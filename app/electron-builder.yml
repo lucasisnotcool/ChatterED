@@ -1,0 +1,36 @@
+# Unsigned DMG for the A1/A2 internal build (issue #17). Signing and notarisation are a
+# later milestone — architecture-mac.md §F.2 option 2 is deliberate here, not an oversight.
+appId: sg.nus.chattered
+productName: ChatterED
+copyright: NUS CS3249 research prototype
+directories:
+  output: out
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+asar: true
+mac:
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  identity: null          # unsigned on purpose — no Apple Developer Program yet (#17)
+  hardenedRuntime: false
+  gatekeeperAssess: false
+dmg:
+  title: ChatterED ${version}
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+npmRebuild: true

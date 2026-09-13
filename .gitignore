@@ -18,6 +18,8 @@ service-account*.json
 # --- Node ---
 node_modules/
 dist/
+out/
+*.tsbuildinfo
 build/Release
 coverage/
 .nyc_output
