@@ -188,6 +188,8 @@ export interface TurnDecisionRow {
   probe_type: string | null;
   rationale: string | null;
   decided_by: string;
+  /** json array: every element this probe put under test (migration 002). */
+  challenged_element_ids: string;
   usage: string | null;
   created_at: string;
 }
@@ -215,7 +217,8 @@ export type LedgerGate =
   | 'low_confidence'
   | 'agreement_not_evidence'
   | 'monotonic'
-  | 'downgrade_capped';
+  | 'downgrade_capped'
+  | 'defended_requires_challenge';
 
 export interface LedgerHistoryRow {
   id?: number;
