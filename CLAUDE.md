@@ -27,8 +27,10 @@ use `gh api repos/:owner/:repo/issues/N --jq '.title, .body'`.
 - **Subagents run on Opus or lower, never Fable.** Nested spawning IS permitted (a
   subagent may spawn its own subagents) — the only rule is the model:
   1. Every `Agent` call, at any depth, passes `model` explicitly — `"opus"` (the ceiling),
-     `"sonnet"` or `"haiku"`. An omitted model **inherits the main session's model, which
-     is Fable** — that is how 16 unauthorised Fable agents ran on 2026-09-13.
+     `"sonnet"` or `"haiku"`. Never rely on inheritance. (A 2026-09-13 scare about nested
+     agents running on Fable turned out to be a false positive — a transcript audit showed
+     every nested turn on `claude-opus-5` — but explicit is auditable, inheritance is not.)
+  Audit: `grep -o '"model":"[^"]*"' <scratchpad>/tasks/a*.output | sort | uniq -c`.
   2. Every subagent prompt must relay the rule: "If you use the Agent tool, pass
      model: \"opus\" (or sonnet/haiku) explicitly — never omit it."
   Enforced by `.claude/settings.json` (`CLAUDE_CODE_SUBAGENT_MODEL: opus` + a `PreToolUse`
