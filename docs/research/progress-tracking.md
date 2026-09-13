@@ -388,7 +388,7 @@ prompted away.
 
 ### 6.3 The silence timer uses the ledger too
 
-When the 60 s silence alarm fires, Mei posts a **partial, correctable statement** about the
+When the 45 s silence alarm fires (45 s of idle, paused while typing — decision #8), Mei posts a **partial, correctable statement** about the
 current target element — not a question, and never the answer:
 
 > *Mei:* "I might be wrong, but I think the expensive appends are the ones where it's already
@@ -544,7 +544,7 @@ Bloom scalar could not do: it correctly left **E4 at zero** despite an otherwise
 
 ---
 
-**Turn 5 — silence.** The student goes quiet. At 60 s the alarm fires; the Peer posts a partial
+**Turn 5 — silence.** The student goes quiet. At 45 s of idle the alarm fires; the Peer posts a partial
 statement on E4 (§6.3):
 
 > *Mei:* "I think I follow — so 'amortised' basically means it's fast on average, right? Like if
