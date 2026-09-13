@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
 
@@ -7,6 +8,32 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...svelte.configs['flat/recommended'],
+  {
+    // Svelte components and rune modules: TypeScript inside <script lang="ts">.
+    files: ['**/*.svelte', '**/*.svelte.ts'],
+    languageOptions: {
+      parserOptions: {
+        parser: tseslint.parser,
+        extraFileExtensions: ['.svelte'],
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'warn',
+    },
+  },
+  {
+    files: ['**/*.mjs', 'scripts/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'src/room/**/*.ts', 'src/test-support/**/*.ts', 'src/**/*.test.ts'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['src/renderer/**/*.ts', 'src/renderer/**/*.svelte'],
+    languageOptions: { globals: globals.browser },
+  },
   {
     files: ['**/*.ts'],
     rules: {
@@ -19,14 +46,14 @@ export default tseslint.config(
     // Only src/room/context.ts may import the whispers repository. Everything that
     // assembles a group-scope prompt is therefore structurally unable to see a whisper.
     files: ['src/**/*.ts'],
-    ignores: ['src/room/context.ts', 'src/**/*.test.ts'],
+    ignores: ['src/room/context.whisper.ts', 'src/**/*.test.ts', 'src/test-support/**'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [
           {
-            group: ['**/repos/whispers', '**/repos/whispers.js', '**/room/whispers'],
+            group: ['**/repos/whispers', '**/repos/whispers.js', '**/prompts.whisper', '**/prompts.whisper.js'],
             message:
-              'Only src/room/context.ts may import the whispers repository (architecture-mac.md §D.4 whisper invariant).',
+              'Only src/room/context.whisper.ts may import the whisper repository or role block (architecture-mac.md §D.4 whisper invariant). src/main/db/store.ts is the one allowlisted composition root and carries an explicit eslint-disable.',
           },
         ],
       }],
@@ -44,7 +71,7 @@ export default tseslint.config(
         patterns: [
           {
             group: ['**/repos/whispers', '**/repos/whispers.js'],
-            message: 'Only src/room/context.ts may import the whispers repository.',
+            message: 'Only src/room/context.whisper.ts may import the whispers repository.',
           },
         ],
       }],

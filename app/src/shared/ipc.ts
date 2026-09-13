@@ -1,0 +1,78 @@
+/**
+ * The IPC contract. The preload bridge exposes exactly this and nothing else
+ * (architecture-mac.md §C.1: "IPC bridge — contextIsolation, preload allowlist").
+ */
+import type {
+  Bootstrap,
+  ConceptDraft,
+  CreateSessionInput,
+  RecapView,
+  RelayAttribution,
+  RoomEvent,
+  RoomSnapshot,
+  WhisperThreadView,
+} from './types.js';
+
+export const IPC = {
+  bootstrap: 'app:bootstrap',
+  chooseSlidesFolder: 'app:chooseSlidesFolder',
+  setApiKey: 'app:setApiKey',
+  clearApiKey: 'app:clearApiKey',
+  completeFirstRun: 'app:completeFirstRun',
+  draftConcept: 'session:draftConcept',
+  createSession: 'session:create',
+  openRoom: 'room:open',
+  sendMessage: 'room:send',
+  typing: 'room:typing',
+  holdTimer: 'room:hold',
+  pauseNudges: 'room:pauseNudges',
+  wrapUp: 'room:wrapUp',
+  openWhisper: 'whisper:open',
+  sendWhisper: 'whisper:send',
+  relayWhisper: 'whisper:relay',
+  closeWhisper: 'whisper:close',
+  event: 'room:event',
+} as const;
+
+export interface ChatterEdApi {
+  bootstrap(): Promise<Bootstrap>;
+  chooseSlidesFolder(): Promise<string | null>;
+  /** Stored with Electron safeStorage in the OS keychain. Never written to SQLite or disk. */
+  setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;
+  clearApiKey(): Promise<void>;
+  completeFirstRun(): Promise<void>;
+
+  /** Turns pasted text into a draft concept + 3–5 claim rows the learner then edits. */
+  draftConcept(input: { moduleCode: string; title: string; text: string }): Promise<ConceptDraft>;
+  createSession(input: CreateSessionInput): Promise<{ roomId: string }>;
+
+  openRoom(roomId: string): Promise<RoomSnapshot>;
+  sendMessage(input: { roomId: string; text: string }): Promise<void>;
+  /** Typing heartbeat. Rate-limited by the renderer to at most one per 3 s (§C.3). */
+  typing(input: { roomId: string; textLen: number }): Promise<void>;
+  /** The composer's `Hold` control: +60 s, posts nothing. */
+  holdTimer(input: { roomId: string }): Promise<void>;
+  /** `Wait for me`: pauses nudges for this round, with an undo. */
+  pauseNudges(input: { roomId: string; paused: boolean }): Promise<void>;
+  wrapUp(input: { roomId: string }): Promise<RecapView>;
+
+  openWhisper(input: { roomId: string; agentKey: string }): Promise<WhisperThreadView>;
+  sendWhisper(input: { roomId: string; threadId: string; text: string }): Promise<void>;
+  relayWhisper(input: {
+    roomId: string;
+    threadId: string;
+    whisperId: string;
+    attribution: RelayAttribution;
+    text: string;
+  }): Promise<void>;
+  closeWhisper(input: { roomId: string; threadId: string }): Promise<void>;
+
+  /** Subscribe to pushed room events. Returns an unsubscribe function. */
+  onEvent(listener: (event: RoomEvent) => void): () => void;
+}
+
+declare global {
+  interface Window {
+    chattered: ChatterEdApi;
+  }
+}
