@@ -131,7 +131,7 @@ learning feature; one opponent, one persona; $4/mo or $44/yr, US-only for learne
 Design warning from the LLM-teachable-agent literature: teaching ChatGPT improved knowledge
 gains and self-regulation, but the agent's tendency to be *correct* limited error-correction
 practice (https://arxiv.org/pdf/2412.15226). **A Peer that is too competent destroys the
-protégé mechanism** — Mei must be allowed to be wrong. Foundational protégé-effect evidence:
+protégé mechanism** — Ellie must be allowed to be wrong. Foundational protégé-effect evidence:
 Chase et al. 2009 (https://link.springer.com/article/10.1007/s10956-009-9180-4).
 
 ## Feature implications for ChatterED (for product-design.md)
@@ -139,7 +139,7 @@ Chase et al. 2009 (https://link.springer.com/article/10.1007/s10956-009-9180-4).
 1. Engineer turn-taking and role complementarity in the product — users of the only shipping
    group chat have to hack both with pinned rules.
 2. Make the whisper channel a first-class, discoverable UI element; nobody else has it.
-3. Show the pacing: a visible "Arun is thinking…" beats an unexplained pause, and the
+3. Show the pacing: a visible "Max is thinking…" beats an unexplained pause, and the
    ledger update running inside the delay makes the wait do real work.
 4. Let the Peer be wrong on purpose and let the student catch it; log when they do.
 5. The free baseline is Microsoft's single coach — differentiate on the *social* mechanics

@@ -11,8 +11,8 @@ carry the logging in §7 and the residency requirement in §9.5). `interview-gui
 evidence — do not duplicate it here; this plan is *summative*). `cloudflare-do-limits.md` (the
 residency finding in its §8 drives §9.5 below).
 
-**Agent names follow `design-brief.md` §D1:** Peer = **Mei**, Challenger = **Arun**, opt-in closing
-Tutee = **Kai**.
+**Agent names follow `design-brief.md` §D1:** Peer = **Ellie**, Challenger = **Max**, opt-in closing
+Tutee = **Theo**.
 
 > **What A1 needs from this document.** The A1 rubric line *"a clear mechanism for tracking
 > student progress"* is answered by `progress-tracking.md`, not here. What A1 should borrow
@@ -42,7 +42,7 @@ as a cheap early read.
 
 ## 2. Research questions and hypotheses
 
-Naming: **Audience** = {Group (Mei + Arun), Single (Arun only)}. **Whisper** =
+Naming: **Audience** = {Group (Ellie + Max), Single (Max only)}. **Whisper** =
 {On, Off}. **Latency** = {Immediate (~1 s), Delayed (8–12 s TTFT)}.
 Primary/secondary/exploratory labels are binding — declare them before data collection (§8.6).
 
@@ -107,7 +107,7 @@ Primary/secondary/exploratory labels are binding — declare them before data co
   post-test score controlling for pre-test (target: Spearman ρ ≥ .5). If it does not, the ledger is
   a UI affordance only and must not be reported as a learning measure. See `progress-tracking.md` §8.
 
-### RQ5 — The Kai teach-back round (exploratory, opt-in, not manipulated)
+### RQ5 — The Theo teach-back round (exploratory, opt-in, not manipulated)
 
 `design-brief.md` §D1 makes the Tutee agent an *invited* closing round rather than a standing third
 voice, gated on a filled ledger (`progress-tracking.md` §6.5). It is **not** added as a fourth
@@ -231,14 +231,14 @@ module-permitted material and cite them in the A2 report.
 
 ### 4.2 Agents
 
-- **Peer (Mei)** — collaborative partner; per turn, screens whether the student contributed, then picks
+- **Peer (Ellie)** — collaborative partner; per turn, screens whether the student contributed, then picks
   one or two of {ask for elaboration, suggest a focus area, offer a tentative idea}
   (Xu et al. §4.1.2).
-- **Challenger (Arun)** — Socratic; screens input for adequacy, analyses the statement for flaws (vague
+- **Challenger (Max)** — Socratic; screens input for adequacy, analyses the statement for flaws (vague
   language, unstated assumptions), then selects one question type from {clarification, probing
   assumptions, probing reasons and evidence, probing implications and consequences, probing
   alternative viewpoints}, opening with a brief acknowledgment (Xu et al. §4.1.3).
-- **Single condition** = Arun (Challenger) only. *Justification:* Challenger is the closest single-agent
+- **Single condition** = Max (Challenger) only. *Justification:* Challenger is the closest single-agent
   analogue to the intended ChatterED experience (pushback + explanation) and Xu et al. rate it
   "moderate pressure, high critical thinking" — the fair comparator. Comparing Group against a
   Tutee or Control would stack the deck.
@@ -252,7 +252,7 @@ module-permitted material and cite them in the A2 report.
 Server-authoritative (Durable Object alarm; see `cloudflare-do-limits.md` §1 — "usually within a
 few milliseconds… can be delayed by up to a minute", so the UI countdown must be client-side and
 cosmetic while the DO stays the source of truth). Default **60 s** of student silence, per the
-developer's original framing. On fire, Mei posts a partial statement about the ledger's target
+developer's original framing. On fire, Ellie posts a partial statement about the ledger's target
 element for the student to correct (`progress-tracking.md` §6.3) — this is deliberately a
 *correctable* prompt, not an answer.
 
@@ -474,7 +474,7 @@ separately as `client_ts` and never used for analysis. Every event carries the *
 | `posttest.submit` | Post-test done | as `pretest.submit` |
 | `survey.submit` | Battery submitted | `instrument` (imi/fss/ct/masg/quality), `items{}`, `duration_ms` |
 | `task.end` / `session.end` | Block or session ends | `reason` (completed/timeout/abandoned/withdrawn), `duration_ms` |
-| `teachback.offer` / `.accept` / `.decline` / `.end` | Kai round (`progress-tracking.md` §6.5) | `elements_probed[]`, `duration_ms` — feeds RQ5 |
+| `teachback.offer` / `.accept` / `.decline` / `.end` | Theo round (`progress-tracking.md` §6.5) | `elements_probed[]`, `duration_ms` — feeds RQ5 |
 | `withdraw.request` | Student withdraws | `scope` (session/all), `at_phase` — must trigger the deletion path, §9.1 |
 
 ### 7.2 Logging rules
@@ -632,12 +632,12 @@ may then reward the capitulation.
 **Design mitigations (build these; they are cheap and each maps to a source):**
 1. **Two agents, not three or five.** Pressure scaled with group size in Song et al. Two is the
    smallest group that is still a group. Do not add a third agent for richness.
-2. **Never unanimous on a factual point.** Enforce in the orchestrator: if Mei and Arun
-   would both oppose the student's position in the same window, Mei instead voices partial
+2. **Never unanimous on a factual point.** Enforce in the orchestrator: if Ellie and Max
+   would both oppose the student's position in the same window, Ellie instead voices partial
    support or reframes. Song et al. §5.4.3 recommends exactly this — *"having a small portion of the
    bots side with instead of against the user"* (minority influence) — and their §5.5 lists mixed
    opinion composition as the untested case.
-3. **Arun must be able to lose.** Its prompt requires it to concede explicitly ("that's
+3. **Max must be able to lose.** Its prompt requires it to concede explicitly ("that's
    right, and here's why it holds") when the student's justification is sound, and it may not
    re-challenge a conceded point in the same block. A challenger that never concedes is a pressure
    machine, and Xu et al. already recorded a minority (4/24) finding the Challenger
@@ -651,7 +651,7 @@ may then reward the capitulation.
    never on the student agreeing with an agent (`progress-tracking.md` §4.4, rule 4). `CONCEDE-NJ`
    must never move a ledger element. No score, no streak, no grade on the rail
    (`design-brief.md` §F3).
-7. **Kai never joins a majority.** The teach-back round mutes Mei and Arun, so the live agent count
+7. **Theo never joins a majority.** The teach-back round mutes Ellie and Max, so the live agent count
    never exceeds two (`design-brief.md` §D1; `progress-tracking.md` §6.5).
 8. **An exit that costs nothing.** Leave the room at any time; no streak, no penalty, no nag.
 

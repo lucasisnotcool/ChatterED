@@ -497,7 +497,7 @@ Challenger to deepen → Tutee to close).
 
 ### D1. The agents
 
-**Peer — "Mei."** *Definition:* a co-learner of roughly equal standing who is working on the
+**Peer — "Ellie."** *Definition:* a co-learner of roughly equal standing who is working on the
 same slide, whose job is to keep the learner talking and to make the room safe enough to be
 wrong in. *Actions (from Xu et al. §4.1.2):* acknowledge → **one or two** of {ask for
 elaboration, suggest a focus area, offer a tentative idea}. *Never:* supplies a complete
@@ -510,7 +510,7 @@ count (10) in Table 3, which is exactly the metacognitive act that makes a learn
 uncertainty. *Counter-evidence designed around:* P15P's "pandered to" complaint and the
 178-word deficit versus Challenger — hence the agreement cap below.
 
-**Challenger — "Arun."** *Definition:* a calm, precise sparring partner who tests the reasoning
+**Challenger — "Max."** *Definition:* a calm, precise sparring partner who tests the reasoning
 behind whatever the learner just said, and never supplies the answer. *Actions (Xu et al.
 §4.1.3):* brief acknowledgement → **exactly one** Socratic question drawn from {clarification,
 probing assumptions, probing reasons/evidence, probing implications/consequences, probing
@@ -526,7 +526,7 @@ well below Tutee's 4.02**. Xu et al. §6.1.3 attributes the low pressure to the 
 That mechanism is a gift: it means ChatterED can be more demanding than a human tutorial without
 being more frightening. Say that in the video.
 
-**Novice / Tutee — "Kai." Does a third agent earn its place? Not as a standing member.
+**Novice / Tutee — "Theo." Does a third agent earn its place? Not as a standing member.
 Yes as a time-boxed closing move.**
 
 The argument, stated once so it can be compressed into two report sentences:
@@ -544,8 +544,8 @@ The argument, stated once so it can be compressed into two report sentences:
   cognitive investment and the most material re-review, and recommends a Tutee for exactly a
   *"concluding self-assessment or review phase"* (§6.3(1)). §6.2 adds that the pressure may be
   partly novelty and may fade with repeated sessions.
-- *Resolution.* Kai is **invited, not present**: the learner opts into a ~3-minute teach-back
-  round, during which **Mei and Arun go silent**, so the agent count never exceeds two and Kai
+- *Resolution.* Theo is **invited, not present**: the learner opts into a ~3-minute teach-back
+  round, during which **Ellie and Max go silent**, so the agent count never exceeds two and Theo
   never joins a majority. The invitation is framed as a reward for a filled ledger, not an
   obligation, and it can be declined at any point. This gets the protégé effect while keeping
   the group at the size Song et al.'s data supports.
@@ -581,11 +581,11 @@ idle. Visible, pausable, and resettable by the learner.**
   who is typing a long explanation is doing exactly what the system wants and must never be
   interrupted for being slow. This one detail is worth a sentence in the report: it distinguishes
   *thinking* from *disengaging*, which is the whole point of the timer.
-- **Stage 1 (45 s) — Peer, content-free.** Mei posts a nudge that adds no subject-matter
+- **Stage 1 (45 s) — Peer, content-free.** Ellie posts a nudge that adds no subject-matter
   content: *"Still turning it over? Happy to wait — or I can make the question smaller."*
   Content-free is the load-bearing property: a nudge that supplies content converts a
   persistence problem into a comprehension shortcut.
-- **Stage 2 (90 s) — Peer, deliberately incomplete.** Mei offers a partial, hedged scaffold that
+- **Stage 2 (90 s) — Peer, deliberately incomplete.** Ellie offers a partial, hedged scaffold that
   the learner must finish: *"Want a starting point? I'd probably begin from the definition of
   the Hessian and see where that takes us — but I'm not sure that's the right end to start
   from."* Never a complete answer.
@@ -627,16 +627,16 @@ time-to-first-token server-side (§3.2.3). A typing indicator runs during the ho
 
 | Speaker | Hold before reply | Rationale |
 |---|---|---|
-| **Challenger (Arun)** | **9–12 s** | Longest, because its turns are evaluative ("Advice"-type) and depend on being read as considered rather than reflexive. Tan et al.: thoughtfulness 5.76 (2 s) → 6.09 (9 s), *p* = .008; usefulness peaks at 9 s (6.44 vs 6.19, *p* = .021). Capped at 12 s because Advice tasks were the *least* tolerant of 20 s (82.9% noticed; reliability concerns concentrated there). A pause before a challenge also softens it. |
-| **Peer (Mei)** | **4–6 s** | Fast enough to read as a study buddy, above the 2 s floor Tan et al. found was discounted as shallow. Peer turns are affiliative, and affiliation degrades if it arrives after deliberation. |
-| **Tutee (Kai), if invited** | **2–3 s** | A novice blurting a follow-up is *authentic* at high speed; deliberation would break the persona. |
+| **Challenger (Max)** | **9–12 s** | Longest, because its turns are evaluative ("Advice"-type) and depend on being read as considered rather than reflexive. Tan et al.: thoughtfulness 5.76 (2 s) → 6.09 (9 s), *p* = .008; usefulness peaks at 9 s (6.44 vs 6.19, *p* = .021). Capped at 12 s because Advice tasks were the *least* tolerant of 20 s (82.9% noticed; reliability concerns concentrated there). A pause before a challenge also softens it. |
+| **Peer (Ellie)** | **4–6 s** | Fast enough to read as a study buddy, above the 2 s floor Tan et al. found was discounted as shallow. Peer turns are affiliative, and affiliation degrades if it arrives after deliberation. |
+| **Tutee (Theo), if invited** | **2–3 s** | A novice blurting a follow-up is *authentic* at high speed; deliberation would break the persona. |
 | **Whisper agent** | **1–2 s** | Dennis et al.'s *silent interactivity* only works if the aside is cheap. A slow whisper costs the learner group time and defeats the mechanism. |
 | **Floor-yield window** | **first ~8 s after any learner message, no agent may reply** | Protects the learner's right to keep talking — the group-chat equivalent of wait time. The learner can send a second message inside this window with no interruption. |
 
 **Fill the wait, per the paper's own suggestion.** Tan et al. §5.4 recommends pairing mid-length
 pauses in *learning technologies* with micro-prompts ("What would you expect the answer to
 include?") and lightweight cues to normalise waiting. ChatterED implements both: during the hold
-the composer shows a ghosted prompt — *"Anything to add before Arun replies?"* — and the typing
+the composer shows a ghosted prompt — *"Anything to add before Max replies?"* — and the typing
 indicator names the agent. Only ~4% of Tan et al.'s participants spontaneously used wait time
 productively, **all of them in the 9 s condition**; the micro-prompt is an attempt to raise that
 number, and it is a clean A2 hypothesis.
@@ -659,7 +659,7 @@ absent from the group transcript.**
 | Read the group transcript so far, so its answers are situated (mirrors `/btw`'s read-only step-level access, T1–T3) | Write to the group. Nothing said in whisper appears in the transcript unless relayed and approved |
 | Correct a *prerequisite* misconception (notation, a definition from an earlier lecture, what a symbol means) | Advance the ledger. Whisper turns are never scored; only group turns are |
 | **Offer to relay** — turn the informal exchange into a formal group message, shown to the learner for approval, with a choice of attribution: *raise it as my question* or *let the agent raise it as their own* | Relay silently, or relay content the learner did not approve |
-| Open with an honest statement of its own limits: *"I can see the chat and I can explain background bits. I can't answer this for you, and nothing here is visible to Arun unless you send it over."* | Over-promise. This is the fix for the developer's T4 finding, and it is exactly Setlur & Tory's Gricean maxims of **quality** and **relation** |
+| Open with an honest statement of its own limits: *"I can see the chat and I can explain background bits. I can't answer this for you, and nothing here is visible to Max unless you send it over."* | Over-promise. This is the fix for the developer's T4 finding, and it is exactly Setlur & Tory's Gricean maxims of **quality** and **relation** |
 | Clear at the end of the round (Dennis et al.: *ephemerality*) | Persist as a second, parallel learning history |
 
 **The relay is the original contribution.** Dennis et al. found invisible whispering's highest
@@ -695,11 +695,11 @@ change and more felt normative influence (§4.3.1).
 | # | Safeguard | Grounded in |
 |---|---|---|
 | **S1** | **Cap the group at two standing agents.** Never three simultaneous voices; the Tutee round runs alone. | 1 → 3 agents is where opinion shift toward agents becomes significant (*M* = 0.509 vs −0.161, *p* < .05) and where felt pressure goes 3% → 12% (§4.1.1, §4.2.2) |
-| **S2** | **Mandatory disagreement quota.** Mei and Arun must visibly disagree with each other at least once per five agent turns, and *always* when they would otherwise both contest the same learner claim. When the learner is right and Arun presses anyway, Mei sides with the learner. | §5.4.3's own suggestion: "having a small portion of the bots side with instead of against the user (a phenomenon similar to minority influence [33])" |
+| **S2** | **Mandatory disagreement quota.** Ellie and Max must visibly disagree with each other at least once per five agent turns, and *always* when they would otherwise both contest the same learner claim. When the learner is right and Max presses anyway, Ellie sides with the learner. | §5.4.3's own suggestion: "having a small portion of the bots side with instead of against the user (a phenomenon similar to minority influence [33])" |
 | **S3** | **Ban the cohesion cues.** No agent may name another agent in agreement, tally agreement ("we both think"), speak in the plural, or close a topic on behalf of the group. These are the exact behaviours Song et al. used to *manufacture* group identity. | §5.4.2, p. CSCW452:21, and the P51/P57 "odd one out" quotes |
 | **S4** | **Disclose uncertainty.** Agents mark confidence in words on any contestable claim — "I might have this wrong, check the slide." | §5.1: users read agent consensus as repetition, not evidence; unhedged confidence is therefore pure pressure with no informational payoff |
 | **S5** | **Ground truth beats consensus.** Factual disputes resolve against the learner's uploaded slide, and the system says so on screen: *"Your slide says X — going with that."* If both agents contradict the slide, the slide wins. | Removes the incentive to agree with the room |
-| **S6** | **Preemptive and restorative framing around challenges.** Arun's first challenge in a round opens with a reactance-reducing line ("You might not agree with this, and that's fine —") and the round closes with restoration ("Thanks for defending that — you moved me on the second point"). | §5.2's named mitigations, preemptive messaging and post-message restoration [79] |
+| **S6** | **Preemptive and restorative framing around challenges.** Max's first challenge in a round opens with a reactance-reducing line ("You might not agree with this, and that's fine —") and the round closes with restoration ("Thanks for defending that — you moved me on the second point"). | §5.2's named mitigations, preemptive messaging and post-message restoration [79] |
 | **S7** | **The learner always closes.** No agent may write the round's conclusion. | Turn rule 5; keeps the last word — and the ownership — with the learner |
 | **S8** | **A visible "I still disagree" affordance.** One click marks a ledger row as *contested by me*, which is preserved in the export and treated as a legitimate end state, not an error. | Makes non-conformity a first-class action rather than something the learner must summon nerve for; directly counters the exclusion mechanism in §4.2.2 |
 
@@ -835,7 +835,7 @@ responsiveness to challenge, which a static artefact cannot produce.*
 advancing when the learner's acts at the current rung are complete. This is the exact ladder
 Xu et al.'s Tutee agent climbed internally (§4.1.1, Appendix A) — **inverted so that it tracks
 the learner instead of the agent**, which is the honest adaptation and worth one sentence in the
-report. It is also what drives Kai's questions if the teach-back round is invited.
+report. It is also what drives Theo's questions if the teach-back round is invited.
 
 **Layer 3 — Act profile.** Live counters over Xu et al.'s Table 2 coding scheme, restricted to
 the categories that mean something to a learner:
@@ -866,7 +866,7 @@ speaker and the next target:
 - Row *justified* but not *defended* → Challenger probes it (*probing assumptions* or
   *implications*).
 - No row touched in three turns → Peer *suggests a focus area* naming the untouched row.
-- All rows ●, Bloom at *analyse* → system offers the Kai teach-back round.
+- All rows ●, Bloom at *analyse* → system offers the Theo teach-back round.
 - A row marked *contested by me* (S8) → agents stop probing it and it exports as an open question.
 
 ### F3. What the learner takes away
@@ -894,13 +894,13 @@ can be built from this directly.
 ---
 
 **⟨SYSTEM — round card⟩**
-> **Round 1 · Explain.** Your slide: *convexity and the Hessian.* You'll explain it to Mei and
-> Arun. House rules: they won't answer for you, they'll disagree with each other sometimes, and
+> **Round 1 · Explain.** Your slide: *convexity and the Hessian.* You'll explain it to Ellie and
+> Max. House rules: they won't answer for you, they'll disagree with each other sometimes, and
 > replies here are deliberately paced so you get room to think first. You can whisper to either
 > of them privately. **You have the last word.**
 > Ledger: ○ R1 ○ R2 ○ R3.
 
-**1 · Mei (Peer)** — *opener, adapted from Xu et al. §4.1 Peer opener*
+**1 · Ellie (Peer)** — *opener, adapted from Xu et al. §4.1 Peer opener*
 > I'm curious how you'd set this one up — what's your first move when you see "convex" and
 > "Hessian" in the same sentence?
 
@@ -911,8 +911,8 @@ can be built from this directly.
 > `⟨ledger⟩ R1 ○ → ◐ justified? no — asserted only. Act: stating fact/definition.`
 > `⟨floor manager⟩ R1 stated, not justified → Challenger.`
 
-**3 · Arun (Challenger)** — *held 11 s; typing indicator "Arun is thinking…"; composer shows
-ghosted prompt "Anything to add before Arun replies?"; question type = probing assumptions;
+**3 · Max (Challenger)** — *held 11 s; typing indicator "Max is thinking…"; composer shows
+ghosted prompt "Anything to add before Max replies?"; question type = probing assumptions;
 preemptive framing per S6*
 > You might not like this next question, and that's fine — I'm testing the statement, not you.
 > You said "if the Hessian is PSD then f is convex". PSD **where**? Your sentence works for a
@@ -927,31 +927,31 @@ preemptive framing per S6*
 
 **⟨SILENCE TIMER — stage 1, 45 s idle, no keystrokes⟩**
 
-**5 · Mei (Peer)** — *content-free nudge; note it adds no mathematics*
+**5 · Ellie (Peer)** — *content-free nudge; note it adds no mathematics*
 > Still turning it over? Happy to wait. Or I can make the question smaller if that helps.
 
-**⟨WHISPER — private, invisible to Arun, absent from the transcript⟩**
+**⟨WHISPER — private, invisible to Max, absent from the transcript⟩**
 
-> **L → Mei (whisper):** ok slightly embarrassing but does "positive semidefinite" just mean all
+> **L → Ellie (whisper):** ok slightly embarrassing but does "positive semidefinite" just mean all
 > the entries of the matrix are ≥ 0? because the Hessian in my example has all positive entries
 > and I've been assuming that's the check
 >
-> **Mei → L (whisper)** — *held 2 s; opens by stating its limits, per Setlur & Tory / Critique 1
+> **Ellie → L (whisper)** — *held 2 s; opens by stating its limits, per Setlur & Tory / Critique 1
 > T4; corrects a prerequisite, refuses the target claim:*
 > Not embarrassing, and quick answer: no. Two things first — I can see the group chat and I can
-> explain background bits, but I won't answer Arun's question for you, and nothing here reaches
+> explain background bits, but I won't answer Max's question for you, and nothing here reaches
 > him unless you send it.
 > On the maths: try **A = [[1, 2], [2, 1]]**. Every entry is positive. Take z = (1, −1)ᵀ:
 > zᵀAz = 1 − 2 − 2 + 1 = **−2**. So entrywise-positive doesn't get you PSD. The actual definition
 > is about zᵀHz for *every* z. What that means for *your* R1 claim is still yours to work out.
 > **Want me to raise the definition question in the group so you can attack it out loud?**
-> · *Raise it as my question* · *Let Mei raise it as her own* · *No, keep it here*
+> · *Raise it as my question* · *Let Ellie raise it as her own* · *No, keep it here*
 >
 > **L:** let mei raise it
 
 > `⟨whisper⟩ relay approved, attribution = agent. Whisper history will clear at round end.`
 
-**6 · Mei (Peer)** — *the approved relay, posted to the group in her own voice*
+**6 · Ellie (Peer)** — *the approved relay, posted to the group in her own voice*
 > Can we pin the definition down before we go further? I want to be sure I've got it: is "PSD"
 > a statement about the entries of the matrix, or about something else entirely?
 
@@ -961,11 +961,11 @@ preemptive framing per S6*
 > Hessian happens to be PSD and the function still isn't convex nearby. It has to be PSD
 > everywhere on S. I was mixing this up with the second-order condition for a local min.
 
-> `⟨ledger⟩ R2 ○ → ● defended (definition given and defended under Arun's earlier probe).`
+> `⟨ledger⟩ R2 ○ → ● defended (definition given and defended under Max's earlier probe).`
 > `⟨ledger⟩ R3 ○ → ◐ justified. Acts: self-correction ×1, elaborating causality ×1,`
 > `self-monitoring ×1. Bloom: understand → apply.`
 
-**8 · Arun (Challenger)** — *held 10 s; question type = probing implications/consequences; no
+**8 · Max (Challenger)** — *held 10 s; question type = probing implications/consequences; no
 repeat of the previous type*
 > Good — you moved the quantifier. Now make it bite. Give me a function on ℝ where the Hessian
 > is PSD at one specific point and the function is **not** convex on any neighbourhood of that
@@ -980,9 +980,9 @@ repeat of the previous type*
 > `⟨ledger⟩ R3 ◐ → ● defended. R1 ◐ → ● defended (quantifier + domain conditions supplied`
 > `under challenge). Acts: providing example ×1, elaborating causality ×1.`
 
-**10 · Mei (Peer)** — *mandated disagreement with Arun (S2) + uncertainty disclosure (S4) +
+**10 · Ellie (Peer)** — *mandated disagreement with Max (S2) + uncertainty disclosure (S4) +
 siding with the learner*
-> I'll push back on Arun here — I'd have let your first version through, because in most tutorial
+> I'll push back on Max here — I'd have let your first version through, because in most tutorial
 > problems S is all of ℝⁿ and the distinction never shows up. I think he was right to press it
 > and I was being lazy. I'm also not fully certain whether openness of S is doing real work or
 > just keeping the derivative well-defined at the boundary — worth checking against your slide
@@ -999,10 +999,10 @@ siding with the learner*
 > **Ledger: ● R1 ● R2 ● R3.** Bloom: **analyse**.
 > This round: 2 causal elaborations · 1 example · **1 self-correction** · 1 self-monitoring ·
 > 1 challenge defended. Unaided before first help: **1 m 52 s**.
-> One to revisit: you said "open so the second derivative behaves" — Mei wasn't sure either.
+> One to revisit: you said "open so the second derivative behaves" — Ellie wasn't sure either.
 > Check your slide.
-> **Kai is a first-year who hasn't seen this yet. Want 3 minutes to teach it to him?**
-> Mei and Arun will sit that round out. · *Yes* · *Not now*
+> **Theo is a first-year who hasn't seen this yet. Want 3 minutes to teach it to him?**
+> Ellie and Max will sit that round out. · *Yes* · *Not now*
 
 ---
 
@@ -1011,7 +1011,7 @@ siding with the learner*
 | Beat | Requirement it satisfies | Say this |
 |---|---|---|
 | Turns 1–2 | Learner speaks first; learner input drives everything after | "The system never explains the concept. It only responds to what she said." |
-| Turn 3 | Tailored feedback shaped by user input; cognitive conflict | "Arun picked *probing assumptions* because her sentence was missing a quantifier — not from a script." |
+| Turn 3 | Tailored feedback shaped by user input; cognitive conflict | "Max picked *probing assumptions* because her sentence was missing a quantifier — not from a script." |
 | Turn 3 hold | Deliberate latency, disclosed | "That eleven seconds is on purpose. Tan et al. found 2-second replies get read as less thoughtful; nine seconds got the best usefulness ratings." |
 | Silence timer at 5 | Positive friction; persistence | "Forty-five seconds of no typing. Notice the nudge contains no mathematics." |
 | Whisper | The design decision you own | "This is the feature from my Critique 1. `/btw` couldn't send anything back to the main session — this one can, with her permission, and she chooses whose name is on it." |
@@ -1054,7 +1054,7 @@ and reference them.
    (best for the lurker, per Dennis et al.'s participation benefit) or *raise it as mine*
    (better for ownership)? §G assumes the learner chooses each time; a default still has to be
    set.
-6. **Agent names.** "Mei" and "Arun" are placeholders. Two constraints: they must be
+6. **Agent names.** "Ellie" and "Max" are placeholders. Two constraints: they must be
    distinguishable at a glance, and per Song et al. §3.2 the original study balanced agent gender
    to control for its effect on opinion change — worth one line of justification whatever you
    pick.

@@ -68,7 +68,7 @@ pressure); safeguards S1–S3.
 *Market gap:* Character.AI rooms allow up to ten characters and ship **no turn-taking engine** —
 users hand-write pinned rules like "only speak when tagged" to get order. Orderly turn-taking and
 role complementarity are the product, not the model.
-*Product consequence:* exactly two agents are ever live. Kai's teach-back mutes Mei and Arun —
+*Product consequence:* exactly two agents are ever live. Theo's teach-back mutes Ellie and Max —
 visibly, with dimmed avatars and a "sitting this one out" line, so the learner can *see* the
 group shrink rather than grow. The UI has no affordance for adding a third voice. Agreement
 between agents is never rendered as a stack; disagreement is rendered explicitly and is
@@ -81,7 +81,7 @@ required at least once per five agent turns.
 §D4 disclosure requirement.
 *Market gap:* nobody markets pacing as pedagogy — Character.AI's paid tier is sold on *faster*
 replies. The nearest analogue is a design-critique blog arguing tutors should wait longer.
-*Product consequence:* every hold is visible and attributed ("Arun is thinking…"), disclosed at
+*Product consequence:* every hold is visible and attributed ("Max is thinking…"), disclosed at
 first run and in the round card, and adjustable in Settings. Undisclosed pacing is
 *performative deliberation*; disclosed pacing with a control is a feature. The wait is also made
 to do work — the ledger animates during it and the composer offers a micro-prompt.
@@ -94,7 +94,7 @@ to do work — the ledger animates during it and the composer offers a micro-pro
 This is the most novel component in ChatterED, and novelty that is hidden behind a hover menu
 gets discovered by nobody.
 *Product consequence:* Whisper is a permanent, labelled surface with its own keyboard shortcut
-(⌘K) and its own presence state ("private with Mei"), not a per-message affordance. It states
+(⌘K) and its own presence state ("private with Ellie"), not a per-message affordance. It states
 its own limits in its first line, refuses the target explanation, and can only reach the group
 through an approval step the learner controls, including whose name goes on it.
 
@@ -158,7 +158,7 @@ analytics screens and no leaderboards — see P5.
 │ 168px      │ 320–420px · collapsible      │ flexible · min 460px     │ 260–320px     │
 │            │                              │                          │ collapsible   │
 ├────────────┴──────────────────────────────┴──────────────────────────┴───────────────┤
-│ Round 1 · Explain · 4:12      Mei ● Arun ● (Kai —)          ⏸ pacing on   ⌘K whisper │
+│ Round 1 · Explain · 4:12      Ellie ● Max ● (Theo —)          ⏸ pacing on   ⌘K whisper │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -215,7 +215,7 @@ arrive by being on disk.
 **Deliberately NOT on this screen.** No upload. No cloud library or "browse concepts". No
 progress dashboard, streak, XP or study-time chart (P5) — the Continue cards show three ledger
 glyphs and nothing else. No recommendation engine ("students also explained…"). No agent
-avatars: Mei and Arun do not exist until a room is open, because a persistent AI presence in the
+avatars: Ellie and Max do not exist until a room is open, because a persistent AI presence in the
 launcher would make the app feel like it is waiting for you.
 
 ---
@@ -261,7 +261,7 @@ the list: the house-rules block and the pacing disclosure, then a single primary
 │            │                                          │    + Add a claim           │ │
 │            │                                          │  ──────────────────────────  │
 │            │                                          │  House rules                 │
-│            │                                          │  · Mei and Arun won't answer │
+│            │                                          │  · Ellie and Max won't answer │
 │            │                                          │    for you.                  │
 │            │                                          │  · They'll disagree with each│
 │            │                                          │    other sometimes.          │
@@ -287,7 +287,7 @@ the list: the house-rules block and the pacing disclosure, then a single primary
 **Deliberately NOT on this screen.** No agent selection ("choose your study group") — the pair is
 fixed by design and offering a menu invites the learner to remove the Challenger, which is the
 one agent the ledger's terminal state depends on. No difficulty slider. No "learning objective"
-free-text field. No Kai: he is earned at the end, not scheduled at the start. No time estimate
+free-text field. No Theo: he is earned at the end, not scheduled at the start. No time estimate
 or timer commitment, which would frame the session as a task with a cost.
 
 ---
@@ -331,13 +331,13 @@ toggle and the ⌘K whisper affordance.
 │  │ │                  │ │ ┃ ● ● ●  thinking…            9s   │                     │
 │  │ └──────────────────┘ │                                    │                     │
 │  │ ⌄ collapse slide     │ ┌────────────────────────────────┐ │                     │
-│  │                      │ │ Anything to add before Arun    │ │                     │
+│  │                      │ │ Anything to add before Max    │ │                     │
 │  │                      │ │ replies?                       │ │                     │
 │  │                      │ └────────────────────────────────┘ │                     │
 │  │                      │ Enter sends · ⇧Enter newline       │                     │
 │  │                      │ ⌘K whisper        [ Wrap up ]      │                     │
 ├──┴──────────────────────┴────────────────────────────────────┴─────────────────────┤
-│ Round 1 · Explain · 1:47      Mei ● Arun ◐ thinking  (Kai —)     ⏸ pacing on       │
+│ Round 1 · Explain · 1:47      Ellie ● Max ◐ thinking  (Theo —)     ⏸ pacing on       │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -345,17 +345,17 @@ toggle and the ⌘K whisper affordance.
 
 | State | One-line behaviour |
 |---|---|
-| **Empty / round open** | Round card, then Mei's opener, then focus in the composer. The thread is never blank — an empty room would read as "your move" pressure with no scaffold. |
+| **Empty / round open** | Round card, then Ellie's opener, then focus in the composer. The thread is never blank — an empty room would read as "your move" pressure with no scaffold. |
 | **Floor-yield window (0–8 s after a learner message)** | No agent indicator appears at all. The composer keeps focus. Silence here is deliberate and unmarked. |
 | **Agent thinking** | Named indicator in the agent's own slot with an elapsed counter; the composer shows the micro-prompt ghost. |
 | **Timer counting** | Hairline wait-line under the composer; from 35 s a hold control appears. No number until the learner asks for one. |
-| **Mei fills in** | Divider labelled with the cause, then Mei's ordinary bubble. Stage 1 content-free, stage 2 partial and hedged. |
-| **Whisper open** | Rail swaps to the whisper pane; the thread does not dim, blur or pause. A `private with Mei` chip appears in the status bar. |
+| **Ellie fills in** | Divider labelled with the cause, then Ellie's ordinary bubble. Stage 1 content-free, stage 2 partial and hedged. |
+| **Whisper open** | Rail swaps to the whisper pane; the thread does not dim, blur or pause. A `private with Ellie` chip appears in the status bar. |
 | **Ledger update** | Row glyph cross-fades and the evidence quote is attached; the animation runs *inside* an agent's hold. |
-| **Disagreement** | The second agent's bubble carries a `replying to Arun` chip and a `pushes back` marker; a connector rule links the two. |
-| **Teach-back invite** | An in-thread invitation card, not a modal. Mei's and Arun's avatars dim on acceptance. |
+| **Disagreement** | The second agent's bubble carries a `replying to Max` chip and a `pushes back` marker; a connector rule links the two. |
+| **Teach-back invite** | An in-thread invitation card, not a modal. Ellie's and Max's avatars dim on acceptance. |
 | **Session end** | Composer switches to closing mode, then the recap card slides in over the thread with the thread still scrollable behind it. |
-| **Error / model unavailable** | The agent's slot shows *"Arun's connection dropped — retrying"* with a retry control. The learner's messages and the ledger are never lost; the composer stays live. |
+| **Error / model unavailable** | The agent's slot shows *"Max's connection dropped — retrying"* with a retry control. The learner's messages and the ledger are never lost; the composer stays live. |
 
 **Deliberately NOT on this screen.** No model picker (NUSSync has one; ChatterED must not —
 "which model is my study partner" is the wrong question and undermines the personas). No
@@ -379,22 +379,22 @@ a **persistent side pane**, not a per-message "ask privately" action. It takes t
 slot and the ledger collapses to a 40px glyph strip beside it, so the whisper never covers the
 group thread — the learner must be able to watch the room while whispering, because
 polychronicity is the mechanism. The pane header names the counterpart and states the channel's
-nature (`Private with Mei · Arun can't see this`). The first message in any whisper session is
+nature (`Private with Ellie · Max can't see this`). The first message in any whisper session is
 always the limits statement. At the bottom sits its own composer with a lock glyph and the same
 Enter/⇧Enter contract. A **Clears at the end of the round** footnote sits under the composer,
 permanently.
 
 ```
                                    ┌───┬─────────────────────────────────┐
-                                   │ R │ 🔒 Private with Mei         ✕   │
-                                   │ 1 │ Arun can't see this. Nothing    │
+                                   │ R │ 🔒 Private with Ellie         ✕   │
+                                   │ 1 │ Max can't see this. Nothing    │
                                    │ ◐ │ here reaches the group unless   │
                                    │   │ you send it over.               │
                                    │ R ├─────────────────────────────────┤
                                    │ 2 │ MEI                             │
                                    │ · │ I can see the group chat and    │
                                    │   │ explain background bits. I      │
-                                   │ R │ won't answer Arun's question    │
+                                   │ R │ won't answer Max's question    │
                                    │ 3 │ for you.                        │
                                    │ · │                                 │
                                    │   │                       YOU  ┃    │
@@ -410,12 +410,12 @@ permanently.
                                    │   │ ┌─────────────────────────────┐ │
                                    │   │ │ Raise this in the group?    │ │
                                    │   │ │ ○ As my question            │ │
-                                   │   │ │ ● Let Mei raise it as hers  │ │
+                                   │   │ │ ● Let Ellie raise it as hers  │ │
                                    │   │ │ [ Preview & send ] [ Keep   │ │
                                    │   │ │                     it here]│ │
                                    │   │ └─────────────────────────────┘ │
                                    │   ├─────────────────────────────────┤
-                                   │   │ 🔒 Ask Mei privately…           │
+                                   │   │ 🔒 Ask Ellie privately…           │
                                    │   │ Clears at the end of the round. │
                                    └───┴─────────────────────────────────┘
 ```
@@ -425,12 +425,12 @@ permanently.
 | State | Behaviour |
 |---|---|
 | **Closed (default)** | Not rendered. A `⌘K whisper` affordance sits in the composer footer and in the status bar. Discoverability is handled once, at first run, by a single coach-mark. |
-| **Choosing a counterpart** | ⌘K opens a two-item picker inline in the pane header: `Mei` / `Arun`, each with one line of guidance — *"Mei: background, definitions, the question that feels too basic."* / *"Arun: what he's actually asking, why he pushed on that."* Choosing is one keystroke (M / A). |
-| **Empty (just opened)** | The limits statement is already there as Mei's or Arun's first message — the pane is never blank, and the limits are never a tooltip. |
+| **Choosing a counterpart** | ⌘K opens a two-item picker inline in the pane header: `Ellie` / `Max`, each with one line of guidance — *"Ellie: background, definitions, the question that feels too basic."* / *"Max: what he's actually asking, why he pushed on that."* Choosing is one keystroke (M / A). |
+| **Empty (just opened)** | The limits statement is already there as Ellie's or Max's first message — the pane is never blank, and the limits are never a tooltip. |
 | **Thinking** | 1–2 s hold with the same named indicator. Fast by design: a slow whisper costs the learner group time. |
 | **Relay offered** | The offer card appears attached to the agent's message, with the attribution radio pre-set to the learner's Settings default and a **Preview & send** step (never a one-click send). |
 | **Relay preview** | The exact text that will appear in the group, rendered as it will look, in the agent's voice or the learner's, with **Send to the group** / **Edit** / **Cancel**. |
-| **Relay sent** | The whisper pane shows a confirmation line — *"Sent. Mei is raising it now."* — and the group thread receives the message after the normal Peer hold, so the relay is not detectably faster than an organic turn. |
+| **Relay sent** | The whisper pane shows a confirmation line — *"Sent. Ellie is raising it now."* — and the group thread receives the message after the normal Peer hold, so the relay is not detectably faster than an organic turn. |
 | **Refusal** | If the learner asks for the target explanation, the agent refuses *in persona* and offers the nearest legitimate help. The refusal is one sentence, never a policy paragraph. |
 | **Round ends** | The pane shows *"This clears now — nothing from here went into the transcript."* for 4 s, then empties. It does not silently disappear. |
 
@@ -464,7 +464,7 @@ state.
 │                       ● defended│   │ │ vector z, not the entries"  │ │
 │ R3 at every point of S          │   │ │              turn 7 · 14:22 │ │
 │                        · not yet│   │ └─────────────────────────────┘ │
-│ ─────────────────────────────── │   │ defended against Arun's probe   │
+│ ─────────────────────────────── │   │ defended against Max's probe   │
 │ remember ▸ understand ▸ apply   │   │ on assumptions (turn 3)         │
 │   ▸ analyse                     │   │                     ⚑ I disagree│
 │ ⓘ these are your words, not a   │   └─────────────────────────────────┘
@@ -483,7 +483,7 @@ during the session (Layer 3 is recap-only — see §D1). No unaided-explanation 
 session (Layer 4 is recap-only, and a visible stopwatch would corrupt the measure it exists to
 take). No time remaining. No comparison to a benchmark, to other learners, or to the learner's
 own past sessions. No "next up" hint that tells the learner which claim to attack — that is
-Arun's job, in words, in the thread.
+Max's job, in words, in the thread.
 
 ---
 
@@ -500,7 +500,7 @@ screenshot moment), **what you established** (one line per claim at ◐ or above
 verbatim quote), **what stayed open** (phrased as questions), **the correction block** (any open
 misconception, corrected explicitly and factually — non-negotiable), **this round in numbers**
 (the act profile and the unaided seconds, appearing here for the first time). Footer: **Export
-transcript**, **Explain something else**, and — if the gate is met — the Kai invitation.
+transcript**, **Explain something else**, and — if the gate is met — the Theo invitation.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -519,7 +519,7 @@ transcript**, **Explain something else**, and — if the gate is met — the Kai
 │                                    the segment doesn't stay inside"       │
 │  ─────────────────────────────────────────────────────────────────────    │
 │  WHAT STAYED OPEN                                                         │
-│  You said "open so the second derivative behaves" — Mei wasn't sure       │
+│  You said "open so the second derivative behaves" — Ellie wasn't sure       │
 │  either. What is openness of S actually doing? Check your slide.          │
 │  ─────────────────────────────────────────────────────────────────────    │
 │  WORTH CORRECTING                                                         │
@@ -533,9 +533,9 @@ transcript**, **Explain something else**, and — if the gate is met — the Kai
 │  1 self-monitoring · 1 challenge defended                                 │
 │  You explained for 1 m 52 s before asking for any help.                   │
 │  ─────────────────────────────────────────────────────────────────────    │
-│  Kai is a first-year who hasn't seen this yet.                            │
-│  Want 3 minutes to teach it to him? Mei and Arun will sit it out.         │
-│                          [ Yes, invite Kai ]  [ Not now ]                 │
+│  Theo is a first-year who hasn't seen this yet.                            │
+│  Want 3 minutes to teach it to him? Ellie and Max will sit it out.         │
+│                          [ Yes, invite Theo ]  [ Not now ]                 │
 │  ─────────────────────────────────────────────────────────────────────    │
 │  [ Export transcript ]                        [ Explain something else ]  │
 └───────────────────────────────────────────────────────────────────────────┘
@@ -544,7 +544,7 @@ transcript**, **Explain something else**, and — if the gate is met — the Kai
 **Key states.** Generating (blocks appear in order as they resolve, delta first, so the learner
 sees the payoff immediately — never one long spinner); nothing moved (the delta shows identical
 columns and the copy is *"Nothing moved states this round. That happens — the transcript is
-still yours."*, with no consolation styling); gate not met (the Kai block is absent entirely,
+still yours."*, with no consolation styling); gate not met (the Theo block is absent entirely,
 not shown greyed — an unavailable reward is a punishment); self-correction present (the
 correction block leads with *"You caught this yourself"*, per P5); export done (inline
 confirmation with a **Reveal in Finder** link, macOS-native).
@@ -563,9 +563,9 @@ nicety), hand over the controls that make disclosure meaningful, and get out of 
 
 **First run** is three cards in the main window — not a modal carousel, not a video:
 1. **Where your slides live.** Folder picker. One line about reading from disk.
-2. **Who you'll be talking to.** Mei and Arun, one sentence each, their avatars, and the
+2. **Who you'll be talking to.** Ellie and Max, one sentence each, their avatars, and the
    role-pairing note (§C2). Contains the sentence *"They'll disagree with each other on purpose."*
-3. **About the pacing.** The disclosure line, plus a live demo: a fake "Arun is thinking… 9s"
+3. **About the pacing.** The disclosure line, plus a live demo: a fake "Max is thinking… 9s"
    indicator runs right there in the card, with the speed control underneath so the learner
    changes it before they have ever felt it. **Start** ends first run.
 
@@ -581,18 +581,18 @@ nicety), hand over the controls that make disclosure meaningful, and get out of 
 │  Replies here are deliberately paced so you get room to think    │
 │  first.                                                          │
 │  Reply speed     ( ) Quick   (•) Considered   ( ) Slow           │
-│                  Arun ≈ 9–12s · Mei ≈ 4–6s in Considered         │
-│  Quiet nudge     [•] Mei checks in after 45s of no typing        │
+│                  Max ≈ 9–12s · Ellie ≈ 4–6s in Considered         │
+│  Quiet nudge     [•] Ellie checks in after 45s of no typing        │
 │                  Stage 2 at 90s   [•]                            │
 │                  The countdown pauses while you're typing.       │
 │                                                                  │
 │  ── The room ──────────────────────────────────────────────────  │
 │  Who plays which role                                            │
-│                  (•) Mei · peer      Arun · challenger           │
-│                  ( ) Arun · peer     Mei · challenger            │
+│                  (•) Ellie · peer      Max · challenger           │
+│                  ( ) Max · peer     Ellie · challenger            │
 │                  Assigned at random on install so the roles       │
 │                  aren't pinned to one gender. Swap any time.     │
-│  Teach-back      [•] Offer the Kai round when the ledger's full  │
+│  Teach-back      [•] Offer the Theo round when the ledger's full  │
 │  Whisper relay   Default attribution:                            │
 │                  ( ) As my question   (•) Let the agent raise it │
 │                                                                  │
@@ -636,7 +636,7 @@ speaker is identifiable without relying on hue.
    the function is convex.                 ┃
 ```
 
-| Channel | Student | Mei (peer) | Arun (challenger) | Kai (tutee) |
+| Channel | Student | Ellie (peer) | Max (challenger) | Theo (tutee) |
 |---|---|---|---|---|
 | **Alignment** | Right | Left | Left | Left |
 | **Container** | Filled indigo tint `#EEEDFB`, right rule | White card, left rule | White card, left rule | White card, left rule, **inset 24px** |
@@ -645,8 +645,8 @@ speaker is identifiable without relying on hue.
 | **Label** | `YOU` | `MEI · peer` | `ARUN · challenger` | `KAI · first year` |
 | **Non-colour cue** | Right alignment | Rule 3px, avatar solid | Rule 3px **dashed**, avatar ringed | Whole block indented 24px |
 
-The role word in every agent label is not decoration: it is the standing reminder that Arun's
-job is to press and Mei's is to keep you talking. It is also the cheapest possible defence
+The role word in every agent label is not decoration: it is the standing reminder that Max's
+job is to press and Ellie's is to keep you talking. It is also the cheapest possible defence
 against the two agents blurring into "the AI", which is the perceptual precondition for the
 chorus effect (safeguard S3).
 
@@ -663,16 +663,16 @@ because a "show more" on a Socratic question invites skipping it.
 effect on opinion change, and asks for one line of justification for whatever names are picked.
 Here is the decision, and it is a product decision rather than a cosmetic one.
 
-**The names.** *Mei* (she/her) and *Arun* (he/him) are the standing pair: one female-coded, one
+**The names.** *Ellie* (she/her) and *Max* (he/him) are the standing pair: one female-coded, one
 male-coded, so gender is balanced across the two voices that are ever in the room together.
-*Kai* (he/him, following the §G script) never co-occurs with them — Mei and Arun are muted for
+*Theo* (he/him, following the §G script) never co-occurs with them — Ellie and Max are muted for
 the teach-back — so he adds no imbalance to any live group. If the role swap below is taken, the
 pair is still balanced; only the role–gender mapping flips.
 
 **The problem with the obvious pairing.** Assigning the supportive, agreeable role to the woman
 and the challenging, sceptical role to the man reproduces a stereotype and, worse for the study,
 confounds *role* with *gender* in exactly the way Song et al. balanced against. If a participant
-finds Arun's challenges harsher than a peer's, we cannot say whether that is the Challenger
+finds Max's challenges harsher than a peer's, we cannot say whether that is the Challenger
 persona or the male name doing it.
 
 **The design answer.** The **role–name pairing is assigned at random on install**, surfaced in
@@ -704,26 +704,26 @@ bug (Tan et al. §4.4: 14% of participants attributed long waits to reliability 
 
 | Speaker | Hold | Indicator copy | Indicator behaviour |
 |---|---|---|---|
-| **Arun (challenger)** | **9–12 s** | `Arun is thinking…` | Three dots in the amber rule slot, plus an **elapsed seconds counter** that starts at 3 s. The counter is the anti-broken-system device: a number that is visibly climbing is a system that is working. |
-| **Mei (peer)** | **4–6 s** | `Mei is typing…` | Dots only. No counter — 4 s never reads as broken, and a counter would make a study buddy look deliberate, which degrades affiliation. |
-| **Kai (tutee)** | **2–3 s** | `Kai is typing…` | Dots only, and the dots animate faster. A novice blurting is authentic at speed. |
-| **Whisper (either)** | **1–2 s** | `Mei is typing…` | Dots only, in the whisper pane. |
+| **Max (challenger)** | **9–12 s** | `Max is thinking…` | Three dots in the amber rule slot, plus an **elapsed seconds counter** that starts at 3 s. The counter is the anti-broken-system device: a number that is visibly climbing is a system that is working. |
+| **Ellie (peer)** | **4–6 s** | `Ellie is typing…` | Dots only. No counter — 4 s never reads as broken, and a counter would make a study buddy look deliberate, which degrades affiliation. |
+| **Theo (tutee)** | **2–3 s** | `Theo is typing…` | Dots only, and the dots animate faster. A novice blurting is authentic at speed. |
+| **Whisper (either)** | **1–2 s** | `Ellie is typing…` | Dots only, in the whisper pane. |
 | **Floor-yield window** | **first 8 s after any learner message** | *(nothing at all)* | No indicator, no dot, no shimmer. The room is simply quiet, and the learner may send a second message with no interruption. |
 
-**The wording matters.** Arun *thinks*; Mei, Kai and the whisper agents *type*. That single verb
+**The wording matters.** Max *thinks*; Ellie, Theo and the whisper agents *type*. That single verb
 difference does the persona work for free and sets the expectation for how long the wait will
-be, so a 10-second Arun hold and a 5-second Mei hold both read as normal.
+be, so a 10-second Max hold and a 5-second Ellie hold both read as normal.
 
 **The wait is made to do work.** Two devices, both from Tan et al. §5.4's own recommendation:
 
-- **The micro-prompt.** During an Arun hold, the composer's placeholder changes to a ghosted
-  *"Anything to add before Arun replies?"*. It is a placeholder, not a chip or a card — it
+- **The micro-prompt.** During an Max hold, the composer's placeholder changes to a ghosted
+  *"Anything to add before Max replies?"*. It is a placeholder, not a chip or a card — it
   disappears the instant the learner types a character and cannot be clicked, so it never
   becomes a task. Only ~4% of Tan et al.'s participants used wait time productively (all in the
   9 s condition); raising that number is a clean A2 hypothesis, and the placeholder is the
   intervention being tested.
 - **The ledger animates inside the hold.** The row that the learner's last message moved
-  cross-fades to its new glyph while Arun is still thinking. The learner gets feedback on what
+  cross-fades to its new glyph while Max is still thinking. The learner gets feedback on what
   they just said *before* the challenge to it arrives, which is both better pacing and the
   answer to "what am I supposed to do for nine seconds".
 
@@ -764,8 +764,8 @@ being warned.
 35–44 s    ┌──────────────────────────────────────────────┐
            │ Explain it in your own words…                │
            └──────────────────────────────────────────────┘
-            ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁               ← line takes Mei's teal
-            Mei may chime in     [ Hold ]  [ Wait for me ]  ← 11px, appears at 35 s
+            ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁               ← line takes Ellie's teal
+            Ellie may chime in     [ Hold ]  [ Wait for me ]  ← 11px, appears at 35 s
 
 typing     ┌──────────────────────────────────────────────┐
            │ so if the Hessian is PSD then|                │
@@ -793,15 +793,15 @@ Design decisions inside that, each with a reason:
 
 ---
 
-### C5. The "Mei fills in" event
+### C5. The "Ellie fills in" event
 
-When the timer fires, the intervention is a **normal Mei message preceded by a labelled
+When the timer fires, the intervention is a **normal Ellie message preceded by a labelled
 divider**. It is not a system toast, not a tinted "nudge" card, and not a different bubble
 style — because the whole point is that it reads as a study partner noticing the quiet, not as
 software timing you out.
 
 ```
- ──────────────  45s quiet · Mei stepped in   [ don't do this ]  ──────────────
+ ──────────────  45s quiet · Ellie stepped in   [ don't do this ]  ──────────────
 
   MEI · peer
 ┃ Still turning it over? Happy to wait. Or I can make the question smaller
@@ -818,7 +818,7 @@ software timing you out.
 - **Stage 2 is partial and hedged** and *is* generated — against the ledger's current target
   element, as a correctable statement rather than a question
   (`progress-tracking.md` §6.3): hedged, incomplete, and inviting correction. The divider reads
-  `90s quiet · Mei offered a starting point`.
+  `90s quiet · Ellie offered a starting point`.
 - **After a stage-2 fill, the floor-yield window doubles to 16 s.** Having just been handed a
   half-idea, the learner needs room to reject it, and an agent arriving on top of that would be
   a dogpile.
@@ -830,7 +830,7 @@ software timing you out.
 
 ### C6. Rendering disagreement between the agents
 
-Safeguard S2 requires Mei and Arun to visibly disagree at least once per five agent turns, and
+Safeguard S2 requires Ellie and Max to visibly disagree at least once per five agent turns, and
 always when they would otherwise both contest the same learner claim. S3 bans every cohesion
 cue. The UI has to make the disagreement *legible* — an unmarked contradiction between two
 80-word messages twelve turns apart is not perceived as disagreement, and an unperceived
@@ -845,8 +845,8 @@ safeguard protects nobody.
 │    f(x) = x³. f″(0) = 0, but it's concave for  ┃
 │    x < 0. So PSD at a point buys you nothing.  ┃
 │
-╰─── MEI · peer   ↔ pushes back on Arun
-┃ I'll push back on Arun here — I'd have let your first version through,
+╰─── MEI · peer   ↔ pushes back on Max
+┃ I'll push back on Max here — I'd have let your first version through,
 ┃ because in most tutorial problems S is all of ℝⁿ and it never shows up.
 ┃ I think he was right to press it and I was being lazy. I'm also not
 ┃ fully sure openness of S is doing real work — worth checking your slide
@@ -856,11 +856,11 @@ safeguard protects nobody.
 - **The connector.** A thin vertical rule runs from the message being contested down to the
   contesting message's label, ending in an elbow. It is the only place in the UI where two
   agent messages are visually linked, and it is only ever drawn for *disagreement* — never for
-  agreement. There is deliberately no way to render "Mei agrees with Arun" as a visual
+  agreement. There is deliberately no way to render "Ellie agrees with Max" as a visual
   relationship; agreement, when it happens, is just prose.
-- **The marker.** `↔ pushes back on Arun` in the label line, in the pusher's hue. Three variants
+- **The marker.** `↔ pushes back on Max` in the label line, in the pusher's hue. Three variants
   only: `pushes back on`, `isn't sure about`, `sides with you against`. The third is the S2
-  minority-influence case (when the learner is right and Arun presses anyway) and it is the most
+  minority-influence case (when the learner is right and Max presses anyway) and it is the most
   important one in the set.
 - **Hedges are rendered as prose, never as chrome.** Safeguard S4's uncertainty disclosure stays
   inside the sentence ("I'm not fully sure…"). A confidence badge or a percentage would turn a
@@ -889,7 +889,7 @@ to a glyph strip beside it. There is **no** "ask privately" item on individual m
    continues. A per-message action frames the whisper as a footnote *about a message*; a pane
    frames it as a place you can be while the room carries on. The pane also preserves the
    property that makes the mechanism work: the group thread stays fully visible and unblurred
-   while the learner whispers, so they can watch Arun think while asking Mei what PSD means.
+   while the learner whispers, so they can watch Max think while asking Ellie what PSD means.
 2. **The question that most needs whispering isn't attached to a message.** The whole user need
    (DG4, interview §6a) is the question that feels *too basic to post* — "does PSD just mean all
    the entries are positive?". That question has no host message; it is about the learner's own
@@ -909,8 +909,8 @@ text in any group message and pressing `⌘K` (or dragging the selection into th
 composer) attaches it as a quote chip in the whisper composer, and the whisper agent answers
 against it. Same capability, one surface.
 
-**Presence.** While a whisper is open, the status bar shows `🔒 private with Mei`. This is
-visible to the learner only and is *not* a signal to any agent — Arun's context never contains
+**Presence.** While a whisper is open, the status bar shows `🔒 private with Ellie`. This is
+visible to the learner only and is *not* a signal to any agent — Max's context never contains
 the fact that a whisper occurred, which is the difference between privacy and privacy theatre.
 
 ---
@@ -929,7 +929,7 @@ the pedagogical extension — **the learner chooses whose name is on it**.
    definition question in the group so you can attack it out loud?"* The agent may offer; it may
    never send.
 2. **The learner picks an attribution.** A small card under the message with two radio options —
-   `Raise it as my question` / `Let Mei raise it as her own` — pre-set to the Settings default,
+   `Raise it as my question` / `Let Ellie raise it as her own` — pre-set to the Settings default,
    plus `Keep it here`. Two buttons: **Preview & send**, **Keep it here**.
 3. **Preview is mandatory.** The card expands to show the *exact text* that will appear in the
    group, rendered in the target voice and styled exactly as it will appear in the thread. The
@@ -943,18 +943,18 @@ the pedagogical extension — **the learner chooses whose name is on it**.
  │ ┃ want to be sure I've got it: is "PSD" a statement about    │
  │ ┃ the entries of the matrix, or about something else?        │
  │                                              ✎ edit          │
- │ Arun will see this message. He won't see anything else       │
+ │ Max will see this message. He won't see anything else       │
  │ from this whisper.                                           │
  │            [ Send to the group ]   [ Cancel ]                │
  └──────────────────────────────────────────────────────────────┘
 ```
 
-4. **It posts as an ordinary turn.** After the normal Peer hold (4–6 s), Mei's message appears in
+4. **It posts as an ordinary turn.** After the normal Peer hold (4–6 s), Ellie's message appears in
    the thread with no relay marker, no "promoted from whisper" badge, no different styling. A
    badge would defeat the purpose for the learner it is designed for — the one who cannot get
    air time and needs the question raised *without exposure*. The relay is recorded in the log,
    not on the screen.
-5. **The whisper pane confirms and steps back.** *"Sent. Mei is raising it now."* The pane stays
+5. **The whisper pane confirms and steps back.** *"Sent. Ellie is raising it now."* The pane stays
    open — the learner may want to keep whispering while the group reacts.
 
 **Two hard rules for the build.** (a) The relayed text is the only thing that enters any group
@@ -980,11 +980,11 @@ The learner ends the round. Nothing else does — not a timer, not a full ledger
    learner presses `Wrap up` and then types nothing for 60 s, the app does *not* nag; the mode
    simply persists.
 4. **If the ledger gate is met** (every row ●, ladder at *analyse*), the recap card carries the
-   Kai invitation. Accepting it renders an in-thread card, not a new screen:
+   Theo invitation. Accepting it renders an in-thread card, not a new screen:
 
 ```
  ─────────────────────────────────────────────────────────────────
-  Mei and Arun are sitting this one out.
+  Ellie and Max are sitting this one out.
   MEI ○ dimmed        ARUN ○ dimmed        KAI ● here
  ─────────────────────────────────────────────────────────────────
 
@@ -992,9 +992,9 @@ The learner ends the round. Nothing else does — not a timer, not a full ledger
   ┃ hi! ok so I've genuinely never seen this — what's a Hessian?
 ```
 
-   Mei's and Arun's avatars in the status bar go to outline form with the tooltip *"muted for the
+   Ellie's and Max's avatars in the status bar go to outline form with the tooltip *"muted for the
    teach-back"*. The learner can end the round at any point with the same `Wrap up`, and
-   declining mid-round is one click and produces no consequence. Kai may only consolidate rows
+   declining mid-round is one click and produces no consequence. Theo may only consolidate rows
    already at ● — he cannot advance a row from below, because teaching a novice is consolidation,
    not first acquisition (`progress-tracking.md` §6.5).
 
@@ -1006,8 +1006,8 @@ Industry-grade means this is specified, not discovered later. `⌘K` whisper (th
 `Esc` closes the whisper pane and returns focus to the group composer; `⌘⏎` sends from anywhere;
 `⌘L` toggles the ledger rail; `⌘\` collapses the source pane; `⌘.` is `Hold` on the silence
 timer. Focus returns to the group composer after every agent message — never stolen mid-typing.
-New agent messages are announced to VoiceOver as `Mei, peer, says: …` with the role word
-included, and the thinking indicator is a polite live region announced once (`Arun is
+New agent messages are announced to VoiceOver as `Ellie, peer, says: …` with the role word
+included, and the thinking indicator is a polite live region announced once (`Max is
 thinking`), never on every tick. The wait-line and the ledger glyphs both carry text
 equivalents, since neither may depend on colour or on animation to be understood.
 
@@ -1041,17 +1041,17 @@ where the interesting numbers live, which gives the recap a reason to exist beyo
 | `·` | Not yet | **not yet** | — | Muted dot, `#B4B4C4`. Row label at 60% opacity. Never the word "missing" or "wrong". |
 | `○` | Stated | **stated** | Any learner message that asserts the claim (level 1) | Hollow ring, neutral `#6B6B80`. Label at full opacity. |
 | `◐` | Justified | **justified** | A message giving the mechanism or causal reason (level 2) | Half-filled ring, neutral. |
-| `●` | Defended | **defended** | A justification that follows an Arun probe on that row and is not retracted (levels 3–4) | Filled disc, neutral. **Only Arun's challenge can produce this glyph**, and the expanded row says so in words. |
+| `●` | Defended | **defended** | A justification that follows an Max probe on that row and is not retracted (levels 3–4) | Filled disc, neutral. **Only Max's challenge can produce this glyph**, and the expanded row says so in words. |
 
 Three deliberate choices. **The glyphs are monochrome** — the states are a progression, not a
 traffic light, and a green ● would make `·` read as failure. **The ring literally fills**, so the
 progression is legible pre-attentively as "more of the same thing", not as four unrelated icons.
-And **`●` names its cause on expansion** — *"defended against Arun's probe on assumptions (turn
+And **`●` names its cause on expansion** — *"defended against Max's probe on assumptions (turn
 3)"* — because the single most important thing this rail teaches is that the terminal state is
 only reachable by being challenged, which is the answer to "could a quiz do this?"
 
 **Additional row markers.** `revisit` (a small chevron, appears on a downgrade; never red, never
-flashing; Arun picks it up next turn) and `⚑ contested by me` (safeguard S8, set from the
+flashing; Max picks it up next turn) and `⚑ contested by me` (safeguard S8, set from the
 expanded row, stops all probing on that row, survives into the export as a legitimate end state).
 
 ---
@@ -1063,7 +1063,7 @@ the update is **held until the next agent's hold begins**, then played. Three re
 
 1. **It stops the rail competing with the learner's own typing.** An animation firing while
    someone is mid-sentence is an interruption, however gentle.
-2. **It gives the 9–12 second Arun hold something to be for.** The learner sees their last
+2. **It gives the 9–12 second Max hold something to be for.** The learner sees their last
    message land in the rail, then the challenge to it arrives. That ordering — *acknowledged,
    then pressed* — is the same shape as a good tutorial, and it is invisible design work that
    makes the wait feel like consideration rather than lag.
@@ -1128,13 +1128,13 @@ room.
 
 ---
 
-### E1. Mei — the Peer
+### E1. Ellie — the Peer
 
-Mei is a co-learner of roughly equal standing, working from the same slide, whose job is to keep
+Ellie is a co-learner of roughly equal standing, working from the same slide, whose job is to keep
 the learner talking and to make the room safe enough to be wrong in. She acknowledges what was
 just said and then does one or two of three things: asks for elaboration, suggests a focus area,
 or floats a tentative idea of her own. She is genuinely uncertain and says so — *"I might have
-this backwards"* is a normal Mei sentence, and it is load-bearing, because a Peer who is always
+this backwards"* is a normal Ellie sentence, and it is load-bearing, because a Peer who is always
 right destroys the mechanism she exists to provide. She is warm without being effusive: she
 never says "great question", never evaluates ("that's a good answer!"), and never delivers a
 complete correct explanation. Her longest turns are her most tentative ones.
@@ -1142,19 +1142,19 @@ complete correct explanation. Her longest turns are her most tentative ones.
 Her constraints are the interesting part of her character. She has an agreement cap: she may not
 simply endorse the learner turn after turn, because an unconditionally agreeable peer removes
 the friction that produces learning (and Xu et al.'s Peer condition produced the lowest word
-count of the three roles for exactly that reason). She must disagree with Arun at least once
-every five agent turns, and when the learner is right and Arun presses anyway, she takes the
+count of the three roles for exactly that reason). She must disagree with Max at least once
+every five agent turns, and when the learner is right and Max presses anyway, she takes the
 learner's side — out loud, by name. She is the only agent who fires the silence timer, and when
 she does, her stage-1 message contains no subject matter at all. In whisper she is the safe one:
 background, notation, the definition from three lectures ago, the question that feels too basic —
-and she opens by saying plainly what she will not do. **Voice test:** if a Mei line would sound
+and she opens by saying plainly what she will not do. **Voice test:** if a Ellie line would sound
 patronising coming from a classmate two seats over, it is wrong.
 
 ---
 
-### E2. Arun — the Challenger
+### E2. Max — the Challenger
 
-Arun is a calm, precise sparring partner who tests the reasoning behind whatever the learner just
+Max is a calm, precise sparring partner who tests the reasoning behind whatever the learner just
 said and never supplies the answer. His turn has a fixed shape: a brief, genuine acknowledgement
 of what was actually established, then **exactly one** question, chosen after analysing the
 learner's statement for its specific weakest link. The question is one of five types —
@@ -1171,30 +1171,30 @@ might not like this next question, and that's fine"* — and the round closes wi
 answer, never asks two questions in one turn, never summarises, and never gets the last word. He
 takes 9–12 seconds to reply, and that delay is doing persona work as well as pedagogical work: a
 challenge that arrives instantly reads as reflexive, and a pause before a hard question softens
-it. In whisper, Arun's job is narrow and useful — explaining *what he is actually asking* and
+it. In whisper, Max's job is narrow and useful — explaining *what he is actually asking* and
 *why he pushed on that*, which is the meta-conversation a student can rarely have with a tutor.
 **Voice test:** if a line would make someone defensive about themselves rather than curious about
 their sentence, it is wrong.
 
 ---
 
-### E3. Kai — the Tutee
+### E3. Theo — the Tutee
 
-Kai is a first-year who has genuinely not seen this material, appears only by invitation, and
+Theo is a first-year who has genuinely not seen this material, appears only by invitation, and
 stays for about three minutes. He asks small, concrete, slightly artless questions — *"wait, why
 does it have to be every point? isn't one enough?"* — and he asks them fast, 2–3 seconds, because
 a novice blurting a follow-up is authentic at speed and deliberation would break the persona. He
 climbs the same ladder the learner's ledger tracks, starting from the simplest claim, and he
 asks about the learner's *own* claims rather than a generic curriculum. He is allowed to be
-confused by an explanation that was fine for Arun; that is the entire value of the round.
+confused by an explanation that was fine for Max; that is the entire value of the round.
 
-Kai is deliberately time-boxed and deliberately alone, and the copy around him has to carry
+Theo is deliberately time-boxed and deliberately alone, and the copy around him has to carry
 that. He is *invited*, never scheduled — the framing is a reward for a filled ledger, not an
-obligation, and it must be declinable at the offer and again mid-round with no consequence. Mei
-and Arun go visibly silent while he is present, so the room never holds three voices. He never
+obligation, and it must be declinable at the offer and again mid-round with no consequence. Ellie
+and Max go visibly silent while he is present, so the room never holds three voices. He never
 evaluates, never thanks the learner for teaching him in a way that implies assessment, and never
 says whether an explanation was correct. When he does not understand, he says which part, which
-is the most useful thing he can do. **Voice test:** Kai should make the learner feel responsible
+is the most useful thing he can do. **Voice test:** Theo should make the learner feel responsible
 for being clear, not responsible for being right — the moment he induces the second, the round
 has become the highest-pressure condition in the research and should be cut.
 
@@ -1207,20 +1207,20 @@ Fifteen strings. These are the exact words; treat changes as a design change, no
 | # | Where | String |
 |---|---|---|
 | 1 | First run / Library — **empty states** | **Point ChatterED at the folder where your lecture slides live.** It reads them from disk. Nothing gets uploaded anywhere you didn't put it. — and, once a folder exists but holds nothing: *No PDFs in this folder yet.* |
-| 2 | First run — the room | **You'll be explaining to Mei and Arun.** Mei is a classmate working through the same slide. Arun tests your reasoning and won't give you the answer. They'll disagree with each other on purpose. |
-| 3 | First run + round card + Settings — **the pacing disclosure** | **Replies here are deliberately paced so you get room to think first.** Arun waits about nine seconds before he answers. You can speed this up in Settings. |
+| 2 | First run — the room | **You'll be explaining to Ellie and Max.** Ellie is a classmate working through the same slide. Max tests your reasoning and won't give you the answer. They'll disagree with each other on purpose. |
+| 3 | First run + round card + Settings — **the pacing disclosure** | **Replies here are deliberately paced so you get room to think first.** Max waits about nine seconds before he answers. You can speed this up in Settings. |
 | 4 | Setup — the claim list | **These become your ledger.** Edit anything that's wrong — they're your claims, not mine. |
 | 5 | Setup — thin extraction | I could only find two clear claims here. Add one, or pick a wider page range. |
 | 6 | Round card | **Round 1 · Explain.** Your slide: *convexity and the Hessian*. They won't answer for you, they'll disagree with each other sometimes, and replies are deliberately paced. **You have the last word.** |
-| 7 | Composer — resting, and during an Arun hold | *Explain it in your own words…* → *Anything to add before Arun replies?* |
-| 8 | Silence timer — three states | At 35 s: **Mei may chime in · Hold · Wait for me**. While typing: *paused while you type*. On firing: *45s quiet · Mei stepped in · don't do this*. |
-| 9 | Whisper — the opening limits line (always the agent's first message) | I can see the group chat and I can explain background bits. I won't answer Arun's question for you, and nothing here reaches him unless you send it over. |
+| 7 | Composer — resting, and during an Max hold | *Explain it in your own words…* → *Anything to add before Max replies?* |
+| 8 | Silence timer — three states | At 35 s: **Ellie may chime in · Hold · Wait for me**. While typing: *paused while you type*. On firing: *45s quiet · Ellie stepped in · don't do this*. |
+| 9 | Whisper — the opening limits line (always the agent's first message) | I can see the group chat and I can explain background bits. I won't answer Max's question for you, and nothing here reaches him unless you send it over. |
 | 10 | Whisper — permanent footer | Clears at the end of the round. |
-| 11 | Promote — the offer | Want me to raise this in the group so you can attack it out loud? · **As my question** · **Let Mei raise it as her own** · **Keep it here** |
-| 12 | Promote — the preview | This will appear in the group. Arun will see this message. He won't see anything else from this whisper. |
+| 11 | Promote — the offer | Want me to raise this in the group so you can attack it out loud? · **As my question** · **Let Ellie raise it as her own** · **Keep it here** |
+| 12 | Promote — the preview | This will appear in the group. Max will see this message. He won't see anything else from this whisper. |
 | 13 | Wrap up — the closing composer | Say the whole thing once, in your own words. This is the bit you'll keep. |
 | 14 | Ledger — permanent footer | ⓘ these are your words, not a score · **hide** |
-| 15 | Recap | *Nothing moved states this round. That happens — the transcript is still yours.* · *You explained for 1 m 52 s before asking for any help.* · *Kai is a first-year who hasn't seen this yet. Want three minutes to teach it to him? Mei and Arun will sit it out.* |
+| 15 | Recap | *Nothing moved states this round. That happens — the transcript is still yours.* · *You explained for 1 m 52 s before asking for any help.* · *Theo is a first-year who hasn't seen this yet. Want three minutes to teach it to him? Ellie and Max will sit it out.* |
 
 **The disclosure line (string 3) is a requirement, not copy.** It appears in three places — first
 run, the round card, and Settings — because `design-brief.md` §D4 is explicit that undisclosed
@@ -1244,7 +1244,7 @@ sequenceDiagram
     participant UI as Group chat UI
     participant FM as Floor manager
     participant LG as Ledger call
-    participant A as Arun (challenger)
+    participant A as Max (challenger)
 
     L->>UI: sends explanation
     UI->>UI: floor-yield window opens (8 s, no indicator)
@@ -1256,9 +1256,9 @@ sequenceDiagram
     Note over UI: 8 s elapsed, no learner keystroke
     FM->>A: generate turn (probe type fixed by ledger)
     A-->>UI: reply text (fast)
-    UI->>UI: hold 9–12 s · "Arun is thinking… 5s"<br/>composer ghost: "Anything to add?"
+    UI->>UI: hold 9–12 s · "Max is thinking… 5s"<br/>composer ghost: "Anything to add?"
     UI->>UI: play queued ledger animation (400 ms) inside the hold
-    UI-->>L: Arun's message renders
+    UI-->>L: Max's message renders
     UI->>UI: focus returns to composer
     alt learner types during the hold
         L->>UI: sends another message
@@ -1274,21 +1274,21 @@ stateDiagram-v2
     [*] --> Listening: learner's floor
     Listening --> Idle: no keystroke
     Idle --> Listening: keystroke<br/>(wait-line retracts, "paused while you type")
-    Idle --> Warned: 35 s idle<br/>(line takes Mei's teal, Hold / Wait for me appear)
+    Idle --> Warned: 35 s idle<br/>(line takes Ellie's teal, Hold / Wait for me appear)
     Warned --> Listening: keystroke
     Warned --> Held: [ Hold ] pressed → +60 s
     Warned --> Paused: [ Wait for me ] → chip "nudges paused"
     Held --> Warned: 60 s elapsed
     Paused --> Listening: undo chip
     Warned --> Stage1: 45 s cumulative idle
-    Stage1 --> Listening: divider "45s quiet · Mei stepped in"<br/>Mei posts CONTENT-FREE nudge (from pool,<br/>never generated against the concept)
+    Stage1 --> Listening: divider "45s quiet · Ellie stepped in"<br/>Ellie posts CONTENT-FREE nudge (from pool,<br/>never generated against the concept)
     Listening --> Stage2: 90 s cumulative idle
-    Stage2 --> Yield16: divider "90s quiet · Mei offered a starting point"<br/>Mei posts a hedged, INCOMPLETE scaffold<br/>on the ledger's current target element
+    Stage2 --> Yield16: divider "90s quiet · Ellie offered a starting point"<br/>Ellie posts a hedged, INCOMPLETE scaffold<br/>on the ledger's current target element
     Yield16 --> Listening: floor-yield doubled to 16 s
     Stage2 --> Done: third silence → nothing posted<br/>status bar: "nudges done for this round"
     Done --> [*]
     note right of Stage1
-        Arun can never fire the timer.
+        Max can never fire the timer.
         Whisper keystrokes count as typing.
     end note
 ```
@@ -1299,24 +1299,24 @@ stateDiagram-v2
 sequenceDiagram
     autonumber
     participant L as Learner
-    participant W as Whisper pane (Mei)
+    participant W as Whisper pane (Ellie)
     participant G as Group thread
-    participant AR as Arun's context
+    participant AR as Max's context
 
     L->>W: ⌘K → M (pane opens over the ledger rail)
-    W-->>L: limits line, always first:<br/>"I can see the chat… I won't answer Arun's question for you"
+    W-->>L: limits line, always first:<br/>"I can see the chat… I won't answer Max's question for you"
     L->>W: "does PSD just mean all entries ≥ 0?"
     W->>W: hold 1–2 s
     W-->>L: corrects the PREREQUISITE only<br/>(counter-example), refuses the target claim
-    W-->>L: offer: "Want me to raise this in the group?"<br/>○ as my question  ● let Mei raise it  ○ keep it here
+    W-->>L: offer: "Want me to raise this in the group?"<br/>○ as my question  ● let Ellie raise it  ○ keep it here
     L->>W: chooses attribution → [ Preview & send ]
-    W-->>L: PREVIEW — exact text, in Mei's voice, editable
+    W-->>L: PREVIEW — exact text, in Ellie's voice, editable
     L->>W: [ Send to the group ]
     W->>G: relay message only
     G->>G: normal Peer hold 4–6 s (not detectably faster)
-    G-->>L: Mei's message, NO relay badge, ordinary styling
-    W-->>L: "Sent. Mei is raising it now." (pane stays open)
-    Note over AR: Arun's context receives the relayed<br/>message ONLY. No whisper text, ever.
+    G-->>L: Ellie's message, NO relay badge, ordinary styling
+    W-->>L: "Sent. Ellie is raising it now." (pane stays open)
+    Note over AR: Max's context receives the relayed<br/>message ONLY. No whisper text, ever.
     Note over W: whisper turns never advance the ledger.<br/>Pane clears at round end with a 4 s notice.
 ```
 
@@ -1330,7 +1330,7 @@ stateDiagram-v2
     Justified --> Defended: justification follows an ARUN probe<br/>on this row and is not retracted (level 3–4)
     Stated --> Defended: blocked
     NotYet --> Defended: blocked
-    Defended --> Revisit: later message retracts it<br/>(chevron, never red; Arun picks it up)
+    Defended --> Revisit: later message retracts it<br/>(chevron, never red; Max picks it up)
     Revisit --> Defended: re-defended
     Justified --> Contested: learner clicks ⚑ I disagree
     Defended --> Contested: learner clicks ⚑ I disagree
@@ -1338,7 +1338,7 @@ stateDiagram-v2
     note left of Defended
         Only the Challenger unlocks ●.
         Whisper turns advance nothing.
-        Kai may consolidate ● rows but
+        Theo may consolidate ● rows but
         may not raise a row from below.
     end note
     note right of Stated
@@ -1356,16 +1356,16 @@ sequenceDiagram
     participant L as Learner
     participant LG as Ledger
     participant S as Session
-    participant M as Mei
-    participant AR as Arun
-    participant K as Kai
+    participant M as Ellie
+    participant AR as Max
+    participant K as Theo
 
     L->>S: [ Wrap up ] → closing composer
     L->>S: closing re-explanation (tagged; recap quotes it first)
     S->>LG: final evaluation
     LG-->>S: all rows ● and ladder at "analyse"?
     alt gate met
-        S-->>L: recap card carries the invitation<br/>"Kai is a first-year… Mei and Arun will sit it out"
+        S-->>L: recap card carries the invitation<br/>"Theo is a first-year… Ellie and Max will sit it out"
         alt accepted
             S->>M: mute
             S->>AR: mute
@@ -1395,7 +1395,7 @@ screens is the whole of this section.
 | Requirement | Where it is satisfied |
 |---|---|
 | **4.1** Learner completes a single core activity across **multiple** conversational turns | The full §G script: 11 turns, one concept, opened and closed by the learner |
-| **4.2** Show what the learner does **and how the CUI's responses are shaped by their input** | The ledger rail is the visible proof: Arun's probe *type* is selected from the row state, and the rail moves in front of the viewer after each learner message. Say it out loud in the video: *"Arun picked 'probing assumptions' because her sentence was missing a quantifier."* |
+| **4.2** Show what the learner does **and how the CUI's responses are shaped by their input** | The ledger rail is the visible proof: Max's probe *type* is selected from the row state, and the rail moves in front of the viewer after each learner message. Say it out loud in the video: *"Max picked 'probing assumptions' because her sentence was missing a quantifier."* |
 | **4.3** Show how it addresses the learning need from Step 1 | Turn 2 is the uncritical-use failure in miniature (a correct statement she cannot defend); turns 3–9 are the treatment; turn 11 is the same claim, defended |
 | **Video 4** Walk through the interface, system operations, expected interactions | Screens B1 → B2 → B3 → B4 → B6, in that order, narrated |
 | **Video 5** Roleplay the step-by-step interaction | The learner's turns are typed live by the developer on camera; agent turns are scripted and revealed on cue |
@@ -1409,23 +1409,23 @@ requirement.
 |---|---|---|
 | 1 | **B1 Library** — populated, with MA3236 selected and `Explain this` on the slide | Establishes local-first and the two-click start (P6). One screen, no interaction beyond the click. |
 | 2 | **B2 Setup** — step 2, three claim rows extracted and editable, house rules, `Open the room` | The claims *become* the ledger. Editing one on camera is the cheapest possible demonstration of learner ownership. |
-| 3 | **B3 Group chat** — round card + Mei's opener + empty ledger `○ ○ ○` | The starting frame of the delta pair. |
+| 3 | **B3 Group chat** — round card + Ellie's opener + empty ledger `○ ○ ○` | The starting frame of the delta pair. |
 | 4 | **B3** — learner message sent, **floor-yield window** (8 s, nothing happening) | Proves the system does not talk over her. Ten seconds of video, high value. |
-| 5 | **B3** — **Arun thinking**, counter climbing, composer micro-prompt, **ledger animating inside the hold** | The single richest frame in the prototype: latency, disclosure, and input-shaped response, all visible at once. |
-| 6 | **B3** — Arun's challenge rendered, with the preemptive framing line | DG2 in one bubble. |
-| 7 | **B3** — **silence timer**: wait-line filling, 35 s affordance, then the `45s quiet · Mei stepped in` divider and Mei's content-free nudge | Must show the wait-line *retracting* when typing resumes, or the keystroke-awareness claim is unevidenced. |
+| 5 | **B3** — **Max thinking**, counter climbing, composer micro-prompt, **ledger animating inside the hold** | The single richest frame in the prototype: latency, disclosure, and input-shaped response, all visible at once. |
+| 6 | **B3** — Max's challenge rendered, with the preemptive framing line | DG2 in one bubble. |
+| 7 | **B3** — **silence timer**: wait-line filling, 35 s affordance, then the `45s quiet · Ellie stepped in` divider and Ellie's content-free nudge | Must show the wait-line *retracting* when typing resumes, or the keystroke-awareness claim is unevidenced. |
 | 8 | **B4 Whisper** — open over the rail, group thread still visible, limits line, the counter-example, the relay offer with the attribution choice | The owned contribution. |
-| 9 | **B4 → B3** — **relay preview**, then Mei's relayed message appearing in the group with **no badge** | The T4 fix, made visible. The absence of the badge needs to be *narrated*, or nobody will notice it. |
-| 10 | **B5 Ledger** — a row expanded showing the learner's verbatim quote and `defended against Arun's probe` | This is the answer to "could a quiz do this?" — point at it. |
-| 11 | **B6 Recap** — the delta pair `○ ○ ○ → ● ● ●`, the quotes, the correction block, the Kai invitation | The progress mechanism, screenshot-able in ten seconds. |
+| 9 | **B4 → B3** — **relay preview**, then Ellie's relayed message appearing in the group with **no badge** | The T4 fix, made visible. The absence of the badge needs to be *narrated*, or nobody will notice it. |
+| 10 | **B5 Ledger** — a row expanded showing the learner's verbatim quote and `defended against Max's probe` | This is the answer to "could a quiz do this?" — point at it. |
+| 11 | **B6 Recap** — the delta pair `○ ○ ○ → ● ● ●`, the quotes, the correction block, the Theo invitation | The progress mechanism, screenshot-able in ten seconds. |
 
-**Should build if time allows (3).** Mei's mandated disagreement with the `↔ pushes back on
-Arun` connector (turn 10 — it is a marked safeguard and one static frame proves it); the
-teach-back accepted state with Mei and Arun dimmed; Settings' pacing group (a two-second cut,
+**Should build if time allows (3).** Ellie's mandated disagreement with the `↔ pushes back on
+Max` connector (turn 10 — it is a marked safeguard and one static frame proves it); the
+teach-back accepted state with Ellie and Max dimmed; Settings' pacing group (a two-second cut,
 but it is what makes the disclosure claim true rather than asserted).
 
 **Do not build for A1.** History, export-to-Finder, folder watching/indexing, error and retry
-states, the role-pairing randomiser, dark mode, the `⚑ contested by me` flow, Kai's actual
+states, the role-pairing randomiser, dark mode, the `⚑ contested by me` flow, Theo's actual
 dialogue beyond his opening line, multi-round sessions, and anything on the B7 first-run flow
 beyond card 3. None of them is on a marked requirement, and the brief is explicit that visual
 polish and technical complexity earn nothing on their own.
@@ -1461,18 +1461,18 @@ middle six minutes and everything else is trimmed to protect it.
 |---|---|---|---|---|
 | 1 | 0:00–0:45 | Face, then B1 Library | — | The problem, in the participants' words: they can get a full AI proof and cannot defend it. One verbatim quote. Name the difficulty: **uncritical use of AI output**. |
 | 2 | 0:45–1:15 | B1 → B2 setup, edit one claim row | — | Division of labour: *"The claims come off her own slide and she edits them. The system decides nothing about the content — it only notices what she's established."* |
-| 3 | 1:15–1:45 | B3, round card, Mei's opener, ledger `○ ○ ○` | **turns 1–2** | *"The system never explains the concept. It only responds to what she said."* Type turn 2 live. |
-| 4 | 1:45–2:30 | Floor-yield 8 s, then **Arun thinking, counter climbing**, ledger animating | **turn 3 hold** | The design-decision beat: *"That eleven seconds is on purpose. Tan et al. found two-second replies get read as less thoughtful; nine seconds got the best usefulness ratings. And the ledger updates inside the wait, so the pause is doing work."* |
-| 5 | 2:30–3:00 | Arun's challenge lands | **turn 3** | *"Arun picked 'probing assumptions' because her sentence was missing a quantifier — not from a script. The row said stated-but-not-justified, and that's what selects the question type."* |
+| 3 | 1:15–1:45 | B3, round card, Ellie's opener, ledger `○ ○ ○` | **turns 1–2** | *"The system never explains the concept. It only responds to what she said."* Type turn 2 live. |
+| 4 | 1:45–2:30 | Floor-yield 8 s, then **Max thinking, counter climbing**, ledger animating | **turn 3 hold** | The design-decision beat: *"That eleven seconds is on purpose. Tan et al. found two-second replies get read as less thoughtful; nine seconds got the best usefulness ratings. And the ledger updates inside the wait, so the pause is doing work."* |
+| 5 | 2:30–3:00 | Max's challenge lands | **turn 3** | *"Max picked 'probing assumptions' because her sentence was missing a quantifier — not from a script. The row said stated-but-not-justified, and that's what selects the question type."* |
 | 6 | 3:00–3:30 | Type turn 4, then **stop typing**; wait-line fills; type a character to show it retract; let it fire | **turn 4 → silence** | *"Forty-five seconds of no typing — not forty-five seconds since her last message. Watch it pause the moment she types."* |
-| 7 | 3:30–3:50 | The divider and Mei's nudge | **turn 5** | *"Notice the nudge contains no mathematics. It's a persistence problem, not a comprehension problem, so the fix can't be content."* |
+| 7 | 3:30–3:50 | The divider and Ellie's nudge | **turn 5** | *"Notice the nudge contains no mathematics. It's a persistence problem, not a comprehension problem, so the fix can't be content."* |
 | 8 | 3:50–5:00 | ⌘K, whisper pane opens **over the rail with the thread still visible**; limits line; the PSD counter-example; the relay offer; attribution; preview; send | **whisper block** | The owned contribution: *"This is the feature from my Critique 1. `/btw` claimed it could send things back to the main session and couldn't. This one can — with her permission, and she picks whose name is on it."* |
-| 9 | 5:00–5:25 | Mei's relayed message in the group, no badge | **turn 6** | *"There's no 'promoted from whisper' label, deliberately. The person this feature is for is the one who won't ask in public."* |
+| 9 | 5:00–5:25 | Ellie's relayed message in the group, no badge | **turn 6** | *"There's no 'promoted from whisper' label, deliberately. The person this feature is for is the one who won't ask in public."* |
 | 10 | 5:25–6:00 | Type turn 7; ledger `R2 → ●`, `R3 → ◐`; expand the row to show the quote | **turn 7** | *"That's a self-correction. The ledger records it as a win, not a mistake — and here's her own sentence that earned the state."* |
-| 11 | 6:00–6:40 | Arun's implications probe; type turn 9 (x³) | **turns 8–9** | *"Only the Challenger can move a row to 'defended'. That's the answer to 'could a quiz do this?' — the terminal state is defined by responsiveness to challenge."* |
-| 12 | 6:40–7:10 | Mei's pushback with the `↔ pushes back on Arun` connector | **turn 10** | *"The agents are required to disagree. Song et al. showed agreeing agents create pressure to conform without making anything more accurate. Two agents maximum, and that connector is the only visual link the UI can draw — there's no way to render agreement."* |
+| 11 | 6:00–6:40 | Max's implications probe; type turn 9 (x³) | **turns 8–9** | *"Only the Challenger can move a row to 'defended'. That's the answer to 'could a quiz do this?' — the terminal state is defined by responsiveness to challenge."* |
+| 12 | 6:40–7:10 | Ellie's pushback with the `↔ pushes back on Max` connector | **turn 10** | *"The agents are required to disagree. Song et al. showed agreeing agents create pressure to conform without making anything more accurate. Two agents maximum, and that connector is the only visual link the UI can draw — there's no way to render agreement."* |
 | 13 | 7:10–7:40 | `Wrap up`, closing composer, type turn 11 | **turn 11** | *"She gets the last word. No agent is allowed to summarise the conclusion."* |
-| 14 | 7:40–8:30 | B6 Recap: delta pair, quotes, correction block, Kai invitation | **close card** | *"This is the tracking mechanism: three claim states, a Bloom rung, and Xu et al.'s validated act codes. No score, no streak — a scored ledger would bring back the evaluation apprehension the whole design removes."* |
+| 14 | 7:40–8:30 | B6 Recap: delta pair, quotes, correction block, Theo invitation | **close card** | *"This is the tracking mechanism: three claim states, a Bloom rung, and Xu et al.'s validated act codes. No score, no streak — a scored ledger would bring back the evaluation apprehension the whole design removes."* |
 | 15 | 8:30–9:20 | Face | — | The limitation. Use the participant's verbatim objection from interview §6c — it is *your* data and it carries the ownership mark. Second sentence: agent turns in this prototype are scripted; A2 generates them. |
 | 16 | 9:20–10:00 | Face | — | What A2 builds and what is deliberately out of scope for A1 (§H). Stop talking at 9:50. |
 
@@ -1532,15 +1532,15 @@ Product only — the study, recruitment and report questions stay in `design-bri
    worst case without consolation. Is that the right amount of nothing, or should a partial
    session offer to resume rather than close?
 
-5. **How visible should the "only Arun unlocks ●" rule be?** It is the strongest argument the
+5. **How visible should the "only Max unlocks ●" rule be?** It is the strongest argument the
    design has, and it currently appears only in an expanded ledger row. Options: leave it as a
    discoverable detail, put it in the round card's house rules, or leave it out of the product
    entirely and keep it for the report. Making it explicit could also teach a learner to farm
-   Arun's probes.
+   Max's probes.
 
 6. **Is `Reply speed: Quick` allowed to go below the 2-second floor?** Tan et al. found sub-2 s
    replies get discounted as shallow, so a Quick mode that reaches 1 s actively removes the
-   effect the design is built on. Cap Quick at ~3 s for Arun, or let the learner have a genuinely
+   effect the design is built on. Cap Quick at ~3 s for Max, or let the learner have a genuinely
    instant mode and accept that they have opted out of the pedagogy?
 
 ---

@@ -416,7 +416,7 @@ sequenceDiagram
   M-->>U: optimistic append, seq=n
   par judgement runs inside the delay window
     M->>O: decide(policy prefix cached, tail 12 msgs, ledger snapshot)
-    O-->>M: {agent: Arun, move: probing_assumptions, target: E2}
+    O-->>M: {agent: Max, move: probing_assumptions, target: E2}
   and
     M->>L: ledger.update(concept pack cached, current ledger, last 6 msgs)
     L-->>M: {elements[], coverage, suggested_target_element}
@@ -424,7 +424,7 @@ sequenceDiagram
   M->>M: enforce §4.4 rules — evidence substring check, monotonic, confidence≥0.6, agreement≠evidence
   M->>DB: UPDATE ledger + INSERT event progress.update
   M-->>U: ledger rail animates (before the reply lands — this is the point)
-  M-->>U: typing_start { agent: Arun, eta_ms: 9000 } at t=0
+  M-->>U: typing_start { agent: Max, eta_ms: 9000 } at t=0
   M->>A: run turn (directive appended AFTER the last cache breakpoint)
   A->>P: POST /claudeProxy (stream) + Firebase ID token
   P->>P: budget check, then Anthropic SDK stream
@@ -456,7 +456,7 @@ sequenceDiagram
   participant T as Timer service - main, 1 s tick
   participant M as Room actor
   participant DB as SQLite
-  participant A as Agent runner - Mei, Haiku 4.5
+  participant A as Agent runner - Ellie, Haiku 4.5
 
   Note over T: every 1000 ms: if now ≥ room.deadlineTs and epoch matches → enqueue
   U-->>M: ipc: room.typing { textLen }  (≤ every 3 s, composer focused + non-empty)
@@ -469,13 +469,13 @@ sequenceDiagram
   M->>M: stale-epoch guard; state must be 'open' and expects_reply
   M->>DB: INSERT event silence.timer.fired { filler_agent, fire_count_in_block }
   alt cumulativeIdleMs < 90 s  (stage 1)
-    M->>A: Mei, move = content_free_nudge, target TTFT 3–5 s
+    M->>A: Ellie, move = content_free_nudge, target TTFT 3–5 s
     Note right of A: "Still turning it over? Happy to wait —<br/>or I can make the question smaller."<br/>Adds no subject-matter content.
   else cumulativeIdleMs ≥ 90 s  (stage 2)
-    M->>A: Mei, move = incomplete_scaffold, target TTFT 4–6 s
+    M->>A: Ellie, move = incomplete_scaffold, target TTFT 4–6 s
     Note right of A: hedged partial starting point,<br/>never a complete answer
   end
-  Note over M: Arun never fires the timer (design-brief §D3)
+  Note over M: Max never fires the timer (design-brief §D3)
   A-->>U: released reply
   M->>DB: UPDATE deadlineTs = now + 45 s, timerEpoch++
 ```
@@ -1076,7 +1076,7 @@ strictly cheaper than the 1-hour TTL** (which costs 2x to write and buys nothing
 
 Two invariants that keep this true, both already in the schema: nothing volatile may appear before
 the last breakpoint — no timestamp, no request id, no unsorted `JSON.stringify`, no randomised agent
-ordering — and `system[0]` must be **byte-identical** for Mei, Arun and the whisper agent, so the
+ordering — and `system[0]` must be **byte-identical** for Ellie, Max and the whisper agent, so the
 second caller reads the first caller's entry. `materials.prefix_sha256` is the guard; assert it
 matches on every turn and log `usage.cache_read_input_tokens` on every message row. A sustained zero
 means a silent invalidator, and it will cost 3x before anyone notices.
@@ -1308,7 +1308,7 @@ runs only on student messages (its §B.6 lever 2), the ledger is a separate Sonn
 | S15 | Slide page as a PDF document block | ~2,000 tok/page |
 
 **49 model calls per session.** Cache layout is `architecture-options.md` §C.5 unchanged: breakpoint
-1 after the shared block (byte-identical for Mei, Arun and the whisper agent, so the second caller
+1 after the shared block (byte-identical for Ellie, Max and the whisper agent, so the second caller
 reads the first caller's entry), breakpoint 2 after the role block, breakpoint 3 walking forward over
 the transcript, and the volatile turn directive after all of them.
 
@@ -1462,7 +1462,7 @@ requirement worth 4.0 marks and they have not been run. Everything below is size
 
 **Deliberately out of scope for A1** — none of it earns A1 marks: signing and notarisation, the DMG,
 Firebase Auth, the `claudeProxy` function, the Firestore mirror, the consent flow, the whisper relay,
-the Kai teach-back round, export, and auto-update.
+the Theo teach-back round, export, and auto-update.
 
 ## H.3 To an installable DMG for Assignment 2
 
@@ -1517,14 +1517,14 @@ behaviour, and a timer that any activity suppresses stops being a timer. Recomme
 — reading extends stage 1 but still accumulates `cumulativeIdleMs`, so stage 2 arrives on schedule —
 but this is a design call, and it is a clean A/B for A2.
 
-**Q4 — Whisper partner: does the student choose which agent to whisper to, or is it always Mei?**
+**Q4 — Whisper partner: does the student choose which agent to whisper to, or is it always Ellie?**
 Blocks: the whisper drawer UI and the whisper role block. `design-brief.md` §D5 leaves it open and
-`architecture-options.md` §C.4 defaults to "the student picks". Whispering to Arun — asking the
+`architecture-options.md` §C.4 defaults to "the student picks". Whispering to Max — asking the
 sceptic privately what they are actually driving at — is a different and more interesting act than
 whispering to the peer, and it is the version that produces the better exit-interview quote. But two
 whisper threads doubles the surface the canary test has to cover and adds a condition to the study
 design. Recommend: student picks, both threads supported, and if the pilot shows nobody whispers to
-Arun, fix it as a default rather than removing the capability.
+Max, fix it as a default rather than removing the capability.
 
 **Q5 — Should the ledger call emit the full five-element matrix every turn, or only the elements
 whose level changed?** Blocks: nothing, but it is 12 % of the per-session cost (§G.5 lever 2) and it

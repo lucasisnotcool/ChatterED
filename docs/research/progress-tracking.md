@@ -14,8 +14,8 @@ validation, H4). `architecture-options.md` §C.2–C.3 (where the ledger state a
 loop live). `interview-guide.md` already lists "progress ledger" as a mechanism to probe in §7 —
 this is that ledger, specified.
 
-**Agent names follow `design-brief.md` §D1:** Peer = **Mei**, Challenger = **Arun**, and the
-opt-in closing Tutee = **Kai** (invited, never a standing third voice — §6.5).
+**Agent names follow `design-brief.md` §D1:** Peer = **Ellie**, Challenger = **Max**, and the
+opt-in closing Tutee = **Theo** (invited, never a standing third voice — §6.5).
 
 ---
 
@@ -49,7 +49,7 @@ it; this is how the layers are computed.
 
 | `design-brief.md` §F | Here | Relationship |
 |---|---|---|
-| **Layer 1 — claim rows, three states ○ Stated / ◐ Justified / ● Defended** | §3.1 levels 0–4 | The three states are the **learner-facing labels**; the 0–4 levels are the **computed values**. Mapping is fixed: 0 = blank row, **1 → ○ Stated**, **2 → ◐ Justified**, **3 and 4 → ● Defended**. The brief's rule that *"only the Challenger can unlock ●"* is enforced here as a handler condition: an element may only reach level ≥3 on a message that answers an Arun probe targeting that element (`in_reply_to` = Arun's `msg_id`, `target_element_id` matches). Levels 3 and 4 are kept apart internally because the probe selector needs the finer address (§6.1); the learner only ever sees ●. |
+| **Layer 1 — claim rows, three states ○ Stated / ◐ Justified / ● Defended** | §3.1 levels 0–4 | The three states are the **learner-facing labels**; the 0–4 levels are the **computed values**. Mapping is fixed: 0 = blank row, **1 → ○ Stated**, **2 → ◐ Justified**, **3 and 4 → ● Defended**. The brief's rule that *"only the Challenger can unlock ●"* is enforced here as a handler condition: an element may only reach level ≥3 on a message that answers an Max probe targeting that element (`in_reply_to` = Max's `msg_id`, `target_element_id` matches). Levels 3 and 4 are kept apart internally because the probe selector needs the finer address (§6.1); the learner only ever sees ●. |
 | **Layer 2 — global Bloom ladder** | §3.1, rolled up | Displayed rung = the **lowest level across all elements** (a ladder is only as high as its weakest claim). Computed per element; shown as one rung. |
 | **Layer 3 — act profile** (live counters over Xu et al.'s Table 2 codes) | `evaluation-plan.md` §6 | Uses the *same* coding scheme as the study's transcript coding, so the live counters and the researcher's codes are the same construct. Live counters are LLM-assigned and provisional; the study numbers are the human-adjudicated ones (`evaluation-plan.md` §6.5). **Never report the live counters as study data.** |
 | **Layer 4 — unaided-explanation seconds** | `evaluation-plan.md` §7.1 | Derived at analysis time from `task.start`, the first of {`whisper.open`, hint request, `silence.timer.fired`}. No new plumbing: the events already exist. |
@@ -374,9 +374,9 @@ probe_type  = LEVEL_TO_PROBE[target.level]
 Xu et al.'s Challenger opens with a brief acknowledgment before challenging, and turns run ~80
 words. Keep both — they are what kept its pressure "moderate" rather than adversarial.
 
-### 6.2 The Peer (Mei) takes a *different* element
+### 6.2 The Peer (Ellie) takes a *different* element
 
-Mei targets the **second** candidate, never the same element as Arun in the same
+Ellie targets the **second** candidate, never the same element as Max in the same
 window, and it works one level lower — asking for elaboration, suggesting a focus area, or offering
 a tentative idea (Xu et al. §4.1.2).
 
@@ -388,10 +388,10 @@ prompted away.
 
 ### 6.3 The silence timer uses the ledger too
 
-When the 45 s silence alarm fires (45 s of idle, paused while typing — decision #8), Mei posts a **partial, correctable statement** about the
+When the 45 s silence alarm fires (45 s of idle, paused while typing — decision #8), Ellie posts a **partial, correctable statement** about the
 current target element — not a question, and never the answer:
 
-> *Mei:* "I might be wrong, but I think the expensive appends are the ones where it's already
+> *Ellie:* "I might be wrong, but I think the expensive appends are the ones where it's already
 > full — so, like, every few appends? Is that the shape of it?"
 
 Three properties, deliberate: it is *incomplete* (invites correction rather than agreement), it is
@@ -406,19 +406,19 @@ The block ends on the timer (12 min in Study A) or when every element reaches `t
 whichever first. On early completion the agents shift to level-4 consolidation on the weakest
 element rather than declaring victory — but the recap card is offered immediately.
 
-### 6.5 The ledger gates the Kai teach-back round
+### 6.5 The ledger gates the Theo teach-back round
 
-`design-brief.md` §D1 resolves the third-agent question by making the Tutee (**Kai**) *invited, not
-present*: a ~3-minute opt-in teach-back during which Mei and Arun go silent, so the live agent count
+`design-brief.md` §D1 resolves the third-agent question by making the Tutee (**Theo**) *invited, not
+present*: a ~3-minute opt-in teach-back during which Ellie and Max go silent, so the live agent count
 never exceeds two (the Song et al. group-size mitigation). **The ledger is the gate.**
 
 - **Trigger:** every element at ● (level ≥3) and the rolled-up Bloom rung at *analyse*. Offered as
   an invitation, phrased as an option, declinable, and declinable *again* mid-round.
-- **During the round:** Mei and Arun are muted. Kai climbs the same ladder as Xu et al.'s Tutee
+- **During the round:** Ellie and Max are muted. Theo climbs the same ladder as Xu et al.'s Tutee
   (§4.1.1) but over **the learner's own ledger elements** — it asks about E1 first, then upward.
 - **Ledger behaviour during teach-back:** elements may reach **level 4** here, and only here, for
-  the elements Kai actually probes. They may **not** advance from below 3 — teaching a novice is
-  consolidation, not first acquisition, and letting it substitute for defending against Arun would
+  the elements Theo actually probes. They may **not** advance from below 3 — teaching a novice is
+  consolidation, not first acquisition, and letting it substitute for defending against Max would
   undo the "only the Challenger unlocks ●" rule (§1.1).
 - **Logging:** `teachback.offer` / `teachback.accept | decline` / `teachback.end`, with
   `elements_probed[]`. Accept/decline rate is a free finding, and the round is the natural
@@ -445,7 +445,7 @@ average, not probabilistic) · **E5** where it stops being true (a single append
 
 ---
 
-**Turn 1 — Arun (Challenger) opens** (target E1, level 0 → clarification):
+**Turn 1 — Max (Challenger) opens** (target E1, level 0 → clarification):
 
 > "Before we get into the analysis — when you say appending to a dynamic array is fast, do you mean
 > fast every single time, or fast on average?"
@@ -462,13 +462,13 @@ Rail: E1 goes ○ *stated*. "1 of 5 claims covered."
 
 ---
 
-**Turn 2 — Mei takes E2** (second candidate, elaboration), **Arun takes E1** (level 1 →
-probing reasons and evidence). Both released after the 8–12 s delay; Mei first, Arun 4 s
+**Turn 2 — Ellie takes E2** (second candidate, elaboration), **Max takes E1** (level 1 →
+probing reasons and evidence). Both released after the 8–12 s delay; Ellie first, Max 4 s
 later, so it reads as a conversation rather than a broadside.
 
-> *Mei:* "Ooh — when it resizes, how much bigger does it get? I've always just assumed it, like,
+> *Ellie:* "Ooh — when it resizes, how much bigger does it get? I've always just assumed it, like,
 > grows."
-> *Arun:* "Right, so the resize is the expensive bit. What actually makes it O(n) — what is
+> *Max:* "Right, so the resize is the expensive bit. What actually makes it O(n) — what is
 > the machine doing during that resize?"
 
 **Student:**
@@ -496,7 +496,7 @@ Rail: E1 ◐ *justified*, E2 ○ *stated*. "2 of 5 claims covered."
 
 > *(whisper)* "is it bad that i don't actually know why doubling and not like +10"
 
-Whispered Mei reply — clarifies, does not answer, and pushes the claim back to the main channel:
+Whispered Ellie reply — clarifies, does not answer, and pushes the claim back to the main channel:
 
 > "Not bad at all, that's the actual question here. Try this: picture growing by 10 each time and
 > count how many copies happen over a thousand appends. Then say what you find out loud — that's
@@ -510,7 +510,7 @@ derailing it — and shows the design refusing to let the private channel become
 
 ---
 
-**Turn 4 — Arun targets E2** (level 1 → probing reasons and evidence):
+**Turn 4 — Max targets E2** (level 1 → probing reasons and evidence):
 
 > "You said it doubles. Suppose it grew by ten each time instead — you'd still get plenty of cheap
 > appends between resizes. Would that also be O(1) amortised?"
@@ -535,7 +535,7 @@ derailing it — and shows the design refusing to let the private channel become
 ], "coverage":0.53, "suggested_target_element":"E4", "suggested_probe_type":"clarification" }
 ```
 Rail: E2 ● *defended*, E3 ● *defended*. "4 of 5 claims covered." One gentle animation, no
-fanfare. (Both reached level 3 in reply to an Arun probe on that element, so the ● unlock rule in
+fanfare. (Both reached level 3 in reply to an Max probe on that element, so the ● unlock rule in
 §1.1 is satisfied.)
 
 Note what the ledger just did that a checklist could not: **E2 jumped two levels in one message**,
@@ -547,7 +547,7 @@ Bloom scalar could not do: it correctly left **E4 at zero** despite an otherwise
 **Turn 5 — silence.** The student goes quiet. At 45 s of idle the alarm fires; the Peer posts a partial
 statement on E4 (§6.3):
 
-> *Mei:* "I think I follow — so 'amortised' basically means it's fast on average, right? Like if
+> *Ellie:* "I think I follow — so 'amortised' basically means it's fast on average, right? Like if
 > you ran it lots of times it'd usually be quick?"
 
 That is deliberately the **common misconception** `M4a` (amortised = average-case), voiced hedged
@@ -562,13 +562,13 @@ and by the *Peer*, which makes correcting it low-cost socially.
 is O(n)"*, `M4a` resolved, `MET-CORR` + `FBK-DIS` coded. `after_timer_fire_ms` = 4,100.
 
 Rail: "5 of 5 claims covered", E5 still ○ at level 1 (implied by "worst case" but not
-established). Note E4 reached level 3 answering **Mei's** timer fill, not an Arun probe — under the
-§1.1 unlock rule it displays as ◐ until Arun probes it; the internal level is 3 and the probe
+established). Note E4 reached level 3 answering **Ellie's** timer fill, not an Max probe — under the
+§1.1 unlock rule it displays as ◐ until Max probes it; the internal level is 3 and the probe
 selector treats it as such.
 
 ---
 
-**Turn 6 — Arun targets E5** (level 1 → probing implications):
+**Turn 6 — Max targets E5** (level 1 → probing implications):
 
 > "Good — a guarantee over the sequence. So if I'm writing something with a hard 5-millisecond
 > deadline per operation, does your guarantee help me?"

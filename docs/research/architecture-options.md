@@ -709,7 +709,7 @@ func decide_and_maybe_speak(room, trigger, force_other_agent=False):
     eligible = [a for a in room.agents if not on_cooldown(a)]
     if force_other_agent: eligible = [a for a in eligible if a != room.last_speaker_id]
 
-    addressed = detect_direct_address(room.last_message)     # "@Mei", "Arun, what about…"
+    addressed = detect_direct_address(room.last_message)     # "@Ellie", "Max, what about…"
     if addressed in eligible:
         choice = {agent: addressed, move: 'respond_to_address'}
         decided_by = 'rule:addressed'
@@ -879,7 +879,7 @@ both agents' cache entries.
 │  Persona + move framework + tone + safeguards (verbatim structure below)        │
 │                                            ◄── cache_control breakpoint 2       │
 ├─ messages ── group transcript, speaker-labelled, one running block ─────────────┤
-│  [Student] …  [Peer/Mei] …  [Challenger/Arun] …                                 │
+│  [Student] …  [Peer/Ellie] …  [Challenger/Max] …                                 │
 │                                            ◄── cache_control breakpoint 3       │
 │                                                (walks forward each turn)        │
 └─ FINAL, UNCACHED ── the orchestrator's turn directive ──────────────────────────┘
@@ -1026,7 +1026,7 @@ Ordered by how much they block. The first four should be answered before M0 clos
    with distinct colours and gender balance) or labelled roles ("Peer", "Challenger")? Named
    personas increase the group feeling the whole design depends on and also increase the
    anthropomorphism you may not want to defend in the report.
-5. **Should the student ever see the orchestrator?** A visible "Mei is deciding whether to jump in"
+5. **Should the student ever see the orchestrator?** A visible "Ellie is deciding whether to jump in"
    is honest and might reduce the "ganged up" feeling; it also breaks the group-chat illusion. My
    default is to hide it and log it.
 6. **Whisper partner: student's choice, or always the Peer?** Whispering to the *Challenger* — "am
