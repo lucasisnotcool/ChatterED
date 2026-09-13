@@ -1540,3 +1540,63 @@ student must be able to close their MacBook mid-session and resume on an iMac wi
 room actor has to move back to a server and most of §B's argument reverses. For a 20-minute study
 session this seems clearly out of scope — but it is worth saying out loud now rather than discovering
 it in W7.
+
+---
+
+# Implementation notes (appended 13 Sep 2026, M0/M1 build)
+
+Where the code under `app/` departs from this brief, and why. Added by the build pass rather
+than by a revision of the design: the brief above stands as written, and each deviation below
+names what it trades. Status of the build itself is `app/docs/STATUS.md`.
+
+1. **Renderer is Svelte 5 + Vite, not SvelteKit** (§A.2 says "SvelteKit static build"). ChatterED
+   is one window with no URLs, so the router is the only part of SvelteKit that would be used,
+   and `adapter-static` under `file://` is a class of packaging bug this milestone does not need
+   to carry. The components are plain Svelte and port into a SvelteKit route unchanged if the
+   NUSSync embed ever wants one. Everything else in §A.2 — the whole room package in Node main,
+   `better-sqlite3` on disk, no Electron imports in `packages/room` — is implemented as written.
+
+2. **The API key is per-user, not a Cloud Function proxy** (§B.2 recommends option C). Superseded
+   by issue #15, taken after this document was written. The consequences §B.2 lists are real and
+   should be in the report: caches are per workspace, so the §G cache savings are per student;
+   spend and rate limits differ per participant, which is a confound the analysis must handle;
+   and first-run now has a key-entry screen, which §F.4 said it would not. What the app does with
+   the key is §B.2's option-B escape hatch promoted to the default: Electron `safeStorage`
+   ciphertext in the local settings table, the encryption key in the login keychain, and no path
+   that sends it anywhere but `api.anthropic.com`. With no key the app runs the scripted client,
+   so a demo needs no configuration at all.
+
+3. **Tests run SQLite through `node:sqlite`; the app runs `better-sqlite3`** (§D.1 assumes one
+   driver). `postinstall` rebuilds `better-sqlite3` against Electron's ABI, which a plain-Node
+   test runner then cannot load. Both adapters implement the same four-method interface and the
+   same migrations run through both, so the schema and every query are exercised for real either
+   way. The alternative — running Vitest inside Electron — buys nothing and costs the fast loop.
+
+4. **The `materials` CHECK is `cache_eligible = 0 OR token_count >= 4096`, not
+   `token_count >= 4096`** (§D.1). §E.2's own arithmetic says a realistic 3–8 page slide
+   selection misses the floor by up to a factor of four, and §E.2's `ensurePrefixFloor` step 3
+   says to proceed but never silently. A constraint that refuses to store such a material would
+   make the documented fallback unreachable. The row is stored with `cache_eligible = 0`, which
+   is the fact the cost model needs.
+
+5. **A fifth ledger gate: `defended` is unreachable without a Challenger probe.**
+   `progress-tracking.md` §4.4 lists four hard rules; `product-design.md` §D2 additionally
+   promises that "only Max's challenge can produce this glyph", and that promise is the answer to
+   "could a quiz do this?". It is enforced in the handler alongside the other four, and
+   migration 002 adds `turn_decisions.challenged_element_ids` so a probe that tests two claims
+   (as Max's turn-3 question in `design-brief.md` §G does) can be recorded honestly.
+
+6. **Stage-1 silence fills never reach a model.** §C.3's flow diagram sends the stage-1 nudge to
+   the agent runner; `product-design.md` §C5 requires the stage-1 line to be content-free "in the
+   product, not just the prompt". The implementation draws it from a fixed pool, which satisfies
+   both and makes the nudge free and offline-safe. Stage 2 is generated, as specified.
+
+7. **`ensurePrefixFloor` is partially implemented.** The prefix is assembled, hashed and frozen at
+   confirmation (§E.3) and `cache_eligible` is recorded, but the token count is a ~1.3 tokens/word
+   estimate rather than `messages.count_tokens`, and the widen-pages and glossary steps are not
+   built. §E.2's warning applies: the estimate is wrong in exactly the band where it matters, so
+   this is M2 work and the app should not be trusted on cache eligibility until it lands.
+
+8. **The Firestore mirror is an interface with a stub.** Scoped out of M0/M1. The `outbox` table
+   is written on every message, with the deterministic doc ids §D.2 rule 1 requires, so the drain
+   is the only missing piece.
