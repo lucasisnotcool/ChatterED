@@ -8,6 +8,11 @@ adult university students, one specific learning task, one named difficulty, dir
 as briefed; the observation sits inside the same booking.
 **Target n.** 4 booked, 3 minimum usable (brief requires ≥3). Book 5 to absorb no-shows.
 
+> **Question bank.** The survey (Google Form) and the interview question set, with shared item
+> IDs and the transcript codebook, live in `instruments/question-bank.md`. Sections 4 and 6 below
+> are the earlier draft of the interview blocks; where the two differ, the question bank wins.
+> `instruments/create-google-form.gs` builds the form.
+
 > Record **programme, year of study, gender** — never names, student IDs, or NUSNET IDs
 > (A1 brief, "Learning Problem and User Needs", 4.0 marks). Use participant codes P1…P5.
 
