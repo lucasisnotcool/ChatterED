@@ -17,6 +17,7 @@ function run(cmd, args, opts = {}) {
 
 console.log('[dev] compiling main + preload…');
 await run(process.execPath, [resolve(appDir, 'node_modules/typescript/lib/tsc.js'), '-p', 'tsconfig.main.json']);
+await run(process.execPath, [resolve(appDir, 'scripts/copy-assets.mjs')]);
 
 const server = await createServer({ configFile: resolve(appDir, 'vite.config.mts') });
 await server.listen();

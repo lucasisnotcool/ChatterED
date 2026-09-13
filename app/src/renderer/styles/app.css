@@ -1,0 +1,126 @@
+/* ChatterED renderer — design tokens and reset (product-design.md §B0, §C1, §C2). */
+
+:root {
+  /* Ground and surfaces */
+  --ground: #f7f7fa;
+  --pane: #ffffff;
+  --hairline: #e6e6ef;
+  --radius: 8px;
+
+  /* Text */
+  --text: #1b1b22;
+  --text-2: #56566b;
+  --muted: #b4b4c4;
+
+  /* Learner + primary */
+  --indigo: #4f46e5;
+  --indigo-tint: #eeedfb;
+
+  /* Agent hues — used ONLY on that agent's rule, avatar and label (§C2 rule 2) */
+  --peer: #0f7b6c;
+  --challenger: #b45309;
+  --tutee: #7c3aed;
+
+  /* Neutral ledger glyphs (§D2) — the rail is never tinted by an agent hue */
+  --glyph: #6b6b80;
+  --waitline: #d8d8e2;
+
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { height: 100%; }
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+input, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Shared primitives ------------------------------------------------------- */
+
+.btn {
+  border: 1px solid var(--hairline);
+  background: var(--pane);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  color: var(--text-2);
+}
+.btn:hover { border-color: #d4d4e2; color: var(--text); }
+
+.btn-primary {
+  border: 1px solid var(--indigo);
+  background: var(--indigo);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 9px 18px;
+  font-weight: 500;
+}
+.btn-primary:hover { background: #443cd0; }
+.btn-primary:disabled { opacity: 0.45; cursor: default; }
+
+.btn-link {
+  color: var(--text-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 1px;
+}
+.btn-link:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+
+.hairline { height: 1px; background: var(--hairline); border: 0; margin: 0; }
+
+.label-caps {
+  font-size: 11px;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.pane {
+  background: var(--pane);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
