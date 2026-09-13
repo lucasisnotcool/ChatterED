@@ -24,17 +24,21 @@ use `gh api repos/:owner/:repo/issues/N --jq '.title, .body'`.
   `Academia/Sources/*/README.md` opens with that section, in the owner's own words and
   spelling. Never edit, reword, tidy, reflow, spell-check or "summarise" it — not even
   to fix an obvious typo. Append only under `## AI may edit and add here:`.
-- **Subagents run on Opus or lower, never Fable.** Two rules, both required:
-  1. Every `Agent` call passes `model` explicitly — `"opus"` (the ceiling), `"sonnet"`
-     or `"haiku"`. An omitted model **inherits the parent's model, which is Fable**.
-  2. Every subagent prompt must itself say **"Do NOT use the Agent tool"** — a nested
-     spawn inside a subagent inherits Fable the same way, and the guard below cannot see
-     into a child session.
+- **Subagents run on Opus or lower, never Fable.** Nested spawning IS permitted (a
+  subagent may spawn its own subagents) — the only rule is the model:
+  1. Every `Agent` call, at any depth, passes `model` explicitly — `"opus"` (the ceiling),
+     `"sonnet"` or `"haiku"`. An omitted model **inherits the main session's model, which
+     is Fable** — that is how 16 unauthorised Fable agents ran on 2026-09-13.
+  2. Every subagent prompt must relay the rule: "If you use the Agent tool, pass
+     model: \"opus\" (or sonnet/haiku) explicitly — never omit it."
   Enforced by `.claude/settings.json` (`CLAUDE_CODE_SUBAGENT_MODEL: opus` + a `PreToolUse`
   matcher on `Agent`) calling `.claude/hooks/guard-agent-model.sh`, which denies an
   omitted or non-allowed model. If a spawn is refused, fix the call — do not edit the
-  hook or the settings to get around it.
-- **At most 3 concurrent agents.** Batch independent work in threes, not tens.
+  hook or the settings to get around it. Hooks added mid-session go live only after
+  `/hooks` or a restart.
+- **Mind the 20-concurrent-agent harness cap.** Fan-out is fine when each agent is on
+  Opus or lower; check `ListAgents` before a large batch so a nested fan-out doesn't
+  block the next launch.
 - **`docs/research/` is the source of truth for design decisions.** Code that contradicts
   a brief is a bug in one of the two; say which, and say so in the commit or the issue,
   before changing either.
