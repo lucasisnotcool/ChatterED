@@ -1,0 +1,47 @@
+name: Feedback for next agent pass
+description: Something you saw that the next agent session should fix, change, or reconsider.
+title: "[feedback] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Plain language is fine — you do not have to diagnose it. The agent reads open
+        issues at the start of every session, comments with what it did, and closes with
+        the commit reference.
+  - type: textarea
+    id: saw
+    attributes:
+      label: What you saw
+      description: What actually happened, or what the doc/screen actually says. Screenshots welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Which doc or screen
+      description: "File path, doc section, or screen name — e.g. docs/research/interview-guide.md §3, or the group-chat view."
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Blocker — Assignment 1 cannot be submitted without this
+        - High — do it this pass
+        - Normal — do it soon
+        - Low — whenever
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Constraints, a guess at the cause, or things the agent should NOT do here.

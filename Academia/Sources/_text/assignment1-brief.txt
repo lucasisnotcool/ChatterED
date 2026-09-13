@@ -1,0 +1,269 @@
+Assignment 1: ​
+Design and Prototype a Learning CUI
+for the AI Era
+Design and prototype a CUI for one specific university learning task
+
+
+      Item                                           Details
+
+     Weight        16 points
+
+  Main report      Maximum 2,000 words
+
+     Video         Maximum 10 minutes; maximum 200 MB
+
+    Deadline       22/09/2026 (Recess Week) 23:59
+
+  Submission       Canvas: PDF + ZIP + MP4
+
+
+
+1. Assignment at a glance
+
+In this individual assignment, you will investigate one specific university learning task in
+which students use generative AI but still experience a learning difficulty. You will identify
+one evidence-supported difficulty, define a focused learning goal, decide what the learner
+and the CUI should each do, choose a suitable CUI form and technical approach, and
+develop a prototype of one core, multi-turn CUI learning interaction. Assignment 1 prepares
+this interaction for implementation in Assignment 2. You will demonstrate and explain your
+prototype in an individual video.
+
+You will be assessed on the quality and justification of your decisions, how clearly your
+prototype communicates the intended interaction, and whether you understand and can
+explain what you submitted. You may use AI tools throughout the assignment. However, AI
+may support rather than replace the responsibilities listed below.
+
+
+How you may use AI
+The following responsibilities remain yours when you use AI:
+    1.​ You must personally obtain consent and talk to or observe at least three real adult
+        university students. AI-generated or simulated participants do not count as learner
+        evidence.
+    2.​ You must make the final decisions about the learning problem, learning goal, CUI
+        role, and technical approach.
+    3.​ You must check that your prototype accurately represents the intended interaction
+        and understand any code, prompts, configurations, and claims you submit.
+    4.​ You must appear in the video and explain the project in your own words. An
+        AI-generated avatar or voice cannot replace you.
+
+
+What counts as a CUI?
+A CUI is not limited to a text chatbot. In this assignment, a CUI is an interactive system in
+which the learner and the system take turns communicating, and the system's next response
+or action is shaped by what the learner says, does, or provides.
+
+It may use text, voice, video, multimodal interaction, external tools, or agents. It may act as a
+tutor, coach, practice partner, teachable peer, reflection partner, or another learning-oriented
+role.
+
+Note:
+
+    1.​ Voice, video, multimodal, or agent-based systems do not receive automatic bonus
+        marks compared to a text-only chatbot.
+    2.​ Choose the form that best fits the learners, learning goal, and what you can build
+        well.
+    3.​ Using a larger, newer, or paid model is not, by itself, an innovation.
+
+Examples for inspiration:
+
+    ●​ StuBot asks learners to teach a topic in their own words and responds with questions
+        about missing parts.
+    ●​ Khanmigo acts as a coach that guides learners instead of simply giving them an
+        answer.
+    ●​ Duolingo Roleplay and Video Call provide conversational language practice
+        followed by feedback.
+
+
+2. What you need to do
+
+Complete the following four steps in order. Use the same order in your report.
+Step 1: Understand what remains difficult after AI
+assistance
+Interview at least 3 adult university students about one specific learning task (e.g.,
+programming, reading, mathematics, abstraction, planning, and decomposition) for which
+they currently use generative AI. You may ask them questions or observe how they use and
+respond to the AI's help. Ask for their permission and do not include names or other
+identifying information in your submission.
+
+Summarise what you learned in four parts:
+
+   1.​ Learner and task: Who (major? Grad? … etc) are you designing for, what are they
+       trying to learn, and how do they currently use AI?
+   2.​ Current difficulty: After receiving AI assistance, what does the learner still struggle
+       to understand, or do for themselves?
+
+       Choose one of the following difficulties that best describes your target learner, or
+       identify another difficulty supported by your learner evidence:
+
+           ●​ Reduced persistence: When the task becomes difficult, the learner turns to
+               AI before making or sustaining a meaningful attempt of their own.
+           ●​ Uncritical use of AI output: The learner can obtain an AI-assisted answer
+               but struggles to explain, question, verify, or improve it using their own
+               reasoning.
+           ●​ Reduced ownership and self-direction: The learner relies on AI to determine
+               the approach or next steps and struggles to make key decisions for
+               themselves.
+           ●​ Other: A different difficulty that emerged from your interviews or
+               observations and is not adequately captured by the categories above. Give it a
+               clear name and definition.
+
+       For your chosen difficulty, describe how it appears in the specific learning task you
+       are studying. Explain what the learner can accomplish with AI assistance and what
+       they still struggle to understand or do on their own. Your choice must be supported
+       by evidence from your learner interviews or observations.
+
+   3.​ User Needs: Summarize key needs identified from target user interviews
+   4.​ Potential CUI support: How a CUI could assist them in overcoming these obstacles,
+       and how it can empower them to master these tasks independently.
+Step 2: Decide the learning goal and the CUI's role
+Describe your plan in the following parts:
+
+   1.​ Learning goal: Based on the difficulty identified in Step 1, state one specific thing
+       the learner should understand or learn to do. Explain what the learner would explain
+       or do to show progress toward this goal.
+   2.​ Roles of the learner and the CUI: Clearly state what the learner must think about or
+       do themselves during the learning activity, and what the CUI will do to support that
+       work without taking it over.
+   3.​ Why this approach: What does conversational interaction add to this learning
+       process? Could a simpler non-conversational design work just as well?
+   4.​ Design Goals: Define at least three clear design goals grounded in relevant theories
+       and identified user needs, providing a solid justification for each.
+
+
+Step 3: Implementation Plan
+Detail the CUI model and tech stack (such as a chatbot, hybrid CUI+GUI, multimodal
+framework, rule-driven logic, or prompt engineering) chosen for your functional prototype,
+explaining how these options directly support the target learning challenge, learning
+objective, and planned interaction model.
+
+Outline your implementation strategy. While implementation is not required for Assignment
+1, and prototyping tools are permitted, you must clearly demonstrate your technical plan and
+understanding:
+
+   ●​ What components need to be developed?
+   ●​ Which parts will you build yourself?
+   ●​ Which aspects will rely on an LLM for development assistance?
+
+Provide a clear overview of the system architecture and justify your approach to leveraging
+AI to build the conversational interface. Keep in mind that technical complexity alone does
+not translate to higher marks. A straightforward CUI can earn top marks if it addresses
+student challenges effectively and accurately. Ultimately, success hinges on sound design
+decisions rather than reliance on complex or cutting-edge technologies.
+Step 4: Develop a CUI prototype
+Develop a prototype of one multi-turn CUI learning interaction based on your work in Steps
+1–3. The interaction must involve several connected exchanges between the learner and the
+CUI as they work toward the learning goal. Assignment 1 focuses on designing and
+prototyping this interaction to be ready for implementation, not on building a CUI system.
+You may use code, digital prototyping tools, storyboards, paper materials, or another suitable
+prototyping method. Whatever method you choose, the prototype must be detailed enough
+to demonstrate how the interaction works and how it addresses one key learning need
+identified in Step 1.
+
+Your prototype does not need to cover every planned feature, but it must:
+
+   1.​ Enable the learner to engage in and complete a single core learning activity across
+       multiple conversational turns.
+   2.​ Show what the learner thinks about or does, and how the CUI's responses are shaped
+       by the learner's input across the interaction.
+   3.​ Show how the interaction addresses the identified learning need and supports the
+       learning goal from Step 2.
+
+In your demonstration video, explicitly show how the interaction works:
+
+   4.​ Walk through the interface to illustrate the system operations and expected user
+       interactions (imperfections in an initial prototype are completely fine).
+   5.​ Roleplay or act out the step-by-step user interaction to show how the system is
+       intended to function.
+
+
+3. What to submit
+
+A report PDF, a prototype package ZIP, and an individual video MP4. Use the filenames
+below and replace <StudentID> with your own student ID.
+
+
+A. A1_<StudentID>_Report.pdf
+Maximum 2,000 words; no minimum. Ensure the report remains concise by focusing strictly
+on content directly relevant to explaining your project. The 2,000-word limit covers the core
+text only, excluding references and optional appendices. Structure the report in the same
+order as Steps 1–4 above.
+
+Cite all external research, code, datasets, media, templates, and other resources used.
+B. A1_<StudentID>_Prototype.zip
+
+Your prototype package must contain:
+
+   1.​ All materials needed to review and demonstrate your prototype, such as source code,
+       prompts, configurations, digital prototype files, storyboards, or clear scans or
+       photographs of paper materials.
+   2.​ A README.md that identifies the prototyping method and explains how to open,
+       run, view, or roleplay the prototype.
+
+
+C. A1_<StudentID>_Video.mp4
+Submit an individual MP4 video of no more than 10 minutes and no more than 200 MB.
+
+   1.​ Show your face while speaking and keep it visible while you explain the project.
+   2.​ Demonstrate one complete, multi-turn CUI learning interaction from beginning to
+       end. If the prototype is paper-based or simulated, role-play the interaction.
+   3.​ Using your own words, explain the learning problem, how the learner and the CUI
+       divide the work, one important design decision, and one current limitation.
+
+Evaluations focus on a straightforward demonstration, a clear rationale tied to your project,
+and evidence of your genuine comprehension and ownership of the work. Video editing is
+not necessary—a basic Zoom recording is fully sufficient. Submissions are not judged on
+visual polish; instead, the focus is on how effectively you articulate your concept and convey
+your underlying thought process throughout the prototyping phase.
+
+
+4. How your work will be assessed
+
+Your Assignment 1 mark is out of 16 and counts directly toward the 100-mark course total.
+Graders will assess the four areas below.
+
+Learning Problem and User Needs (4.0 marks)​
+To demonstrate a deep understanding of the problem space and target user group, base your
+submission on primary empirical evidence collected through interviews or observational
+sessions with at least 3 adult university students. Identify their specific academic program,
+gender, or year of study rather than names or IDs to demonstrate relevance to your chosen
+topic. You must clearly outline a focused learning task and examine how students currently
+incorporate generative AI tools into their study workflow. Pinpoint a primary challenge
+faced by learners, supporting your findings with direct user quotes, observed behaviors, or
+documented responses. Conclude by articulating the fundamental user need your CUI design
+intends to address.
+
+Learning Design and Chosen Approach (4.0 marks)​
+This section requires a well-defined learning objective alongside a clear mechanism for
+tracking student progress. You should establish an explicit division of responsibilities
+between the student and the CUI, while providing a compelling rationale for adopting a
+conversational modality. Your design goals must be rooted in established communication
+and learning theories as well as empirical user needs. Furthermore, present a feasible,
+well-suited technical implementation strategy and CUI framework, ensuring every design
+choice and architectural decision is thoroughly justified. To ground your approach, draw
+upon lecture materials, theoretical foundations, and relevant scholarly literature from the
+course reading list or external academic sources.
+
+Please properly attribute or cite these resources in your report, so then we will be able to
+know how you grounded your design properly.
+
+CUI Prototype and Interaction (3.0 marks)​
+Construct a low-fidelity prototype illustrating a multi-turn CUI learning exchange. The
+design must foster active cognitive engagement from the learner, offer tailored feedback,
+guidance, or progressive steps following user input, and directly address the target learning
+challenge. Evaluation centers on the clarity and coherence with which the interaction design
+is communicated. Suitable medium formats encompass low-complexity solutions such as
+conversation flows, paper-based mockups, scripts, storyboards, or Dialogflow setups.
+Selection of the appropriate prototyping approach is left to your discretion.
+
+The purpose of these rapid prototyping techniques is to clarify the core concept and prepare
+it for implementation and user testing in Assignment 2. High visual fidelity is not expected;
+assessment focuses on the quality and clarity of the interaction design rather than its visual
+presentation.
+
+Individual Video and Ownership (5.0 marks)​
+A clear demonstration of the complete, multi-turn prototype interaction; project-specific
+explanation and reasoning; and clear evidence that the student understands and owns the
+submitted work. Within this criterion, 2 marks are for the demonstration, 2 marks are for
+project-specific explanation and reasoning, and 1 mark is for individual understanding and
+ownership.
+

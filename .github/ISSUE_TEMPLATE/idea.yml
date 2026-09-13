@@ -1,0 +1,35 @@
+name: Idea
+description: A direction, mechanic, or experiment worth considering. Not yet a decision.
+title: "[idea] "
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: One paragraph. What it is, in your own words.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it might work
+      description: The intuition, or the paper/source it comes from (Academia/Sources/... if it has one).
+    validations:
+      required: true
+  - type: textarea
+    id: cost
+    attributes:
+      label: What it would cost or break
+      description: Tokens, scope, rubric fit, complexity — whatever makes you hesitate.
+  - type: dropdown
+    id: horizon
+    attributes:
+      label: Horizon
+      options:
+        - Assignment 1
+        - Assignment 2
+        - Product (after the module)
+        - Unsure
+    validations:
+      required: true

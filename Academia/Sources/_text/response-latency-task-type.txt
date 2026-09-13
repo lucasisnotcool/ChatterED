@@ -1,0 +1,1085 @@
+ The Impact of Response Latency and Task Type on Human-LLM
+                  Interaction and Perception
+                             Felicia Fang-Yi Tan                                                Moritz Alexander Messerschmidt
+                       Tandon School of Engineering                                                     Augmented Human Lab
+                           New York University                                                      National University of Singapore
+                         New York, New York, USA                                                         Singapore, Singapore
+                           felicia.tan@nyu.edu                                                            mome@nus.edu.sg
+
+                                      Wen Yin                                                                   Oded Nov
+                       Tandon School of Engineering                                                   Tandon School of Engineering
+                           New York University                                                            New York University
+                         New York, New York, USA                                                        New York, New York, USA
+                            wy870@nyu.edu                                                                   onov@nyu.edu
+
+Abstract                                                                                1   Introduction
+Responsiveness in large language model (LLM) applications is                            Large language model (LLM) assistants like ChatGPT have rapidly
+widely assumed to be critical, yet the impact of latency on user be-                    become part of everyday knowledge work, commonly support-
+havior and perception of output quality has not been systematically                     ing tasks such as drafting an email or getting feedback on ideas
+explored. We report a controlled experiment varying time-to-first-                      [37, 45, 61]. A central factor shaping their usability is responsive-
+token latency (2, 9, 20 seconds) across two taxonomy-driven knowl-                      ness, long examined in HCI research through the lens of System
+edge task types (Creation and Advice). Log analyses reveal that                         Response Times (SRT). Classic studies identified thresholds at which
+user interaction behaviors were robust to latency, yet varied by task                   response delays disrupt interaction - about 0.1 seconds for immedi-
+type: Creation tasks elicited more frequent prompting than Advice                       acy, 1 second for continuity of thought, and 10 seconds for loss of
+tasks. In contrast, participants who experienced 2-second laten-                        attention [8, 39]. From this perspective, optimizing for speed and
+cies rated the LLM’s outputs less thoughtful and useful than those                      minimizing any waiting that users experience emerged as a core
+who experienced 9- or 20-second latencies. Participants attributed                      design imperative. Yet in today’s LLM platforms, responsiveness is
+delays to AI deliberation, though long waits occasionally shifted                       no longer a simple matter of faster being better. For instance, users
+this interpretation toward frustration or concerns about reliability.                   are often presented with trade-offs between models that deliver
+Overall, this work demonstrates that latency is not simply a cost to                    quicker responses vs. slower modes engaging in extended reason-
+reduce but a tunable design variable with ethical implications. We                      ing sequences for greater accuracy [54]. In contemporary use cases
+offer design strategies for enhancing human-LLM interaction.                            of LLMs for knowledge work, classical assumptions about latency
+                                                                                        require reexamination.
+CCS Concepts                                                                               Unlike the deterministic, transactional systems typically studied
+• Human-centered computing → Empirical studies in HCI.                                  in SRT research, waiting in LLM interactions introduces new dy-
+                                                                                        namics. Because outputs are probabilistic and unpredictable, users
+                                                                                        cannot know in advance what the model will generate or how well it
+Keywords                                                                                will align with their goals, a difficulty Subramonyam et al. term the
+Large language models, Latency, Human-AI interaction, Knowledge                         “gulf of envisioning” [53]. Moreover, interaction with LLMs takes
+work, Interaction logs, User perception, Positive friction, Response                    conversational form, which suggests that timing may carry socially
+time, Human-centered AI                                                                 meaningful cues, much as pauses shape interpretations in human
+                                                                                        dialogue [21, 26]. Prior work points to the possibility that delays
+ACM Reference Format:
+                                                                                        can be anthropomorphized as “thinking time” or even serve con-
+Felicia Fang-Yi Tan, Moritz Alexander Messerschmidt, Wen Yin, and Oded
+Nov. 2026. The Impact of Response Latency and Task Type on Human-LLM                    structive functions when calibrated as positive friction [9, 51, 63].
+Interaction and Perception. In Proceedings of the 2026 CHI Conference on                What remains less understood, however, is how such differences in
+Human Factors in Computing Systems (CHI ’26), April 13–17, 2026, Barcelona,             interpretation play out in everyday knowledge work, where users
+Spain. ACM, New York, NY, USA, 17 pages. https://doi.org/10.1145/3772318.               pursue different task types and may respond to waiting differently.
+3790716                                                                                    This motivates our focus on task type as a critical moderator
+                                                                                        of how latency is experienced and shapes user behaviors in LLM-
+                                                                                        assisted knowledge work. We focus on two common forms of knowl-
+                                                                                        edge work [4]: Creation tasks, which involve producing new content
+This work is licensed under a Creative Commons Attribution 4.0 International License.   (e.g., writing, brainstorming, or drafting), and Advice tasks, which
+CHI ’26, Barcelona, Spain                                                               involve providing guidance, critique, or evaluation (e.g., suggesting
+© 2026 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-2278-3/26/04
+https://doi.org/10.1145/3772318.3790716
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                           Tan et al.
+
+
+revisions, offering decision support, or validating criteria). Based on   to maintain the flow of thought, and ∼10 s before attention drifts
+this distinction, our study was guided by two research questions:         [8, 42]. These anchors, spanning perceptual, cognitive, and atten-
+RQ1. How do Latency and Task Type influence human-LLM inter-              tional scales, suggest a dominant heuristic that the faster a system
+     action behavior?                                                     responds, the more seamless the user experience.
+RQ2. How do Latency and Task Type affect participants’ perceived             Subsequent research showed that latency affects not only task
+     quality of LLM responses?                                            completion speed but also error rates, user strategies, satisfaction,
+                                                                          and physiological stress markers. Dabrowski and Munson [10]
+   To investigate these questions, we conducted a 3 (Latency: 2, 9,
+                                                                          classify tasks by their tolerance for delay. Control tasks, such as
+20 seconds) × 2 (Task Type: Creation, Advice) between-subjects
+                                                                          dragging, scrolling, or other direct-manipulation actions, require
+experiment with 240 participants. Using a custom GPT-4o interface,
+                                                                          near-instantaneous feedback (<200 ms) to preserve the feeling of
+participants were assigned to one latency condition and one task
+                                                                          continuous control. In contrast, conversational tasks admit modest
+type, then completed three tasks within their assigned task type.
+                                                                          pauses; short latencies can feel like natural turn-taking, sustaining
+Each time they queried the AI assistant, the response was delayed
+                                                                          rhythm rather than disrupting it. A controlled study of interactive
+according to their assigned latency condition. We examined system-
+                                                                          visualization showed that adding 500 ms of delay to each action re-
+logged behaviors (e.g., prompt submissions and edits, copy-pasting)
+                                                                          duced coverage (how broadly people explored the data) and insight
+alongside user perceptions gathered through ratings and open-
+                                                                          (the number or quality of observations they made) [34].
+ended reflections.
+                                                                             Two additional factors refine this picture: the psychophysiology
+   Results show that participants’ log-based interaction behaviors
+                                                                          of waiting and the role of expectations. Human-factors experiments
+were robust to latency but strongly shaped by task type. Across con-
+                                                                          indicate a U-shaped cost curve, where short ∼2 s waits can elevate
+ditions, participants in Creation tasks submitted more new prompts
+                                                                          arousal and impair accuracy, whereas 8-9 s waits increase strain
+than those in Advice tasks, underscoring that the kind of work users
+                                                                          and frustration [23, 57]. Expectations amplify these effects. In high-
+pursue with LLMs drives their prompting strategies more than sys-
+                                                                          volume services such as web search, where users are habituated to
+tem response times. Latency, in contrast, primarily influenced users’
+                                                                          near-instant responses, delays above roughly 1 s are noticed, and
+perceptions of output quality: participants who experienced short
+                                                                          users preferentially click on the faster-loading page even when the
+waits (2 s) rated the LLM’s responses as less thoughtful and less
+                                                                          content is identical [2].
+useful than those generated after longer waits (9-20 s). Qualitative
+                                                                             Together, these studies yield a long-standing baseline: treat la-
+feedback echoed this pattern, with participants often interpreting
+                                                                          tency as overhead to minimize. However, these thresholds are not
+longer response latencies as signs of “deliberation” rather than
+                                                                          fixed but moderated by task class, user expectations, and whether
+strain. Taken together, these findings nuance the maxim that faster
+                                                                          the system provides informative waiting cues.
+is better.
+   This work makes three key contributions:
+    (1) We present empirical findings showing that interaction be-        2.2    Latency Perception, Mental Models, and
+        haviors were robust to latency but shaped by task type. In               Social Heuristics
+        contrast, both latency and task type influenced perceptions
+                                                                          Unlike deterministic systems where an action yields a predefined
+        of LLM output quality, with short waits (2 s) rated as less
+                                                                          outcome (e.g., opening a file), LLMs generate probabilistic out-
+        thoughtful and useful than longer waits (9-20 s).
+                                                                          puts, respond in conversational turns. In this setting, time is a
+    (2) We provide design implications for treating timing as an
+                                                                          communicative signal of effort, or malfunction that shapes how
+        interaction design material, suggesting how response latency
+                                                                          people trust, strategize, and collaborate with intelligent systems
+        can be framed and tuned based on task structure.
+                                                                          [21, 24, 35, 46]. Brief pauses are often interpreted as “system work-
+    (3) We contribute a reusable experimental platform for studying
+                                                                          ing” cues, whereas sustained waits are read as deliberation when
+        timing effects in human-LLM interaction, comprising an
+                                                                          complexity is expected, or as failure when speed is normative [42].
+        end-to-end LLM interaction system with latency control and
+                                                                             Classic cognitive accounts hold that people construct simplified
+        interaction logging1 , and the study’s anonymized dataset
+                                                                          internal models to explain complex systems [43]. Such models guide
+        with accompanying documentation on the Open Science
+                                                                          users’ inferences about what the system is doing while they wait,
+        Framework (OSF)2 .
+                                                                          often becoming folk theories in opaque algorithmic settings. These
+                                                                          mental models also shape pacing: fast responses elicit fragmented,
+2 Related Work                                                            exploratory probing, whereas slower responses encourage fewer,
+2.1 System Response Times in HCI                                          more deliberate commands [10]. Managing latency is thus also
+Early HCI studies often frame system delays in conversational and         about managing perception - what time signals about effort, control,
+cognitive terms. Miller’s analysis of dialogue suggests that multi-       and competence shapes how interaction unfolds.
+second pauses (≈4 s) can break the interaction “thread” [39], i.e.,          Furthermore, classic social response theory explains that peo-
+disrupt users’ train of thought and mental flow. Usability guidance       ple apply conversational norms to machines [41]. Recent studies
+later converged on thresholds of immediacy: about 0.1 s to feel           report similar attributions in AI-mediated dialogue; Lee et al. [26]
+instantaneous (preserving the illusion of direct manipulation), ∼1 s      found that users of creative image-generation tools often inter-
+                                                                          preted longer render times as evidence that the AI was “thinking
+1 https://github.com/AugmentMo/gpt-chatbot-emu                            harder,” sometimes rating outputs as higher quality despite iden-
+2 https://osf.io/367cw                                                    tical content. Subramonyam et al. [53] highlight a related “gulf of
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                    CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+envisioning” in LLM use. Because users lack direct visibility into                     as System 2 processing [22, 52]). Chen and Schmidt [9] distinguish
+model processes, they imbue observable cues such as delays with ex-                    four friction types (self-control, questioning assumptions, stimu-
+planatory weight. Crucially, whether latency is judged positively or                   lating action, and deprioritizing efficiency), each implementable
+negatively depends on context and framing. Delays in speed-critical                    via forcing functions, pauses, or prompts. In time-based applica-
+settings (e.g., factual Q&A) may be seen as incompetence or system                     tions, well-framed delays can improve decision quality, yielding
+failure. But when delays align with expectations of complexity,                        better discrimination of correct vs. incorrect advice and reducing
+they can be reassuring. Zhang et al. [62] demonstrate that simple                      overreliance on AI [7, 44].
+framing cues (e.g., displaying “Analyzing your request...” during                         Concrete implementations of positive friction appear in human-
+a pause) increased perceived transparency and trust. Riemer et al.                     AI interaction. Inan et al. [63] focus on conversational AI, introduc-
+[47] add that temporal consistency matters. In other words, once                       ing brief pauses and clarifying interjections in dialogue to improve
+users develop expectations from repeated encounters, deviations                        alignment. A study also showed that color-coded highlights indi-
+(i.e., unexpectedly fast or slow responses) can erode confidence.                      cating confidence levels, omissions, or contested claims, function
+    While the aforementioned studies clarify how users perceive                        as cognitive “speed bumps,” slowing readers enough to encour-
+and interpret latency, the meaning and impact of waiting are also                      age critical review [51]. Notably, effects followed an inverted-U:
+contingent on what users are trying to accomplish.                                     too little friction left users skimming, whereas too much imposed
+                                                                                       unnecessary burden.
+2.3    Task Contexts in LLM Use                                                           Foundational timing work also explains how delay paces cogni-
+                                                                                       tion via (1) entrainment, where users synchronize their tempo to
+LLMs support a spectrum of knowledge-work tasks that differ in
+                                                                                       system speed, so very short waits rush and increase errors while
+cognitive demands and evaluation criteria [38]. Prior work orga-
+                                                                                       moderate waits support control [40], and (2) temporal predictability,
+nizes task context along three empirically observed axes: stakes,
+                                                                                       where consistent waiting times allow users to prepare actions in
+expectations, and interaction patterns. Stakes vary with domain
+                                                                                       advance, improving performance [56].
+and the consequence of error. Unreliability is especially concerning
+in high-stakes settings compared with low-risk or exploratory uses                        In summary, prior work underscores four themes: (1) classic HCI
+[6]. Expectations vary by intent: advice-oriented tasks prioritize                     established low latency as a core usability principle, (2) latency can
+factuality and professional knowledge, favoring concise, actionable                    be interpreted through users’ mental models and social heuristics,
+output, whereas creation-oriented tasks prioritize creativity and                      (3) the meaning and acceptability of delay depend on task context,
+favor more expansive, stylistically flexible output [5, 58]. Interac-                  and (4) deliberate slowdowns have been framed as positive fric-
+tion patterns also differ. Advice and learning intents tend to unfold                  tion. Our work extends this literature by systematically comparing
+through multi-turn conversational prompting, which supports clar-                      latency across task types in LLM-assisted knowledge work.
+ification and iteration, whereas information-seeking often takes
+the form of single-turn lookups or tool-assisted retrieval [14, 49].                   3     Study
+    Within this landscape, Brachman et al. [5] validate a four-way                     We conducted a controlled experiment to examine how task type
+taxonomy of LLM use: Creation, Information, Advice, and Automa-                        and latency shape human–LLM interaction and perception. This
+tion. Our study focuses on Creation and Advice, two major task                         section presents the study design and details the system implemen-
+types in knowledge work. Creation tasks include writing an email,                      tation used for latency control and interaction logging.
+brainstorming ideas, or drafting code or prose, while Advice tasks
+involve offering critiques, making recommendations, or helping a                       3.1     Study Design
+user weigh trade-offs. These categories differ in cognitive orienta-
+tion; Creation emphasize open-ended generativity and originality,                      The experiment followed a 2 × 3 between-subjects design with 240
+and Advice emphasize evaluative guidance and reliability.                              crowdsourced participants. Participants were randomly assigned
+    Empirical contrasts reinforce that latency may be interpreted                      to one of the following factors (Figure 1):
+differently by task type. Creation emphasizes novelty and fluency                            • Task-Type: Creation, Advice
+through iterative prompting, whereas Advice emphasizes precision                             • Latency-Level: 2, 9, 20 seconds
+and verification [49, 58]. A 10 s pause may feel reasonable when
+                                                                                       3.1.1 Task-Type. Participants were randomly assigned to one of
+“the AI is coming up with ideas,” but excessive when the goal is a
+                                                                                       two task types (Creation or Advice) drawn from Brachman et al.’s
+binary recommendation. Despite this plausible interaction, latency
+                                                                                       taxonomy [5]. These two categories were chosen for their preva-
+research rarely accounts for task diversity. Controlled studies often
+                                                                                       lence in knowledge work and distinct cognitive orientations (Sec-
+target narrow domains or single tasks, while taxonomy-driven
+                                                                                       tion 2.3). Creation tasks involve producing new content or artifacts
+work maps LLM use without investigating how timing operates
+                                                                                       (e.g., writing an email, or brainstorming ideas). They are generative,
+across categories. This leaves a critical gap in understanding latency
+                                                                                       often open-ended, and emphasize originality. By contrast, Advice
+effects across task types.
+                                                                                       tasks involve evaluative or assistive guidance (e.g., critiquing text,
+                                                                                       or making a recommendation). They foreground accuracy and reli-
+2.4    Positive Friction and Productive Delay                                          ability, often carry higher stakes of “getting it right,” and typically
+Positive friction, an HCI design framework, reframes small, inten-                     unfold as dialogic, back-and-forth exchanges. Together, these task
+tional slowdowns as levers that interrupt automatic responding                         types differ in cognitive demands, urgency, and temporal expecta-
+and encourage more deliberate, effortful reasoning (often described                    tions, making them a useful contrast.
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                         Tan et al.
+
+
+
+
+Figure 1: Study design. Participants were randomly assigned to one of six experimental groups (2 Task-Types × 3 Latency-Levels).
+Each participant completed three tasks of the assigned Task-Type, in randomized order, interacting with the LLM under the
+assigned latency, which remained fixed across all three tasks. System logs recorded user interactions while post-task surveys
+captured self-reports.
+
+
+   Task Scenarios. Within their assigned Task-Type, participants        of the first generated token. We adopt TTFT as an onset-based
+completed three task scenarios (i.e., three Creation or three Advice    proxy for responsiveness, consistent with classic HCI definitions of
+scenarios). Task scenarios served as concrete instantiations of Task-   response time as the interval between user input and initial system
+Types. For each task scenario, participants freely interacted with      feedback [8, 39, 42].
+the LLM for assistance in completing the task, then submitted a            This manipulation was implemented via a custom
+final written response to the task.                                     HTML/JavaScript front-end and a Python back-end, which
+   The scenarios were adapted from prior HCI/AI task designs            fixed TTFT at one of three levels (2, 9, and 20 seconds). After
+[49, 58]. Using multiple distinct scenarios per Task-Type improved      the first token, the streaming rate was fixed at 25 tokens/second
+external validity by ensuring conceptual coverage and reducing          (40 ms inter-token interval) in all conditions. Overall output
+the likelihood that findings were unique to a single case. Below, we    length followed the model’s natural decoding process, allowing
+summarize the scenarios; full task texts are provided in Appendix A.    total generation time to vary with response length. Section 3.2
+                                                                        provides additional details on the technical implementation. This
+   Creation tasks:                                                      design isolates TTFT as the focal manipulation while holding
+   (1) Slogan generation: create and refine a promotional slogan        other temporal components constant. Unmanipulated factors are
+       for a fictional collaboration platform targeted at educators.    discussed as directions for future work (Section 6).
+   (2) Scenario-based brainstorming: propose activity ideas to help        Rationale for Latency Levels. Our latency levels extend thresh-
+       distracted high school students stay on task.                    olds identified in prior HCI research (Section 2.1), adapting them
+   (3) Gap-filling writing: complete the missing middle section of      to LLM interaction dynamics. In this literature, heuristic guidelines
+       an article on the benefits of learning a second language.        at the scale of 1 s and 10 s denote approximate timescale regions
+   Advice tasks:                                                        where qualitative shifts in user experience occur, rather than pre-
+   (1) Personalized recommendation: advise a coworker struggling        cise psychophysical cutoffs. We therefore use 2 s, 9 s, and 20 s to
+       with focus while working from home.                              instantiate short, mid-range, and longer delay timescales.
+   (2) Trade-off analysis: evaluate a decision memo comparing a              • 2 s (low). Prior work suggests that response delays of ∼1–2 s
+       promotion vs. a new job offer, identifying missing consider-            can preserve conversational flow and continuity of thought
+       ations.                                                                 [39]. Because current LLMs rarely respond in sub-second
+   (3) Mock email reply: improve a draft response to a friend con-             timescales, we anchored our shortest latency level at 2 s,
+       sidering a career change to become a full-time artist.                  which serves as a practical lower bound.
+                                                                             • 9 s (moderate). Positioned within the 8–9 s range where psy-
+Within each Task-Type, the three scenarios were presented in sim-              chophysiological studies report elevated strain and frustra-
+ple random order.                                                              tion [23, 57], yet just below the widely cited ∼10 s guideline
+3.1.2   Latency-Level.                                                         for attentional break [42], this level probes user experience
+                                                                               in a range where the character of waiting is expected to shift.
+   Latency Definition. We varied time-to-first-token (TTFT), de-             • 20 s (high). Chosen as a stress-test condition, this level re-
+fined as the interval between prompt submission and rendering                  flects realistic response times for reasoning-oriented LLMs
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                    CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+
+
+Figure 2: System architecture. The Qualtrics survey embeds a web application via an HTML iframe. The front-end displays a
+chat interface, while the Python back-end relays model calls to OpenAI. The back-end then buffers the response stream to
+enforce the assigned TTFT latency and writes anonymized interaction logs to a secure S3 bucket.
+
+
+       under long contexts or inference-time scaling [32]. It exceeds                  3.2.3 Back-End Python API. The Python back-end was hosted on
+       the ∼10 s attentional window and approaches the ∼15 s re-                       Render.com and wrapped the OpenAI API to enforce TTFT latency.
+       gion where context switching becomes likely [42], enabling                      When the front-end submitted a request, it passed the current chat
+       us to examine behavior beyond established continuity limits.                    history, user message, and assigned TTFT value to the server. The
+                                                                                       back-end then initiated a streamed GPT-4o response but buffered
+3.1.3 Pilot validation. We conducted three pilot studies (pilot 1:
+                                                                                       output in memory until the designated TTFT (2 s, 9 s, or 20 s) had
+𝑛 = 20 participants; pilot 2: 𝑛 = 30; pilot 3: 𝑛 = 30) to iteratively
+                                                                                       elapsed. After this TTFT delay, tokens were released at a fixed rate
+refine study materials and verify factor levels. Each pilot recruited
+                                                                                       of 25 tokens/s (40 ms inter-token interval). GPT-4o was selected as
+a unique set of participants, and participants who completed any
+                                                                                       it was the default model provided in the free tier of ChatGPT at the
+pilot study were excluded from the main experiment. Across pilots,
+                                                                                       time of the study, making it familiar to most participants.
+the 2/9/20 s delays were tolerable and subjectively distinguishable;
+                                                                                           In addition to LLM response generation, the back-end exposed
+tasks and instructions were clear, and the end-to-end procedure ran
+                                                                                       logging endpoints. All model queries and user action events (Table
+smoothly. Minor wording and layout adjustments were made. Pilot
+                                                                                       1), along with timing metadata were recorded. Data were securely
+data were excluded from analysis, as they served only to ensure
+                                                                                       stored on AWS S3, retaining only a session identifier.
+feasibility of the final experiment.
+                                                                                       3.2.4 Integrated Participant Interface. We presented the aforemen-
+3.2    System Design                                                                   tioned LLM chat module as part of an integrated layout that com-
+3.2.1 Architecture Overview. We developed a system (Figure 2) that                     bined three elements in the overall experimental interface (Figure 4):
+embedded an LLM assistant within a Qualtrics survey, enabling                             The overall experimental interface comprised:
+natural and intuitive chat-style interaction while allowing us to                          (1) Top panel: Task description outlining the scenario and in-
+control time-to-first-token (TTFT) latency and capture detailed                                structions.
+logs.                                                                                      (2) Middle panel: LLM chat interface, which functions as the
+                                                                                               AI assistant for task support.
+3.2.2 Front-End Interface. The front-end mirrored common LLM
+                                                                                           (3) Bottom panel: A submission box for participants’ final
+assistants (e.g., ChatGPT) and supported six functions:
+                                                                                               answers.
+     • Prompt submission via a text field and send button (Fig-
+       ure 3e).                                                                           This arrangement collocated task context, LLM chat assistant
+     • Chat history view, where responses were streamed token-                         interaction, and participant task authoring, minimizing context
+       by-token and rendered using the marked.js library for                           switching and ensuring that latency manipulations were experi-
+       Markdown-to-HTML and highlight.js for code syntax high-                         enced within a consistent task workflow.
+       lighting (Figure 3b).                                                              Text selection and copying from the task description were dis-
+     • Edit previous prompt (Figure 3c).                                               abled (Figure 4, top panel). However, copy–paste functionality re-
+     • Copy message (Figure 3c & d).                                                   mained enabled within the chat interface. This prevented partici-
+     • Regenerate response (Figure 3d).                                                pants from transferring the full text description directly into the AI
+     • Start new chat to clear the conversation (Figure 3a).                           assistant, but allowed for the reuse or adaptation of AI-generated
+   During response generation, all interactive controls (submit, edit,                 text in the final submissions.
+regenerate, start-new-chat) were temporarily disabled and visually
+muted. A pulsing cursor signaled pending output until the assigned                     3.2.5 Web Application Hosting & Data Privacy. We used Prolific
+TTFT elapsed. The front-end handled all participant inputs and                         to recruit participants and assign them to experimental conditions,
+displayed outputs, while forwarding requests to the back-end for                       with session tokens and condition data passed to Qualtrics via
+latency enforcement.                                                                   URL parameters. The web app (front-end + back-end) was hosted
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                                                Tan et al.
+
+
+
+
+Figure 3: Front-end chat interface with key features highlighted: (a) start or refresh a new chat, (b) chat view with streamed
+responses, (c) edit or copy messages previously input by the user, (d) regenerate or copy responses generated by the model, and
+(e) input field to submit new prompts.
+
+
+on Render.com and embedded in Qualtrics via an HTML iframe.                      • Post-task Survey. After completing all tasks, participants
+Communication between Qualtrics and the app was established                        provided ratings and open-ended reflections (Section 3.5).
+through cross-document messaging, allowing session tokens, task                  • Demographics and Debrief. Participants provided demo-
+type, and latency level to be passed.                                              graphic information and were debriefed about the experi-
+   All communication occurred over secure HTTPS connections,                       ment’s purpose, including the option to withdraw their data.
+and only anonymized session tokens linked to our survey responses             The median completion time was 25 min 12 s.
+were logged by our system. OpenAI does not use API data for model
+training3 .                                                                3.4      Participants
+3.3 Procedure                                                              On Prolific, we restricted eligibility to adults (18+) residing in the
+                                                                           United States. Participants self-reported English proficiency, had at
+Participants were recruited online via Prolific4 and entered the           least 100 prior submissions with a ≥95% approval rate, and reported
+Qualtrics survey. Participants were informed that they had to use          using AI assistants (e.g., ChatGPT, Google Gemini) at least once per
+a laptop or desktop device, and complete the study in one sitting          month for knowledge tasks such as writing or decision-making.
+without refreshing or closing the browser. The study then unfolded            A total of 240 participants were randomized into six experimental
+in the following stages:                                                   conditions, with group sizes as follows:
+     • Consent and Instructions. After IRB-approved consent,
+                                                                                 • Creation: 2 s (𝑛 = 41), 9 s (𝑛 = 42), 20 s (𝑛 = 41)
+       participants were instructed that they would complete three
+                                                                                 • Advice: 2 s (𝑛 = 38), 9 s (𝑛 = 38), 20 s (𝑛 = 40)
+       text-based tasks using an AI assistant. They were introduced
+       to the available chat features (e.g., regenerate, edit, start new      We analyzed data from 309 participants with valid interaction
+       chat, copy–paste), informed that queries had to be text-only,       logs5 . From these, we excluded participants who withdrew consent
+       and told they could interact with the assistant as many times       (n=3), failed the attention check (n=1), or exhibited speeding (n=2).
+       as needed.                                                          We then applied a latency-fidelity rule excluding participants whose
+     • Task Block. Participants completed three tasks within their         median observed latency exceeded 120% of their assigned latency
+       assigned task type, presented in randomized order.
+                                                                           5 Of 343 participants who finished the survey, 34 lacked a valid log due to an intermittent
+3 https://platform.openai.com/docs/guides/your-data
+                                                                           session-token handoff failure during page load. This server-side failure occurred before
+4 https://www.prolific.com                                                 any model calls and was not associated with Latency or Task assignment.
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                   CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+
+
+Figure 4: The experiment’s task interface. The top panel presents the task description, the middle panel is where participants
+interact with the AI assistant, and the bottom panel contains the response field where participants submit their final answer.
+
+
+(𝑛 = 63; see Section 3.5.1 on rationale and preprocessing method).                       Data Preprocessing. Raw logs were preprocessed before analysis:
+The final analytic sample of 240 met the requirement from our a                           • Deduplication: Events occurring within a one-second win-
+priori power analysis for a 2×3 between-subjects design (Cohen’s                            dow were flagged as potential duplicates (e.g., accidental
+𝑓 = 0.25, 𝛼 = .05, power = .80), which required a sample of 𝑁 = 211                         double-clicks). In such cases, the first instance was retained;
+(∼36 per condition). Participant demographics for the final analytic                        subsequent near-duplicates were removed unless manual
+sample are reported in Appendix B.                                                          inspection indicated they reflected intentional actions.
+   Participants were compensated $4 USD for completing the study                          • Latency fidelity: Although fixed latencies (2 s, 9 s, 20 s) were
+(median completion time = 25 min 12 s). The study protocol was                              imposed, runtime fluctuations (e.g., network variability) were
+approved by our institutional review board (IRB).                                           unavoidable. To preserve treatment fidelity, we computed
+3.5    Measures                                                                             each participant’s median TTFT across the three tasks and
+                                                                                            excluded cases where the median exceeded 120% of the as-
+We collected both behavioral and subjective measures to capture                             signed latency. Using a percentage-based cutoff, rather than
+how latency shaped interaction strategies (RQ1), user perceptions                           an absolute time threshold, ensured that participants’ typical
+of output quality (RQ2), and qualitative feedback.                                          waiting experience reflected the intended condition, while
+3.5.1 Interaction Log Measures. Derived from system logs gener-                             the median provided a robust estimate less distorted by out-
+ated by the experimental platform (Section 3.2), interaction mea-                           liers. This approach aligns with Weber’s law [18], which
+sures captured session and task identifiers, event type, and event-                         suggests that time perception scales proportionally rather
+specific metadata (e.g., text length, source of action).                                    than absolutely.
+   Table 1 summarizes the two classes of events: (1) LLM query
+events, which triggered model output and were subject to the la-                          Aggregation. Event counts were aggregated per participant
+tency manipulation, and (2) user action events, which reflected par-                   across the three tasks they completed, then analyzed by Latency-
+ticipants’ handling of outputs (e.g., copying, pasting) but were not                   Level × Task-Type. We did not analyze tasks individually because
+themselves latency-affected.                                                           our focus was at the Task-Type level (Creation vs. Advice) rather
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                                 Tan et al.
+
+
+                                 Table 1: System log events. Latency measures apply only to LLM query events.
+
+             Category                     Event Type        Explanation                                 Parameters Logged
+                                          new-generation    Prompt submission
+                                                                                                        EventTarget, Content, Actual
+             LLM Query Events             edit-generation   Modify previous prompt submission
+                                                                                                        time-to-first-token, Timestamp
+                                          re-generation     Regenerate response to prior prompt
+                                          copy              Copy output text (highlight or button)
+             User Action Events           paste             Paste text into input field                 EventTarget, Content, Timestamp
+                                          new-chat          Start a new AI conversation thread
+
+
+than on unique task variation. This choice is also consistent with               Participants who responded “Yes” (𝑛 = 140) were then displayed
+our survey design, where post-task ratings were collected once after          an open-ended question: “In what ways, if any, did the response de-
+all three tasks, providing an aggregate judgment of the experience.           lays influence how you interacted with the AI Assistant, and how you
+                                                                              judged the quality of its responses (e.g., clarity, usefulness, thought-
+3.5.2 Perceived Response Quality. As part of the post-experiment              fulness, trustworthiness), including whether they matched what you
+survey, participants rated the AI assistant’s responses on seven              expected?” These reflections were analyzed thematically.
+items (7-point Likert scale; 1 = Strongly Disagree, 7 = Strongly
+Agree):                                                                       4     Results
+• Clarity: “The AI assistant’s responses were clear and easy to              We analyzed the quantitative outcome variables using aligned rank
+  understand.”                                                               transform (ART) ANOVA [59], given violations of normality con-
+• Relevance: “The AI assistant’s responses addressed the task                firmed by Shapiro-Wilk tests. Only Latency Perception (categorical)
+  without including irrelevant information.”                                 was analyzed using chi-squared test of independence. For signif-
+• Understanding: “The AI assistant’s responses demonstrated a                icant main effects or interactions, post hoc tests with pairwise
+  correct grasp of the task’s meaning and context.”                          comparisons using ART contrasts and Tukey’s HSD adjustment
+• Thoughtfulness: “The AI assistant’s responses were thoughtful              were conducted [29].
+  and took the nuances of the task into account.”
+• Usefulness: “The AI assistant’s responses were useful for com-
+  pleting the tasks.”
+• Trustworthiness: “I trust the information provided by the AI
+  assistant.”
+• Expectation Gap: “The overall quality of the AI assistant’s re-
+  sponses met my expectations.”
+   These constructs were selected to capture multiple dimensions
+of perceived quality, adapted from prior frameworks for evaluating
+LLM outputs [13, 28, 55]. Participants were instructed to base their
+judgments on their overall experience across tasks.
+
+3.5.3 Cognitive Workload (NASA-TLX). Participants also reported
+their subjective workload via the NASA Task Load Index [19] (6
+dimensions; 0–100 slider scale):
+                                                                              Figure 5: Mean event count per participant for prompt sub-
+• Mental Demand: “How mentally demanding were the tasks?”                     missions across latency and task type. Participants who
+• Physical Demand: “How physically demanding were the tasks?”                 completed Creation tasks submitted significantly more LLM
+• Temporal Demand: “How hurried or rushed was the pace of                     prompts than those who completed Advice tasks. Neither
+  the tasks?”                                                                 latency level nor the interaction effect was significant, indi-
+• Performance: “How successful were you in accomplishing what                 cating that prompt generation was driven primarily by task
+  you were asked to do?”                                                      type. Error bars represent 95% confidence intervals.
+• Effort: “How hard did you have to work to accomplish your level
+  of performance?”
+• Frustration: “How insecure, discouraged, irritated, stressed, and
+  annoyed were you?”                                                          4.1    System Log
+                                                                                Model Query Events. There was a significant main effect of
+3.5.4 Latency Perception and Qualitative Feedback. To assess par-            Task-Type on the number of New-Prompt generation events,
+ticipants’ awareness of delay, the post-experiment survey included           𝐹 (1, 236) = 8.57, 𝑝 = .004, 𝜂𝑝2 = .035. Participants in the Advice
+the question: “Did you notice any delay in the AI assistant’s responses      condition (𝑀 = 5.14, 𝑆𝐷 = 2.33, 95% CI [4.72, 5.57]) submitted
+while completing the tasks?” (Yes/No).                                       fewer new prompts compared to those in the Creation condition
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                    CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+
+
+Figure 6: Mean ratings (±95% CI) by latency and task type. Ratings are displayed on a truncated scale (5–7) for visual clarity;
+all measures were collected on a 1–7 Likert scale. Creation responses were higher than Advice on Clarity (**), Relevance (*),
+Understanding (**), and Usefulness (***). Thoughtfulness increased with latency (2 s < 9 s ** ; 2 s < 20 s *); Usefulness was greater
+at 9 s than 2 s (*). Asterisks denote levels of statistical significance (* 𝑝 < .05, ** 𝑝 < .01, *** 𝑝 < .001).
+
+
+(𝑀 = 6.20, 𝑆𝐷 = 2.94, 95% CI [5.68, 6.72]). The pairwise compari-                         Relevance: There was a significant main effect of Task-Type,
+son was statistically significant, 𝑡 (236) = −2.93, 𝑝 = .004, Cohen’s                  𝐹 (1, 234) = 4.14, 𝑝 = .043, 𝜂𝑝2 = .018. Participants rated LLM re-
+𝑑 = −0.40. Neither Latency-Level nor the interaction effect was                        sponses in the Creation condition as more relevant (𝑀 = 6.23, 𝑆𝐷 =
+significant, suggesting that prompting behavior was driven more                        .91, 95% CI [6.07, 6.40]) than those in the Advice condition (𝑀 =
+by differences in Task-Type than by Latency-Level.                                     5.91, 𝑆𝐷 = 1.15, 95% CI [5.70, 6.13]). No significant effects of
+   Editing and regenerating prompts was very rare. Only 13 out of                      Latency-Level or interaction were observed.
+240 participants (5.4%) made any edits, while 16 out of 240 partici-
+pants (6.7%) regenerated an LLM response. No statistically signifi-                       Understanding: A significant main effect of Task-Type was
+cant effect was found.                                                                 found, 𝐹 (1, 234) = 7.12, 𝑝 = .008, 𝜂𝑝2 = .031. Participants rated LLM
+                                                                                       responses in the Creation condition (𝑀 = 6.33, 𝑆𝐷 = .67, 95% CI
+                                                                                       [6.21, 6.45]) as demonstrating stronger task understanding than that
+   User Action Events. Copy actions (via text highlight or the copy
+                                                                                       of the Advice condition (𝑀 = 6.16, 𝑆𝐷 = .75, 95% CI [6.02, 6.29]). No
+button) were frequent, with 90.1% of participants using them at least
+                                                                                       significant effects of Latency-Level or interaction were observed.
+once. Paste actions were less common (45.8%), suggesting that while
+the majority of participants copied model outputs, fewer pasted                           Thoughtfulness: A significant main effect of Latency-Level
+text outputs directly into the task response box. New-chat resets                      emerged, 𝐹 (2, 234) = 5.12, 𝑝 = .007, 𝜂𝑝2 = .037. No significant effect
+were rarer, initiated by 10.8% of participants. For all event types, no                of Task-Type or interaction was detected.
+significant main or interaction effects were detected (𝑝 > .05).                          Post-hoc comparisons indicated that LLM responses at 2 s latency
+   Overall, interaction patterns around LLM prompting were                             (𝑀 = 5.76, 𝑆𝐷 = 1.18, 95% CI [5.50, 6.02]) were rated less thoughtful
+shaped more by Task-Type than by Latency-Level; Creation tasks                         than those at 9 s (𝑀 = 6.09, 𝑆𝐷 = 0.90, 95% CI [5.89, 6.29]; 𝑝 = .008)
+elicited more New-Prompt submissions. While copying was the                            and 20 s (𝑀 = 6.11, 𝑆𝐷 = 0.82, 95% CI [5.93, 6.29]; 𝑝 = .040). No
+most frequent user action, the use of copy, paste, and new-chat                        other pairwise differences were significant.
+features was not affected by condition.                                                   Overall, responses with longer latencies (9–20 s) were perceived
+                                                                                       as more thoughtful compared to very short waits (2 s).
+4.2 Perceived Quality of LLM Responses                                                    Usefulness: Significant main effects of both Task-Type and
+   Clarity: A significant main effect of Task-Type was found,                          Latency-Level were observed. For Task-Type, 𝐹 (1, 234) = 34.9, 𝑝 <
+𝐹 (1, 234) = 7.68, 𝑝 = .006, 𝜂𝑝2 = .033. LLM responses in the Creation                 .001, 𝜂𝑝2 = .13, LLM responses for Creation condition were rated
+condition (𝑀 = 6.47, 𝑆𝐷 = .64, 95% CI [6.35, 6.58]) were rated                         as more useful (𝑀 = 6.52, 𝑆𝐷 = .72, 95% CI [6.39, 6.64]) than those
+clearer than those in the Advice condition (𝑀 = 6.30, 𝑆𝐷 = .71, 95%                    in the Advice condition (𝑀 = 6.18, 𝑆𝐷 = .88, 95% CI [6.02, 6.34];
+CI [6.17, 6.43]). No significant effects of Latency-Level or interaction               𝑝 < .001). For Latency-Level, 𝐹 (2, 234) = 3.61, 𝑝 = .028, 𝜂𝑝2 = .032,
+were observed.                                                                         post hoc comparisons showed that responses at a 9 s latency
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                             Tan et al.
+
+
+(𝑀 = 6.44, 𝑆𝐷 = .67, 95% CI [6.29, 6.59]) were rated more use-
+ful than those at a 2 s latency (𝑀 = 6.19, 𝑆𝐷 = 1.01, 95% CI [5.96,
+6.42]; 𝑝 = .021). No other pairwise differences were significant.
+   Overall, responses were perceived as more useful in Creation
+tasks, with usefulness peaking at moderate (9 s) latency.
+    Trustworthiness: No significant main or interaction effects
+were observed (𝑝 > .05). Mean ratings across all conditions were
+moderately high (𝑀 = 5.80–6.19 on a 7-point scale). This suggests
+participants expressed moderate trust in the LLM’s responses, with
+little variation conditions.
+   Expectation Gap: There were no significant main or interac-
+tion effects (𝑝 > .50). Mean ratings across all conditions were high
+(6.05–6.42 on a 7-point scale), corresponding to “agree” to “strongly
+                                                                           Figure 7: Percentage of participants who reported noticing
+agree.” This indicates that participants consistently felt the AI Assis-
+                                                                           the LLM’s response delay (“Yes”) by latency level and task
+tant’s responses met their expectations, with little variation across
+                                                                           type. Bars show proportions with Wilson 95% CIs.
+conditions.
+
+   Across measures, participants assigned to Creation tasks per-
+ceived the LLM’s responses more favorably than those in Advice             participants interpreted the delay. The first author created an initial
+tasks, rating them significantly higher in clarity, relevance, un-         codebook based on a pilot set. Two non-author coders indepen-
+derstanding, and usefulness. In terms of Latency effects, responses        dently coded the full dataset; any discrepancies were resolved by
+were perceived as more thoughtful and useful at moderate or longer         discussion. The inter-rater reliability was 𝜅 = .46–.80, all 𝑝 < .001.
+latencies (9–20 s) compared to very short waits (2 s).                        Definitions and illustrative quotes are provided in Appendix C
+                                                                           to clarify and ground each theme. Below, we report theme counts
+4.3     NASA-TLX (Workload)                                                to convey relative salience rather than to test between-group dif-
+                                                                           ferences.
+ANOVAs revealed no significant main or interaction effects of Task-
+Type or Latency-Level on any NASA-TLX dimension (all 𝑝 > .05).                Theme 1: No/Minimal Impact. This was the most frequent
+Descriptively, participants reported:                                      theme overall, coded for 63 participants (≈45%). Responses indi-
+   Mental Demand: Moderate levels (𝑀 = 52.4-56.2), indicating              cated that while delays were noticed, they were often regarded
+the tasks required a fair amount of concentration.                         as inconsequential to how participants interacted with or evalu-
+   Physical Demand: Low levels (𝑀 = 20.7-26.1), consistent with            ated the AI. Within-condition proportions suggest this framing was
+the nature of the task.                                                    especially common in the shortest waits (44-58% across 2 s condi-
+   Temporal Demand: Moderate levels (𝑀 = 25.9-34.9), suggest-              tions, compared to ≈37–47% across the 9 s and 20 s conditions). The
+ing participants did not feel too much time pressure.                      pattern was similar across task types.
+   Performance: High ratings of success (𝑀 = 84.2-89.2), indicat-
+ing participants generally felt they performed well.                          Theme 2: Inferred AI Deliberation. 43 participants (≈31%)
+   Effort: Moderate effort (𝑀 = 63.9-67.0), suggesting participants        interpreted the latency as evidence of the AI “thinking” or “pro-
+had to work somewhat hard but not excessively so.                          cessing,” sometimes raising expectations for more thoughtful or
+   Frustration: Low frustration (𝑀 = 10.3-16.9), suggesting partic-        higher-quality outputs. This interpretation was more typical of
+ipants rarely felt so.                                                     longer pauses, suggesting they were more readily framed as con-
+                                                                           structive deliberation. Prevalence was similar across task types.
+4.4     LLM Latency Perception                                                Theme 3: Quality-Contingent Value. 14% of the participants
+A chi-square test of independence revealed a strong association            emphasized that waiting was acceptable if the LLM ultimately pro-
+between condition and latency perception, 𝜒 2 (5, 𝑁 = 240) =               duced clear, detailed, or accurate responses. The perceived worth
+54.29, 𝑝 < .001, Cramer’s 𝑉 = .48, indicating a large effect. In           of waiting was thus conditional on output quality. A notable dip
+the Creation task, 29.3% noticed latency at 2 s, rising to 60.5% at 9 s,   occurred in the 20 s Advice condition (≈6%), suggesting that very
+and 80.0% at 20 s. A similar trend was observed in the Advice task,        long waits during Advice tasks were less perceived as worthwhile.
+with 23.7% noticing latency at 2 s, 73.0% at 9 s, and 82.9% at 20 s.
+This pattern suggests that participants were more likely to perceive          Theme 4: Self-Regulatory Use of Wait Time. Only 5 partici-
+latency at longer wait times, regardless of task type.                     pants (≈4%), all in the 9 s latency conditions, described using delays
+                                                                           productively (e.g., planning the next query or re-reading instruc-
+4.5     Qualitative Response                                               tions).
+Only participants who reported noticing a delay (in the Latency              Theme 5: Negative Affective Cost. Only 7% of the participants
+Perception question) provided open-ended reflections (𝑛 = 140). We         described delays as frustrating, anxiety-inducing, or disruptive.
+thematically analyzed open-ended responses to characterize how             Mentions of this theme rose as latencies extended.
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                      CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+   Theme 6: System Reliability Concern. 14% of all participants                        patterns in how users make sense of waiting, which we elaborate
+attributed delays to potential technical or system issues (e.g., poor                  in the next section.
+connectivity or model inefficiency). It was most prevalent in the
+                                                                                           Latency as Normalized Waiting. One explanatory lens for this
+longest waits and Advice tasks.
+                                                                                       robustness in interaction behavior is the conversational structure
+   Theme 7: Interaction Strategy Adaptation. 9% of all partic-                         of LLM interaction. Conversation analyses show that pauses are a
+ipants reported adapting their prompting strategies in response                        routine and interpretable feature of turn-taking [48]. In LLM-based
+to delays; for example, consolidating more information into single                     knowledge work, pauses are normalized as part of a turn-based
+prompts, reducing the number of queries, or double-checking out-                       exchange with a “black box” partner, and Kuang et al. [25] highlight
+puts. Such adaptations emerged primarily at the higher latencies,                      how timing in conversational AI shapes user trust and engagement.
+indicating that longer delays encouraged more strategic adjust-                            Furthermore, qualitative feedback in our study indicates that
+ments to interaction style.                                                            the majority of participants either downplayed delays as having
+                                                                                       No or Minimal Impact (≈45%) or reinterpreted them as signs of AI
+   Taken together, these themes reveal a spectrum of ways partici-                     Deliberation (≈31%). As P23 explained, “I just assumed since the AI
+pants made sense of latency, from dismissing it as inconsequential                     was providing quite a bit of information, that it was taking a little time
+to their task workflow, to reframing it as evidence of deliberation                    to generate” (20 s, Advice). This pattern suggests that participants
+or a chance for productive use. We use these mechanisms to ground                      not only normalized waiting but in some cases anthropomorphized
+the design discussion and implications that follow.                                    the system, attributing delays to the AI “thinking” and even showing
+                                                                                       a degree of empathy toward its effort [3].
+                                                                                           At the same time, a smaller subset of participants reported adapt-
+5     Discussion                                                                       ing their interaction strategies to avoid repeated exchanges. P1
+This study investigated how response latency and task type shape                       shared: “I included as much information I could with the prompt,
+users’ interaction with LLMs. The following sections interpret the                     knowing that if I did not I would have to follow up with another
+findings, connecting them to the broader HCI literature and extract-                   prompt, which would make the task even longer” (20 s, Creation),
+ing implications for design, ethics, and future research.                              and P20 stated, “I tried to minimize the number of prompts per
+                                                                                       task because I got annoyed at the response delay” (20 s, Advice).
+5.1    Interaction Behavior: Robustness to Latency                                     Of the 12 participants who described changing their behavior in
+       (RQ1)                                                                           this way, 7 were in the 20 s condition. While not conclusive, this
+                                                                                       pattern may reflect a satisficing tendency [11] at higher latencies,
+   Consistent Behaviors Across Latency Durations. Regardless of
+                                                                                       i.e. when an answer was usable, participants often reduced further
+whether onset delays were 2 s, 9 s, or 20 s, participants submitted
+                                                                                       prompting rather than continuing to iterate. Evidence of other costs,
+new prompts, copied outputs, and pasted or refreshed the chat at
+                                                                                       such as frustration or concerns about reliability, also became more
+similar rates. Editing and regenerating were rare overall (≈5–7% of
+                                                                                       common at the longest 20 s delays. While these experiences were
+participants engaged in such actions), suggesting a strong prefer-
+                                                                                       not widespread enough to alter overall interaction patterns, they
+ence for issuing new prompts over modifying or re-running prior
+                                                                                       highlight boundary conditions under which latency may begin to
+ones. The minimal revisiting of previous responses aligns with
+                                                                                       undermine engagement.
+evidence that modifying earlier AI outputs within chat-based in-
+terfaces imposes substantial interaction costs: users must scroll
+through transcripts, locate specific elements in prior responses,
+                                                                                       5.2    Prompting Frequency: Shaped by Task Type
+and manually reference them, making such revision comparatively                               (RQ1)
+effortful [16]. Beyond interactional frictions, motivational factors                      Cognitive Demands of Creation vs. Advice Tasks. A clear effect of
+may also contribute. XAI research shows that users choose to invest                    task type emerged in prompting behavior. Participants attempting
+effort in additional interaction only when they expect it to advance                   Creation tasks submitted significantly more new prompts (𝑀 = 6.20,
+their goals [30]. Notably, this pattern held even at the longest delays                𝑆𝐷 = 2.94) than those in Advice tasks (𝑀 = 5.14, 𝑆𝐷 = 2.33).
+(20 s). Participants did not prefer more conservative strategies to                    Other logged user actions (e.g., copy–paste) showed no systematic
+avoid the “cost” of waiting. Instead, they consistently favored new                    differences (Section 4.1), underscoring that the main behavioral
+prompts.                                                                               divergence lay in prompt submissions.
+   In response to the question, “Did you notice any delay in the AI                       This pattern aligns with the divergent–convergent split in knowl-
+assistant’s response while completing the tasks?”, recognition rose                    edge work. Divergent tasks, i.e., open-ended exploration, often en-
+significantly with latency level, from ≈26.6% at 2 s to 66.3% at 9 s and               courage repeated prompting, as users probe the model to expand
+81.5% at 20 s (averaged across task types), confirming the effective-                  or refine ideas. For example, a task like slogan generation (in the
+ness of the experimental manipulation. Several interpretations may                     Creation condition) could plausibly invite participants to request
+account for why some participants, particularly in longer latency                      multiple variations until one “felt right.” By contrast, evaluative
+conditions, did not report noticing the wait. Users may normalize                      Advice tasks may conclude once a satisfactory answer is obtained.
+pauses as conversational turn-taking [21, 48], interpret the pause                     Put differently, Creation tasks encourage prompting because each
+as the AI “thinking” [25] rather than as a delay, pay more conscious                   turn can produce new ideas, whereas in Advice tasks the marginal
+attention to the content of the output than to its timing, or inac-                    value of further queries diminishes after sufficiency is reached. Prior
+curately recall the delay [15]. These tendencies align with broader                    work similarly shows that generative AI sustains divergent cycles
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                              Tan et al.
+
+
+of idea generation [6, 27], whereas convergent use curtails further            Trust and Acceptance vs. “Too Slow”. Trust ratings remained
+interaction once sufficiency is reached [5, 30, 33].                       high across all latency conditions, even at 20 s delays. Expectation-
+                                                                           gap scores similarly indicated that participants, regardless of task
+   Design and engineering implications. The significant influence          type and latency level, felt the AI assistant’s responses met their
+of task-type on prompting frequency may carry practical conse-             expectations. Qualitative accounts reinforce this pattern: many par-
+quences. For developers of LLM-based applications, Creation tasks          ticipants expressed a quality-contingent value perspective, treating
+(which elicited more prompts) are likely to entail greater token           delays as acceptable, or even “worth it” (P129, P135), when the
+consumption, longer interaction chains, and increased context-             output was clear, detailed, or accurate. For instance, P104 remarked
+retention overhead, thereby increasing computational costs and             “I did not mind the response delays due to the quality of the responses”
+infrastructure demands. By contrast, Advice tasks may generate             (9 s, Creation). In these cases, participants granted the slower AI the
+shorter sessions with fewer turns, but appear more sensitive to the        benefit of the doubt so long as the response itself was satisfactory.
+impact of individual delays. These distinctions offer a starting point
+                                                                              However, qualitative feedback also revealed limits to this toler-
+for reasoning about how task orientation structures interaction
+                                                                           ance. In the longest-delay condition (20 s), especially for Advice
+patterns and how such differences may be accounted for in system
+                                                                           tasks, some participants began to lose patience or question the
+design, optimization, and resource planning.
+                                                                           system’s reliability: “The responses were fine but the response
+                                                                           time made me question if my internet cut off” (P100, 20 s, Advice).
+5.3     User Perceptions: Latency’s Influence on                           Perceived usefulness dipped slightly in these cases, and explicit
+        Quality and Experience (RQ2)                                       mentions of waiting being “worth it” declined. This suggests a
+                                                                           threshold effect: modest delays can enhance perceived value, but
+Perceptions of AI output quality are critical because they shape
+                                                                           very long waits risk backfiring, reframing latency as inefficiency
+trust, reliance, and willingness to integrate results into knowledge
+                                                                           rather than deliberation.
+work [26, 30]. Prior research shows that subjective impressions
+are as crucial as objective accuracy in determining adoption and
+use [6, 12]. In our study, all LLM responses were generated by the             Calibrating the “Sweet Spot” of Latency. Across measures, the
+same underlying model, yet variations in latency and task type             findings suggest a temporal zone of benefit. Very fast responses
+significantly shaped how users judged their quality.                       (2 s) were often discounted as superficial, while moderate latencies
+                                                                           (9 s) produced the most favorable evaluations, particularly for use-
+   Perceived Thoughtfulness. Responses delivered after very                fulness. Longer waits (20 s) did not enhance thoughtfulness and, for
+short delays (2 s) were judged as less thoughtful than those fol-          some participants, tipped into frustration or reliability concerns. In
+lowing moderate or longer waits (9–20 s). This pattern aligns with         other words, modest pauses could enhance perceptions of quality,
+the AI Deliberation theme, in which slower responses were inter-           but excessive waiting risked backfiring, reframing latency as ineffi-
+preted as evidence of system deliberation. Such interpretations are        ciency rather than deliberation. This aligns with the principle of
+consistent with the effort heuristic, whereby people infer quality         positive friction [9, 63], which holds that small, well-calibrated slow-
+from perceived effort [24], and, in this context, are accompanied by       downs can foster reflection, whereas excessive friction undermines
+anthropomorphic attributions of deliberation to the system. Prior          engagement.
+work similarly shows that slower algorithmic advice can be judged
+                                                                              Crucially, these perceptual shifts were not mirrored in workload
+as more accurate or trustworthy because delays are read as signs
+                                                                           outcomes. No NASA-TLX dimension (e.g., frustration, effort, per-
+of deliberation [44]. Overall, this suggests that latency can bias
+                                                                           formance) showed significant differences across latency levels or
+evaluations of depth independently of content.
+                                                                           task type. This dissociation suggests that latency shaped how users
+                                                                           interpreted the LLM responses, not how much cognitive burden
+   Perceived Usefulness. Ratings were highest at moderate laten-
+                                                                           they experienced. Some participants even qualitatively described
+cies (≈9 s) and lower at both shorter (2 s) and longer (20 s) waits, and
+                                                                           using pauses productively (e.g., reviewing instructions, planning
+were significantly higher for Creation tasks than for Advice tasks.
+                                                                           the next query, or briefly multitasking), folding latency into the
+Unlike thoughtfulness, which is closely associated with users’ attri-
+                                                                           rhythm of their workflow. From a distributed cognition perspec-
+butions of cognitive effort, usefulness reflects the pragmatic value
+                                                                           tive [20], such appropriation illustrates how temporality is not just
+of the output for accomplishing the task, grounding evaluation in
+                                                                           a single system’s parameter but a cognitive resource that users
+instrumental utility rather than process attributions [55]. Consis-
+                                                                           coordinate across tasks, artifacts, and activities.
+tent with this view, prior work on chatbot guidance shows that the
+same content can be judged as useful or disruptive depending on               As LLMs deliver increasingly fast responses, users’ interpreta-
+when it is delivered [60], underscoring the temporal contingency           tions of latency may recalibrate with repeated exposure and more
+of perceived utility. For design, this suggests a trade-off: moderate      accurate mental models of system capability. Such recalibration
+pauses may enhance perceived usefulness, whereas longer delays             may weaken attributions of AI “deliberation,” reducing the tendency
+risk inflating expectations, particularly in Advice contexts where         to view fast responses as shallow or mismatched to task demands.
+additional “thinking time” does not necessarily yield better out-          At the same time, users may remain sensitive to delays that violate
+puts [54]. Designers must therefore weigh the potential benefits of        learned expectations. Understanding how temporal expectations
+calibrated pauses against the risk of overstating the practical value      evolve under sustained use is therefore an important direction for
+of the system’s outputs.                                                   longitudinal research.
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                    CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+5.4     Design Implications                                                            erode trust. Designers should therefore avoid one-size-fits-all ap-
+While prior HCI research has treated latency largely as a model per-                   proaches and consider whether adaptive or user-controlled pacing
+formance constraint, our results show that it also shapes meaning-                     better supports diverse situational needs.
+making in interaction. This reframing expands the design space:                           At the same time, deliberately manipulating response speed sits
+rather than optimizing solely for speed, designers can intention-                      uneasily between positive friction and potential deception. While
+ally use response timing to influence perceived quality, trust, and                    prior work shows that modest delays can reduce automation bias
+engagement. Below, we outline four design implications.                                and promote reflection [7, 44], the absence of clear explanations
+                                                                                       for timing can lower perceived transparency and trust [62]. Recent
+      • Instantaneous output need not be the priority. In our                          work on deceptive design patterns in LLM-based interfaces sharp-
+        study, the shortest onset delay (2 s) was consistently rated                   ens this concern. Shi’s taxonomy [50] identifies how temporal cues
+        less thoughtful and less useful than slower responses. This                    (such as hesitation, slowed pacing, or staged disclosure of output)
+        suggests that faster replies can undercut perceptions of depth.                can function as performative deliberation. This deceptive interaction
+        Developers of productivity tools (e.g., writing assistants or                  pattern simulates cognitive effort and leads users to overattribute
+        research copilots) might deliberately pace responses, even if                  reasoning or competence to the system.
+        the model could respond faster.                                                   This tension is well-captured by discussions of benevolent decep-
+      • Mid-length pauses can be leveraged strategically. Mod-                         tion [1], which note that designers sometimes introduce deceptive
+        erate waits (≈9 s) were occasionally reframed by participants                  cues to bridge gaps between system behavior and user expectations.
+        as useful, with some reporting they used the time to re-read                   The Motive–Means–Opportunity model provides an analytic vo-
+        instructions or plan next steps. This suggests that latency                    cabulary for examining when such practices arise. In the case of
+        can be repurposed as a resource. In learning technologies,                     latency manipulation, the motive may be to support reflection or
+        such pauses might be paired with micro-prompts (e.g., “What                    reduce human error, the means involve shaping observable system
+        would you expect the answer to include?”) to engage users in                   behavior, and the opportunity arises because users cannot readily
+        anticipatory thinking. Lightweight system cues (“analyzing                     verify true processing time. Crucially, the ethical status of such
+        your request. . . ”) can also normalize waiting and preserve                   interventions is context-dependent, shaped by the availability of
+        trust. Section 6 suggests testing whether scaffolds during                     truthful alternatives and long-term implications for user trust [1].
+        waits amplify their reflective value.                                             These considerations underscore the importance of transparency
+      • Mitigate the costs of long delays. Even at 20 s, latency did                   when timing is intentionally shaped. Delays arising from genuine
+        not substantially alter prompting behavior, though a subset                    computation may require little justification, but when pacing is
+        of participants reported concerns about system reliability.                    designed to influence user interpretation, offering users insight into
+        These reactions suggest a potential boundary condition: very                   this behavior, or control over it, helps preserve agency. Without
+        long delays risk being interpreted as inefficiency rather than                 such transparency, users may conflate interactional pacing with
+        deliberation. These risks may be especially salient in contexts                signals of epistemic depth, leading to distorted trust calibration.
+        where timely feedback matters.
+      • Calibrate latency to task orientation. Creation tasks
+        elicited more prompting than Advice tasks, and their outputs                   6   Limitations and Future Work
+        were rated more favorably across several quality dimensions.                      Latency Manipulation. Our study manipulated only time-to-
+        This suggests that latency design should be task-aware rather                  first-token (TTFT), the onset of latency, while holding streaming
+        than uniform. A practical implication is that systems could                    throughput constant and testing three discrete latency levels (2,
+        adapt response pacing based on inferred task intent, treating                  9, and 20 s). TTFT captures an important component of perceived
+        latency as a tunable interaction parameter rather than a fixed                 responsiveness, but it represents only one part of the temporal
+        system property.                                                               experience. Other factors (such as streaming pace, total response
+                                                                                       duration, variability across turns, and the relation between latency
+5.5     Ethical Considerations                                                         and output length) likely also shape how latency is perceived. Ac-
+Our findings highlight that latency is not only a technical parameter                  cordingly, our findings can only support comparative claims across
+but also an interpretive cue with ethical implications. Users in our                   coarse latency levels, but do not establish whether user perceptions
+study often read longer delays as signs of deliberation, even though                   follow a continuous curve or hinge on discrete temporal thresh-
+the underlying content was generated by the same AI model. Such                        olds. Future work should therefore report full timing schematics
+interpretations risk uneven effects across user groups - novices                       (assigned and observed TTFT, token counts, total generation time)
+or those with less domain knowledge may be more likely to over-                        and test finer-grained manipulations, including relative changes
+trust “slow” outputs, while experts remain more skeptical [17, 31].                    in TTFT (Weber-like proportionality), throughput, and cue-based
+This raises concerns about fairness and equity, as latency could                       transparency.
+inadvertently reinforce disparities in how different populations
+calibrate trust in AI systems.                                                            Task Context and Generalizability. Our study was conducted
+   The ethics of latency are also highly contextual. In reflective                     in a controlled experimental environment, where participants faced
+or creative work, modest delays may provide valuable pauses for                        no real consequences for latency and may therefore have been more
+sensemaking, while in time-critical settings such as healthcare, fi-                   tolerant of waiting than in professional or time-critical contexts.
+nance, or safety, even small artificial waits could introduce risk or                  This tolerance likely reflects the absence of external pressures such
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                                         Tan et al.
+
+
+as deadlines, accountability to colleagues, or financial stakes. More-    (such as concurrent human work and background AI processing),
+over, the tasks were designed so that all required information was        latency may be absorbed as users shift attention elsewhere and re-
+presented within a single interface panel (Figure 4), minimizing          ceive results just in time. By contrast, in synchronous collaboration
+the need to retrieve, coordinate, or synthesize information across        (e.g., real-time decision support), even small delays may remain
+digital, physical, interpersonal, or cognitive sources. By contrast,      disruptive if they slow turn-taking or coordination. Exploring how
+real-world knowledge work is typically distributed and interleaved:       latency design should differ across synchronous and asynchronous
+workers move between files, applications, ideas, and conversations        settings is an important direction for future research.
+under competing demands. In such settings, latency may be ab-
+sorbed into opportunities for multitasking or, alternatively, disrupt     7    Conclusion
+the coordination required across people, artifacts, and contexts. Fu-     This study examined how LLM response latency and task type shape
+ture work should investigate latency in ecologically richer settings      user interaction. We found that user interaction behaviors remained
+(e.g., multi-document tasks, collaborative workflows, time-sensitive      consistent across latency conditions, but perceptions of output
+decisions) to understand how delays shape broader work rhythms.           quality varied. Short delays reduced perceived thoughtfulness and
+                                                                          usefulness, moderate delays improved evaluations, and long delays
+    Sociocultural Context. Participants were recruited from Pro-
+                                                                          sometimes undermined perceptions of system reliability.
+lific and limited to U.S.-based adults who reported regular use of AI
+                                                                             From a design perspective, our findings suggest that response
+assistants, implying relatively high digital familiarity and exposure
+                                                                          speed should be calibrated rather than minimized, since different
+to LLM systems. However, prior work suggests that cultural norms
+                                                                          task contexts demand different balances between immediacy, per-
+and digital literacy shape how waiting is experienced, influencing
+                                                                          ceived effort, and reliability. Building on this, a social perspective
+patience thresholds, tolerance for uncertainty, and trust in system
+                                                                          highlights how users sometimes humanize the AI system itself,
+feedback [36]. Expectations of immediacy versus deliberation may
+                                                                          interpreting delays as signs of deliberation and even responding
+therefore differ across cultures and between novice and expert users.
+                                                                          with patience or empathy. These social dynamics, in turn, surface
+Future work should examine response latency in more diverse cul-
+                                                                          ethical concerns: interpretations of delay may calibrate trust in
+tural and demographic contexts, to understand how perceptions of
+                                                                          unequal ways across user groups, raising questions about fairness
+latency, quality, and trust in LLMs vary across groups.
+                                                                          and transparency. Finally, from a future research perspective, these
+   Generation Cues and Transparency Interventions. We delib-              insights point toward the need to examine latency in more complex
+erately adopted a cue-free interface, omitting progress indicators        and distributed work settings, where the rhythms of waiting may
+such as “thinking” labels during the study’s wait period. This design     align with or disrupt AI-supported knowledge work.
+choice allowed us to isolate whether time itself could act as a signal       Taken together, this work positions latency as a central dimen-
+to users, independent of any UI messaging. In practice, however,          sion of interaction design for AI systems: not simply a barrier to
+some commercial LLM platforms surface feedback during waiting,            be removed, but a design factor that shapes perceptions, trust, and
+ranging from simple progress indicators to emerging “reasoning-           collaboration.
+mode” displays that reveal intermediate steps of model processing.
+Such cues may influence not only perceived thoughtfulness and             Acknowledgments
+trust but also how users structure their prompting strategies and         This work was supported by the National Science Foundation (NSF)
+workflow transitions. Future work can systematically vary cue pres-       under grants 1928614 and 2129076. We are also grateful to our
+ence, type, and granularity alongside latency to better understand        colleagues for their constructive feedback.
+how temporal signals and transparency jointly shape perceptions
+of effort and trust.                                                      References
+                                                                           [1] Eytan Adar, Desney S. Tan, and Jaime Teevan. 2013. Benevolent deception in
+   Latency and the Future of Work. Future work should extend                   human computer interaction. In Proceedings of the SIGCHI Conference on Human
+these insights beyond isolated prompt–response exchanges to more               Factors in Computing Systems (CHI ’13). Association for Computing Machinery,
+                                                                               New York, NY, USA, 1863–1872. https://doi.org/10.1145/2470654.2466246
+complex, agentic scenarios. In emerging forms of delegated or au-          [2] Ioannis Arapakis, Xiao Bai, and B. Barla Cambazoglu. 2014. Impact of response
+tonomous AI, response times may scale dramatically or take new                 latency on user behavior in web search. In Proceedings of the 37th international
+                                                                               ACM SIGIR conference on Research & development in information retrieval (SIGIR
+forms (e.g., background tasks that return results minutes or hours             ’14). Association for Computing Machinery, New York, NY, USA, 103–112. https:
+later). In such contexts, the significance of latency may depend               //doi.org/10.1145/2600428.2609627
+less on its duration than on how delays are surfaced, scheduled, or        [3] Theo Araujo. 2018. Living up to the chatbot hype: The influence of anthropomor-
+                                                                               phic design cues and communicative agency framing on conversational agent
+integrated into broader workflows.                                             and company perceptions. Computers in Human Behavior 85 (Aug. 2018), 183–189.
+   Productive use of pauses. Some participants reported using pauses           https://doi.org/10.1016/j.chb.2018.03.051
+to review instructions, plan the next query, or briefly multitask. This    [4] Michelle Brachman, Amina El-Ashry, Casey Dugan, and Werner Geyer. 2024.
+                                                                               How Knowledge Workers Use and Want to Use LLMs in an Enterprise Context. In
+suggests that waiting may function as a resource for coordination,             Extended Abstracts of the CHI Conference on Human Factors in Computing Systems
+not merely an interruption. Future work should examine when and                (CHI EA ’24). Association for Computing Machinery, New York, NY, USA, 1–8.
+                                                                               https://doi.org/10.1145/3613905.3650841
+how users appropriate pauses across different types of work, and           [5] Michelle Brachman, Amina El-Ashry, Casey Dugan, and Werner Geyer. 2025.
+under what conditions delays support reflection versus distraction.            Current and Future Use of Large Language Models for Knowledge Work. https:
+   Synchronous vs. asynchronous collaboration. As AI systems evolve            //doi.org/10.48550/arXiv.2503.16774
+                                                                           [6] Erik Brynjolfsson, Danielle Li, and Lindsey Raymond. 2025. Generative AI at
+from reactive chat tools to semi-autonomous collaborators, the ex-             Work. The Quarterly Journal of Economics 140, 2 (May 2025), 889–942. https:
+perience of waiting may be reconfigured. In asynchronous scenarios             //doi.org/10.1093/qje/qjae044
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                                CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+ [7] Zana Buçinca, Maja Barbara Malaya, and Krzysztof Z. Gajos. 2021. To Trust                  //doi.org/10.1145/3706598.3713778
+     or to Think: Cognitive Forcing Functions Can Reduce Overreliance on AI in             [28] Mina Lee, Megha Srivastava, Amelia Hardy, John Thickstun, Esin Durmus, Ash-
+     AI-assisted Decision-making. Proc. ACM Hum.-Comput. Interact. 5, CSCW1 (April              win Paranjape, Ines Gerard-Ursin, Xiang Lisa Li, Faisal Ladhak, Frieda Rong,
+     2021), 188:1–188:21. https://doi.org/10.1145/3449287                                       Rose E Wang, Minae Kwon, Joon Sung Park, Hancheng Cao, Tony Lee, Rishi
+ [8] Stuart K. Card, Allen Newell, and Thomas P. Moran. 1983. The Psychology of                 Bommasani, Michael S. Bernstein, and Percy Liang. 2023. Evaluating Human-
+     Human-Computer Interaction. L. Erlbaum Associates Inc., USA.                               Language Model Interaction. Transactions on Machine Learning Research (2023).
+ [9] Zeya Chen and Ruth Schmidt. 2024. Exploring a Behavioral Model of “Positive                https://openreview.net/forum?id=hjDYJUn9l1
+     Friction” in Human-AI Interaction. In Design, User Experience, and Usability:         [29] Russell V. Lenth, Balazs Banfai, Ben Bolker, Paul Buerkner, Iago Giné-Vázquez,
+     13th International Conference, DUXU 2024, Washington, DC, USA, June 29–July                Maxime Herve, Maarten Jung, Jonathon Love, Fernando Miguez, Julia Piaskowski,
+     4, 2024, Proceedings, Part II. Springer-Verlag, Berlin, Heidelberg, 3–22. https:           Hannes Riebl, and Henrik Singmann. 2025. emmeans: Estimated Marginal Means,
+     //doi.org/10.1007/978-3-031-61353-1_1                                                      aka Least-Squares Means. https://cran.r-project.org/web/packages/emmeans/
+[10] Jim Dabrowski and Ethan V. Munson. 2011. 40 years of searching for the best                index.html
+     computer system response time. Interacting with Computers 23, 5 (2011), 555–564.      [30] Q. Vera Liao, Daniel Gruen, and Sarah Miller. 2020. Questioning the AI: Informing
+     https://doi.org/10.1016/j.intcom.2011.05.008                                               Design Practices for Explainable AI User Experiences. In Proceedings of the 2020
+[11] Hai Dang, Sven Goller, Florian Lehmann, and Daniel Buschek. 2023. Choice                   CHI Conference on Human Factors in Computing Systems. 1–15. https://doi.org/
+     Over Control: How Users Write with Large Language Models using Diegetic and                10.1145/3313831.3376590
+     Non-Diegetic Prompting. In Proceedings of the 2023 CHI Conference on Human            [31] Q. Vera Liao and S. Shyam Sundar. 2022. Designing for Responsible Trust in
+     Factors in Computing Systems (CHI ’23). Association for Computing Machinery,               AI Systems: A Communication Perspective. In Proceedings of the 2022 ACM
+     New York, NY, USA, 1–17. https://doi.org/10.1145/3544548.3580969                           Conference on Fairness, Accountability, and Transparency (FAccT ’22). Association
+[12] Thomas H. Davenport. 2005. Thinking for a living : how to get better performance           for Computing Machinery, New York, NY, USA, 1257–1268. https://doi.org/10.
+     and results from knowledge workers. Harvard Business School Press.                         1145/3531146.3533182
+[13] Danica Dillion, Debanjan Mondal, Niket Tandon, and Kurt Gray. 2025. AI lan-           [32] Kevin Lin, Charlie Snell, Yu Wang, Charles Packer, Sarah Wooders, Ion Stoica,
+     guage model rivals expert ethicist in perceived moral expertise. Scientific Reports        and Joseph E. Gonzalez. 2025. Sleep-time Compute: Beyond Inference Scaling at
+     15, 1 (Feb. 2025), 4084. https://doi.org/10.1038/s41598-025-86510-0                        Test-time. https://doi.org/10.48550/arXiv.2504.13171
+[14] Jie Gao, Simret Araya Gebreegziabher, Kenny Tsu Wei Choo, Toby Jia-Jun Li,            [33] Yiren Liu, Si Chen, Haocong Cheng, Mengxia Yu, Xiao Ran, Andrew Mo, Yiliu
+     Simon Tangi Perrault, and Thomas W Malone. 2024. A Taxonomy for Human-                     Tang, and Yun Huang. 2024. How AI Processing Delays Foster Creativity:
+     LLM Interaction Modes: An Initial Exploration. In Extended Abstracts of the CHI            Exploring Research Question Co-Creation with an LLM-based Agent. In Pro-
+     Conference on Human Factors in Computing Systems (CHI EA ’24). Association                 ceedings of the 2024 CHI Conference on Human Factors in Computing Systems
+     for Computing Machinery, New York, NY, USA, 1–11. https://doi.org/10.1145/                 (CHI ’24). Association for Computing Machinery, New York, NY, USA, 1–25.
+     3613905.3650786                                                                            https://doi.org/10.1145/3613904.3642698
+[15] Moojan Ghafurian, David Reitter, and Frank E. Ritter. 2020. Countdown timer           [34] Zhicheng Liu and Jeffrey Heer. 2014. The Effects of Interactive Latency on
+     speed: A trade-off between delay duration perception and recall. ACM Transac-              Exploratory Visual Analysis. IEEE Transactions on Visualization and Computer
+     tions on Computer-Human Interaction 27, 2 (2020), 1–25. https://doi.org/10.1145/           Graphics 20, 12 (Dec. 2014), 2122–2131. https://doi.org/10.1109/TVCG.2014.
+     3380961                                                                                    2346452
+[16] Sarah Gibbons, Tarun Mugunthan, and Jakob Nielsen. 2023. Accordion Editing            [35] Jennifer M. Logg, Julia A. Minson, and Don A. Moore. 2019. Algorithm ap-
+     and Apple Picking: Early Generative-AI User Behaviors. https://www.nngroup.                preciation: People prefer algorithmic to human judgment. Organizational
+     com/articles/accordion-editing-apple-picking/                                              Behavior and Human Decision Processes 151 (March 2019), 90–103. https:
+[17] Ulrich Gnewuch, Stefan Morana, Marc Adam, and Alexander Maedche. 2018. “The                //doi.org/10.1016/j.obhdp.2018.12.005
+     Chatbot is typing ...” – The Role of Typing Indicators in Human-Chatbot Interac-      [36] David H. Maister. 1985. The Psychology of Waiting Lines. In The Service Encounter,
+     tion. SIGHCI 2018 Proceedings (Dec. 2018). https://aisel.aisnet.org/sighci2018/14          John A. Czepiel, Michael R. Solomon, and Carol Surprenant (Eds.). Lexington
+[18] Andrew Haigh, Deborah Apthorp, and Lewis A. Bizo. 2021. The role of Weber’s                Books, Lexington, MA, 113–123.
+     law in human time perception. Attention, Perception, & Psychophysics 83, 1 (Jan.      [37] Soumik Mandal, Batia M Wiesenfeld, Adam C Szerencsy, William R Small,
+     2021), 435–447. https://doi.org/10.3758/s13414-020-02128-6                                 Vincent Major, Safiya Richardson, Antoinette Schoenthaler, Devin Mann, and
+[19] Sandra Hart and Lowell Staveland. 1988. Development of NASA-TLX (Task Load                 Oded Nov. 2025. Utilization of generative AI-drafted responses for manag-
+     Index): Results of Empirical and Theoretical Research. In Advances in Psychology,          ing patient-provider communication. npj Digital Medicine 8, 1 (2025), 591.
+     Peter A. Hancock and Najmedin Meshkati (Eds.). Human Mental Workload,                      https://doi.org/10.1038/s41746-025-01972-w
+     Vol. 52. North-Holland, 139–183. https://doi.org/10.1016/S0166-4115(08)62386-9        [38] Tamir Mendel, Nina Singh, Devin M Mann, Batia Wiesenfeld, and Oded Nov.
+[20] James Hollan, Edwin L. Hutchins, and David Kirsh. 2000. Distributed cognition.             2025. Laypeople’s use of and attitudes toward large language models and search
+     ACM Transactions on Computer-Human Interaction (TOCHI) 7 (2000), 174–196.                  engines for health queries: survey study. Journal of medical Internet research 27
+     https://doi.org/10.1145/353485.353487                                                      (2025), e64290. https://doi.org/10.2196/64290
+[21] Sun Young Hwang, Negar Khojasteh, and Susan R. Fussell. 2019. When Delayed in         [39] Robert B. Miller. 1968. Response time in man-computer conversational trans-
+     a Hurry: Interpretations of Response Delays in Time-Sensitive Instant Messaging.           actions. In Proceedings of the December 9-11, 1968, AFIPS ’68 (Fall, part I). ACM
+     Proc. ACM Hum.-Comput. Interact. 3, GROUP (Dec. 2019), 234:1–234:20. https:                Press, San Francisco, California, 267. https://doi.org/10.1145/1476589.1476628
+     //doi.org/10.1145/3361115                                                             [40] Herbert A. Myer and Michael Hildebrandt. 2002. Towards time design: pacing of
+[22] D. Kahneman. 2011. Thinking, Fast and Slow. Farrar, Straus and Giroux.                     hypertext navigation by system response times. In CHI ’02 Extended Abstracts on
+[23] Olaf Kohlisch and Werner Kuhmann. 1997. System response time and readiness                 Human Factors in Computing Systems (CHI EA ’02). Association for Computing
+     for task execution the optimum duration of inter-task delays. Ergonomics 40, 3             Machinery, New York, NY, USA, 824–825. https://doi.org/10.1145/506443.506616
+     (1997), 265–280. https://doi.org/10.1080/001401397188143                              [41] Clifford Nass and Youngme Moon. 2000. Machines and Mindlessness: Social
+[24] Justin Kruger, Derrick Wirtz, Leaf Van Boven, and T. William Altermatt. 2004.              Responses to Computers. Journal of Social Issues 56, 1 (Jan. 2000), 81–103. https:
+     The effort heuristic. Journal of Experimental Social Psychology 40, 1 (Jan. 2004),         //doi.org/10.1111/0022-4537.00153
+     91–98. https://doi.org/10.1016/S0022-1031(03)00065-9                                  [42] Jakob Nielsen. 1994. Usability Engineering. Morgan Kaufmann Publishers Inc.,
+[25] Emily Kuang, Minghao Li, Mingming Fan, and Kristen Shinohara. 2024. Enhanc-                San Francisco, CA, USA.
+     ing UX Evaluation Through Collaboration with Conversational AI Assistants:            [43] Donald A. Norman. 1983. Some observations on mental models. In Mental Models,
+     Effects of Proactive Dialogue and Timing. In Proceedings of the 2024 CHI Confer-           Dedre Gentner and Albert L. Stevens (Eds.). Lawrence Erlbaum Associates, 7–14.
+     ence on Human Factors in Computing Systems (CHI ’24). Association for Computing       [44] Joon Sung Park, Rick Barber, Alex Kirlik, and Karrie Karahalios. 2019. A Slow
+     Machinery, New York, NY, USA, 1–16. https://doi.org/10.1145/3613904.3642168                Algorithm Improves Users’ Assessments of the Algorithm’s Accuracy. Proc. ACM
+[26] Hui Min Lee, Davis Yadav, Sangwook Lee, Keerthana Govindarazan, Cheng Chen,                Hum.-Comput. Interact. 3, CSCW (Nov. 2019), 102:1–102:15. https://doi.org/10.
+     and S. Shyam Sundar. 2025. While We Wait... How Users Perceive Waiting                     1145/3359204
+     Times and Generation Cues during AI Image Generation. In Proceedings of the           [45] Kevin Pu, KJ Kevin Feng, Tovi Grossman, Tom Hope, Bhavana Dalvi Mishra, Matt
+     Extended Abstracts of the CHI Conference on Human Factors in Computing Systems             Latzke, Jonathan Bragg, Joseph Chee Chang, and Pao Siangliulue. 2025. Ideasynth:
+     (CHI EA ’25). Association for Computing Machinery, New York, NY, USA, 1–8.                 Iterative research idea development through evolving and composing idea facets
+     https://doi.org/10.1145/3706599.3719725                                                    with literature-grounded feedback (CHI ’25). Association for Computing Machin-
+[27] Hao-Ping (Hank) Lee, Advait Sarkar, Lev Tankelevitch, Ian Drosos, Sean Rintel,             ery, New York, NY, USA, 1–31. https://doi.org/10.1145/3706598.3714057
+     Richard Banks, and Nicholas Wilson. 2025. The Impact of Generative AI on              [46] René Riedl and Thomas Fischer. 2018. System Response Time as a Stressor in
+     Critical Thinking: Self-Reported Reductions in Cognitive Effort and Confidence             a Digital World: Literature Review and Theoretical Model. In HCI in Business,
+     Effects From a Survey of Knowledge Workers. In Proceedings of the 2025 CHI                 Government, and Organizations: 5th International Conference, HCIBGO 2018, Las
+     Conference on Human Factors in Computing Systems (CHI ’25). Association for                Vegas, NV, USA, July 15-20, 2018, Proceedings. Springer-Verlag, Berlin, Heidelberg,
+     Computing Machinery, New York, NY, USA, Article 1121, 22 pages. https:                     175–186. https://doi.org/10.1007/978-3-319-91716-0_14
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                                                            Tan et al.
+
+
+[47] Martin Riemer, Johanna Bogon, Nele Rußwinkel, Niels Henze, Eva Wiese, David         designed to help high school students collaborate on group projects
+     Halbhuber, and Roland Thomaschke. 2023. Time and Timing in Human-Computer           in real time using shared documents, chat, and task tracking. Your
+     Interaction. https://doi.org/10.18420/muc2023-mci-ws05-106
+[48] Harvey Sacks, Emanuel A. Schegloff, and Gail Jefferson. 1974. A Simplest Sys-       slogan should be aimed at teachers and school leaders who might
+     tematics for the Organization of Turn-Taking for Conversation. Language 50, 4       consider recommending this tool to their students. Use the AI as-
+     (1974), 696–735. https://doi.org/10.2307/412243
+[49] Chirag Shah, Ryen White, Reid Andersen, Georg Buscher, Scott Counts, Sarkar
+                                                                                         sistant to brainstorm, refine, or evaluate your slogan ideas. In the
+     Das, Ali Montazer, Sathish Manivannan, Jennifer Neville, Nagu Rangan, Tara          response field, submit your finalized slogan, along with an explanation
+     Safavi, Siddharth Suri, Mengting Wan, Leijie Wang, and Longqi Yang. 2025. Using     of why you chose it.
+     Large Language Models to Generate, Validate, and Apply User Intent Taxonomies.
+     ACM Trans. Web (May 2025). https://doi.org/10.1145/3732294                             Task 2: Scenario-Based Brainstorming. A group of high
+[50] Yike Shi, Qing Xiao, Qing Hu, Hong Shen, and Hua Shen. 2025. The Siren Song
+     of LLMs: How Users Perceive and Respond to Dark Patterns in Large Language          school students are working together in after-school study ses-
+     Models. https://doi.org/10.48550/arXiv.2509.10830                                   sions, but they often get distracted or lose focus while trying to
+[51] Beth Stackpole. 2024. To help improve the accuracy of generative AI, add speed      prepare for exams and complete assignments. Use the AI assistant
+     bumps. MIT Sloan. https://mitsloan.mit.edu/ideas-made-to-matter/to-help-
+     improve-accuracy-generative-ai-add-speed-bumps                                      to help you brainstorm and refine activity ideas that could assist
+[52] K. E. Stanovich and R. F. West. 2000. Individual differences in reasoning: impli-   the students with staying on task. In the response field, describe one
+     cations for the rationality debate? The Behavioral and Brain Sciences 23, 5 (Oct.
+     2000), 645–665; discussion 665–726. https://doi.org/10.1017/s0140525x00003435
+                                                                                         idea you have developed and explain how you would adapt it for this
+[53] Hari Subramonyam, Roy Pea, Christopher Pondoc, Maneesh Agrawala, and                group.
+     Colleen Seifert. 2024. Bridging the Gulf of Envisioning: Cognitive Challenges in
+     Prompt Based Interactions with LLMs. In Proceedings of the 2024 CHI Conference          Task 3: Gap-Filling Writing. Below is an excerpt of an article
+     on Human Factors in Computing Systems (CHI ’24). Association for Computing          titled “Why Is Learning a Second Language Important?” The intro-
+     Machinery, New York, NY, USA, 1–19. https://doi.org/10.1145/3613904.3642754
+[54] Yang Sui, Yu-Neng Chuang, Guanchu Wang, Jiamu Zhang, Tianyi Zhang, Jiayi            duction and conclusion are already written, but the middle section
+     Yuan, Hongyi Liu, Andrew Wen, Shaochen Zhong, Na Zou, Hanjie Chen, and              is missing. This missing section should provide one or two key
+     Xia Hu. 2025. Stop Overthinking: A Survey on Efficient Reasoning for Large
+     Language Models. https://doi.org/10.48550/arXiv.2503.16419
+                                                                                         reasons someone might benefit from learning a new language. Use
+[55] Thomas Yu Chow Tam, Sonish Sivarajkumar, Sumit Kapoor, Alisa V. Stolyar,            the AI assistant to help you brainstorm and refine your ideas. In the
+     Katelyn Polanska, Karleigh R. McCarthy, Hunter Osterhoudt, Xizhi Wu, Shyam          response field, write out 3-4 sentences to complete the article’s middle
+     Visweswaran, Sunyang Fu, Piyush Mathur, Giovanni E. Cacciamani, Cong Sun,
+     Yifan Peng, and Yanshan Wang. 2024. A framework for human evaluation of             section.
+     large language models in healthcare derived from literature review. NPJ Digital
+     Medicine 7 (Sept. 2024), 258. https://doi.org/10.1038/s41746-024-01258-7            A.2 Advice Tasks
+[56] Roland Thomaschke and Carola Haering. 2014. Predictivity of system delays
+     shortens human response time. International Journal of Human-Computer Studies          Task 1: Personalized Recommendation. A coworker shares
+     72, 3 (March 2014), 358–365. https://doi.org/10.1016/j.ijhcs.2013.12.004            that they’ve been struggling to stay focused while working from
+[57] M. Thum, W. Boucsein, W. Kuhmann, and W. J. Ray. 1995. Standardized task
+     strain and system response times in human-computer interaction. Ergonomics          home. They mention that distractions like social media, house
+     38, 7 (July 1995), 1342–1351. https://doi.org/10.1080/00140139508925192             chores, or lack of routine are getting in the way of their productivity.
+[58] Ben Wang, Jiqun Liu, Jamshed Karimnazarov, and Nicolas Thompson. 2024. Task
+     Supportive and Personalized Human-Large Language Model Interaction: A User
+                                                                                         Use the AI assistant to suggest practical strategies they can try to
+     Study. In Proceedings of the 2024 Conference on Human Information Interaction       improve their focus. In the response field, describe one chosen strategy
+     and Retrieval (CHIIR ’24). Association for Computing Machinery, New York, NY,       and explain why you think this strategy is effective and realistic for
+     USA, 370–375. https://doi.org/10.1145/3627508.3638344
+[59] Jacob O. Wobbrock, Leah Findlater, Darren Gergle, and James J. Higgins. 2011.       someone working remotely.
+     The aligned rank transform for nonparametric factorial analyses using only
+     anova procedures. In Proceedings of the SIGCHI Conference on Human Factors in          Task 2: Decision Memo Review. Someone has drafted a short
+     Computing Systems (CHI ’11). Association for Computing Machinery, New York,         decision memo comparing two career options: (1) accepting a pro-
+     NY, USA, 143–146. https://doi.org/10.1145/1978942.1978963
+                                                                                         motion at their current company, and (2) taking a job offer from
+[60] Su-Fang Yeh, Meng-Hsin Wu, Tze-Yu Chen, Yen-Chun Lin, XiJing Chang, You-
+     Hsuan Chiang, and Yung-Ju Chang. 2022. How to Guide Task-oriented Chatbot           another company with higher pay and more flexibility. Use the AI
+     Users, and When: A Mixed-methods Study of Combinations of Chatbot Guidance          assistant to help assess whether the memo considers all relevant
+     Types and Timings. In Proceedings of the 2022 CHI Conference on Human Factors
+     in Computing Systems (CHI ’22). Association for Computing Machinery, New
+                                                                                         factors that people might weigh in a career decision. In the response
+     York, NY, USA, 1–16. https://doi.org/10.1145/3491102.3501941                        field, list any additional factors or information that you think are
+[61] Chao Zhang, Kexin Ju, Peter Bidoshi, Yu-Chun Grace Yen, and Jeffrey M Rzes-         important to consider when making a career decision like this. Explain
+     zotarski. 2025. Friction: Deciphering Writing Feedback into Writing Revisions
+     through LLM-Assisted Reflection. In Proceedings of the 2025 CHI Conference on       how including these considerations might improve the memo and help
+     Human Factors in Computing Systems (CHI ’25). Association for Computing Ma-         make the decision process clearer.
+     chinery, New York, NY, USA, 1–27. https://doi.org/10.1145/3706598.3714316
+[62] Zhengquan Zhang, Konstantinos Tsiakas, and Christina Schneegass. 2024. Ex-             Task 3: Email Reply Revision. A friend has emailed you asking
+     plaining the Wait: How Justifying Chatbot Response Delays Impact User Trust.
+     In ACM Conversational User Interfaces 2024. ACM, 1–16. https://doi.org/10.1145/
+                                                                                         for advice: “I’m thinking about quitting my job in marketing to
+     3640794.3665550                                                                     become a full-time artist. I’ve been doing freelance illustration on the
+[63] Mert İnan, Anthony Sicilia, Suvodip Dey, Vardhan Dongre, Tejas Srinivasan, Jesse    side for a few years, and it’s what I really love. But I’m nervous about
+     Thomason, Gökhan Tür, Dilek Hakkani-Tür, and Malihe Alikhani. 2025. Better
+     Slow than Sorry: Introducing Positive Friction for Reliable Dialogue Systems.       the financial uncertainty. What do you think I should do?”
+     https://doi.org/10.48550/arXiv.2501.17348                                              You’ve drafted a quick reply: “I think you should go for it. You
+                                                                                         clearly love art and life is short. Worst case, you can always go back
+A Experimental Tasks                                                                     to marketing.” Use the AI assistant to help you improve this reply.
+                                                                                         Make it more thoughtful, balanced, and emotionally supportive. In
+A.1 Creation Tasks                                                                       the response field, submit your revised version of the email reply.
+   Task 1: Slogan Generation + Rewrite. Imagine you are creat-
+ing a promotional slogan for a new online platform called PeerLink,
+The Impact of Response Latency and Task Type on Human-LLM Interaction and Perception                                                 CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+B     Participant demographics
+
+                                                    Table 2: Participant demographics and AI usage.
+
+                          Dimension                                Category                                                          Participants
+                          Gender Identity                          Female                                                            126 (52.5%)
+                                                                   Male                                                              112 (46.7%)
+                                                                   Non-binary / third gender                                         2 (0.8%)
+                          Age Range                                18–24                                                             17 (7.1%)
+                                                                   25–34                                                             63 (26.2%)
+                                                                   35–44                                                             77 (32.1%)
+                                                                   45–54                                                             48 (20.0%)
+                                                                   55+                                                               35 (14.6%)
+                          Education                                High school                                                       62 (26.7%)
+                                                                   Associate/Technical degree                                        18 (7.5%)
+                                                                   Bachelor’s degree                                                 99 (41.2%)
+                                                                   Advanced degree                                                   61 (25.4%)
+                          Occupational Industry (top 5)            Computer and Mathematical                                         40 (16.7%)
+                                                                   Business and Financial Operations                                 36 (15.0%)
+                                                                   Educational Instruction and Library                               24 (10.0%)
+                                                                   Arts, Design, Entertainment, Sports, and Media                    17 (7.1%)
+                                                                   Management                                                        16 (6.7%)
+                          Primary AI assistant (top 5)*            ChatGPT (OpenAI)                                                  187 (77.9%)
+                                                                   Google Gemini                                                     30 (12.5%)
+                                                                   Claude.ai                                                         6 (2.5%)
+                                                                   Perplexity.ai                                                     6 (2.5%)
+                                                                   Grok                                                              4 (1.7%)
+                                      * Participants were asked: “Which AI assistant tool do you most regularly use for knowledge tasks?”
+
+
+
+C      Qualitative themes
+
+Table 3: Seven themes from participants’ open-ended responses. Counts reflect responses coded with each theme; multiple
+codes per response were allowed, so percentages do not sum to 100%.
+
+    Theme (Count)                           Definition                                                            Example Quote
+
+    No/Minimal Impact                       Delay is noticed but has no substantive effect on process             “Did not influence the way I interacted...It was just
+    (𝑛 = 63, 45.0%)                         or quality; may involve minor irritation or inconvenience.            minimally annoying.”
+
+    Inferred AI Deliberation                Delay is attributed to AI cognition. As a result, participants        “It was gathering information to formulate a thought-
+    (𝑛 = 43, 30.7%)                         may expect higher-quality or more thoughtful responses.               ful response...made me think that I would get a well
+                                                                                                                  planned and well written response.”
+
+    Quality-Contingent Value                Delay is acceptable when the response is clear, detailed,             “If the AI ultimately delivered a better response more
+    (𝑛 = 19, 13.6%)                         or accurate; expectations of output value scale with delay.           detailed, accurate, or insightful than expected I’d
+                                                                                                                  likely view the wait as worthwhile.”
+
+    Self-Regulatory Use                     Delay is framed as useful time for reflection, planning, or           “I had longer to contemplate what my next query
+    (𝑛 = 5, 3.6%)                           preparing the next query.                                             would be.”
+
+    Negative Affective Cost                 Delay produces negative emotional consequences such as                “It made me slightly anxious and distracted me from
+    (𝑛 = 10, 7.1%)                          impatience, frustration, distraction, or loss of focus.               the questions...I may have missed one of the details.”
+
+    System Reliability Concern              Delay raises technical doubts about system/LLM reliability            “The response time made me question if my internet
+    (𝑛 = 20, 14.3%)                         or efficiency.                                                        cut off.”
+
+    Interaction Strategy Adaptation         Delay leads participants to change their interaction strate-          “I tried to minimize the number of prompts per task...”
+    (𝑛 = 12, 8.6%)                          gies, e.g., fewer prompts or front-loading information.
+

@@ -1,0 +1,148 @@
+ /btw
+Whispering with your agent
+Collaborating with an agent, behind its back
+
+ Text-based   Task-oriented   Agentic
+
+
+Lucas Loh / A0282987E / lucasloh@u.nus.edu
+CS3249 / AY2627 S1 / Critique 1
+   Official Docs
+
+
+  “Use /btw to ask a question about your current work
+  without adding to the conversation history.”
+   Claude Code documentation, ‘Side questions with /btw’ https://code.claude.com/docs/en/interactive-mode#side-questions-with-%2Fbtw (accessed 31 Aug 2026)
+
+
+
+
+Goal        1. Help users understand what the agent is doing
+            2. without interrupting it, or affecting main session context
+
+
+
+Normal               Prompt                   Agent takeover                         steer                 Agent takeover                         Prompt
+Coding            “Proceed with tier 2 upgrades..”                                                                                              fork
+Agents            “Fix the following bugs in UI: ..”
+
+
+                                                                               /btw question                            Agent answer
+                                                                                                                                                               Claude Code
+
+                                                                                                                                                              Respond based on
+                                                                                      “Where do I find [new feature] built?”                                  main session
+                                                                                      “Any questions to clarify before we..”                                  context only
+                                                                                      “Why can’t we have both features..”                                     (no tools / memory)
+                                                                                      “Is this a secure way to handle..”
+/btw as a whisper
+                                        HUMAN-HUMAN COLLABORATION
+
+      “Is there something                                 “Sorry, I think
+      wrong with the slide?”                              there’s something
+                                                          wrong..”             “Oh! Thanks for
+                                                                               the catch!”
+
+
+
+
+               “Yeah, I cannot see
+               the screen too!”
+
+
+                                          HUMAN-AI COLLABORATION
+
+      “/btw is this a safe                                 “Sorry, I think
+      way to code..”                 *Coding...*           there’s something
+                                                           wrong..”            “Oh! Thanks for
+                                                                               the catch!”
+
+
+
+
+               btw: “Oops, this
+               will expose data..”
+    /btw vs. texting in a meeting                                 (or, students chatting with lecturer is talking)
+Asking in main conversation may be disruptive
+Agent did not need interjection, user was able to receive clarification       Silent Whispering (Dennis et al., 2010):
+                                                                              Instant Messaging at a meeting
+                                                                              Silent Whispering (p. 849-850):
+                                                                              1. Interactivity – able to engage at any moment
+                                                                              2. Polychronic – hold conversation in parallel
+                                                                              3. Ephemeral – remarks are tentative
+
+
+                                                                              Benefits of Silent Whispers (p. 864-868):
+                                                                              1. Participation – members unable to get air time
+                                                                                 can engage at the sidelines
+                                                                              2. Satisfaction – able to seek clarification and
+                                                                                 contribute their remarks
+                                                                              3. Efficiency – Steps and decisions made in
+                                                                                 parallel within meeting
+                                                                              4. Politeness – avoid “rude” interruption
+
+                                                                             Dennis, A. R., Rennecker, J. A., & Hansen, S. (2010). Invisible whispering: Restructuring
+                                                                             collaborative decision making with instant messaging. Decision Sciences, 41(4), 845–886.
+                                                                             https://doi.org/10.1111/j.1540-5915.2010.00290.x
+Limit Tests of /btw show it adheres to Claude Code’s specs
+Claude Code
+
+
+      Main Task                     /btw                /btw response                     Finding              Insight
+General coding             Asked about a file         Correctly declined Context is strict              /btw is strictly tool-
+task                       never opened in            to answer, cited not subset of main               less version of the
+                           main task                  opened               session                      agent.
+Run tests, modify          Asked whether              Correctly                   Tool-call level       Live view into
+code, run tests            tests passed mid-          answered, and also          understanding of      agent’s tool calls
+again                      task                       pointed out                 agent’s work, able    and reasoning,
+                                                      changes in                  to answer             allows user to ask
+                                                      progress, tests             accurately and        and get correct
+                                                      pending                     precisely             answer any time
+General coding             Asked to add a             Claimed to do so            Did not actually do   /btw has no
+task                       todo to memory             (inaccurate) Bug            so, memory            memory, cannot
+                                                                                  protected             affect main agent
+
+Automated tests with precise timestamp capture for reproducibility. Tested Model: Claude Sonnet 5.
+/btw removes context penalty, encourages user participation
+          NORMAL STEERING – CLUTTERS CONTEXT                      REDUCED RISK FOR CONTEXT CLUTTERING
+                       *Coding...*                        “/btw why can’t we..”
+ “why can’t we..”                          Steering                                               *Coding...*
+                       “We can, but it     pollutes                         btw: “We
+                       contradicts your    context                          can, but it
+                       earlier decision..”                                  contradicts
+ “Nevermind.”                                                               your earlier
+                                                                            decision..”
+                       *Coding...*
+                                                          “Ohh ok thanks”
+
+
+
+
+Gap: Discussion and decisions in btw cannot be forwarded to agent
+Agent falsely claims it has done things it cannot     User needs to parse the conversation into a steering prompt
+
+         /btw              /btw response                              “Sorry, I think
+                                                                      there’s something
+Asked to add a           Claimed to do so                             wrong..”
+                                                                                           “Oh! Thanks for
+todo to memory           (inaccurate) Bug                                                  the catch!”
+       From silent whispering to speaking up at meeting
+         Claude Code
+
+         Feature       Allow /btw to communicate back to main agent through steering
+
+                                               User as Director
+             Prompt           Agent takeover        steer         Agent takeover          Prompt
+“Proceed with tier 2 upgrades..”
+“Fix the following bugs in UI: ..”
+                                                              User as Directed                               Agent
+                                       /btw question           Agent answer           ask to steer        summary of
+                                                                                                          conversation
+
+                       Agent offers to relay decision points / user directive back to main agent
+
+                       1. Allows user to explore and ask questions with minimal cost to main context,
+                       2. Reduce cost to steer when user has already communicated to CUI on /btw
+                       3. /btw serves as hygiene layer in behavior and communication
+                       4. Relies on agents being directive and clear when communicating with each other
+

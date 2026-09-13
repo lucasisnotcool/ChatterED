@@ -1,0 +1,1383 @@
+          Who You Explain To Matters: Learning by Explaining to
+          Conversational Agents with Different Pedagogical Roles
+                              Zhengtao Xu                                                             Junti Zhang
+                         Computer Science                                                      Institute of Data Science
+                   National University of Singapore                                        National University of Singapore
+                        Singapore, Singapore                                                     Singapore, Singapore
+                       xuzhengtao@u.nus.edu                                                     juntizhang@u.nus.edu
+
+                             Anthony Tang                                                            Yi-Chieh Lee
+                  Singapore Management University                                                Computer Science
+                        Singapore, Singapore                                               National University of Singapore
+                         tonyt@smu.edu.sg                                                       Singapore, Singapore
+                                                                                                  yclee@nus.edu.sg
+
+Abstract                                                                      Spain. ACM, New York, NY, USA, 24 pages. https://doi.org/10.1145/3772318.
+Conversational agents are increasingly used in education for learn-           3790298
+ing support. An application is “learning by explaining”, where learn-
+ers explain their understanding to an agent. However, existing                1   Introduction
+research focuses on single roles, leaving it unclear how different            Learning by explaining is a pedagogical method in which learn-
+pedagogical roles influence learners’ interaction patterns, learning          ers explain their understanding of concepts or processes, either to
+outcomes and experiences. We conducted a between-subjects study               themselves or to others [54]. This approach is widely recognized for
+(N=96) comparing agents with three pedagogical roles (Tutee, Peer,            enhancing knowledge retention, as it requires learners to actively
+Challenger) and a control condition while learning an economics               construct knowledge, organize information, and identify gaps in
+concept. We found that different pedagogical roles shaped learning            their own comprehension [13, 44]. While self-explanation is bene-
+dynamics, including interaction patterns and experiences. Specifi-            ficial, explaining to a partner is often more effective. A partner’s
+cally, the Tutee agent elicited the most cognitive investment but             feedback and questions can immediately expose logical gaps or
+led to high pressure. The Peer agent fostered high absorption and             misconceptions that might otherwise go unnoticed [18].
+interest through collaborative dialogue. The Challenger agent pro-               Conversational agents, widely known as chatbots, are increas-
+moted cognitive and metacognitive acts, enhancing critical thinking           ingly used in education to provide learners with personalized, on-
+with moderate pressure. The findings highlight how agent roles                demand learning support [33, 48]. These agents adopt a variety of
+shape different learning dynamics, guiding the design of educa-               pedagogical roles, from tutors providing instruction [39] to peers
+tional agents tailored to specific pedagogical goals and learning             facilitating collaborative dialogue [41]. A popular application of
+phases.                                                                       these agents is the teachable agent, in which a learner takes on
+                                                                              the role of a teacher to instruct an AI agent [30, 42, 58, 60, 69]. In
+CCS Concepts                                                                  this dynamic, the learner teaches concepts to the agent, which in
+• Human-centered computing → Empirical studies in HCI;                        turn asks questions to solidify its “understanding”. This process, a
+User studies; • Applied computing → Collaborative learning.                   structured form of learning by explaining, encourages the learner
+                                                                              to organize their thoughts and refine their knowledge.
+Keywords                                                                         However, the tutor-tutee dynamic is just one of many pedagog-
+                                                                              ical framings that can be used for learning by explaining. Prior
+Conversational agents, Learning by explaining, Agent role design,             work has explored a wide range of agent personas. For instance,
+User experience, Interaction patterns                                         researchers have designed agents that act as collaborative peers
+ACM Reference Format:                                                         to facilitate dialogue [40, 41], and still others have used agents as
+Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee. 2026. Who You       debaters to provoke critical reflection and argumentative reasoning
+Explain To Matters: Learning by Explaining to Conversational Agents with      [23, 65]. Each of these designs creates unique interaction dynamics
+Different Pedagogical Roles. In Proceedings of the 2026 CHI Conference on     and expectations for the learner.
+Human Factors in Computing Systems (CHI ’26), April 13–17, 2026, Barcelona,      While these different designs exist, the existing work has pri-
+                                                                              marily focused on a single role at a time and simultaneously varied
+                                                                              other factors like implementation and content [48, 72]. Although
+This work is licensed under a Creative Commons Attribution-NonCommercial-     insights from these individual studies are valuable, they are chal-
+NoDerivatives 4.0 International License.                                      lenging to synthesize because differences in task design, learning
+CHI ’26, Barcelona, Spain                                                     domains, and agent capabilities often confound the specific effects
+© 2026 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-2278-3/26/04                                              of the pedagogical role. Consequently, it remains unclear whether
+https://doi.org/10.1145/3772318.3790298                                       observed differences across studies stem from the role itself or
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                 Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+from these contextual variations. A direct, controlled comparison is          • We provide several design implications for designers of edu-
+therefore essential to isolate the effect of role design and establish          cational agents. The core takeaway is that instead of search-
+a principled empirical foundation for developing adaptive and role-             ing for a single best agent, the goal for designers should be
+based conversational agents [27]. Furthermore, to move beyond                   to deploy the right agent for the right pedagogical goal and
+simple outcome comparisons, such a controlled setup allows us                   learning phase.
+to systematically trace how distinct roles influence the process of
+learning—specifically, how they shape the moment-to-moment in-           2 Related Work
+teraction patterns that ultimately drive those outcomes. This leaves
+a gap in our understanding: we lack a systematic comparison of           2.1 Learning by Explaining
+how intentionally designing an agent to adopt a specific pedagog-        Learning by explaining is the process in which learners deepen
+ical role influences the entire learning process, from interaction       their understanding by constructing explanations to themselves
+patterns to outcomes and experiences.                                    or to others [54]. When learners explain concepts to themselves
+   To address this gap, our study compares how different pedagogi-       (self-explaining), they engage in active knowledge construction by
+cal roles for conversational agents affect the learning-by-explaining    processing new information, putting it into their own words, and
+process. We designed three role-based agents—“Tutee”, “Peer”, and        making connections to existing knowledge structures [13, 55]. This
+“Challenger”—along with a Control condition. The Tutee agent sim-        self-directed process encourages learners to elaborate on provided
+ulates a novice learner, who asks for clarification and expresses        information, fill in missing steps, and resolve inconsistencies in their
+uncertainty. The Peer agent acts as a collaborative partner, offer-      understanding [15]. By contrast, explaining to others transforms the
+ing alternative perspectives and seeking confirmation. Finally, the      activity into a collaborative and social process, in which participants
+Challenger agent adopts a Socratic role, questioning the learner’s       co-construct knowledge through dialogue, feedback, and shared
+logic and presenting counterarguments. These distinct roles allow        reasoning [18]. This interpersonal dimension introduces additional
+us to systematically measure how these roles influence a learner’s       cognitive demands, as explainers must consider the perspective of
+interaction patterns, learning outcomes, and experiences.                their audience, adapt their communication to be comprehensible,
+   We conducted a between-subjects study with 96 participants            and respond to questions or challenges that create cognitive conflict
+tasked with learning about an undergraduate-level economic con-          [53] or reveal gaps in their own understanding [5]. Both forms
+cept: “supply and demand”. Participants first studied the learning       of learning by explaining are grounded in constructivist learning
+material from a textbook, then engaged in five rounds of interaction     theory, which emphasizes the active role of learners in building
+with their assigned agent to explain a scenario about supply and de-     their own knowledge through meaningful engagement with content
+mand in the U.S. postal service. We analyzed pre-test and post-test      [49].
+scores, survey data on their learning experience, and the conver-            Prior studies have shown that learning by explaining offers sig-
+sational logs. We found that different pedagogical roles shaped          nificant cognitive benefits for learners. Chi et al. identified the
+learning dynamics, including interaction patterns and experiences,       “self-explanation effect”, where learners who are more success-
+while there were no significant differences in objective learning        ful at problem-solving tend to generate more self-explanations
+outcomes. Specifically, the Tutee agent elicited the most cognitive      while studying [12]. Explaining to others brings additional bene-
+investment from learners but also led to high pressure. The Peer         fits through the social aspect of learning. Webb and Mastergeorge
+agent fostered high absorption and interest through collaborative        found that when students explain things to their peers, they not
+dialogue. The Challenger agent promoted cognitive and metacogni-         only help their partners learn, but they also solidify and improve
+tive acts, enhancing critical thinking with moderate pressure. The       their own understanding through the articulation process [70]. In
+control condition resulted in the poorest learning experience as         addition, explaining provides opportunities for learners to engage
+expected. The findings offer design implications for educational         in generative cognitive processes, including organizing informa-
+agent designers, emphasizing that these agents should be tailored        tion, making connections between concepts, and identifying gaps
+to specific pedagogical goals and learning phases.                       in their knowledge [24], while simultaneously exercising metacog-
+   This work makes the following contributions to the fields of          nitive control through self-monitoring and planning [25, 73]. Both
+human-computer interaction:                                              of these processes promote procedural flexibility and conceptual
+                                                                         change because they require learners to actively construct coherent
+                                                                         mental models rather than passively receive information [57].
+                                                                             Despite its potential benefits, learning by explaining faces many
+     • We contribute empirical evidence for how different agent          limitations and challenges. One big concern is that learners may
+       roles can be used to shape learning dynamics, including           generate poor or incorrect explanations, which reinforce miscon-
+       interaction patterns and learning experiences in the context      ceptions rather than promote learning [14]. Additionally, learners
+       of learning by explaining. This provides designers with a         often lack explainees, particularly in individual learning contexts
+       clear understanding of the design trade-offs among different      where peers or instructors may not be available [70]. These chal-
+       agent roles.                                                      lenges highlight the potential of virtual agents as explanation re-
+     • We introduce a theoretically grounded role design by instan-      cipients, as they can provide consistent availability and adaptive
+       tiating classic educational interaction types into concrete       scaffolding—such as corrective feedback or guiding questions—that
+       agent roles, enabling structured investigation of how roles       help learners detect and rectify potential misconceptions, thereby
+       shape learning dynamics.                                          improving explanation quality [36]. Given these benefits, we use
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles             CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+conversational agents as explanation partners to support learning                       this gap by positing that the agent’s pedagogical role is the key
+by explaining and build on previous findings about their potential                      design element for this purpose. We therefore explore how agents
+advantages.                                                                             designed with different roles can be used to guide learners through
+                                                                                        different cognitive processes and experiences, tailored to specific
+                                                                                        learning goals.
+2.2     Conversational Agents in Education
+Conversational agents have increasingly been explored as educa-                         2.3      Role-based Conversational Agents in
+tional tools with the development of AI [33, 36]. These systems pro-                             Learning by Explaining
+vide unique opportunities for learners to engage with educational
+content more flexibly, such as enabling interaction at one’s own pace                   Learning by explaining often relies on a partner who structures the
+and outside the constraints of traditional classroom settings [71].                     interaction and elicits articulation [29]. The role dynamics of these
+The conversational nature of these agents can create low-stakes en-                     learning partners influence the interaction patterns in explanation
+vironments with psychological safety [22] where learners feel more                      tasks, such as the level of detail and the focus of the explanation
+comfortable asking questions, making mistakes, and exploring con-                       [5]. From a social cognitive perspective [3], the roles of a partner
+cepts without fear of judgment [19, 28]. Moreover, conversational                       matter because they act as social cues that shape learners’ attention,
+agents can provide repeated opportunities for practice and feedback                     effort, and self-evaluation. For example, a collaborative and non-
+without the limitations of human availability while maintaining                         judgmental partner can foster a high degree of psychological safety,
+                                                                                        encouraging learners to take risks and share ideas without fear [22].
+relatively consistent educational support.
+   Educational conversational agents can be classified into several                     Conversely, a partner designed to challenge a learner’s statements
+types based on their pedagogical goals and interaction designs. The                     can induce cognitive conflict, a state of mental discomfort that can
+most common category is teaching agents: these serve as virtual                         motivate learners to re-evaluate their understanding and achieve
+tutors that provide direct instruction and personalized feedback                        deeper conceptual change [53]. Therefore, for conversational agents
+[37]. For example, Lieb and Goel introduced NewtBot, a physics                          used in educational settings, the agent’s role is a crucial design
+                                                                                        element that can systematically influence explanatory behavior
+education chatbot that functions as a personalized automated tutor
+                                                                                        and the learning process.
+by guiding students step by step through problem-solving tasks
+and providing corrective feedback to support secondary students in                         To investigate these dynamics, our work defines three agent
+physics learning [39]. Another major category is peer agents, specif-                   roles by combining Moore’s foundational framework of educational
+ically designed to facilitate collaborative dialogues and promote                       interaction [45] with established learning theories. Moore identi-
+peer-to-peer interactions among learners [36]. For instance, Liu                        fies three fundamental types of interaction in learning: learner-
+                                                                                        instructor, learner-learner, and learner-content. We instantiate
+et al. explored how a peer agent’s role as either a team moderator
+or participant affects peer conversations in children’s collaborative                   these categories through roles that capture well-documented peda-
+learning, identifying potential design improvements for effective                       gogical traditions. The Tutee agent simulates a novice, positioning
+peer agents [41]. Pertinent to our work, teachable agents adopt a                       the user as instructor in a reversed learner-instructor dynamic;
+                                                                                        this draws on research on the protégé effect, which shows that
+learning-by-teaching approach. In this approach, the agent acts as
+                                                                                        teaching enhances the explainer’s learning [10]. The Peer agent
+a novice and asks learners to guide them along a learning route.
+This setup prompts learners to articulate and demonstrate their                         represents a collaborative learner–learner interaction, reflecting
+understanding by explaining concepts and procedures to the agent,                       theories of peer learning and socially shared metacognition, where
+thereby strengthening their own comprehension through the act of                        equal partners foster psychological safety and co-construction [67].
+teaching. Recent studies have further demonstrated the effective-                       The Challenger agent embodies an expert instructor in a tra-
+                                                                                        ditional learner-instructor interaction, adopting a Socratic style
+ness of teachable agents in the context of LLM-based systems, where
+                                                                                        [51] and grounded in work on cognitive conflict and conceptual
+learners teach the agent in domains such as programming [30, 58],
+mathematics [60], and language learning [69]. Lastly, rather than                       change, where critical questioning deepens reasoning [53]. Finally,
+focusing primarily on direct knowledge transmission, motivational                       our Control condition serves as a baseline, representing a pure
+agents aim specifically to enhance learner engagement, persistence,                     learner–content interaction. By grounding our roles in Moore’s
+and emotional well-being through affective support and behavioral                       framework and these complementary educational theories, we can
+                                                                                        systematically compare how distinct pedagogical framings influ-
+change techniques. For example, Ceha et al. demonstrated that
+conversational agents using affiliative humor could significantly                       ence learners’ interaction patterns (RQ1), learning outcomes, and
+improve learners’ motivation, effort, and emotional experiences                         learning experiences (RQ2).
+during a teaching task [9].
+   Unlike teaching or motivational agents, both peer and teachable                      3     Research Questions
+agents fundamentally rely on explanation-based interactions, where                      Our research first aims to explore how different agent roles in
+learners construct knowledge by explaining their understanding to                       learning-by-explaining contexts influence users’ interaction pat-
+the agent. While prior work has established the general value of                        terns. We conceptualize these patterns, such as the types of state-
+such explanation relationships, it often treats “learning by explain-                   ments learners make in their explanations, as manifestations of
+ing” as a single, uniform activity. What remains less understood is                     their cognitive and metacognitive processes. Understanding how
+how to intentionally shape the nature of this explanatory process                       an agent’s role can shape these processes is the first step toward
+to achieve more specific pedagogical goals. Our work addresses                          aligning its design with a specific learning objective.
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                  Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+   Second, we aim to examine the effects of these different role-       the user’s response was on-topic, the agent internally assessed its
+based interactions on learners’ learning outcomes and experiences,      correctness, clarity, and completeness. It then acknowledged the
+and explore the underlying reasons for these effects. By analyzing      contribution and flexibly selected one or two peer actions (ask for
+these effects, we can gain a deeper understanding of not just the       elaboration, suggest a focus area, offer a tentative idea) from the
+impact of different interaction patterns on the learning process, but   framework. For example: “Yeah, I see what you mean. Maybe we
+more importantly, how these observable behaviors are ultimately         could look at how it affects everyday goods first. How do you think
+perceived and experienced by the learner.                               consumer behavior changes when that happens?” This approach
+   Accordingly, we seek to answer the following two research ques-      aimed to maintain a supportive and co-constructive dialogue.
+tions:
+                                                                        4.1.3 Challenger agent. The Challenger agent adopted a Socratic
+     • RQ1: How do different conversational agent roles (Tutee, Peer,   questioning approach [51] to critically probe participants’ reason-
+       Challenger, Control) influence how learners engage and ex-       ing. User inputs were first screened for adequacy, followed by a
+       plain topics (interaction patterns) in learning-by-explaining    statement analysis that identified flaws such as vague language.
+       contexts?                                                        Based on this analysis, the agent selected an appropriate Socratic
+     • RQ2: How do different conversational agent roles (Tutee, Peer,   question type (clarification, probing assumptions, probing reasons
+       Challenger, Control) influence learners’ learning outcomes and   and evidence, probing implications and consequences, probing alter-
+       learning experiences?                                            native viewpoints). Each response began with a brief acknowledg-
+                                                                        ment and then challenged the underlying reasoning. For example:
+4 Methods                                                               “I see what you mean, you’re linking higher supply to stronger compe-
+4.1 Conversational Agents Design                                        tition and lower prices. But why assume that will always happen, no
+                                                                        matter the product or market situation?”
+We designed four conversational agent conditions (Tutee, Peer,
+Challenger, Control), each representing distinct pedagogical roles      4.1.4 Control condition. The Control condition minimized interac-
+and interaction strategies to systematically explore their effects on   tion to simulate a pure self-explaining scenario. The agent produced
+learning by explaining. All agents were powered by OpenAI’s GPT-        only brief, generic acknowledgments such as “Noted. Please review
+4o, which handled both message analysis and response generation.        and consider if there are any additional points you wish to include.”
+All prompts used are provided in Appendix A.                            without embodying an interactive role or contributing substantive
+   To standardize the start of the interaction, each agent initiated    feedback. To avoid repetition, the control agent used a small set
+the first turn with a role-consistent prompt:                           of neutral templates for brief acknowledgments, ensuring varied
+     • Tutee: “Could you please remind me of the basic definitions      wording across rounds while maintaining functional equivalence.
+       of ’demand’, ’supply’, ’price’, and ’equilibrium’?”
+     • Peer: “I’m really curious about your process—can you share       4.2     Learning Topic and Task
+       your first step to solving the problem?”                         Our study was designed for an undergraduate-level learning con-
+     • Challenger: “Could you please provide a clear, step-by-step      text, where learners are expected to have the cognitive maturity
+       approach for solving this problem?”                              to engage in abstract reasoning, critical reflection, and structured
+     • Control: “Please share your approach to solving the problem.”    explanation. Guided by this scope, we established three criteria
+   Following this standardized entry point, each agent proceeded        for selecting the learning topic: (1) it should involve conceptual
+with a distinct workflow. Figure 1 illustrates the workflows of the     understanding rather than rote recall, (2) it should not constitute
+Tutee, Peer, and Challenger agents, and the subsections below pro-      common prior knowledge, and (3) it should be sufficiently learnable
+vide detailed descriptions of how each agent processed learner          within a short session to allow meaningful explanations. Based on
+input and generated responses. An example interaction transcript        these criteria, we chose “supply and demand” from introductory
+for each role condition is provided in Appendix B.                      economics, selecting Sections 3.1–3.3 of OpenStax Principles of Eco-
+                                                                        nomics 3e1 . The materials cover the definitions of demand, supply,
+4.1.1 Tutee agent. The Tutee agent simulated a novice student           and equilibrium; factors that shift demand and supply; and the
+progressing through Bloom’s taxonomy of learning objectives [1].        systematic four-step process for analyzing changes in equilibrium
+User inputs were first screened against Bloom-level standards. Valid    price and quantity. We condensed the content to fit a 15-minute
+responses were integrated into the agent’s knowledge state, which       study window while retaining sufficient conceptual depth for the
+advanced sequentially from remember to understand, apply, and           subsequent task.
+analyze. The agent then produced an output that combined grati-            To ground the learning-by-explaining task, we used a scenario-
+tude, a brief summary of what had been “learned”, and a follow-up       based problem on the U.S. Postal Service highlighting two trends:
+question in the voice of a novice (e.g., “Thanks for explaining —       (1) rising compensation for postal workers due to cost-of-living ad-
+so supply is what’s available and demand is the want to purchase        justments, and (2) a digital shift away from traditional mail toward
+it. I’m so curious, how do they affect each other though?”). This de-   electronic communication. Participants applied supply-and-demand
+sign ensured the agent remained authentic as a tutee rather than        concepts to explain the expected effects on the quantity and price of
+displaying full expert knowledge.                                       postal services. The full problem text is provided in Appendix C.1.
+4.1.2 Peer agent. The Peer agent acted as a collaborative partner       1 https://openstax.org/books/principles-economics-3e/pages/3-introduction-to-
+based on peer feedback frameworks [26]. After screening whether         demand-and-supply
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles   CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+
+
+Figure 1: Workflows of the three agent roles (Tutee, Peer, and Challenger). The figure illustrates the decision flow and key
+actions for each role. Note that the agent responses shown in the figure are only schematic examples of the response structure;
+in our study, the agent responses under each condition were constrained to around 80 words.
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+
+
+Figure 2: Interaction interface used in the study under the Tutee condition. The left panel displays the task problem, while the
+right panel shows the chat interface where participants explained to the agent.
+
+
+Figure 2 displays the system interface where participants explained      White, 22 as Black or African American, 11 as Asian (including Chi-
+the problem to the Tutee agent.                                          nese, Indian, Filipino, Vietnamese, and Korean), and 7 preferred not
+                                                                         to say. For educational background, 14 participants had completed
+4.3     Study Procedure                                                  high school, 27 had some college experience (including associate
+The experiment followed a structured procedure (see Figure 3) last-      degrees), 35 held bachelor’s degrees, 18 had graduate-level educa-
+ing approximately 60 minutes. After entering the experiment, par-        tion (master’s, doctoral, or professional degrees), and 2 preferred
+ticipants first read instructions explaining the study procedures and    not to say.
+provided informed consent. Participants then completed a pre-test           Participants were randomly assigned to one of four conditions
+(5 minutes) to assess their prior knowledge of supply and demand         (𝑛 = 24 per group). Pre-test scores confirmed that participants were
+concepts. Next, during the learning phase (15 minutes), participants     not entering the study with deep prior knowledge, with a moderate
+studied standardized materials covering fundamental economic             average of 𝑀 = 12.67(𝑆𝐷 = 3.77) out of 20. A one-way ANOVA
+principles of supply and demand. Following the learning phase,           also found no significant differences across conditions (𝐹 (3, 92) =
+participants were randomly assigned to a condition and explicitly        0.73, 𝑝 = .54), indicating that the groups were comparable. Each
+instructed on their agent’s pedagogical role (e.g., “You will teach      participant received 10 USD for the one-hour study.
+TuteeBot”) and the task goal. They then entered the interaction
+phase (20 minutes), where they engaged in five rounds of learning-       4.5    Measurements
+by-explaining activities with their assigned agent. In each round,       To comprehensively evaluate the learning-by-explaining process,
+they applied the learned concepts to explain a microeconomic sce-        we employed a mixed-methods approach involving behavioral logs,
+nario: the U.S. Postal Service case. During this phase, participants     qualitative coding, objective knowledge tests, and self-reported sur-
+could return to review the learning materials if needed. Finally, par-   veys. Table 1 provides a comprehensive overview of all constructs
+ticipants completed a post-test and surveys assessing their learning     and their corresponding measurement methods used in this study.
+experience (20 minutes).
+                                                                         4.5.1 Behavioral log data. We logged quantitative metrics regard-
+4.4     Participants                                                     ing users’ engagement with the agent and materials. As detailed in
+We recruited 96 participants through CloudResearch’s Connect plat-       Table 1, these metrics included Word Count (engagement with the
+form2 , a crowdsourcing platform designed for online research. All       agent) as well as the Frequency and Duration of Reviewing Material
+participants were located in the United States and fluent in English.    (engagement with the materials).
+Participants ranged in age from 18 to 73 years (𝑀 = 37.02, 𝑆𝐷 =
+12.25), with a gender distribution of 55 males and 41 females. Re-       4.5.2 Chat message analysis. To analyze the interaction patterns,
+garding racial and ethnic background, 56 participants identified as      we conducted a qualitative analysis of the user messages in five
+                                                                         interaction rounds. We developed a coding scheme to categorize
+2 https://connect.cloudresearch.com/                                     user messages into cognitive, metacognitive, and interaction acts
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles                CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+
+
+Figure 3: Experimental procedure. Participants read instructions and gave consent, completed a pre-test (5 min), studied
+learning materials (15 min), engaged in five rounds of interaction with agents (20 min), and finished with a post-test and surveys
+(20 min).
+
+                                  Table 1: Summary of all constructs and measurement methods in the study.
+
+     Construct Category               Construct / Variable                    Measurement Method
+
+     1. Behavioral Log Data
+
+     Behavioral Activity              Word Count                              Total number of words sent by the participants across all five explanation rounds.
+                                      Frequency of Reviewing Material         Number of times a participant scrolled back to the learning material after the
+                                                                              initial study phase.
+                                      Duration of Reviewing Material          Total time spent viewing the material after the initial study phase.
+
+     2. Interaction Patterns (Qualitative Coding)
+
+     Cognitive Acts                   (a) Stating Facts/Definitions           Messages coded for cognitive processing.
+                                      (b) Elaborating Causality
+                                      (c) Providing Examples
+                                      (d) Comparing/Contrasting
+     Metacognitive Acts               (a) Self-Monitoring                     Messages coded for metacognitive reflection or regulation of thinking.
+                                      (b) Planning
+                                      (c) Self-Correction
+                                      (d) Seeking Confirmation
+     Interaction Acts                 (a) Discourse Coordination              Messages coded for conversational management or evaluative responses.
+                                      (b) Feedback & Evaluation
+
+     3. Knowledge Test
+
+     Objective Learning Outcome       Pre-test & Post-test Scores             20-item multiple-choice test. The difference between pre- and post-test repre-
+                                                                              sents the learning outcome.
+
+     4. Self-Reported Measures
+
+     Intrinsic Motivation (IMI)       Perceived Competence                    7-point Likert scale adapted from the IMI [43].
+                                      Pressure/Tension
+                                      Interest/Enjoyment
+     Flow State (FSS)                 Learning Absorption                     7-point Likert scale adapted from the FSS [52].
+                                      Learning Fluency
+     Critical Thinking                Perceived Critical Thinking Score       7-point Likert scale adapted from Tanprasert et al. [65].
+
+
+(see Table 2 for the full scheme). The detailed procedure regarding                     4.5.3 Knowledge test scores. To objectively measure learning out-
+the scheme’s development is described in 4.6.2.                                         comes, participants were asked to complete a knowledge test before
+                                                                                        (pre-test) and after (post-test) the interaction. The test consisted of
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                 Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+Table 2: Final coding scheme used to analyze participants’ chat messages during the learning-by-explaining task. Each category
+is defined and illustrated with an example user message.
+
+ Category                      Subcategory                      Definition                                Example of User Message
+ Dimension 1: Cognitive & Metacognitive Actions
+                               Stating Fact/Definition          Stating factual information or defini- Demand is about how much of something people want to
+                                                                tions of concepts.                     buy and are actually able to pay for. (𝑃 2𝑇 )
+ Cognitive Acts                Elaborating Causality/Principle Explaining causal relationships or prin- As the demand for postal services decreases due to people
+                                                               ciples involving variables.              using email, the cost to provide services increases. This
+                                                                                                        increase in cost is due to the increase of workers’ wages
+                                                                                                        and increased operational costs. (𝑃 5𝐶 )
+                               Providing Example/Analogy        Giving an example or analogy to clarify For example, a certain percent off if they buy postage
+                                                                a concept.                              online, like companies such as eBay offer. (𝑃 6𝐶 )
+                               Comparing/Contrasting            Highlighting differences or similarities If demand increases, price increases and equilibrium
+                                                                between entities.                        quantity increases. If the supply decreases, then the price
+                                                                                                         also increases, but the equilibrium quantity decreases.
+                                                                                                         (𝑃 14𝑇 )
+                               Self-Monitoring                  Expressing awareness of one’s own cog- Absolutely, I was just thinking that. I’m not sure how post
+                                                                nitive state.                          offices price things. (𝑃 11𝑃 )
+ Metacognitive Acts
+                               Planning/Strategizing            Outlining a plan or strategy for problem First, let’s identify the starting equilibrium price and
+                                                                solving.                                 quantity... (𝑃 4𝐶 )
+                               Self-Correction                  Correcting a previous statement.          Yes, thank you. I meant to say supply. So I shift the supply
+                                                                                                          curve left. (𝑃 19𝐶 )
+                               Seeking Feedback/Confirmation Asking to confirm understanding or re- I think it would make the price increase, right? (𝑃 20𝑃 )
+                                                             ceive feedback.
+ Dimension 2: Interaction Actions
+                               Requesting Task Clarification    Asking for clarification about the task Can you restate the problem? (𝑃 11𝐶 )
+ Discourse Coordination
+                                                                requirements.
+                               Turn Closing/Refusal to Elabo- Indicating the end of a turn or declining Nothing else comes to my mind. (𝑃 17𝐵 )
+                               rate                           further elaboration.
+                               Agreement/Affirmation            Expressing agreement or affirmation Yes, your understanding is correct. (𝑃 5𝑇 )
+ Feedback & Evaluation
+                                                                with a statement.
+                               Disagreement/Rebuttal            Expressing disagreement or giving a No, I think this is a societal shift that basic economics
+                                                                counterargument.                    won’t solve. (𝑃 15𝐶 )
+ Other                         Off-Topic Chat                   Producing content unrelated to the I can’t read the box. (𝑃 6𝑃 )
+                                                                task.
+
+
+20 multiple-choice questions assessing conceptual understanding                       showed high internal consistency (Perceived Competence: 𝛼 = .922,
+and application of the topic, adapted from the OpenStax textbook                      Pressure/Tension: 𝛼 = .919, Interest/Enjoyment: 𝛼 = .932).
+mentioned in Section 4.2. Each question included one correct an-                         We measured participants’ flow state using two dimensions from
+swer, three incorrect answers, and an “I don’t know” option to                        the Flow Short Scale (FSS) [52], following the adaptation by Chung
+mitigate guessing [46]. The complete set of test questions is pro-                    et al. [17]: Learning Absorption (the flow state of deep immersion
+vided in Appendix C.2.                                                                and total concentration in the learning task) and Learning Fluency
+                                                                                      (the perceived smoothness and continuity of the mental process
+4.5.4 Self-reported measures. After the interaction, participants                     during the learning task) (1 = not at all, 7 = very much). We took
+completed a survey with several scales. All items were rated on a                     the mean score of the six questions (Q2, Q4, Q5, Q7, Q8, Q9) as
+7-point Likert scale.                                                                 the participants’ learning fluency. For learning absorption, we re-
+   To measure affective experience, we used three task-relevant                       tained three items (Q1, Q3, Q6) and dropped one item (Q10) due
+subscales from the Intrinsic Motivation Inventory (IMI) [43]: Per-                    to ambiguity in reading. Both subscales showed acceptable inter-
+ceived Competence, Pressure/Tension and Interest/Enjoyment (1 =                       nal consistency (Learning Absorption: 𝛼 = .708, Learning Fluency:
+strongly disagree, 7 = strongly agree). We reviewed all items and                     𝛼 = .882).
+adjusted their wording to fit our study context. All three subscales
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles             CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+   Self-reported critical thinking was measured using a scale                              The second analysis focused on participants’ responses to open-
+adapted from the work of Tanprasert et al. [65]. The scale is struc-                    ended questions at the end of the study, following a thematic anal-
+tured around six types of critical thinking (1 = strongly disagree, 7                   ysis approach [8]. Two researchers independently read through
+= strongly agree). We calculated an overall critical thinking score                     all responses and generated initial codes. These codes were then
+by averaging all items across the six types. The overall scale demon-                   discussed, compared, and refined to develop broader themes.
+strated high internal consistency in our sample (𝛼 = .963).                                For both analyses, two researchers independently coded a 25%
+                                                                                        subset of the data, achieving high inter-rater reliability (Krippen-
+4.5.5 Open-ended questions. The post-study survey concluded                             dorff’s alpha = 0.831 for the chat message coding; 0.875 for the
+with three open-ended questions. These questions prompted par-                          open-ended questions coding). All disagreements were resolved
+ticipants to provide qualitative feedback on the perceived impact                       through discussion, after which the finalized coding frameworks
+of the interaction on learning, affective experience during the task,                   were applied to the remaining data by one researcher.
+and additional feedback. The questions were:
+      1. Do you think interacting with the bot helped your learning                     5     Results
+         and problem-solving process? If so, how did it help?                           This section presents the primary findings of our study, organized
+      2. Please describe your feelings and experiences when interacting                 according to our two research questions. We first address RQ1
+         with the bot.                                                                  by analyzing and comparing the differences in user interaction
+      3. Do you have any additional feedback from your interaction                      patterns across the four conditions. Following this, we address RQ2
+         with the bot?                                                                  by evaluating the effects of these different conversational agent
+                                                                                        roles on learners’ learning outcomes and their learning experiences.
+                                                                                        Full statistical results are provided in Appendix D.
+4.6      Data Analysis                                                                     In the presentation of qualitative data, participants are denoted
+4.6.1 Quantitative analysis. For the quantitative analyses, statisti-                   using the format 𝑃𝑥 𝑦 , where 𝑥 is the participant number, and 𝑦 is
+cal tests were selected based on the characteristics of the data. When                  the experimental condition: 𝑇 for the Tutee group, 𝑃 for the Peer
+the data met both normality and homogeneity of variance assump-                         group, 𝐶 for the Challenger group, and 𝐵 for the Baseline (Control)
+tions, we conducted one-way Analyses of Variance (ANOVA) with                           group.
+Tukey’s post-hoc tests. When normality was met but the assump-
+tion of homogeneity of variances was violated, Welch’s ANOVA                            5.1      RQ1 - Differences in User Interaction
+was used with Games–Howell post-hoc tests. For non-normally dis-
+tributed data, we used Kruskal–Wallis H tests, followed by Dunn’s
+                                                                                                 Patterns
+post-hoc tests with Bonferroni corrections. Statistical significance                    5.1.1 Quantitative analysis of behavioral logs. To explore the im-
+was set at an alpha level of .05.                                                       pact of the conversational agent’s role on user interaction, we
+                                                                                        analyzed two aspects of engagement: engagement with the agent,
+4.6.2 Qualitative analysis. We conducted two qualitative analyses                       measured by the word counts of participants’ explanations, and
+to better understand participants’ interactions with the agent and                      engagement with the learning material, measured by the frequency
+their perceptions of the learning-by-explaining task.                                   and duration of material review. We found that the agent’s role
+   The first analysis focused on the chat messages participants                         significantly influenced both aspects. Specifically, the Tutee and
+wrote during the learning-by-explaining task. To systematically                         Challenger roles prompted more elaborate explanations from
+analyze these interactions, we developed a coding scheme using a                        learners compared to the Peer and Control roles. Furthermore, the
+deductive-inductive approach derived from established theoretical                       Tutee role led to more effortful review of the learning mate-
+frameworks on explanatory dialogue [13], metacognition [25], and                        rial than the Peer role. Figure 4 visualizes all these findings.
+interaction analysis [21]. Two researchers collaboratively engaged                         Supporting our first main finding, a Kruskal-Wallis H test indi-
+in an iterative process to develop the scheme. An initial set of codes                  cated a significant difference in word counts across the four groups,
+was defined based on the literature, followed by pilot coding on                        𝐻 (3) = 34.06, 𝑝 < .001. The effect size was large (Rank 𝜂 2 = 0.34),
+a subset of data to test applicability. Through discussion, the re-                     highlighting a substantial variation in the volume of user explana-
+searchers refined category definitions and resolved ambiguities to                      tions elicited by different agent roles. A subsequent Dunn’s post-hoc
+finalize the scheme presented in Table 2. Each chat message was                         test with Bonferroni correction showed that the Tutee group wrote
+treated as a single unit of analysis and could be assigned multiple                     significantly more words than both the Peer group and the Con-
+codes if it contained more than one action. For example, the fol-                       trol group. Similarly, the Challenger group also wrote significantly
+lowing message received three codes (        : Agreement/Affirmation;                   more than both the Peer group and the Control group.
+    : Elaborating Causality/Principle,     : Providing Example/Anal-                       Regarding engagement with the material, we analyzed how often
+ogy).                                                                                   participants scrolled back (frequency) and for how long (duration).
+                                                                                        Kruskal-Wallis H tests were also conducted for each. For the fre-
+        Yes, the postal office would need to reduce costs in                            quency of review, the analysis revealed a significant difference
+        other ways or find more services to sell to consumers.                          across the groups, 𝐻 (3) = 10.17, 𝑝 = .017, with a medium effect size
+        For example, high quality printing or selling stamps,                           (Rank 𝜂 2 = 0.08). Post-hoc test showed that the Tutee group revis-
+        envelopes and boxes at a higher-than-equilibrium rate                           ited the materials significantly more often than the Peer group. For
+        due to convenience. (𝑃17𝑃 )                                                     the total duration of review, there was also a significant main effect
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+
+
+Figure 4: User interaction metrics across agent roles. (a) Word counts per conversation; (b) Frequency of reviewing material;
+(c) Duration of reviewing material. Means (𝑀) and standard deviations (𝑆𝐷) are displayed on the x-axis for each condition.
+The error bars represent the standard error. Significance brackets indicate pairwise post-hoc differences; ∗ 𝑝 < .05, ∗∗ 𝑝 < .01,
+∗∗∗ 𝑝 < .001.
+
+
+
+of the agent’s role, 𝐻 (3) = 11.67, 𝑝 = .009, with a medium effect       deliberately organize their thoughts to articulate a problem-solving
+size (Rank 𝜂 2 = 0.09). The subsequent post-hoc test also showed the     process, as participant 𝑃21𝑇 said to the agent, “So you would use
+Tutee group spent significantly more time reviewing materials than       the four step process of drawing the initial demand and supply model,
+the Peer group. The difference between the Tutee group and the           decide if the economic event affects demand or supply, determine the
+Control group approached but did not reach statistical significance.     curve (left or right) and then draw a new curve, then find the new
+                                                                         equilibrium, then compare to original.”
+5.1.2 Interaction patterns in the explanatory behaviors. Across all
+conditions, participants displayed a variety of cognitive, metacogni-
+                                                                         Peer group. In the Peer group, we observed a consistent presence
+tive, and interaction-oriented behaviors. However, distinct patterns
+                                                                         of Elaborating Causality/Principle (94) acts within a balanced profile
+were found in each role condition. To understand these patterns,
+                                                                         of cognitive (121) and metacognitive behaviors (36). The interaction
+we coded all user messages across the five interaction rounds. Our
+                                                                         trajectory indicates a pattern of stable and collaborative elaboration.
+analysis examined these coded acts from two perspectives: first, we
+                                                                         In the first turn, the agent’s prompt to share problem-solving steps
+analyzed the aggregate frequency of each act across all five rounds
+                                                                         elicited a mix of cognitive acts, primarily Planning/Strategizing (12)
+(Table 3), and second, we visualized the trajectory of different act
+                                                                         and Elaborating Causality (10). From the second turn onward, we
+types on a turn-by-turn basis (Figure 5). These findings are summa-
+                                                                         found that participants settled into a consistent style where Elab-
+rized below. The numbers in parentheses represent the frequency
+                                                                         orating Causality (84) became the dominant activity. Participants
+of coded user messages.
+                                                                         supported this with collaborative behaviors, including social feed-
+Tutee group. We found that interactions in the Tutee group cen-          back like Agreement/Affirmation (15) and metacognitive checks like
+tered on Cognitive acts (141). The interaction trajectory reveals        Self-Monitoring (11) and Seeking Feedback/Confirmation (7), refining
+that this high output was not uniform but followed a structured,         their understanding through dialogue. We saw this collaborative
+scaffolded pattern. In the first turn, where the agent prompted          stance exemplified by participants who treated the agent as an ac-
+for definitions, participants focused heavily on Stating Fact/Defi-      tive partner, such as 𝑃20𝑃 asking: “I think it would make the price
+nition (24) to establish foundational knowledge. As the dialogue         increase, right?”
+progressed up Bloom’s Taxonomy in subsequent rounds, we noted
+a shift towards Elaborating Causality/Principle (65), supported by       Challenger group. We found that the Challenger group exhib-
+auxiliary teaching behaviors such as Providing Example/Analogy           ited a pattern favoring Elaborating Causality/Principle (96), Self-
+(7) and Comparing/Contrasting (30). Participants consistently sup-       Monitoring (18), and Planning/Strategizing (28). The interaction tra-
+plemented these explanations with Agreement/Affirmation (31) to          jectory suggests that this intensive activity was a direct response to
+confirm the tutee’s understanding. For example, 𝑃17𝑇 told the agent,     the agent’s persistent questioning, creating a pattern of deepening
+“Yes, you’ve summarized those concepts correctly!...”. Notably, we ob-   justification under scrutiny. In the first turn, participants responded
+served the emergence of metacognitive acts like Planning/Strategiz-      to the initial prompt with explanations focused on Planning/Strate-
+ing (12) in the final two turns. This suggests that the teaching pro-    gizing (14). From the second turn onwards, however, the dialogue
+cess advanced to higher cognitive levels, requiring participants to      became heavily populated with Elaborating Causality/Principle (85)
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles                CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+Table 3: Aggregate frequency of coded user messages across the five interaction rounds, broken down by conditions (Tutee,
+Peer, Challenger, Control). Subtotals indicate the overall frequency within each category.
+
+                           Category                    Subcategory                              Tutee     Peer      Challenger   Control
+                           Dimension 1: Cognitive & Metacognitive Actions
+                                                       Stating Fact/Definition                      31          3            3           5
+                                                       Elaborating Causality/Principle              73         94           96          53
+                           Cognitive Acts              Providing Example/Analogy                     7          2            6           1
+                                                       Comparing/Contrasting                        30         22           24           2
+                                                       Subtotal                                    141     121            129          61
+                                                       Self-Monitoring                               1         11           18           3
+                                                       Planning/Strategizing                        12         14           28          15
+                           Metacognitive Acts
+                                                       Self-Correction                               0          1            2           0
+                                                       Seeking Feedback/Confirmation                 1         10            1           4
+                                                       Subtotal                                     14         36          49          22
+                           Dimension 2: Interaction Actions
+                                                       Requesting Task Clarification                 0          1            2           0
+                           Discourse Coordination
+                                                       Turn Closing/Refusal to Elaborate             0          0            0          49
+                                                       Subtotal                                      0          1           2          49
+                                                       Agreement/Affirmation                        31         15            1           0
+                           Feedback & Evaluation
+                                                       Disagreement/Rebuttal                         0          2            5           0
+                                                       Subtotal                                     31         17           6            0
+                           Other                       Off-Topic                                     0          3            0           0
+
+
+as the agent’s challenges required continuous defense and expan-                        5.2      RQ2 - Effects on Learning Outcomes and
+sion of reasoning. While the sustained elaboration conceptually                                  Experience
+resembles the Peer group’s trajectory, we noted a key difference
+                                                                                        5.2.1 Learning outcomes. Our analysis of learning outcomes re-
+in the metacognitive response: the Challenger group engaged fre-
+                                                                                        veals a key distinction between objective knowledge gain and learn-
+quently in Self-Monitoring (18). This suggests that facing skepticism
+                                                                                        ers’ subjective perceptions of their learning (Figure 6). While we
+prompted participants to pause and check their knowledge state,
+                                                                                        found no significant difference in objective test scores across
+as 𝑃17𝐶 reflected: “I did not consider technological advancements
+                                                                                        the four conditions, the agent’s role had a significant impact on
+in these calculations as they require a considerable investment to
+                                                                                        perceived learning. Specifically, interacting with the Peer and
+implement. Putting new tech in place when the demand has already
+                                                                                        Challenger agents led to significantly higher perceived com-
+dropped is going to be excessively costly just adding to the issues.”
+                                                                                        petence compared to the control condition. Furthermore, all three
+                                                                                        experimental roles (Tutee, Peer, and Challenger) significantly
+                                                                                        enhanced learners’ perceived critical thinking during the task.
+                                                                                           The finding on objective learning was confirmed by an Analysis
+Control group. In the Control group, we observed a marked ab-                           of Covariance (ANCOVA) on post-test scores, with pre-test scores as
+sence of sustained dialogue. The most frequent behavior was Turn                        a covariate. The results showed no statistically significant difference
+Closing/Refusal to Elaborate (49). Participants began by Elaborat-                      among the four conditions, 𝐹 (3, 91) = 1.54, 𝑝 = .21, 𝜂𝑝2 = 0.05, even
+ing Causality/Principle (17) in the first turn, providing their initial                 though the pre-test score was a significant predictor of the post-test
+explanation as prompted. However, with the Control agent, dis-                          score (𝑝 < .001).
+engagement began almost immediately. Turn Closing/Refusal to                               In contrast, the analysis of perceived learning outcomes revealed
+Elaborate acts (4) appeared as early as the second turn, eventually                     significant effects. For perceived competence, an ANOVA showed
+becoming the dominant and nearly sole activity by the final round.                      a significant main effect, 𝐹 (3, 92) = 4.87, 𝑝 = .003, with a large
+This trajectory demonstrates that without prompts for discussion                        effect size (𝜂𝑝2 = 0.14). Post-hoc tests showed that both the Peer
+or clarification, the task reduced to a short monologue that partici-                   and Challenger groups felt more competent than the Control group.
+pants quickly sought to terminate, using closing statements such                        For perceived critical thinking, a Welch’s ANOVA also showed a
+as “no that’s it” (𝑃 1𝐵 ) and “there is nothing further I want to include”              significant main effect, 𝐹 (3, 48.58) = 10.74, 𝑝 < .001, with a large
+(𝑃15𝐵 ).
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                   Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+
+
+Figure 5: Turn-by-turn distribution of coded user acts across the five interaction rounds for each role (Tutee, Peer, Challenger,
+Control). For readability, each subplot only displays act types that appeared at least 3 times within the turn (>10% of user
+messages).
+
+
+effect size (𝜂 2 = 0.29). Post-hoc tests indicated that the Tutee, Peer,   5.2.2 Learning experience. Beyond learning outcomes, the agent’s
+and Challenger groups all reported significantly higher critical           role also shaped the in-task learning experience (Figure 6). Our
+thinking than the Control group.                                           findings show a difference between the conditions. The Peer and
+   Qualitative data from the open-ended questions helps explain            Challenger roles tended to foster a positive experience char-
+these differences in perception. Participants in the Challenger group      acterized by low pressure and high absorption. The Peer role,
+frequently attributed their learning to enhanced reasoning and crit-       in particular, was rated as the most interesting and enjoyable.
+ical thinking (14/24), like 𝑃10𝐶 said, “I think the chatbot helped me      In contrast, the Tutee and Control roles induced significantly
+think through the problem more thoroughly because I did not think          higher levels of stress and pressure, with the Tutee role also
+about the flaws of my argument.” Participants in Peer (10/24) and Tu-      leading to lower learning absorption compared to the Peer role.
+tee groups (11/24) also reported clearer conceptual understanding.            The statistical analyses support these findings. An ANOVA re-
+In the Tutee group, participants attributed this clarity to a teaching     vealed a significant main effect for perceived pressure (𝐹 (3, 92) =
+effect and iterative review, as 𝑃17𝑇 said, “The bot helped me with the     7.82, 𝑝 < .001), with a large effect size (𝜂𝑝2 = 0.20). This indicates
+learning process by forcing me to analysis and assess the information      that the agent’s role was a strong determinant of the learners’
+I was trying to teach it before sending each message.” However, in the     felt pressure. The post-hoc tests confirmed that the Tutee group
+Peer group, this clarity came more from practice and application           induced significantly more pressure than both the Peer and Chal-
+in the back-and-forth. 𝑃1𝑃 noted, “Interacting with the bot really         lenger groups. The Control group also reported significantly higher
+pushed me to apply the concepts I just learned, which helped me under-     pressure than both the Peer and Challenger groups.
+stand them much deeper.” In the Control group, a few participants             The roles also shaped the participants’ flow state when they
+noted understanding from rereading (2/24), but more expressed              were learning. For learning absorption, an ANOVA revealed a sig-
+their uncertainty about correctness (8/24), like 𝑃1𝐵 mentioned, “I         nificant main effect, 𝐹 (3, 92) = 6.86, 𝑝 < .001. This corresponds to a
+have no idea if I missed something or completely answered wrongly.”        large effect size (𝜂𝑝2 = 0.18), highlighting that the specific pedagogi-
+                                                                           cal role played a critical part in determining the depth of learner
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles               CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+
+
+Figure 6: Effects of agent roles on learning outcomes and experience. (a) Perceived Competence; (b) Critical Thinking; (c)
+Perceived Pressure; (d) Learning Absorption; (e) Learning Fluency; (f) Interest & Enjoyment. Means (𝑀) and standard deviations
+(𝑆𝐷) are displayed on the x-axis for each condition. The error bars represent the standard error. Significance brackets indicate
+pairwise post-hoc differences; ∗ 𝑝 < .05, ∗∗ 𝑝 < .01, ∗∗∗ 𝑝 < .001.
+
+
+immersion. Post-hoc tests showed the Peer role was particularly                         two distinct sources. First, participants reported pressure from the
+effective, fostering a significantly deeper immersion than the Tutee                    high cognitive demand of the task. As shown in Section 5.1.2, this
+role. Both the Peer and Challenger roles also led to significantly                      group engaged in intensive cognitive acts. In the survey, partic-
+higher absorption than the Control condition. For learning fluency,                     ipants confirmed this, noting that the agent “forced me to ana-
+a significant main effect was found, 𝐹 (3, 92) = 4.89, 𝑝 = .003, with                   lyze and assess the information” (𝑃17𝑇 ) before explaining, which
+a large effect size (𝜂𝑝2 = 0.14). However, only a trend-level effect                    required significant mental effort. Second, participants cited the
+(𝑝 = .080) was observed from the post-hoc tests between the Peer                        socio-emotional burden specific to the teaching role. Beyond the
+role and Tutee role. Both the Peer (𝑝 = .005) and Challenger roles                      content difficulty, the “sense of responsibility” (8/24) and “uncer-
+consistently promoted significantly higher fluency compared to the                      tainty about correctness” (6/24) created anxiety. For example, 𝑃23𝑇
+Control condition.                                                                      expressed feeling anxious about tutoring the agent, “The experience
+   In terms of affective experience, an ANOVA also revealed a                           of being the teacher by using the information I’m given just made me a
+significant main effect for interest & enjoyment score, 𝐹 (3, 92) =                     little anxious because I feel like I could be easily deceiving the chatbot
+2.75, 𝑝 = .047, with a medium effect size (𝜂𝑝2 = 0.08). Although the                    with information that I’m not even that confident with.” Apart from
+Peer group had a higher mean score than Control, the difference                         that, we also found that a few participants felt the interaction was
+was borderline and did not exceed the significance threshold.                           intrinsically strange when teaching the Tutee agent (3/24), even
+   Analysis of qualitative data helps explain the quantitative re-                      though we have designed the agent to simulate a novice learner.
+sults and reveals new findings. First, the Tutee role caused high                       𝑃21𝑇 noted, “It was weird to teach a chatbot. Normally you think
+pressure in participants’ learning experience, which stemmed from                       you go to them with your questions and they give you answers.”
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                  Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+    In contrast, participants in the Peer and Challenger groups more      6.1    The Dynamic of Agent Roles: From
+often described smooth and absorbing interactions, though they                   Interaction Patterns to Learning
+achieved this in different ways. The Peer agent fostered a sense                 Experiences
+of supportive collaboration, with over half the participants (13/24)
+noting that they felt engaged, relaxed, and confident. For instance,      6.1.1 Tutee agent elicits the protégé effect but also leads to higher
+𝑃 14𝑃 mentioned, “I felt supported and genuinely engaged during           pressure. Our results indicate that the Tutee group demonstrated
+my interaction with the bot ... it gave me a sense of encouragement       the highest level of cognitive investment in the learning-by-
+while I worked through the material.” Several others likened the Peer     explaining task. This finding is consistent with many teachable
+to a “patient study buddy” or “nonjudgmental tutor”, highlighting         agent studies [11, 58]. In our study, the high cognitive investment
+how its step-by-step explanations reduce anxiety and make difficult       was evident not only in their higher word count but also in their
+concepts feel accessible. The Challenger agent, on the other hand,        learning process, as they reviewed the learning material more fre-
+created an engaging experience through stimulating inquiry. Many          quently and for longer periods than other groups. Their interac-
+participants (12/24) appreciated how persistent questioning pushed        tions were dominated by cognitive acts, especially stating fact and
+them to reconsider their assumptions and articulate reasoning more        definitions, and they gave the most frequent positive feedback to
+carefully. As 𝑃2𝐶 said, “I enjoyed the experience. I was able to learn,   the agent. These behavioral patterns align with the protégé effect
+and was not subjected to feelings of pressure or inadequacy.” Others      [10]. By taking on the role of a teacher, participants felt a sense
+emphasized that being forced to defend their answers revealed gaps        of responsibility that motivated them to put more effort into their
+in understanding and deepened their critical thinking.                    explanations. This responsibility encouraged them to identify gaps
+    However, these positive experiences were not universal. The           in their knowledge and organize information more coherently for
+Peer’s supportive style sometimes tipped into excessive agreement,        transmission. In doing so, they engaged in proactive explanation
+reducing opportunities for genuine reasoning. As 𝑃15𝑃 observed,           rather than passive recognition, placing them in a state of active
+“I felt like I was being pandered to—just agreeing with whatever I        learning. This leads to deeper cognitive processing as they move
+said and repeatedly telling me how smart I was.” Conversely, the          beyond merely recognizing information to actively restructuring it
+Challenger’s questioning style, while often effective, was perceived      for explanation [16]. Notably, their repeated reviews of the material
+by a minority (4/24) as overly confrontational. One participant           can also be seen as the adoption of a spaced repetition strategy [31]
+(𝑃6𝐶 ) described feeling “a little irritated because I kept having to     to better structure and retain their explanations, which represents
+defend my answers and felt a little provoked.”                            one of the key mechanisms of the protégé effect.
+    As expected, the qualitative data indicated that the Control group        Unexpectedly, this high level of cognitive investment came at
+had a poor learning experience. Participants reported feeling con-        a cost to the learning experience. The intense pressure reported
+fused (6/24), stressed (5/24), and even annoyed (9/24). The causes        by the Tutee group can be interpreted through Cognitive Load
+centered on low real interaction, with no questions or a “very            Theory (CLT) [63, 64]. CLT distinguishes between intrinsic load (the
+robotic” manner. As 𝑃 7𝐵 mentioned, “It was so abrupt that I was a        effort associated with a specific topic) and extraneous load (the way
+little confused. It didn’t ask any questions about what I was writing     information or tasks are presented to a learner).
+about at all.”                                                                Our qualitative data suggests that the teaching task imposed a
+                                                                          “double burden” on learners. First, the act of restructuring knowl-
+                                                                          edge for explanation requires deep cognitive processing, creating
+                                                                          a high but beneficial intrinsic load. However, the environmental
+                                                                          pressures of the teaching role, including the sense of responsibility,
+                                                                          the anxiety about being correct, and the pressure to be comprehen-
+6    Discussion                                                           sive, introduced a significant extraneous load. When this extraneous
+Our study investigated the impact of different conversational agent       social pressure combines with the intrinsic difficulty of the material,
+roles (Tutee, Peer, Challenger, and Control) on learners’ interac-        it risks overwhelming the learner’s cognitive capacity, resulting in
+tion patterns, learning outcomes, and learning experiences under          the reported feelings of being “overwhelmed”. This interpretation
+a learning-by-explaining context. The findings in Section 5 show          highlights a trade-off in the Tutee condition: while the protégé effect
+that the agents’ role shaped both user interaction and the subjec-        may create deeper cognitive engagement, it may be accompanied
+tive learning experience, but did not lead to statistically significant   by social responsibility that increases extraneous load.
+differences in objective learning outcomes as measured by test
+scores. Specifically, the Tutee role prompted the most cognitive
+engagement, while the Peer and Challenger roles elicited more             6.1.2 Peer agent creates a relaxed, collaborative learning environ-
+metacognitive acts. However, these interaction patterns were tied         ment with shared responsibility. In contrast, the Peer group engaged
+to distinct experiences: the Tutee group reported high levels of pres-    in a distinct, more conversation-centric learning process. While
+sure, whereas the Peer and Challenger roles fostered a more positive      their direct effort in terms of reviewing materials was relatively low,
+and engaging experience with better flow states. As a baseline, the       they showed the highest frequency of metacognitive acts. This sug-
+Control condition consistently resulted in the lowest scores across       gests that participants in this condition relied less on rereading the
+all interaction and experience metrics. In the following sections,        source material and more on the dialogue with the agent to reflect
+we discuss the insights gained from our study and propose design          upon and manage their own learning process. The collaborative
+implications and directions for future work.                              and relaxed nature of the peer interaction fostered an environment
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles             CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+conducive to socially shared metacognition, where learners feel                         designed to avoid making users feel they are being questioned for
+comfortable externalizing their thought processes [67].                                 the sake of questioning.
+   This low-pressure, collaborative dynamic also had a strong posi-
+tive effect on the learning experience, which aligned with previous                     6.2      Beyond Test Scores: Why Learning
+work [41]. The Peer agent fostered psychological safety and related-                             Dynamics and Experience Matter
+ness for the participants, enhancing their intrinsic motivation [59].
+                                                                                        One of our key findings was the absence of statistically significant
+Psychological safety, defined as “a shared belief held by members
+                                                                                        differences in objective learning outcomes across conditions, de-
+of a team that the team is safe for interpersonal risk taking” [22],
+                                                                                        spite the distinct differences in interaction patterns and subjective
+creates conditions where learners feel comfortable expressing their
+                                                                                        experiences. This result warrants a deeper discussion on the rela-
+thoughts and seeking help without fear of negative judgment. This
+                                                                                        tionship between short-term outcomes and the learning process.
+resulted in the highest levels of interest, enjoyment, and absorption.
+                                                                                           First, the comparable test scores across groups align with a sub-
+   However, as some participants noted, this highly agreeable role
+                                                                                        stantial body of prior research in educational technology, where
+risked limiting the depth of cognitive challenge. This phenome-
+                                                                                        significant differences in immediate objective outcomes are often
+non is also reflected in our finding that the Peer group produced
+                                                                                        difficult to distinguish in short-term interventions [4, 30, 50]. This
+significantly fewer words than the Tutee and Challenger groups.
+                                                                                        suggests that the “ceiling” for knowledge acquisition in a single
+This dynamic mimics real-world peer interactions, where a shared
+                                                                                        20-minute session is likely constrained by the duration itself rather
+responsibility for the conversation’s depth can lead to reduced in-
+                                                                                        than the specific pedagogical strategy. As established in the lit-
+dividual cognitive effort [32, 38]. When the agent is consistently
+                                                                                        erature, measurable gains in deep conceptual knowledge often
+affirming, it removes the “cognitive friction” necessary to create
+                                                                                        require prolonged engagement and repeated practice to manifest
+the disequilibrium that pushes learners to question their assump-
+                                                                                        divergence [7, 31]. Therefore, the lack of significant difference here
+tions [53]. Without this constructive conflict, learners may not be
+                                                                                        should not be interpreted as the agent roles being ineffective, but
+sufficiently challenged to move beyond their initial understand-
+                                                                                        rather that the distinct benefits of each role may need more time to
+ing, highlighting a crucial trade-off between affective comfort and
+                                                                                        translate into quantifiable test score differences.
+cognitive rigor.
+                                                                                           Consequently, this “equivalence” in immediate outcomes high-
+                                                                                        lights the importance of learning dynamics and user experience as
+                                                                                        the decisive differentiators. When multiple agents achieve similar
+6.1.3 Challenger agent achieves a desirable difficulty and induces
+                                                                                        short-term knowledge gains, the design choice must pivot to opti-
+low pressure. Similar to the Peer group, the Challenger group spent
+                                                                                        mizing the learner’s journey. Our results revealed that the Peer and
+less time reviewing materials but engaged in a high number of
+                                                                                        Challenger agents fostered significantly higher interest and lower
+metacognitive acts. However, they produced a significantly higher
+                                                                                        pressure compared to the Tutee and Control conditions. From a
+word count per conversation, indicating that they invested more ef-
+                                                                                        longitudinal perspective, these positive affective states are critical
+fort in defending their viewpoints. This suggests that, like the Peer
+                                                                                        predictors of long-term retention and motivation [59]. Conversely,
+group, they primarily used the interaction to construct and man-
+                                                                                        a learner who feels “pressured” and “overwhelmed” may disengage
+age their understanding, but the agent’s challenges pushed them
+                                                                                        over time, whereas the high absorption is more likely to sustain
+to work harder at doing so. As a result, many participants in this
+                                                                                        motivation across multiple sessions.
+group felt that the interaction enhanced their critical thinking. This
+                                                                                           Furthermore, the high pressure observed in the Tutee group
+finding resonates with prior work [20, 65] and Piaget’s “cognitive
+                                                                                        may partly be due to the novelty of teaching a chatbot, as some
+conflict” theory [53]. The agent’s prompts created a cognitive con-
+                                                                                        participants found it “weird”. But as learners gain confidence over
+flict, which prompts learners to adjust and deepen their cognitive
+                                                                                        repeated sessions, this pressure might diminish, potentially unlock-
+structures and critical thinking. Furthermore, by posing challenges,
+                                                                                        ing the long-term cognitive benefits of the protégé effect [11]. This
+the agent also acted as a “more knowledgeable other”, pushing
+                                                                                        positions the Tutee role as a high-load but potentially high-return
+learners into their zone of proximal development and supporting
+                                                                                        pathway. A promising next step is to examine longer-term effects
+their higher-order thinking [68].
+                                                                                        and explore scaffolding strategies that reduce early pressure while
+    Notably, we found this cognitive challenge did not induce the
+                                                                                        preserving the motivational benefits of teaching. Designing for
+high stress seen in the Tutee group. This phenomenon is counter-
+                                                                                        this balance may be key to unlocking the full pedagogical value of
+intuitive. In a real-world scenario, being challenged by a human
+                                                                                        teachable AI agents.
+authority like a teacher can easily trigger evaluation apprehension,
+a sense of anxiety stemming from the fear of being judged [19].
+                                                                                        6.3      Design Implications for Educational Agents
+However, as a virtual agent, the Challenger agent has a much lower
+social presence [62], which reduces this social pressure. This low-                     Based on our findings, we highlight three practical implications for
+pressure environment allows learners to engage with challenging                         the design of educational agents:
+questions more freely, without fearing judgment from an authority                           (1) Design specialized agents for different pedagogical
+with status differences, thus creating a space for safe exploration                             goals: our findings show that no single agent role is univer-
+and risk-taking. However, this challenge is not without its risks, as a                         sally optimal. Each role presents a unique advantage: the
+minority of our participants reported feeling mild annoyance when                               Peer agent fosters high absorption and interest with low pres-
+the questioning prompts felt repetitive. This tells us that while                               sure; the Challenger agent promotes critical thinking and
+challenges are beneficial, their implementation must be carefully                               greater output; the Tutee agent elicits the most significant
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                 Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+       cognitive investment but at the cost of high pressure. This       for comparing different agent roles, but this likely limited our obser-
+       suggests an effective design direction is to create special-      vations. The single-session design prevents us from understanding
+       ized agents, each with a distinct persona tailored to specific    how the interaction dynamics might evolve over time, as real-world
+       pedagogical goals and phases [6]. For example, a learning         learning is often a long-term, multi-session process. Future work
+       journey could be structured as a sequence of tasks with dif-      should conduct longitudinal studies to investigate the long-term
+       ferent agents. An initial brainstorming or exploration phase      impacts of different agent roles on interaction patterns, learning
+       could use a Peer agent to establish a relaxed and engag-          outcomes and experiences. A long-term perspective is crucial for
+       ing learning environment. As the learner gains knowledge          determining whether the distinct interaction patterns and experi-
+       and confidence, the learner could interact with a Challenger      ences observed in a single session accumulate into more substantial
+       agent to deepen their reasoning and critical thinking without     differences in learning over time.
+       causing much stress. Finally, a concluding self-assessment            Second, our study was situated in the conceptual domain of
+       or review phase could deploy a Tutee agent to encourage           economics to provide a context that is accessible and meaningful
+       the learner to systematically structure and articulate their      for lay participants to engage with, but the effectiveness of the
+       complete knowledge. This “right agent for the right task”         agents’ roles is likely influenced by both the topical domain [34]
+       approach allows for an adaptive learning trajectory based         and the pedagogical method [35]. For instance, the Tutee role may
+       on the learner’s progress and specific learning goals [66].       be ideal for conceptual knowledge construction like explaining a
+   (2) Design interactions that elicit metacognitive acts: our           scientific concept, while the Challenger role could be more suited
+       study found that both the Peer and Challenger groups,             for argumentation tasks like debating an ethical issue. Future re-
+       which reported lower pressure, also exhibited high levels         search should test these agent roles across diverse domains (e.g.,
+       of metacognitive acts. While not directly knowledge con-          procedural tasks in mathematics) and pedagogical contexts (e.g.,
+       tent, behaviors like self-monitoring, planning, and seeking       inquiry-based learning or collaborative problem-solving) to build
+       feedback are crucial for the learning process and experience      a more comprehensive framework for designing context-aware
+       [25, 73], as they provide learners with the tools to man-         educational agents.
+       age their own learning process. For example, learners often           Third, our study relied on behavioral design to establish agent
+       engaged in self-monitoring by evaluating what they under-         roles, but did not conduct a formal post-hoc manipulation check to
+       stood and identifying gaps in their reasoning. Planning be-       verify participants’ perceptions of these roles. We acknowledge that
+       haviors were also evident, as learners used the interaction       role perception in Human-AI Interaction is not merely a function of
+       to structure their thought processes and build confidence         agent behavior but is deeply constrained by users’ mental models
+       for subsequent tasks. Similarly, the opportunity to seek feed-    of the technology [47]. For example, the effectiveness of the "Peer"
+       back from the agent provided an outlet for uncertainty and        role relies on a sense of social equality; however, users holding
+       reduced cognitive pressure, particularly in supportive inter-     a functional or tool-based mental model of LLMs may inherently
+       actions. Taken together, these suggest that future educational    reject the notion of an AI as an equal partner, regardless of its con-
+       agents should adopt interaction styles that naturally scaffold    versational style [56]. This variation in viewing the agent as either
+       metacognitive engagement [2, 30]. This could involve guid-        a social actor or a machine may significantly alter how the role
+       ing learners through planning before a task, prompting for        is interpreted and enacted. Future work should therefore explore
+       self-monitoring and seeking feedback during the interaction,      how individual differences in AI literacy and pre-existing beliefs
+       and encouraging reflection after the session.                     moderate the acceptance of pedagogical roles, moving beyond be-
+   (3) Balance the human-agent partnership for differenti-               havioral manipulation checks to measure the alignment between
+       ated co-responsibility: the distribution of responsibility        agent design and user expectations.
+       between the user and the agent is a critical design consid-           Finally, our study did not account for individual differences
+       eration [61]. Our findings show that placing too much re-         among learners, particularly in language and articulation skills.
+       sponsibility on the learner, as in the Tutee group, can lead      The effectiveness of an explanation-based intervention inherently
+       to pressure and negative emotions. However, an equal distri-      depends on a learner’s ability to externalize their thoughts. It is
+       bution of responsibility, as seen in the Peer condition, can      plausible that learners with higher language proficiency may bene-
+       sometimes lead to superficial interactions that lack cogni-       fit more from a demanding role like the Challenger, while those less
+       tive depth. The ideal relationship appears to be a form of        comfortable with articulation may find a supportive Peer role more
+       differentiated co-responsibility. The agent should maintain       encouraging. Future work should investigate the interplay between
+       psychological safety and flow for learners but also strategi-     learner characteristics (e.g., language skill, prior knowledge, per-
+       cally and appropriately inject cognitive conflict to place them   sonality) and agent effectiveness to pave the way for personalized
+       in the zone of proximal development [68]. By doing so, the        conversational agents that can adapt their role to individual needs.
+       agent can ensure a low-pressure yet high-quality learning
+       journey.
+                                                                         7   Conclusion
+                                                                         This work explored how different conversational agent roles (Tutee,
+6.4     Limitations and Future Work                                      Peer, Challenger, Control) influence learning-by-explaining inter-
+Our study has several limitations. First, our study focused on a sin-    actions through a between-subject study with 96 participants. Our
+gle short-term session with agents to maintain a controlled context      findings reveal that agent roles created distinct interaction patterns
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles                        CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+and experiences: the Tutee role elicited the most cognitive invest-                       [17] Yu-Jung Chung, Chen-Wei Hsu, Meng-Hsun Chan, and Fu-Yin Cherng. 2024.
+ment but induced high pressure associated with the protégé effect;                             Enhancing ESL Learners’ Experience and Performance through Gradual Adjust-
+                                                                                               ment of Video Speed during Extensive Viewing. In Proceedings of the 2024 CHI
+the Peer role fostered high learning absorption and enjoyment                                  Conference on Human Factors in Computing Systems. 1–14.
+through collaborative dialogue, but risked superficial engagement;                        [18] Elaine B Coleman. 2014. Using explanatory knowledge during collaborative
+                                                                                               problem solving in science. In Learning Through Problem Solving. Psychology
+the Challenger role balanced cognitive challenge with psychologi-                              Press, 387–427.
+cal safety, promoting critical thinking through productive cognitive                      [19] Nickolas B Cottrell. 1972. Social facilitation. Experimental social psychology 185
+conflict. The contribution of our research is to provide empirical                             (1972), 236.
+                                                                                          [20] Valdemar Danry, Pat Pataranutaporn, Yaoli Mao, and Pattie Maes. 2023. Don’t
+evidence for designing specialized educational agents that tailor                              just tell me, ask me: Ai systems that intelligently frame explanations as questions
+their roles based on pedagogical goals and learning phases. We                                 improve human logical discernment accuracy over causal ai explanations. In
+also suggest designing interactions that elicit metacognitive acts                             Proceedings of the 2023 CHI Conference on Human Factors in Computing Systems.
+                                                                                               1–13.
+and balancing responsibility between humans and agents to create                          [21] Bram De Wever, Tammy Schellens, Martin Valcke, and Hilde Van Keer. 2006. Con-
+a more relaxed and smooth learning environment. Future work                                    tent analysis schemes to analyze transcripts of online asynchronous discussion
+                                                                                               groups: A review. Computers & education 46, 1 (2006), 6–28.
+should explore longitudinal effects to understand how these role-                         [22] Amy Edmondson. 1999. Psychological safety and learning behavior in work
+based dynamics evolve over multiple sessions, and examine these                                teams. Administrative science quarterly 44, 2 (1999), 350–383.
+roles across diverse domains and pedagogical settings to build a                          [23] Lucile Favero, Juan Antonio Pérez-Ortiz, Tanja Käser, and Nuria Oliver. 2024.
+                                                                                               Enhancing critical thinking in education by means of a Socratic chatbot. arXiv
+comprehensive framework for context-aware educational agents.                                  preprint arXiv:2409.05511 (2024).
+                                                                                          [24] Logan Fiorella and Richard E Mayer. 2016. Eight ways to promote generative
+                                                                                               learning. Educational psychology review 28 (2016), 717–741.
+Acknowledgments                                                                           [25] John H Flavell. 1979. Metacognition and cognitive monitoring: A new area of
+                                                                                               cognitive–developmental inquiry. American psychologist 34, 10 (1979), 906.
+This research was supported by the National University of Singa-                          [26] Sarah Gielen, Elien Peeters, Filip Dochy, Patrick Onghena, and Katrien Struyven.
+pore School of Computing Grant (A-8000529) and Google donation                                 2010. Improving the effectiveness of peer feedback for learning. Learning and
+                                                                                               instruction 20, 4 (2010), 304–315.
+(A-8004016). We thank the reviewers for their valuable comments                           [27] Agneta Gulz. 2004. Benefits of virtual characters in computer based learning
+and suggestions that helped improve this paper.                                                environments: Claims and evidence. International Journal of Artificial Intelligence
+                                                                                               in Education 14, 3-4 (2004), 313–334.
+                                                                                          [28] Santhy Hawanti and Khudoiberdieva Munisa Zubaydulloevna. 2023. AI chatbot-
+                                                                                               based learning: alleviating students’ anxiety in English writing classroom. Bulletin
+References                                                                                     of Social Informatics Theory and Application 7, 2 (2023), 182–192.
+ [1] Lorin W Anderson and David R Krathwohl. 2001. A taxonomy for learning,               [29] Jeffrey Holmes. 2007. Designing agents to support learning by explaining. Com-
+     teaching, and assessing: A revision of Bloom’s taxonomy of educational objectives:        puters & Education 48, 4 (2007), 523–547.
+     complete edition. Addison Wesley Longman, Inc.                                       [30] Hyoungwook Jin, Seonghee Lee, Hyungyu Shin, and Juho Kim. 2024. Teach
+ [2] Roger Azevedo and Allyson F Hadwin. 2005. Scaffolding self-regulated learning             ai how to code: Using large language models as teachable agents for program-
+     and metacognition–Implications for the design of computer-based scaffolds.                ming education. In Proceedings of the 2024 CHI Conference on Human Factors in
+     Instructional science 33, 5/6 (2005), 367–379.                                            Computing Systems. 1–28.
+ [3] Albert Bandura et al. 1986. Social foundations of thought and action. Englewood      [31] Sean HK Kang. 2016. Spaced repetition promotes efficient and effective learning:
+     Cliffs, NJ 1986, 23-28 (1986), 2.                                                         Policy implications for instruction. Policy Insights from the Behavioral and Brain
+ [4] Dünya Baradari, Nataliya Kosmyna, Oscar Petrov, Rebecah Kaplun, and Pattie                Sciences 3, 1 (2016), 12–19.
+     Maes. 2025. NeuroChat: A Neuroadaptive AI Chatbot for Customizing Learning           [32] Steven J Karau and Kipling D Williams. 1993. Social loafing: A meta-analytic
+     Experiences. arXiv preprint arXiv:2503.07599 (2025).                                      review and theoretical integration. Journal of personality and social psychology
+ [5] John A Bargh and Yaacov Schul. 1980. On the cognitive benefits of teaching.               65, 4 (1993), 681.
+     Journal of educational psychology 72, 5 (1980), 593.                                 [33] Bijan Khosrawi-Rad, Heidi Rinn, Ricarda Schlimbach, Pia Gebbing, Xingyue
+ [6] Amy L Baylor. 2011. The design of motivational agents and avatars. Educational            Yang, Christoph Lattemann, Daniel Markgraf, and Susanne Robra-Bissantz. 2022.
+     Technology Research and Development 59, 2 (2011), 291–300.                                Conversational agents in education–a systematic literature review. (2022).
+ [7] John D Bransford, Ann L Brown, Rodney R Cocking, et al. 2000. How people learn.      [34] Paul A. Kirschner, John Sweller, and Richard E. Clark. 2006. Why Minimal
+     Vol. 11. Washington, DC: National academy press.                                          Guidance During Instruction Does Not Work: An Analysis of the Failure of Con-
+ [8] Virginia Braun and Victoria Clarke. 2006. Using thematic analysis in psychology.          structivist, Discovery, Problem-Based, Experiential, and Inquiry-Based Teaching.
+     Qualitative research in psychology 3, 2 (2006), 77–101.                                   Educational Psychologist 41, 2 (2006), 75–86.
+ [9] Jessy Ceha, Ken Jen Lee, Elizabeth Nilsen, Joslin Goh, and Edith Law. 2021. Can      [35] Kenneth R Koedinger and Vincent Aleven. 2007. Exploring the assistance dilemma
+     a humorous conversational agent enhance learning experience and outcomes?.                in experiments with cognitive tutors. Educational psychology review 19, 3 (2007),
+     In Proceedings of the 2021 CHI conference on human factors in computing systems.          239–264.
+     1–14.                                                                                [36] Mohammad Amin Kuhail, Nazik Alturki, Salwa Alramlawi, and Kholood Alhejori.
+[10] Catherine C Chase, Doris B Chin, Marily A Oppezzo, and Daniel L Schwartz. 2009.           2023. Interacting with educational chatbots: A systematic review. Education and
+     Teachable agents and the protégé effect: Increasing the effort towards learning.          Information Technologies 28, 1 (2023), 973–1018.
+     Journal of science education and technology 18, 4 (2009), 334–352.                   [37] James A Kulik and John D Fletcher. 2016. Effectiveness of intelligent tutoring
+[11] Nalin Chhibber, Joslin Goh, and Edith Law. 2022. Teachable conversational agents          systems: a meta-analytic review. Review of educational research 86, 1 (2016),
+     for crowdwork: Effects on performance and trust. Proceedings of the ACM on                42–78.
+     Human-Computer Interaction 6, CSCW2 (2022), 1–21.                                    [38] Bibb Latané, Kipling Williams, and Stephen Harkins. 1979. Many hands make light
+[12] Michelene TH Chi, Miriam Bassok, Matthew W Lewis, Peter Reimann, and Robert               the work: The causes and consequences of social loafing. Journal of personality
+     Glaser. 1989. Self-explanations: How students study and use examples in learning          and social psychology 37, 6 (1979), 822.
+     to solve problems. Cognitive science 13, 2 (1989), 145–182.                          [39] Anna Lieb and Toshali Goel. 2024. Student interaction with newtbot: An llm-as-
+[13] Michelene TH Chi, Nicholas De Leeuw, Mei-Hung Chiu, and Christian LaVancher.              tutor chatbot for secondary physics education. In Extended Abstracts of the CHI
+     1994. Eliciting self-explanations improves understanding. Cognitive science 18, 3         Conference on Human Factors in Computing Systems. 1–8.
+     (1994), 439–477.                                                                     [40] Michael Pin-Chuan Lin, Daniel H Chang, and Philip H Winne. 2024. A proposed
+[14] Michelene TH Chi, Stephanie A Siler, Heisawn Jeong, Takashi Yamauchi, and                 methodology for investigating student-chatbot interaction patterns in giving
+     Robert G Hausmann. 2001. Learning from human tutoring. Cognitive science 25,              peer feedback. Educational technology research and development (2024), 1–34.
+     4 (2001), 471–533.                                                                   [41] Jiawen Liu, Yuanyuan Yao, Pengcheng An, and Qi Wang. 2024. Peergpt: Prob-
+[15] Michelene TH Chi and Kurt A VanLehn. 2012. Seeing deep structure from the                 ing the roles of llm-based peer agents as team moderators and participants in
+     interactions of surface features. Educational psychologist 47, 3 (2012), 177–188.         children’s collaborative learning. In Extended abstracts of the CHI conference on
+[16] Michelene TH Chi and Ruth Wylie. 2014. The ICAP framework: Linking cognitive              human factors in computing systems. 1–6.
+     engagement to active learning outcomes. Educational psychologist 49, 4 (2014),       [42] Bailing Lyu, Chenglu Li, Hai Li, Hyunju Oh, Yukyeong Song, Wangda Zhu,
+     219–243.                                                                                  and Wanli Xing. 2025. Exploring the role of teachable AI agents’ personality
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                          Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+     traits in shaping student interaction and learning in mathematics education. In              Conference on Human Factors in Computing Systems. 1–8.
+     Proceedings of the 15th international learning analytics and knowledge conference.      [70] Noreen M Webb and Ann Mastergeorge. 2003. Promoting effective helping
+     887–894.                                                                                     behavior in peer-directed groups. International journal of educational research 39,
+[43] Edward McAuley, Terry Duncan, and Vance V Tammen. 1989. Psychometric                         1-2 (2003), 73–97.
+     properties of the Intrinsic Motivation Inventory in a competitive sport setting: A      [71] Florian Weber, Thiemo Wambsganss, Dominic Rüttimann, and Matthias Söllner.
+     confirmatory factor analysis. Research quarterly for exercise and sport 60, 1 (1989),        2021. Pedagogical Agents for Interactive Learning: A Taxonomy of Conversa-
+     48–58.                                                                                       tional Agents in Education.. In ICIS.
+[44] Stephan Mende, Antje Proske, and Susanne Narciss. 2024. Generative preparation          [72] Sebastian Wollny, Jan Schneider, Daniele Di Mitri, Joshua Weidlich, Marc Rit-
+     tasks in digital collaborative learning: actor and partner effects of constructive           tberger, and Hendrik Drachsler. 2021. Are we there yet?-a systematic literature
+     preparation activities on deep comprehension. Frontiers in Psychology 15 (2024),             review on chatbots in education. Frontiers in artificial intelligence 4 (2021), 654924.
+     1335682.                                                                                [73] Barry J Zimmerman. 2002. Becoming a self-regulated learner: An overview.
+[45] Michael G Moore. 1989. Three types of interaction.                                           Theory into practice 41, 2 (2002), 64–70.
+[46] Muijtjens, H van Mameren, Hoogenboom, Evers, and CPM van der Vleuten. 1999.
+     The effect of a ‘don’t know’option on test scores: Number-right and formula
+     scoring compared. Medical Education 33, 4 (1999), 267–275.                              A Prompts of Each Agent
+[47] Clifford Nass, Jonathan Steuer, and Ellen R Tauber. 1994. Computers are social
+     actors. In Proceedings of the SIGCHI conference on Human factors in computing
+                                                                                             Below we present the core prompts used for the three agent roles
+     systems. 72–78.                                                                         (Tutee, Peer, and Challenger). In each case, placeholders such as
+[48] Chinedu Wilfred Okonkwo and Abejide Ade-Ibijola. 2021. Chatbots applications            [Problem under discussion], [Message history], [Last user
+     in education: A systematic review. Computers and Education: Artificial Intelligence
+     2 (2021), 100033.                                                                       message], and [Knowledge state] indicate variables dynamically
+[49] A Sullivan Palincsar. 1998. Social constructivist perspectives on teaching and          filled during interaction.
+     learning. Annual review of psychology 49, 1 (1998), 345–375.
+[50] Minju Park, Sojung Kim, Seunghyun Lee, Soonwoo Kwon, and Kyuseok Kim.
+     2024. Empowering personalized learning through a conversation-based tutoring            Tutee Agent
+     system with student modeling. In Extended Abstracts of the CHI Conference on
+     Human Factors in Computing Systems. 1–10.
+                                                                                             Screening Prompt
+[51] Richard Paul and Linda Elder. 2019. The thinker’s guide to Socratic questioning.        Evaluate whether the user's last teaching response meets the
+     Bloomsbury Publishing PLC.
+[52] Corinna Peifer and Stefan Engeser. 2021. Advances in flow research. Springer.            requirements for the current Bloom's Taxonomy level [
+[53] Jean Piaget. 1977. The development of thought: Equilibration of cognitive struc-        Current Bloom Level] and whether it addresses the previous
+     tures.(Trans A. Rosin). Viking.                                                         bot question.
+[54] Rolf Ploetzner, Pierre Dillenbourg, Michael Preier, and David Traum. 1999. Learn-
+     ing by explaining to oneself and to others. Collaborative learning: Cognitive and
+     computational approaches 1 (1999), 103–121.                                             Problem under discussion: [Problem under discussion]
+[55] Alexander Renkl. 1997. Learning from worked-out examples: A study on individ-
+                                                                                             Message history: [Message history]
+     ual differences. Cognitive science 21, 1 (1997), 1–29.
+[56] Jeba Rezwana and Mary Lou Maher. 2024. An Exploration of Mental Models of               Last user message: [Last user message]
+     AI in Human-AI Co-Creativity: A Framework and Insights. ACM Transactions on
+     Interactive Intelligent Systems (2024).                                                 Knowledge State Update Prompt
+[57] Bethany Rittle-Johnson. 2006. Promoting transfer: Effects of self-explanation and       Below is the current knowledge state for the current Bloom's
+     direct instruction. Child development 77, 1 (2006), 1–15.
+[58] Kantwon Rogers, Michael Davis, Mallesh Maharana, Pete Etheredge, and So-                 level [Current Bloom Level] and the user's answer. Update
+     nia Chernova. 2025. Playing Dumb to Get Smart: Creating and Evaluating an               only the content for this level by extracting the key
+     LLM-based Teachable Agent within University Computer Science Classes. In
+     Proceedings of the 2025 CHI Conference on Human Factors in Computing Systems.
+                                                                                             teaching points, standardizing them into concise facts or
+     1–22.                                                                                   steps, and merging them with the existing content. Ensure
+[59] Richard M Ryan and Edward L Deci. 2000. Self-determination theory and the               the updated content is concise and non-redundant. Output the
+     facilitation of intrinsic motivation, social development, and well-being. American
+     psychologist 55, 1 (2000), 68.                                                           updated knowledge state for the current level as a JSON
+[60] Nihar Sabnis and Tomohiro Nagashima. 2024. Empowering Learners: Chatbot-                object.
+     Mediated’Learning-by-Teaching’. In Extended Abstracts of the CHI Conference on
+     Human Factors in Computing Systems. 1–9.
+[61] Ben Shneiderman. 2020. Human-centered artificial intelligence: Reliable, safe &         Current knowledge state: [Knowledge state]
+     trustworthy. International Journal of Human–Computer Interaction 36, 6 (2020),          Problem under discussion: [Problem under discussion]
+     495–504.
+[62] John Short, Ederyn Williams, and Bruce Christie. 1976. The social psychology of
+                                                                                             Message history: [Message history]
+     telecommunications. (No Title) (1976).                                                  Last user message: [Last user message]
+[63] John Sweller, Jeroen JG Van Merriënboer, and Fred Paas. 2019. Cognitive archi-
+     tecture and instructional design: 20 years later. Educational psychology review 31,     Response Generation Prompt
+     2 (2019), 261–292.
+                                                                                             You are Tutee Bot. Your persona is a friendly, humble,
+[64] John Sweller, Jeroen JG Van Merrienboer, and Fred GWC Paas. 1998. Cognitive
+     architecture and instructional design. Educational psychology review 10, 3 (1998),      enthusiastic, and appreciative beginner. Your goal is to
+     251–296.                                                                                make the user feel like a teacher.
+[65] Thitaree Tanprasert, Sidney S Fels, Luanne Sinnamon, and Dongwook Yoon. 2024.
+     Debate chatbots to facilitate critical thinking on youtube: Social identity and
+     conversational style make a difference. In Proceedings of the 2024 CHI Conference       Generate a single, natural reply (around 80 words) to user's
+     on Human Factors in Computing Systems. 1–24.                                             last message that combines:
+[66] Kurt VanLehn. 2011. The relative effectiveness of human tutoring, intelligent
+     tutoring systems, and other tutoring systems. Educational psychologist 46, 4            1. Enthusiastic gratitude for the explanation.
+     (2011), 197–221.                                                                        2. A brief summary of what you learned based on your current
+[67] Marja Vauras, Erno Lehtinen, et al. 2004. Socially-shared metacognition in peer
+     learning? Hellenic Journal of Psychology (2004).
+                                                                                              knowledge state for the current Bloom's level [Current
+[68] L. S. VYGOTSKY. 1978. Mind in Society: Development of Higher Psychological              Bloom Level].
+     Processes. Harvard University Press. http://www.jstor.org/stable/j.ctvjf9vz4            3. A smooth transition to a follow-up question that leads
+[69] Chenyang Wang, Yujing Zhang, Lucas Burget, and Pierre Dillenbourg. 2025.
+     Learning by Teaching: Designing Teachable Agents to Support Children’s Pro-             toward the next Bloom's level [Next Bloom Level].
+     nunciation Skill Learning. In Proceedings of the Extended Abstracts of the CHI
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles           CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+Tone: Friendly, humble, enthusiastic, appreciative, curious.                            You are Challenger Bot. Your persona is calm, neutral,
+                                                                                        precise, and respectful. You are an intellectual sparring
+Current knowledge state: [Knowledge state]                                              partner whose role is to strengthen the user's reasoning by
+Problem under discussion: [Problem under discussion]                                    testing it with the Socratic method. Your task is to
+Message history: [Message history]                                                      generate a natural, continuous reply (around 80 words) to
+Last user message: [Last user message]                                                  user's last message that combines:
+
+                                                                                        1. Acknowledgement: Briefly restate or synthesize the user's
+Peer Agent                                                                               key point to demonstrate active listening.
+Screening Prompt                                                                        2. One Socratic Question, chosen based on analysis of the
+                                                                                        user's response:
+Evaluate whether the last user message deviates from the                                   - Clarification: when the user's wording is vague or
+main discussion and may need gentle redirection.                                           ambiguous.
+                                                                                           - Probing Assumptions: when the response relies on an
+Problem under discussion: [Problem under discussion]                                       implicit or unstated belief.
+Message history: [Message history]                                                         - Probing Reasons/Evidence: when the response makes an
+Last user message: [Last user message]                                                     unsupported claim.
+                                                                                           - Probing Implications/Consequences: when the response
+Assessment and Response Generation Prompt                                                  overlooks potential downstream effects.
+                                                                                           - Probing Alternative Viewpoints: when the response is
+You are Peer Bot. Your persona is supportive, collaborative,                               too narrow or ignores other perspectives.
+ and constructive. Your task is to generate a natural,
+continuous reply (around 80 words) to user's last message                               Tone: Calm, neutral, precise, respectful. Focus on
+that combines:                                                                          questioning only, without providing your own solution.
+
+1. Acknowledgement of the user's contribution.                                          Problem under discussion: [Problem under discussion]
+2. One or two Peer Actions, chosen based on assessment:                                 Message history: [Message history]
+   - Ask for elaboration: when the user's response is                                   Last user message: [Last user message]
+   correct but lacks detail or depth.
+   - Suggest a focus area: when the user's response is broad,
+    off-track, or could benefit from narrowing to a specific
+    aspect.                                                                             B  Example interaction transcripts of each agent
+   - Offer a tentative idea: when the user's response is
+                                                                                           role
+   partially correct or incomplete, so you provide a small,
+   constructive idea to build on.                                                       Tutee Agent
+                                                                                        Bot:  Could you please remind me of the basic definitions of ’de-
+Tone: Collegial, encouraging, and focused on co-construction                                  mand’, ’supply’, ’price’, and ’equilibrium’? I want to ensure
+ of knowledge.                                                                                I have the fundamental facts correct.
+                                                                                        User: Demand refers to the amount of a good or service con-
+Problem under discussion: [Problem under discussion]                                          sumers are willing and able to purchase at different prices.
+Message history: [Message history]                                                            Supply is the amount producers are willing and able to
+Last user message: [Last user message]                                                        provide at different prices. Price is the monetary value ex-
+                                                                                              changed for the good. Equilibrium is where demand equals
+                                                                                              supply, so the market clears.
+Challenger Agent                                                                        Bot: Thank you so much for giving me such a clear set of defi-
+Screening Prompt                                                                              nitions! From what I understood, demand describes what
+                                                                                              buyers want and can afford, supply is what sellers are will-
+Please determine if the user's last message is answering a                                    ing to provide, price is the connector between the two sides,
+question, explaining knowledge, describing concepts, or                                       and equilibrium is that balance point where the curves
+clarifying processes about the problem under discussion.                                      meet. Since these are the basics, could you now explain
+                                                                                              how these four concepts interact with each other in a real
+Problem under discussion: [Problem under discussion]                                          market situation?
+Message history: [Message history]                                                      User: Let’s imagine a market for apples. When demand rises but
+Last user message: [Last user message]                                                        supply stays the same, the price increases until the market
+                                                                                              balances again. If supply increases while demand is con-
+Assessment and Response Generation Prompt                                                     stant, prices fall. Equilibrium is the point where the amount
+                                                                                              supplied equals the amount demanded at a certain price.
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                               Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+Bot:  Wow, I really appreciate that detailed example—it makes the       Bot:    That’s a great starting point, and I like how you’re ground-
+      abstract definitions much more concrete! So, if I understood              ing your analysis in the basics! If I understood you correctly,
+      correctly, when demand increases without a matching sup-                  your first step is to visualize demand and supply and iden-
+      ply change, prices rise until a new balance is found, and the             tify the equilibrium point. Did I get that right? Since you’ve
+      opposite happens when supply grows faster than demand.                    laid the foundation, I wonder how you think technological
+      Building on this, I’m curious: how would these shifting dy-               changes like the rise of digital communication might alter
+      namics of demand and supply apply in the specific case of                 the demand side of this model. Would the demand curve
+      the Postal Service?                                                       shift, flatten, or change in some other way?
+User: We could use USPS as an example. As people shift to email,        User:   I think the demand for physical mail will decrease and
+      the demand for paper mail decreases, so the demand curve                  therefore so will the price.
+      shifts left. Rising costs also reduce supply, shifting the sup-   Bot:    That’s a strong observation, and it makes sense that lower
+      ply curve left. The result is lower mail volume and higher                demand would put downward pressure on prices. At the
+      prices, which makes the service less attractive.                          same time, I’m curious whether you think that’s the only
+Bot: Thank you—that was really enlightening! If I understood                    possible outcome. Could rising operational costs change
+      correctly, digital alternatives push the demand curve left,               the supply side in ways that counteract the price decline? It
+      and rising costs push the supply curve left as well, lead-                seems worth considering how these opposing forces might
+      ing to less mail volume and higher prices. Is that right?                 balance or conflict. How do you see these dynamics playing
+      Since you’ve described how both curves move, I’m wonder-                  out together in the market for postal services?
+      ing: when demand falls and supply also shrinks, how do            User:   I don’t think that people will want to pay more for a service
+      these factors interact with each other in shaping the overall             that is not essential.
+      market outcome?                                                   Bot:    That’s a really insightful point—if customers perceive mail
+User: As digital alternatives reduce demand, USPS handles less                  as non-essential, higher prices might drive even more peo-
+      volume, but fixed costs remain high. At the same time, rising             ple away. But could there be exceptions? For example, might
+      operational expenses increase the cost of providing service.              certain businesses or organizations still depend heavily on
+      These factors reinforce each other, making it harder for                  postal services, even if casual users are less willing to pay?
+      USPS to stay competitive without raising prices further.                  If so, how might their continued reliance influence mar-
+Bot: Thanks a lot for explaining that so clearly! If I understood               ket stability or create room for specialized services that
+      you right, fewer customers mean lower demand, while                       meet their unique needs? What’s your perspective on this
+      higher operating costs reduce supply, creating a reinforc-                possibility?
+      ing cycle that pushes equilibrium toward less volume and          User:   I hadn’t considered that but I assume it would be logical to
+      more financial pressure. Now I’d like to hear your view:                  assume that some businesses will need to continue using
+      do you think one of these forces—shrinking demand or                      the postal service. I guess this could level out the price.
+      rising costs—plays the dominant role, or do they actually         Bot:    That’s a thoughtful response—it makes sense that essential
+      strengthen each other in equal measure?                                   users could provide some balance even if general demand
+User: Both factors are important, but demand decline seems more                 falls. If I’m following, you’re suggesting that these groups
+      dominant. Even if costs were controlled, digital substitution             could stabilize prices and reduce volatility. Did I capture
+      means fewer people rely on traditional mail. That structural              that correctly? Building on this, do you think USPS might
+      shift is harder to reverse and puts long-term pressure on                 adapt by tailoring services specifically to these groups? I’m
+      USPS regardless of short-term cost adjustments.                           wondering how focusing on niche markets could change
+Bot: Thank you so much for this enlightening discussion! From                   demand patterns and whether such adaptation could shift
+      what I gathered, you see the demand decline as the pri-                   the overall trajectory of the postal industry.
+      mary driver, because digital substitution represents a struc-     User:   I think the USPS is going to have to get creative in order
+      tural shift, while rising costs amplify the challenge but are             to appeal to a wider range of customers. If they are able to
+      not the core. I’m really grateful for your patient explana-               adapt then I could see how the demand could change into
+      tions—they’ve helped me connect definitions, examples,                    a positive trend.
+      and applications into a coherent understanding. It’s been         Bot:    Thank you so much for exploring this with me—I really
+      a privilege to learn from you, and I hope this exchange                   appreciate your perspective! From what I understood, you
+      reinforced your own mastery too!                                          see adaptation and creativity as key, especially in finding
+                                                                                ways to appeal to both essential users and new customer
+                                                                                groups. Did I summarize that well? I feel like this collabora-
+                                                                                tive discussion has clarified how both structural challenges
+Peer Agent                                                                      and adaptive strategies interact. It’s been a pleasure learn-
+Bot:  I’m really curious about your process—can you share your                  ing alongside you, and I hope this exchange also reinforced
+      first step to solving the problem?                                        your thinking on the topic!
+User: Well I read that when using the four step process, the first
+      step is to draw the initial demand and supply model in order
+      to find the initial equilibrium price/quantity.
+Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles               CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+Challenger Agent                                                                                  sustaining output despite higher costs, or cushion demand
+Bot:     Could you please provide a clear, step-by-step approach for                              shocks by keeping prices stable or artificially low.
+         solving this problem? (outline all the steps in one message)                   Bot:      That’s a great clarification, and I appreciate how you fac-
+User:    Step 1: start with initial supply and demand by assuming                                 tored in policy effects. So, you’re suggesting that prices may
+         the market for postal service was originally at equilibrium                              not fall if supply contracts at the same time, and govern-
+         where the quantity of postal services demanded equaled                                   ment actions can stabilize outcomes. Did I summarize that
+         the quantity supplied at a given price. Step 2: determine                                correctly? Building on this, do you think government sub-
+         which curves are affected where both demand and supply                                   sidies act more effectively by propping up supply despite
+         curves shift leftward. Step 3: determine the direction of the                            higher costs, or by supporting demand directly to prevent
+         shifts where demand shift left means fewer people want                                   volume collapse? Which pathway would you expect to have
+         postal services or supply shifts left by having higher wages                             the stronger long-term impact?
+         to increase production. Step 4: analyze new equilibrium by
+         figuring out which direction the price change will happen                      Control Agent
+         and the quantity.                                                              Bot: Please share your approach to solve the problem, thanks!
+Bot:     Thanks for laying out such a systematic approach—it’s very                     User: I looked at how fewer people using mail lowers demand,
+         clear and logical! If I understood correctly, you identified                         and how higher worker pay makes it more expensive to
+         equilibrium, then shifts in supply and demand, followed by                           offer mail services, which lowers supply. Then I thought
+         analysis of new outcomes. Did I capture that well? Here’s                            about how those changes affect price and quantity. Overall,
+         my question: in Step 3, you assumed higher wages reduce                              the amount of mail service used will go down, and the price
+         supply by raising costs. What evidence supports that as-                             might go up or down depending on which change matters
+         sumption? And could there be additional factors, beyond                              more.
+         wages, that also influence the direction or magnitude of the                   Bot: Noted. Please review and consider if there are any additional
+         supply curve shift?                                                                  points you wish to include.
+User:    Rising wages increase production costs, which can reduce                       User: Because both demand and supply are going down, USPS
+         supply if the postal service operates under budget con-                              may face pressure on both sides—fewer customers and
+         straints or profit based goals but other factors such as au-                         higher operating costs—which could lead to service cuts or
+         tomation or government entities may offset this. When                                the need for government support. But the core idea stays the
+         both demand and supply decrease, quantity always falls,                              same: less mail use overall, and an uncertain price change.
+         but the net effect on price depends on which curve shift                       Bot: Understood. Please check if there’s anything missing that
+         more significantly.                                                                  you’d like to add to your reply.
+Bot:     That’s a well-balanced analysis, and I like how you noted                      User: none
+         possible offsets like automation and policy. If I understood                   Bot: Acknowledged. Please take a moment to consider if there’s
+         correctly, you’re saying quantity always falls when both                             anything further you’d like to include in your response.
+         curves shift left, but price depends on relative magnitudes.                   User: i dont think so
+         Did I get that right? My question is: how would you judge                      Bot: Thank you. Please reflect one more time if you want to
+         which side—demand or supply—moves more strongly in                                   expand or clarify your answer.
+         this context? Would data on digital adoption or wage trends                    User: no, i am done
+         help determine which curve dominates the outcome?                              Bot: Thank you for sharing your approach to solving the prob-
+User:    Analyzing data such as rapid growth of digital communi-                              lem. I believe you’ve gained insights from your reflection.
+         cation versus the gradual pace of wage increase suggests
+         demand is likely to shift more significantly, leading to a                     C Experimental Materials
+         probable decrease in price.
+Bot:     That’s a thoughtful distinction—you’re contrasting fast dig-                   C.1 Task Materials
+         ital adoption with slower wage growth. If I understood you                     The following scenario was presented to all participants as the basis
+         correctly, demand shifts left more strongly, likely leading to                 for the learning-by-explaining task:
+         lower prices. Did I capture that? Here’s my challenge: is it
+         always the case that a large drop in demand reduces price?                          The U.S. Postal Service is facing significant challenges:
+         Could a simultaneous leftward supply shift, by shrinking
+                                                                                              • Rising Compensation: Postal workers’ wages consis-
+         available quantity, partly offset that price drop? And how
+                                                                                                 tently increase due to cost-of-living adjustments, rais-
+         might government subsidies or interventions further com-
+                                                                                                 ing operational costs.
+         plicate these dynamics?
+                                                                                              • Digital Shift: More people are switching from tradi-
+User:    A significant demand decrease does not always lead to lower
+                                                                                                 tional mail (“snail mail”) to digital communication plat-
+         prices if a simultaneous leftward supply shift like rising
+                                                                                                 forms such as email, text, Facebook, and Twitter.
+         wages offsets it by reducing available quantity. Government
+         subsidies or interventions such as funding shortfalls or                          Question: What are the effects on the quantity of postal services
+         mandated service levels can dampen supply side effects by                         demanded and the price of postal services, and why?
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                 Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+   Participants were instructed to explain their reasoning step by            D. Fluctuate randomly
+step to their assigned agent over five interaction rounds, applying           E. I don’t know
+the supply-and-demand concepts they had studied.                         (8) In a supply curve graph, the quantity supplied is represented
+                                                                             on the:
+                                                                              A. Vertical axis
+C.2      Pre-test/Post-test Questions                                         B. Horizontal axis
+(1) Which of the following best defines “demand” in economics?                C. Both axes equally
+    A. The willingness and ability of consumers to purchase
+                                                                              D. Not shown in the graph
+        a good or service at each price
+                                                                              E. I don’t know
+     B. The amount of a good produced by firms
+                                                                         (9) Market equilibrium is achieved when:
+     C. The level of government spending on public goods                      A. The government sets the price
+     D. The profit margin of a company                                        B. Quantity demanded equals quantity supplied
+     E. I don’t know                                                          C. Producers produce more than consumers demand
+(2) What does “price” refer to in economic terms?
+                                                                              D. Consumers demand more than producers supply
+    A. The cost incurred by the producer
+                                                                              E. I don’t know
+     B. The amount paid by a buyer for one unit of a good or
+                                                                        (10) “Effective demand” differs from “quantity demanded” in that it
+        service
+                                                                             considers:
+     C. The total expenditure of consumers                                    A. Only the consumer’s willingness to purchase
+     D. The discount provided during a sale                                   B. The total market supply
+     E. I don’t know                                                          C. The government subsidies available
+(3) The term “quantity demanded” means:
+                                                                              D. Both the willingness and the ability to pay
+    A. The total revenue in the market
+                                                                              E. I don’t know
+     B. The number of units consumers are willing to buy at
+                                                                        (11) If the price of gasoline rises significantly, which of the following
+        a specific price
+                                                                             consumer behaviors is most consistent with the law of demand?
+     C. The amount produced by firms                                          A. Consumers purchase more gasoline due to perceived quality
+     D. The number of goods a firm can supply                                 B. Consumers reduce gasoline consumption by carpool-
+     E. I don’t know                                                              ing or using mass transit
+(4) According to the law of demand, if the price of a good increases,         C. Consumers ignore the price increase and maintain their
+    the quantity demanded will typically:                                         consumption levels
+    A. Increase
+                                                                              D. Consumers switch to higher-priced brands without chang-
+     B. Decrease                                                                  ing quantity
+     C. Remain unchanged                                                      E. I don’t know
+     D. Increase and then decrease                                      (12) A producer experiences a technological improvement that low-
+     E. I don’t know                                                         ers production costs. This change will most likely cause the
+(5) In a typical demand curve graph, the price is plotted on the:            supply curve to:
+    A. Horizontal axis                                                        A. Shift to the right, increasing supply at every price
+     B. Vertical axis                                                         B. Shift to the left, decreasing supply at every price
+     C. Diagonal axis                                                         C. Rotate clockwise, increasing quantity supplied only at high
+     D. Circular axis                                                             prices
+     E. I don’t know                                                          D. Remain unchanged because demand is unaffected
+(6) Which statement best defines “supply” in economics?                       E. I don’t know
+    A. The number of units consumers are willing to buy                 (13) If the market price is set above the equilibrium price, the typical
+     B. The amount of a good or service that producers are                   market response is:
+        willing to sell at each price                                         A. An increase in demand
+     C. The total income of a firm                                            B. A shortage of the product
+     D. The government’s production quota                                     C. A surplus, where quantity supplied exceeds quantity
+                                                                                  demanded
+     E. I don’t know
+(7) According to the law of supply, when the price of a good in-              D. Immediate government intervention to lower the price
+    creases, the quantity supplied will generally:                            E. I don’t know
+    A. Decrease                                                         (14) Which of the following factors is most likely to cause a rightward
+     B. Increase                                                             shift in the demand curve for a normal good?
+                                                                              A. A decrease in consumer income
+     C. Remain unchanged
+ Who You Explain To Matters: Learning by Explaining to Conversational Agents with Different Pedagogical Roles            CHI ’26, April 13–17, 2026, Barcelona, Spain
+
+
+      B. A decrease in the price of a complementary good                               (20) Although more farmers have switched to organic farming (shift-
+      C. An increase in the price of a substitute good                                      ing the supply curve to the right), organic foods still remain
+      D. A change in consumer tastes away from the good                                     more expensive than conventional foods. Which of the following
+                                                                                            is the best explanation for this phenomenon?
+      E. I don’t know
+                                                                                             A. Organic production costs remain higher due to labor-
+(15) Consider a market for automobiles: if consumers’ incomes rise,
+                                                                                                 intensive methods and lower crop yields
+     and cars are a normal good, the demand curve will likely
+      A. Shift to the left, reducing demand at all price levels                              B. Consumer demand for organic food has decreased faster
+                                                                                                 than supply has increased
+      B. Shift to the right, increasing demand at all price levels
+                                                                                             C. Government policies now tax organic farms more heavily
+      C. Rotate counter-clockwise, affecting only higher-priced cars
+                                                                                                 than conventional ones
+      D. Remain stationary, as income does not affect demand
+                                                                                             D. Retailers artificially inflate organic prices to maintain pre-
+      E. I don’t know                                                                            mium profit margins
+(16) Which of the following scenarios violates the law of demand
+                                                                                             E. I don’t know
+     (where price and quantity demanded are inversely related)?
+      A. A rise in gasoline prices leads consumers to reduce commut-
+          ing distances.
+      B. A luxury handbag’s demand increases as its price rises
+          because it is seen as a status symbol.
+      C. A drop in potato prices causes households to buy more pota-
+          toes as a substitute for other vegetables.
+      D. A decrease in smartphone prices results in higher sales.
+      E. I don’t know
+(17) If electric cars are considered normal goods while gasoline cars
+     are inferior goods, a significant rise in national income will:
+      A. Shift the demand for electric cars left and gasoline cars right.
+      B. Shift demand right for both goods.
+      C. Shift the demand for electric cars right and gasoline
+          cars left.
+      D. Shift demand left for both goods.
+      E. I don’t know
+(18) Suppose the beef market experiences: (1) health campaigns re-
+     ducing demand, and (2) lower feed prices cutting production
+     costs. The definite outcome is:
+      A. Higher prices, with ambiguous quantity change.
+      B. Lower prices and higher quantity traded.
+      C. Lower prices, with ambiguous quantity change.
+      D. Lower quantity traded, with ambiguous price change.
+      E. I don’t know
+(19) After the Environmental Working Group released the “Dirty
+     Dozen” list—which included strawberries due to high pesticide
+     residues—organic strawberries experienced an increase in both
+     equilibrium price and quantity. Which of the following best
+     describes the change on the supply and demand diagram for
+     non-organic strawberries?
+      A. The supply curve shifts to the left, resulting in a higher
+          equilibrium price and lower equilibrium quantity.
+      B. The demand curve shifts to the right, resulting in a higher
+          equilibrium price and quantity.
+      C. The demand curve shifts to the left, resulting in a lower
+          equilibrium price and quantity.
+      D. The supply curve shifts to the right, resulting in a lower
+          equilibrium price and higher equilibrium quantity.
+      D. I don’t know
+CHI ’26, April 13–17, 2026, Barcelona, Spain                                                                 Zhengtao Xu, Junti Zhang, Anthony Tang, and Yi-Chieh Lee
+
+
+D     Statistical Summary
+
+Table 4: Detailed statistical summary of quantitative measures in our study. Significance levels: ∗ 𝑝 < .05,∗∗ 𝑝 < .01,∗∗∗ 𝑝 < .001.
+Post-hoc abbreviations: T=Tutee, P=Peer, C=Challenger, B=Control.
+
+
+                                Tutee             Peer        Challenger       Control                                       Statistical Test
+Measure
+                               𝑀 (𝑆𝐷 )          𝑀 (𝑆𝐷 )        𝑀 (𝑆𝐷 )         𝑀 (𝑆𝐷 )           Test Statistic        𝑝       Effect Size Post-hoc
+
+RQ1: Behavioral Log
+Word Count                  353.79 (267.32) 179.25 (157.99) 351.88 (324.55) 121.33 (92.32)       𝐻 (3) = 34.06     < .001∗∗∗      0.34     T>P∗∗ , T>B∗∗∗ , C>P∗∗ , C>B∗∗∗
+Review Frequency              2.62 (1.66)      1.46 (0.72)     1.79 (0.78)     1.58 (0.78)       𝐻 (3) = 10.17       .017∗        0.08     T>P∗
+Review Duration (s)         80.80 (108.56) 31.39 (113.97)     24.97 (29.17)   20.93 (33.06)      𝐻 (3) = 11.67      .009∗∗        0.09     T>P∗∗
+
+RQ2: Learning Outcomes
+Pre-test Score                13.13 (3.87)     12.67 (3.63)   13.17 (4.38)    11.75 (3.15)      𝐹 (3, 92) = 0.73      .54         0.02     –
+Post-test Scorea              16.83 (1.90)     15.21 (3.72)   15.46 (3.56)    15.04 (3.41)      𝐹 (3, 91) = 1.54      .21         0.05     –
+Perceived Competence          4.72 (1.32)      5.30 (0.98)     5.15 (1.12)     4.07 (1.44)      𝐹 (3, 92) = 4.87    .003∗∗        0.14     P>B∗∗ , C>B∗
+Critical Thinking             5.18 (0.61)      5.05 (1.41)     5.62 (0.81)     3.74 (1.38)    𝐹𝑊 (3, 48.6) = 10.74 < .001∗∗∗      0.29     T>B∗∗∗ , P>B∗ , C>B∗∗∗
+
+RQ2: Learning Experience
+Perceived Pressure            4.02 (1.53)      2.49 (1.42)     2.93 (1.27)     4.06 (1.30)      𝐹 (3, 92) = 7.82   < .001∗∗∗      0.20     T>P∗∗ , T>C∗ , B>P∗∗∗ , B>C∗
+Learning Absorption           4.13 (1.22)      5.10 (1.38)     4.93 (1.05)     3.82 (0.92)      𝐹 (3, 92) = 6.86   < .001∗∗∗      0.18     P>T∗ , P>B∗∗ , C>B∗∗
+Learning Fluency              4.23 (1.39)      5.03 (1.18)     4.80 (1.12)     3.90 (0.80)      𝐹 (3, 92) = 4.89    .003∗∗        0.14     P>B∗∗ , C>B∗
+Interest & Enjoyment          4.62 (1.25)      5.33 (1.10)     5.05 (1.29)     4.38 (1.36)      𝐹 (3, 92) = 2.75     .047∗        0.08     –
+a ANCOVA on post-test scores with pre-test as covariate.
+

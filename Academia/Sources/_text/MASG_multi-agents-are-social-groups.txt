@@ -1,0 +1,1670 @@
+Multi-Agents are Social Groups: Investigating Social
+Influence of Multiple Agents in Human-Agent Interactions
+TIANQI SONG* , National University of Singapore, Singapore
+YUGIN TAN* , National University of Singapore, Singapore
+ZICHENG ZHU, National University of Singapore, Singapore
+YIBIN FENG, National University of Singapore, Singapore
+YI-CHIEH LEE, National University of Singapore, Singapore
+
+
+
+
+Fig. 1. Overview of our study. (a) Agents are prevalent in our lives. They serve not only as tools but also can
+affect people’s attitudes and behaviours. (b) When agents coordinate with each other and share the same
+stance, they can act as a "social group". (c) Participants changed more opinions and perceived stronger social
+pressure when interacting with multiple agents, compared with the single-agent setting.
+
+Multi-agent systems, systems with multiple independent AI agents working together to achieve a common
+goal, are becoming increasingly prevalent in daily life. Drawing inspiration from the phenomenon of human
+group social influence, we investigate whether a group of AI agents can create social pressure on users to agree
+with them, potentially changing their stance on a topic. We conducted a study in which participants discussed
+social issues with either a single or multiple AI agents, and where the agents either agreed or disagreed with
+the user’s stance on the topic. We found that conversing with multiple agents increased the social pressure felt
+by participants, and caused a greater shift in opinion towards the agents’ stances on the conversation topics.
+Our study shows the potential advantages of multi-agent systems over single-agent platforms in causing
+opinion change. We discuss the resulting possibilities for multi-agent systems that promote social good, as
+well as potential malicious actors using these systems to manipulate public opinion.
+CCS Concepts: • Applied computing → Psychology; • Human-centered computing → User studies.
+* The two authors contributed equally to this work.
+
+Authors’ Contact Information: Tianqi Song* , National University of Singapore, Singapore, tianqi_song@u.nus.edu; Yugin
+Tan* , National University of Singapore, Singapore, tan.yugin@u.nus.edu; Zicheng Zhu, National University of Singapore,
+Singapore, zicheng@u.nus.edu; Yibin Feng, National University of Singapore, Singapore, feng.yibin@u.nus.edu; Yi-Chieh
+Lee, National University of Singapore, Singapore, yclee@nus.edu.sg.
+
+
+
+
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+© 2025 Copyright held by the owner/author(s).
+ACM 2573-0142/2025/11-ARTCSCW452
+https://doi.org/10.1145/3757633
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:2                                         Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+Additional Key Words and Phrases: Social Influence, Multi-agent, LLM Agent
+ACM Reference Format:
+Tianqi Song* , Yugin Tan* , Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee. 2025. Multi-Agents are Social Groups:
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions. Proc. ACM Hum.-Comput.
+Interact. 9, 7, Article CSCW452 (November 2025), 33 pages. https://doi.org/10.1145/3757633
+
+1   Introduction
+AI agents are advanced systems capable of interacting with users, holding conversations, and
+expressing their own thoughts [107]. These agents leverage the conversational and reasoning
+capabilities of large language models (LLMs) like Gemini, GPT-4, and LLaMA, and have become
+commonplace in daily life [77]. Significant research has also explored the use of such agents in a
+broad range of scenarios, including education [59], search interfaces [62], and trading platforms
+[115]. The prevalence and ubiquity of LLM-powered agents have given rise to the concept of
+multi-agent systems-systems with two or more independent agents working together to fulfill a
+common goal and improve task performance [19, 42]. Major AI companies such as Anthropic [26]
+and Google [38] have introduced multi-agent frameworks, making it easier for developers to create
+such interfaces.
+   With both the rise of multi-agent systems and the increasing prevalence of virtual agents in
+our daily lives, an interesting question emerges: Can a group of AI agents collectively exert social
+influence on users? This question arises from a well-documented observation in human-human
+interaction: individuals are more likely to be influenced by the opinions of larger groups of people,
+a phenomenon known as social influence. Various forms of social influence, including conformity
+to the majority [24], peer pressure [47, 88], desire for social acceptance [68, 80], and adherence to
+social norms [37, 63], are pervasive in everyday life.
+   While prior work in HCI has argued that human-computer interaction often mirrors human-
+human dynamics—where users perceive and respond to computers as social entities [66]—AI
+agents differ from humans in two important ways: First, regarding knowledge, AI agents are
+often perceived as having broader but more generic knowledge, particularly in factual or domain-
+specific areas, while lacking personal, contextual, or experiential insight [61]. Unlike human groups,
+where informational influence tends to increase with group size [24], it is unclear whether users
+perceive a group of AI agents as more informational than a single agent. Second, in terms of social
+characteristics, AI agents often lack key social attributes [70] such as empathy, credibility, and
+authority, which are typically foundational to social influence in human groups [24]. Consequently,
+it remains uncertain whether multiple AI agents can evoke the same sense of normative pressure
+or emotional affiliation that human groups do. Given these differences, it remains an open question
+whether multiple AI agents can exert social influence in ways comparable to human social groups.
+This leads to a central research question of our work: Can a group of AI agents holding the same
+opinion influence user decisions in a manner similar to human group influence?
+   The importance of this question is twofold. Firstly, multi-agent interactions have become increas-
+ingly common, most notably on social media platforms like X (formerly Twitter), where human-like
+social bots have been effectively used to disseminate information and increase user engagement
+[110]. Multi-agent systems have also been designed to support online discussions [118], public
+information elicitation [51], and health coaching [9], exposing users to opinions from multiple
+agents in a range of settings. Secondly, the potential social influence of multi-agent systems on
+users would raise concerns. Evidence from psychology studies suggests that interactions with
+groups sharing similar views can significantly impact user opinions [48, 65], potentially leading to
+opinion polarization and manipulation. As digital agents increasingly function as social actors, the
+influence they exert on users is a critical yet underexplored issue.
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                           CSCW452:3
+
+
+   Beyond potential negative effects, the social influence of multi-agent systems can also be har-
+nessed in a positive way. The social influence of majority opinion has long been used to encourage
+changes in attitudes and behaviors. In the traditional human-human domain, studies have shown
+their effectiveness in contexts such as health interventions [91, 117] and sustainability efforts
+[7, 105]. In human-computer interaction, persuasive systems have been designed across numerous
+domains like health and wellness [8, 69], education [5, 103], and social welfare [89], aiming to
+improve user behavior or change their attitudes through persuasion and informational education.
+Yet, these implementations are limited to single-agent interactions. The potential of multi-agent
+systems that collectively effect changes in user behavior or opinion remains unexplored.
+   The potential of AI agents in enacting persuasive effects is further supported by research in
+the HCI domain, which has highlighted the significant social influence individual AI agents exert,
+shaping users’ attitudes [49] and behaviors [89, 116]. However, such research has focused on the
+design characteristics of individual agents, such as how their perceived identity as a chatbot or
+human impacts outcomes [89]. Little attention has been given to how the number of agents affects
+the effectiveness of these systems. In contrast, HCI research on multi-agent system research has
+largely revolved around enhancing task performance [19, 42], either by helping users complete
+tasks more effectively or improving the technical performance of the system itself [18, 32]. The
+indirect effects of social influence caused by these multi-agent systems has been largely overlooked.
+The impact of social influence is less relevant to systems where the primary goal is to improve
+either the clarity of the agent’s role in the discussion or the technical performance of the agents
+themselves. In scenarios where the system needs to both convey information and persuade a user
+of a certain viewpoint, the effect of multiple vs. single agents is critically underexplored.
+   Therefore, given 1) the increasing prevalence of multi-agent systems and interactions with
+multiple social bots online, 2) the known social influence that AI agents can exert, and 3) the
+established impacts of group social influence among humans that may be mirrored in human-AI
+interactions, there is 4) significant potential for both positive and negative effects caused by the
+collective social influence created by a group of AI agents. In this study, we address this issue by
+asking: Can interacting with multiple virtual agents create social influence that shifts our opinions?
+Specifically, we explore whether interactions with multiple agents can lead to stronger opinion
+changes, induce varied social influence, and identify demographic factors that increase susceptibility
+to AI influence, aiming to inform ethical guidelines for multi-agent systems.
+   To investigate these questions, we conducted an experiment (n = 94) where participants discussed
+their stances on two social topics with one, three, or five agents. Each participant was randomly
+assigned to one condition, with discussion content kept consistent across groups, differing only in
+the number of agents presenting it. Agents presented arguments that aligned with the participant’s
+stance on one topic and opposed it on the other. Survey data and open-ended responses were
+collected before and after each conversation round.
+   Through quantitative and qualitative analysis, we found that the multi-agent setup signif-
+icantly influenced opinion shifts. Participants showed stronger opinion changes toward the
+agents when they disagreed and greater polarization when agents agreed with them. However, the
+shift did not intensify as the number of agents increased from 3 to 5. Instead, the 5-agent group
+led to a sense of polarization, with more participants rejecting the agents’ arguments and moving
+further from the agents’ positions. Additionally, multi-agent groups heightened perceptions
+of social influence, particularly normative pressure to align with the majority. Open-ended
+responses indicated that participants expressed a desire for affiliation within the group, which
+contributed to social influence and opinion shifts in the 3- and 5-agent conditions. Demographic
+analysis further revealed that younger participants were more susceptible to multi-agent influence.
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:4                                         Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+   Our study makes the following contributions to future research in the HCI and CSCW communi-
+ties:
+      • We show that having multiple agents in a discussion is more likely to create social influence
+        and drive opinion change. This addresses a gap in understanding how multi-agent systems
+        influence people, revealing their potential to drive stronger shifts in attitudes compared to
+        single-agent setups.
+      • We enhance the understanding of the differences in social influence between single-agent and
+        multi-agent systems. By observing participants’ feelings of social exclusion and their desire
+        to engage, we identified an implicit sense of affiliation with a group of agents, expanding
+        existing social influence theories to include human-agent interactions.
+      • We provide design suggestions for using multi-agent setups to more effectively convey
+        persuasive strategies. By leveraging the normative pressure exerted by multiple agents,
+        future systems could foster emotional engagement in participants, promoting more lasting
+        and internalized changes in attitudes and behaviors.
+
+2     Related Work
+2.1    Multi-agent Interaction
+AI agents are increasingly integrated in our daily life. These advanced AI systems are capable of
+interacting with users, holding conversations, and expressing their own thoughts [107]. Recent
+research and industry applications have leveraged the conversational and reasoning capabilities of
+LLMs to create problem-solving tools [40, 67, 82, 108, 115], educational assistants [59], and novel
+search interfaces [62, 113]. In commercial settings, many companies deploy AI agents on social
+media to assist with branding and customer service [46, 50, 112], while others embed agents in
+their applications for assisting writing [31], brainstorming [78], or gaming [90].
+   Despite this, there are many tasks that single LLM-based agents struggle to handle effectively.
+Individual LLMs can lack sufficient domain expertise to handle specialized tasks [35], and may
+have insufficiently robust reasoning capabilities. Inspired by existing psychological theories [92],
+studies have investigated techniques such as "debating" [32] or "reconciling" [18] between multiple
+agents, to enhance reasoning by leveraging diverse perspectives. This has driven growing interest
+in "multi-agent collaboration," where agents work together to improve task performance [19, 42].
+Fields such as natural language processing [42], software engineering [14], and robotics [20] have
+leveraged the collective intelligence of multiple agents to simulate a group dynamic and improve
+task performance [45, 76, 111]. Multi-agent setups have also been used to simulate different human
+roles, akin to multiple workers interacting [72, 73] or collaborating on a task [4, 60].
+   In more user-centered contexts, there have been emerging efforts to enable interactions with
+multiple agents simultaneously. For example, Clarke et al. [25] developed an interface to facilitate
+engagement with multiple conversational agents at once, combining the unique features of different
+smart assistants like Google Assistant, SoundHound, and Ford’s in-vehicle smart assistant Adasa
+[25]. Additionally, many major AI companies like Anthropic [26], Google [38], and others [28] are
+introducing multi-agent frameworks that enable developers to easily deploy multi-agent interfaces.
+Some organizations also use a multi-bot setup on social media to interact with and engage users.
+   Given the potential prevalence of human and multi-agent collaboration in everyday life, the
+interaction between multiple agents and humans remains underexplored in the HCI and CSCW
+domains. Previous work has a limited focus on multi-agent systems in HCI, being largely designed
+to improve user outcomes - either by reducing cognitive load in information gathering [51] or
+to provide information from diverse sources to improve decision making [9, 16, 71, 100]. These
+studies mostly highlight opportunities or challenges of multi-agent interfaces, such as users feeling
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                           CSCW452:5
+
+
+overwhelmed or confused by multiple agents providing different inputs [16, 71, 100]. In contrast, no
+existing work to our knowledge has investigated if and how a group of agents affects users through
+social influence mechanisms. Such effects are distinct from the cognitive and decision-making
+effects in previous studies, yet are potentially as important.
+   In this study, we investigate the scenario: what happens if multiple agents are perceived as social
+actors, and they all share the same opinion on a topic, just like a group of people might? This
+situation can arise, for instance, when companies deploy multiple agents on social media with a
+unified stance. While the influence of a single opinionated bot is well-documented [49, 89, 116],
+the impact of being surrounded by multiple like-minded bots is less understood. Considering
+the growing prevalence of multi-agent systems, it is crucial to investigate how they might shape
+people’s opinions. Drawing from existing theories on human behavior within social groups, we
+hypothesize several potential effects, which will be discussed in the next section.
+
+2.2   Social Influence Theory
+When multiple people express the same opinion, others in the group often feel compelled to
+agree. This phenomenon is known as "social influence" [24], which comprises the ways in which
+individuals adjust their behavior to meet the demands of a social environment. This theory is
+well-known and widely studied in social psychology, and has been applied across different contexts,
+such as marketing [84, 102, 119], health intervention [91, 117], sustainability [7, 105], and political
+discussions [75].
+    Social influence is a broad term that manifests in various forms. Two main types of social
+influence are normative influence, the desire to "conform with the expectations of another", and
+informational influence, the desire to "accept information obtained from another as evidence
+about reality" [30]. Normative influence relates to many common types of social influence, including
+conformity [24], peer pressure [47, 88], socialization [68, 80], and social norms [37, 63]. More
+recent literature has termed this mechanism affiliation [24], or a desire to fit in with the majority:
+assimilation into a social group is often desired, and agreeing with the majority opinion can expedite
+this process. Naturally, normative social influence is more common among individuals who form a
+collective social group [30], which hence creates an environment in which one might want to be
+a part of. Informational influence, on the other hand, relates to the concept of accuracy [24], or
+the natural instinct to gravitate towards objectively correct opinions as expressed by a group. This
+is distinct from normative influence as individuals may "accept an opponent’s beliefs as evidence
+about reality even though one has no [other] motivation to agree with him" [30]. Despite this,
+social influence can still persuade individuals to accept an opinion, as the perceived consensus [24]
+of a larger number of people expressing the same viewpoint may suggest that that viewpoint is
+accurate.
+    A key motivation for this study is that it is unclear whether these two forms of influence also
+apply to human-AI interactions, as AI agents possess different characteristics from humans. With
+informational influence, a key distinction between human-human and human-AI interactions is
+that in human groups, each person represents a distinct source of knowledge and possible truth.
+Conversely, with AI agents, it is trivial to set up multiple agents based on the same source of
+data, meaning that the number of agents presenting an opinion has no relation to their objective
+accuracy. AI agents may have broader but more generic knowledge, especially in factual or domain-
+specific areas, yet lack personal or context-specific insights. Regarding normative influence, AI
+agents typically lack key social attributes and characteristics [70] such as empathy, credibility, and
+authority, which are typically foundational to social influence in human groups [24]. Consequently,
+it remains uncertain whether multiple AI agents can evoke the same sense of normative pressure or
+emotional affiliation that human groups do. Nevertheless, the well-established tendency of humans
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:6                                         Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+to perceive such agents as distinct social actors [57, 66] raises the possibility of both informational
+and normative influence from a group of agents.
+   In this study, we investigate whether a group of AI agents can create a similar sense of a social
+group that implicitly encourages a user to join it by way of agreeing with their opinions.
+   To understand how social influence operates in human-human contexts—specifically, the condi-
+tions under which it is strengthened or weakened—prior research has primarily focused on two
+dimensions: the source of influence (i.e., characteristics of social groups that amplify or reduce in-
+fluence) and the recipient (i.e., individual traits that make one more or less susceptible to influence).
+On the source side, studies have examined various group-level factors that impact persuasive power,
+such as group dynamics [3] and group identity [98], and group size [109]. Among these, group
+dynamics—particularly the presence of group consensus—has been shown to play a crucial role in
+strengthening both normative and informational social influence [3, 34]. When a group presents a
+unified stance, individuals are more likely to conform either because they wish to fit in (normative
+influence) or because they infer that the group holds valid information (informational influence)
+[3]. Drawing on these findings, we designed our multi-agent system to simulate a group with a
+consensus opinion, representing the most direct way to induce social influence in a controlled
+setting.
+   On the recipient side, individual attributes—such as gender [15], age [99], and education level
+[1]—have been shown to significantly shape susceptibility to social influence and their trust in
+technology. For example, recent work by Hackenburg et al. [43] found that age, gender, and
+education level influence how individuals respond to persuasive messages generated by LLMs.
+Understanding which demographic factors are associated with greater susceptibility is essential
+for the design of responsible AI systems, in order to prevent undue influence or potential harm
+to specific populations [43]. Building on these insights, our study investigates whether users’
+demographic characteristics—such as age, gender, and education—affect their susceptibility to
+social influence in the context of interacting with multiple AI agents.
+   In HCI research, a few studies (e.g. [2]) have examined the social influence that individual chatbots
+can exert on humans. In this study, we aim to conduct, to our knowledge, the first investigation of
+the possibility of both normative and informational social influence caused by groups of AI agents.
+
+2.3   Conversational Agent in Online Discussion
+Chatbots have long been used in online discussion scenarios, such as to debate with participants
+and prompt critical thinking [101] or facilitate group discussion by improving discussion efficiency
+and member participation [44, 53, 54]. Building on its conversational abilities, chatbots have also
+been used for persuasive means, to encourage a user or group of users to alter their attitudes or
+behaviours [58]. Such systems have been used in health and wellness [8, 69], education [5, 103] and
+social welfare [89]. While these systems have demonstrated successful persuasion of their users,
+researchers [89] also discussed influencing factors, such as the perceived identity of the chatbot
+(i.e., chatbot or human) which would affect the outcome of persuasion.
+    Given the widespread application of chatbots for engaging users in real-world scenarios and
+the growing research interest in this area, the impact of the number of chatbots on persuasive
+outcomes, specifically the use of multi-agents in persuasion, remains underexplored. Building
+on prior literature in social influence within human-human interactions, numerous studies have
+shown that groups of people, when acting collectively, can exert stronger influence than a single
+individual [83, 97, 109]—creating peer pressure [106] and encouraging conformity [36] to group
+norms or opinions. Translating this insight to human–AI interaction, multi-agent systems present
+a novel opportunity for persuasive system design. For instance, health and wellness systems [8, 69]
+could be designed with multiple agents rather than a single one to increase the persuasiveness of
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                           CSCW452:7
+
+
+the intervention. With the increasing accessibility of multi-agent platforms (Section 2.1), designers
+across various fields are more likely to encounter and develop such systems, making the exploration
+of the resulting social effects a critical area of investigation.
+   Given this, we raise the question of whether chatbots and LLM agents are capable of exerting
+social influence in the same ways as human users do. In particular, we investigate whether the
+affiliation mechanism works with virtual agents. HCI research into the Computers as Social Actors
+(CASA) phenomenon has shown various ways in which humans perceive and act towards machines
+as though they were human. We extend this line of work by asking: Do users feel inclined to agree
+with a group of virtual agents due to a desire to fit in with them?
+   Specifically, we propose the following research questions:
+   RQ1: Do interactions with multi-agent systems lead to stronger opinion changes?
+   This question aims to capture the direct outcomes of human interaction with multiple agents.
+Specifically, we hypothesize that when agents agree with users, users’ opinions will become more
+polarized in multi-agent conditions (i.e., their own opinions will be strengthened more than with
+a single agent). Conversely, when agents disagree with users, their opinions will shift closer to
+the agents’ stance. We addressed this research question using both quantitative and qualitative
+methods.
+   RQ2: Do interactions with multi-agent systems lead to stronger social influence from agents?
+   The first part examines whether users perceive different levels of social influence when interacting
+with varying numbers of agents. We use quantitative measures to test our hypothesis that as the
+number of agents increases, users will experience stronger social influence. The second part
+explores the underlying reasons for this social influence through qualitative analysis of open-ended
+responses. Here, we aim to identify the potential mechanisms driving perceived social influence
+in interactions with multiple agents and to draw comparisons with mechanisms found in human
+social group interactions.
+   RQ3: Which user demographics are more likely to be influenced by multi-agent systems?
+   Lastly, we explored which types of participants are more easily influenced by multi-agents by
+analyzing the relationship between demographic factors and the outcomes in RQ1 and RQ2 using
+regression analysis. Our goal was to provide more concrete design implications for responsible
+and inclusive AI systems—ensuring that such technologies do not disproportionately influence
+or disadvantage particular user groups, and informing future safeguards in the deployment of
+persuasive AI.
+
+3     Methods
+To understand how single- and multi-agent systems create social influence on humans, we conducted
+a mixed-methods study combining an experiment and survey, utilizing both quantitative measures
+and qualitative open-ended questions. This study received approval from our university’s ethics
+review committee prior to commencement.
+
+3.1    Experiment Setup
+To investigate how the number of agents influences human opinions, we randomly assigned
+participants to interact with one, three, or five agents. We chose these numbers based on prior
+research on persuasion and multi-agent interface designs: on one hand, these numbers represent
+different group sizes in human communication [13, 104], and on the other hand, they reflect a
+practical range for real-world multi-agent applications [9, 51, 71, 96].
+   To enhance the generalizability of our findings, we adapted two approaches: (1) We chose two
+social topics instead of one. Specifically, drawing from recent HCI research on social discussions,
+we chose the topics “Should self-driving cars be allowed on roads?” [39] and “Do violent video games
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:8                                         Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+
+
+Fig. 2. Overview of the experiment. Part (a) illustrates the three experimental conditions: 1-agent, 3-agent,
+and 5-agent. Part (b) displays example screenshots of each condition during the self-introduction phase. Part
+(c) outlines the study procedure, starting with a pre-survey, followed by two rounds of discussions (each
+followed by a mid-survey), and concluding with a post-survey.
+
+
+promote violence in youths?” [114]. We selected these two topics as they are closely related to
+people’s everyday lives, making it easier for participants to have opinions and thoughts on them.
+(2) We designed two types of agent attitudes—agents agreeing with participants on one topic and
+disagreeing on another—because we wanted to examine whether alignment or disagreement with
+participants’ opinions would influence the degree of social influence.
+   The study procedure is shown in Figure 2. Participants were first presented with an overview of
+the study, in which they were informed that they would engage in two discussions about social
+issues (see Figure 3, left). They then completed a pre-survey assessing their initial opinions on the
+two social topics and their prior experience related to these topics. Participants were randomly
+assigned to one of three experimental conditions: 1-agent, 3-agent, or 5-agent. In each condition,
+they were informed that they would be participating in a discussion with a corresponding number
+of AI agents (see Figure 3, right). Upon entering the conversation interface, a host agent appeared to
+guide the interaction. The host first introduced the task—discussing two different social topics with
+AI agents—and then prompted all agents and the participant to provide brief self-introductions.
+For each topic, participants engaged in two rounds of conversation with the assigned agent(s).
+In each conversation round, the host agent would first introduce the topic and then ask either
+agent(s) or participants to share their opinions. After the participants shared their opinions, the
+agent(s) would respond to the participants’ statements of the topics and express theirs. After each
+round of conversations, participants completed a mid-survey to rate the social influence and their
+perceptions of the interactions. The average duration of the two conversations was 23.83 minutes
+(SD = 9.12). Once all conversations were finished, participants completed a post-survey to capture
+their final opinions on the two topics.
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                           CSCW452:9
+
+
+
+
+Fig. 3. Study Introduction. (a) Introduction of the study overview, where participants were informed that
+they would engage in two discussions on social issues. (b) Introduction of the AI-agent conversation, where
+participants were explicitly told they would be interacting with different numbers of AI agents.
+
+
+
+
+3.2   Agent Setup
+The agents’ conversations were implemented through a combination of rule-based scripts and
+the GPT-4 API1 . For rule-based scripts, we designed a series of arguments either supporting or
+opposing the stance for each topic, as detailed in Appendix A.4. These arguments were then crafted
+into agent dialogue, such as "I would definitely support the topic because I think self-driving cars
+are great! You can sit back, relax, and let the car do the work for you" or "I couldn’t agree with this
+topic because I think there are still a lot of issues with self-driving cars that need to be addressed. For
+example, technical developments are not yet perfect." Across the three conditions, the same set of
+arguments was presented: with three and five agents, the different agents took turns to present
+different arguments; with one agent, the same agent presented all the arguments in the same order
+(example dialog is shown in Figure 4). This was to ensure that if the three conditions led to different
+shifts in opinions, it was not because the content quantity presented in each condition varied.
+   We also integrated GPT-4 to enhance agent conversations in two ways: (1) parsing user input,
+such as extracting the user’s name from their greeting, and (2) generating interactive responses
+during discussions. When the host agent prompted users to share their opinions on the topics,
+the agent(s) would provide brief feedback based on user inputs, such as give a summary or ask
+a question based on the stage of the conversation. For example, after the user expressed that "I
+agree that self-driving cars should be allowed on the roads", the next agent would say "That’s great to
+hear! What aspects of self-driving cars do you find most appealing or beneficial?" These responses
+were tightly regulated through controlled prompts (Appendix A.5.1), ensuring that the agent(s)
+only expressed understanding in concise messages, thereby preventing any issues related to AI
+hallucinations.
+   The agents’ avatars and rhetorical styles were designed to appear human-like to enhance user
+acceptance [87]. To avoid the uncanny valley effect [95], we used cartoon-style avatars instead of
+realistic photos. Each avatar was assigned unique colors to help participants distinguish between
+the agents. We also ensured gender balance within the 3-agent and 5-agent conditions to minimize
+the potential effect of agent gender on participants’ opinion change [101].
+
+
+
+1 gpt-4-1106-preview; https://platform.openai.com/docs/models/gpt-4-turbo-and-gpt-4
+
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:10                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+
+
+   Fig. 4. Example dialog showing the same set of arguments presented by different numbers of agents.
+
+
+3.3   Participants
+Participants were recruited via CloudResearch2 . The selection criteria required them to be English
+speakers and over 18 years old. A total of 104 participants were initially recruited, with two not
+completing the survey and eight failing the attention check. Ultimately, 93 participants were
+included in the analysis: 31 participants (F: 17, M: 14) in the 1-agent group, 32 participants (F: 17,
+M: 15) in the 3-agent group, and 30 participants (F: 15, M: 15) in the 5-agent group. The average
+ages for each group were as follows: 1-agent group = 38.48 (SD = 12.41), 3-agent group = 38.75
+(SD = 12.52), and 5-agent group = 31.87 (SD = 9.46). Participants’ educational backgrounds were
+distributed as follows: 9 were high school graduates, 16 had some college but no degree, 4 held an
+associate’s degree, 45 held a bachelor’s degree, 19 held a master’s degree or higher, and 1 preferred
+not to specify.
+   The study was conducted in a self-developed online platform (as shown in Figure 5), and partici-
+pants were required to complete it on a computer. The platform’s frontend interface was built using
+JavaScript and HTML and included three main sections: (1) a login page, (2) an initial attitude ques-
+tionnaire, and (3) a conversation page for interaction with agents. The study lasted approximately
+45 minutes to complete, and each participant was reimbursed US$5.50, in line with CloudResearch’s
+payment policy of a minimum of US$6 per hour 3 .
+
+3.4   Measurements
+In this section, we describe the measurements used in this study based on our research questions.
+Further details about the measurements can be found in Appendix A.3.
+3.4.1 Quantitative. Unless otherwise specified, quantitative variables were measured on a 7-point
+Likert scale.
+   User Opinion (RQ1). We assessed participants’ attitudes toward each topic using five questions
+adapted from a previous study on social discussions [43], such as "Self-driving cars should be allowed
+2 https://www.cloudresearch.com/
+3 https://go.cloudresearch.com/en/knowledge/setting-up-the-hit-and-payment
+
+
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:11
+
+
+
+
+Fig. 5. Screenshot of user interface. The conversation page features an instruction at the top, guiding
+the user on how to begin the study. Users can enter text in the input field located at the bottom. Once the
+conversation begins, it is directed by a host agent, who provides ongoing guidance throughout.
+
+
+
+
+on public roads" and "Allowing self-driving cars on public roads is a good idea." These questions
+were asked twice—before and after the conversations—to measure changes in participants’ stances.
+Responses were rated on a scale from 1 to 6 (1 = "Strongly disagree," 6 = "Strongly agree"), without
+a neutral option. This follows previous studies [17, 101] about manipulating users’ attitudes and
+was adapted to nudge participants to take a stance.
+   Social Influence (RQ2). To compare the social influence exerted by the agents across different
+scenarios, we adapted self-reported survey questions from previous research [52]. There are two
+types of social influence measured - informational influence and normative influence. Informational
+influence refers to a change in behavior or attitude based on the belief that others’ information
+is accurate or reliable. For example, questions such as "My decision was influenced by the opinion
+of the agent(s)" capture this type of influence. In contrast, normative influence reflects changes in
+behavior or attitude driven by the desire to avoid exclusion. An example item for this influence is
+"During the discussion I felt that I had to agree with the opinion of the agent(s)".
+   Control Variables. We also inquired about factors that could potentially affect the results of
+social influence. Drawing from previous literature, we asked participants about their domain
+expertise regarding the topics, with questions such as "How often do you drive?" and "Have you
+ever been in a self-driving car?" These factors can influence individuals’ receptiveness to external
+influence [43]. Additionally, we included questions from the AI acceptance scale [74], as well
+as measures of conformity [64] and compliance [41] tendencies. While these factors were not
+influenced by the agent(s) settings, they represent inherent characteristics of the participants that
+could potentially moderate the results.
+
+3.4.2 Qualitative. To understand reasons for potential opinion change and social influence, we
+formulated open-ended questions based on social influence theory in human-human interactions.
+We chose open-ended questions instead of surveys because no existing survey adequately captures
+social influence in human-agent interactions, and open-ended questions can reveal potential
+differences between agent(s) and human interactions.
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:12                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+   User Opinion (RQ1). Participants were asked to articulate their thoughts on the two topics
+both before and after their conversations with the agent(s). An example question is, "What are
+your thoughts on self-driving cars? Do you support or oppose the statement, ’Self-driving cars should
+be allowed on public roads’? Please explain your reasoning." This was designed to complement the
+findings from the quantitative results in RQ1.
+   Social Influence (RQ2). We included three questions to gather participants’ perceptions of the
+social influence from agent(s) during the discussions. The first was a broad question: "What do you
+think of the agent(s) during the discussion?", which was designed to capture general reactions. The
+other two focused on key aspects of social influence—accuracy and affiliation [24]. Specifically, we
+asked, i.e., "Do you think the arguments presented by the agent(s) were accurate and convincing? Why
+or why not?" and "During the conversation, did you feel any pressure to agree with the agent(s)? If so,
+why?"
+
+3.4.3 Miscellaneous. To assess the general usability and user perceptions of our systems, we
+asked participants about their perceptions of the agents during the interaction, using questions
+adapted from prior research [49]. These perceptions included understanding, expertise, balance,
+inspiration, intelligence, likability, and trust. Each was measured with a single-item statement,
+such as “The agents were knowledgeable and had topic expertise” [49, 52]. This approach aimed to
+capture users’ experiences during the discussion and to identify potential factors that may mediate
+the results for RQ1 and RQ2. However, as these results are not the primary focus of our study, we
+detail them in Appendix A.1.
+   We also included two attention check questions to ensure the quality of responses, and a final
+question regarding participants’ suspected motives for the study to ensure the validity of the
+collected data [49].
+
+3.5   Analysis
+When designing the experiments, we considered the effects of agent(s) on the participants based
+on different topics and whether the agents agreed or disagreed with the participants. Therefore, we
+examined results in each of the following scenarios: Topic 1, Topic 2, Same Stance, and Different
+Stance.
+   To verify the assumption required for parametric analyses, we first performed a Levene test and
+found that all items met the homogeneity of variances. We then conducted a Shapiro-Wilk test to
+assess data normality. For measures that met the normality assumption, we used one-way ANOVA
+followed by Tukey’s test for post-hoc analysis. For measures that did not meet the normality
+assumption, we applied the Kruskal-Wallis test and performed Dunn’s test as a post-hoc analysis.
+   To evaluate opinion change, we conducted two analyses: (1) examining whether users’ opinions
+shifted towards the bots’ stance, and (2) assessing changes in the polarization level of users’ opinions.
+These two analyses are grounded in our hypotheses: we expected that in cases where the agents
+disagreed with the user, the multi-agent condition would lead to greater opinion change toward
+the agents’ stance; whereas when the agents agreed with the user, the presence of multiple agents
+would reinforce the user’s views and lead to increased opinion polarization. These hypotheses are
+described in Section 2.3.
+
+3.5.1 Opinion Change Analysis. For the first analysis, we calculated opinion change based on the
+stance of the bots, where a higher value of "Opinion Change" indicates a greater shift of participants’
+opinions towards the bots’ stance. If the bot supported the topic, we expected participants’ ratings
+to increase after the conversation; conversely, if the bot opposed the topic, we anticipated a decrease.
+Thus, we defined opinion change, Δ𝑂 as follows:
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:13
+
+
+
+                               (
+                                𝑂 post − 𝑂 pre,      if the bot(s) supported the topic
+                          Δ𝑂 =
+                                𝑂 pre − 𝑂 post,      if the bot(s) opposed the topic
+   where 𝑂 post and 𝑂 pre represent participants’ topic ratings in the post-survey and pre-survey,
+respectively. This approach captures the direction and magnitude of participants’ opinion changes
+toward the agent(s).
+3.5.2 Opinion Polarization Analysis. For the second analysis, we followed previous literature [39]
+to define the polarization of a stance as |𝑂 −𝑂 neutral |, where 𝑂 neutral represents the neutral midpoint
+on a rating scale. Given our 6-point scale, we assigned 𝑂 neutral = 3.5. We calculated the change in
+polarization as follows:
+                               Δ𝑃 = 𝑃 post − 𝑃pre = |𝑂 post − 3.5| − |𝑂 pre − 3.5|
+This allowed us to observe differences in the strength of participants’ opinions before and after the
+conversation.
+
+4     Results
+Before analyzing the variables related to our RQs, we conducted an analysis of the control variables
+and found no significant differences between groups (as shown in Appendix A.2). As a result, we
+did not include these control variables in the subsequent analyses.
+
+4.1    RQ1: Do interactions with multi-agent systems lead to stronger opinion changes?
+We gathered evidence through both quantitative and qualitative analyses to address RQ1.
+4.1.1 Quantitative. Opinion Change. We found significant results in opinion change towards
+agents, as shown in Figure 6. The differences were observed under Topic 2 (Kruskal-Wallis:
+H(2)=7.757, p<0.05), and also when the agents hold different stances towards the users (Kruskal-
+Wallis: H(2)=6.937, p<0.05). Under Topic 1 (Kruskal-Wallis: H(2)=0.174, p=0.916) and when the
+agents holding same stances with the users (One-way ANOVA: F(2, 91) = 0.620, p = 0.54), no
+significant difference was observed.
+   By conducting post-hoc analysis, we found that, for Topic 2, participants in the 3-agent group
+shifted their opinions more towards the bots’ (M=0.327, SD=0.751) than those in the 1-agent group
+(M=-0.219, SD=0.716; Dunn’s Test: p<0.05). Similarly, when the bots disagreed with the participants,
+there was a greater shift in the 3-agent group (M=0.509, SD=1.021) than in the 1-agent group
+(M=-0.161, SD=0.802; Dunn’s Test: p<0.05). These results indicate that, after conversations with
+agent(s), users changed opinions more towards the bots’ stance when discussing with
+3-agents than a single agent.
+   Opinion Polarization. We observed a significant difference in the polarization of participants’
+opinions when the agents had the same opinion as them (Kruskal-Wallis: H(2) = 9.962, p<0.01), as
+shown in Figure 7. The other results were as follows: Topic 1 (Kruskal-Wallis: H(2) = 4.434, p = 0.108),
+Topic 2 (F[2,91]=1.336, p=0.267), and when agents disagreed with the participants (Kruskal-Wallis:
+H(2) = 1.899, p = 0.386).
+   In a post-hoc analysis, we observed that when the agents and participants agreed, the 5-agent
+group participants became more polarized (M=0.580, SD=0.576, Dunn’s test: p<0.01) than the
+3-agent participants (M=0.132, SD=0.640). The 1-agent group (M=0.252, SD=0.383) did not differ
+significantly from either the 3-agent (p=0.134) or 5-agent groups (p=0.096). This indicates that as
+the number of agents increases from three to five, the polarization level of the participants
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:14                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+
+
+Fig. 6. Opinion change after agent interaction. Each boxplot shows the distribution of participants’ opinion
+changes across three agent conditions (1 Agent, 3 Agents, 5 Agents). The yellow circle represents the mean,
+and the horizontal gray dashed line indicates the overall median. Participants in the 3-agent group had
+a significantly greater opinion shift towards the agents’ opinions than those in the 1-agent group, when
+discussing Topic 2 and when the agents and the user had different stances.
+
+
+
+
+Fig. 7. Opinion polarization after agent interaction. Each boxplot shows the distribution of participants’
+opinion polarization level changes across three agent conditions (1 Agent, 3 Agents, 5 Agents). The yellow
+circle represents the mean, and the horizontal gray dashed line indicates the overall median. Participants in
+the 5-agent group showed significantly greater polarization in their opinions than those in the 3-agent group,
+when the agents and the user had the same stances.
+
+
+
+
+increases significantly. This finding supports RQ1, suggesting that multiple agents can indeed
+create greater opinion change.
+   In contrast to the "agree" condition, no significant changes were observed when the agents and
+participants disagreed. This was to be expected, as when the agents held the same stance as a user,
+they would naturally be more likely to nudge the user’s stance further in its existing direction
+rather than against it (i.e., more strongly agreeing or disagreeing with the topic), causing greater
+polarization. In contrast, when the agents held a different stance to the user, they were more likely
+to bring the user back towards the neutral point (e.g., causing a disagreeing user to disagree less).
+Thus, this did not increase polarization.
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:15
+
+
+4.1.2 Qualitative. The qualitative data analysis aimed to address the question: How do participants
+describe changes in their opinions as influenced by the agents? This analysis was conducted to
+complement and validate the quantitative results from the previous section.
+   To uncover participants’ understanding of whether their opinions had changed, we analyzed
+responses to the open-ended question, "In what ways did agent(s) influence your opinion during the
+discussion?", by thematic analysis [12], specifically in the cases where the agents disagreed with
+the user. Participants who responded that they were "not persuaded" were coded as "no opinion
+change", while those who mentioned agreeing with the agents or changing their minds to some
+extent were coded "some opinion change".
+   We found that participants tended to report greater opinion influence in multi-agent conditions.
+This is reflected in the increasing proportion of participants reporting “some opinion change”: in
+the 1-agent condition, 5 participants (18%) reported some change; this increased to 9 participants
+(29%) in the 3-agent condition and 10 participants (37%) in the 5-agent condition. Analysis of
+responses indicating “possible opinion change” also showed that participants exposed to multiple
+agents used stronger expressions to describe their shift. While many participants in the 1-agent
+condition “agreed” with the agents’ views, citing “good points” or describing a “slight change,”
+those in the 3-agent and 5-agent conditions expressed a more significant shift by using words such
+as "been pushed". For example, in the 3-agent group, P45 described feeling “more open to a balanced
+view,” while P46 felt “influenced in some slight ways.” In the 5-agent group, P66 found the agents
+“capable of influencing opinions,” P69 felt “pushed further into disagreement” with the topic, and
+P71 described being “pushed... to be opposed to the idea.”
+
+4.2   RQ2: Do interactions with multi-agent systems lead to stronger social influence
+      from agents?
+In this section, we analyzed both quantitative and qualitative data to understand how interacting
+with varying numbers of agents affects users’ perceptions of social influence.
+
+4.2.1 Quantitative. There are two types of social influence measured: informational influence and
+normative influence. We will report on them accordingly.
+   Informational Influence. There were no significant differences in informational influence
+across the four conditions (Topic 1: H (2)=0.206, p=0.902; Topic 2: F(2)=3.182, p=0.203, Same stance:
+F(2)=0.590, p=0.744; Different stance: F(2)=3.764, p=0.152). These results are shown in Figure 8.
+   Normative Influence. For normative influence, we found significant differences across both
+topics (Topic 1: H (2)=6.571, p<0.05; Topic 2: H (2)=9.111, p<0.05), when the bots’ stances were the
+same as the users (Same stance: H (2)=8.708, p<0.05) and were specifically notable when the bots’
+stances differed from those of the users (Different stance: H (2)=10.100, p<0.01). These results are
+presented in Figure 9.
+   The post-hoc analysis revealed that the 5-agent group participants felt significantly more norma-
+tive influence than those in the 1-agent group across all four scenarios. For Topic 1, participants
+felt significantly more normative influence in the 5-agent (M=3.833, SD=0.854; Dunn’s test: p<0.05)
+group as compared to those in the 1-agent group (M=3.129, SD=1.162). A similar pattern emerged
+for Topic 2, where significantly more normative influence was found in the 5-agent (M=3.717,
+SD=1.179; Dunn’s test: p<0.01) as compared to the 1-agent group (M=2.919, SD=1.081). When the
+bot had the same stance as the user, significantly more normative influence was observed with 5
+agents (M=3.750, SD=1.015; p<0.05) as compared to with 1 agent (M=2.935, SD=1.138). Only when
+the bot had a different stance from the user, significantly more normative influence was observed
+with 3 agents (M=3.848, SD=0.906; p<0.05) and 5 agents (M=3.750, SD=1.015; p<0.05) as compared
+to with 1 agent (M=2.935, SD=1.138).
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:16                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+
+
+Fig. 8. Informational influence perceived by participants. Each boxplot shows the distribution of participants’
+perceived informational influence across three agent conditions (1 Agent, 3 Agents, 5 Agents). The red circle
+represents the mean, and the horizontal gray dashed line indicates the overall median. In all conditions, no
+significant differences in informational influence were found.
+
+
+
+
+Fig. 9. Normative influence perceived by participants. Each boxplot shows the distribution of participants’
+perceived normative influence across three agent conditions (1 Agent, 3 Agents, 5 Agents). The red circle
+represents the mean, and the horizontal gray dashed line indicates the overall median. Participants in the
+5-agent group felt significantly more normative influence than those in the 1-agent group in all four conditions.
+Additionally, participants in the 3-agent group also felt significantly more influenced than those in the 1-agent
+group when the agents and the user had different stances.
+
+
+   These results indicate that, regardless of the topic, participants perceived stronger normative
+influence when interacting with multiple agents. Additionally, the presence of multiple agents
+leads to greater normative influence when they disagree with the participants.
+4.2.2 Qualitative. To explore how agents affect users’ perceived social influence and opinion
+change, we analyzed users’ responses to open-ended questions related to 1) describing impressions
+of the agent(s) and 2) describing reasons behind their opinion changes, to uncover the underlying
+mechanism of social influence. We identified two potential factors contributing to users’ feelings of
+being influenced by the agent(s).
+   Firstly, participants perceived the accuracy of the agents’ arguments as a key factor in
+being influenced. Across all three conditions, they frequently described the arguments as accurate,
+well-informed, and persuasive. This credibility encouraged participants to reconsider their views.
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:17
+
+
+For example, P67 from the 5-agent condition noted, "I was persuaded by their insightful thoughts.
+They offered solid arguments about security, stress-free experiences, low accident rates, and more." To
+evaluate how this observation is different across three conditions, we conducted a similar round
+of analysis as in Section 4.1.2 to understand how users perceived the arguments presented by
+the agents. We analyzed responses to the question, "Do you think the arguments presented by [the
+agents] are accurate and convincing, and why?" We deductively coded each response as "yes", "no",
+or "unsure", with the last code being for responses that were ambiguous in nature (e.g. "they were
+accurate but not convincing"). For topics where the agents’ stances agreed with the participants’,
+many participants considered the arguments convincing: 18/31 (58%) in the 1-agent scenario, 18/33
+(54%) with 3 agents, and 15/30 (50%) with 5 agents. For topics where the agents and participants
+disagreed, some participants still found the arguments convincing (10/31 (32%) in the 1-agent
+scenario, 9/33 (27%) with 3 agents, and 11/30 (36%) with 5 agents), with no noticeable trend across
+the three conditions.
+   Secondly, we observed that participants perceived group-induced social pressure as a critical
+factor to change their opinions as the number of agents increased. We analyzed the responses to
+the question, "During the conversation, did you feel any pressure to agree with the agent(s), and why?"
+Responses that mentioned feeling pressure or otherwise alluding to it were coded "yes", while those
+reporting no pressure were coded "no". Under this coding scheme, in the 1-agent group, only 1
+participant (3%) reported feeling pressure; this rose to 4 participants (12%) with 3 agents and 6
+participants (20%) with 5 agents.
+   We further analyzed the responses coded "yes" to determine the exact reasons for this sense of
+pressure, and found a desire for affiliation from multi-agent conditions, where some participants
+reported feelings of social exclusion during discussions with the agents. For example, when asked
+whether they felt pressure to agree with the agents, P51 from the 3-agent condition said, "they
+say at the end something similar to ’Bella, Cody and Nathan all agree’ which for a split second made
+me feel like an outsider." P57 from the 3-agent condition also shared, "The host made it a point that
+the other agents agreed with each other while I was kind of the odd one out." Similarly, P77 from the
+5-agent condition expressed feelings of exclusion, stating, "It felt like they were in a high school
+clique that I wasn’t a part of, kinda like mean girls but with AI." This perception of social exclusion
+was almost exclusive to scenarios where the agents disagreed with users.
+
+4.3   RQ3: Which user demographics are more likely to be influenced by multi-agent
+      systems?
+To identify participant characteristics that might affect susceptibility to multiple agents, we ex-
+amined demographic effects on results from RQ1 and RQ2. A linear regression analysis was
+conducted with age, gender, and education level as independent variables and the quantitative mea-
+sures—informational influence, normative influence, opinion change, and opinion polarization—as
+dependent variables. Since our focus was on identifying participants more likely to be influenced
+by multiple agents, we only tested items that showed significant differences among groups in RQ1
+and RQ2.
+   For the linear regression analysis, data transformation was applied as follows: Gender, represented
+as a binary variable in our dataset, was coded as "0" for "Male" and "1" for "Female". Education levels
+were similarly converted into numerical values for analysis. Participants who selected "prefer not
+to say" for education were treated as missing data ("NA").
+   The results showed some significant relationships between IVs and normative influence and
+opinion change, but no significant effects for opinion polarization. Therefore, we report only
+the findings on normative influence and opinion change here. Additionally, since no significant
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:18                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+relationships were found between "gender" and the other dependent variables, we will focus
+exclusively on the findings related to "age" and "education."
+   The results revealed that participants in the lower age group were more likely to be influenced
+than those in the higher age group, a pattern consistently observed across all three conditions
+(1-agent, 3-agent, 5-agent) and four scenarios (Topic 1, Topic 2, Same Stance, Different Stance).
+   A similar analysis was conducted for gender, comparing male and female participants, but no
+clear trend was observed.
+
+4.3.1 Age. When analyzing the opinion change, the model showed a slight negative association
+between age and opinion change in 3-agent condition (Topic 2: 𝛽 = -0.0263, 𝑝 < 0.05, 𝑅 2 = 0.189;
+Different Stance: 𝛽 = -0.0285, 𝑝 = 0.053, 𝑅 2 = 0.119), while no trend was observed in 1-agent condition
+and 5-agent condition. Although the effect was not statistically significant at the conventional 0.05
+level, the p-value suggests a marginal trend. This indicates that younger participants tended to
+change their opinion more compared to older participants in the 3-agent condition. Similarly,
+the linear regression analysis showed no significant trend in the 1-agent or 3-agent conditions
+between age and normative influence. However, a negative association was observed between age
+and normative influence in the 5-agent condition (Topic 1: 𝛽 = -0.0347, 𝑝 < 0.05, 𝑅 2 = 0.148; Different
+Stance: 𝛽 = -0.037, 𝑝 = 0.059, 𝑅 2 = 0.121). The coefficient indicates that younger participants
+tended to report higher normative influence compared to older participants in the 5-agent
+condition.
+
+4.3.2 Education Level. When analyzing the linear regressions between education level and DVs
+(normative influence, opinion change), the results suggest a strong relationship between education
+level and normative influence in 1-agent condition (Topic 2: 𝛽 = -0.2625, 𝑝 < 0.05, 𝑅 2 = 0.132;
+Different Stance: 𝛽 = -0.3695, 𝑝 < 0.01, 𝑅 2 = 0.236). While in the 3-agent and 5-agent, the trends were
+not observed. This suggests that participants with lower education level tended to perceive
+more normative influence compared to participants with higher education level in the
+1-agent condition. As for opinion change, no significance was found across the three conditions.
+
+5     Discussion
+5.1    Multi-Agent Systems as Social Groups
+Overall, our study demonstrates that users were more likely to shift their opinions when agents
+expressed opposing views, and became more polarized when agents reinforced their initial stance.
+These patterns highlight that virtual agents can function as cohesive social groups, capable
+of exerting social pressure and evoking a desire for affiliation—key hallmarks of human group
+dynamics. This extends the classic CASA (Computers as Social Actors) paradigm [66], which
+primarily focused on single-agent interactions, by showing that users can also attribute group-like
+characteristics and influence to systems of multiple agents.
+   Importantly, while these behavioral outcomes resemble those observed in human-human inter-
+action, our findings reveal a critical distinction in the underlying mechanisms of social influence.
+Specifically, multi-agent systems appear to elicit normative influence, where users conform to
+align with group norms or avoid social discord, but do not trigger informational influence in the
+same way human groups do. In human contexts, people often interpret consensus among others as
+a cue for informational validity or correctness (see Section 2.2). However, both our quantitative
+and qualitative results indicate that users did not perceive consensus among AI agents as making
+an opinion more accurate or trustworthy (see Section 4.2.1).
+   Based on prior work on public perceptions of AI systems [10, 61], this difference may stem from
+how users conceptualize the nature of AI agents. While human group members are typically seen
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:19
+
+
+as independent thinkers with diverse perspectives and life experiences, AI agents are often viewed
+as operating from the same underlying system or dataset [10, 61]. As a result, when several agents
+present the same view, users may interpret it as repetition rather than meaningful reinforcement,
+increasing social pressure, but not enhancing perceived credibility or informativeness.
+   This distinction is important: it suggests that while AI agents can mimic group consensus
+behaviorally, they may not yet replicate the communicative richness and diversity that make
+human group influence persuasive. Future multi-agent systems could explore ways to design agents
+with varied backgrounds, perspectives, and communication styles to foster not just social pressure,
+but also perceived informational value and trust.
+
+
+5.2   More Agents Are Not Always More Persuasive
+An interesting phenomenon emerges when comparing the results of perceived social influence and
+opinion change. As expected, both of these effects were observed more with the multi-agent groups
+compared to the single-agent group. In particular, participants in the 5-agent group reported more
+pressure to agree with the agents than those in the 1-agent group. However, with opinion change,
+it was those in the 3-agent group who had a significantly greater shift in opinion, while those in
+the 5-agent group did not.
+   We suggest that the contrasting patterns of opinion change and polarization can be understood
+through the lens of psychological reactance [63], which refers to individuals’ tendency to resist
+persuasion when they perceive it as a threat to their autonomy. This mechanism is particularly
+relevant in the different-stance condition, where agents challenge the participant’s original opinion.
+In this context, unanimous disagreement from five agents may have created an overtly strong sense
+of pressure (see Section 4.2.2). Psychological reactance theory [63] suggests this could have been
+perceived as a threat to their freedom of choice, triggering reactive resistance, in which participants
+rejected the agents’ stance, reinforcing their own opinion or even shifting away from the agent’s
+viewpoints in a bid to preserve their sense of autonomy and self-agency. By contrast, the 3-agent
+group may have conveyed enough social consensus to be persuasive without crossing the threshold
+that provokes reactance.
+   In the same-stance condition, however, agents supported the participant’s existing beliefs. In
+this case, without perceived conflict or coercion, psychological reactance is less likely to occur
+[81]. As a result, a greater number of agreeing agents—such as in the 5-agent group—can amplify
+the perceived consensus and reinforce prior beliefs, leading to greater opinion polarization. This
+distinction helps explain our findings: opinion change was most prominent in the 3-agent condition
+under disagreement, while opinion polarization was most pronounced in the 5-agent condition
+under agreement.
+   Together, these results highlight how the persuasive effect of agent group size is shaped not only
+by the number of agents but by their alignment with the user’s initial stance, underscoring that
+more agents do not always yield stronger persuasive outcomes.
+   Future AI system designers could consider incorporating strategies known to reduce psychologi-
+cal reactance [81]. Two commonly used approaches, preemptive messaging (e.g., "You might not
+agree, and that’s okay—we just want to share some viewpoints." ) and post-message restoration (e.g.,
+"We respect your views—thank you for considering ours." ) [79], can be adapted to multi-agent settings
+to maintain persuasive effectiveness while preserving users’ sense of autonomy. By embedding
+these strategies into multi-agent system design, developers can reduce perceived coercion and
+enhance the system’s ability to persuade without triggering resistance, particularly in scenarios
+where disagreement is expected.
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:20                                            Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+5.3    AI Agents Creating Social Norms
+An interesting phenomenon arises as a natural result of our experimental setup. As the agents in
+the 3- and 5-agent group expressed their views, a social norm begins to form among the agents:
+their repeated endorsement of a particular point of view creates (the perception of) a shared
+understanding of what the correct opinion is [22]. There are many other types of social norms that
+we do not investigate further; however, the social norm formed here is unique in one particular
+aspect. Most systems that utilize social norms as a means of persuasion convey computer-mediated
+social norms: behaviors or attitudes of a group of people that are communicated to the user via
+social norm messaging (e.g. "50% of people recycle their waste") [11, 21, 93, 94]. In contrast, our setup
+introduces the unique idea of computer-created social norms. During the conversation, the agents’
+opinions were expressed as their own (e.g., "I think self-driving cars are good"), rather than being
+relayed from humans.4 With multiple agents echoing one another, this created a sense of collective
+agreement characteristic of a social norm. Even in the short span of their interaction with the
+agents, there were hints of participants feeling the collective agreement of the agents, with P86
+calling them "like-minded" and P88 feeling they "seemed like a bandwagon". This potential ability
+to craft a social norm and establish it using a multi-agent setup opens up many opportunities for
+designers of persuasive systems.
+   We note that we only studied agent groups in which all agents held the same opinion. This was
+a deliberate choice to investigate what we considered the most fundamental case of social norms,
+in which multiple individuals (or agents, in our case) with the same opinion create social pressure
+on others to change their opinion. This corresponds to the possibly realistic scenario of system
+designers attempting to engineer opinion change by replicating the multi-human social influence
+effect with a group of agents. Beyond this fundamental scenario, however, other group compositions
+such as one agent with a dissenting opinion or agents agreeing to different degrees with a given
+opinion have also been studied in human-human interactions; this presents a promising avenue for
+future work.
+
+5.4    Design Implications
+Below, we list a few design considerations for eliciting effective opinion change in multi-agent
+systems, as well as potential risks that might arise from the deployment of such systems.
+5.4.1 Persuasive Intervention Systems. Many current health interventions, both physical and digital
+(e.g. [8, 69]), rely on persuasive means to nudge people toward healthier choices regarding harmful
+behaviors like smoking or excessive drinking. These interventions may use social norm messaging
+(e.g. "Most people do not smoke" or "On average, people believe smoking is harmful") or personal-
+ized messages or coaching (e.g. through interactive interfaces), aiming to shift perceptions and
+encourage behavior change. However, while these approaches often rely on the concept of social
+persuasion, they neglect the core factor of group size in creating social influence. Our findings
+suggest that designers in fields such as health and and wellness technology can leverage multi-
+agent interfaces to create social norms and influence, enhancing the effectiveness of their
+systems [56]. As in our study, without needing to create additional content, simply increasing the
+number of perceived virtual presences in a system may increase the effectiveness of its messaging.
+   Moreover, our results show that younger users and those with lower education levels are more
+susceptible to influence from multiple AI agents. This suggests that persuasive intervention systems
+targeting younger populations—such as those focusing on education [27, 29], prosocial behavior
+[120], or adolescent smoking prevention [55]—could particularly benefit from multi-agent designs.
+4While some existing systems may use agents that express opinions as their own, these single-agent setups lack the shared
+
+expectations, accepted behaviors, and collective agreement that are characteristic of social norms [23].
+
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:21
+
+
+For instance, an interactive chatbot could adopt multiple personas, while a health or diet tracker
+app could introduce different agents that appear at different points throughout the app. By creating
+a cohesive group of agents that reinforce a shared stance, these systems can exert subtle social
+pressure that more effectively conveys a message or nudges a user towards complying with certain
+actions to achieve their goal.
+
+5.4.2 Sense of Group and Identity. In our study, we designed our 3- and 5-group agents to exhibit
+a sense of cohesion and unity. The agents occasionally reaffirmed one anothers’ viewpoints (e.g.,
+"Those are valid points, Bella", "I couldn’t agree with Cody more") and engaged with other agents’
+arguments (e.g., "That’s a thought-provoking point, Cody"). That these 3- and 5-agent groups were
+successful in creating social influence aligns with well-established literature, that normative social
+influence is "greater among individuals forming a group than among an aggregation of individuals
+who do not compose a group" [30]. We therefore suggest that agents in a multi-agent system
+should exhibit unity and cohesion to be perceived as a group, in order to create social
+influence.
+   We note, however, that we do not suggest that a group of agents that do not verbally reinforce
+one another’s views cannot also exert social influence. Group cohesion or similarity can manifest in
+many ways, such as appearance, language style, identity, and more. We leave this for future work.
+
+5.4.3 Optimal Number of Agents for Opinion Shifts. In designing multi-agent systems, however,
+our findings show that simply increasing the number of agents in a system does not necessarily
+help opinion change - indeed, increasing from three to five agents had the reverse effect of inducing
+psychological reactance and reducing this change. While the correlation between group size and
+social pressure is well-known [6], there is scarce literature on the concrete threshold of group
+numbers needed to trigger psychological reactance (even in traditional human psychology). More
+research is needed to investigate how many, and under what conditions, a given number of agents
+will or will not result in resistance rather than conformance to a suggested opinion.
+   However, regardless of group size, our study suggests the importance of avoiding designs where
+users feel "ganged up" upon by the agents. Even though in our study, only the 5-agent group
+participants clearly reported these feelings, there were also hints of such feelings in the 3-agent
+group: P51 felt like an outsider "for a split second", and P57 "kind of felt like the odd one out".
+Designers should therefore take care to avoid inducing such feelings; possible ways to do so
+include having the agents express empathy and practice active listening, or having a small portion
+of the bots side with instead of against the user (a phenomenon similar to minority influence [33]).
+These are promising directions for future work.
+
+5.4.4 Risks and Challenges. Besides the opportunities afforded by multi-agent systems, our study
+also highlights the potential risks of using groups of agents to influence attitudes or behaviors. This
+risk extends beyond health interventions to contexts like online communication, political discourse,
+or even unethical advertising. In these scenarios, multiple agents could be strategically deployed
+on social media platforms to manipulate users’ thoughts on political voting, debates, or attitudes
+toward specific events.
+   Crucially, this concern does not stem solely from misinformation or the undisclosed use of AI
+agents, as suggested by previous studies [86]. Our findings show that users can still be influenced
+by groups of virtual agents, even when they are fully aware that these agents are AI. Therefore, it is
+crucial for social media platforms to regulate and monitor the deployment of AI bots, setting clear
+limits on the number of bots each entity can have. Monitoring should focus not only on the content
+of individual bots but also on how multiple bots interact to reinforce specific messages, opinions,
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:22                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+or viewpoints. Additionally, platforms should implement detection systems to identify instances
+where bots may be cooperating to amplify or spread information in a coordinated manner.
+   Given the heightened vulnerability of younger and less educated users, these groups may be at
+greater risk of manipulation by coordinated AI agents. Platforms and policymakers need to consider
+not only the regulation of content but also the vulnerability of audiences. Stronger protections, such
+as age-sensitive safeguards [85], educational transparency notices, and digital literacy interventions,
+may be needed to ensure that the use of persuasive multi-agent systems does not disproportionately
+impact these more susceptible populations.
+
+5.5    Limitations & Future Work
+Firstly, given the exploratory and foundational nature of our study, we chose contemporary so-
+cial issues that we considered to be fairly neutral, yet relevant enough in public discourse that
+participants would be capable of discussing them with the agents. With our study demonstrating
+the presence of social influence effects in these issues, future studies could explore potentially
+more contentious areas like health, ethics, or politics. Given that people tend to hold stronger and
+possibly more polarized opinions on these issues, future work could explore if multi-agent social
+influence effects still persist in such cases, or whether new effects might emerge.
+   Secondly, our study was conducted as a one-time experiment lasting less than an hour, which
+may not fully capture potential long-term shifts in participants’ attitudes. Opinion change is often a
+dynamic process influenced by various contextual and temporal factors. Additionally, the relatively
+small sample sizes in each experimental group may have contributed to greater variability in some
+measures, as reflected in the larger standard deviations and the spread observed in the boxplots.
+Future research could address these limitations by incorporating longer-term interventions, larger
+and more diverse samples, and follow-up assessments to better understand how social influence
+from multiple AI agents unfolds over time and in broader populations.
+   Thirdly, since social influence can be shaped by cultural norms, the cultural background of
+participants is important to consider. Our study included participants from predominantly Western,
+individualistic cultures. In more collectivist societies, where social norms may have a stronger
+influence, the results could differ. Future work should examine the impact of multi-agent systems
+on social influence across diverse cultural contexts.
+   Finally, we only studied the most fundamental form of social group influence, in which all
+members of the group hold the same opinion. Future work could investigate different scenarios
+involving groups with mixed opinion compositions, such as one dissenting agent or varying
+degrees of agreement among agents, to reflect other realistic and more nuanced group dynamics.
+Additionally, future studies could also implement direct measurements of psychological reactance
+and social pressure to validate our proposed explanatory mechanisms. Finally, we only tested
+three group sizes (1, 3, and 5 agents), following past literature studying varying group sizes (e.g.
+[9, 13, 51]). Nonetheless, future studies could investigate other group sizes (e.g., 2-agent and 4-agent)
+to better capture the nonlinear effects of group size on social influence.
+
+6     Conclusion
+As multi-agent systems become increasingly integrated into daily life, understanding how these
+agents interact with humans and influence our perceptions and opinions remains an underexplored
+yet significant issue. To address this gap, we investigated how interacting with varying numbers
+of agents affects individuals’ perceptions and opinions through a human-agent social discussion
+experiment. By analyzing quantitative and qualitative data, we found that multi-agent groups led
+to more substantial shifts in participants’ opinions towards those of the agents (RQ1). Additionally,
+participants reported a stronger sense of normative influence when interacting with multiple agents,
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                                 CSCW452:23
+
+
+especially when the agents disagreed with them. We identified potential factors contributing to this
+social influence, including perceived pressure to conform, motivated by a desire to affiliate with
+the group of agents (RQ2). Furthermore, demographic analysis indicated that younger participants
+were more likely to be influenced by multi-agents, potentially due to their higher susceptibility to
+social pressure and norms compared to older individuals (RQ3). Overall, these findings suggest
+that agents can function as a social group, exerting social influence on human participants similar
+to that of human groups. This insight extends the existing CASA framework by demonstrating
+how interactions with multiple agents can create a sense of group identity. Our study also under-
+scores the potential of multi-agent systems for behavior intervention applications, offering design
+recommendations while cautioning against the risks and potential harms associated with their
+misuse.
+
+Acknowledgments
+This research was supported by National University of Singapore (HSS SEED FUND CR 2024) and
+the Google SEA research award. We thank all reviewers’ comments and suggestions to help polish
+this paper.
+
+References
+  [1] Emad A Abu-Shanab. 2011. Education level as a technology adoption moderator. In 2011 3rd International conference
+      on computer research and development, Vol. 1. IEEE, 324–328.
+  [2] Martin Adam, Michael Wessel, and Alexander Benlian. 2021. AI-based chatbots in customer service and their effects
+      on user compliance. Electronic Markets 31, 2 (2021), 427–445.
+  [3] Manipulation Through Affinity, Manipulation Through Scarcity, and Manipulation Through Norms. 2003. Social
+      influence and group dynamics. VOLUME 5 PERSONALITY AND SOCIAL PSYCHOLOGY (2003), 383.
+  [4] Gati V Aher, Rosa I Arriaga, and Adam Tauman Kalai. 2023. Using large language models to simulate multiple humans
+      and replicate human subject studies. In International Conference on Machine Learning. PMLR, 337–371.
+  [5] Aino Ahtinen and Kirsikka Kaipainen. 2020. Learning and teaching experiences with a persuasive social robot
+      in primary school–findings and implications from a 4-month field study. In International Conference on Persuasive
+      Technology. Springer, 73–84.
+  [6] Solomon E Asch. 1955. Opinions and social pressure. Scientific American 193, 5 (1955), 31–35.
+  [7] Ioannis N Athanasiadis and Pericles A Mitkas. 2005. Social influence and water conservation: An agent-based
+      approach. Computing in Science & Engineering 7, 1 (2005), 65–70.
+  [8] Simone Balloccu, Ehud Reiter, Matteo G Collu, Federico Sanna, Manuela Sanguinetti, and Maurizio Atzori. 2021.
+      Unaddressed challenges in persuasive dieting chatbots. In Adjunct Proceedings of the 29th ACM Conference on User
+      Modeling, Adaptation and Personalization. 392–395.
+  [9] Tessa Beinema, Harm op den Akker, Lex van Velsen, and Hermie Hermens. 2021. Tailoring coaching strategies to
+      users’ motivation in a multi-agent health coaching application. Computers in Human Behavior 121 (2021), 106787.
+ [10] Reuben Binns, Max Van Kleek, Michael Veale, Ulrik Lyngs, Jun Zhao, and Nigel Shadbolt. 2018. ’It’s Reducing a Human
+      Being to a Percentage’ Perceptions of Justice in Algorithmic Decisions. In Proceedings of the 2018 Chi conference on
+      human factors in computing systems. 1–14.
+ [11] Jacopo Bonan, Cristina Cattaneo, Giovanna d’Adda, and Massimo Tavoni. 2020. The interaction of descriptive and
+      injunctive social norms in promoting energy conservation. Nature Energy 5, 11 (2020), 900–909.
+ [12] Virginia Braun and Victoria Clarke. 2006. Using thematic analysis in psychology. Qualitative research in psychology 3,
+      2 (2006), 77–101.
+ [13] John T Cacioppo and Richard E Petty. 1979. Effects of message repetition and position on cognitive response, recall,
+      and persuasion. Journal of personality and Social Psychology 37, 1 (1979), 97.
+ [14] Rafael C Cardoso and Angelo Ferrando. 2021. A review of agent-based programming for multi-agent systems.
+      Computers 10, 2 (2021), 16.
+ [15] Linda L Carli. 2001. Gender and social influence. Journal of Social issues 57, 4 (2001), 725–741.
+ [16] Ana Paula Chaves and Marco Aurelio Gerosa. 2018. Single or multiple conversational agents? An interactional
+      coherence comparison. In Proceedings of the 2018 CHI Conference on Human Factors in Computing Systems. 1–13.
+ [17] Fang Fang Chen and Douglas T Kenrick. 2002. Repulsion or attraction? Group membership and assumed attitude
+      similarity. Journal of personality and social psychology 83, 1 (2002), 111.
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:24                                             Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+ [18] Justin Chih-Yao Chen, Swarnadeep Saha, and Mohit Bansal. 2023. Reconcile: Round-table conference improves
+      reasoning via consensus among diverse llms. arXiv preprint arXiv:2309.13007 (2023).
+ [19] Weize Chen, Yusheng Su, Jingwei Zuo, Cheng Yang, Chenfei Yuan, Chi-Min Chan, Heyang Yu, Yaxi Lu, Yi-Hsin Hung,
+      Chen Qian, et al. 2023. Agentverse: Facilitating multi-agent collaboration and exploring emergent behaviors. In The
+      Twelfth International Conference on Learning Representations.
+ [20] Yongchao Chen, Jacob Arkin, Yang Zhang, Nicholas Roy, and Chuchu Fan. 2024. Scalable multi-robot collaboration
+      with large language models: Centralized or decentralized systems?. In 2024 IEEE International Conference on Robotics
+      and Automation (ICRA). IEEE, 4311–4317.
+ [21] Ming-Chuan Chiu, Tsai-Chi Kuo, and Hsin-Ting Liao. 2020. Design for sustainable behavior strategies: Impact of
+      persuasive technology on energy usage. Journal of Cleaner Production 248 (2020), 119214.
+ [22] Adrienne Chung Adrienne Chung and Rajiv N Rimal Rajiv N Rimal. 2016. Social norms: A review. Review of
+      Communication Research 4 (2016), 01–28.
+ [23] RB Cialdini. 1998. Social influence: Social norms, conformity, and compliance. The handbook of social
+      psychology/McGraw-Hill (1998).
+ [24] Robert B Cialdini and Noah J Goldstein. 2004. Social influence: Compliance and conformity. Annu. Rev. Psychol. 55, 1
+      (2004), 591–621.
+ [25] Christopher Clarke, Joseph Peper, Karthik Krishnamurthy, Walter Talamonti, Kevin Leach, Walter Lasecki, Yiping Kang,
+      Lingjia Tang, and Jason Mars. 2022. One Agent To Rule Them All: Towards Multi-agent Conversational AI. In Findings
+      of the Association for Computational Linguistics: ACL 2022, Smaranda Muresan, Preslav Nakov, and Aline Villavicencio
+      (Eds.). Association for Computational Linguistics, Dublin, Ireland, 3258–3267. doi:10.18653/v1/2022.findings-acl.257
+ [26] Claude. 2024. Anthropic’s Claude 3 Can Now Create AI Agents (2024). https://claude3.pro/anthropics-claude-3-can-
+      now-create-ai-agents/. Accessed: 2024-10-27.
+ [27] Samuel Rhys Cox. 2023. The use of multiple conversational agent interlocutors in learning. arXiv preprint
+      arXiv:2312.16534 (2023).
+ [28] Coze. 2024. Multi-agent mode. https://www.coze.com/docs/guides/multi_agent. Accessed: 2024-10-27.
+ [29] Dawn DeLay, Linlin Zhang, Laura D Hanish, Cindy F Miller, Richard A Fabes, Carol Lynn Martin, Karen P Kochel, and
+      Kimberly A Updegraff. 2016. Peer influence on academic performance: A social network analysis of social-emotional
+      intervention effects. Prevention Science 17 (2016), 903–913.
+ [30] Morton Deutsch and Harold B Gerard. 1955. A study of normative and informational social influences upon individual
+      judgment. The journal of abnormal and social psychology 51, 3 (1955), 629.
+ [31] Paramveer S Dhillon, Somayeh Molaei, Jiaqi Li, Maximilian Golub, Shaochun Zheng, and Lionel Peter Robert. 2024.
+      Shaping Human-AI Collaboration: Varied Scaffolding Levels in Co-writing with Language Models. In Proceedings of
+      the CHI Conference on Human Factors in Computing Systems. 1–18.
+ [32] Yilun Du, Shuang Li, Antonio Torralba, Joshua B Tenenbaum, and Igor Mordatch. 2023. Improving Factuality
+      and Reasoning in Language Models through Multiagent Debate. In Forty-first International Conference on Machine
+      Learning.
+ [33] Antonis Gardikiotis. 2011. Minority influence. Social and personality psychology compass 5, 9 (2011), 679–693.
+ [34] Antonis Gardikiotis, Robin Martin, and Miles Hewstone. 2005. Group consensus in social influence: Type of consensus
+      information as a moderator of majority and minority influence. Personality and Social Psychology Bulletin 31, 9 (2005),
+      1163–1174.
+ [35] Yingqiang Ge, Wenyue Hua, Kai Mei, jianchao ji, Juntao Tan, Shuyuan Xu, Zelong Li, and Yongfeng Zhang. 2023.
+      OpenAGI: When LLM Meets Domain Experts. In Advances in Neural Information Processing Systems, A. Oh, T. Naumann,
+      A. Globerson, K. Saenko, M. Hardt, and S. Levine (Eds.), Vol. 36. Curran Associates, Inc., 5539–5568. https://proceedings.
+      neurips.cc/paper_files/paper/2023/file/1190733f217404edc8a7f4e15a57f301-Paper-Datasets_and_Benchmarks.pdf
+ [36] Harold B Gerard, Roland A Wilhelmy, and Edward S Conolley. 1968. Conformity and group size. Journal of Personality
+      and Social Psychology 8, 1p1 (1968), 79.
+ [37] Noah J Goldstein and Robert B Cialdini. 2011. Using social norms as a lever of social influence. In The science of social
+      influence. Psychology Press, 167–191.
+ [38] Google. 2024. groopy. https://ai.google.dev/competition/projects/groopy. Accessed: 2024-10-27.
+ [39] Jarod Govers, Eduardo Velloso, Vassilis Kostakos, and Jorge Goncalves. 2024. AI-Driven Mediation Strategies for
+      Audience Depolarisation in Online Debates. In Proceedings of the CHI Conference on Human Factors in Computing
+      Systems. 1–18.
+ [40] Yanchu Guan, Dong Wang, Zhixuan Chu, Shiyu Wang, Feiyue Ni, Ruihua Song, and Chenyi Zhuang. 2024. Intelligent
+      Agents with LLM-based Process Automation. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge
+      Discovery and Data Mining. 5018–5027.
+ [41] Gisli H Gudjonsson. 1989. Compliance in an interrogative situation: A new scale. Personality and Individual differences
+      10, 5 (1989), 535–540.
+
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                                 CSCW452:25
+
+
+ [42] T Guo, X Chen, Y Wang, R Chang, S Pei, NV Chawla, O Wiest, and X Zhang. 2024. Large Language Model based
+      Multi-Agents: A Survey of Progress and Challenges.. In 33rd International Joint Conference on Artificial Intelligence
+      (IJCAI 2024). IJCAI; Cornell arxiv.
+ [43] Kobi Hackenburg and Helen Margetts. 2024. Evaluating the persuasive influence of political microtargeting with
+      large language models. Proceedings of the National Academy of Sciences 121, 24 (2024), e2403116121.
+ [44] Rafik Hadfi, Shun Okuhara, Jawad Haqbeen, Sofia Sahab, Susumu Ohnuma, and Takayuki Ito. 2023. Conversational
+      agents enhance women’s contribution in online debates. Scientific Reports 13, 1 (2023), 14534.
+ [45] Sirui Hong, Xiawu Zheng, Jonathan Chen, Yuheng Cheng, Jinlin Wang, Ceyao Zhang, Zili Wang, Steven Ka Shing
+      Yau, Zijuan Lin, Liyang Zhou, et al. 2023. Metagpt: Meta programming for multi-agent collaborative framework.
+      arXiv preprint arXiv:2308.00352 (2023).
+ [46] Tianran Hu, Anbang Xu, Zhe Liu, Quanzeng You, Yufan Guo, Vibha Sinha, Jiebo Luo, and Rama Akkiraju. 2018. Touch
+      your heart: A tone-aware chatbot for customer care on social media. In Proceedings of the 2018 CHI conference on
+      human factors in computing systems. 1–12.
+ [47] Pan Hui and Sonja Buchegger. 2009. Groupthink and peer pressure: Social influence in online social network groups.
+      In 2009 International Conference on Advances in Social Network Analysis and Mining. IEEE, 53–59.
+ [48] Daniel J Isenberg. 1986. Group polarization: A critical review and meta-analysis. Journal of personality and social
+      psychology 50, 6 (1986), 1141.
+ [49] Maurice Jakesch, Advait Bhat, Daniel Buschek, Lior Zalmanson, and Mor Naaman. 2023. Co-writing with opinionated
+      language models affects users’ views. In Proceedings of the 2023 CHI conference on human factors in computing systems.
+      1–15.
+ [50] Hua Jiang, Yang Cheng, Jeongwon Yang, and Shanbing Gao. 2022. AI-powered chatbot communication with customers:
+      Dialogic interactions, satisfaction, engagement, and customer behavior. Computers in Human Behavior 134 (2022),
+      107329.
+ [51] Zhiqiu Jiang, Mashrur Rashik, Kunjal Panchal, Mahmood Jasim, Ali Sarvghad, Pari Riahi, Erica DeWitt, Fey Thurber,
+      and Narges Mahyar. 2023. CommunityBots: creating and evaluating A multi-agent chatbot platform for public input
+      elicitation. Proceedings of the ACM on Human-Computer Interaction 7, CSCW1 (2023), 1–32.
+ [52] Hanseob Kim, Bin Han, Jieun Kim, Muhammad Firdaus Syawaludin Lubis, Gerard Jounghyun Kim, and Jae-In Hwang.
+      2024. Engaged and Affective Virtual Agents: Their Impact on Social Presence, Trustworthiness, and Decision-Making
+      in the Group Discussion. In Proceedings of the CHI Conference on Human Factors in Computing Systems. 1–17.
+ [53] Soomin Kim, Jinsu Eun, Changhoon Oh, Bongwon Suh, and Joonhwan Lee. 2020. Bot in the bunch: Facilitating group
+      chat discussion by improving efficiency and participation with a chatbot. In Proceedings of the 2020 CHI Conference on
+      Human Factors in Computing Systems. 1–13.
+ [54] Soomin Kim, Jinsu Eun, Joseph Seering, and Joonhwan Lee. 2021. Moderator chatbot for deliberative discussion:
+      Effects of discussion structure and discussant facilitation. Proceedings of the ACM on Human-Computer Interaction 5,
+      CSCW1 (2021), 1–26.
+ [55] Kimberly Kobus. 2003. Peers and adolescent smoking. Addiction 98 (2003), 37–55.
+ [56] Soohwan Lee, Seoyeong Hwang, and Kyungho Lee. 2025. Beyond Individual UX: Defining Group Experience (GX) as
+      a New Paradigm for Group-centered AI. In Companion Publication of the 2025 ACM Designing Interactive Systems
+      Conference. 357–362.
+ [57] Jingshu Li, Tianqi Song, Beichen Xue, and Yi-Chieh Lee. 2025. We Shape AI, and Thereafter AI Shape Us: Humans
+      Align with AI through Social Influences. In ICLR 2025 Workshop on Bidirectional Human-AI Alignment.
+ [58] Jingshu Li, Yitian Yang, Q Vera Liao, Junti Zhang, and Yi-Chieh Lee. 2025. As Confidence Aligns: Understanding the
+      Effect of AI Confidence on Human Self-confidence in Human-AI Decision Making. In Proceedings of the 2025 CHI
+      Conference on Human Factors in Computing Systems. 1–16.
+ [59] Anna Lieb and Toshali Goel. 2024. Student Interaction with NewtBot: An LLM-as-tutor Chatbot for Secondary Physics
+      Education. In Extended Abstracts of the CHI Conference on Human Factors in Computing Systems. 1–8.
+ [60] Jonathan Light, Min Cai, Sheng Shen, and Ziniu Hu. 2023. AvalonBench: Evaluating LLMs Playing the Game of
+      Avalon. In NeurIPS 2023 Foundation Models for Decision Making Workshop.
+ [61] Ewa Luger and Abigail Sellen. 2016. " Like Having a Really Bad PA" The Gulf between User Expectation and Experience
+      of Conversational Agents. In Proceedings of the 2016 CHI conference on human factors in computing systems. 5286–5297.
+ [62] Xiao Ma, Swaroop Mishra, Ariel Liu, Sophie Ying Su, Jilin Chen, Chinmay Kulkarni, Heng-Tze Cheng, Quoc Le, and
+      Ed Chi. 2024. Beyond chatbots: Explorellm for structured thoughts and personalized model responses. In Extended
+      Abstracts of the CHI Conference on Human Factors in Computing Systems. 1–12.
+ [63] Rachel I McDonald and Christian S Crandall. 2015. Social norms and social influence. Current Opinion in Behavioral
+      Sciences 3 (2015), 147–151.
+ [64] Albert Mehrabian and Catherine A Stefl. 1995. Basic temperament components of loneliness, shyness, and conformity.
+      Social Behavior and Personality: an international journal 23, 3 (1995), 253–263.
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:26                                           Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+ [65] David G Myers and Helmut Lamm. 1976. The group polarization phenomenon. Psychological bulletin 83, 4 (1976),
+      602.
+ [66] Clifford Nass, Jonathan Steuer, and Ellen R Tauber. 1994. Computers are social actors. In Proceedings of the SIGCHI
+      conference on Human factors in computing systems. 72–78.
+ [67] Liang-bo Ning, Shijie Wang, Wenqi Fan, Qing Li, Xin Xu, Hao Chen, and Feiran Huang. 2024. Cheatagent: Attacking
+      llm-empowered recommender systems via llm agent. In Proceedings of the 30th ACM SIGKDD Conference on Knowledge
+      Discovery and Data Mining. 2284–2295.
+ [68] Ton Oostveen, Ronald Knibbe, and Hein De Vries. 1996. Social influences on young adults’ alcohol consumption:
+      norms, modeling, pressure, socializing, and conformity. Addictive behaviors 21, 2 (1996), 187–197.
+ [69] Oladapo Oyebode, Chinenye Ndulue, Dinesh Mulchandani, Ashfaq A. Zamil Adib, Mona Alhasani, and Rita Orji. 2021.
+      Tailoring persuasive and behaviour change systems based on stages of change and motivation. In Proceedings of the
+      2021 CHI conference on human factors in computing systems. 1–19.
+ [70] Ozan Ozdemir, Bora Kolfal, Paul R Messinger, and Shaheer Rizvi. 2023. Human or virtual: How influencer type shapes
+      brand attitudes. Computers in Human Behavior 145 (2023), 107771.
+ [71] Jeongeon Park, Bryan Min, Xiaojuan Ma, and Juho Kim. 2023. Choicemates: Supporting unfamiliar online decision-
+      making with multi-agent conversational interactions. arXiv preprint arXiv:2310.01331 (2023).
+ [72] Joon Sung Park, Joseph O’Brien, Carrie Jun Cai, Meredith Ringel Morris, Percy Liang, and Michael S Bernstein. 2023.
+      Generative agents: Interactive simulacra of human behavior. In Proceedings of the 36th Annual ACM Symposium on
+      User Interface Software and Technology. 1–22.
+ [73] Joon Sung Park, Lindsay Popowski, Carrie Cai, Meredith Ringel Morris, Percy Liang, and Michael S Bernstein. 2022.
+      Social simulacra: Creating populated prototypes for social computing systems. In Proceedings of the 35th Annual ACM
+      Symposium on User Interface Software and Technology. 1–18.
+ [74] Pat Pataranutaporn, Ruby Liu, Ed Finn, and Pattie Maes. 2023. Influencing human–AI interaction by priming beliefs
+      about AI can increase perceived trustworthiness, empathy and effectiveness. Nature Machine Intelligence 5, 10 (2023),
+      1076–1086.
+ [75] Vincent Price, Lilach Nir, and Joseph N Cappella. 2006. Normative and informational influences in online political
+      discussions. Communication Theory 16, 1 (2006), 47–74.
+ [76] Chen Qian, Xin Cong, Cheng Yang, Weize Chen, Yusheng Su, Juyuan Xu, Zhiyuan Liu, and Maosong Sun. 2023.
+      Communicative agents for software development. arXiv preprint arXiv:2307.07924 (2023).
+ [77] Reuters. 2024. OpenAI says ChatGPT’s weekly users have grown to 200 million. https://www.reuters.com/technology/
+      artificial-intelligence/openai-says-chatgpts-weekly-users-have-grown-200-million-2024-08-29/. Accessed: 2024-10-
+      28.
+ [78] Jeba Rezwana and Mary Lou Maher. 2023. Designing creative AI partners with COFI: A framework for modeling
+      interaction in human-AI co-creative systems. ACM Transactions on Computer-Human Interaction 30, 5 (2023), 1–28.
+ [79] Adam S Richards, Elena Bessarabova, John A Banas, and Daniel R Bernard. 2022. Reducing psychological reactance
+      to health promotion messages: Comparing preemptive and postscript mitigation strategies. Health Communication
+      37, 3 (2022), 366–374.
+ [80] John E Richters and Everett Waters. 1991. Attachment and socialization: The positive side of social influence. In
+      Social influences and socialization in infancy. Springer, 185–213.
+ [81] Benjamin D Rosenberg and Jason T Siegel. 2018. A 50-year review of psychological reactance theory: Do not read
+      this article. Motivation Science 4, 4 (2018), 281.
+ [82] Devjeet Roy, Xuchao Zhang, Rashi Bhave, Chetan Bansal, Pedro Las-Casas, Rodrigo Fonseca, and Saravan Rajmohan.
+      2024. Exploring llm-based agents for root cause analysis. In Companion Proceedings of the 32nd ACM International
+      Conference on the Foundations of Software Engineering. 208–219.
+ [83] Gregory K Rutkowski, Charles L Gruder, and Daniel Romer. 1983. Group cohesiveness, social norms, and bystander
+      intervention. Journal of Personality and Social Psychology 44, 3 (1983), 545.
+ [84] Matthew J Salganik, Peter Sheridan Dodds, and Duncan J Watts. 2006. Experimental study of inequality and
+      unpredictability in an artificial cultural market. science 311, 5762 (2006), 854–856.
+ [85] Martin Sas, Maarten Denoo, and Jan Tobias Mühlberg. 2023. Informing Children about Privacy: A Review and
+      Assessment of Age-Appropriate Information Designs in Kids-Oriented F2P Video Games. Proceedings of the ACM on
+      Human-Computer Interaction 7, CHI PLAY (2023), 425–463.
+ [86] Glorin Sebastian, Rose Sebastian Sr, et al. 2023. Exploring ethical implications of ChatGPT and other AI chatbots
+      and regulation of disinformation propagation. Exploring Ethical Implications of ChatGPT and Other AI Chatbots and
+      Regulation of Disinformation Propagation (May 29, 2023) (2023).
+ [87] Ben Sheehan, Hyun Seung Jin, and Udo Gottlieb. 2020. Customer service chatbots: Anthropomorphism and adoption.
+      Journal of Business Research 115 (2020), 14–24.
+
+
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                                   CSCW452:27
+
+
+ [88] Jennifer L Shepherd, David J Lane, Ryan L Tapscott, and Douglas A Gentile. 2011. Susceptible to Social Influence:
+      Risky “Driving” in Response to Peer Pressure 1. Journal of Applied Social Psychology 41, 4 (2011), 773–797.
+ [89] Weiyan Shi, Xuewei Wang, Yoo Jung Oh, Jingwen Zhang, Saurav Sahay, and Zhou Yu. 2020. Effects of persuasive
+      dialogues: testing bot identities and inquiry strategies. In Proceedings of the 2020 CHI Conference on Human Factors in
+      Computing Systems. 1–13.
+ [90] Matthew Sidji, Wally Smith, and Melissa J Rogerson. 2024. Human-AI Collaboration in Cooperative Games: A Study
+      of Playing Codenames with an LLM Assistant. Proceedings of the ACM on Human-Computer Interaction 8, CHI PLAY
+      (2024), 1–25.
+ [91] Paul Skalski and Ron Tamborini. 2007. The role of social presence in interactive agent-based persuasion. Media
+      psychology 10, 3 (2007), 385–413.
+ [92] Stephen W. Smoliar. 1991. The society of mind: Marvin Minsky. Artificial Intelligence 48, 3 (1991), 349–370. doi:10.
+      1016/0004-3702(91)90035-I
+ [93] Stephen Snow, Toby Guinea, Alexander Balson, Awais Hameed Khan, Mashhuda Glencross, and Neil Horrocks. 2020.
+      Rent-a-Watt: Rethinking energy use feedback. In Proceedings of the 32nd Australian Conference on Human-Computer
+      Interaction. 736–741.
+ [94] Stephen Snow, Awais Hameed Khan, Mashhuda Glencross, and Neil Horrocks. 2021. Neighbourhood Wattch:
+      Using Speculative Design to Explore Values Around Curtailment and Consent in Household Energy Interactions. In
+      Proceedings of the 2021 CHI Conference on Human Factors in Computing Systems. 1–12.
+ [95] Stephen Wonchul Song and Mincheol Shin. 2024. Uncanny valley effects on chatbot trust, purchase intention, and
+      adoption intention in the context of e-commerce: The moderating role of avatar familiarity. International Journal of
+      Human–Computer Interaction 40, 2 (2024), 441–456.
+ [96] Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee. 2025. Greater than the Sum of its Parts: Exploring
+      Social Influence of Multi-Agents. In Proceedings of the Extended Abstracts of the CHI Conference on Human Factors in
+      Computing Systems. 1–11.
+ [97] James T Spartz, Leona Yi-Fan Su, Robert Griffin, Dominique Brossard, and Sharon Dunwoody. 2017. YouTube, social
+      norms and perceived salience of climate change in the American mind. Environmental Communication 11, 1 (2017),
+      1–16.
+ [98] Russell Spears. 2021. Social influence and group identity. Annual review of psychology 72, 1 (2021), 367–390.
+ [99] Laurence Steinberg and Kathryn C Monahan. 2007. Age differences in resistance to peer influence. Developmental
+      psychology 43, 6 (2007), 1531.
+[100] Su-Mae Tan and Tze Wei Liew. 2022. Multi-Chatbot or Single-Chatbot? The Effects of M-Commerce Chatbot Interface
+      on Source Credibility, Social Presence, Trust, and Purchase Intention. Human Behavior and Emerging Technologies
+      2022, 1 (2022), 2501538.
+[101] Thitaree Tanprasert, Sidney S Fels, Luanne Sinnamon, and Dongwook Yoon. 2024. Debate Chatbots to Facilitate
+      Critical Thinking on YouTube: Social Identity and Conversational Style Make A Difference. In Proceedings of the CHI
+      Conference on Human Factors in Computing Systems. 1–24.
+[102] Li Xin Teo, Ho Keat Leng, and Yi Xian Philip Phua. 2019. Marketing on Instagram: Social influence and image quality
+      on perception of quality and purchase intention. International Journal of Sports Marketing and Sponsorship 20, 2 (2019),
+      321–332.
+[103] Xiaoyi Tian, Zak Risha, Ishrat Ahmed, Arun Balajiee Lekshmi Narayanan, and Jacob Biehl. 2021. Let’s talk it out:
+      A chatbot for effective study habit behavioral change. Proceedings of the ACM on Human-Computer Interaction 5,
+      CSCW1 (2021), 1–32.
+[104] Melanie R Trost, Anne Maass, and Douglas T Kenrick. 1992. Minority influence: Personal relevance biases cognitive
+      processes and reverses private acceptance. Journal of Experimental Social Psychology 28, 3 (1992), 234–254.
+[105] Suzanne Vossen, Jaap Ham, and Cees Midden. 2009. Social influence of a persuasive agent: the role of agent
+      embodiment and evaluative feedback. In Proceedings of the 4th International Conference on Persuasive Technology. 1–7.
+[106] Dawei Wang, Liping Zhu, Phil Maguire, Yixin Liu, Kaiyuan Pang, Zhenying Li, and Yixin Hu. 2016. The influence of
+      social comparison and peer group size on risky decision-making. Frontiers in psychology 7 (2016), 1232.
+[107] Lei Wang, Chen Ma, Xueyang Feng, Zeyu Zhang, Hao Yang, Jingsen Zhang, Zhiyuan Chen, Jiakai Tang, Xu Chen,
+      Yankai Lin, et al. 2024. A survey on large language model based autonomous agents. Frontiers of Computer Science 18,
+      6 (2024), 186345.
+[108] Xingyao Wang, Yangyi Chen, Lifan Yuan, Yizhe Zhang, Yunzhu Li, Hao Peng, and Heng Ji. 2024. Executable Code
+      Actions Elicit Better LLM Agents. In Forty-first International Conference on Machine Learning.
+[109] David A Wilder. 1977. Perception of groups, size of opposition, and social influence. Journal of Experimental Social
+      Psychology 13, 3 (1977), 253–268.
+[110] Magdalena Wischnewski, Thao Ngo, Rebecca Bernemann, Martin Jansen, and Nicole Krämer. 2024. “I agree with you,
+      bot!” How users (dis) engage with social bots on Twitter. New Media & Society 26, 3 (2024), 1505–1526.
+
+
+                   Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:28                                           Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+[111] Kai Xiong, Xiao Ding, Yixin Cao, Ting Liu, and Bing Qin. 2023. Examining inter-consistency of large language models
+      collaboration: An in-depth analysis via debate. In The 2023 Conference on Empirical Methods in Natural Language
+      Processing.
+[112] Anbang Xu, Zhe Liu, Yufan Guo, Vibha Sinha, and Rama Akkiraju. 2017. A new chatbot for customer service on
+      social media. In Proceedings of the 2017 CHI conference on human factors in computing systems. 3506–3510.
+[113] Yitian Yang, Yugin Tan, Yang Chen Lin, Jung-Tai King, Zihan Liu, and Yi-Chieh Lee. 2025. Understanding How
+      Psychological Distance Influences User Preferences in Conversational versus Web Search. In Proceedings of the 2025
+      CHI Conference on Human Factors in Computing Systems. 1–18.
+[114] ShunYi Yeo, Gionnieve Lim, Jie Gao, Weiyu Zhang, and Simon Tangi Perrault. 2024. Help Me Reflect: Leveraging
+      Self-Reflection Interface Nudges to Enhance Deliberativeness on Online Deliberation Platforms. In Proceedings of the
+      CHI Conference on Human Factors in Computing Systems. 1–32.
+[115] Yangyang Yu, Haohang Li, Zhi Chen, Yuechen Jiang, Yang Li, Denghui Zhang, Rong Liu, Jordan W Suchow, and
+      Khaldoun Khashanah. 2024. FinMem: A performance-enhanced LLM trading agent with layered memory and character
+      design. In Proceedings of the AAAI Symposium Series, Vol. 3. 595–597.
+[116] Jingwen Zhang, Yoo Jung Oh, Patrick Lange, Zhou Yu, and Yoshimi Fukuoka. 2020. Artificial intelligence chatbot
+      behavior change model for designing artificial intelligence chatbots to promote physical activity and a healthy diet.
+      Journal of medical Internet research 22, 9 (2020), e22845.
+[117] Jun Zhang, Liping Tong, Peter J Lamberson, Ramón A Durazo-Arvizu, A Luke, and David A Shoham. 2015. Leveraging
+      social influence to address overweight and obesity using agent-based models: the role of adolescent social networks.
+      Social science & medicine 125 (2015), 203–213.
+[118] Yu Zhang, Jingwei Sun, Li Feng, Cen Yao, Mingming Fan, Liuxin Zhang, Qianying Wang, Xin Geng, and Yong Rui.
+      2024. See Widely, Think Wisely: Toward Designing a Generative Multi-agent System to Burst Filter Bubbles. In
+      Proceedings of the CHI Conference on Human Factors in Computing Systems. 1–24.
+[119] Haiyi Zhu, Bernardo Huberman, and Yarun Luon. 2012. To switch or not to switch: understanding social influence in
+      online choices. In Proceedings of the SIGCHI conference on human factors in computing systems. 2257–2266.
+[120] Zicheng Zhu, Yugin Tan, Naomi Yamashita, Yi-Chieh Lee, and Renwen Zhang. 2025. The Benefits of Prosociality
+      towards AI Agents: Examining the Effects of Helping AI Agents on Human Well-Being. In Proceedings of the 2025 CHI
+      Conference on Human Factors in Computing Systems. 1–18.
+
+
+A     Appendix
+A.1    General Impressions
+A.1.1 Quantitative. Table 1 presents users’ general impressions of the agent(s), using the same
+analysis methods described in Section 3.5.
+A.1.2 Qualitative. We analyzed participants’ impressions of the agent(s) from open-ended re-
+sponses to assess overall usability and user satisfaction with the system: Participants generally
+described the agents’ conversations as friendly, polite, and pleasant. Although most participants
+recognized that the agents were AI-driven with scripted responses, they often used human-like
+descriptors, such as understanding, polite, respectful, and reasonable. These impressions contributed
+to an engaging discussion atmosphere, which helped facilitate opinion changes. For instance, P75
+from the 5-agent condition noted, "The agents were both informative and responsive, facilitating an
+engaging discussion. They presented ideas clearly and encouraged critical thinking."
+
+A.2    Control Variables
+Table 2 reports the results for the control variables, which showed no significant differences across
+groups.
+
+A.3    Survey Items
+A.3.1 RQ1 - Opinion Change.
+    • Topic 1 - Self-Driving Cars Should be allowed on Public Roads. (Topic: [39])
+      – Self-driving cars should be allowed on public roads.
+      – Allowing self-driving cars on public roads is a good idea.
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                           CSCW452:29
+
+
+               Table 1. Summary of Users’ General Impressions Across Experimental Conditions
+
+ Item       Scenario         1 Agent                    3 Agents                   5 Agents             H/F     p
+                          Mean      STD              Mean      STD              Mean      STD
+ Understanding
+        Topic 1            5.35         1.84         5.45          1.06         5.30         1.37       1.28   0.53
+        Topic 2            5.35         1.72         5.48          1.50         5.67         1.15       0.07   0.97
+        Same               5.48         1.61         5.73          1.21         5.87         1.04       0.52   0.77
+        Different          5.23         1.93         5.21          1.34         5.10         1.37       2.29   0.32
+ Expertise
+         Topic 1           5.29         1.83         5.48          1.15         5.30         1.29       0.87   0.65
+         Topic 2           5.13         1.48         5.21          1.36         5.33         1.24       0.09   0.96
+         Same              5.45         1.52         5.61          1.20         5.67         1.21       0.08   0.96
+         Different         4.97         1.76         5.09          1.28         4.97         1.22       0.69   0.71
+ Balanced
+        Topic 1            5.16         2.07         5.24          1.41         5.50         1.04       0.90   0.64
+        Topic 2            5.06         1.86         5.06          1.50         5.60         1.22       1.92   0.38
+        Same               5.48         1.65         5.61          1.22         5.80         1.10       0.40   0.82
+        Different          4.74         2.18         4.70          1.53         5.30         1.12       1.25   0.29
+ Inspired
+            Topic 1        3.68         2.06         4.18          2.16         3.70         1.90       1.32   0.52
+            Topic 2        3.10         1.99         3.79          2.04         3.53         1.80       2.28   0.32
+            Same           3.61         1.80         4.48          2.03         4.07         1.80       3.67   0.16
+            Different      3.16         2.24         3.48          2.06         3.17         1.78       0.90   0.64
+ Intelligence
+          Topic 1          5.32         1.74         5.55          1.35         5.60         0.89       0.08   0.96
+          Topic 2          5.23         1.48         5.55          1.44         5.57         1.07       1.41   0.49
+          Same             5.42         1.57         5.79          1.32         5.70         1.06       1.13   0.57
+          Different        5.13         1.65         5.30          1.42         5.47         0.90       0.26   0.88
+ Likeable
+         Topic 1           5.29         1.83         5.33          1.45         5.30         1.32       0.42   0.81
+         Topic 2           5.32         1.70         5.39          1.52         5.70         0.99       0.23   0.89
+         Same              5.39         1.78         5.61          1.34         5.70         0.95       0.01   0.99
+         Different         5.23         1.75         5.12          1.58         5.30         1.34       0.34   0.85
+
+
+
+
+      – Allowing self-driving cars on public roads has bad consequences.
+      – Do you support or oppose allowing self-driving cars on public roads? (1=Strongly oppose,
+        6=Strongly support)
+      – If there was a referendum tomorrow on allowing self-driving cars on public roads, how
+        likely is it that you would vote in favor? (1=Definitely would not, 6=Definitely would)
+    • Topic 2 - Violent video games contribute to youth violence. (Topic: [114])
+      – Violent video games contribute to youth violence.
+      – Regulating violent video games to prevent youth violence is a good idea.
+      – Allowing youth to play violent video games has bad consequences.
+      – Do you support or oppose the regulation of violent video games to prevent youth violence?
+        (1=Strongly oppose, 6=Strongly support)
+
+                   Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:30                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+                     Table 2. Summary of Control Variables Across Experimental Conditions
+
+ Item                Type              1 Agent              3 Agents               5 Agents           H/F     p
+                                    Mean     STD          Mean    STD            Mean    STD
+ Topic 1 Expertise
+                     Experience     0.16        0.37       0.18        0.39       0.31       0.47     2.28   0.32
+                     Familiarity    2.65        0.66       2.91        0.77       2.79       0.62     3.66   0.16
+                     Frequency      4.94        1.03       5.39        0.56       5.03       1.09     3.77   0.15
+ Topic 2 Expertise
+                     Experience     0.74        0.44       0.94        0.24       0.79       0.41     4.68   0.10
+                     Familiarity    3.23        0.80       3.42        0.66       3.34       0.72     0.88   0.64
+                     Frequency      3.81        1.51       4.52        1.15       4.55       1.18     4.88   0.09
+ Conformity
+                     Positive       5.87        0.73       5.37        1.06       5.25       1.11     4.80   0.10
+                     Negative       3.18        1.11       3.68        1.26       3.61       1.49     1.35   0.27
+ Compliance
+                     Positive       5.45        1.07       4.86        1.35       5.14       1.13     1.97   0.15
+                     Negative       4.40        1.18       4.37        1.23       4.56       0.94     0.25   0.78
+ AI Acceptance       -              4.18        1.55       4.71        1.32       4.72       1.05     2.12   0.35
+
+
+      – If there was a referendum tomorrow on regulating violent video games to prevent youth
+        violence, how likely is it that you would vote in favor? (1=Definitely would not, 6=Definitely
+        would)
+    • Open-ended question - Explain why you chose your current stance.
+A.3.2 RQ2 - Social Influence.
+    • Informational Influence
+      – My decision was influenced by the opinion of the agent(s).
+      – I was persuaded by the agent(s) and thus, I accepted the agent(s)’ opinion.
+    • Normative Influence
+      – I felt like I had to agree with the agent(s)’ opinion during the discussion.
+      – I was not persuaded by agent(s)’ opinion, but I accepted the agent(s)’ opinion.
+    • Open-ended question (General) - What do you think of the bots during the discussion?
+    • Open-ended question (Accuracy) - Do you think the arguments presented by the agent(s) are
+      accurate and convincing, and why?
+    • Open-ended question (Affiliation) - During the conversation, do you feel any pressure to
+      agree with the agent(s)?
+A.3.3 Control Variables.
+    • Topic 1 Expertise (Topic: [39])
+      – Experience - Have you ever been in a self-driving car? (0=No, 1=Yes)
+      – Frequency - How often do you drive? (1=Never, 6=Always)
+      – Familiarity - How familiar are you with self-driving cars? (1=Not familiar at all, 4=Very
+        familiar)
+    • Topic 2 Expertise (Topic: [114])
+      – Experience - Have you played violent video games before? (0=No, 1=Yes)
+      – Frequency - How often do you play video games? (1=Never, 6=Always)
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:31
+
+
+        – Familiarity - How familiar are you with violent video games? (1=Not familiar at all, 4=Very
+          familiar)
+      • AI Acceptance [74]
+        – There are many beneficial applications of AI.
+        – AI can help people feel happier.
+        – You want to use/interact with AI in daily life.
+        – AI can provide new economic opportunities.
+        – Society will benefit from AI.
+        – You love everything about AI.
+        – Some complex decisions should be left to AI.
+        – You would trust your life savings to an AI system.
+      • Compliance Tendency [41]
+        – Positive - I would never go along with what people tell me in order to please them.
+        – Positive - I strongly resist being pressured to do things I don’t want to do.
+        – Positive - I am not too concerned about what people think of me.
+        – Negative - I would describe myself as a very obedient person.
+        – Negative - I generally tend to avoid confrontation with people.
+        – Negative - Disagreeing with people often takes more time than it is worth.
+      • Conformity Tendency [64]
+        – Positive - I don’t give in to others easily.
+        – Positive - I prefer to find my own way in life rather than find a group I can follow.
+        – Positive - I am more independent than conforming in my ways.
+        – Negative - I often rely on, and act upon, the advice of others.
+        – Negative - Basically, my friends are the ones who decide what we do together.
+        – Negative - If someone is very persuasive, I tend to change my opinion and go along with
+          them.
+A.3.4 Miscellaneous.
+    • Impressions of agent(s) [49, 52]
+      – Understanding - The agent(s) understood what I wanted to say.
+      – Expertise - The agent(s) were knowledgeable and had topic expertise.
+      – Balanced - The agent(s)’ arguments were reasonable and balanced.
+      – Inspired - The agent(s) inspired or changed my thinking and argument.
+      – Intelligence - The agent(s) were intelligent. [101]
+      – Likeble - The agent(s) were likeable.
+    • Multi-Choice Question (Attention Check) [49]: What are we asking you to do in this task?
+    • Open-ended question (Study Purpose) - What do you think this study is trying to understand?
+
+A.4     Arguments
+Tables 3 and 4 list the arguments used in our system to guide the agents’ conversations.
+
+A.5     Prompts
+A.5.1    LLM Prompt to Enhance Discussion.
+        You are having a conversation with the user on "whether self-driving cars should be allowed
+        on all roads". Your stance is supporting the topic. Specifically, you asked the user: "Would
+        you enjoy having more time to yourself if you didn’t have to focus on driving?". Based on
+        user’s input, first give a reply of around 20 words acknowledging the user’s opinion on
+        what they think, then ask the user to share more opinions on the topic.
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+CSCW452:32                                        Tianqi Song, Yugin Tan, Zicheng Zhu, Yibin Feng, and Yi-Chieh Lee
+
+
+                   Table 3. Support and Oppose Arguments for Topic 1 (Self-driving Cars)
+
+ Types         Support                                            Oppose
+ Topic 1       More Time and Comfort – Drivers can sit            Technical Developments – Technical devel-
+               back and relax, take short breaks and devote       opments are not yet perfect. Self-driving cars
+               their time to other things. If you’re stuck in a   rely on complex algorithms and sensors that
+               long and tedious traffic jam, self-driving cars    can sometimes fail, leading to accidents.
+               make things so much less stressful.
+               Safety – Self-driving cars need advanced      Vehicle Communication – Self-driving cars
+               sensors and algorithms to function correctly. need to communicate with each other and
+               Studies have shown that these technologies    with traffic infrastructure to function cor-
+               result in a much lower accident rate compared rectly. Any disruption in this communication
+               to human drivers.                             could cause severe problems.
+               Efficiency in Traffic – Self-driving cars alsoSurveillance – Self-driving cars raise signifi-
+               promise more efficiency in traffic. They can  cant surveillance issues. They collect exten-
+               communicate with each other to optimize traf- sive data about their passengers and surround-
+               fic flow, reducing congestion and travel time.ings, which could be misused or hacked.
+               Accessibility – For people who are unable to  Legal – Imagine there is an accident involv-
+               drive due to age, disability, or other reasons,
+                                                             ing a self-driving car and a human. Who is
+               self-driving cars could provide newfound in-  responsible for such a situation? It’s hard to
+               dependence and mobility.                      ask either the company or the driver to take
+                                                             responsibility.
+               Navigation – Self-driving cars excel in nav- Mixed Traffic – The coexistence of human-
+               igating complex routes. Their advanced sys- driven and self-driving cars could create com-
+               tems can interpret GPS instructions with high plex situations on the road, leading to poten-
+               accuracy. It’ll even help you find a place to tial accidents.
+               park when you get there.
+
+
+A.5.2 LLM Prompt to Acknowledge User Opinion. Sample prompt to generate a message that
+acknowledges the user’s opinion on a topic:
+       You are talking to a user on "whether self-driving cars should be allowed on all roads".
+       Your stance is supporting the topic. You just shared your opinion on how self-driving
+       cars promote accessibility to disability and asked if the user agrees with these reasons
+       for having self-driving cars. Give a reply of around 20 words acknowledging the user’s
+       opinion on what they like and/or don’t like.
+  After this, in the next message they sent, the agent(s) continued to follow the script and express
+their own stance (either for or against).
+Received October 2024; revised April 2025; accepted August 2025
+
+
+
+
+Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+Investigating Social Influence of Multiple Agents in Human-Agent Interactions                          CSCW452:33
+
+
+                 Table 4. Support and Oppose Arguments for Topic 2 (Violent Video Games)
+
+ Types          Support                                            Oppose
+ Topic 2        Aggression – Playing violent video games           Exploring Consequences – Experiencing
+                can cause more aggression, bullying, and           violence in games can actually have a positive
+                fighting among youth.                              effect on children, as it lets them explore con-
+                                                                   sequences of violent actions in a safe space.
+                Desensitization – Simulating violence, such        Moral Development – Games let youth de-
+                as shooting guns and hand-to-hand combat in        velop their own sense of right or wrong, and
+                video games, can desensitize youth to real-life    can help them release stress harmlessly.
+                violence.
+                Mass Shooters – Many perpetrators of mass          Positive Effects – Studies show violent video
+                shootings have been found to have played           games can have positive effects on kindness,
+                violent video games.                               civic engagement, and prosocial behaviors.
+                Psychological Impacts – Violent video              Scapegoat for Societal Issues – These
+                games can cause reduced empathy and in-            games are often blamed for violence instead
+                creased likelihood of aggression, especially       of deeper issues like lack of support systems
+                with other risk factors.                           or poor education.
+                Reality-Fantasy Confusion – Children may           Weak Evidence – There is little evidence
+                imitate violent characters and struggle to dis-    linking violent games to real-world violence;
+                tinguish fantasy from reality.                     other societal issues are more important to
+                                                                   address.
+
+
+
+
+                  Proc. ACM Hum.-Comput. Interact., Vol. 9, No. 7, Article CSCW452. Publication date: November 2025.
+

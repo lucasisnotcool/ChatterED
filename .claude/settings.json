@@ -1,0 +1,20 @@
+{
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-agent-model.sh",
+            "timeout": 10,
+            "statusMessage": "Checking subagent model policy"
+          }
+        ]
+      }
+    ]
+  }
+}

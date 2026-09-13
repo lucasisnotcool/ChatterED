@@ -1,0 +1,35 @@
+name: Bug
+description: Something is broken — code, script, hook, or a doc that is factually wrong.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What is broken
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Steps, or the exact command you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: File path, screen, or command.
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: Paste the error verbatim. Rendered as a code block; no backticks needed.
+      render: shell
