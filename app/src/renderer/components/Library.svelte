@@ -13,6 +13,7 @@
    * deliberate departure in app/docs/STATUS.md.
    */
   import type { SearchHitView, VaultFileView } from '../../shared/types.js';
+  import DocumentPane from './DocumentPane.svelte';
   import Finder from './Finder.svelte';
   import SearchResults from './SearchResults.svelte';
   import { LEDGER_GLYPH, glyphAlt } from '../lib/labels.js';
@@ -25,15 +26,16 @@
   const vault = $derived(store.vault);
 
   function open(file: VaultFileView): void {
-    store.selectedFileId = file.id;
+    void store.openFile(file.id);
   }
 
+  /** A search hit knows which page its snippet came from, so the viewer opens there. */
   function openHit(hit: SearchHitView): void {
-    store.selectedFileId = hit.fileId;
+    void store.openFile(hit.fileId, hit.page);
   }
 
   function openById(fileId: string): void {
-    store.selectedFileId = fileId;
+    void store.openFile(fileId);
   }
 </script>
 
@@ -42,6 +44,9 @@
     <VaultSidebar onopen={open} />
   {/if}
 
+  {#if store.openDoc}
+    <DocumentPane doc={store.openDoc} onclose={() => store.closeDoc()} />
+  {:else}
   <div class="screen">
     <header class="top">
       <h1>Library</h1>
@@ -132,6 +137,7 @@
       {/if}
     {/if}
   </div>
+  {/if}
 </div>
 
 {#if store.finderOpen}

@@ -197,3 +197,57 @@ a prefix `*`, so search feels live while it is still being typed.
 
 **Stubbed at this stage:** a hit or a finder result only *selects* the file — the viewers are
 stage (d).
+
+## Issue #22 stage (d) — the viewers
+
+**Real.** Opening a file in the Library now shows it, in the app. No Quick Look.
+
+| Kind | Component | What it does |
+|---|---|---|
+| PDF | `PdfViewer.svelte` | pdf.js in the renderer: page navigation (‹ › and a page box), zoom (⊟ 140% ⊞ / Fit — the §B2 L240 chrome), current-page state from an IntersectionObserver, and a page-range selector |
+| Markdown | `MarkdownViewer.svelte` + `lib/markdown.ts` | marked + **KaTeX** for `$…$` and `$$…$$`, highlight.js for fenced code, and an outline rail when there are more than two headings |
+| Text and code | `TextViewer.svelte` | highlight.js by extension for code; plain text is left alone, because auto-detecting a language in lecture notes produces confident nonsense |
+| Images | `ImageViewer.svelte` | png · jpg · gif · svg · webp · bmp · avif, via an object URL, with zoom |
+| Anything else | `DocumentPane.svelte` | The "no viewer" card: says what happened, keeps the file, offers **Reveal in Finder** |
+
+**The page-range conflict, resolved by building both.** `product-design.md` §B2 L230 specifies a
+typed `Pages [30]–[31]` stepper; `architecture-mac.md` L970 says the opposite — "the range is
+chosen by scrolling — 'start here' / 'end here' — **not** by typing numbers". They are not
+really alternatives: **Start here / End here** mark the page you are looking at, and the two
+number fields show and correct what they marked. The marked range is outlined on the pages
+themselves with a rule, not a tint (§C2 rule 2 keeps backgrounds untinted).
+
+**Bytes cross IPC, not a URL.** A PDF or an image comes back as a `Uint8Array` on the
+`DocumentView`. A custom `chattered://file/<id>` protocol would have been less copying, but it
+would also have handed the renderer a URL it could re-request at will; as it stands a file the
+main process never handed over stays unreachable. The cost is that a very large PDF is copied
+once per open — noted, not yet a problem (the 10.3 MB Xu et al. paper opens in well under a
+second).
+
+**Two bugs the browser probe caught, both fixed before this commit:**
+1. *"Cannot use the same canvas during multiple render() operations."* Two intersections for
+   one page can arrive before the first render resolves. Each page's `RenderTask` is now kept
+   and cancelled before a new one starts; a cancelled render is the normal result of scrolling
+   past a page, not an error.
+2. **Every page rendered at once.** An unrendered page box has no height, so all 24 pages of a
+   paper sat inside the viewport, all intersected, and the "lazy" render rendered the whole
+   document. Page 1's viewport is now read up front and used as the placeholder size for every
+   page. Measured after the fix: **2 of 24** canvases drawn on open.
+
+**`{@html}` is used twice, and both are asserted rather than trusted.** `lib/markdown.ts`
+drops raw HTML from the source instead of rendering it, escapes fenced code, and turns links
+and images into inert text — the pane is a reader, not a browser, and a renderer that can be
+navigated is a way out of the app. `markdown.test.ts` (17 tests) covers a raw `<script>`, an
+`onerror` attribute, a `javascript:` link, a relative image, KaTeX inline and display, `$5 and
+$6` not being a formula, `$HOME` inside a code span, and a broken formula degrading to its own
+source instead of an error card.
+
+**Verified against the real vault in a real Electron window** (real main process, real preload,
+real renderer, `/Users/lohzh/ChatterED/Academia` as the vault, `Sources` promoted): 16 of 16
+files indexed, 0 failed; searching `Challenger` gives 20 hits led by the Xu et al. paper at
+pages 11, 12 and 4; clicking that hit opens the PDF at 24 pages, 10.3 MB, first canvas
+1715×2220 with 358,646 dark pixels; the page box jumps to 3; **Start here / End here** writes
+3–3 and outlines exactly one page; a Markdown file renders with its headings and no `<script>`
+nodes; ⌘K with `whoyouexplain` finds `Sources/_text/who-you-explain-to-matters.txt`.
+
+**Stubbed at this stage:** nothing from the viewer reaches the room yet — that is stage (e).

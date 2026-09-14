@@ -6,7 +6,7 @@
  * it never owns the silence deadline — it animates against a timestamp the main process wrote
  * to SQLite before arming anything.
  */
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type {
   Bootstrap,
   CreateSessionInput,
@@ -344,6 +344,10 @@ export class AppService {
     handle<{ topicId: string | null }>(IPC.vaultTree, (input) => this.#vault.tree(input.topicId));
     handle<{ query: string }>(IPC.vaultFind, (input) => this.#vault.find(input.query));
     handle<{ query: string }>(IPC.vaultSearch, (input) => this.#vault.search(input.query));
+    handle<{ fileId: string }>(IPC.vaultDocument, (input) => this.#vault.document(input.fileId));
+    handle<{ fileId: string }>(IPC.vaultReveal, (input) => {
+      shell.showItemInFolder(this.#vault.revealPath(input.fileId));
+    });
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>

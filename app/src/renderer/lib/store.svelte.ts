@@ -12,6 +12,7 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
+  DocumentView,
   FinderHitView,
   SearchHitView,
   SettingsPatch,
@@ -70,6 +71,19 @@ class Store {
   vaultTree: VaultTreeNode[] = $state([]);
   vaultBusy = $state(false);
   selectedFileId: string | null = $state(null);
+
+  /**
+   * The open document and the state a reference reads off it: which page is on screen, which
+   * range the learner marked, and what they last selected (issue #22 decisions 3 and 4).
+   */
+  openDoc: DocumentView | null = $state(null);
+  docBusy = $state(false);
+  docPage = $state(1);
+  docFrom: number | null = $state(null);
+  docTo: number | null = $state(null);
+  docSelection = $state('');
+  /** Set by a search hit so the PDF jumps to the page the snippet came from. */
+  pendingPage: number | null = $state(null);
   topicSheetOpen = $state(false);
   topicCandidates: TopicCandidateView[] = $state([]);
 
@@ -268,6 +282,34 @@ class Store {
     const stillThere = view.topics.some((t) => t.id === this.selectedTopic);
     if (!stillThere && this.selectedTopic !== 'other') this.selectedTopic = view.topics[0]?.id ?? 'other';
     await this.loadTree();
+  }
+
+  // ── One document ─────────────────────────────────────────────────────────
+  async openFile(fileId: string, page: number | null = null): Promise<void> {
+    if (this.openDoc?.fileId === fileId) {
+      if (page !== null) this.pendingPage = page;
+      return;
+    }
+    this.docBusy = true;
+    this.selectedFileId = fileId;
+    this.pendingPage = page;
+    const doc = await run(this, () => bridge().openDocument({ fileId }));
+    this.docBusy = false;
+    if (!doc) return;
+    this.openDoc = doc;
+  }
+
+  closeDoc(): void {
+    this.openDoc = null;
+    this.selectedFileId = null;
+    this.docSelection = '';
+    this.docFrom = null;
+    this.docTo = null;
+    this.pendingPage = null;
+  }
+
+  revealFile(fileId: string): Promise<void | null> {
+    return run(this, () => bridge().revealFile({ fileId }));
   }
 
   // ── Finding and searching ────────────────────────────────────────────────

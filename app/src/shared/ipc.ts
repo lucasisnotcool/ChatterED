@@ -11,6 +11,7 @@ import type {
   RoomEvent,
   RoomSnapshot,
   SettingsPatch,
+  DocumentView,
   FinderHitView,
   SearchHitView,
   SettingsView,
@@ -55,6 +56,8 @@ export const IPC = {
   vaultTree: 'vault:tree',
   vaultFind: 'vault:find',
   vaultSearch: 'vault:search',
+  vaultDocument: 'vault:document',
+  vaultReveal: 'vault:reveal',
   /** main → renderer: a scan finished, or the background indexer advanced. */
   vaultChanged: 'vault:changed',
 } as const;
@@ -126,6 +129,14 @@ export interface ChatterEdApi {
   findFiles(input: { query: string }): Promise<FinderHitView[]>;
   /** Full text, over the FTS5 index: snippets, and a page number for a PDF hit. */
   searchVault(input: { query: string }): Promise<SearchHitView[]>;
+  /**
+   * Everything the document pane needs for one file. PDF and image bytes come back over IPC as
+   * a Uint8Array rather than through a custom protocol: the renderer then holds no URL it could
+   * re-request, and a file it was never handed stays unreachable.
+   */
+  openDocument(input: { fileId: string }): Promise<DocumentView>;
+  /** Reveal in Finder — the one action the "no viewer" card offers (issue #22 decision 3). */
+  revealFile(input: { fileId: string }): Promise<void>;
   /** Subscribe to vault changes pushed by the scanner and the background indexer. */
   onVaultChanged(listener: (view: VaultView) => void): () => void;
 

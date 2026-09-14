@@ -352,6 +352,11 @@ export function createMockBridge(): ChatterEdApi {
     vaultTree: async () => [],
     findFiles: async () => [],
     searchVault: async () => [],
+    openDocument: async ({ fileId }) => ({
+      fileId, name: '', relPath: '', absPath: '', kind: 'other' as const, ext: '', size: 0,
+      pageCount: null, text: null, bytes: null, error: 'No vault outside Electron.',
+    }),
+    revealFile: async () => undefined,
     onVaultChanged() { return () => undefined; },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
