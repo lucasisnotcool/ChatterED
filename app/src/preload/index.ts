@@ -4,7 +4,7 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
-import type { RoomEvent } from '../shared/types.js';
+import type { RoomEvent, WindowState } from '../shared/types.js';
 
 const api: ChatterEdApi = {
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
@@ -32,6 +32,13 @@ const api: ChatterEdApi = {
     ipcRenderer.on(IPC.event, handler);
     return () => {
       ipcRenderer.removeListener(IPC.event, handler);
+    };
+  },
+  onWindowState: (listener) => {
+    const handler = (_event: unknown, payload: WindowState) => listener(payload);
+    ipcRenderer.on(IPC.windowState, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC.windowState, handler);
     };
   },
 };

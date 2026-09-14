@@ -24,8 +24,6 @@
 </script>
 
 <nav class="rail" class:collapsed aria-label="Main">
-  <div class="brand">{collapsed ? '◆' : '◆ ChatterED'}</div>
-
   <button
     type="button"
     class="item"
@@ -70,7 +68,7 @@
     flex: none;
     background: var(--ground);
     border-right: 1px solid var(--hairline);
-    padding: 14px 10px;
+    padding: 12px 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -78,8 +76,6 @@
     overflow: hidden;
   }
   .rail.collapsed { width: 56px; }
-
-  .brand { font-size: 12px; font-weight: 600; padding: 2px 8px 14px; color: var(--text); white-space: nowrap; }
 
   .item {
     display: flex;

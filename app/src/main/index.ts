@@ -13,6 +13,7 @@ import { openDatabase } from './db/driver.js';
 import { runMigrations } from './db/migrations.js';
 import { createStore } from './db/store.js';
 import { AppService } from './ipc.js';
+import { IPC } from '../shared/ipc.js';
 
 let mainWindow: BrowserWindow | null = null;
 let service: AppService | null = null;
@@ -51,8 +52,10 @@ function createWindow(): BrowserWindow {
     title: 'ChatterED',
     ...(icon ? { icon } : {}),
     backgroundColor: '#F7F7FA',
+    // The renderer draws its own title bar and reserves the left TRAFFIC_LIGHT_INSET px of it
+    // for these three buttons (issue #21). y: 13 centres 12 px buttons in that 38 px bar.
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 14 },
+    trafficLightPosition: { x: 14, y: 13 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -67,6 +70,18 @@ function createWindow(): BrowserWindow {
   const devServer = process.env.CHATTERED_DEV_SERVER;
   if (devServer) void win.loadURL(devServer);
   else void win.loadFile(join(__dirname, '../renderer/index.html'));
+
+  // macOS hides the traffic lights in fullscreen, so the renderer's reserved spacer has to
+  // collapse or the title sits 78 px too far right (issue #21). The window is the only thing
+  // that knows, so it tells the renderer; the renderer never asks.
+  const pushWindowState = () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send(IPC.windowState, { fullScreen: win.isFullScreen() });
+  };
+  win.on('enter-full-screen', pushWindowState);
+  win.on('leave-full-screen', pushWindowState);
+  // A reload re-mounts the renderer with no memory of the last push, so re-state it.
+  win.webContents.on('did-finish-load', pushWindowState);
 
   win.on('closed', () => {
     mainWindow = null;

@@ -261,6 +261,15 @@ export interface ConceptDraft {
   provenance: 'fixed' | 'elicited';
 }
 
+/**
+ * Window chrome, pushed from main. `fullScreen` is the only bit the renderer needs: macOS
+ * hides the traffic lights in fullscreen, so the reserved spacer in the custom title bar has
+ * to collapse (issue #21).
+ */
+export interface WindowState {
+  fullScreen: boolean;
+}
+
 /** Events pushed from main to the renderer. The renderer never polls. */
 export type RoomEvent =
   | { type: 'message.appended'; roomId: string; message: MessageView }

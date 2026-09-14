@@ -13,6 +13,7 @@ import type {
   SettingsPatch,
   SettingsView,
   WhisperThreadView,
+  WindowState,
 } from './types.js';
 
 export const IPC = {
@@ -37,6 +38,8 @@ export const IPC = {
   relayWhisper: 'whisper:relay',
   closeWhisper: 'whisper:close',
   event: 'room:event',
+  /** main → renderer: the window entered or left macOS fullscreen (issue #21). */
+  windowState: 'app:windowState',
 } as const;
 
 export interface ChatterEdApi {
@@ -83,6 +86,13 @@ export interface ChatterEdApi {
 
   /** Subscribe to pushed room events. Returns an unsubscribe function. */
   onEvent(listener: (event: RoomEvent) => void): () => void;
+
+  /**
+   * Subscribe to window chrome changes. The only thing the renderer needs from the window is
+   * whether macOS is currently drawing the traffic lights over its top-left corner: in
+   * fullscreen it is not, and the reserved spacer must collapse (issue #21).
+   */
+  onWindowState(listener: (state: WindowState) => void): () => void;
 }
 
 declare global {

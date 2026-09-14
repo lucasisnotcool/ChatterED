@@ -11,12 +11,14 @@
   import SessionSetup from './components/SessionSetup.svelte';
   import Settings from './components/Settings.svelte';
   import StatusBar from './components/StatusBar.svelte';
+  import TitleBar from './components/TitleBar.svelte';
   import { store } from './lib/store.svelte.js';
 
   void store.init();
 </script>
 
 <div class="app">
+  <TitleBar />
   {#if store.screen === 'firstRun'}
     <FirstRun />
   {:else}

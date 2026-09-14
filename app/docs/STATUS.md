@@ -85,3 +85,32 @@ instead of SvelteKit (one window, no routing); per-user API keys instead of the 
 proxy (issue #15 supersedes §B.2); `node:sqlite` in tests because `better-sqlite3` is rebuilt for
 Electron's ABI; a relaxed material `CHECK` so an uncacheable selection is recorded rather than
 refused; a fifth ledger gate making `defended` unreachable without a Challenger probe.
+
+## Issue #21 — the title bar, 14 Sep 2026
+
+**Real.** The window is still `titleBarStyle: 'hiddenInset'`, but the renderer now draws a
+38 px `TitleBar.svelte` above everything else and reserves the left 78 px of it
+(`src/renderer/lib/chrome.ts`, `TRAFFIC_LIGHT_INSET`) as an empty spacer for the traffic
+lights. The bar is the window's drag handle (`-webkit-app-region: drag`); a `.no-drag` class
+is defined for any control added to it later, because a drag region swallows clicks. The
+brand mark moved out of the nav rail and into the bar, after the spacer — it was the thing
+sitting underneath the buttons. `trafficLightPosition` moved to `{x:14, y:13}` so 12 px
+buttons centre in a 38 px bar.
+
+Fullscreen is the case the obvious fix gets wrong: macOS stops drawing the buttons, and a
+78 px spacer then just shoves the title into the middle of nowhere. The window is the only
+thing that knows, so `main/index.ts` pushes `{fullScreen}` on `enter-full-screen`,
+`leave-full-screen` and `did-finish-load` over a new `app:windowState` channel, and the
+spacer collapses to 0.
+
+Verified in a real Electron window against the built renderer
+(`app/dist/renderer`, preload loaded, main's #21 wiring stood in):
+
+| state | bar | drag region | spacer | brand left | nav rail top / first item |
+|---|---|---|---|---|---|
+| windowed 1320 | top 0, h 38 | `drag` | 78 px | x 78 | 38 / 50 |
+| fullscreen 1512 | top 0, h 38 | `drag` | **0 px** | x 0 | 38 / 50 |
+| narrow 1040 | top 0, h 38 | `drag` | 78 px | x 78 | 38 / 50 |
+
+Hit-testing (20,19), (40,19), (60,19) — inside the traffic-light rectangle — returns the
+empty header in every windowed state, so nothing is underneath the buttons any more.

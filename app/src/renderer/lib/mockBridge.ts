@@ -332,5 +332,7 @@ export function createMockBridge(): ChatterEdApi {
     async closeWhisper({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    // `vite dev` has no window to be fullscreen; the traffic lights are never drawn there.
+    onWindowState(listener) { listener({ fullScreen: false }); return () => undefined; },
   };
 }
