@@ -347,3 +347,32 @@ prefix.
   recorded as `cache_eligible = 0` and said so, exactly as before.
 - References are local-only. They are not in the `outbox` collection enum and are not mirrored,
   for the same reason `extracted_text` is not (§D.3 L862).
+
+## Verified on this Mac, 14 Sep 2026 — the installed app (issues #21, #22)
+
+`npm run install:local -- --force` built and installed `~/Applications/ChatterED.app`
+(0.1.0, build 28, commit `882012b`, ad-hoc signed). It was then driven over the Chrome
+DevTools Protocol — the real bundle, running out of `app.asar`, not a dev build:
+
+| Step | Result |
+|---|---|
+| Migrations | `pragma user_version` = **6**; `vaults`, `topics`, `files`, `file_text`, `message_refs` present; `materials.topic_context` added |
+| Title bar (#21) | 38 px, `-webkit-app-region: drag`, 78 px spacer, brand at x 78; `elementFromPoint` at (20,19), (40,19), (60,19) returns the empty header |
+| Library | `Sources 16` · `Other 1`, 22 tree rows, search box |
+| Search `Challenger` | 20 hits, led by the Xu et al. paper at pages 11, 12 and 4 |
+| Open that hit | The PDF opens **at page 11** — the hit's own page — 24 pages, 10.3 MB, **2 of 24** canvases drawn |
+| Page 3, Start here / End here | Page box `3`, range `3–3` |
+| `Explain p. 3 →` | Setup seeded with 5,675 characters and "From 3772318.3790298 (1).pdf, p. 3" |
+| Open the room | Room opens on the live Claude CLI backend (the concept draft is a real model call, so it takes a few seconds) |
+| `Bring a document…` → `Show the room · p. 3` | Back in the room, the transcript shows `Look at this — 3772318.3790298 (1).pdf, p. 3.` with the document card `▤ 3772318.3790298 (1).pdf p. 3` |
+| In the app's own database | one `message_refs` row: pages 3–3, 5,675 characters of page text. The material: `source_kind = pdf_pages`, pages 3–3, `topic_context` = "The student is working in their "Sources" folder…", `token_count` 2,809, `cache_eligible` 0 |
+| Quit | `osascript -e 'quit app "ChatterED"'` — clean, no processes left |
+
+pdf.js in the renderer works from inside `app.asar` (its worker is a Vite-emitted same-origin
+asset, and the CSP now names `worker-src 'self' blob:` and `font-src 'self' data:` for it and
+for KaTeX's fonts). The main process's copy of pdf.js is `asarUnpack`ed, because Node's ESM
+loader cannot `import()` out of an asar archive.
+
+`cache_eligible = 0` at 2,809 tokens is the honest, expected answer, not a regression:
+architecture-mac.md §E.2 L1004 says every realistic single-slide selection misses the 4,096
+floor, and `ensurePrefixFloor`'s widen and glossary steps are still M2 work.
