@@ -1,7 +1,11 @@
 /**
- * The LLM port. Two implementations ship: `AnthropicClient` (real, streaming, prompt caching)
- * and `ScriptedClient` (replays design-brief.md §G — the A1 video fallback, and what every
- * test runs against; no test in this repo makes a network call).
+ * The LLM port. Three implementations ship: `ClaudeCliClient` (the default — the local,
+ * logged-in `claude` binary, in src/main/llm because it spawns a process), `AnthropicClient`
+ * (per-user API key, streaming, prompt caching) and `ScriptedClient` (replays design-brief.md
+ * §G — the A1 video fallback, and what every test runs against; no test in this repo makes a
+ * network call).
+ *
+ * The Room actor must not be able to tell which one it has (issue #19).
  */
 
 export interface CacheableBlock {
@@ -44,16 +48,22 @@ export interface LlmUsage {
   cache_creation_input_tokens: number;
 }
 
+export type LlmBackend = 'anthropic' | 'scripted' | 'claude-cli';
+
 export interface LlmResult {
   text: string;
   model: string;
   usage: LlmUsage;
   /** Real time to first token. Stored next to `latency_target_ms` so the manipulation is checkable. */
   ttftMs: number;
+  /** Which backend answered. Persisted on the message row next to `model` (issue #19). */
+  backend?: LlmBackend;
+  /** The local CLI reports a dollar figure per call; the API path does not. */
+  costUsd?: number;
 }
 
 export interface LLMClient {
-  readonly kind: 'anthropic' | 'scripted';
+  readonly kind: LlmBackend;
   /**
    * Generates a reply. `onDelta` receives tokens as they arrive; the *caller* owns the
    * latency floor and the release pacing, because the hold is a product decision, not a

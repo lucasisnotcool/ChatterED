@@ -16,7 +16,6 @@
  */
 import type { AgentRole } from '../shared/types.js';
 import type { LLMClient, LlmRequest } from './llm/types.js';
-import { SONNET } from './agents.js';
 
 export const MAX_CONSECUTIVE_AGENT_TURNS = 2;
 export const DISAGREEMENT_QUOTA = 5;
@@ -136,7 +135,9 @@ export async function decideTurn(opts: DecideOptions): Promise<TurnDecision> {
   if (ruled) return { ...ruled, mustDisagree: ruled.speak ? mustDisagree : false };
 
   try {
-    const result = await opts.client.complete({ ...opts.request, model: SONNET, jsonSchema: DECISION_SCHEMA });
+    // The model id comes in on the request: the caller resolved it from the backend's plan
+    // (issue #19), so this works identically over the API key and over the local CLI.
+    const result = await opts.client.complete({ ...opts.request, jsonSchema: DECISION_SCHEMA });
     const parsed = JSON.parse(extractJson(result.text)) as Record<string, unknown>;
     const role = parsed.role === 'challenger' || parsed.role === 'peer' ? (parsed.role as AgentRole) : null;
     const speak = parsed.speak === true && role !== null;
@@ -153,7 +154,7 @@ export async function decideTurn(opts: DecideOptions): Promise<TurnDecision> {
       targetElementId: typeof parsed.target_element_id === 'string' ? parsed.target_element_id : null,
       challenges: Array.isArray(parsed.challenges) ? (parsed.challenges as string[]) : [],
       rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
-      decidedBy: `model:${SONNET}`,
+      decidedBy: `model:${opts.request.model}`,
       disagreement:
         parsed.disagreement && typeof parsed.disagreement === 'object'
           ? (parsed.disagreement as TurnDecision['disagreement'])

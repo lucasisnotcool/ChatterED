@@ -78,6 +78,7 @@ export class AnthropicClient implements LLMClient {
       model: final.model,
       usage: normaliseUsage(final.usage),
       ttftMs: ttftMs < 0 ? Date.now() - startedAt : ttftMs,
+      backend: 'anthropic',
     };
   }
 }

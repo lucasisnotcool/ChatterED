@@ -25,7 +25,8 @@ import { agentByKey, agentByRole, latencyTargetMs } from './agents.js';
 import { buildGroupContext } from './context.group.js';
 import { buildWhisperContext } from './context.whisper.js';
 import { applyLedgerRules, type LedgerProposal } from './ledger.js';
-import type { LLMClient } from './llm/types.js';
+import type { LLMClient, LlmBackend } from './llm/types.js';
+import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
 import { decideTurn, type TurnDecision, type TurnTrigger } from './orchestrator.js';
 import type { Clock, Store, Transport } from './ports.js';
@@ -63,6 +64,12 @@ export interface RoomActorDeps {
   roster: AgentProfile[];
   pack: ConceptPack;
   config: RoomConfig;
+  /**
+   * Which model answers which call (issue #19). The actor does not choose it and cannot tell
+   * which backend resolved it — it just stamps it on the orchestrator and ledger requests,
+   * the way the roster already stamps the agent model on a group turn.
+   */
+  models?: ModelPlan;
   appVersion: string;
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
@@ -461,12 +468,14 @@ export class RoomActor {
     let text: string;
     let ttft = 0;
     let model = agent.model;
+    let backend: LlmBackend | null = null;
     let usage: Record<string, number> = {};
     try {
       const result = await generation;
       text = result.text;
       ttft = result.ttftMs;
       model = result.model;
+      backend = result.backend ?? null;
       usage = result.usage as unknown as Record<string, number>;
     } catch (err) {
       this.#event(decision.role, 'agent.turn.error', { cause: (err as Error).message });
@@ -489,6 +498,7 @@ export class RoomActor {
         participantId: this.#d.store.participants.byAgentKey(this.#d.roomId, agent.key)!.id,
         body: text,
         model,
+        backend,
         usage: JSON.stringify(usage),
         latencyTargetMs: target,
         ttftActualMs: ttft,
@@ -548,6 +558,7 @@ export class RoomActor {
       directive: { agentRole: 'peer', move: 'decide_next_turn' },
       maxTokens: 400,
     });
+    request.model = this.#models.orchestrator;
     request.meta = { ...request.meta, scope: 'orchestrator', scriptCue: cue };
     return decideTurn({ client: this.#d.llm, request, input });
   }
@@ -557,7 +568,7 @@ export class RoomActor {
     if (decision.moveType === 'content_free_nudge') {
       const pool = CONTENT_FREE_NUDGES;
       const line = pool[Math.floor(this.#rand() * pool.length)] ?? pool[0]!;
-      return { text: line, model: 'pool:content_free', usage: {}, ttftMs: 0 };
+      return { text: line, model: 'pool:content_free', usage: {}, ttftMs: 0, backend: undefined };
     }
     const request = buildGroupContext(this.#d.groupStore, {
       roomId: this.#d.roomId,
@@ -596,6 +607,9 @@ export class RoomActor {
       directive: { agentRole: 'peer', move: 'ledger_update' },
       maxTokens: 900,
     });
+    // The ledger is a structured-output call, not an agent turn: it runs on the orchestrator
+    // model, which is the whole point of the two-dropdown split (#19).
+    request.model = this.#models.orchestrator;
     request.meta = { ...request.meta, scope: 'ledger', scriptCue: cue };
 
     let proposal: LedgerProposal;
@@ -645,6 +659,11 @@ export class RoomActor {
     return this.#d.random ?? Math.random;
   }
 
+  /** Defaults to the API-path plan so every existing caller and test keeps its behaviour. */
+  get #models(): ModelPlan {
+    return this.#d.models ?? API_PLAN;
+  }
+
   #room() {
     const room = this.#d.store.rooms.get(this.#d.roomId);
     if (!room) throw new Error(`No such room: ${this.#d.roomId}`);
@@ -665,6 +684,7 @@ export class RoomActor {
     participantId: string;
     body: string;
     model?: string;
+    backend?: LlmBackend | null;
     usage?: string;
     latencyTargetMs?: number;
     ttftActualMs?: number;
@@ -681,6 +701,7 @@ export class RoomActor {
       body: input.body,
       turn_decision_id: null,
       model: input.model ?? null,
+      backend: input.backend ?? null,
       usage: input.usage ?? null,
       latency_target_ms: input.latencyTargetMs ?? null,
       ttft_actual_ms: input.ttftActualMs ?? null,

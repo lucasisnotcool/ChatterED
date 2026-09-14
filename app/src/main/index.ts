@@ -77,6 +77,11 @@ function boot(): void {
   // discarded by timerEpoch — so running it twice is harmless (architecture-mac.md §B.4).
   powerMonitor.on('resume', () => service?.recover());
   service.recover();
+
+  // Warm the Claude CLI detection cache in the background. The probe costs one real Haiku
+  // round trip, so it must never sit on the critical path of a launch or a turn (issue #19);
+  // it is cached in the settings table and re-used until the learner presses "Check again".
+  void service.detectCli().catch(() => undefined);
 }
 
 void app.whenReady().then(() => {

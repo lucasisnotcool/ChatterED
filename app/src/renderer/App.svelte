@@ -9,6 +9,7 @@
   import NoticeBanner from './components/NoticeBanner.svelte';
   import Room from './components/Room.svelte';
   import SessionSetup from './components/SessionSetup.svelte';
+  import Settings from './components/Settings.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import { store } from './lib/store.svelte.js';
 
@@ -27,6 +28,8 @@
         <Library />
       {:else if store.screen === 'setup'}
         <SessionSetup />
+      {:else if store.screen === 'settings'}
+        <Settings />
       {:else if store.room}
         <Room room={store.room} />
       {/if}

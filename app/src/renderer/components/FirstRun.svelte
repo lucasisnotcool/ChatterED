@@ -1,7 +1,8 @@
 <script lang="ts">
   /**
-   * First run: three cards in the main window (product-design.md §B7, adapted —
-   * this build carries an API-key card because each user brings their own key).
+   * First run: three cards in the main window (product-design.md §B7, adapted — this build
+   * carries a backend card, because the study partners can run on the copy of Claude Code
+   * already installed on this Mac and only fall back to a key if it cannot, issue #19).
    */
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
@@ -11,6 +12,25 @@
   let saving = $state(false);
   let keyError = $state<string | null>(null);
   let folder = $state<string | null>(null);
+  let checking = $state(false);
+  let showKeyField = $state(false);
+
+  const cli = $derived(store.settings?.cli ?? store.boot?.cli ?? null);
+  const cliReady = $derived(cli?.found === true && cli.loggedIn === true);
+
+  /** Runs when the learner reaches card 2, so the 1–2 s probe overlaps with reading card 1. */
+  async function checkCli(): Promise<void> {
+    if (checking) return;
+    checking = true;
+    await store.checkCli(true);
+    checking = false;
+    showKeyField = !(store.settings?.cli.found && store.settings.cli.loggedIn);
+  }
+
+  function toCard(n: number): void {
+    card = n;
+    if (n === 2) void checkCli();
+  }
 
   async function saveKey(): Promise<void> {
     if (!key.trim()) return;
@@ -21,6 +41,7 @@
     if (result.ok) {
       key = '';
       if (store.boot) store.boot.hasApiKey = true;
+      await store.refreshBoot();
       card = 3;
     } else {
       keyError = result.error ?? "That key didn't work.";
@@ -54,25 +75,58 @@
       </p>
       <p class="quiet">A ledger on the right fills with what you have established, in your words.</p>
       <div class="acts">
-        <button type="button" class="btn-primary" onclick={() => (card = 2)}>Next</button>
+        <button type="button" class="btn-primary" onclick={() => toCard(2)}>Next</button>
       </div>
     {:else if card === 2}
-      <h1>Your Anthropic API key</h1>
-      <p>
-        The study partners run on your own key. It is stored in the macOS keychain{store.boot
-          ?.keychainAvailable === false
-          ? ', if this Mac makes one available'
-          : ''} and never written to the database, the transcript or disk.
-      </p>
-      <label class="field">
-        <span>API key</span>
-        <input type="password" bind:value={key} placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
-      </label>
-      {#if keyError}<p class="err">{keyError}</p>{/if}
+      <h1>Who answers</h1>
+      {#if checking}
+        <p class="quiet">Looking for Claude Code on this Mac…</p>
+      {:else if cliReady}
+        <p>
+          Found Claude Code on this Mac, signed in. The study partners will run on it — nothing to
+          set up, no API key, and nothing billed per message.
+        </p>
+        <p class="quiet">You can change the models, or switch to an API key, in Settings.</p>
+      {:else if cli?.found}
+        <p>
+          Claude Code is installed here but not signed in. Open Terminal, run <code>claude</code>
+          once and sign in — then come back and check again.
+        </p>
+      {:else}
+        <p>
+          Claude Code was not found on this Mac. You can install it, or give ChatterED an
+          Anthropic API key instead.
+        </p>
+      {/if}
+
+      {#if !cliReady && !checking}
+        <div class="acts">
+          <button type="button" class="btn" onclick={() => void checkCli()}>Check again</button>
+          <button type="button" class="btn-link" onclick={() => (showKeyField = true)}>Use an API key</button>
+        </div>
+      {/if}
+
+      {#if showKeyField && !cliReady}
+        <p class="quiet">
+          The key is stored in the macOS keychain{store.boot?.keychainAvailable === false
+            ? ', if this Mac makes one available'
+            : ''} and never written to the database, the transcript or disk.
+        </p>
+        <label class="field">
+          <span>API key</span>
+          <input type="password" bind:value={key} placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+        </label>
+        {#if keyError}<p class="err">{keyError}</p>{/if}
+      {/if}
+
       <div class="acts">
-        <button type="button" class="btn-primary" onclick={() => void saveKey()} disabled={!key.trim() || saving}>
-          Save the key
-        </button>
+        {#if showKeyField && !cliReady}
+          <button type="button" class="btn-primary" onclick={() => void saveKey()} disabled={!key.trim() || saving}>
+            Save the key
+          </button>
+        {:else}
+          <button type="button" class="btn-primary" onclick={() => toCard(3)} disabled={checking}>Next</button>
+        {/if}
         <button type="button" class="btn-link" onclick={() => void store.completeFirstRun()}>
           Skip — use the scripted demo
         </button>
@@ -114,6 +168,7 @@
   p { margin: 0 0 12px; font-size: 13px; line-height: 1.7; max-width: 62ch; }
   .quiet { color: var(--text-2); }
   .err { color: var(--text-2); font-size: 12px; }
+  code { font-size: 11px; background: var(--ground); padding: 1px 5px; border-radius: 4px; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-2); margin: 16px 0 6px; }
   .field input {
     border: 1px solid var(--hairline);

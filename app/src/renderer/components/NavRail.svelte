@@ -41,10 +41,16 @@
     <span class="icon" aria-hidden="true">▤</span>
     {#if !collapsed}<span>History</span>{/if}
   </span>
-  <span class="item off" title="Not in this build">
+  <button
+    type="button"
+    class="item"
+    class:active={store.screen === 'settings'}
+    onclick={() => void store.openSettings()}
+  >
     <span class="icon" aria-hidden="true">⚙</span>
     {#if !collapsed}<span>Settings</span>{/if}
-  </span>
+    <span class="sr-only">Settings</span>
+  </button>
 
   {#if !collapsed && courses.length > 0}
     <p class="head label-caps">Courses</p>

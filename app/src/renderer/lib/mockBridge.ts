@@ -19,6 +19,8 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
+  SettingsPatch,
+  SettingsView,
   TimerView,
   WhisperThreadView,
   WhisperTurnView,
@@ -35,6 +37,22 @@ const AGENTS: AgentProfile[] = [
 ];
 const ellie = AGENTS[0]!;
 const max = AGENTS[1]!;
+
+const MOCK_CLI = { found: true, path: '/Users/you/.local/bin/claude', loggedIn: true, detail: null, checkedAt: iso() };
+const mockSettings: SettingsView = {
+  appVersion: '0.1.0-mock',
+  backendChoice: 'auto',
+  resolvedBackend: 'claude_cli',
+  fellBackBecause: null,
+  cli: MOCK_CLI,
+  cliPathOverride: null,
+  agentModel: 'sonnet',
+  orchestratorModel: 'sonnet',
+  modelChoices: ['haiku', 'sonnet', 'opus'],
+  hasApiKey: false,
+  keychainAvailable: true,
+  slidesFolder: null,
+};
 
 const row = (id: string, label: string, learnerLabel: string): LedgerRowView => ({
   elementId: id, label, learnerLabel, level: 0, state: 'not_yet',
@@ -176,6 +194,7 @@ export function createMockBridge(): ChatterEdApi {
     async bootstrap(): Promise<Bootstrap> {
       return {
         appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted', slidesFolder: null,
+        backend: 'scripted', backendChoice: 'auto', cli: MOCK_CLI,
         pairing: 'ellie_peer', agents: AGENTS, firstRun: true, keychainAvailable: true,
         recentSessions: [
           { roomId: ROOM, conceptTitle: 'Convexity and the Hessian', moduleCode: 'MA3236', states: ['defended', 'defended', 'justified'], endedAt: iso(-2 * 864e5), updatedAt: iso(-2 * 864e5) },
@@ -187,6 +206,16 @@ export function createMockBridge(): ChatterEdApi {
     async setApiKey(_key: string) { return { ok: true }; },
     async clearApiKey() { /* no-op */ },
     async completeFirstRun() { /* no-op */ },
+
+    async getSettings(): Promise<SettingsView> { return { ...mockSettings }; },
+    async saveSettings(patch: SettingsPatch) {
+      Object.assign(mockSettings, patch);
+      return { ok: true, settings: { ...mockSettings } };
+    },
+    async detectCli(): Promise<SettingsView> {
+      await new Promise((r) => setTimeout(r, 600));
+      return { ...mockSettings };
+    },
 
     async draftConcept(input): Promise<ConceptDraft> {
       await new Promise((r) => setTimeout(r, 1400));

@@ -13,7 +13,7 @@ import { FIXED_PACKS, PSD_HESSIAN_CONVEXITY_V1 } from '../room/concepts/psd-hess
 import type { LLMClient } from '../room/llm/types.js';
 import { PROMPT_VERSION, sharedBlock, stableJson } from '../room/prompts.js';
 import type { ConceptPack, MaterialRow, RoomConfig } from '../room/records.js';
-import { SONNET } from '../room/agents.js';
+import { API_PLAN, type ModelPlan } from '../room/llm/models.js';
 import type { LocalStore } from './db/store.js';
 
 /** Haiku 4.5's minimum cacheable prefix (architecture-mac.md §E.2). */
@@ -49,13 +49,17 @@ export interface CreateSessionDeps {
   appVersion: string;
   osVersion: string;
   mode: 'scripted' | 'live';
+  /** Which backend and models this session is being opened on (issue #19). Recorded on the row. */
+  backend?: string;
+  models?: ModelPlan;
   silenceMs?: number;
   now?: () => string;
 }
 
 export function createSession(deps: CreateSessionDeps, input: CreateSessionInput): CreatedSession {
   const now = deps.now ?? (() => new Date().toISOString());
-  const roster = rosterFor(deps.pairing);
+  const models = deps.models ?? API_PLAN;
+  const roster = rosterFor(deps.pairing, models.agent);
   const pack = packFor(input);
   const materialId = newId('mat');
   const roomId = newId('room');
@@ -174,6 +178,9 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
       end_reason: null,
       summary_text: null,
       summary_usage: null,
+      llm_backend: deps.backend ?? null,
+      agent_model: models.agent,
+      orchestrator_model: models.orchestrator,
     });
     for (const element of pack.elements) {
       deps.store.ledger.upsert({
@@ -268,19 +275,22 @@ const DRAFT_SCHEMA: Record<string, unknown> = {
 };
 
 /**
- * Turn a pasted slide into 3–5 claims for the learner to edit. Sonnet 5, structured output —
- * it is one-shot and it must be reliable at strict JSON (architecture-mac.md §E.1).
+ * Turn a pasted slide into 3–5 claims for the learner to edit. Runs on the **orchestrator**
+ * model of whichever backend is live — Sonnet 5 over the API key, the Settings choice (default
+ * `sonnet`) over the local CLI. Structured output, because it is one-shot and it must be
+ * reliable at strict JSON (architecture-mac.md §E.1).
  * With no key (or in scripted mode) the committed fixed pack is returned instead, which is
  * also the offline fallback §B.3 prescribes.
  */
 export async function draftConcept(
   llm: LLMClient | null,
   input: { moduleCode: string; title: string; text: string },
+  models: ModelPlan = API_PLAN,
 ): Promise<ConceptDraft> {
   if (!llm || llm.kind === 'scripted') return fixedDraft();
   try {
     const result = await llm.complete({
-      model: SONNET,
+      model: models.orchestrator,
       max_tokens: 1500,
       system: [
         {

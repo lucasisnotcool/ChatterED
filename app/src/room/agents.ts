@@ -7,9 +7,15 @@
  * Theo is the Tutee and is invited only, at the end of a round; he never co-occurs with them.
  */
 import type { AgentProfile, AgentRole, RolePairing } from '../shared/types.js';
+import { HAIKU_API, SONNET_API } from './llm/models.js';
 
-export const HAIKU = 'claude-haiku-4-5';
-export const SONNET = 'claude-sonnet-5';
+/**
+ * Kept as named exports because the rest of the app spells the API-path defaults this way.
+ * The per-role choice itself now lives in `llm/models.ts` (issue #19): which model an agent
+ * runs on is a setting, and `rosterFor` takes it.
+ */
+export const HAIKU = HAIKU_API;
+export const SONNET = SONNET_API;
 
 /** Hue is never the only cue — see the redundant channels in product-design.md §C1. */
 export const ROLE_COLOUR: Record<AgentRole, string> = {
@@ -46,24 +52,29 @@ export const ROLE_LABEL: Record<AgentRole, string> = {
   whisper: 'peer',
 };
 
-export function rosterFor(pairing: RolePairing): AgentProfile[] {
+/**
+ * `agentModel` is the resolved id for **agent turns** — Haiku 4.5 on the API path, the
+ * learner's Settings choice (default `sonnet`) on the local-CLI path. The orchestrator and
+ * ledger model is not here: those calls are not made *as* an agent.
+ */
+export function rosterFor(pairing: RolePairing, agentModel: string = HAIKU): AgentProfile[] {
   const peerName = pairing === 'ellie_peer' ? 'Ellie' : 'Max';
   const challengerName = pairing === 'ellie_peer' ? 'Max' : 'Ellie';
   return [
-    profile('peer', peerName),
-    profile('challenger', challengerName),
-    profile('tutee', 'Theo'),
+    profile('peer', peerName, agentModel),
+    profile('challenger', challengerName, agentModel),
+    profile('tutee', 'Theo', agentModel),
   ];
 }
 
-export function profile(role: AgentRole, displayName: string): AgentProfile {
+export function profile(role: AgentRole, displayName: string, model: string = HAIKU): AgentProfile {
   return {
     key: `${role}.${displayName.toLowerCase()}`,
     role,
     displayName,
     colour: ROLE_COLOUR[role],
     verb: VERB[role],
-    model: HAIKU,
+    model,
     latency: LATENCY[role],
   };
 }

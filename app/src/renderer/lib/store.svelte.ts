@@ -12,11 +12,13 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
+  SettingsPatch,
+  SettingsView,
   WhisperThreadView,
 } from '../../shared/types.js';
 import { bridge } from './bridge.js';
 
-export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room';
+export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings';
 
 /** One shared 200 ms tick. The wait-line transitions across it, so it reads as continuous. */
 class Clock {
@@ -55,6 +57,11 @@ class Store {
 
   /** Seed for the setup screen when the learner arrives via "Paste text instead". */
   setupSeed = $state('');
+
+  /** Settings, loaded on demand. Null until the Settings screen has been opened once. */
+  settings: SettingsView | null = $state(null);
+  settingsBusy = $state(false);
+  settingsError: string | null = $state(null);
 
   unsubscribe: (() => void) | null = null;
 
@@ -123,6 +130,50 @@ class Store {
     await run(this, () => bridge().completeFirstRun());
     if (this.boot) this.boot.firstRun = false;
     this.screen = 'library';
+  }
+
+  // ── Settings ─────────────────────────────────────────────────────────────
+  async openSettings(): Promise<void> {
+    this.screen = 'settings';
+    this.navCollapsed = false;
+    await this.loadSettings();
+  }
+
+  async loadSettings(): Promise<void> {
+    this.settingsBusy = true;
+    const view = await run(this, () => bridge().getSettings());
+    this.settingsBusy = false;
+    if (view) this.settings = view;
+  }
+
+  async saveSettings(patch: SettingsPatch): Promise<void> {
+    this.settingsBusy = true;
+    this.settingsError = null;
+    const result = await run(this, () => bridge().saveSettings(patch));
+    this.settingsBusy = false;
+    if (!result) return;
+    if (!result.ok) {
+      this.settingsError = result.error ?? 'That setting could not be saved.';
+      return;
+    }
+    if (result.settings) this.settings = result.settings;
+    await this.refreshBoot();
+  }
+
+  /** One real `claude` round trip. The button says so, because it costs a model call. */
+  async checkCli(force = true): Promise<void> {
+    this.settingsBusy = true;
+    this.settingsError = null;
+    const view = await run(this, () => bridge().detectCli({ force }));
+    this.settingsBusy = false;
+    if (view) this.settings = view;
+    await this.refreshBoot();
+  }
+
+  /** Re-reads the bootstrap so the status bar and the roster follow a backend change. */
+  async refreshBoot(): Promise<void> {
+    const boot = await run(this, () => bridge().bootstrap());
+    if (boot) this.boot = { ...boot, firstRun: this.boot?.firstRun ?? boot.firstRun };
   }
 
   goSetup(seed = ''): void {

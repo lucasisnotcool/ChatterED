@@ -184,10 +184,55 @@ export interface RecentSession {
   updatedAt: string;
 }
 
+/** The three live backends, plus 'auto' for "pick the best one available" (issue #19). */
+export type BackendKind = 'claude_cli' | 'anthropic' | 'scripted';
+export type BackendChoice = 'auto' | BackendKind;
+
+/** What the last `claude` binary probe found. Cached in settings; see src/main/llm/detect.ts. */
+export interface CliStatus {
+  found: boolean;
+  path: string | null;
+  /** null when the binary was found but the login has not been probed yet. */
+  loggedIn: boolean | null;
+  detail: string | null;
+  checkedAt: string;
+}
+
+export interface SettingsView {
+  appVersion: string;
+  /** What the learner chose. 'auto' means CLI → API key → scripted, in that order. */
+  backendChoice: BackendChoice;
+  /** What that actually resolved to, once reality was consulted. */
+  resolvedBackend: BackendKind;
+  /** Set when the choice could not be honoured — e.g. "forced the CLI, but it is not logged in". */
+  fellBackBecause: string | null;
+  cli: CliStatus;
+  cliPathOverride: string | null;
+  /** Resolved model ids for the two roles. On the CLI path these are aliases: haiku/sonnet/opus. */
+  agentModel: string;
+  orchestratorModel: string;
+  /** The dropdown options, in order. Fable is deliberately not among them (CLAUDE.md). */
+  modelChoices: string[];
+  hasApiKey: boolean;
+  keychainAvailable: boolean;
+  slidesFolder: string | null;
+}
+
+export interface SettingsPatch {
+  backendChoice?: BackendChoice;
+  cliPathOverride?: string | null;
+  agentModel?: string;
+  orchestratorModel?: string;
+}
+
 export interface Bootstrap {
   appVersion: string;
   hasApiKey: boolean;
   mode: 'scripted' | 'live';
+  /** Which backend the next room will open on, and why (issue #19). */
+  backend: BackendKind;
+  backendChoice: BackendChoice;
+  cli: CliStatus;
   slidesFolder: string | null;
   pairing: RolePairing;
   agents: AgentProfile[];

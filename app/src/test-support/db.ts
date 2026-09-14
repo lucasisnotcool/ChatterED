@@ -168,6 +168,9 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
       end_reason: null,
       summary_text: null,
       summary_usage: null,
+      llm_backend: null,
+      agent_model: null,
+      orchestrator_model: null,
     });
 
     for (const e of PSD_HESSIAN_CONVEXITY_V1.elements) {
@@ -201,6 +204,7 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
         body,
         turn_decision_id: null,
         model: null,
+        backend: null,
         usage: null,
         latency_target_ms: null,
         ttft_actual_ms: null,

@@ -5,7 +5,10 @@ report has to be guessed at. The rule used throughout: a mechanic that carries a
 is real; content and infrastructure that carry none may be scripted or stubbed, and are listed
 here as such.
 
-Run it: `npm install && npm run dev`. Test it: `npm test` (42 tests, no network).
+Run it: `npm install && npm run dev`. Test it: `npm test` (82 tests, no network).
+
+**Updated 14 Sep 2026** for issues #19 (local Claude CLI backend, per-role model selection) and
+#20 (local install with a launchd auto-rebuild).
 
 ## Real — it runs, it is persisted, and it is tested
 
@@ -23,7 +26,11 @@ Run it: `npm install && npm run dev`. Test it: `npm test` (42 tests, no network)
 | **The whisper leak test** | `src/room/context.test.ts` | Canary string, store-shape assertion, and a walk of the static import graph from `context.group.ts` |
 | Scripted transcript player (the A1 video fallback) | `src/room/llm/script.psd-hessian.ts`, `scripted.ts` | Replays design-brief.md §G through the *real* actor, timer, gates and whisper scoping. The ledger's evidence is lifted verbatim from what the learner actually types |
 | Anthropic client: streaming, cache breakpoints, usage persisted | `src/room/llm/anthropic.ts` | `claude-haiku-4-5` for agent turns, `claude-sonnet-5` for orchestrator/ledger/ingest |
-| API key entry via safeStorage | `src/main/keychain.ts` | Ciphertext in the settings table, key in the login keychain. No key ⇒ the app runs scripted |
+| **Local Claude CLI client** (#19) | `src/main/llm/claude-cli.ts` | Shells out to `claude -p … --output-format stream-json`, parses the deltas and the final `result`, persists the same usage shape. In `src/main`, not `src/room`, because it spawns a process and `src/room` is the portable half. 29 tests against a fake `claude` binary on a temp PATH |
+| **Backend detection and order** (#19) | `src/main/llm/detect.ts`, `backend.ts` | CLI-if-logged-in → API key → scripted, forceable in Settings. The login probe costs one Haiku round trip, so it is cached in the settings table and warmed in the background at launch |
+| **Per-role model selection** (#19) | `src/room/llm/models.ts`, `src/renderer/components/Settings.svelte` | Two dropdowns (agent turns / orchestrator + ledger), haiku·sonnet·opus, default **sonnet** for both on the CLI path; a free-text field takes a full id. Fable is not offered and is rejected if typed |
+| Settings screen | `src/renderer/components/Settings.svelte` | Backend, CLI status and path override, the two model choices. Says which backend is *actually* live and why a forced choice was not honoured |
+| API key entry via safeStorage | `src/main/keychain.ts` | Ciphertext in the settings table, key in the login keychain. Optional now that the CLI can answer |
 | Session setup from pasted text, claim rows, prefix frozen and hashed at confirmation | `src/main/sessions.ts` | `pack_confirmed_at` gates opening the room |
 | Role–name pairing randomised at install | `src/room/agents.ts`, `ipc.ts` | Stored in settings; recorded per session |
 | Three-pane shell, message anatomy, composer hairline, indicators, ledger rail, whisper pane, recap | `src/renderer/` | Functional against the scripted client |
@@ -49,7 +56,7 @@ Run it: `npm install && npm run dev`. Test it: `npm test` (42 tests, no network)
 | Consent screen, participant code, withdrawal path | Compliance is handled by Lucas with the prof; the schema holds `consents` already | A2 |
 | History, export to `~/Documents/ChatterED/` | Not on a marked A1 requirement | A2 |
 | Theo's teach-back round | The recap renders the invitation; accepting it does nothing yet | A2 |
-| Settings (Reply speed, pacing toggle, the `don't do this` target) | `pauseNudges` covers the nudge case for now | A2 |
+| Settings: Reply speed, pacing toggle, the `don't do this` target | The Settings screen now exists (#19) but carries only the backend and model choices | A2 |
 | Signing / notarisation / DMG | Unsigned by decision (#17); `npm run dist:mac` produces an unsigned DMG, untested this pass | Later milestone |
 | Firebase Auth, the `claudeProxy` function | Superseded for now by per-user keys (#15) | Revisit with the cohort |
 

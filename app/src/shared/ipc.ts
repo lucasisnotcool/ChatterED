@@ -10,6 +10,8 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
+  SettingsPatch,
+  SettingsView,
   WhisperThreadView,
 } from './types.js';
 
@@ -19,6 +21,9 @@ export const IPC = {
   setApiKey: 'app:setApiKey',
   clearApiKey: 'app:clearApiKey',
   completeFirstRun: 'app:completeFirstRun',
+  getSettings: 'app:getSettings',
+  saveSettings: 'app:saveSettings',
+  detectCli: 'app:detectCli',
   draftConcept: 'session:draftConcept',
   createSession: 'session:create',
   openRoom: 'room:open',
@@ -41,6 +46,15 @@ export interface ChatterEdApi {
   setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;
   clearApiKey(): Promise<void>;
   completeFirstRun(): Promise<void>;
+
+  getSettings(): Promise<SettingsView>;
+  /** Returns the settings as they now are, or the reason the patch was refused. */
+  saveSettings(patch: SettingsPatch): Promise<{ ok: boolean; error?: string; settings?: SettingsView }>;
+  /**
+   * Spawns `claude` once to check the binary and the login. Costs one Haiku round trip, so it
+   * is cached — `force` is the "Check again" button (issue #19).
+   */
+  detectCli(input?: { force?: boolean }): Promise<SettingsView>;
 
   /** Turns pasted text into a draft concept + 3–5 claim rows the learner then edits. */
   draftConcept(input: { moduleCode: string; title: string; text: string }): Promise<ConceptDraft>;

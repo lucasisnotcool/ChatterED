@@ -36,6 +36,7 @@ export class ScriptedClient implements LLMClient {
       model: `scripted:${request.model}`,
       usage: { ...EMPTY_USAGE },
       ttftMs: this.#ttftMs,
+      backend: 'scripted',
     };
   }
 
