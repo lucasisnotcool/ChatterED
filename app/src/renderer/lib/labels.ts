@@ -2,7 +2,7 @@
  * View-layer naming. Agent names and hues always come from AgentProfile data at
  * runtime — nothing here hardcodes Ellie, Max or Theo (product-design.md §C2).
  */
-import type { AgentRole, BloomRung, LedgerState, MessageView } from '../../shared/types.js';
+import type { AgentRole, BloomRung, LedgerState, MessageView, VaultFileKind } from '../../shared/types.js';
 
 /** The role word printed in every agent label — the standing reminder of the contract (§C1). */
 export function roleWord(role: AgentRole): string {
@@ -49,3 +49,17 @@ export const BLOOM_RUNGS: BloomRung[] = ['remember', 'understand', 'apply', 'ana
 export function glyphAlt(state: LedgerState): string {
   return LEDGER_WORD[state];
 }
+
+/**
+ * A neutral glyph per file kind for the vault tree (issue #22 decision 2). Text, not colour:
+ * product-design.md §C2 rule 1 says hue is never the only cue, and rule 2 reserves every hue
+ * that would otherwise be tempting here.
+ */
+export const KIND_GLYPH: Record<VaultFileKind, string> = {
+  pdf: '▤',
+  markdown: '▦',
+  text: '≡',
+  code: '‹›',
+  image: '▣',
+  other: '□',
+};

@@ -4,7 +4,7 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
-import type { RoomEvent, WindowState } from '../shared/types.js';
+import type { RoomEvent, VaultView, WindowState } from '../shared/types.js';
 
 const api: ChatterEdApi = {
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
@@ -32,6 +32,19 @@ const api: ChatterEdApi = {
     ipcRenderer.on(IPC.event, handler);
     return () => {
       ipcRenderer.removeListener(IPC.event, handler);
+    };
+  },
+  getVault: () => ipcRenderer.invoke(IPC.vaultGet),
+  chooseVault: () => ipcRenderer.invoke(IPC.vaultChoose),
+  rescanVault: () => ipcRenderer.invoke(IPC.vaultRescan),
+  topicCandidates: () => ipcRenderer.invoke(IPC.vaultCandidates),
+  promoteTopics: (input) => ipcRenderer.invoke(IPC.vaultPromote, input),
+  vaultTree: (input) => ipcRenderer.invoke(IPC.vaultTree, input),
+  onVaultChanged: (listener) => {
+    const handler = (_event: unknown, payload: VaultView) => listener(payload);
+    ipcRenderer.on(IPC.vaultChanged, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC.vaultChanged, handler);
     };
   },
   onWindowState: (listener) => {

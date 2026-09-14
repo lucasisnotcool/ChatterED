@@ -14,6 +14,9 @@ import type {
   RoomSnapshot,
   SettingsPatch,
   SettingsView,
+  TopicCandidateView,
+  VaultTreeNode,
+  VaultView,
   WhisperThreadView,
 } from '../../shared/types.js';
 import { bridge } from './bridge.js';
@@ -58,20 +61,37 @@ class Store {
   /** Seed for the setup screen when the learner arrives via "Paste text instead". */
   setupSeed = $state('');
 
+  // ── The vault (issue #22) ──────────────────────────────────────────────
+  vault: VaultView | null = $state(null);
+  /** A topic id, 'other' for the unpromoted remainder, or null before anything is picked. */
+  selectedTopic: string | null = $state(null);
+  vaultTree: VaultTreeNode[] = $state([]);
+  vaultBusy = $state(false);
+  selectedFileId: string | null = $state(null);
+  topicSheetOpen = $state(false);
+  topicCandidates: TopicCandidateView[] = $state([]);
+
   /** Settings, loaded on demand. Null until the Settings screen has been opened once. */
   settings: SettingsView | null = $state(null);
   settingsBusy = $state(false);
   settingsError: string | null = $state(null);
 
   unsubscribe: (() => void) | null = null;
+  unsubscribeVault: (() => void) | null = null;
 
   async init(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = bridge().onEvent((e) => this.apply(e));
+    // The scanner and the background indexer push; the renderer never polls for either.
+    this.unsubscribeVault?.();
+    this.unsubscribeVault = bridge().onVaultChanged((view) => {
+      this.vault = view;
+    });
     try {
       const boot = await bridge().bootstrap();
       this.boot = boot;
       this.screen = boot.firstRun ? 'firstRun' : 'library';
+      await this.loadVault();
     } catch (err) {
       this.notice = { level: 'error', text: message(err) };
       this.screen = 'library';
@@ -174,6 +194,68 @@ class Store {
   async refreshBoot(): Promise<void> {
     const boot = await run(this, () => bridge().bootstrap());
     if (boot) this.boot = { ...boot, firstRun: this.boot?.firstRun ?? boot.firstRun };
+  }
+
+  // ── The vault ────────────────────────────────────────────────────────────
+  async loadVault(): Promise<void> {
+    const view = await run(this, () => bridge().getVault());
+    if (!view) return;
+    this.vault = view;
+    if (this.selectedTopic === null) this.selectedTopic = view.topics[0]?.id ?? (view.rootPath ? 'other' : null);
+    if (this.selectedTopic !== null) await this.loadTree();
+  }
+
+  async chooseVault(): Promise<void> {
+    this.vaultBusy = true;
+    const view = await run(this, () => bridge().chooseVault());
+    this.vaultBusy = false;
+    if (!view) return;
+    this.vault = view;
+    this.selectedTopic = view.topics[0]?.id ?? 'other';
+    await this.loadTree();
+    // A brand-new vault has no topics yet, and ticking them is the point of the screen.
+    if (view.topics.length === 0) await this.openTopicSheet();
+  }
+
+  async rescanVault(): Promise<void> {
+    this.vaultBusy = true;
+    const view = await run(this, () => bridge().rescanVault());
+    this.vaultBusy = false;
+    if (view) this.vault = view;
+    await this.loadTree();
+  }
+
+  async selectTopic(topic: string | null): Promise<void> {
+    this.selectedTopic = topic;
+    await this.loadTree();
+  }
+
+  async loadTree(): Promise<void> {
+    if (!this.vault?.rootPath || this.selectedTopic === null) {
+      this.vaultTree = [];
+      return;
+    }
+    const topicId = this.selectedTopic === 'other' ? null : this.selectedTopic;
+    const tree = await run(this, () => bridge().vaultTree({ topicId }));
+    this.vaultTree = tree ?? [];
+  }
+
+  async openTopicSheet(): Promise<void> {
+    const candidates = await run(this, () => bridge().topicCandidates());
+    this.topicCandidates = candidates ?? [];
+    this.topicSheetOpen = true;
+  }
+
+  async promoteTopics(relPaths: string[]): Promise<void> {
+    this.vaultBusy = true;
+    const view = await run(this, () => bridge().promoteTopics({ relPaths }));
+    this.vaultBusy = false;
+    this.topicSheetOpen = false;
+    if (!view) return;
+    this.vault = view;
+    const stillThere = view.topics.some((t) => t.id === this.selectedTopic);
+    if (!stillThere && this.selectedTopic !== 'other') this.selectedTopic = view.topics[0]?.id ?? 'other';
+    await this.loadTree();
   }
 
   goSetup(seed = ''): void {

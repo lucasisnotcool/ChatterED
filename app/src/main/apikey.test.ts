@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiKeyPath, createApiKeyStore, looksLikeAnthropicKey } from './apikey.js';
 import { AppService } from './ipc.js';
-import { openTestStore } from '../test-support/db.js';
+import { openTestDb, openTestStore } from '../test-support/db.js';
 
 const FORBIDDEN = 'safe' + 'Storage';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -167,7 +167,7 @@ describe('nothing in the app can reach Electron safe storage', () => {
 describe('boot with no key', () => {
   it('constructs the IPC layer and resolves a backend without touching the keychain', () => {
     const service = new AppService({
-      store: openTestStore(),
+      ...openTestDb(),
       appVersion: '0.0.0-test',
       osVersion: 'darwin test',
       userDataDir: join(dir, 'ChatterED'),
@@ -187,7 +187,7 @@ describe('boot with no key', () => {
   it('offers the API backend once a key is in the file, still without the keychain', () => {
     const userData = join(dir, 'ChatterED');
     const service = new AppService({
-      store: openTestStore(),
+      ...openTestDb(),
       appVersion: '0.0.0-test',
       osVersion: 'darwin test',
       userDataDir: userData,

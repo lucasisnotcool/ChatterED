@@ -12,6 +12,9 @@ import type {
   RoomSnapshot,
   SettingsPatch,
   SettingsView,
+  TopicCandidateView,
+  VaultTreeNode,
+  VaultView,
   WhisperThreadView,
   WindowState,
 } from './types.js';
@@ -40,6 +43,16 @@ export const IPC = {
   event: 'room:event',
   /** main → renderer: the window entered or left macOS fullscreen (issue #21). */
   windowState: 'app:windowState',
+
+  // The vault (issue #22).
+  vaultGet: 'vault:get',
+  vaultChoose: 'vault:choose',
+  vaultRescan: 'vault:rescan',
+  vaultCandidates: 'vault:candidates',
+  vaultPromote: 'vault:promote',
+  vaultTree: 'vault:tree',
+  /** main → renderer: a scan finished, or the background indexer advanced. */
+  vaultChanged: 'vault:changed',
 } as const;
 
 export interface ChatterEdApi {
@@ -86,6 +99,22 @@ export interface ChatterEdApi {
 
   /** Subscribe to pushed room events. Returns an unsubscribe function. */
   onEvent(listener: (event: RoomEvent) => void): () => void;
+
+  // ── The vault (issue #22) ───────────────────────────────────────────────
+  /** The Library's whole left-hand state: root, topics with counts, index progress. */
+  getVault(): Promise<VaultView>;
+  /** Opens the folder picker. Null when the learner cancelled. Scans before it returns. */
+  chooseVault(): Promise<VaultView | null>;
+  /** Re-walk the vault and reconcile by mtime. Cheap; called on window focus. */
+  rescanVault(): Promise<VaultView>;
+  /** The depth-1 folders on offer as topics, with the promoted ones ticked. */
+  topicCandidates(): Promise<TopicCandidateView[]>;
+  /** Sets the promoted set exactly. Anything omitted is demoted back to "Other". */
+  promoteTopics(input: { relPaths: string[] }): Promise<VaultView>;
+  /** The file tree for one topic, or for "Other" when topicId is null. */
+  vaultTree(input: { topicId: string | null }): Promise<VaultTreeNode[]>;
+  /** Subscribe to vault changes pushed by the scanner and the background indexer. */
+  onVaultChanged(listener: (view: VaultView) => void): () => void;
 
   /**
    * Subscribe to window chrome changes. The only thing the renderer needs from the window is

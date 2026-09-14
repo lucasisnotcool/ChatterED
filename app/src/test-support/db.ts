@@ -3,7 +3,7 @@
  * Test-only — this directory is excluded from the main-process build.
  */
 import { fileURLToPath } from 'node:url';
-import { openTestDatabase } from '../main/db/driver.js';
+import { openTestDatabase, type SqlDatabase } from '../main/db/driver.js';
 import { runMigrations } from '../main/db/migrations.js';
 import { createStore, type LocalStore } from '../main/db/store.js';
 import { PSD_HESSIAN_CONVEXITY_V1, PSD_HESSIAN_SLIDE_TEXT } from '../room/concepts/psd-hessian-convexity-v1.js';
@@ -22,10 +22,15 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   mode: 'scripted',
 };
 
-export function openTestStore(): LocalStore {
+/** The migrated database *and* the store over it — AppService needs both (issue #22). */
+export function openTestDb(): { db: SqlDatabase; store: LocalStore } {
   const db = openTestDatabase(':memory:');
   runMigrations(db, MIGRATIONS_DIR);
-  return createStore(db);
+  return { db, store: createStore(db) };
+}
+
+export function openTestStore(): LocalStore {
+  return openTestDb().store;
 }
 
 export interface SeededRoom {

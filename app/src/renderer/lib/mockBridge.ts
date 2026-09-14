@@ -22,9 +22,20 @@ import type {
   SettingsPatch,
   SettingsView,
   TimerView,
+  VaultView,
   WhisperThreadView,
   WhisperTurnView,
 } from '../../shared/types.js';
+
+const EMPTY_VAULT: VaultView = {
+  rootPath: null,
+  displayName: '',
+  topics: [],
+  otherCount: 0,
+  totalFiles: 0,
+  lastScanAt: null,
+  index: { total: 0, done: 0, failed: 0, running: false, current: null },
+};
 
 const ROOM = 'mock-room-1';
 const SILENCE = 45000;
@@ -330,6 +341,16 @@ export function createMockBridge(): ChatterEdApi {
       later(5000, () => { post(text, attribution === 'as_agent' ? ellie : null, { promotedFromWhisper: true }); arm(); });
     },
     async closeWhisper({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
+
+    // The vault needs a filesystem, which `vite dev` does not have. Empty, never fabricated:
+    // a mock vault full of invented file names would be a screenshot of a lie.
+    getVault: async () => EMPTY_VAULT,
+    chooseVault: async () => null,
+    rescanVault: async () => EMPTY_VAULT,
+    topicCandidates: async () => [],
+    promoteTopics: async () => EMPTY_VAULT,
+    vaultTree: async () => [],
+    onVaultChanged() { return () => undefined; },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     // `vite dev` has no window to be fullscreen; the traffic lights are never drawn there.

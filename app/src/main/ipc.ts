@@ -22,14 +22,18 @@ import type { LLMClient } from '../room/llm/types.js';
 import { CLI_MODEL_CHOICES, isBlockedModelId, normaliseModelId } from '../room/llm/models.js';
 import type { ConceptPack, RoomConfig } from '../room/records.js';
 import { systemClock } from './clock.js';
+import type { SqlDatabase } from './db/driver.js';
 import { groupView, type LocalStore } from './db/store.js';
 import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './apikey.js';
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
+import { VaultService } from './vault/service.js';
 
 export interface IpcDeps {
   store: LocalStore;
+  /** The same SqlDatabase the store was built on — the vault's tables live in it (issue #22). */
+  db: SqlDatabase;
   appVersion: string;
   osVersion: string;
   /** `app.getPath('userData')`. The API key file lives directly inside it (#15). */
@@ -40,11 +44,21 @@ export interface IpcDeps {
 export class AppService {
   readonly #d: IpcDeps;
   readonly #apiKey: ApiKeyStore;
+  readonly #vault: VaultService;
   #actor: RoomActor | null = null;
 
   constructor(deps: IpcDeps) {
     this.#d = deps;
     this.#apiKey = createApiKeyStore(deps.userDataDir);
+    this.#vault = new VaultService({
+      db: deps.db,
+      settings: deps.store.settings,
+      onChanged: (view) => this.#d.getWindow()?.webContents.send(IPC.vaultChanged, view),
+    });
+  }
+
+  get vault(): VaultService {
+    return this.#vault;
   }
 
   get apiKeyStore(): ApiKeyStore {
@@ -219,6 +233,19 @@ export class AppService {
   dispose(): void {
     this.#actor?.stop();
     this.#actor = null;
+    this.#vault.dispose();
+  }
+
+  /**
+   * Re-walk the vault. Called on window focus (issue #22 decision 1) and swallowed rather than
+   * surfaced: a rescan the learner did not ask for must never put a banner in front of them.
+   */
+  refreshVault(): void {
+    try {
+      if (this.#vault.activeVaultId()) this.#vault.rescan();
+    } catch {
+      /* the folder has gone away, or is not readable; the Library says so on its own. */
+    }
   }
 
   #requireActor(roomId: string): RoomActor {
@@ -298,6 +325,23 @@ export class AppService {
       );
       return { roomId: created.roomId };
     });
+
+    // ── The vault (issue #22) ──────────────────────────────────────────────
+    handle(IPC.vaultGet, () => this.#vault.view());
+
+    handle(IPC.vaultChoose, async () => {
+      const win = this.#d.getWindow();
+      const result = await (win
+        ? dialog.showOpenDialog(win, { properties: ['openDirectory'], buttonLabel: 'Open vault' })
+        : dialog.showOpenDialog({ properties: ['openDirectory'] }));
+      const folder = result.canceled ? null : (result.filePaths[0] ?? null);
+      return folder ? this.#vault.open(folder) : null;
+    });
+
+    handle(IPC.vaultRescan, () => this.#vault.rescan());
+    handle(IPC.vaultCandidates, () => this.#vault.candidates());
+    handle<{ relPaths: string[] }>(IPC.vaultPromote, (input) => this.#vault.promote(input.relPaths));
+    handle<{ topicId: string | null }>(IPC.vaultTree, (input) => this.#vault.tree(input.topicId));
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>

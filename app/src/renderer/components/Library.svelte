@@ -1,73 +1,129 @@
 <script lang="ts">
-  /** The launcher (product-design.md §B1). No upload button exists anywhere. */
-  import { bridge } from '../lib/bridge.js';
+  /**
+   * The launcher (product-design.md §B1), revamped into a vault browser (issue #22).
+   *
+   * §B1 L169 calls this screen "a *launcher*, not a content manager", and issue #22 knowingly
+   * moves that line: the learner now browses, searches and reads their own files here. The
+   * launcher's two load-bearing rules survive intact, and they are the ones that carried a
+   * design decision —
+   *   - **no upload button exists anywhere: files arrive by being on disk** (§B1 L180);
+   *   - **no agent appears here.** "Ellie and Max do not exist until a room is open" (§B1 L222).
+   * What it drops is the "watched folders, one per module" shape of §B1 L179, because a student
+   * keeps one notes tree and the modules are the folders inside it. That is recorded as a
+   * deliberate departure in app/docs/STATUS.md.
+   */
+  import type { VaultFileView } from '../../shared/types.js';
   import { LEDGER_GLYPH, glyphAlt } from '../lib/labels.js';
   import { store } from '../lib/store.svelte.js';
   import { relative } from '../lib/time.js';
+  import TopicSheet from './TopicSheet.svelte';
+  import VaultSidebar from './VaultSidebar.svelte';
 
   const recents = $derived((store.boot?.recentSessions ?? []).slice(0, 3));
-  const folder = $derived(store.boot?.slidesFolder ?? null);
+  const vault = $derived(store.vault);
 
-  async function chooseFolder(): Promise<void> {
-    const picked = await bridge().chooseSlidesFolder();
-    if (picked && store.boot) store.boot.slidesFolder = picked;
+  function open(file: VaultFileView): void {
+    store.selectedFileId = file.id;
   }
 </script>
 
-<div class="screen">
-  <header class="top">
-    <h1>Library</h1>
-  </header>
-
-  {#if recents.length > 0}
-    <h2 class="label-caps">Continue</h2>
-    <div class="strip">
-      {#each recents as s (s.roomId)}
-        <button type="button" class="card" onclick={() => void store.openRoom(s.roomId)}>
-          <span class="title">{s.conceptTitle}</span>
-          <span class="row">
-            <span class="glyphs">
-              {#each s.states.slice(0, 3) as st, i (i)}
-                <span class="g">{LEDGER_GLYPH[st]}</span><span class="sr-only">{glyphAlt(st)}</span>
-              {/each}
-            </span>
-            <span class="when">{relative(s.endedAt ?? s.updatedAt)}</span>
-          </span>
-        </button>
-      {/each}
-    </div>
+<div class="library">
+  {#if vault?.rootPath}
+    <VaultSidebar onopen={open} />
   {/if}
 
-  <p class="paste">
-    <button type="button" class="btn-link" onclick={() => store.goSetup()}>Paste text instead →</button>
-  </p>
+  <div class="screen">
+    <header class="top">
+      <h1>Library</h1>
+      {#if vault?.rootPath}
+        <span class="where" title={vault.rootPath}>{vault.rootPath}</span>
+      {/if}
+    </header>
 
-  <h2 class="label-caps">{folder ?? 'Your slides'}</h2>
-  <div class="list">
-    {#if !folder}
-      <div class="empty">
-        <p>
-          Point ChatterED at the folder where your lecture slides live. It reads them from disk —
-          nothing is uploaded anywhere you didn't put it.
-        </p>
-        <button type="button" class="btn-primary" onclick={() => void chooseFolder()}>
-          Choose a folder…
-        </button>
+    {#if recents.length > 0}
+      <h2 class="label-caps">Continue</h2>
+      <div class="strip">
+        {#each recents as s (s.roomId)}
+          <button type="button" class="card" onclick={() => void store.openRoom(s.roomId)}>
+            <span class="title">{s.conceptTitle}</span>
+            <span class="row">
+              <span class="glyphs">
+                {#each s.states.slice(0, 3) as st, i (i)}
+                  <span class="g">{LEDGER_GLYPH[st]}</span><span class="sr-only">{glyphAlt(st)}</span>
+                {/each}
+              </span>
+              <span class="when">{relative(s.endedAt ?? s.updatedAt)}</span>
+            </span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <p class="paste">
+      <button type="button" class="btn-link" onclick={() => store.goSetup()}>Paste text instead →</button>
+    </p>
+
+    {#if !vault?.rootPath}
+      <h2 class="label-caps">Your files</h2>
+      <div class="list">
+        <div class="empty">
+          <p>
+            Point ChatterED at the folder where your course material lives — the whole tree, not
+            one module. It reads the files from disk; nothing is uploaded anywhere you didn't put
+            it.
+          </p>
+          <p>You pick which folders inside it are topics, and the rest stays browsable under Other.</p>
+          <button type="button" class="btn-primary" disabled={store.vaultBusy} onclick={() => void store.chooseVault()}>
+            {store.vaultBusy ? 'Reading…' : 'Choose a folder…'}
+          </button>
+        </div>
+      </div>
+    {:else if vault.totalFiles === 0}
+      <h2 class="label-caps">{vault.displayName}</h2>
+      <div class="list">
+        <div class="empty">
+          <p>Nothing readable in this folder yet.</p>
+          <p class="path">{vault.rootPath}</p>
+          <button type="button" class="btn-link" onclick={() => void store.chooseVault()}>Choose another…</button>
+        </div>
       </div>
     {:else}
-      <div class="empty">
-        <p>No PDFs in this folder yet.</p>
-        <p class="path">{folder}</p>
-        <button type="button" class="btn-link" onclick={() => void chooseFolder()}>Choose another…</button>
+      <h2 class="label-caps">{vault.displayName}</h2>
+      <div class="list">
+        <div class="empty">
+          <p>
+            {vault.totalFiles} files across {vault.topics.length}
+            {vault.topics.length === 1 ? 'topic' : 'topics'}. Pick one on the left to read it.
+          </p>
+          <p class="path">
+            {#if vault.index.failed > 0}
+              {vault.index.failed} couldn't be read for search — their rows say which.
+            {/if}
+          </p>
+          <button type="button" class="btn-link" onclick={() => void store.chooseVault()}>Choose another folder…</button>
+        </div>
       </div>
     {/if}
   </div>
 </div>
 
+{#if store.topicSheetOpen}
+  <TopicSheet />
+{/if}
+
 <style>
+  .library { flex: 1; display: flex; min-width: 0; min-height: 0; }
   .screen { flex: 1; overflow-y: auto; padding: 20px 28px 40px; min-width: 0; }
   .top { display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px; }
   h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  .where {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: rtl;
+  }
   h2 { margin: 22px 0 10px; color: var(--muted); font-size: 10px; }
 
   .strip { display: flex; gap: 12px; flex-wrap: wrap; }

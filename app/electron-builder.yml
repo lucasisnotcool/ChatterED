@@ -10,7 +10,20 @@ files:
   - dist/**/*
   - package.json
   - '!**/*.map'
+  # pdf.js is 35 MB unpacked and the main process loads exactly one entry point of it
+  # (legacy/build/pdf.mjs plus its in-process worker). The renderer has its own copy, bundled
+  # by Vite into dist/renderer, so nothing else in this package is ever reached at runtime.
+  - '!node_modules/pdfjs-dist/**/*'
+  - node_modules/pdfjs-dist/package.json
+  - node_modules/pdfjs-dist/LICENSE
+  - node_modules/pdfjs-dist/legacy/build/pdf.mjs
+  - node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs
+  - node_modules/pdfjs-dist/wasm/**
 asar: true
+# pdf.js is loaded with a real dynamic `import()` of a file:// URL (src/main/vault/pdf.ts).
+# Node's ESM loader does not read out of an asar archive, so this one package stays unpacked.
+asarUnpack:
+  - node_modules/pdfjs-dist/**
 mac:
   category: public.app-category.education
   # Built from assets/AppIcon.svg by tools/make-icon.sh. electron-builder resolves this

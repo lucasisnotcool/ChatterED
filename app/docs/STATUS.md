@@ -114,3 +114,54 @@ Verified in a real Electron window against the built renderer
 
 Hit-testing (20,19), (40,19), (60,19) — inside the traffic-light rectangle — returns the
 empty header in every windowed state, so nothing is underneath the buttons any more.
+
+## Issue #22 stage (b) — the vault: scan, topics, sidebar tree
+
+**Real.** "Open folder" now picks a **vault root**, not a slides folder. Migration `005`
+adds `vaults`, `topics`, `files` and an FTS5 `file_text`; `src/main/vault/` holds the scan,
+the classification, the repository, the pdf.js extractor, the background indexer and the
+fuzzy finder. `src/room` imports none of it — the room still receives plain text.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Recursive scan with skip rules | `src/main/vault/scan.ts`, `kinds.ts` | Skips dotfiles/dot-dirs, a fixed `node_modules`/`.git`/build-output denylist, files over 200 MB, non-regular files and **symlinks** (in or out), with a depth and a file-count guard. Sorted output, so two scans of an unchanged tree are byte-identical — the topic file list reaches a cached prompt prefix, where §E.2 forbids volatility |
+| Topic promotion | `service.ts#promote` | Depth-1 folders only. The promoted set is set *exactly*; anything untick*ed* falls back to **Other**, which stays browsable. A folder named like a module code (`MA3236`) gets `module_code`; anything else does not, because guessing harder than that is guessing |
+| Incremental re-sync | `repo.ts#sync` | Keyed on `(size, mtime_ms)`. A changed file loses its `indexed_*` stamp and comes back round to the indexer; a file whose *topic* changed keeps its index, because the bytes did not move. A deleted file takes its FTS rows with it. Runs on `open`, on "Re-scan", and on **window focus** |
+| PDF text extraction | `vault/pdf.ts` | `pdfjs-dist` 6.x, **worker disabled**, no canvas, no standard-font fetches. ESM-only, so it is loaded through `new Function('s','return import(s)')` — tsc with `module: CommonJS` would otherwise rewrite a literal `import()` into a `require()` that cannot load ESM — with a `vm.USE_MAIN_CONTEXT_DEFAULT_LOADER` fallback for vitest's module runner. Per page, joined into lines by `hasEOL` and y-coordinate breaks |
+| FTS5 index | migration `005`, `repo.ts` | One row per PDF **page** (so a hit names a page), one per Markdown/text/code file. Background, incremental, batched, yielding to the event loop between files; the app stays usable while it runs. A learner's query is quoted term-by-term before it reaches the FTS5 query parser |
+| Sidebar | `VaultSidebar.svelte`, `FileTree.svelte`, `TopicSheet.svelte` | Topic list with count badges, "Other", a determinate indexing strip (§B1 L212), and a folders-first tree with numeric collation (`Week 4` before `Week 10`). Topic dots come from a **new palette** that avoids the three agent hues and indigo (§C2 rules 2 and 3) |
+
+**The test driver changed.** Node 22's built-in `node:sqlite` has **no FTS5**
+(`sqlite_compileoption_used('ENABLE_FTS5')` = 0; `CREATE VIRTUAL TABLE … USING fts5` fails
+with "no such module: fts5"), so migration 005 could not even be applied under the old test
+database. `openTestDatabase` now loads `better-sqlite3-node` — a devDependency **alias of the
+identical better-sqlite3 version**, left on its Node-ABI prebuild while `postinstall`
+rebuilds the production copy for Electron. Both sides are now SQLite 3.53.4 with
+`ENABLE_FTS5` = 1, and a test can no longer pass against a different SQLite than the one
+that ships. Verified that `electron-builder install-app-deps` only rebuilds `dependencies`,
+so the alias survives a `postinstall`.
+
+**Verified on the real vault** (`/Users/lohzh/ChatterED/Academia`, 17 files): scan 3 ms;
+promoting `Sources` gives a 16-file topic and 1 file under Other; indexing all 16 takes
+1.8 s; `Challenger` returns 8 hits, top five all in the Xu et al. paper at pages 11, 12, 4,
+15 and 14 with correct snippets; the ⌘K matcher resolves `explain` to
+`Sources/_text/who-you-explain-to-matters.txt`.
+
+**Departures from `product-design.md` §B1, named rather than slipped in:**
+
+1. **"A *launcher*, not a content manager" (§B1 L169)** — issue #22 deliberately moves that
+   line. Browsing, searching and reading now happen here. The two §B1 rules that carry a
+   design decision survive untouched: **no upload button exists anywhere** (L180) and **no
+   agent appears in the Library** (L222).
+2. **One vault root, not "Watched folders" (§B1 L179, §B7 L587)** — a student keeps one notes
+   tree and the modules are folders inside it. `settings.slides_folder` is kept in step so
+   §F.4's first-run copy is not orphaned, but it is no longer what the Library reads.
+3. **Count badges count files, not sessions (§B0 L137, §B1 L173)** — the badge is next to a
+   folder now, and the number a learner wants beside a folder is how much is in it. The
+   course list in the nav rail still counts sessions.
+4. **"No PDFs in this folder yet." (canonical string 1, §E4 L1207)** becomes "Nothing readable
+   in this folder yet.", because the vault indexes Markdown, text, code and images too. §E4
+   L1205 says that is a design change, so it is recorded here as one.
+
+**Stubbed at this stage:** clicking a file only selects it — the viewers are stage (d); the
+finder and the search box are stage (c); nothing yet reaches the room.

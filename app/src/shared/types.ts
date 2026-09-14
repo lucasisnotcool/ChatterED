@@ -282,3 +282,129 @@ export type RoomEvent =
   | { type: 'whisper.cleared'; roomId: string; threadId: string }
   | { type: 'session.recap'; roomId: string; recap: RecapView }
   | { type: 'notice'; roomId: string | null; level: 'info' | 'error'; text: string };
+
+// ── The vault (issue #22) ──────────────────────────────────────────────────
+// Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner
+// is meant to read them (a "Reveal in Finder" target, the vault root under the topic list);
+// everywhere else a file is addressed by its opaque `fileId`, so the renderer can never ask the
+// main process to open a path it was not handed (src/main/ipc.ts: the renderer holds no
+// authority). Nothing here is mirrored: architecture-mac.md §D.3 keeps file paths and extracted
+// text local because the text is copyrighted lecture material.
+
+export type VaultFileKind = 'pdf' | 'markdown' | 'text' | 'code' | 'image' | 'other';
+
+export interface VaultTopicView {
+  id: string;
+  /** The folder name as the learner promoted it, e.g. 'MA3236'. */
+  name: string;
+  relPath: string;
+  /** From TOPIC_COLOURS — never an agent hue and never indigo (product-design.md §C2). */
+  colour: string;
+  moduleCode: string | null;
+  fileCount: number;
+}
+
+export interface VaultFileView {
+  id: string;
+  name: string;
+  relPath: string;
+  kind: VaultFileKind;
+  size: number;
+  mtimeMs: number;
+  /** null when the file is not under a promoted topic — the "Other" bucket. */
+  topicId: string | null;
+  pageCount: number | null;
+  indexed: boolean;
+  /** e.g. 'scanned image, maybe?' — rendered on the row, which never disappears (§B1). */
+  indexError: string | null;
+}
+
+/** A folder in the per-topic tree. Directories carry children; files carry `file`. */
+export interface VaultTreeNode {
+  name: string;
+  relPath: string;
+  dir: boolean;
+  children: VaultTreeNode[];
+  file: VaultFileView | null;
+}
+
+export interface IndexStatus {
+  /** Indexable files known to the vault. */
+  total: number;
+  done: number;
+  failed: number;
+  running: boolean;
+  /** The file being read right now, for the determinate strip in §B1. */
+  current: string | null;
+}
+
+export interface VaultView {
+  rootPath: string | null;
+  displayName: string;
+  topics: VaultTopicView[];
+  /** Files not under any promoted topic. Browsable under "Other" (issue #22 decision 1). */
+  otherCount: number;
+  totalFiles: number;
+  lastScanAt: string | null;
+  index: IndexStatus;
+}
+
+export interface TopicCandidateView {
+  relPath: string;
+  name: string;
+  fileCount: number;
+  promoted: boolean;
+}
+
+export interface FinderHitView {
+  fileId: string;
+  name: string;
+  relPath: string;
+  topicName: string | null;
+  kind: VaultFileKind;
+  /** Indices into `relPath` that matched, for highlighting. */
+  positions: number[];
+}
+
+export interface SearchHitView {
+  fileId: string;
+  name: string;
+  relPath: string;
+  topicName: string | null;
+  kind: VaultFileKind;
+  /** 1-indexed page for a PDF hit; null for Markdown, text and code. */
+  page: number | null;
+  /** An FTS5 snippet. Matched terms are wrapped in the SNIPPET_MARK delimiters. */
+  snippet: string;
+}
+
+/** What the document pane needs to render one file. */
+export interface DocumentView {
+  fileId: string;
+  name: string;
+  relPath: string;
+  /** Shown in the "no viewer" card, and the Reveal in Finder target. */
+  absPath: string;
+  kind: VaultFileKind;
+  ext: string;
+  size: number;
+  pageCount: number | null;
+  /** Markdown, text and code: the file's contents. Null for PDF and images. */
+  text: string | null;
+  /** PDF and image bytes, handed over IPC. Null otherwise. */
+  bytes: Uint8Array | null;
+  /** Set when the file could not be opened at all. */
+  error: string | null;
+}
+
+/** What "Show the room" posts. The extracted page text is attached; the bytes never are. */
+export interface DocumentReference {
+  fileId: string;
+  name: string;
+  relPath: string;
+  kind: VaultFileKind;
+  pageFrom: number | null;
+  pageTo: number | null;
+  /** The learner's selection, capped at SELECTION_CAP characters. */
+  selection: string | null;
+}

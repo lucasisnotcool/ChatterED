@@ -97,6 +97,7 @@ function boot(): void {
 
   service = new AppService({
     store,
+    db,
     appVersion: app.getVersion(),
     osVersion: `${process.platform} ${release()}`,
     userDataDir: dir,
@@ -113,6 +114,11 @@ function boot(): void {
   // discarded by timerEpoch — so running it twice is harmless (architecture-mac.md §B.4).
   powerMonitor.on('resume', () => service?.recover());
   service.recover();
+
+  // Re-walk the vault when the learner comes back to the window: they may have dropped a new
+  // PDF into it from Finder or from a browser download (issue #22 decision 1). mtime diffing
+  // makes an unchanged vault nearly free, so this does not need to be rate-limited.
+  mainWindow.on('focus', () => service?.refreshVault());
 
   // Warm the Claude CLI detection cache in the background. The probe costs one real Haiku
   // round trip, so it must never sit on the critical path of a launch or a turn (issue #19);
