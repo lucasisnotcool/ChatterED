@@ -20,6 +20,8 @@ has to deliver is `docs/research/product-design.md` §B–§D and `docs/research
 | `npm run lint` | ESLint, including the whisper-import restriction and the `src/room` portability rule |
 | `npm run typecheck` | `tsc --noEmit` plus `svelte-check` |
 | `npm run dist:mac` | Unsigned DMG into `out/` (no signing, no notarisation — issue #17) |
+| `npm run install:local` | Builds this checkout into `~/Applications/ChatterED.app` and loads the auto-rebuild LaunchAgent (#20) |
+| `npm run uninstall:local` | Unloads and removes the LaunchAgent. Leaves the app |
 
 `npm run dev` picks a backend automatically — see below. With no Claude CLI and no API key it
 starts on the scripted transcript player (`ScriptedClient`) and makes no network calls at all.
@@ -75,6 +77,57 @@ Two Settings dropdowns, because these are the two kinds of call the app makes:
 `haiku` / `sonnet` / `opus`, or a full model id in the free-text field. Fable is not offered and
 is rejected if typed (CLAUDE.md hard invariant). Every message row stores the backend and the
 resolved model id; every session row stores the plan it was opened with.
+
+## Install on your Mac
+
+```sh
+npm run install:local
+```
+
+Builds this checkout and installs it as `~/Applications/ChatterED.app`, then loads a LaunchAgent
+(`com.chattered.updater`) that repeats the build **at login and every six hours**, after a
+`git pull --ff-only origin main` (issue #20). So the app on the Dock tracks `main` without anyone
+remembering to rebuild it.
+
+What the script guarantees, and why:
+
+- **A failed build never removes the working app.** It packages into a scratch directory and only
+  then does `rm -rf ~/Applications/ChatterED.app && cp -R`. An unattended job that runs every six
+  hours will eventually run during a broken commit; the cost of that has to be "yesterday's app
+  and a line in the log". Same shape as `/Applications/scribe/ScribeBar/build.sh`.
+- **A dirty working tree is never pulled over.** It warns, skips the pull, and builds the tree as
+  it stands.
+- **`npm ci` runs only when `package-lock.json` actually changed** (a hash under
+  `~/Library/Caches/chattered-install`), because it is slow and wipes `node_modules`.
+- **One build at a time**, via a lock that goes stale after an hour so a killed run cannot block
+  the updater for ever.
+- The bundle's `CFBundleShortVersionString` comes from `package.json`, `CFBundleVersion` is the
+  commit count (monotonic, which is what macOS expects), and `ChatterEDGitCommit` records the
+  short hash.
+
+Unsigned, by decision #17: no Developer ID, no notarisation. The bundle is **ad-hoc** signed
+(`codesign --force --deep -s -`) only so macOS sees a coherent signature rather than a broken one
+after the Info.plist edits — that is not distribution security and is not offered as any.
+
+Logs: `~/Library/Logs/chattered-install.log` (the script) and `~/Library/Logs/chattered-updater.log`
+(launchd's capture of it).
+
+```sh
+launchctl list | grep com.chattered      # is the agent loaded?
+bash tools/install-local.sh update --force   # rebuild now, even if HEAD has not moved
+```
+
+### Uninstall
+
+```sh
+npm run uninstall:local     # unloads and removes the LaunchAgent; leaves the app
+```
+
+Then drag `~/Applications/ChatterED.app` to the Trash if you want the app gone too. Its data lives
+in `~/Library/Application Support/ChatterED/`.
+
+The distribution path is unchanged: `npm run dist:mac` still produces an **unsigned** DMG in
+`out/`, and nothing here signs or notarises it.
 
 ## Layout
 

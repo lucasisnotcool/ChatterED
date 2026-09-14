@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE. install-local.sh substitutes the double-brace placeholders below and writes the
+  result to ~/Library/LaunchAgents/com.chattered.updater.plist. Do not load this file directly.
+
+  It rebuilds ~/Applications/ChatterED.app from the repo at login and every six hours, after a
+  `git pull --ff-only origin main`. A failed build leaves the installed app untouched, so the
+  worst case of an unattended run is "yesterday's app, and a line in the log" (issue #20).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{{LABEL}}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>{{SCRIPT}}</string>
+    <string>update</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd's default PATH has neither Homebrew (node) nor ~/.local/bin (claude), and a
+         GUI agent does not read the login shell's profile. Same fix, same reason, as
+         /Applications/scribe/com.scribeapp.daemon.plist. -->
+    <key>PATH</key><string>{{PATH}}</string>
+    <key>HOME</key><string>{{HOME}}</string>
+  </dict>
+  <!-- At login, then every six hours. StartInterval counts from load, so a Mac that is asleep
+       at the six-hour mark runs the job once on wake rather than once per missed interval. -->
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+  <!-- Not KeepAlive: this is a job that finishes, not a daemon. KeepAlive would relaunch the
+       build in a loop. -->
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>5</integer>
+  <key>StandardOutPath</key><string>{{LOG_OUT}}</string>
+  <key>StandardErrorPath</key><string>{{LOG_ERR}}</string>
+  <key>WorkingDirectory</key><string>{{WORKDIR}}</string>
+</dict>
+</plist>

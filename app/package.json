@@ -22,6 +22,8 @@
     "test:watch": "vitest",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "dist:mac": "npm run build && electron-builder --mac dmg",
+    "install:local": "bash tools/install-local.sh install",
+    "uninstall:local": "bash tools/install-local.sh uninstall-launchd",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

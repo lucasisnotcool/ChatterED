@@ -35,6 +35,8 @@ Run it: `npm install && npm run dev`. Test it: `npm test` (82 tests, no network)
 | Role–name pairing randomised at install | `src/room/agents.ts`, `ipc.ts` | Stored in settings; recorded per session |
 | Three-pane shell, message anatomy, composer hairline, indicators, ledger rail, whisper pane, recap | `src/renderer/` | Functional against the scripted client |
 | Event log with the §7.1 vocabulary, and an outbox with deterministic doc ids | `actor.ts`, `db/` | Event payloads never contain message bodies (asserted in a test) |
+| **App icon, wired** (#20) | `assets/AppIcon.*`, `electron-builder.yml`, `src/main/index.ts` | `mac.icon` for the bundle; `app.dock.setIcon` so `npm run dev` shows it too |
+| **Local install + launchd auto-rebuild** (#20) | `tools/install-local.sh`, `tools/com.chattered.updater.plist` | `npm run install:local` → `~/Applications/ChatterED.app` plus a LaunchAgent that rebuilds at login and every 6 h after `git pull --ff-only`. A failed build leaves the previous app untouched. Unsigned, ad-hoc only (#17) |
 
 ## Scripted — real machinery, scripted content
 
@@ -57,8 +59,24 @@ Run it: `npm install && npm run dev`. Test it: `npm test` (82 tests, no network)
 | History, export to `~/Documents/ChatterED/` | Not on a marked A1 requirement | A2 |
 | Theo's teach-back round | The recap renders the invitation; accepting it does nothing yet | A2 |
 | Settings: Reply speed, pacing toggle, the `don't do this` target | The Settings screen now exists (#19) but carries only the backend and model choices | A2 |
-| Signing / notarisation / DMG | Unsigned by decision (#17); `npm run dist:mac` produces an unsigned DMG, untested this pass | Later milestone |
+| Signing / notarisation | Unsigned by decision (#17). `npm run install:local` ad-hoc signs so macOS does not see a *broken* signature; `npm run dist:mac` still produces an unsigned DMG, untested this pass | Later milestone |
 | Firebase Auth, the `claudeProxy` function | Superseded for now by per-user keys (#15) | Revisit with the cohort |
+
+## Verified on this Mac, 14 Sep 2026
+
+- `npm run install:local` built and installed `~/Applications/ChatterED.app` (0.1.0, build 21,
+  commit `e6df5bf`), ad-hoc signed, `codesign --verify --deep` clean.
+- It launches from `~/Applications` — main, GPU, network and renderer processes all up against
+  `app.asar`, and it quits cleanly on `osascript -e 'quit app "ChatterED"'`.
+- **The packaged app finds the Claude CLI.** Launched through LaunchServices, with none of the
+  login shell's PATH, its boot-time probe wrote
+  `{"found":true,"path":"/Users/lohzh/.local/bin/claude","loggedIn":true}` into the settings
+  table. That is the whole point of building the PATH explicitly (#19).
+- Migration 003 applied on first launch (`pragma user_version` = 3).
+- `launchctl list | grep com.chattered` shows the agent loaded, and its `RunAtLoad` run appears
+  in `~/Library/Logs/chattered-updater.log` — so node, npm and git are all reachable from
+  launchd's environment.
+- `npm run uninstall:local` unloads and removes the agent and leaves the app in place.
 
 ## Deviations from `docs/research/architecture-mac.md`
 
