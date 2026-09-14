@@ -13,6 +13,9 @@ files:
 asar: true
 mac:
   category: public.app-category.education
+  # Built from assets/AppIcon.svg by tools/make-icon.sh. electron-builder resolves this
+  # relative to the project directory, so the icon does not need to be in `files`.
+  icon: assets/AppIcon.icns
   target:
     - target: dmg
       arch:

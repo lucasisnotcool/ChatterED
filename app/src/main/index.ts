@@ -5,9 +5,9 @@
  * timer's 1 s tick, the orchestrator, the ledger and the SQLite file. The renderer is a view
  * (architecture-mac.md §B.1, §C.1).
  */
-import { app, BrowserWindow, powerMonitor, powerSaveBlocker } from 'electron';
+import { app, BrowserWindow, nativeImage, powerMonitor, powerSaveBlocker } from 'electron';
 import { join } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { release } from 'node:os';
 import { openDatabase } from './db/driver.js';
 import { runMigrations } from './db/migrations.js';
@@ -24,13 +24,32 @@ function dataDir(): string {
   return dir;
 }
 
+/**
+ * The icon, for `npm run dev` only.
+ *
+ * A packaged build gets its icon from the bundle (`mac.icon` in electron-builder.yml) and macOS
+ * reads it from there, so nothing here runs in production. Under `npm run dev` the app is
+ * Electron's own bundle, which is why the Dock otherwise shows Electron's icon — `dock.setIcon`
+ * is the only thing that changes it, and `BrowserWindow({ icon })` is set too for the Windows
+ * and Linux builds this code will outlive.
+ */
+function devIcon(): Electron.NativeImage | null {
+  // dist/main/index.js → app/assets. Absent from a packaged build, which is the point.
+  const path = join(__dirname, '../../assets/AppIcon.png');
+  if (!existsSync(path)) return null;
+  const image = nativeImage.createFromPath(path);
+  return image.isEmpty() ? null : image;
+}
+
 function createWindow(): BrowserWindow {
+  const icon = devIcon();
   const win = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 1040,
     minHeight: 680,
     title: 'ChatterED',
+    ...(icon ? { icon } : {}),
     backgroundColor: '#F7F7FA',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
@@ -85,6 +104,8 @@ function boot(): void {
 }
 
 void app.whenReady().then(() => {
+  const icon = devIcon();
+  if (icon && process.platform === 'darwin') app.dock?.setIcon(icon);
   boot();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
