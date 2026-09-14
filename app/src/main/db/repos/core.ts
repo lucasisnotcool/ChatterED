@@ -7,6 +7,7 @@ import type {
   EventsRepo,
   LedgerRepo,
   MaterialsRepo,
+  MessageRefsRepo,
   MessagesRepo,
   OutboxRepo,
   ParticipantsRepo,
@@ -21,6 +22,7 @@ import type {
   LedgerHistoryRow,
   LedgerRow,
   MaterialRow,
+  MessageRefRow,
   MessageRow,
   OutboxRow,
   ParticipantRow,
@@ -92,6 +94,20 @@ export function messagesRepo(db: SqlDatabase): MessagesRepo {
       db.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE room_id = @r').get<{ m: number }>({
         r: roomId,
       })?.m ?? 0,
+  };
+}
+
+export function messageRefsRepo(db: SqlDatabase): MessageRefsRepo {
+  return {
+    insert: (row) => insert(db, 'message_refs', row as unknown as Record<string, unknown>),
+    forRoom: (roomId) =>
+      plainAll(
+        db
+          .prepare('SELECT * FROM message_refs WHERE room_id = @r ORDER BY created_at')
+          .all<MessageRefRow>({ r: roomId }),
+      ),
+    forMessage: (messageId) =>
+      plain(db.prepare('SELECT * FROM message_refs WHERE message_id = @m').get<MessageRefRow>({ m: messageId })),
   };
 }
 

@@ -11,6 +11,7 @@ import type {
   LedgerHistoryRow,
   LedgerRow,
   MaterialRow,
+  MessageRefRow,
   MessageRow,
   OutboxRow,
   ParticipantRow,
@@ -49,6 +50,19 @@ export interface MessagesRepo {
   bodyAtSeq(roomId: string, seq: number): string | undefined;
   get(id: string): MessageRow | undefined;
   maxSeq(roomId: string): number;
+}
+
+/**
+ * Documents the learner has shown the room (issue #22 decision 4).
+ *
+ * Unlike whispers, this IS group scope: a reference is a public act, posted into the thread by
+ * the learner, and the agents are meant to see it. It therefore belongs in `GroupStore` — the
+ * whisper invariant is about whispers, not about everything that carries text.
+ */
+export interface MessageRefsRepo {
+  insert(row: MessageRefRow): void;
+  forRoom(roomId: string): MessageRefRow[];
+  forMessage(messageId: string): MessageRefRow | undefined;
 }
 
 /**
@@ -127,6 +141,7 @@ export interface GroupStore {
   rooms: RoomsRepo;
   messages: MessagesRepo;
   participants: ParticipantsRepo;
+  messageRefs: MessageRefsRepo;
 }
 
 /** The whisper-scope view: the group view plus the private thread. */

@@ -14,7 +14,7 @@
   import PdfViewer from './PdfViewer.svelte';
   import TextViewer from './TextViewer.svelte';
 
-  let { doc, onclose }: { doc: DocumentView; onclose: () => void } = $props();
+  let { doc, onclose, inRoom = false }: { doc: DocumentView; onclose: () => void; inRoom?: boolean } = $props();
 
   let pdf = $state<ReturnType<typeof PdfViewer> | null>(null);
   let paneEl = $state<HTMLElement | null>(null);
@@ -50,6 +50,31 @@
     }
   });
 
+  /** Where in the file "Show the room" would point: the marked range, else the page on screen. */
+  const where = $derived.by(() => {
+    if (doc.kind !== 'pdf') return null;
+    const from = store.docFrom ?? store.docPage;
+    const to = store.docTo ?? store.docPage;
+    return from === to ? `p. ${from}` : `pp. ${from}\u2013${to}`;
+  });
+
+  let menu = $state<{ x: number; y: number } | null>(null);
+
+  /** Right-click on a selection is the third way in (issue #22 decision 4). */
+  function oncontextmenu(e: MouseEvent): void {
+    if (!inRoom) return;
+    const selected = (window.getSelection()?.toString() ?? '').trim();
+    if (selected.length === 0) return;
+    e.preventDefault();
+    store.docSelection = selected;
+    menu = { x: e.clientX, y: e.clientY };
+  }
+
+  function show(): void {
+    menu = null;
+    store.showTheRoom();
+  }
+
   const sizeLabel = $derived(
     doc.size < 1024
       ? `${doc.size} B`
@@ -66,11 +91,22 @@
     <span class="name" title={doc.relPath}>{doc.name}</span>
     <span class="meta">{sizeLabel}{doc.pageCount ? ` · ${doc.pageCount} pages` : ''}</span>
     <span class="gap"></span>
+    {#if inRoom}
+      <!-- The whole point of the pane while a room is open (issue #22 decision 4). -->
+      <button type="button" class="show" onclick={show}>
+        Show the room{where ? ` · ${where}` : ''}
+        <kbd>⌘⇧S</kbd>
+      </button>
+    {:else}
+      <button type="button" class="mini" onclick={() => void store.setupFromFile(doc.fileId, store.docFrom, store.docTo)}>
+        Explain {where ?? 'this'} →
+      </button>
+    {/if}
     <button type="button" class="mini" onclick={() => void store.revealFile(doc.fileId)}>Reveal in Finder</button>
     <button type="button" class="mini" onclick={onclose} aria-label="Close">Close</button>
   </header>
 
-  <div class="body">
+  <div class="body" {oncontextmenu} role="presentation">
     {#if doc.error}
       <div class="card">
         <p class="line">This one wouldn't open.</p>
@@ -102,6 +138,15 @@
   </div>
 </section>
 
+{#if menu}
+  <div class="menu-scrim" role="presentation" onclick={() => (menu = null)} oncontextmenu={() => (menu = null)}></div>
+  <div class="menu" style="left: {menu.x}px; top: {menu.y}px" role="menu">
+    <button type="button" class="item" role="menuitem" onclick={show}>
+      Show the room{where ? ` · ${where}` : ''}
+    </button>
+  </div>
+{/if}
+
 <style>
   .pane {
     flex: 1;
@@ -126,6 +171,52 @@
   .gap { flex: 1; }
   .mini { font-size: 11px; color: var(--text-2); white-space: nowrap; }
   .mini:hover { color: var(--indigo); }
+
+  /* Indigo, because bringing a document to the group is the learner acting (§C2 rule 3). */
+  .show {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+    border: 1px solid var(--indigo);
+    background: var(--indigo);
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .show:hover { background: #443cd0; }
+  .show kbd {
+    font: inherit;
+    font-size: 10px;
+    opacity: 0.72;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+
+  .menu-scrim { position: fixed; inset: 0; z-index: 60; }
+  .menu {
+    position: fixed;
+    z-index: 61;
+    background: var(--pane);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(27, 27, 34, 0.18);
+    padding: 4px;
+  }
+  .menu .item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    white-space: nowrap;
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .menu .item:hover { background: var(--indigo-tint); }
 
   .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 

@@ -20,6 +20,16 @@
   <section class="pane" aria-label="Source">
     <header>
       <span class="name">{material.fileName ?? material.title} · {pages}</span>
+      <!-- The way in to the vault from inside a room (issue #22 decision 4). The keyboard route
+           is ⌘⇧S; this is the one a learner finds without being told. -->
+      <button
+        type="button"
+        class="bring"
+        onclick={() => (store.browserOpen = true)}
+        title="Open another file from your vault (⌘⇧S)"
+      >
+        Bring a document…
+      </button>
     </header>
     <div class="sheet">
       <h3>{material.title}</h3>
@@ -42,7 +52,15 @@
     padding: 12px;
     min-height: 0;
   }
-  header { padding: 0 2px 10px; }
+  header { padding: 0 2px 10px; display: flex; align-items: baseline; gap: 8px; }
+  .bring {
+    margin-left: auto;
+    flex: none;
+    font-size: 11px;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+  .bring:hover { color: var(--indigo); }
   .name { font-size: 11px; color: var(--text-2); }
   .sheet {
     flex: 1;

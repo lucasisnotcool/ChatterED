@@ -11,7 +11,7 @@ import type { ConceptDraft, CreateSessionInput, RolePairing } from '../shared/ty
 import { rosterFor } from '../room/agents.js';
 import { FIXED_PACKS, PSD_HESSIAN_CONVEXITY_V1 } from '../room/concepts/psd-hessian-convexity-v1.js';
 import type { LLMClient } from '../room/llm/types.js';
-import { PROMPT_VERSION, sharedBlock, stableJson } from '../room/prompts.js';
+import { PROMPT_VERSION, sharedBlock, stableJson, topicContextBlock } from '../room/prompts.js';
 import type { ConceptPack, MaterialRow, RoomConfig } from '../room/records.js';
 import { API_PLAN, type ModelPlan } from '../room/llm/models.js';
 import type { LocalStore } from './db/store.js';
@@ -89,6 +89,8 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
     extracted_text: input.text,
     extract_engine: input.sourceKind === 'pdf_pages' ? 'pdfjs' : 'paste',
     padding_text: '',
+    // Frozen here, before the prefix is hashed, and never recomputed (issue #22 decision 5).
+    topic_context: topicContextBlock(input.topic ?? null),
     concept_pack: stableJson(pack),
     pack_provenance: input.conceptId ? 'fixed' : 'elicited',
     pack_confirmed_at: now(),

@@ -8,13 +8,14 @@ import type {
   Bootstrap,
   ConceptDraft,
   CreateSessionInput,
+  DocumentView,
+  FinderHitView,
   RecapView,
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
-  DocumentView,
-  FinderHitView,
   SearchHitView,
+  SessionSeed,
   SettingsPatch,
   SettingsView,
   TopicCandidateView,
@@ -63,6 +64,12 @@ class Store {
 
   /** Seed for the setup screen when the learner arrives via "Paste text instead". */
   setupSeed = $state('');
+  /**
+   * Set when setup was reached from a file and a page range instead (issue #22 decision 4).
+   * It carries the provenance the material row wants and the topic the prefix wants; the text
+   * itself still lands in the same textarea, because paste is the flow and this pre-fills it.
+   */
+  setupFrom: SessionSeed | null = $state(null);
 
   // ── The vault (issue #22) ──────────────────────────────────────────────
   vault: VaultView | null = $state(null);
@@ -84,6 +91,13 @@ class Store {
   docSelection = $state('');
   /** Set by a search hit so the PDF jumps to the page the snippet came from. */
   pendingPage: number | null = $state(null);
+
+  /**
+   * The vault browser as an overlay over a live room (issue #22 decision 4). The learner goes
+   * and fetches something and comes back, which is what "bringing a document over" is; the
+   * room's three columns are not re-laid-out around a PDF.
+   */
+  browserOpen = $state(false);
   topicSheetOpen = $state(false);
   topicCandidates: TopicCandidateView[] = $state([]);
 
@@ -352,7 +366,48 @@ class Store {
 
   goSetup(seed = ''): void {
     this.setupSeed = seed;
+    this.setupFrom = null;
     this.screen = 'setup';
+  }
+
+  /**
+   * Session setup from the open document and its marked page range. Paste stays the fallback:
+   * this fills the same box, and nothing downstream knows the difference except the material
+   * row's provenance and the topic block in the prefix.
+   */
+  async setupFromFile(fileId: string, pageFrom: number | null, pageTo: number | null): Promise<void> {
+    const seed = await run(this, () => bridge().sessionSeed({ fileId, pageFrom, pageTo }));
+    if (!seed) return;
+    this.setupSeed = seed.text;
+    this.setupFrom = seed;
+    this.screen = 'setup';
+  }
+
+  /**
+   * "Show the room" — post the open document into the group chat as the learner.
+   *
+   * Deliberately not awaited. The main-process call does not resolve until the agent that
+   * answers has finished its latency floor and its generation, which is 9–12 s for the
+   * Challenger; waiting for that would leave the learner staring at the file they just showed
+   * with a spinner on the button. It is the same shape as `send()`: fire it, go back to the
+   * room, and let the reply arrive as an event. A failure still lands in the notice banner.
+   */
+  showTheRoom(): boolean {
+    const roomId = this.room?.roomId;
+    const doc = this.openDoc;
+    if (!roomId || !doc) return false;
+    const selection = this.docSelection.trim();
+    const payload = {
+      roomId,
+      fileId: doc.fileId,
+      pageFrom: doc.kind === 'pdf' ? (this.docFrom ?? this.docPage) : null,
+      pageTo: doc.kind === 'pdf' ? (this.docTo ?? this.docPage) : null,
+      selection: selection.length > 0 ? selection : null,
+    };
+    this.browserOpen = false;
+    this.docSelection = '';
+    void run(this, () => bridge().showDocument(payload));
+    return true;
   }
 
   async openRoom(roomId: string): Promise<void> {
@@ -368,6 +423,7 @@ class Store {
   }
 
   leaveRoom(): void {
+    this.browserOpen = false;
     this.room = null;
     this.recap = null;
     this.whisper = null;
@@ -382,7 +438,21 @@ class Store {
   }
 
   async createSession(input: CreateSessionInput): Promise<void> {
-    const created = await run(this, () => bridge().createSession(input));
+    const from = this.setupFrom;
+    const full: CreateSessionInput = from
+      ? {
+          ...input,
+          sourceKind: 'pdf_pages',
+          fileId: from.fileId,
+          fileName: from.fileName,
+          ...(from.pageFrom !== null ? { pageFrom: from.pageFrom } : {}),
+          ...(from.pageTo !== null ? { pageTo: from.pageTo } : {}),
+          ...(from.topic ? { topic: from.topic } : {}),
+        }
+      : input;
+    // Everything on `this` is a $state proxy, and structuredClone — which is what IPC is —
+    // refuses a proxy with "An object could not be cloned". Snapshot before it crosses.
+    const created = await run(this, () => bridge().createSession($state.snapshot(full) as CreateSessionInput));
     if (created) await this.openRoom(created.roomId);
   }
 

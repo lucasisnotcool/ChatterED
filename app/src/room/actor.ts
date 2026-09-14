@@ -30,7 +30,7 @@ import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
 import { decideTurn, type TurnDecision, type TurnTrigger } from './orchestrator.js';
 import type { Clock, Store, Transport } from './ports.js';
-import type { ConceptPack, LedgerRow, MessageRow, RoomConfig } from './records.js';
+import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_ROUND_CARD, SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { SilenceTimer } from './timer.js';
@@ -189,6 +189,69 @@ export class RoomActor {
         body,
       });
       this.#event('student', 'message.send', { seq: row.seq, chars: body.length });
+      this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
+    });
+
+    await this.#runAgentTurn('student_message', { studentBody: body });
+  }
+
+  /**
+   * "Show the room" (issue #22 decision 4): the learner brings a document over.
+   *
+   * It is a **learner message**, not a system event. That decides three things that would
+   * otherwise each need arguing:
+   *   - it cancels a held agent reply and resets the silence timer, because the floor belongs
+   *     to the learner and they have just used it (product-design.md §C3 L731);
+   *   - it opens the 8 s floor-yield window, so no agent acknowledges it instantly (§C3 L719);
+   *   - the ledger can only ever quote the short line they see on screen. The page text lives on
+   *     the reference row, not in `body`, so document text can never become "evidence the
+   *     learner explained it" — which is the whole point of the ledger's verbatim rule.
+   */
+  async showDocument(input: {
+    fileId: string | null;
+    fileName: string;
+    relPath: string;
+    kind: string;
+    pageFrom: number | null;
+    pageTo: number | null;
+    selection: string | null;
+    pageText: string;
+  }): Promise<void> {
+    const where =
+      input.pageFrom !== null && input.pageTo !== null
+        ? input.pageFrom === input.pageTo
+          ? `p. ${input.pageFrom}`
+          : `pp. ${input.pageFrom}\u2013${input.pageTo}`
+        : null;
+    const body = where
+      ? `Look at this \u2014 ${input.fileName}, ${where}.`
+      : `Look at this \u2014 ${input.fileName}.`;
+
+    await this.#mailbox.enqueue(() => {
+      if (this.#pending) {
+        this.#pending.cancelled = true;
+        this.#clearThinking();
+      }
+      this.#timer.cancel();
+      this.#studentTurns += 1;
+      const row = this.#insertMessage({
+        participantId: this.#studentParticipant().id,
+        body,
+        // Written by #insertMessage between the message row and the emitted view: the row it
+        // points at has to exist first (the foreign key), and the view has to carry the card on
+        // its first emission or the transcript flashes a bare line and grows one a tick later.
+        reference: {
+          file_id: input.fileId,
+          file_name: input.fileName,
+          rel_path: input.relPath,
+          kind: input.kind,
+          page_from: input.pageFrom,
+          page_to: input.pageTo,
+          selection: input.selection,
+          page_text: input.pageText,
+        },
+      });
+      this.#event('student', 'message.send', { seq: row.seq, chars: body.length, reference: true });
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
     });
 
@@ -364,6 +427,7 @@ export class RoomActor {
     const room = this.#room();
     const material = this.#d.store.materials.get(room.material_id)!;
     const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
+    const references = new Map(this.#d.store.messageRefs.forRoom(this.#d.roomId).map((r) => [r.message_id, r]));
     return {
       roomId: room.id,
       sessionId: this.#d.sessionId,
@@ -388,7 +452,7 @@ export class RoomActor {
       agents: this.#d.roster,
       messages: this.#d.store.messages
         .forRoom(this.#d.roomId)
-        .map((m) => messageView(m, participants, this.#d.roster)),
+        .map((m) => messageView(m, participants, this.#d.roster, references.get(m.id))),
       ledger: ledgerView(this.#ledgerRows(), this.#d.pack),
       timer: timerView(this.#timer.snapshot, this.#d.config.silence_ms, this.#d.clock.now(), this.#typingActive()),
       thinking: this.#thinking,
@@ -691,6 +755,8 @@ export class RoomActor {
     promotedFromWhisper?: string;
     dividerCause?: string | null;
     disagreement?: string | null;
+    /** A document the learner is showing the room (issue #22 decision 4). */
+    reference?: Omit<MessageRefRow, 'id' | 'message_id' | 'room_id' | 'created_at'>;
   }): MessageRow {
     const seq = this.#d.store.messages.maxSeq(this.#d.roomId) + 1;
     const row: MessageRow = {
@@ -712,6 +778,15 @@ export class RoomActor {
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);
+    if (input.reference) {
+      this.#d.store.messageRefs.insert({
+        ...input.reference,
+        id: this.#d.newId('ref'),
+        message_id: row.id,
+        room_id: this.#d.roomId,
+        created_at: row.created_at,
+      });
+    }
     this.#d.store.rooms.update(this.#d.roomId, { turn_seq: seq });
     this.#d.store.outbox.enqueue({
       collection: 'messages',
@@ -722,7 +797,12 @@ export class RoomActor {
       enqueued_at: this.#nowIso(),
     });
     const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
-    const view: MessageView = messageView(row, participants, this.#d.roster);
+    const view: MessageView = messageView(
+      row,
+      participants,
+      this.#d.roster,
+      this.#d.store.messageRefs.forMessage(row.id),
+    );
     this.#d.transport.emit({ type: 'message.appended', roomId: this.#d.roomId, message: view });
     return row;
   }

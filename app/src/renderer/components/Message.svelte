@@ -5,6 +5,7 @@
   import { store } from '../lib/store.svelte.js';
   import { clockTime } from '../lib/time.js';
   import Divider from './Divider.svelte';
+  import DocumentCard from './DocumentCard.svelte';
 
   let {
     message,
@@ -64,6 +65,9 @@
 
   <div class="block">
     <p>{message.body}</p>
+    {#if message.reference}
+      <DocumentCard reference={message.reference} />
+    {/if}
   </div>
 
   <div class="meta" aria-hidden="true">

@@ -156,11 +156,29 @@
     return { destroy: () => observer.disconnect() };
   }
 
+  /**
+   * Jump to a page. The target is *remembered* rather than applied immediately, because the
+   * common caller is a search hit — "open this file at page 11" — and at that moment the
+   * document has not loaded, `pageCount` is 0, and clamping against it would silently land the
+   * learner on page 1 with no sign that anything went wrong.
+   */
+  let wanted = $state<number | null>(null);
+
   export function goTo(page: number): void {
-    const target = Math.min(Math.max(1, page), Math.max(1, pageCount));
-    currentPage = target;
-    scroller?.querySelector(`[data-page="${target}"]`)?.scrollIntoView({ block: 'start' });
+    wanted = Math.max(1, Math.round(page));
   }
+
+  $effect(() => {
+    const target = wanted;
+    if (target === null || pageCount === 0) return;
+    const clamped = Math.min(target, pageCount);
+    wanted = null;
+    currentPage = clamped;
+    // The page box exists as soon as pageCount is known, but not in this tick.
+    requestAnimationFrame(() => {
+      scroller?.querySelector(`[data-page="${clamped}"]`)?.scrollIntoView({ block: 'start' });
+    });
+  });
 
   function setZoom(next: number): void {
     fit = false;

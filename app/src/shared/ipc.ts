@@ -6,14 +6,15 @@ import type {
   Bootstrap,
   ConceptDraft,
   CreateSessionInput,
+  DocumentView,
+  FinderHitView,
   RecapView,
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
-  SettingsPatch,
-  DocumentView,
-  FinderHitView,
   SearchHitView,
+  SessionSeed,
+  SettingsPatch,
   SettingsView,
   TopicCandidateView,
   VaultTreeNode,
@@ -58,6 +59,8 @@ export const IPC = {
   vaultSearch: 'vault:search',
   vaultDocument: 'vault:document',
   vaultReveal: 'vault:reveal',
+  vaultSeed: 'vault:seed',
+  showDocument: 'room:showDocument',
   /** main → renderer: a scan finished, or the background indexer advanced. */
   vaultChanged: 'vault:changed',
 } as const;
@@ -137,6 +140,23 @@ export interface ChatterEdApi {
   openDocument(input: { fileId: string }): Promise<DocumentView>;
   /** Reveal in Finder — the one action the "no viewer" card offers (issue #22 decision 3). */
   revealFile(input: { fileId: string }): Promise<void>;
+  /**
+   * Start session setup from a file and a page range: the extracted text pre-fills the paste
+   * box, and the topic comes along for the room's system context (issue #22 decisions 4 and 5).
+   */
+  sessionSeed(input: { fileId: string; pageFrom: number | null; pageTo: number | null }): Promise<SessionSeed>;
+  /**
+   * "Show the room": post a reference to the open document into the group chat, as the learner.
+   * The main process resolves the page text; the renderer only says which pages and what was
+   * highlighted, because the renderer has no authority to decide what the agents are told.
+   */
+  showDocument(input: {
+    roomId: string;
+    fileId: string;
+    pageFrom: number | null;
+    pageTo: number | null;
+    selection: string | null;
+  }): Promise<void>;
   /** Subscribe to vault changes pushed by the scanner and the background indexer. */
   onVaultChanged(listener: (view: VaultView) => void): () => void;
 

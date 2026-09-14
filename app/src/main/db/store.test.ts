@@ -32,6 +32,7 @@ describe('migrations and the repository layer', () => {
         extracted_text: 'x',
         extract_engine: 'paste',
         padding_text: '',
+      topic_context: '',
         concept_pack: '{}',
         pack_provenance: 'fixed',
         pack_confirmed_at: null,

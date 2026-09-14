@@ -124,7 +124,98 @@ describe('the whisper invariant', () => {
     const { store } = seedWithWhisper();
     const view = groupView(store) as unknown as Record<string, unknown>;
     expect('whispers' in view).toBe(false);
-    expect(Object.keys(view).sort()).toEqual(['materials', 'messages', 'participants', 'rooms']);
+    // `messageRefs` joined this list with issue #22. It is group scope on purpose: a document
+    // reference is a public act, posted into the thread by the learner, and the agents are
+    // meant to see it. The invariant this test guards is about *whispers*, not about every
+    // repository that happens to carry text — so the list is widened deliberately, here,
+    // rather than the assertion being loosened to stop failing.
+    expect(Object.keys(view).sort()).toEqual([
+      'materials',
+      'messageRefs',
+      'messages',
+      'participants',
+      'rooms',
+    ]);
+  });
+
+  it('carries a document the learner showed the room into the group prompt', () => {
+    const { store, roomId } = seedWithWhisper();
+    const roster = rosterFor('ellie_peer');
+    const messageId = store.messages.forRoom(roomId)[1]!.id; // one the student authored
+    store.messageRefs.insert({
+      id: 'ref_1',
+      message_id: messageId,
+      room_id: roomId,
+      file_id: 'f_1',
+      file_name: 'who-you-explain-to-matters.pdf',
+      rel_path: 'Sources/who-you-explain-to-matters.pdf',
+      kind: 'pdf',
+      page_from: 3,
+      page_to: 3,
+      selection: 'learning by explaining to conversational agents',
+      page_text: 'PAGE-THREE-BODY-TEXT about pedagogical roles',
+      created_at: '2026-09-13T10:07:00.000Z',
+    });
+
+    const prompt = JSON.stringify(
+      buildGroupContext(groupView(store), {
+        roomId,
+        speaker: roster[0]!,
+        roster,
+        pack: PSD_HESSIAN_CONVEXITY_V1,
+        directive: { agentRole: 'peer', move: 'ask what they mean' },
+      }),
+    );
+
+    expect(prompt).toContain('who-you-explain-to-matters.pdf');
+    expect(prompt).toContain('page 3');
+    expect(prompt).toContain('learning by explaining to conversational agents');
+    expect(prompt).toContain('PAGE-THREE-BODY-TEXT');
+    // And the whisper invariant still holds with a reference present.
+    expect(prompt).not.toContain(CANARY);
+  });
+
+  it('keeps the attached page text out of system[0], where the prefix is frozen', () => {
+    const { store, roomId } = seedWithWhisper();
+    const roster = rosterFor('ellie_peer');
+    store.messageRefs.insert({
+      id: 'ref_2',
+      message_id: store.messages.forRoom(roomId)[1]!.id,
+      room_id: roomId,
+      file_id: null,
+      file_name: 'slides.pdf',
+      rel_path: 'MA3236/slides.pdf',
+      kind: 'pdf',
+      page_from: 7,
+      page_to: 8,
+      selection: null,
+      page_text: 'MID-SESSION-ATTACHMENT',
+      created_at: '2026-09-13T10:08:00.000Z',
+    });
+
+    const request = buildGroupContext(groupView(store), {
+      roomId,
+      speaker: roster[0]!,
+      roster,
+      pack: PSD_HESSIAN_CONVEXITY_V1,
+      directive: { agentRole: 'peer', move: 'ask what they mean' },
+    });
+
+    // architecture-mac.md §E.2 L1077 / §E.3 L1119: system[0] is byte-identical across agents
+    // and frozen at pack confirmation. A document brought in mid-session must not touch it, or
+    // every cached prefix in the room is invalidated for the rest of the session.
+    expect(JSON.stringify(request.system)).not.toContain('MID-SESSION-ATTACHMENT');
+    expect(JSON.stringify(request.messages)).toContain('MID-SESSION-ATTACHMENT');
+
+    // And it really is byte-identical for the other agent.
+    const other = buildGroupContext(groupView(store), {
+      roomId,
+      speaker: roster[1]!,
+      roster,
+      pack: PSD_HESSIAN_CONVEXITY_V1,
+      directive: { agentRole: 'challenger', move: 'probe assumptions' },
+    });
+    expect(other.system[0]!.text).toBe(request.system[0]!.text);
   });
 
   it('cannot reach the whispers repository through the static import graph', () => {

@@ -43,6 +43,26 @@ export interface MessageView {
   disagreement: { marker: DisagreementMarker; targetAgentKey: string; targetMessageId: string | null } | null;
   /** A labelled divider drawn immediately above this message, e.g. '45s quiet · Ellie stepped in'. */
   divider: { cause: string; control?: 'dont_do_this' } | null;
+  /**
+   * Set when the learner used "Show the room" (issue #22 decision 4). Rendered as a compact
+   * document card in the transcript; the page text it carries is NOT in `body` and is never
+   * shown, because the card is a reference, not a paste.
+   */
+  reference: MessageReferenceView | null;
+}
+
+export interface MessageReferenceView {
+  /** Null once the file has left the vault. The transcript outlives the file. */
+  fileId: string | null;
+  fileName: string;
+  relPath: string;
+  kind: VaultFileKind;
+  pageFrom: number | null;
+  pageTo: number | null;
+  /** What the learner had highlighted, capped. Shown in the card, collapsed if long. */
+  selection: string | null;
+  /** How much extracted text went to the agents, so the card can say so honestly. */
+  attachedChars: number;
 }
 
 export type LedgerState = 'not_yet' | 'stated' | 'justified' | 'defended';
@@ -252,6 +272,13 @@ export interface CreateSessionInput {
   fileName?: string;
   pageFrom?: number;
   pageTo?: number;
+  /** The vault file this came from, when it did (issue #22 decision 4). */
+  fileId?: string;
+  /**
+   * The vault topic the file sits in. Its name and file list go into the frozen prompt prefix,
+   * so the agents know which module they are in (issue #22 decision 5).
+   */
+  topic?: { name: string; fileNames: string[] };
 }
 
 export interface ConceptDraft {
@@ -395,6 +422,25 @@ export interface DocumentView {
   bytes: Uint8Array | null;
   /** Set when the file could not be opened at all. */
   error: string | null;
+}
+
+/**
+ * A session started from a file and a page range (issue #22 decision 4). It is not a new flow:
+ * the extracted text simply pre-fills the paste box, and everything downstream is the existing
+ * concept-pack path. Paste remains as the fallback it always was.
+ */
+export interface SessionSeed {
+  fileId: string;
+  fileName: string;
+  relPath: string;
+  /** From the topic folder when it looks like a module code, else null. */
+  moduleCode: string | null;
+  pageFrom: number | null;
+  pageTo: number | null;
+  /** The extracted text, capped. This is what lands in the textarea. */
+  text: string;
+  /** Goes into the frozen prompt prefix so the agents know the module (decision 5). */
+  topic: { name: string; fileNames: string[] } | null;
 }
 
 /** What "Show the room" posts. The extracted page text is attached; the bytes never are. */

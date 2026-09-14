@@ -44,6 +44,8 @@ const api: ChatterEdApi = {
   searchVault: (input) => ipcRenderer.invoke(IPC.vaultSearch, input),
   openDocument: (input) => ipcRenderer.invoke(IPC.vaultDocument, input),
   revealFile: (input) => ipcRenderer.invoke(IPC.vaultReveal, input),
+  sessionSeed: (input) => ipcRenderer.invoke(IPC.vaultSeed, input),
+  showDocument: (input) => ipcRenderer.invoke(IPC.showDocument, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

@@ -4,6 +4,7 @@
  */
 import type {
   AgentProfile,
+  VaultFileKind,
   LedgerRowView,
   LedgerView,
   MessageView,
@@ -12,13 +13,21 @@ import type {
 } from '../shared/types.js';
 import { ROLE_LABEL } from './agents.js';
 import { bloomRung, coverage, levelToState } from './ledger.js';
-import type { ConceptPack, LedgerRow, MessageRow, ParticipantRow, WhisperRow } from './records.js';
+import type {
+  ConceptPack,
+  LedgerRow,
+  MessageRefRow,
+  MessageRow,
+  ParticipantRow,
+  WhisperRow,
+} from './records.js';
 import type { TimerSnapshot } from './timer.js';
 
 export function messageView(
   row: MessageRow,
   participants: Map<string, ParticipantRow>,
   roster: AgentProfile[],
+  reference?: MessageRefRow,
 ): MessageView {
   const p = participants.get(row.participant_id);
   const agent = p?.agent_key ? roster.find((a) => a.key === p.agent_key) : undefined;
@@ -36,6 +45,20 @@ export function messageView(
     promotedFromWhisper: row.promoted_from_whisper !== null,
     disagreement,
     divider: row.divider_cause ? { cause: row.divider_cause, control: 'dont_do_this' } : null,
+    // The page text the agents were given is deliberately absent: the card says a document was
+    // shown and which pages, not the pages themselves (issue #22 decision 4).
+    reference: reference
+      ? {
+          fileId: reference.file_id,
+          fileName: reference.file_name,
+          relPath: reference.rel_path,
+          kind: reference.kind as VaultFileKind,
+          pageFrom: reference.page_from,
+          pageTo: reference.page_to,
+          selection: reference.selection,
+          attachedChars: reference.page_text.length,
+        }
+      : null,
   };
 }
 

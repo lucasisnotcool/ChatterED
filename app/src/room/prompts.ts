@@ -11,7 +11,7 @@
  */
 import type { AgentProfile, AgentRole } from '../shared/types.js';
 import { ROLE_LABEL } from './agents.js';
-import type { ConceptPack, MaterialRow } from './records.js';
+import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
 
 export const PROMPT_VERSION = 'prompts.v0.1';
 
@@ -93,8 +93,54 @@ export function sharedBlock(input: SharedBlockInput): string {
     '',
     'THE SLIDE, AS SELECTED BY THE STUDENT',
     input.material.extracted_text,
+    // The module folder this session came out of (issue #22 decision 5). Frozen on the material
+    // row at creation, sorted and capped, so this line is byte-identical on every turn.
+    input.material.topic_context ? `\nTHE FOLDER THIS CAME FROM\n${input.material.topic_context}` : '',
     input.material.padding_text ? `\nMODULE NOTATION\n${input.material.padding_text}` : '',
   ].join('\n');
+}
+
+/** Names only, sorted, capped. Built once at session creation and stored on the material. */
+export function topicContextBlock(topic: { name: string; fileNames: string[] } | null, cap = 40): string {
+  if (!topic) return '';
+  const names = [...topic.fileNames].sort((a, b) => (a < b ? -1 : 1)).slice(0, cap);
+  const more = topic.fileNames.length > names.length ? ` (+${topic.fileNames.length - names.length} more)` : '';
+  return [
+    `The student is working in their "${topic.name}" folder.`,
+    `Other material they keep there${more}: ${names.join(', ')}.`,
+    'The file names tell you what the module covers. They do not tell you what is in them, and',
+    'you have not read them.',
+  ].join('\n');
+}
+
+/**
+ * A document the learner has brought into the room (issue #22 decision 4).
+ *
+ * It is appended to the learner's own message in the transcript, i.e. **after** the last cache
+ * breakpoint — never into `system[0]`, which is frozen and hashed at pack confirmation
+ * (architecture-mac.md §E.3 L1119). A reference mid-session that changed the prefix would
+ * invalidate the cache for every agent for the rest of the room.
+ */
+export function referenceBlock(ref: MessageRefRow): string {
+  const where =
+    ref.page_from !== null && ref.page_to !== null
+      ? ref.page_from === ref.page_to
+        ? `page ${ref.page_from}`
+        : `pages ${ref.page_from}\u2013${ref.page_to}`
+      : 'the whole file';
+  const fence = '"""';
+  const parts = [`[The student has just shown the room a document: "${ref.file_name}", ${where}.`];
+  if (ref.selection && ref.selection.trim().length > 0) {
+    parts.push(`The part they highlighted:\n${fence}\n${ref.selection.trim()}\n${fence}`);
+  }
+  if (ref.page_text.trim().length > 0) {
+    parts.push(`What is on ${where}:\n${fence}\n${ref.page_text.trim()}\n${fence}`);
+  }
+  parts.push(
+    'Treat this the way you would treat a coursemate turning their laptop round. It is theirs, not',
+    'yours: do not summarise it back to them, and do not explain it. Ask them what they make of it.]',
+  );
+  return parts.join('\n');
 }
 
 export function roleBlock(role: AgentRole, self: AgentProfile, other: AgentProfile | undefined): string {

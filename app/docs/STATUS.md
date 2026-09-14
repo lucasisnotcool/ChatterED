@@ -251,3 +251,99 @@ pages 11, 12 and 4; clicking that hit opens the PDF at 24 pages, 10.3 MB, first 
 nodes; ⌘K with `whoyouexplain` finds `Sources/_text/who-you-explain-to-matters.txt`.
 
 **Stubbed at this stage:** nothing from the viewer reaches the room yet — that is stage (e).
+
+## Issue #22 stage (e) — Show the room, session-from-file, topic context
+
+**Real.** The vault now reaches the group chat, and only the group chat.
+
+**Chat is the study room, and always was.** There is no single-assistant "Ask" mode to remove:
+a sweep of `src/` finds no such affordance, and product-design.md argues against it three times
+over — P2 L65 ("exactly two agents are ever live… the UI has no affordance for adding a third
+voice"), P1 L51 (the learner speaks first and last) and §B3 L360 ("No model picker (NUSSync has
+one; ChatterED must not)"). Recorded as confirmation, not as a change.
+
+**"Show the room"** — three ways in, per the decision: the **Show the room · p. N** button in the
+document pane's header while a room is open, **⌘⇧S** (which opens the vault browser if it is not
+already open, because "show them this" and "go and find the thing to show them" are the same
+intention half a second apart), and a **right-click on a selection**. It posts a *learner
+message* — `Look at this — <file>, p. N.` — with a `message_refs` row carrying the page range,
+the selection (capped at 1,500 characters, **in the main process**, because the renderer does
+not get to decide how much of a document reaches a model) and the extracted page text.
+
+Being a learner message settles three things at once: a held agent reply is **cancelled, not
+queued** (§C3 L731); the 8 s floor-yield window opens, so nothing acknowledges it instantly
+(§C3 L719); and the ledger can only ever quote the one-line body, because the page text is on
+the reference row and never in `messages.body`. That last one is the point — a slide can never
+become "evidence the learner explained it".
+
+**The card** (`DocumentCard.svelte`) follows §C6 L872, the one existing source reference in the
+transcript: neutral, system-styled, carries a page reference, and clicking it reopens the file
+at that page. It shows the highlighted passage (collapsed past 160 characters) and **not** the
+page text — the agents were given that; printing a slide back at the learner would make this a
+paste, which is exactly what it is not. No action chips: §B3 L359 rules out anything in the
+transcript that produces an agent turn.
+
+**Where the text goes.** `message_refs.page_text` is rendered into the **message stream**, after
+the last cache breakpoint — never into `system[0]`, which is frozen and hashed at pack
+confirmation (§E.3 L1119). A mid-session document that touched the prefix would invalidate every
+cached prefix in the room for the rest of the session. Asserted in `context.test.ts` and again
+in `actor.test.ts`, alongside a check that `system[0]` stays byte-identical for both agents.
+
+**The whisper invariant still holds.** `groupView`'s member list grew `messageRefs`, and the
+store-shape assertion in the leak test was **widened deliberately rather than loosened**: a
+reference is a public act posted by the learner into the thread, and the agents are meant to see
+it. The canary test now runs with a reference present and still finds no whisper in the group
+prompt.
+
+**Session from a file + page range.** `Explain p. N →` in the document pane pulls the extracted
+text for the marked range into the existing paste box, with a line saying where it came from and
+an invitation to fix it ("it often does with maths" — §E.1 L939 is explicit that pdf.js output
+is a record, not a prompt). Paste is untouched and remains the fallback.
+
+**Topic context** (`materials.topic_context`, migration 006) is the topic name plus a sorted,
+capped list of file names, frozen on the material row at creation and included in `sharedBlock`.
+Frozen, because `sharedBlock` is rebuilt from that row on every turn and must be byte-identical
+each time (§E.2 L1077) — a list read live from the vault would change the moment the learner
+saved a file into that folder. It also tells the agents they have **not read** those files,
+because otherwise a file list reads as a reading list they are expected to know.
+
+**The prefix arithmetic stays honest.** The topic block counts towards `token_count`, and
+`cache_eligible` still tracks the same 4,096 threshold. Measured on the real flow: a single page
+of the Xu et al. paper plus the topic block gives `token_count` 2,064 and `cache_eligible` 0 —
+which is §E.2 L1004's prediction ("every realistic slide selection misses") showing up as a
+recorded fact rather than an assumption.
+
+**The page-range conflict**, again: both controls are built (see stage (d)).
+
+**Three bugs the probe caught:**
+1. **A search hit opened the file at page 1.** `goTo` clamped against `pageCount`, which is 0
+   until the document has loaded, so "open at page 11" silently became page 1. The target is now
+   remembered and applied once the document is there.
+2. **"An object could not be cloned."** The topic object handed to `createSession` was a Svelte
+   `$state` proxy, and IPC is `structuredClone`. Snapshotted before it crosses.
+3. **The button sat spinning for ten seconds.** `showDocument` does not resolve until the agent
+   that answers has finished its latency floor, so awaiting it left the learner looking at the
+   file they had just shown. It is now fire-and-forget, the same shape as `send()`; a failure
+   still lands in the notice banner.
+
+**Verified end to end in a real Electron window**, against `/Users/lohzh/ChatterED/Academia`
+with `Sources` promoted: search `Challenger` → 20 hits → open the Xu et al. PDF **at page 11**
+(the hit's own page) → jump to 3 → **Start here / End here** marks 3–3 → `Explain p. 3 →` seeds
+setup with 5,675 characters and the line "From 3772318.3790298 (1).pdf, p. 3" → open the room →
+**Bring a document…** reopens the browser with the PDF still where it was → mark 3–3 →
+**Show the room · p. 3** → back in the room, transcript shows
+`Look at this — 3772318.3790298 (1).pdf, p. 3.` with the document card `▤ … p. 3`. In the
+database: one `message_refs` row, pages 3–3, 5,675 characters of page text. In the assembled
+prompt: the reference block and the page text in `messages`, the topic block ("The student is
+working in their "Sources" folder…") in `system[0]`, and nothing of the attachment in the
+prefix.
+
+**Stubbed or deliberately left:**
+- The right-click path is only reachable where there is DOM text to select — Markdown, text and
+  code. A pdf.js page is a canvas, so a PDF reference carries a page range and no highlighted
+  passage. A pdf.js text layer would fix that and is not built.
+- A reference posted while the room is closed is not possible: the button only appears in a room.
+- `ensurePrefixFloor`'s widen and glossary steps are still unbuilt (M2), so a short selection is
+  recorded as `cache_eligible = 0` and said so, exactly as before.
+- References are local-only. They are not in the `outbox` collection enum and are not mirrored,
+  for the same reason `extracted_text` is not (§D.3 L862).

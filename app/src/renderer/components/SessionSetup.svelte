@@ -4,7 +4,11 @@
   import { store } from '../lib/store.svelte.js';
 
   let text = $state(store.setupSeed);
-  let moduleCode = $state('MA3236');
+  // A session can start from a file and a page range (issue #22 decision 4). It is not a second
+  // ingest path: the extracted text pre-fills this very box, and everything after it is the
+  // concept-pack flow that paste has always used.
+  const from = store.setupFrom;
+  let moduleCode = $state(from?.moduleCode ?? 'MA3236');
   let draft = $state<ConceptDraft | null>(null);
   let loading = $state(false);
   let opening = $state(false);
@@ -35,6 +39,8 @@
       text,
       conceptId: draft.conceptId,
       claims: claims.map((c) => ({ id: c.id, label: c.label.trim() })),
+      // The file provenance and the topic are added by the store when setup was seeded from a
+      // file; paste stays exactly what it was.
       sourceKind: 'pasted_text',
     });
     opening = false;
@@ -52,6 +58,15 @@
       <span>Module</span>
       <input bind:value={moduleCode} spellcheck="false" />
     </label>
+    {#if from}
+      <p class="from">
+        From <strong>{from.fileName}</strong>{from.pageFrom !== null && from.pageTo !== null
+          ? from.pageFrom === from.pageTo
+            ? `, p. ${from.pageFrom}`
+            : `, pp. ${from.pageFrom}–${from.pageTo}`
+          : ''}. Edit it here if the extraction came out badly — it often does with maths.
+      </p>
+    {/if}
     <label class="field grow">
       <span>Paste the statement you want to explain</span>
       <textarea bind:value={text} placeholder="Paste text from your slide…"></textarea>
@@ -117,6 +132,7 @@
 </div>
 
 <style>
+  .from { margin: 0 0 10px; font-size: 12px; line-height: 1.6; color: var(--text-2); }
   .screen { flex: 1; display: flex; min-width: 0; }
   .col { padding: 20px 24px; overflow-y: auto; }
   .source { flex: 1; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid var(--hairline); }

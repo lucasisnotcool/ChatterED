@@ -16,7 +16,7 @@ import type { AgentProfile } from '../shared/types.js';
 import { ROLE_LABEL } from './agents.js';
 import type { GroupStore } from './ports.js';
 import type { ConceptPack } from './records.js';
-import { roleBlock, sharedBlock, turnDirective, type TurnDirective } from './prompts.js';
+import { referenceBlock, roleBlock, sharedBlock, turnDirective, type TurnDirective } from './prompts.js';
 import type { CacheableBlock, LlmMessage, LlmRequest } from './llm/types.js';
 
 export interface GroupContextInput {
@@ -48,6 +48,9 @@ export function buildGroupContext(store: GroupStore, input: GroupContextInput): 
 
   const participants = new Map(store.participants.forRoom(input.roomId).map((p) => [p.id, p]));
   const transcript = store.messages.forRoom(input.roomId);
+  // Documents the learner has shown the room (issue #22 decision 4). Group scope by
+  // construction: a reference is a public act, posted by the learner into the thread.
+  const references = new Map(store.messageRefs.forRoom(input.roomId).map((r) => [r.message_id, r]));
 
   const turns: LlmMessage[] = [];
   for (const m of transcript) {
@@ -57,7 +60,11 @@ export function buildGroupContext(store: GroupStore, input: GroupContextInput): 
       p?.kind === 'student'
         ? 'Student'
         : `${p?.display_name ?? 'Agent'} (${ROLE_LABEL[roleOf(p?.agent_key)] ?? 'agent'})`;
-    const content = mine ? m.body : `${label}: ${m.body}`;
+    let content = mine ? m.body : `${label}: ${m.body}`;
+    const reference = references.get(m.id);
+    // The attached page text goes here, in the message stream, and never into system[0]:
+    // the prefix is frozen and hashed at confirmation (architecture-mac.md §E.3 L1119).
+    if (reference) content = `${content}\n\n${referenceBlock(reference)}`;
     const role_: LlmMessage['role'] = mine ? 'assistant' : 'user';
     const last = turns[turns.length - 1];
     if (last && last.role === role_) last.content = `${last.content}\n\n${content}`;

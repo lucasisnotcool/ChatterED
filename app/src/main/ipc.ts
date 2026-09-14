@@ -12,6 +12,7 @@ import type {
   CreateSessionInput,
   RoomEvent,
   RoomSnapshot,
+  SessionSeed,
   SettingsPatch,
   SettingsView,
 } from '../shared/types.js';
@@ -28,7 +29,8 @@ import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './ap
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
-import { VaultService } from './vault/service.js';
+import { capText } from './vault/extract.js';
+import { SELECTION_CAP, VaultService } from './vault/service.js';
 
 export interface IpcDeps {
   store: LocalStore;
@@ -237,6 +239,28 @@ export class AppService {
   }
 
   /**
+   * Session setup from a file and a page range (issue #22 decision 4). Not a second ingest
+   * path: it pre-fills the paste box that already exists, and everything after that is the
+   * concept-pack flow `createSession` has always run.
+   */
+  async sessionSeed(input: { fileId: string; pageFrom: number | null; pageTo: number | null }): Promise<SessionSeed> {
+    const file = this.#vault.fileRow(input.fileId);
+    if (!file) throw new Error('That file is not in the vault any more.');
+    const text = await this.#vault.textFor(input);
+    const topic = this.#vault.topicContext(file.topic_id);
+    return {
+      fileId: file.id,
+      fileName: file.name,
+      relPath: file.rel_path,
+      moduleCode: this.#vault.moduleCodeFor(file.topic_id),
+      pageFrom: input.pageFrom,
+      pageTo: input.pageTo,
+      text,
+      topic,
+    };
+  }
+
+  /**
    * Re-walk the vault. Called on window focus (issue #22 decision 1) and swallowed rather than
    * surfaced: a rescan the learner did not ask for must never put a banner in front of them.
    */
@@ -347,6 +371,39 @@ export class AppService {
     handle<{ fileId: string }>(IPC.vaultDocument, (input) => this.#vault.document(input.fileId));
     handle<{ fileId: string }>(IPC.vaultReveal, (input) => {
       shell.showItemInFolder(this.#vault.revealPath(input.fileId));
+    });
+
+    handle<{ fileId: string; pageFrom: number | null; pageTo: number | null }>(IPC.vaultSeed, (input) =>
+      this.sessionSeed(input),
+    );
+
+    handle<{
+      roomId: string;
+      fileId: string;
+      pageFrom: number | null;
+      pageTo: number | null;
+      selection: string | null;
+    }>(IPC.showDocument, async (input) => {
+      const actor = this.#requireActor(input.roomId);
+      const file = this.#vault.fileRow(input.fileId);
+      if (!file) throw new Error('That file is not in the vault any more.');
+      const pageText = await this.#vault.textFor({
+        fileId: input.fileId,
+        pageFrom: input.pageFrom,
+        pageTo: input.pageTo,
+      });
+      await actor.showDocument({
+        fileId: file.id,
+        fileName: file.name,
+        relPath: file.rel_path,
+        kind: file.kind,
+        pageFrom: input.pageFrom,
+        pageTo: input.pageTo,
+        // The cap is enforced here, in the main process. The renderer proposes a selection;
+        // it does not get to decide how much of a document reaches the model.
+        selection: input.selection ? capText(input.selection, SELECTION_CAP) : null,
+        pageText,
+      });
     });
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));

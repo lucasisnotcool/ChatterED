@@ -33,6 +33,12 @@ export interface MaterialRow {
   extracted_text: string;
   extract_engine: 'pdfjs' | 'claude-pdf' | 'paste';
   padding_text: string;
+  /**
+   * The vault topic this session was started from: its name and a sorted, capped list of file
+   * names (issue #22 decision 5). Frozen here at creation because `sharedBlock()` rebuilds the
+   * cached prefix from this row on every turn and it must be byte-identical each time (§E.2).
+   */
+  topic_context: string;
   /** json — progress-tracking.md §3 Concept Pack */
   concept_pack: string;
   pack_provenance: 'fixed' | 'elicited';
@@ -165,6 +171,27 @@ export interface MessageRow {
   promoted_from_whisper: string | null;
   divider_cause: string | null;
   disagreement: string | null;
+  created_at: string;
+}
+
+/**
+ * A document the learner brought into the room (issue #22 decision 4). One per message, and
+ * only ever on a message the learner authored — it is them saying "look at this".
+ */
+export interface MessageRefRow {
+  id: string;
+  message_id: string;
+  room_id: string;
+  /** The vault file id, or null once that file has gone. The transcript outlives the file. */
+  file_id: string | null;
+  file_name: string;
+  rel_path: string;
+  kind: string;
+  page_from: number | null;
+  page_to: number | null;
+  selection: string | null;
+  /** Extracted text for the referenced pages. Reaches the agents; never mirrored (§D.3). */
+  page_text: string;
   created_at: string;
 }
 

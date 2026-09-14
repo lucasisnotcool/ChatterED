@@ -100,7 +100,7 @@ export function createMockBridge(): ChatterEdApi {
     seq += 1; turn += 1;
     const m: MessageView = {
       id: `m${seq}`, seq, body, createdAt: iso(), latencyTargetMs: null, ttftActualMs: null,
-      promotedFromWhisper: false, disagreement: null, divider: null,
+      promotedFromWhisper: false, disagreement: null, divider: null, reference: null,
       speaker: from
         ? { kind: 'agent', key: from.key, role: from.role, displayName: from.displayName, colour: from.colour }
         : { kind: 'student', displayName: 'You' },
@@ -357,6 +357,11 @@ export function createMockBridge(): ChatterEdApi {
       pageCount: null, text: null, bytes: null, error: 'No vault outside Electron.',
     }),
     revealFile: async () => undefined,
+    sessionSeed: async ({ fileId }) => ({
+      fileId, fileName: '', relPath: '', moduleCode: null, pageFrom: null, pageTo: null,
+      text: '', topic: null,
+    }),
+    showDocument: async () => undefined,
     onVaultChanged() { return () => undefined; },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },

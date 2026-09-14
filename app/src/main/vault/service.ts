@@ -375,6 +375,13 @@ export class VaultService {
     return { name: topic.name, fileNames: names };
   }
 
+  /** The module code of a topic, when its folder name looked like one. */
+  moduleCodeFor(topicId: string | null): string | null {
+    const id = this.activeVaultId();
+    if (!id || topicId === null) return null;
+    return this.#repo.topics.forVault(id).find((t) => t.id === topicId)?.module_code ?? null;
+  }
+
   topicForFile(fileId: string): string | null {
     return this.#repo.files.get(fileId)?.topic_id ?? null;
   }

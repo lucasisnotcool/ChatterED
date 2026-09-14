@@ -15,6 +15,7 @@ import {
   eventsRepo,
   ledgerRepo,
   materialsRepo,
+  messageRefsRepo,
   messagesRepo,
   outboxRepo,
   participantsRepo,
@@ -38,6 +39,7 @@ export function createStore(db: SqlDatabase): LocalStore {
     materials: materialsRepo(db),
     rooms: roomsRepo(db),
     messages: messagesRepo(db),
+    messageRefs: messageRefsRepo(db),
     participants: participantsRepo(db),
     whispers: whispersRepo(db),
     sessions: sessionsRepo(db),
@@ -68,5 +70,6 @@ export function groupView(store: Store): GroupStore {
     rooms: store.rooms,
     messages: store.messages,
     participants: store.participants,
+    messageRefs: store.messageRefs,
   };
 }

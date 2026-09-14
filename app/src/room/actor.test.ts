@@ -11,6 +11,7 @@ import { rosterFor } from './agents.js';
 import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js';
 import { RoomActor } from './actor.js';
 import { ScriptedClient } from './llm/scripted.js';
+import { buildGroupContext } from './context.group.js';
 
 const TURN_2 =
   'Basically if the Hessian is positive semidefinite then the function is convex. That is the second-order condition, so you compute the Hessian, check it is PSD, and you are done.';
@@ -231,5 +232,103 @@ describe('the room actor', () => {
     // evaluation-plan.md §7.2: the event stream never contains message bodies.
     const payloads = events.map((e) => e.payload).join('\n');
     expect(payloads).not.toContain(TURN_2.slice(0, 40));
+  });
+});
+
+describe('"Show the room" (issue #22 decision 4)', () => {
+  const REF = {
+    fileId: 'f_xu',
+    fileName: 'who-you-explain-to-matters.pdf',
+    relPath: 'Sources/who-you-explain-to-matters.pdf',
+    kind: 'pdf',
+    pageFrom: 3,
+    pageTo: 3,
+    selection: 'learning by explaining to conversational agents',
+    pageText: 'PAGE-THREE-BODY about pedagogical roles and the Challenger agent',
+  };
+
+  it('posts the reference as a learner message with a card, and not as the page text', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.showDocument(REF));
+
+    const student = h.store.participants.student(h.roomId)!;
+    const mine = h.store.messages.forRoom(h.roomId).filter((m) => m.participant_id === student.id);
+    expect(mine).toHaveLength(1);
+    const row = mine[0]!;
+
+    // The visible line names the file and the page, and carries none of the document.
+    expect(row.body).toContain('who-you-explain-to-matters.pdf');
+    expect(row.body).toContain('p. 3');
+    expect(row.body).not.toContain('PAGE-THREE-BODY');
+    expect(row.body).not.toContain(REF.selection);
+
+    // The ledger can only ever quote a learner message verbatim, so keeping the document text
+    // out of `body` is what stops a slide becoming "evidence the learner explained it".
+    const ref = h.store.messageRefs.forMessage(row.id)!;
+    expect(ref.page_text).toContain('PAGE-THREE-BODY');
+    expect(ref.page_from).toBe(3);
+
+    // The emitted view carries the card, on the first emission — not after a refresh.
+    const appended = h.events.filter((e) => e.type === 'message.appended');
+    const emitted = appended.find((e) => e.type === 'message.appended' && e.message.id === row.id);
+    expect(emitted && emitted.type === 'message.appended' && emitted.message.reference).toMatchObject({
+      fileName: 'who-you-explain-to-matters.pdf',
+      pageFrom: 3,
+      pageTo: 3,
+    });
+    // …and the snapshot rebuilds it from the row, not from the event that was emitted.
+    const inSnapshot = h.actor.snapshot().messages.find((m) => m.id === row.id);
+    expect(inSnapshot?.reference?.fileName).toBe('who-you-explain-to-matters.pdf');
+    expect(inSnapshot?.reference?.selection).toBe(REF.selection);
+  });
+
+  it('reaches the agents through the message stream, and never through system[0]', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.showDocument(REF));
+
+    const request = buildGroupContext(groupView(h.store), {
+      roomId: h.roomId,
+      speaker: rosterFor('ellie_peer')[0]!,
+      roster: rosterFor('ellie_peer'),
+      pack: PSD_HESSIAN_CONVEXITY_V1,
+      directive: { agentRole: 'peer', move: 'ask what they make of it' },
+    });
+
+    expect(JSON.stringify(request.messages)).toContain('PAGE-THREE-BODY');
+    expect(JSON.stringify(request.messages)).toContain(REF.selection);
+    // architecture-mac.md §E.3 L1119: the prefix is frozen at pack confirmation. A document
+    // brought in mid-session must not touch it.
+    expect(JSON.stringify(request.system)).not.toContain('PAGE-THREE-BODY');
+  });
+
+  it('is a learner turn: it cancels a held reply and resets the silence timer', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    const before = h.actor.snapshot().timer.epoch;
+    await settle(h.clock, h.actor.showDocument(REF));
+    const after = h.actor.snapshot();
+    // §C3 L731: a held reply is cancelled, not queued, when the learner uses the floor.
+    expect(after.timer.epoch).toBeGreaterThan(before);
+    expect(after.state).not.toBe('agent_speaking');
+  });
+
+  it('says "the whole file" when there is no page range', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.showDocument({ ...REF, pageFrom: null, pageTo: null, selection: null }));
+    const student = h.store.participants.student(h.roomId)!;
+    const row = h.store.messages.forRoom(h.roomId).find((m) => m.participant_id === student.id)!;
+    expect(row.body).not.toContain('p. ');
+
+    const request = buildGroupContext(groupView(h.store), {
+      roomId: h.roomId,
+      speaker: rosterFor('ellie_peer')[0]!,
+      roster: rosterFor('ellie_peer'),
+      pack: PSD_HESSIAN_CONVEXITY_V1,
+      directive: { agentRole: 'peer', move: 'ask' },
+    });
+    expect(JSON.stringify(request.messages)).toContain('the whole file');
   });
 });

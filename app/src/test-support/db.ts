@@ -101,6 +101,7 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
       extracted_text: PSD_HESSIAN_SLIDE_TEXT,
       extract_engine: 'paste',
       padding_text: '',
+      topic_context: '',
       concept_pack: stableJson(PSD_HESSIAN_CONVEXITY_V1),
       pack_provenance: 'fixed',
       pack_confirmed_at: T0,
