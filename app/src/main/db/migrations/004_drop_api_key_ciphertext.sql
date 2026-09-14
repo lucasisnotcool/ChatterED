@@ -1,0 +1,14 @@
+-- Issue #15, amended 2026-09-14: Electron safeStorage is gone. It kept its encryption key in the
+-- login keychain ("ChatterED Safe Storage"), so `isEncryptionAvailable()` — called on every boot
+-- to decide whether the key path was offered at all — read a keychain item on every launch. With
+-- the app ad-hoc re-signed by every 6-hourly rebuild (tools/install-local.sh), macOS treated each
+-- launch as a new binary asking for someone else's secret and put up "ChatterED wants to use your
+-- confidential information stored in your keychain" — even on the default CLI path, which never
+-- wants a key at all. Boot must never touch the keychain.
+--
+-- The API key now lives in <userData>/anthropic-api-key, mode 0600, in a directory mode 0700.
+-- Any ciphertext left in this table is unreadable without the safeStorage key, so it is not
+-- migrated, it is dropped: it is bytes that can never become a key again. The learner re-enters
+-- the key once, in Settings or first-run. This also corrects the comment on the settings table in
+-- 001_init.sql, which 001 keeps because a shipped migration is never edited.
+DELETE FROM settings WHERE key = 'anthropic_api_key_ciphertext';

@@ -23,7 +23,7 @@ import { CLI_MODEL_CHOICES, isBlockedModelId, normaliseModelId } from '../room/l
 import type { ConceptPack, RoomConfig } from '../room/records.js';
 import { systemClock } from './clock.js';
 import { groupView, type LocalStore } from './db/store.js';
-import { createKeychain, looksLikeAnthropicKey, type Keychain } from './keychain.js';
+import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './apikey.js';
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
@@ -32,21 +32,23 @@ export interface IpcDeps {
   store: LocalStore;
   appVersion: string;
   osVersion: string;
+  /** `app.getPath('userData')`. The API key file lives directly inside it (#15). */
+  userDataDir: string;
   getWindow(): BrowserWindow | null;
 }
 
 export class AppService {
   readonly #d: IpcDeps;
-  readonly #keychain: Keychain;
+  readonly #apiKey: ApiKeyStore;
   #actor: RoomActor | null = null;
 
   constructor(deps: IpcDeps) {
     this.#d = deps;
-    this.#keychain = createKeychain(deps.store.settings, () => new Date().toISOString());
+    this.#apiKey = createApiKeyStore(deps.userDataDir);
   }
 
-  get keychain(): Keychain {
-    return this.#keychain;
+  get apiKeyStore(): ApiKeyStore {
+    return this.#apiKey;
   }
 
   get actor(): RoomActor | null {
@@ -67,7 +69,7 @@ export class AppService {
    * it in Settings between two rooms, and the cached CLI detection can go stale under it.
    */
   backend(): ResolvedBackend {
-    return resolveBackend({ settings: this.#d.store.settings, hasApiKey: this.#keychain.has() });
+    return resolveBackend({ settings: this.#d.store.settings, hasApiKey: this.#apiKey.has() });
   }
 
   mode(): 'scripted' | 'live' {
@@ -77,9 +79,9 @@ export class AppService {
   llm(resolved: ResolvedBackend = this.backend()): LLMClient {
     return createClient({
       settings: this.#d.store.settings,
-      hasApiKey: this.#keychain.has(),
+      hasApiKey: this.#apiKey.has(),
       resolved,
-      apiKey: () => this.#keychain.get(),
+      apiKey: () => this.#apiKey.get(),
     });
   }
 
@@ -99,8 +101,7 @@ export class AppService {
       agentModel: resolved.models.agent,
       orchestratorModel: resolved.models.orchestrator,
       modelChoices: [...CLI_MODEL_CHOICES],
-      hasApiKey: this.#keychain.has(),
-      keychainAvailable: this.#keychain.available(),
+      hasApiKey: this.#apiKey.has(),
       slidesFolder: this.#d.store.settings.get('slides_folder') ?? null,
     };
   }
@@ -163,7 +164,7 @@ export class AppService {
     });
     return {
       appVersion: this.#d.appVersion,
-      hasApiKey: this.#keychain.has(),
+      hasApiKey: this.#apiKey.has(),
       mode: modeFor(resolved.kind),
       backend: resolved.kind,
       backendChoice: resolved.choice,
@@ -173,7 +174,6 @@ export class AppService {
       agents: rosterFor(pairing, resolved.models.agent),
       recentSessions: recent,
       firstRun: this.#d.store.settings.get('first_run_complete') !== '1',
-      keychainAvailable: this.#keychain.available(),
     };
   }
 
@@ -249,7 +249,7 @@ export class AppService {
         return { ok: false, error: "That doesn't look like an Anthropic key — they start with sk-ant-." };
       }
       try {
-        this.#keychain.set(key.trim());
+        this.#apiKey.set(key.trim());
         return { ok: true };
       } catch (err) {
         return { ok: false, error: (err as Error).message };
@@ -257,7 +257,7 @@ export class AppService {
     });
 
     handle(IPC.clearApiKey, () => {
-      this.#keychain.clear();
+      this.#apiKey.clear();
     });
 
     handle(IPC.completeFirstRun, () => {

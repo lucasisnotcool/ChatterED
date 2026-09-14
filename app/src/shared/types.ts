@@ -214,7 +214,6 @@ export interface SettingsView {
   /** The dropdown options, in order. Fable is deliberately not among them (CLAUDE.md). */
   modelChoices: string[];
   hasApiKey: boolean;
-  keychainAvailable: boolean;
   slidesFolder: string | null;
 }
 
@@ -239,7 +238,6 @@ export interface Bootstrap {
   recentSessions: RecentSession[];
   /** True until the first-run flow has been completed once. */
   firstRun: boolean;
-  keychainAvailable: boolean;
 }
 
 export interface CreateSessionInput {

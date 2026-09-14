@@ -40,6 +40,23 @@ Three implement it, and with no forced choice in Settings they are tried in this
 Any of the three can be forced in Settings. Forcing one that cannot run still falls back — the
 pane says which backend is live and why the choice was not honoured.
 
+### Where the API key lives
+
+`~/Library/Application Support/ChatterED/anthropic-api-key` — a plain file, mode `0600`, inside a
+`0700` directory, written by `src/main/apikey.ts` (#15, amended 2026-09-14). Nothing encrypts it,
+and nothing on the boot path reads it: the backend only asks whether the file is non-empty, and the
+plaintext is fetched lazily, at the moment an API call is actually made.
+
+Electron `safeStorage` used to hold it as ciphertext in the settings table. That was dropped
+because its encryption key is an OS credential, so the boot-time availability check made macOS
+challenge every ad-hoc-signed rebuild — a permission modal on **every** launch, including the
+default Claude Code path that never wants a key. `apikey.ts` argues it in full. Migration 004
+deletes the stranded ciphertext, and `src/main/apikey.test.ts` fails the build if the dependency
+reappears.
+
+The file is **outside the repo**, so no `.gitignore` rule covers it and none is needed — but it is
+a live billable credential: never copy it into the checkout, and never commit it.
+
 ### The command line
 
 ```
@@ -133,7 +150,7 @@ The distribution path is unchanged: `npm run dist:mac` still produces an **unsig
 
 ```
 src/
-  main/        Electron main process: window, IPC, SQLite store, keychain, room host
+  main/        Electron main process: window, IPC, SQLite store, API key file, room host
   preload/     contextBridge surface (the only thing the renderer can call)
   renderer/    Svelte 5 SPA — library / document / chat shell, ledger rail, whisper pane
   room/        PORTABLE. The room actor, orchestrator, silence timer, context builder,

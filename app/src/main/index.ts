@@ -75,7 +75,8 @@ function createWindow(): BrowserWindow {
 }
 
 function boot(): void {
-  const db = openDatabase(join(dataDir(), 'app.db'));
+  const dir = dataDir();
+  const db = openDatabase(join(dir, 'app.db'));
   runMigrations(db, join(__dirname, 'db/migrations'));
   const store = createStore(db);
 
@@ -83,6 +84,7 @@ function boot(): void {
     store,
     appVersion: app.getVersion(),
     osVersion: `${process.platform} ${release()}`,
+    userDataDir: dir,
     getWindow: () => mainWindow,
   });
   service.register();

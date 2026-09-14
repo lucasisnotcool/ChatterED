@@ -209,7 +209,9 @@
     <section>
       <h2>Anthropic API key</h2>
       <p class="quiet">
-        {settings.hasApiKey ? 'A key is stored in the macOS keychain.' : 'No key stored. The key path is optional now that Claude Code can answer these calls.'}
+        {settings.hasApiKey
+          ? 'A key is stored in a file only your user account can read: ~/Library/Application Support/ChatterED/anthropic-api-key. Not needed if Claude Code is installed.'
+          : 'No key stored. A key you enter is stored in a file only your user account can read: ~/Library/Application Support/ChatterED/anthropic-api-key. Not needed if Claude Code is installed.'}
       </p>
       {#if settings.hasApiKey}
         <div class="acts">

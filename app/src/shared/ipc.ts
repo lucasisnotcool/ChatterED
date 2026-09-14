@@ -42,7 +42,7 @@ export const IPC = {
 export interface ChatterEdApi {
   bootstrap(): Promise<Bootstrap>;
   chooseSlidesFolder(): Promise<string | null>;
-  /** Stored with Electron safeStorage in the OS keychain. Never written to SQLite or disk. */
+  /** Stored in <userData>/anthropic-api-key, mode 0600. Never written to SQLite (#15). */
   setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;
   clearApiKey(): Promise<void>;
   completeFirstRun(): Promise<void>;

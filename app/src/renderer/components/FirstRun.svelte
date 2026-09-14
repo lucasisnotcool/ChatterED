@@ -108,9 +108,9 @@
 
       {#if showKeyField && !cliReady}
         <p class="quiet">
-          The key is stored in the macOS keychain{store.boot?.keychainAvailable === false
-            ? ', if this Mac makes one available'
-            : ''} and never written to the database, the transcript or disk.
+          Stored in a file only your user account can read:
+          <code>~/Library/Application&nbsp;Support/ChatterED/anthropic-api-key</code>. Not needed if
+          Claude Code is installed.
         </p>
         <label class="field">
           <span>API key</span>

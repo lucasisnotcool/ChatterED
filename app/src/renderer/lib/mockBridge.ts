@@ -50,7 +50,6 @@ const mockSettings: SettingsView = {
   orchestratorModel: 'sonnet',
   modelChoices: ['haiku', 'sonnet', 'opus'],
   hasApiKey: false,
-  keychainAvailable: true,
   slidesFolder: null,
 };
 
@@ -195,7 +194,7 @@ export function createMockBridge(): ChatterEdApi {
       return {
         appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted', slidesFolder: null,
         backend: 'scripted', backendChoice: 'auto', cli: MOCK_CLI,
-        pairing: 'ellie_peer', agents: AGENTS, firstRun: true, keychainAvailable: true,
+        pairing: 'ellie_peer', agents: AGENTS, firstRun: true,
         recentSessions: [
           { roomId: ROOM, conceptTitle: 'Convexity and the Hessian', moduleCode: 'MA3236', states: ['defended', 'defended', 'justified'], endedAt: iso(-2 * 864e5), updatedAt: iso(-2 * 864e5) },
           { roomId: 'mock-room-0', conceptTitle: 'Amortised append', moduleCode: 'CS2040S', states: ['stated', 'not_yet', 'not_yet'], endedAt: iso(-8 * 864e5), updatedAt: iso(-8 * 864e5) },
