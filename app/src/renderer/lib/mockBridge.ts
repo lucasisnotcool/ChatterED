@@ -350,6 +350,8 @@ export function createMockBridge(): ChatterEdApi {
     topicCandidates: async () => [],
     promoteTopics: async () => EMPTY_VAULT,
     vaultTree: async () => [],
+    findFiles: async () => [],
+    searchVault: async () => [],
     onVaultChanged() { return () => undefined; },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },

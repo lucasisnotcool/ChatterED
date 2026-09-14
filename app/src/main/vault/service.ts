@@ -25,7 +25,7 @@ import { capText, extractFile } from './extract.js';
 import { rankFiles } from './finder.js';
 import { isIndexable, type FileKind } from './kinds.js';
 import { topicColour } from './palette.js';
-import { createVaultRepo, newVaultId, SNIPPET_CLOSE, SNIPPET_OPEN, type FileRow, type VaultRepo } from './repo.js';
+import { createVaultRepo, newVaultId, type FileRow, type VaultRepo } from './repo.js';
 import { scanVault, topicCandidates, topicForPath } from './scan.js';
 import type { SqlDatabase } from '../db/driver.js';
 import type { SettingsRepo } from '../db/repos/core.js';
@@ -471,23 +471,6 @@ function sortTree(node: VaultTreeNode): void {
     return a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' });
   });
   for (const child of node.children) if (child.dir) sortTree(child);
-}
-
-/** Split an FTS5 snippet into plain runs and matched runs, for the renderer to style. */
-export function splitSnippet(snippet: string): { text: string; match: boolean }[] {
-  const out: { text: string; match: boolean }[] = [];
-  let rest = snippet;
-  for (;;) {
-    const open = rest.indexOf(SNIPPET_OPEN);
-    if (open === -1) break;
-    const close = rest.indexOf(SNIPPET_CLOSE, open);
-    if (close === -1) break;
-    if (open > 0) out.push({ text: rest.slice(0, open), match: false });
-    out.push({ text: rest.slice(open + 1, close), match: true });
-    rest = rest.slice(close + 1);
-  }
-  if (rest.length > 0) out.push({ text: rest, match: false });
-  return out;
 }
 
 export type { DocumentReference };

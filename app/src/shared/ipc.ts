@@ -11,6 +11,8 @@ import type {
   RoomEvent,
   RoomSnapshot,
   SettingsPatch,
+  FinderHitView,
+  SearchHitView,
   SettingsView,
   TopicCandidateView,
   VaultTreeNode,
@@ -51,6 +53,8 @@ export const IPC = {
   vaultCandidates: 'vault:candidates',
   vaultPromote: 'vault:promote',
   vaultTree: 'vault:tree',
+  vaultFind: 'vault:find',
+  vaultSearch: 'vault:search',
   /** main → renderer: a scan finished, or the background indexer advanced. */
   vaultChanged: 'vault:changed',
 } as const;
@@ -113,6 +117,15 @@ export interface ChatterEdApi {
   promoteTopics(input: { relPaths: string[] }): Promise<VaultView>;
   /** The file tree for one topic, or for "Other" when topicId is null. */
   vaultTree(input: { topicId: string | null }): Promise<VaultTreeNode[]>;
+  /**
+   * The ⌘K finder: fuzzy filename and path matching, no index needed, instant.
+   * ⌘K is the whisper key *inside a room* (§C10 L1004) and the finder key everywhere else —
+   * §B1's own header already reads `[ Search ⌘K ]` (L186). Scope decides, and the two scopes
+   * never overlap because the room owns the keydown while it is open.
+   */
+  findFiles(input: { query: string }): Promise<FinderHitView[]>;
+  /** Full text, over the FTS5 index: snippets, and a page number for a PDF hit. */
+  searchVault(input: { query: string }): Promise<SearchHitView[]>;
   /** Subscribe to vault changes pushed by the scanner and the background indexer. */
   onVaultChanged(listener: (view: VaultView) => void): () => void;
 

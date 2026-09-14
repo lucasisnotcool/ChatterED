@@ -165,3 +165,35 @@ promoting `Sources` gives a 16-file topic and 1 file under Other; indexing all 1
 
 **Stubbed at this stage:** clicking a file only selects it — the viewers are stage (d); the
 finder and the search box are stage (c); nothing yet reaches the room.
+
+## Issue #22 stage (c) — the finder and full-text search, in the UI
+
+**Real.** The indexer from stage (b) now has two front ends.
+
+- **⌘K finder** (`Finder.svelte`): fuzzy filename and path matching, no index needed, instant.
+  Matching happens in the main process (`vault/finder.ts`), so the renderer holds no file list
+  of its own and cannot go stale against the index. Arrow keys / ⌃N / ⌃P move, Enter opens,
+  Esc closes; the matched characters are **bold, not tinted**, because indigo belongs to the
+  learner and to primary actions (§C2 rule 3) and weight survives greyscale (rule 1).
+- **Search box** in the Library header: FTS5 over PDF pages, Markdown, text and code, with a
+  snippet per hit and a **page number for a PDF hit**. Results replace the launcher content
+  while a query is live and the Clear link puts it back.
+
+**The ⌘K collision, resolved by scope rather than by moving either binding.** §C10 L1004 binds
+⌘K to the whisper; §B1's own header ASCII at L186 already prints `[ Search ⌘K ]`. The two can
+never be live at once, because the Library is not on screen while a room is open: `App.svelte`
+owns the binding and stands down when `screen === 'room'`, where `Room.svelte` has always
+owned it. Written down here because §C10 does not say so itself.
+
+**Snippets cross IPC as text, never as markup.** SQLite wraps each matched term in two Private
+Use Area code points (`src/shared/snippet.ts`, shared by both sides so they cannot disagree);
+the renderer splits on them and renders each run as text. A search result is untrusted file
+content — whatever is on the learner's disk — and a main process handing the renderer HTML to
+inject would be an injection point. Asserted in `snippet.test.ts`.
+
+A learner's query is quoted term-by-term before it reaches the FTS5 query language, so typing
+`AND OR NEAR(` is a search for those words rather than a syntax error; only the last term gets
+a prefix `*`, so search feels live while it is still being typed.
+
+**Stubbed at this stage:** a hit or a finder result only *selects* the file — the viewers are
+stage (d).

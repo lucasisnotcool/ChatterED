@@ -15,7 +15,8 @@ import { openTestDatabase, hasFts5 } from '../db/driver.js';
 import { runMigrations } from '../db/migrations.js';
 import { settingsRepo } from '../db/repos/core.js';
 import { TOPIC_COLOURS } from './palette.js';
-import { splitSnippet, VaultService } from './service.js';
+import { VaultService } from './service.js';
+import { splitSnippet } from '../../shared/snippet.js';
 import { toMatchQuery } from './repo.js';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../db/migrations', import.meta.url));

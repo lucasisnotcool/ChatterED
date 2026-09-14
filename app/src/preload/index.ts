@@ -40,6 +40,8 @@ const api: ChatterEdApi = {
   topicCandidates: () => ipcRenderer.invoke(IPC.vaultCandidates),
   promoteTopics: (input) => ipcRenderer.invoke(IPC.vaultPromote, input),
   vaultTree: (input) => ipcRenderer.invoke(IPC.vaultTree, input),
+  findFiles: (input) => ipcRenderer.invoke(IPC.vaultFind, input),
+  searchVault: (input) => ipcRenderer.invoke(IPC.vaultSearch, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

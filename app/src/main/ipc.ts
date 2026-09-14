@@ -342,6 +342,8 @@ export class AppService {
     handle(IPC.vaultCandidates, () => this.#vault.candidates());
     handle<{ relPaths: string[] }>(IPC.vaultPromote, (input) => this.#vault.promote(input.relPaths));
     handle<{ topicId: string | null }>(IPC.vaultTree, (input) => this.#vault.tree(input.topicId));
+    handle<{ query: string }>(IPC.vaultFind, (input) => this.#vault.find(input.query));
+    handle<{ query: string }>(IPC.vaultSearch, (input) => this.#vault.search(input.query));
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>

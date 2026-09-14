@@ -15,7 +15,24 @@
   import { store } from './lib/store.svelte.js';
 
   void store.init();
+
+  /**
+   * ⌘K. Inside a room it is the whisper and Room.svelte owns it (product-design.md §C10 L1004);
+   * everywhere else it is the vault finder, which is what §B1's own header already advertises
+   * at L186. The two scopes cannot overlap, so the binding is made here and simply stands down
+   * while a room is open.
+   */
+  function onkeydown(e: KeyboardEvent): void {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+    if (store.screen === 'room' || store.screen === 'firstRun') return;
+    if (!store.vault?.rootPath) return;
+    e.preventDefault();
+    if (store.finderOpen) store.finderOpen = false;
+    else store.openFinder();
+  }
 </script>
+
+<svelte:window onkeydown={onkeydown} />
 
 <div class="app">
   <TitleBar />

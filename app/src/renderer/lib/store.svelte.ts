@@ -12,6 +12,8 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
+  FinderHitView,
+  SearchHitView,
   SettingsPatch,
   SettingsView,
   TopicCandidateView,
@@ -70,6 +72,16 @@ class Store {
   selectedFileId: string | null = $state(null);
   topicSheetOpen = $state(false);
   topicCandidates: TopicCandidateView[] = $state([]);
+
+  /** The ⌘K palette. Open only outside a room — inside one, ⌘K is the whisper (§C10). */
+  finderOpen = $state(false);
+  finderQuery = $state('');
+  finderHits: FinderHitView[] = $state([]);
+
+  /** The full-text search box in the Library header. */
+  searchQuery = $state('');
+  searchHits: SearchHitView[] = $state([]);
+  searching = $state(false);
 
   /** Settings, loaded on demand. Null until the Settings screen has been opened once. */
   settings: SettingsView | null = $state(null);
@@ -256,6 +268,44 @@ class Store {
     const stillThere = view.topics.some((t) => t.id === this.selectedTopic);
     if (!stillThere && this.selectedTopic !== 'other') this.selectedTopic = view.topics[0]?.id ?? 'other';
     await this.loadTree();
+  }
+
+  // ── Finding and searching ────────────────────────────────────────────────
+  openFinder(): void {
+    this.finderOpen = true;
+    this.finderQuery = '';
+    this.finderHits = [];
+  }
+
+  async runFinder(query: string): Promise<void> {
+    this.finderQuery = query;
+    if (query.trim().length === 0) {
+      this.finderHits = [];
+      return;
+    }
+    const hits = await run(this, () => bridge().findFiles({ query }));
+    // A slower keystroke's result must not overwrite a faster later one.
+    if (this.finderQuery === query) this.finderHits = hits ?? [];
+  }
+
+  async runSearch(query: string): Promise<void> {
+    this.searchQuery = query;
+    if (query.trim().length < 2) {
+      this.searchHits = [];
+      this.searching = false;
+      return;
+    }
+    this.searching = true;
+    const hits = await run(this, () => bridge().searchVault({ query }));
+    if (this.searchQuery !== query) return;
+    this.searchHits = hits ?? [];
+    this.searching = false;
+  }
+
+  clearSearch(): void {
+    this.searchQuery = '';
+    this.searchHits = [];
+    this.searching = false;
   }
 
   goSetup(seed = ''): void {

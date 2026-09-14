@@ -11,6 +11,7 @@ import type { SqlDatabase } from '../db/driver.js';
 import { insert, plain, plainAll, updateById } from '../db/sql.js';
 import type { FileKind } from './kinds.js';
 import type { ScannedFile } from './scan.js';
+import { SNIPPET_CLOSE, SNIPPET_OPEN } from '../../shared/snippet.js';
 
 export interface VaultRow {
   id: string;
@@ -68,19 +69,12 @@ export interface SyncCounts {
   unchanged: number;
 }
 
+export { SNIPPET_CLOSE, SNIPPET_OPEN };
+
 export function newVaultId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
 }
 
-/**
- * The delimiters FTS5 wraps a matched term in: two Private Use Area code points, which cannot
- * occur in a PDF text layer, in Markdown or in source code. The renderer splits the snippet
- * on them and renders the pieces as *text*, never as HTML — a search result is untrusted
- * file content, and wrapping the match in a tag would be an injection point in an app that
- * is pointed at whatever happens to be on the learner's disk.
- */
-export const SNIPPET_OPEN = '\uE000';
-export const SNIPPET_CLOSE = '\uE001';
 
 export interface VaultRepo {
   vaults: {
