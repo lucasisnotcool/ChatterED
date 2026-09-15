@@ -22,11 +22,14 @@ committed** while `git` is blocked on this Mac.
 | Silence timer: 45 s / 90 s, typing-only pause, 120 s extension cap, ≤2 fires per round, Hold, Wait for me | `src/room/timer.ts` | 1 s wall-clock tick against a persisted deadline; `timerEpoch` fences every path; 13 unit tests on a fake clock |
 | Sleep / quit / relaunch recovery, including the 120 s late-fire cut-off and the resume card | `timer.ts`, `actor.ts#recover` | Idempotent; running the pass twice is a tested case |
 | Latency floor (Challenger 9–12 s, Peer 4–6 s, whisper 1–2 s) with the 8 s floor-yield window | `actor.ts` | A floor on visible TTFT, not an added delay: generation starts at once, the reply is buffered. `latency_target_ms` and `ttft_actual_ms` are both stored |
-| Orchestrator: deterministic rules (anti-dog-pile, Peer-only silence fills, last word, S2 quota) + a Sonnet 5 structured decision | `src/room/orchestrator.ts` | Rules decide first; the model is consulted only when they have not |
-| Ledger: the four hard rules + the `defended` gate | `src/room/ledger.ts` | Verbatim-evidence substring check, monotonic with a capped self-contradiction downgrade, 0.6 confidence floor, agreement-is-not-evidence, and `defended` unreachable without a Challenger probe. Every proposal is written to `ledger_history` with the gate that stopped it |
+| Orchestrator: deterministic rules (REFERENCE lock, mandatory quiz feedback, anti-dog-pile, the hand-off, Teacher-only silence fills, last word) + a Sonnet 5 structured decision | `src/room/orchestrator.ts` | Rules decide first; the model is consulted only when they have not — and **the model can never put the Tester on the floor**: a model asking for `challenger` outside a hand-off is demoted to the Teacher. 11 unit tests |
+| **Teacher + Tester roster and the display mapping** (#32) | `src/room/agents.ts`, `prompts.ts` | Ellie explains from the slide and is told each turn what she has taught this sitting; Max asks one question when handed the floor and never answers it. `participants.role` / `agents.role` still store `peer` / `challenger` — `ROLE_LABEL` is the only translation. `PROMPT_VERSION` = `prompts.v0.2` |
+| **The flow session: boundaries, taught set, recency, `handOffDue()`** (#33) | `src/room/flow.ts` | The only place the constants live, aligned to `docs/research/flow-session.md` §8.3. 20 min gap (typing pauses it, `timer.ts`-style absolute deadline, survives sleep), 3 min `MIN_AGE` **capped** as a UI guard, recency a 60-min *ranking* weight that never excludes, 6 h horizon as a conversational-context bound, k = 3 in m = 10 min, feedback after every quiz answer mandatory (Rowland 2014). Pure, 39 fake-clock tests, plus a disclosed `DEMO` profile (k = 2, m = 3 min) |
+| **The REFERENCE path** (`pivot-spec.md` §B1) | `src/room/reference.ts`, `prompts.reference.ts`, `actor.askHere()` | A scope, not an agent: the participant is created with the room with `agent_key = NULL`, so the orchestrator cannot select it. 120-word cap **hard-truncated in code**, then the rule and the hand-back. An answer takes no floor, does not touch the timer, cannot move the ledger, and locks Ellie and Max out of that segment's thread until `actor.explainBack()` — all four asserted in `reference.test.ts` |
+| Ledger: the four hard rules + the `defended` gate | `src/room/ledger.ts` | Verbatim-evidence substring check, monotonic with a capped self-contradiction downgrade, 0.6 confidence floor, agreement-is-not-evidence, and `defended` unreachable without a Tester probe (the gate is unchanged; only the role's display name moved). Every proposal is written to `ledger_history` with the gate that stopped it |
 | Whisper: separate table, scoped context builder, group-prefix snapshot, relay with attribution | `src/room/context.*.ts`, `actor.ts` | Whispers do not pause the timer and do not move the ledger |
 | **The whisper leak test** | `src/room/context.test.ts` | Canary string, store-shape assertion, and a walk of the static import graph from `context.group.ts` |
-| Scripted transcript player (the A1 video fallback) | `src/room/llm/script.psd-hessian.ts`, `scripted.ts` | Replays design-brief.md §G through the *real* actor, timer, gates and whisper scoping. The ledger's evidence is lifted verbatim from what the learner actually types |
+| Scripted transcript player (the A1 video fallback) | `src/room/llm/script.psd-hessian.ts`, `scripted.ts` | Replays design-brief.md §G through the *real* actor, timer, gates and whisper scoping. The ledger's evidence is lifted verbatim from what the learner actually types. `ScriptedClient` now takes a `ScriptSource`, so `script.critique1.ts` drops in without editing it, and answers `scope: 'reference'`; the script carries `handoff:N`, `feedback:N` and `reference:N` beats |
 | Anthropic client: streaming, cache breakpoints, usage persisted | `src/room/llm/anthropic.ts` | `claude-haiku-4-5` for agent turns, `claude-sonnet-5` for orchestrator/ledger/ingest |
 | **Local Claude CLI client** (#19) | `src/main/llm/claude-cli.ts` | Shells out to `claude -p … --output-format stream-json`, parses the deltas and the final `result`, persists the same usage shape. In `src/main`, not `src/room`, because it spawns a process and `src/room` is the portable half. 29 tests against a fake `claude` binary on a temp PATH |
 | **Backend detection and order** (#19) | `src/main/llm/detect.ts`, `backend.ts` | CLI-if-logged-in → API key → scripted, forceable in Settings. The login probe costs one Haiku round trip, so it is cached in the settings table and warmed in the background at launch |
@@ -34,7 +37,7 @@ committed** while `git` is blocked on this Mac.
 | Settings screen | `src/renderer/components/Settings.svelte` | Backend, CLI status and path override, the two model choices. Says which backend is *actually* live and why a forced choice was not honoured |
 | **API key entry, in a 0600 file** (#15, amended 2026-09-14) | `src/main/apikey.ts` | The key is a plain file, `~/Library/Application Support/ChatterED/anthropic-api-key`, mode 0600 inside a 0700 directory. It sits in Application Support, **outside the repo**, so no `.gitignore` rule covers it and none is needed — but it is a live credential: never copy it into the checkout and never commit it. Electron `safeStorage` was removed (the prompt on every launch it caused, and the rule that boot must never touch the login keychain, are argued at the top of `apikey.ts`); migration 004 drops the dead ciphertext row, and `src/main/apikey.test.ts` walks the import graph and sweeps `src/` so it cannot come back. Optional now that the CLI can answer |
 | Session setup from pasted text, claim rows, prefix frozen and hashed at confirmation | `src/main/sessions.ts` | `pack_confirmed_at` gates opening the room |
-| Role–name pairing randomised at install | `src/room/agents.ts`, `ipc.ts` | Stored in settings; recorded per session |
+| Role–name pairing randomised at install | `src/room/agents.ts`, `ipc.ts` | Stored in settings; recorded per session. `ellie_peer` now reads as "Ellie is the Teacher" |
 | Three-pane shell, message anatomy, composer hairline, indicators, ledger rail, whisper pane, recap | `src/renderer/` | Functional against the scripted client |
 | Event log with the §7.1 vocabulary, and an outbox with deterministic doc ids | `actor.ts`, `db/` | Event payloads never contain message bodies (asserted in a test) |
 | **App icon, wired** (#20) | `assets/AppIcon.*`, `electron-builder.yml`, `src/main/index.ts` | `mac.icon` for the bundle; `app.dock.setIcon` so `npm run dev` shows it too |
@@ -51,6 +54,11 @@ committed** while `git` is blocked on this Mac.
   `design-brief.md` §G. Say this on camera: a scripted turn presented as scripted costs nothing.
   Enter an API key in first-run and the same code path calls Haiku 4.5 for real.
 - **Whisper replies and the relay draft** come from the same script in scripted mode.
+- **REFERENCE answers** come from the script in scripted mode — and go through the *same*
+  `truncateToWords()` the live path uses, so a script cannot put a 300-word answer on camera.
+- **The Teacher's hand-off line is not scripted and is not generated.** It is built by
+  `flow.handOffLine()` from the taught set and posted as Ellie's own message. That is the point:
+  beat 10 says "a rule I can see and turn down, not a model's whim", and it has to be true.
 - **Stage-1 silence nudges are drawn from a fixed pool in both modes, deliberately** — content-free
   by construction, never generated against the concept (`product-design.md` §C5).
 
@@ -67,7 +75,7 @@ committed** while `git` is blocked on this Mac.
 | Stage 4, the Claude vision pass over candidate cuts | Removed from A1 by issue #25 decision 4: it was the only API dependency, the only per-page cost and the most visible failure mode on the deadline path | A2, on demand |
 | Cross-page merge; non-slide genres (papers, readings, scans, handwriting) | Same-page merge is enough to undo a split; other genres open whole-page with a notice, and `G = 16 pt` is a *slides* constant that §D3 says must be derived per document first | A2 |
 | History, export to `~/Documents/ChatterED/` | Not on a marked A1 requirement | A2 |
-| Theo's teach-back round | The recap now offers it only when something is on the record, and **Yes, invite Theo** records the acceptance in the event log and says what happens next. The round itself is not built | A2 |
+| ~~Theo's teach-back round~~ | **Dropped, not deferred** (#32): a teach-back *is* a quiz, so it folded into the Tester's question. Theo is out of `rosterFor()`, which makes `teachbackOffer` structurally unreachable rather than merely unbuilt. `acceptTeachback` still compiles, so `shared/types`, the IPC surface and `RecapCard.svelte` are untouched | — |
 | Settings: Reply speed, pacing toggle, the `don't do this` target | The Settings screen now exists (#19) but carries only the backend and model choices | A2 |
 | Signing / notarisation | Unsigned by decision (#17). `npm run install:local` ad-hoc signs so macOS does not see a *broken* signature; `npm run dist:mac` still produces an unsigned DMG, untested this pass | Later milestone |
 | Firebase Auth, the `claudeProxy` function | Superseded for now by per-user keys (#15) | Revisit with the cohort |
@@ -87,6 +95,42 @@ committed** while `git` is blocked on this Mac.
   in `~/Library/Logs/chattered-updater.log` — so node, npm and git are all reachable from
   launchd's environment.
 - `npm run uninstall:local` unloads and removes the agent and leaves the app in place.
+
+## Teacher + Tester — what changed on 15 Sep, and what it costs
+
+**Ellie is the Teacher; Max is the Tester** (#32). The Peer's "may never supply a complete
+correct explanation" contract is **retired**: Ellie explains from the slide and tracks what she
+has covered this sitting. Max only ever speaks when he is handed the floor, asks one question,
+and never answers it. Theo is out of the roster entirely — a teach-back is a quiz.
+
+**When Max is invoked is a rule on a clock, not a model's judgement** (#33). `src/room/flow.ts`
+implements `flow-session.md` §8.2's four conditions — k = 3 learner turns in m = 10 min, ≥ 2
+concepts quizzable, the youngest older than the 3 min UI guard, and a clear floor — and
+`ruleDecision()` consults it before the orchestrator model is asked anything. A model that asks
+for the Tester outside a hand-off is silently demoted to the Teacher. Ellie's *"You've covered X
+and Y — Max, over to you."* is written by `flow.handOffLine()`, not generated.
+
+**Say this on camera, in this order.** (1) The hand-off is a rule, and it is visible and
+declinable. (2) "Flow" here is a **behavioural proxy for sustained engagement**, not flow in
+Csikszentmihalyi's sense — that is self-reported and has no validated log proxy, and nobody
+ships an engagement-triggered quiz, so this is a design proposal with a logging plan rather than
+established practice. (3) If the `DEMO` profile is in force (k = 2, m = 3 min), say so in the
+same breath as "scripted": a hand-off that fires in three minutes because the thresholds were
+lowered for filming is a manipulated demo unless the manipulation is said out loud.
+
+**Three numbers that moved away from what issue #33 proposed**, because the research brief found
+the evidence ran the other way: the 2 h half-life is gone (recency is now a 60-minute *ranking*
+weight that orders candidates and never excludes one); `MIN_AGE` stays at 3 min and is capped in
+code, because for *prose* Karpicke & Roediger found immediate testing **beat** a 10-minute delay;
+and feedback after every quiz answer is now mandatory (Rowland 2014: g = 0.73 with feedback
+against 0.39 without) and is enforced as `rule:quiz_feedback` rather than asked for in Max's
+prompt.
+
+**What it cost.** `PROMPT_VERSION` is `prompts.v0.2` and `sharedBlock()` changed, so
+`prefix_sha256` moves — harmless, since the prefix is frozen per material and a new document
+opens a new room. The S2 disagreement quota, `mustDisagree` and `TurnDecision.disagreement` are
+deleted end to end; the `messages.disagreement` column and the `MessageView` field stay so a
+room recorded before this build still renders its markers.
 
 ## Deviations from `docs/research/architecture-mac.md`
 

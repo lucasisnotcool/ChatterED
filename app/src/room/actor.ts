@@ -30,6 +30,16 @@ import type { LLMClient, LlmBackend } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
 import {
+  REFERENCE_DISPLAY_NAME,
+  anyAnchorLocked,
+  buildReferenceRequest,
+  composeReferenceBody,
+  explainBack,
+  findReferenceParticipant,
+  isAnchorLocked,
+  type ReferenceAnswerState,
+} from './reference.js';
+import {
   FLOW,
   answerQuiz,
   handOffDue,
@@ -136,6 +146,9 @@ export class RoomActor {
   #taught: TaughtItem[] = [];
   #pendingQuiz: PendingQuiz | null = null;
   #testerMode: TesterMode = 'proactive';
+  /** Every REFERENCE card inserted this session, and whether it has been explained back. */
+  #answers: ReferenceAnswerState[] = [];
+  #asks = 0;
 
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
@@ -321,6 +334,154 @@ export class RoomActor {
   pauseNudges(paused: boolean): void {
     this.#timer.setNudgesPaused(paused);
     this.#event('student', paused ? 'silence.timer.cancelled' : 'silence.timer.set', { reason: 'wait_for_me' });
+  }
+
+  // ── "+ Ask here" — the REFERENCE path (pivot-spec.md §B1) ─────────────────
+
+  /**
+   * The learner asks a factual question about one segment, and gets one neutral card back.
+   *
+   * **This is not an agent turn**, and the four properties that make that true are enforced
+   * here rather than asked for in a prompt (`flow-build-plan.md` §4.3):
+   *
+   *  1. no floor — `consecutive_agent_turns` is untouched, and no `pending_turn_id` is written,
+   *     so a held reply elsewhere is neither cancelled nor displaced;
+   *  2. no timer — `this.#timer` is not called at all. The deadline, the epoch and
+   *     `nudge_fires_this_round` all come out the other side unchanged, which is the assertion
+   *     the test makes: reading an answer is not explaining, so it does not buy silence;
+   *  3. no ledger — `#updateLedger` is not called, and could not help the learner if it were,
+   *     since evidence must be a verbatim substring of a *learner* message;
+   *  4. the segment's thread is locked to Ellie and Max until `explainBack()`.
+   *
+   * The learner's question *is* written as their own message, because it is theirs and the flow
+   * renders it; it simply does not schedule anybody.
+   */
+  async askHere(input: {
+    anchorId: string | null;
+    question: string;
+    /** The extracted text of the segment being asked about. */
+    segmentText: string;
+  }): Promise<{ questionId: string; answerId: string; body: string; truncated: boolean }> {
+    const question = input.question.trim();
+    if (question.length === 0) throw new Error('An "Ask here" needs a question');
+    this.#asks += 1;
+
+    const asked = await this.#mailbox.enqueue(() => {
+      this.#noteLearnerActivity('ask', input.anchorId);
+      const row = this.#insertMessage({
+        participantId: this.#studentParticipant().id,
+        body: question,
+        anchorId: input.anchorId,
+      });
+      this.#event('student', 'message.send', {
+        seq: row.seq,
+        chars: question.length,
+        scope: 'reference',
+        anchor_id: input.anchorId,
+      });
+      return row;
+    });
+
+    const material = this.#d.store.materials.get(this.#room().material_id)!;
+    const request = buildReferenceRequest({
+      model: this.#models.orchestrator,
+      roomId: this.#d.roomId,
+      deckTitle: material.title,
+      segmentText: input.segmentText,
+      question,
+      anchorId: input.anchorId,
+      scriptCue: `reference:${this.#asks}`,
+    });
+
+    const started = this.#d.clock.now();
+    let raw: string;
+    let model = request.model;
+    let backend: LlmBackend | null = null;
+    let usage: Record<string, number> = {};
+    try {
+      const result = await this.#d.llm.complete(request);
+      raw = result.text;
+      model = result.model;
+      backend = result.backend ?? null;
+      usage = result.usage as unknown as Record<string, number>;
+    } catch (err) {
+      this.#event('system', 'agent.turn.error', { scope: 'reference', cause: (err as Error).message });
+      this.#notice('error', 'That lookup did not come back — try again.');
+      throw err;
+    }
+
+    // "Held 2–3 s: this is retrieval, not deliberation — it must not borrow the Challenger's
+    // considered pacing" (§B1). A short floor, and it is a floor on visible TTFT like every
+    // other one in this file.
+    await this.#holdUntil(started, Math.round((2_000 + this.#rand() * 1_000) * this.#d.config.latency_scale));
+
+    // The 120-word cap is applied here, in code. A prompt that asks for 120 words is a prompt
+    // that produces 180 on the take you keep.
+    const { body, truncated } = composeReferenceBody(raw);
+
+    const answer = await this.#mailbox.enqueue(() => {
+      const row = this.#insertMessage({
+        participantId: this.#referenceParticipant().id,
+        body,
+        model,
+        backend,
+        usage: JSON.stringify(usage),
+        anchorId: input.anchorId,
+      });
+      this.#answers.push({ answerId: row.id, anchorId: input.anchorId, explainedBackAt: null });
+      this.#event('system', 'agent.turn.dispatched', {
+        seq: row.seq,
+        scope: 'reference',
+        anchor_id: input.anchorId,
+        words: body.split(/\s+/).length,
+        truncated,
+        // Neither of these moved, and the event log is where that is checkable.
+        took_floor: false,
+        reset_timer: false,
+      });
+      return row;
+    });
+
+    return { questionId: asked.id, answerId: answer.id, body, truncated };
+  }
+
+  /**
+   * "Explain it back →". The answer card collapses, a composer opens on the same anchor, and
+   * **Ellie and Max become eligible on that anchor for the first time**.
+   *
+   * This is the hook: the learner has read the answer, and the only way to move the ledger from
+   * there is still to say it in their own words.
+   */
+  explainBack(answerId: string): { unlocked: boolean; anchorId: string | null } {
+    const before = this.#answers.find((a) => a.answerId === answerId);
+    if (!before) return { unlocked: false, anchorId: null };
+    this.#answers = explainBack(this.#answers, answerId, this.#d.clock.now());
+    this.#event('student', 'reference.explain_back', { answer_id: answerId, anchor_id: before.anchorId });
+    this.#d.transport.emit({ type: 'room.state', roomId: this.#d.roomId, state: this.#room().state });
+    return { unlocked: true, anchorId: before.anchorId };
+  }
+
+  /**
+   * The reference participant, created with the room. Made on demand for a room that predates
+   * this build, so an old transcript can still be asked a question.
+   */
+  #referenceParticipant() {
+    const existing = findReferenceParticipant(this.#d.store.participants.forRoom(this.#d.roomId));
+    if (existing) return existing;
+    const row = {
+      id: this.#d.newId('p'),
+      room_id: this.#d.roomId,
+      kind: 'agent' as const,
+      user_id: null,
+      // Null on purpose: the REFERENCE voice is not an agent, has no row in `agents`, and can
+      // therefore never be found by `agentByRole` or selected by the orchestrator.
+      agent_key: null,
+      display_name: REFERENCE_DISPLAY_NAME,
+      joined_at: this.#nowIso(),
+      left_at: null,
+    };
+    this.#d.store.participants.insert(row);
+    return row;
   }
 
   // ── whisper ───────────────────────────────────────────────────────────────
@@ -924,9 +1085,12 @@ export class RoomActor {
     return taughtBlock(items);
   }
 
-  /** Overridden in Track C once anchors exist; false until a REFERENCE answer can be locked. */
-  #referenceLocked(): boolean {
-    return false;
+  /**
+   * True while any REFERENCE card is waiting for "Explain it back". `ruleDecision` reads it
+   * before every other rule, so no agent can schedule a turn into that thread.
+   */
+  #referenceLocked(anchorId: string | null = null): boolean {
+    return anchorId === null ? anyAnchorLocked(this.#answers) : isAnchorLocked(this.#answers, anchorId);
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -967,6 +1131,8 @@ export class RoomActor {
     promotedFromWhisper?: string;
     dividerCause?: string | null;
     disagreement?: string | null;
+    /** Which segment this message hangs off (migration 010). Null is a room-level message. */
+    anchorId?: string | null;
     /** A document the learner is showing the room (issue #22 decision 4). */
     reference?: Omit<MessageRefRow, 'id' | 'message_id' | 'room_id' | 'created_at'>;
   }): MessageRow {
@@ -987,6 +1153,7 @@ export class RoomActor {
       promoted_from_whisper: input.promotedFromWhisper ?? null,
       divider_cause: input.dividerCause ?? null,
       disagreement: input.disagreement ?? null,
+      anchor_id: input.anchorId ?? null,
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);

@@ -176,7 +176,17 @@ export interface MessageRow {
   released_at: string | null;
   promoted_from_whisper: string | null;
   divider_cause: string | null;
+  /**
+   * Never written since #32 — the S2 disagreement quota went with the social-group framing. The
+   * column stays so a room recorded before that build still renders its markers.
+   */
   disagreement: string | null;
+  /**
+   * Which segment of the document this message is anchored to (migration 010), or null for a
+   * room-level message. The flow's threads hang off segments, and the REFERENCE gate is scoped
+   * to one (src/room/reference.ts).
+   */
+  anchor_id: string | null;
   created_at: string;
 }
 

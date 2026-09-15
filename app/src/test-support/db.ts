@@ -138,6 +138,18 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
       closed_at: null,
     });
 
+    // The REFERENCE voice is created with the room (pivot-spec.md §B1). It is not an agent:
+    // `agent_key` is null and there is no row in `agents`, so the orchestrator cannot reach it.
+    store.participants.insert({
+      id: 'p_reference',
+      room_id: roomId,
+      kind: 'agent',
+      user_id: null,
+      agent_key: null,
+      display_name: 'REFERENCE',
+      joined_at: T0,
+      left_at: null,
+    });
     store.participants.insert({
       id: 'p_student',
       room_id: roomId,
@@ -220,6 +232,7 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
         promoted_from_whisper: null,
         divider_cause: null,
         disagreement: null,
+        anchor_id: null,
         created_at: T0,
       });
     });

@@ -12,6 +12,7 @@ import { rosterFor } from '../room/agents.js';
 import { FIXED_PACKS, PSD_HESSIAN_CONVEXITY_V1 } from '../room/concepts/psd-hessian-convexity-v1.js';
 import type { LLMClient } from '../room/llm/types.js';
 import { PROMPT_VERSION, sharedBlock, stableJson, topicContextBlock } from '../room/prompts.js';
+import { REFERENCE_DISPLAY_NAME } from '../room/reference.js';
 import type { ConceptPack, MaterialRow, RoomConfig } from '../room/records.js';
 import { API_PLAN, type ModelPlan } from '../room/llm/models.js';
 import type { LocalStore } from './db/store.js';
@@ -170,6 +171,22 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
         left_at: null,
       });
     }
+    /**
+     * The REFERENCE voice, created with the room (pivot-spec.md §B1). It is a **scope, not an
+     * agent**: `agent_key` is null and no row is written to `agents`, so `rosterFor()` does not
+     * return it, `agentByRole` cannot find it and the orchestrator can never select it. See the
+     * argument at the top of `src/room/reference.ts`.
+     */
+    deps.store.participants.insert({
+      id: newId('p'),
+      room_id: roomId,
+      kind: 'agent',
+      user_id: null,
+      agent_key: null,
+      display_name: REFERENCE_DISPLAY_NAME,
+      joined_at: now(),
+      left_at: null,
+    });
     deps.store.sessions.insert({
       id: sessionId,
       room_id: roomId,
