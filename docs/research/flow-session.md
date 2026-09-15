@@ -28,250 +28,143 @@ or the previous one if it closed under 6 h ago), and the learner has taken ≥ 3
 
 **Four things this brief changes about #33's proposal.**
 
-1. **The 2 h half-life goes.** No evidence supports it for conceptual material — even nonsense
+1. **The 2 h half-life goes** — no evidence supports it for conceptual material; even nonsense
    syllables decay slower (§4). It survives demoted to a 60-minute *ranking* weight.
-2. **The 6 h horizon stays but is re-justified.** It is a **conversational-context** bound, not a
-   decay constant, and the report should say memory would permit far longer (§4).
-3. **The 3-minute minimum age stays, and must not be raised.** For *prose* material the only direct
-   evidence found immediate testing **better** than a 10-minute delay, so `MIN_AGE` is a UI guard,
-   not a pedagogical delay (§3.2).
+2. **The 6 h horizon stays, re-justified** as a **conversational-context** bound, not a decay
+   constant, with the limitation stated: memory would permit far longer (§4).
+3. **The 3-minute minimum age stays and must not be raised.** For *prose* the only direct evidence
+   found immediate testing **better** than a 10-minute delay, so `MIN_AGE` is a UI guard, not a
+   pedagogical delay (§3).
 4. **Feedback after every quiz answer becomes mandatory** — g = 0.73 with it versus 0.39 without
-   (§3.1). This is the single best-evidenced constraint in the brief and #33 does not mention it.
+   (§3). The best-evidenced constraint in the brief, and #33 does not mention it.
 
 **And one that is honest rather than flattering:** "flow" here is a **behavioural proxy for
-sustained engagement**, not flow in Csikszentmihalyi's sense, which is measured by self-report and
-has no validated log proxy (§5). Nobody ships an engagement-triggered quiz (§6), so this is a
-design proposal with a logging plan (§11), not established practice.
+sustained engagement**, not flow in Csikszentmihalyi's sense, which is self-reported and has no
+validated log proxy (§5). Nobody ships an engagement-triggered quiz (§6), so this is a design
+proposal with a logging plan (§11), not established practice.
 
 ## 1. Session boundaries: where the 20-minute gap comes from
 
-**The 30-minute convention is real, ubiquitous, and much weaker than its ubiquity suggests.** GA4:
-*"A session ends after a period of inactivity… The default timeout is 30 minutes but can be
-adjusted here"* ([Google, GA4 Help](https://support.google.com/analytics/answer/12131703) —
-VERIFIED). Adobe Analytics defaults to the same 30-minute visit timeout
-([Adobe](https://experienceleague.adobe.com/en/docs/analytics/components/metrics/visits) —
-SECONDARY).
+The 30-minute convention is ubiquitous and much weaker than its ubiquity suggests; the only modern
+re-examination puts the natural boundary lower, and **no learning-specific number exists at all** —
+which the report must say.
 
-**Its provenance is a 1995 arithmetic convenience, not a finding about people.** Catledge & Pitkow
-instrumented NCSA XMosaic at Georgia Tech, measured a **mean inter-event gap of 9.3 min**, added
-**1.5 standard deviations** to get **25.5 min**, and proposed that as the boundary; it was later
-*"gradually smoothed out to 30 minutes"* (Catledge & Pitkow, 1995, *Characterizing Browsing
-Strategies in the World-Wide Web*, **Computer Networks and ISDN Systems** 27(6), 1065–1073,
-[abstract](https://www.sciencedirect.com/science/article/abs/pii/0169755295000437)). **The primary
-text is paywalled and was not read; the 9.3 / 1.5 SD / 25.5 chain is corroborated by two
-independent secondaries but is UNVERIFIED — cite it as "widely reported".** Nothing in it concerns
-learning, attention or memory.
+| Finding | Source | Confidence |
+|---|---|---|
+| *"A session ends after a period of inactivity… The default timeout is 30 minutes but can be adjusted here."* Adobe Analytics defaults to the same 30-min visit timeout. | [Google, GA4 Help](https://support.google.com/analytics/answer/12131703); [Adobe](https://experienceleague.adobe.com/en/docs/analytics/components/metrics/visits) | VERIFIED / SECONDARY |
+| **The provenance is 1995 arithmetic, not a fact about people.** Catledge & Pitkow instrumented NCSA XMosaic at Georgia Tech, measured a **mean inter-event gap of 9.3 min**, added **1.5 SD** to get **25.5 min**, and proposed that as the boundary; later *"smoothed out to 30 minutes"*. Nothing in it concerns learning, attention or memory. | Catledge & Pitkow, 1995, *Characterizing Browsing Strategies in the WWW*, **Computer Networks and ISDN Systems** 27(6), 1065–1073 ([abstract](https://www.sciencedirect.com/science/article/abs/pii/0169755295000437)) | **UNVERIFIED primary** (paywalled; the 9.3/1.5 SD/25.5 chain is corroborated by two secondaries — cite as "widely reported") |
+| **The antimode — the quietest point in the gap distribution, the real boundary between "still here" and "came back" — sits at 15–20 min in every segment**, over a year of live traffic. Re-running the 1995 method on their own data gave *"six different answers"*. | [Ringside, 2025](https://www.ringside.ai/articles/30-minute-sessions/) | SECONDARY (vendor, not peer-reviewed; web traffic, not study behaviour) |
+| **Learning platforms have no convention.** Published EDM session thresholds span **7.5, 15, 25, 30 and 40 min**, chosen per study; MOOC clickstream work takes 30 min or 1 h. PSLC DataShop's own definition could not be retrieved. Duolingo's unit is a *lesson*, not a gap. | Survey of EDM/MOOC methods sections; [Settles & Meeder, 2016, ACL](https://research.duolingo.com/papers/settles.acl16.pdf) | SECONDARY / **UNVERIFIED** (DataShop) |
+| Nearest shipped analogue that measures *work* sessions: WakaTime buckets activity into one session while heartbeats are ≤ **15 min** apart (5–240 configurable). Slack (~10 min) and Discord (~5 min) idle timers are third-party figures only — **do not cite in the report**. | [WakaTime FAQ](https://wakatime.com/faq) | SECONDARY / UNVERIFIED |
 
-**The one piece of modern evidence points below 30, and lands on our number.** A 2025 industry
-analysis re-ran the exercise over a year of live traffic and reports the **antimode — the quietest
-point in the gap distribution, the natural boundary between "still here" and "came back" — at
-15–20 minutes in every segment**; re-running the 1995 method on their own data gave *"six different
-answers"* ([Ringside](https://www.ringside.ai/articles/30-minute-sessions/) — **SECONDARY**,
-vendor-authored, not peer-reviewed, web traffic not study behaviour). Suggestive, not proof, but it
-is the only published dataset that asks the right question.
-
-**Learning platforms and ITS logs have no convention at all.** Published session-splitting
-thresholds in educational data mining range across **7.5, 15, 25, 30 and 40 min**, chosen per study;
-MOOC clickstream work commonly takes 30 min or 1 h. PSLC DataShop's own stated gap could not be
-retrieved — **UNVERIFIED**. Duolingo's scheduling work defines its unit as a *lesson*, not a gap
-(Settles & Meeder, 2016, ACL, [PDF](https://research.duolingo.com/papers/settles.acl16.pdf) —
-VERIFIED for the paper and its 12 % engagement A/B result), so it offers no number here. **There is
-no learning-specific empirical basis for any inactivity gap, and the report must say so.**
-
-**Adjacent tooling that measures work sessions.** WakaTime buckets coding activity into one session
-while consecutive heartbeats are ≤ **15 min** apart (default; 5–240 min configurable)
-([WakaTime FAQ](https://wakatime.com/faq) — SECONDARY). Slack (~10 min) and Discord (~5 min) idle
-timers are **UNVERIFIED** third-party figures — do not cite them in the report.
-
-**Conclusion: `GAP = 20 min`.** Inside the only measured antimode band (15–20), below the
-unexamined convention, above the longest plausible think-pause. Defensible as *"the low end of the
-industry convention, moved to the antimode the one published re-examination reports"*, and an
-explicit A2 calibration target (§11) — exactly how `design-brief.md` §D3 treats the 45 s threshold.
+**Conclusion — `GAP = 20 min`:** inside the only measured antimode band, below the unexamined
+convention, above the longest plausible think-pause. Defensible as *"the low end of the industry
+convention, moved to the antimode the one published re-examination reports"*, and an explicit A2
+calibration target (§11) — exactly how `design-brief.md` §D3 treats the 45 s silence threshold.
 
 ## 2. The attention-span and Pomodoro claims — what survives scrutiny
 
-Lucas's framing reaches for "flow state", and the temptation is to import a study-timing number —
-25/5, or "attention drops after 10–15 minutes" — as the session length. **Do not.**
+The temptation is to set the session *length* from a study-timing number. **Don't.**
 
-- **The "10–15 minute attention span" claim is not supported.** Wilson & Korn reviewed the
-  note-taking, observational, self-report and physiological literature and found the evidence weak,
-  with individual differences dominating (2007, *Attention During Lectures: Beyond Ten Minutes*,
-  **Teaching of Psychology** 34(2),
-  [DOI](https://journals.sagepub.com/doi/10.1080/00986280701291291) — VERIFIED). Bradbury went
-  further: the most-cited origin *barely discusses attention at all*, and teacher variance dwarfs
-  any segment effect (2016, **Advances in Physiology Education** 40(4), 509–513,
-  [DOI](https://journals.physiology.org/doi/abs/10.1152/advan.00109.2016) — VERIFIED).
-- **Pomodoro's 25/5 is popular with thin causal evidence for those numbers.** A 2026 scoping review
-  found 32 studies (N ≈ 5,270), only **3 of them RCTs**
-  ([PubMed 41107936](https://pubmed.ncbi.nlm.nih.gov/41107936/) — SECONDARY). The *general* case for
-  short breaks is better: brief diversions restore vigilance (Ariga & Lleras, 2011, **Cognition**
-  118(3), 439–443, [DOI](https://www.sciencedirect.com/science/article/abs/pii/S0010027710002994) —
-  VERIFIED), and 22-study meta-analysis finds micro-breaks (≤ 10 min) reliably cut fatigue and raise
-  vigour, with weaker performance effects (Albulescu et al., 2022, **PLOS ONE**,
-  [open access](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0272460) —
-  VERIFIED).
+| Claim | What the evidence says | Source | Confidence |
+|---|---|---|---|
+| "Attention drops after 10–15 min of a lecture" | **Not supported.** The note-taking, observational, self-report and physiological evidence is weak; individual differences dominate. | Wilson & Korn, 2007, **Teaching of Psychology** 34(2) ([DOI](https://journals.sagepub.com/doi/10.1080/00986280701291291)) | VERIFIED |
+| same | The most-cited origin *barely discusses attention at all*; teacher variance dwarfs any segment effect. | Bradbury, 2016, **Adv. Physiol. Educ.** 40(4), 509–513 ([DOI](https://journals.physiology.org/doi/abs/10.1152/advan.00109.2016)) | VERIFIED |
+| Pomodoro 25/5 | Popular, thinly evidenced *for those numbers*: 32 studies (N ≈ 5,270), only **3 RCTs**. | 2026 scoping review ([PubMed 41107936](https://pubmed.ncbi.nlm.nih.gov/41107936/)) | SECONDARY |
+| Short breaks generally | Brief diversions restore vigilance; micro-breaks (≤ 10 min) reliably cut fatigue and raise vigour, with weaker performance effects. | Ariga & Lleras, 2011, **Cognition** 118(3), 439–443 ([DOI](https://www.sciencedirect.com/science/article/abs/pii/S0010027710002994)); Albulescu et al., 2022, **PLOS ONE** ([OA](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0272460)) | VERIFIED |
 
-**Two consequences, both worth a sentence in the report.** (1) **Impose no session length** — no
-25-minute cap, no break nudge on a fixed clock. (2) Bound the session by **observed behaviour** (an
-inactivity gap), which is what #33 proposed. The one positive implication: because micro-breaks are
-restorative and cheap, closing after 20 min of genuine absence costs the learner nothing — the
-resume path (§8.1) carries the continuity.
+**Two consequences, both worth a report sentence.** (1) **Impose no session length** — no 25-minute
+cap, no break nudge on a fixed clock. (2) Bound the session by **observed behaviour**, which is
+what #33 proposed. And because micro-breaks are restorative and cheap, closing after 20 min of
+genuine absence costs the learner nothing — the resume path (§8.1) carries the continuity.
 
 ## 3. Retrieval-practice timing: when is a concept ready to be quizzed?
 
-### 3.1 The testing effect, and why an immediate quiz looks *worse*
+| Finding | Numbers | Source | Confidence |
+|---|---|---|---|
+| **The testing effect crosses over.** Prose passages; restudy 7 min vs a 7-min free-recall test **without feedback**; final recall at 5 min / 2 days / 1 week. | **5 min: restudy wins, 81 % vs 75 %** (d = 0.52). **2 days: testing wins, 68 % vs 54 %** (d = 0.95). **1 week: 56 % vs 42 %** (d = 0.83). Interaction F(2,117) = 32.10, ηp² = .35. Exp. 2 week-long forgetting: **SSSS 52 %, SSST 28 %, STTT 14 %**. | Roediger & Karpicke, 2006, **Psychological Science** 17(3), 249–255 ([PDF](https://colinallen.dnsalias.org/Readings/2006_Roediger_Karpicke_PsychSci.pdf)) | **VERIFIED primary** |
+| **Feedback roughly doubles the effect.** 159 effects, 61 studies. | Overall **g = 0.50** [0.42, 0.58]; **with feedback g = 0.73** [0.61, 0.86] vs **0.39 without**; retention interval ≥ 1 day **g = 0.69** vs 0.41 below; **prose g = 0.58** [0.34, 0.82]. | Rowland, 2014, **Psychological Bulletin** 140(6), 1432–1463 ([PubMed](https://pubmed.ncbi.nlm.nih.gov/25150680/)) | **VERIFIED primary** |
+| **Delaying the first retrieval helps — for word pairs.** First test after 0 vs 5 intervening items (~42 s). | Initial accuracy fell 97 % → 72 % and slowed 2,521 → 3,247 ms, but **at 2 days delayed won, 52 % vs 44 %** (d = 0.35; single-test 39 % vs 21 %). | Karpicke & Roediger, 2007, **JEP:LMC** 33(4), 704–719 ([PDF](https://learninglab.psych.purdue.edu/downloads/2007/2007_Karpicke_Roediger_JEPLMC.pdf)) | **VERIFIED primary** |
+| **…and hurts for prose — the closer analogue to ChatterED's task.** Same paper, pp. 717–718. | A free-recall test taken **relatively immediately** after studying a passage promoted long-term retention **more** than a first test delayed by 10 min; prose recall does not draw on primary memory and is *"inherently difficult enough… and need not be delayed."* Optimal delay *"awaits future research."* | *ibid.* | **VERIFIED primary** |
+| **No lag effect across the literature.** Initial-test-lag meta-regression. | Slope 0.00015, CI [−0.00017, 0.00046], **Z = 0.91, n.s.** | Rowland, 2014 (above) | **VERIFIED primary** |
+| **No applied minimum exists.** | Only that tests *"in immediate succession within a session"* show minimal effects; the one quantitative rule (10–20 % of the retention interval) governs the gap *between* sessions. | Dunlosky, Rawson, Marsh, Nathan & Willingham, 2013, **PSPI** 14(1), 4–58 ([PDF](https://acs.ist.psu.edu/ist521/dunloskyRMNW13.pdf)) | **VERIFIED primary** |
+| **Spacing prefers a day, not an hour.** 839 assessments / 317 experiments; and the ridgeline study (> 1,350 participants). | Spaced **47.3 %** vs massed **36.7 %**; *"learning within a single day impaired learning, compared with a 1-day interval."* Optimal gaps **1, 11, 21, 21 days** for retention intervals of **7, 35, 70, 350 days**; at a 7-day interval the optimal gap bought only **10 %**. | Cepeda et al., 2006, **Psych. Bulletin** 132(3), 354–380 ([PDF](https://augmentingcognition.com/assets/Cepeda2006.pdf)); Cepeda et al., 2008, **Psych. Science** 19(11), 1095–1102 ([PDF](https://files.eric.ed.gov/fulltext/ED505660.pdf)) | **VERIFIED primary** |
 
-Roediger & Karpicke had students read TOEFL-style prose passages then either restudy for 7 min or
-take a 7-min free-recall test **without feedback**, with final recall at **5 min, 2 days or 1 week**.
-The result is a genuine crossover: at **5 min restudy won, 81 % vs 75 %** of idea units (d = 0.52);
-at **2 days testing won, 68 % vs 54 %** (d = 0.95); at **1 week, 56 % vs 42 %** (d = 0.83);
-interaction F(2,117) = 32.10, ηp² = .35. Experiment 2 shows the dose–response: proportional
-forgetting over a week was **SSSS 52 %, SSST 28 %, STTT 14 %** (Roediger & Karpicke, 2006,
-*Test-enhanced learning*, **Psychological Science** 17(3), 249–255,
-[PDF](https://colinallen.dnsalias.org/Readings/2006_Roediger_Karpicke_PsychSci.pdf) — **VERIFIED
-primary**).
+**Four things this settles.**
 
-**Three design consequences.** (1) The payoff is *delayed*, so the Tester will feel less useful
-than the Teacher in the moment — say so in the product copy and in the report, rather than
-promising an immediate gain the evidence denies. (2) **The Tester must give feedback.** Rowland's
-meta-analysis (159 effects, 61 studies) puts the overall testing effect at **g = 0.50
-[0.42, 0.58]**, rising to **g = 0.73 [0.61, 0.86] with feedback** versus **0.39 without**, and to
-**g = 0.69** when the retention interval is ≥ 1 day versus 0.41 below (Rowland, 2014,
-**Psychological Bulletin** 140(6), 1432–1463, [PubMed](https://pubmed.ncbi.nlm.nih.gov/25150680/)
-— **VERIFIED primary**). A Tester that asks and moves on throws away a third of the effect.
-(3) **Prose is in scope**: g = 0.58 [0.34, 0.82] for prose materials, so explaining-back a slide is
-the right task shape.
-
-### 3.2 Is there a defensible *minimum* age? — the evidence argues **against** raising it
-
-**State this plainly in the report; it is the brief's most counter-intuitive finding.** The one
-experiment isolating study-to-first-test lag delayed the first test by **5 intervening items — about
-42 s**: initial accuracy fell (97 % → 72 %) and slowed (2,521 → 3,247 ms), yet **at 2 days the
-delayed-first-test conditions won, 52 % vs 44 %** (d = 0.35; single-test conditions 39 % vs 21 %)
-(Karpicke & Roediger, 2007, **JEP:LMC** 33(4), 704–719,
-[PDF](https://learninglab.psych.purdue.edu/downloads/2007/2007_Karpicke_Roediger_JEPLMC.pdf) —
-**VERIFIED primary**). **But the same authors report the opposite for prose** (pp. 717–718): a free
-recall test taken relatively *immediately* after studying a passage promoted long-term retention
-**more** than a first test delayed by 10 min, because prose recall does not draw on primary memory
-and is *"inherently difficult enough… and need not be delayed"*; they close by saying the optimal
-delay *"awaits future research."* **ChatterED's task is explaining a lecture concept — prose-like,
-not paired-associate — so the closer analogue argues against imposing a delay at all.**
-
-Rowland's meta-regression on initial test lag agrees: **no reliable effect** (slope 0.00015,
-CI [−0.00017, 0.00046], Z = 0.91). Dunlosky et al.'s applied review gives no study-to-first-test
-minimum, saying only that tests *"in immediate succession within a session"* show minimal effects;
-its one quantitative rule — 10–20 % of the retention interval — governs the gap *between* practice
-sessions (Dunlosky, Rawson, Marsh, Nathan & Willingham, 2013, **PSPI** 14(1), 4–58,
-[PDF](https://acs.ist.psu.edu/ist521/dunloskyRMNW13.pdf) — **VERIFIED primary**).
-
-**Recommendation: keep `MIN_AGE = 3 min` as #33 proposed, but change its justification.** It is
-**not** a retrieval-practice delay — the evidence for prose points the other way — it is a
-**user-interface guard** against quizzing the sentence the learner is visibly still reading, in the
-same family as `timer.ts`'s keystroke rule. **Do not raise it to 10 min** on Anki's learning steps
-(`1m 10m`, [Anki Manual](https://docs.ankiweb.net/deck-options.html) — VERIFIED primary): Anki
-schedules *repeat exposures of the same card*, a different operation from a first explain-back.
-Because the constant now carries no theoretical load, it is safe to tune from A1 data (§11) and
-cheap to set to zero if the R4 clear-floor conditions turn out to do the whole job.
-
-### 3.3 Spacing: the *reopen* quiz is the valuable one
-
-Cepeda et al.'s meta-analysis (839 assessments, 317 experiments) finds spaced **47.3 %** vs massed
-**36.7 %** correct, and concludes for education that episodes should be separated **by at least one
-day** — *"learning within a single day impaired learning, compared with a 1-day interval"* (2006,
-**Psychological Bulletin** 132(3), 354–380,
-[PDF](https://augmentingcognition.com/assets/Cepeda2006.pdf) — **VERIFIED primary**). The ridgeline
-study puts optimal gaps at **1, 11, 21 and 21 days for retention intervals of 7, 35, 70 and
-350 days**, i.e. roughly 10–30 % of the retention interval, and note that **at a 7-day interval the
-optimal gap bought only 10 %** (Cepeda et al., 2008, **Psychological Science** 19(11), 1095–1102,
-[PDF](https://files.eric.ed.gov/fulltext/ED505660.pdf) — **VERIFIED primary**).
-
-**The consequence is uncomfortable and should be reported as a limitation.** By this evidence the
-*within-session* hand-off is the weaker half of the mechanism and the **cross-session retrieval
-prompt on reopening (§8.1, rule 4) is the stronger half** — but ChatterED's horizon (§4) caps it at
-hours, i.e. below the one-day spacing the literature prefers. ChatterED's within-session quiz is
-defensible as *the first retrieval attempt* (§3.1–3.2), not as spaced practice; spaced practice is
-what the ledger's recap and any future review feature would serve.
+1. **The payoff is delayed.** The Tester will feel less useful than the Teacher in the moment —
+   at 5 min restudy actually wins. Say so in the copy and in the report rather than promising an
+   immediate gain the evidence denies.
+2. **Feedback after every answer is mandatory, not optional** (g = 0.73 vs 0.39). This is the
+   best-evidenced constraint in the brief and #33 does not mention it. The ledger already produces
+   the material; the Tester must voice it.
+3. **`MIN_AGE` cannot be justified by retrieval evidence and must not be raised.** For prose the
+   only direct result runs the other way. Keep #33's **3 min**, but re-label it: a **UI guard**
+   against quizzing the sentence still being read, in the same family as `timer.ts`'s keystroke
+   rule. Do **not** raise it to 10 min on Anki's learning steps — Anki schedules repeat exposures
+   of the same card, a different operation from a first explain-back. Carrying no theoretical load,
+   it is safe to tune from A1 data (§11) and cheap to set to zero if R4 does the whole job.
+4. **The reopen quiz is the stronger half of the mechanism** — and ChatterED's horizon caps it at
+   hours, below the one-day spacing the literature prefers. **Report this as a limitation:** the
+   within-session hand-off is defensible as *the first retrieval attempt*, not as spaced practice.
 
 ## 4. Decay: the half-life and the horizon
 
-**The 2 h half-life does not survive contact with the evidence and should be dropped as a memory
-claim.** Murre & Dros's Ebbinghaus replication — 70 lists of 104 CVC **nonsense syllables** —
-reports savings of **0.472 at 20 min, 0.373 at 1 h, 0.276 at 9 h, 0.317 at 1 day, 0.230 at 2 days,
-0.041 at 31 days** (power fit R² = 98.7 %; note the curve is **non-monotonic** — 1-day savings
-exceed 9-hour savings in three of four datasets, plausibly a sleep effect) (2015, **PLOS ONE**
-10(7), e0120644,
-[open access](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0120644) —
-**VERIFIED primary**). Even for *nonsense syllables* the decay is slower than a 2 h half-life. For
-**meaningful prose** the anchor is R&K 2006's own restudy arm — **81 % at 5 min, 54 % at 2 days,
-42 % at 1 week** — a half-life on the order of **days**, and longer once retrieval practice is
-added (STTT lost 14 % in a week). Course knowledge decays slower still (~70 % at one year is the
-modal figure; Custers, 2010, **Adv Health Sci Educ** 15, 109–128 — SECONDARY). **The popular "70 %
-lost in 24 hours" figure traces only to vendor blogs and nonsense-syllable data — do not cite it.**
+**The 2 h half-life does not survive and should be dropped as a memory claim.**
 
-**So what is the 6 h horizon actually about?** Re-read Lucas's framing: *"a user is not expected to
-remember a **convo** more than 6 hours old."* That is a claim about **episodic memory of the
-exchange** — who said what, where on the page, what was being argued — not about retention of the
-concept. It is the right constraint for this product and it has nothing to do with forgetting
-curves. **Recommendation: keep 6 h, and re-justify it in the report as a conversational-context
-bound, not a decay constant** — the brief's strongest single correction to #33. State the trade
-openly: memory would permit quizzing *days* later; ChatterED chooses not to, because a question
-about a conversation the learner cannot reconstruct is a worse experience than no question.
+| Finding | Numbers | Source | Confidence |
+|---|---|---|---|
+| Ebbinghaus replication, 70 lists × 104 CVC **nonsense syllables**, savings method. Power fit R² = 98.7 %. The curve is **non-monotonic** — 1-day savings exceed 9-hour savings in three of four datasets, plausibly a sleep effect. | Savings **0.472 @ 20 min, 0.373 @ 1 h, 0.276 @ 9 h, 0.317 @ 1 day, 0.230 @ 2 days, 0.041 @ 31 days**. | Murre & Dros, 2015, **PLOS ONE** 10(7), e0120644 ([OA](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0120644)) | **VERIFIED primary** |
+| **Meaningful prose decays far more slowly**; the anchor is R&K 2006's own restudy arm. | **81 % @ 5 min → 54 % @ 2 days → 42 % @ 1 week** — a half-life of **days**, and longer once retrieval practice is added (STTT lost 14 % in a week). | Roediger & Karpicke, 2006 (§3) | **VERIFIED primary** |
+| Course knowledge slower still. | ~70 % retained at one year is the modal figure across studies. | Custers, 2010, **Adv Health Sci Educ** 15, 109–128 | SECONDARY |
+| Shipped exponential decay with a fitted half-life. | `p̂ = 2^(−Δ/ĥ)`; half-life **clamped to [15 min, 9 months]**; 12.9 M traces; MAE 0.128 vs Leitner 0.235; **+12 % daily engagement**. The 15-min floor is a model clamp, **not** a scheduler rule and **not** evidence for a minimum quiz age. | Settles & Meeder, 2016, **ACL** ([paper](https://aclanthology.org/P16-1174/)) | **VERIFIED primary** |
 
-**The half-life survives in a demoted role.** Keep an exponential freshness score — used **only to
-rank** candidate elements (§8.2), never to exclude one — with `RECENCY_HALF_LIFE = 60 min`.
-Labelled as a ranking weight it needs no memory evidence; labelled a retention estimate it would
-need evidence that does not exist. Shipped precedent for exponential-in-time recall with a fitted
-half-life: Duolingo's half-life regression, `p̂ = 2^(−Δ/ĥ)`, **half-life clamped to [15 min,
-9 months]**, trained on 12.9 M traces, MAE 0.128 vs Leitner 0.235, +12 % daily engagement (Settles
-& Meeder, 2016, **ACL**, [paper](https://aclanthology.org/P16-1174/) — **VERIFIED primary**). Its
-half-life floor of 15 min is a model clamp, not a scheduler rule, and is **not** evidence for a
-minimum quiz age (§3.2).
+**Even nonsense syllables decay slower than a 2 h half-life.** The popular "70 % lost in 24 hours"
+figure traces only to vendor blogs and nonsense-syllable data — **do not cite it**.
+
+**So what is the 6 h horizon actually about?** Re-read the framing: *"a user is not expected to
+remember a **convo** more than 6 hours old."* That is **episodic memory of the exchange** — who
+said what, where on the page, what was being argued — not retention of the concept. It is the right
+constraint for this product and it has nothing to do with forgetting curves. **Keep 6 h and
+re-justify it as a conversational-context bound.** State the trade openly: memory would permit
+quizzing days later, and ChatterED deliberately under-quizzes, because a question about a
+conversation the learner cannot reconstruct is worse than no question.
+
+**The half-life survives demoted.** Keep an exponential freshness score used **only to rank**
+candidate elements (§8.2), never to exclude one, at `RECENCY_HALF_LIFE = 60 min`. As a ranking
+weight it needs no memory evidence; as a retention estimate it would need evidence that does not
+exist.
 
 ## 5. Flow state and its proxies in interaction logs
 
-**Say plainly in the report: ChatterED does not measure flow.** Csikszentmihalyi's conditions —
-clear goals, immediate feedback, challenge–skill balance, merged action and awareness, lost
-self-consciousness, distorted time, control, autotelic quality — are phenomenological and
-canonically measured by **self-report**, via ESM or the Flow State Scale (Csikszentmihalyi, 1990,
-*Flow*, Harper & Row; Nakamura & Csikszentmihalyi, 2002, *The Concept of Flow*, in **Handbook of
-Positive Psychology**, OUP, 89–105 —
-[PDF](https://nuovoeutile.it/wp-content/uploads/2015/12/2002-Flow.pdf); the list is
-textbook-standard but was not read from the primary chapter — SECONDARY). **There is no validated
-behavioural-log proxy for flow.** A "k turns in m minutes" rule is an **engagement heuristic from a
-different tradition**. Calling it flow detection in an A1 report is an unearned claim; calling it
-*"a behavioural proxy for sustained engagement, named 'flow' after the developer's framing and
-explicitly not validated as such"* is honest and costs nothing.
+**Say plainly in the report: ChatterED does not measure flow.**
 
-**What the log tradition does support.** Baker's line of work builds *sensor-free* detectors of
-boredom, confusion, frustration and **"engaged concentration"** from log features alone (response
-times, error rates, hint use) in Cognitive Tutor Algebra, plus a gaming-the-system detector whose
-intervention roughly halves subsequent gaming
-([overview](https://www.globallearningcouncil.org/posts/gaming-the-system-affect-detectors-and-student-persistence-and-learning-in-computer-based-learning-environments/);
-[detector PDF](https://learninganalytics.upenn.edu/ryanbaker/AIED-D-13-00017_Revised%20v2.pdf) —
-SECONDARY, not read in full). **The precedent is the move, not a number:** an engagement state
-inferred from timing features and used to trigger an intervention. That licenses §8.2.
+| Finding | Source | Confidence |
+|---|---|---|
+| Flow's conditions — clear goals, immediate feedback, challenge–skill balance, merged action and awareness, lost self-consciousness, distorted time, control, autotelic quality — are phenomenological and canonically measured by **self-report** (ESM, Flow State Scale). **There is no validated behavioural-log proxy for flow.** | Csikszentmihalyi, 1990, *Flow*, Harper & Row; Nakamura & Csikszentmihalyi, 2002, in **Handbook of Positive Psychology**, OUP, 89–105 ([PDF](https://nuovoeutile.it/wp-content/uploads/2015/12/2002-Flow.pdf)) | SECONDARY (list is textbook-standard; primary chapter not read) |
+| **Sensor-free** detectors of boredom, confusion, frustration and **"engaged concentration"** built from log features alone (response times, error rates, hint use) in Cognitive Tutor Algebra; a gaming-the-system detector's intervention roughly halves subsequent gaming. | Baker et al. ([overview](https://www.globallearningcouncil.org/posts/gaming-the-system-affect-detectors-and-student-persistence-and-learning-in-computer-based-learning-environments/); [detector PDF](https://learninganalytics.upenn.edu/ryanbaker/AIED-D-13-00017_Revised%20v2.pdf)) | SECONDARY |
+| **Impasse is not disengagement:** engagement → **confusion** on impasse → back to flow if resolved, or → frustration → boredom if not. | D'Mello & Graesser, 2012, **Learning and Instruction** 22(2), 145–157 ([DOI](https://www.sciencedirect.com/science/article/abs/pii/S0959475211000806)) | SECONDARY (abstract only) |
+| The clearest shipped threshold in this space: **wheel-spinning**, practising one skill > ~10 times without mastering it. | Beck & Gong, 2013, **AIED 2013**, LNCS 7926 ([DOI](https://link.springer.com/chapter/10.1007/978-3-642-39112-5_44)) | SECONDARY — check the ">10" against the primary before quoting it |
+| **Pause length**: inter-action interval is a standard detector *feature*, but **no published threshold was found**. | — | **UNVERIFIED** |
 
-**Impasse is not disengagement.** D'Mello & Graesser model engagement → **confusion** on impasse →
-back to flow if resolved, or → frustration → boredom if not (2012, **Learning and Instruction**
-22(2), 145–157, [DOI](https://www.sciencedirect.com/science/article/abs/pii/S0959475211000806) —
-SECONDARY, abstract only). So **a long pause is ambiguous**. The silence timer already encodes this
-by treating *keystrokes*, not messages, as activity (`design-brief.md` §D3: *"it distinguishes
-thinking from disengaging, which is the whole point of the timer"*). The flow rule must inherit
-that, or it will quiz a learner mid-sentence.
+**What this licenses, and what it does not.** A "k turns in m minutes" rule is an **engagement
+heuristic from a different tradition**. Calling it flow detection in an A1 report is an unearned
+claim; calling it *"a behavioural proxy for sustained engagement, named 'flow' after the developer's
+framing and explicitly not validated as such"* is honest and costs nothing. What Baker's line **does**
+license is the *move* — an engagement state inferred from timing features and used to trigger an
+intervention. That is §8.2's warrant.
 
-**Thresholds anyone shipped.** The clearest is **wheel-spinning** — practising one skill more than
-~10 times without mastering it (Beck & Gong, 2013, **AIED 2013**, LNCS 7926,
-[DOI](https://link.springer.com/chapter/10.1007/978-3-642-39112-5_44); the ">10" figure is
-**SECONDARY**, check the primary before quoting). For **pause length** specifically, inter-action
-interval is a standard *feature* but **no published threshold was found — UNVERIFIED**. ChatterED's
-gap must therefore be argued from §1 and calibrated from §11, not borrowed.
+**And a hard constraint: a long pause is ambiguous.** The silence timer already encodes this by
+treating *keystrokes*, not messages, as activity (`design-brief.md` §D3: *"it distinguishes thinking
+from disengaging, which is the whole point of the timer"*). The flow rule must inherit it, or it
+will quiz a learner mid-sentence — and quizzing into an impasse is D'Mello's path to frustration.
 
 **So k and m are a designer's choice, and the brief says so.** No source gives a k-in-m rule for
-learning; WakaTime's 15-minute window is the nearest shipped analogue and is a gap, not a count.
-The defence is structural: the window must be (a) short enough that the question still concerns
-what the learner was just doing, (b) long enough to survive one long thinking pause, (c) strictly
-inside the 20 min gap, or the flow window could outlive its session. **m = 10** is half the gap;
-**k = 3** is the smallest count that distinguishes a conversation from a single question.
+learning; WakaTime's 15-minute window is the nearest analogue and is a gap, not a count. The
+defence is structural: the window must be short enough that the question still concerns what the
+learner was just doing, long enough to survive one long thinking pause, and strictly inside the
+20 min gap or it could outlive its session. **m = GAP/2 = 10**; **k = 3** is the smallest count that
+distinguishes a conversation from a single question.
 
 ## 6. Hand-off prior art — who else decides when to quiz
 
@@ -298,30 +191,28 @@ Houde et al. split control over a group agent into *what* is controlled (**when*
 Fig. 7). Three findings bear on the Tester.
 
 **"When to contribute" is explicitly a controllable trigger, and activity/inactivity is the named
-trigger type.** *"The events that trigger a contribution from the AI agent should be controllable…
+trigger type:** *"The events that trigger a contribution from the AI agent should be controllable…
 The agent can also be triggered by the activity or inactivity of the group, such as rapid
 contributions or a long pause"* (§7.2.1). That is the flow rule and the silence timer, and Koala
 says the learner should be able to move both.
 
-**Koala II's shipped control was a three-level threshold on a self-rated value score, not a
-"quiet / normal / eager" slider — correct this in #33.** Koala scored each candidate reply 0–100
-for how valuable a contribution it would be and posted only above a threshold; the exposed settings
-were **high = 90, medium = 75, low = 50** (§5, Fig. 5b), plus a proactive/reactive toggle where
-reactive *"only replied to users when directly addressed"* (Fig. 5a). So ChatterED's three levels
-should be **reactive** (Tester speaks only when invoked) / **normal** / **eager**, implemented as
-the R1–R3 thresholds, not as three prompts. Koala II was then perceived as *"quieter and less
-invasive"* and better paced (§6.2.1).
+**Correct #33 on what Koala actually shipped.** Not a "quiet / normal / eager" slider: Koala scored
+each candidate reply **0–100** for its value as a contribution and posted only above a threshold,
+exposed as **high = 90, medium = 75, low = 50** (§5, Fig. 5b), plus a proactive/reactive toggle
+where reactive *"only replied to users when directly addressed"* (Fig. 5a). ChatterED's three
+levels should therefore be **reactive** (Tester speaks only when invoked) / **normal** / **eager**,
+implemented as the R1–R3 thresholds, not as three prompts. Koala II was then perceived as *"quieter
+and less invasive"* and better paced (§6.2.1).
 
-**Rate should track the group's rate.** Koala's own prompt says it *"attempts to contribute at
-approximately the frequency of other users"*, and P2.1 asked it to *"automatically adjust the rate
-of its messages to match those of the group"* (§7.2.1). k-in-m **is** a rate-matching rule: a
-learner writing a lot is quizzed sooner; a learner reading is left alone.
+**Rate should track the learner's rate.** Koala's own prompt has it *"contribute at approximately
+the frequency of other users"*, and P2.1 asked it to *"automatically adjust the rate of its
+messages to match those of the group"* (§7.2.1). k-in-m **is** a rate-matching rule.
 
-**Therefore show the taught set — answering #33's open question (c) yes.** Koala's control
-complaints were about *unpredictability*; P6.2 wanted the agent to *"ask for permission"* rather
-than jump in (§7.2.1). A Tester firing on an invisible rule is unpredictable by construction. A
-visible "what Max can ask you about" list, with a freshness cue, turns the rule into an affordance
-and makes declining meaningful. Cost: one collapsible strip in the top bar.
+**Therefore show the taught set — #33's question (c) is yes.** Koala's complaints were about
+*unpredictability*; P6.2 wanted the agent to *"ask for permission"* rather than jump in (§7.2.1). A
+Tester firing on an invisible rule is unpredictable by construction; a visible "what Max can ask
+you about" list with a freshness cue turns the rule into an affordance and makes declining
+meaningful. Cost: one collapsible strip in the top bar.
 
 *Source: `Academia/Sources/_text/koala-2501.17258.txt` (Houde et al., arXiv:2501.17258), §5,
 §6.2.1, §7.2.1, Figs. 5 and 7.*
@@ -334,26 +225,25 @@ and makes declining meaningful. Cost: one collapsible strip in the top bar.
 > first meaningful action and closed by absence, not by duration.**
 
 **Opens** on the first *learner-authored* action in a document — a turn, a split, an Ask, a whisper.
-**Opening the document is not enough**: a session that opens on `document.open` fills the §11 gap
+**Opening the document is not enough**: a session opening on `document.open` fills the §11 gap
 distribution with one-action sessions.
 
 **Closes** on the first of: (1) **`GAP = 20 min` with no learner activity**, where activity means
 keystrokes in any composer as well as turns, splits and page changes — the `timer.ts` definition
-inherited verbatim (§5), so typing pauses the clock; (2) **explicit "End session"**, always
-available, the learner-controlled edge of an otherwise automatic mechanism (§7); (3) **sleep, quit
-or crash past the gap** — reuse `timer.ts`'s pattern exactly, an absolute deadline persisted before
-anything is armed and compared against wall-clock on a 1 s tick (*"the row is the timer"*), because
-a session must not depend on a `setTimeout` that never fired; (4) **switching documents**, if
-sessions stay document-scoped (§12 q. 4), with `close_reason = 'document_switch'`.
+inherited verbatim, so typing pauses the clock; (2) **explicit "End session"**, always available —
+the learner-controlled edge of an otherwise automatic mechanism (§7); (3) **sleep, quit or crash
+past the gap**, using `timer.ts`'s pattern exactly: an absolute deadline persisted *before* anything
+is armed and compared against wall-clock on a 1 s tick (*"the row is the timer"*), because a session
+must not depend on a `setTimeout` that never fired; (4) **switching documents**, if sessions stay
+document-scoped (§12 q. 4).
 
-**Stored** as a `flow_sessions` row: `id`, `document_id`, `scope` ('document' for A1), `opened_at`,
-`closed_at`, `close_reason`, `config_hash`, and the ordered anchors touched.
+**Stored** as a `flow_sessions` row: `id`, `document_id`, `scope`, `opened_at`, `closed_at`,
+`close_reason`, `config_hash`, and the ordered anchors touched.
 
 **Resume vs. reopen.** Returning **inside** the gap re-enters the open session — no greeting, no
 recap. Returning **after** it opens a new one, and the Teacher offers a retrieval prompt on the
-previous session's still-fresh items *only* if any survive the horizon (§8.3); otherwise one line on
-what was covered, then move on. The asymmetry is the point: a 90-second coffee break must cost
-nothing.
+previous session's still-fresh items *only* if any survive the horizon; otherwise one line on what
+was covered. A 90-second coffee break must cost nothing.
 
 **Closing does exactly three things** — clears stored whisper turns (§10), expires any unanswered
 Tester question (§12 q. 6), stops the flow window. **It never touches the ledger**, which is
@@ -373,15 +263,14 @@ before the Teacher hands off.
 | **R4 — clear floor** | no unanswered Teacher question pending, no silence-timer window open, no whisper popover open, composer idle ≥ 3 s | — | §5's ambiguity finding. Quizzing into an impasse is the D'Mello path from confusion to frustration; quizzing mid-keystroke is the failure `design-brief.md` §D3 built the keystroke rule to prevent. |
 
 **Which element the Tester picks.** Among elements passing R3 and inside the horizon, prefer
-**highest freshness × lowest ledger level** — the thing most recently taught that the learner has
-least demonstrated. This reuses the existing level → probe-type policy (`progress-tracking.md` §5)
-rather than adding a second one.
+**highest freshness × lowest ledger level** — most recently taught, least demonstrated. Reuses the
+existing level → probe-type policy (`progress-tracking.md` §5) rather than adding a second one.
 
-**The hand-off is an offer, not an event.** *"You've covered X and Y — Max, want to take it?"* A
-decline sets a **cool-down of one full `m` window** before R1 can hold again, and is logged (§11).
-Three declines in a session drop the Tester to *reactive* for the rest of it, said once. This is the
-Koala control expressed as behaviour rather than as a settings panel (§7.2.1: *"ask for
-permission"*).
+**The hand-off is an offer.** *"You've covered X and Y — Max, want to take it?"* A decline sets a
+**cool-down of one full `m` window** and is logged (§11); three declines in a session drop the
+Tester to *reactive* for the rest of it, said once. That is the Koala control expressed as
+behaviour rather than as a settings panel (§7.2.1: *"ask for permission"*). **Every answer gets
+feedback** (§3, constraint 2).
 
 ### 8.3 The constants, with a citation each
 
@@ -467,24 +356,23 @@ numbers and A2 re-running the study.
 
 The issue asked four. This brief answers three and adds three.
 
-1. **(#33a) Is 20 min right for a study sitting?** *Yes as a default, for a reason the issue did not
-   have* (§1: the 15–20 min antimode). Nothing irreversible happens at a close except whisper
-   clearing, so ship 20 and tune from `flow.idle.tick`. **Decide: is the gap a visible setting?**
-2. **(#33b) May the Tester ever fire without the Teacher's hand-off — purely on time?** *Brief says
-   no for A1* (§5: a blind clock will interrupt an impasse, the D'Mello path to frustration; and it
-   is Koala's unpredictability complaint). **But this is your call** — the counter is that a stingy
-   Teacher means the Tester never fires, and spacing evidence mildly favours a clock.
-3. **(#33c) Does the learner see the taught set and freshness?** *Yes* (§7). **Decide how prominent:
-   a collapsed chip in the top bar, or a visible rail like the ledger?**
-4. **(#33d) Sessions per document or per topic folder?** *Per document for A1* — the payload is
-   "segments touched" and segments are document-scoped — with a `scope` field so folder scope is a
-   one-line change. **Confirm.**
+1. **(#33a) Is 20 min right?** *Yes as a default, for a reason the issue did not have* (§1: the
+   15–20 min antimode). Nothing irreversible happens at a close except whisper clearing, so ship 20
+   and tune from `flow.idle.tick`. **Decide: is the gap a visible setting?**
+2. **(#33b) May the Tester fire without the Teacher's hand-off, purely on time?** *No for A1* (§5:
+   a blind clock interrupts impasses; it is also Koala's unpredictability complaint). **But this is
+   your call** — the counter is that a stingy Teacher means the Tester never fires.
+3. **(#33c) Does the learner see the taught set and freshness?** *Yes* (§7). **Decide how
+   prominent: a collapsed chip in the top bar, or a rail like the ledger?**
+4. **(#33d) Per document or per topic folder?** *Per document for A1* — the payload is "segments
+   touched" and segments are document-scoped — with a `scope` field so folder scope is a one-line
+   change. **Confirm.**
 5. **New: may the Tester quiz across documents in one session?** Cross-document retrieval is better
    practice (interleaving) but a worse fit for an in-document surface, which has nowhere to put a
    question about a page the learner is not looking at.
-6. **New: what happens to an unanswered Tester question at close?** Brief recommends **expires,
-   logged**. A quiz that greets you next session is a debt, and `design-brief.md` §E's
-   psychological-safety goal argues against debts.
-7. **New: does re-teaching reset `taught_at` or append a second one?** Brief recommends **append,
-   and use the most recent for the window** — one extra row, and it lets A2 fit a real spacing
-   curve instead of a recency window.
+6. **New: what happens to an unanswered Tester question at close?** Recommend **expires, logged**.
+   A quiz that greets you next session is a debt, and `design-brief.md` §E's psychological-safety
+   goal argues against debts.
+7. **New: does re-teaching reset `taught_at` or append?** Recommend **append, use the most recent
+   for the window** — one extra row, and it lets A2 fit a real spacing curve rather than a recency
+   window.
