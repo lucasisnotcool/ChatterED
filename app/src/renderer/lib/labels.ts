@@ -11,13 +11,23 @@ import type {
   VaultFileKind,
 } from '../../shared/types.js';
 
-/** The role word printed in every agent label — the standing reminder of the contract (§C1). */
+/**
+ * The role word printed in every agent label — the standing reminder of the contract (§C1), and
+ * "the cheapest defence against the two agents blurring into 'the AI'" (`pivot-spec.md` §C4).
+ *
+ * **teacher / tester, not peer / challenger** (#32). The stored strings and the prompt scaffolding
+ * still say `'peer'` and `'challenger'` — renaming the column would need a migration and would
+ * touch every historical room for no learner-visible gain, the same reasoning already used for
+ * `rooms.module_code` — so this is the renderer's half of the one mapping, and
+ * `ROLE_LABEL` in `src/room/agents.ts` is the main process's. They must agree; the flow's AI
+ * cards were the surface that showed they did not.
+ */
 export function roleWord(role: AgentRole): string {
   switch (role) {
     case 'peer':
-      return 'peer';
+      return 'teacher';
     case 'challenger':
-      return 'challenger';
+      return 'tester';
     case 'tutee':
       return 'first year';
     default:

@@ -114,12 +114,21 @@ export class AppService {
     return modeFor(this.backend().kind);
   }
 
-  llm(resolved: ResolvedBackend = this.backend()): LLMClient {
+  /**
+   * `material` pins the scripted client to the right script instead of leaving it to sniff the
+   * deck out of a request (`llm/backend.ts`). Every caller that knows which document it is
+   * opening should pass it; `openRoom` does.
+   */
+  llm(
+    resolved: ResolvedBackend = this.backend(),
+    material?: { fileName?: string | null; contentSha?: string | null },
+  ): LLMClient {
     return createClient({
       settings: this.#d.store.settings,
       hasApiKey: this.#apiKey.has(),
       resolved,
       apiKey: () => this.#apiKey.get(),
+      ...(material ? { material } : {}),
     });
   }
 
@@ -240,7 +249,7 @@ export class AppService {
       groupStore: groupView(this.#d.store),
       clock: systemClock,
       transport: { emit: (event) => this.emit(event) },
-      llm: this.llm(resolved),
+      llm: this.llm(resolved, { fileName: material.file_path, contentSha: material.file_sha256 }),
       roomId,
       sessionId: session.id,
       roster: rosterFor(this.pairing(), resolved.models.agent),

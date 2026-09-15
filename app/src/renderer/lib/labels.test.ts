@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentProfile } from '../../shared/types.js';
-import { agentNames } from './labels.js';
+import { ROLE_LABEL } from '../../room/agents.js';
+import { agentNames, roleWord } from './labels.js';
 
 const agent = (role: AgentProfile['role'], displayName: string): AgentProfile => ({
   key: `${role}.${displayName.toLowerCase()}`,
@@ -41,5 +42,25 @@ describe('agentNames', () => {
 
   it('handles one agent without an orphan conjunction', () => {
     expect(agentNames([agent('peer', 'Ellie')])).toBe('Ellie');
+  });
+});
+
+/**
+ * The role word is the standing reminder of each agent's contract (§C1). It changed with #32 —
+ * Ellie is a Teacher now and Max a Tester — and the renderer had kept saying peer/challenger
+ * while `ROLE_LABEL` in `src/room/agents.ts` said teacher/tester. Two labels for one contract is
+ * one label too many, so they are asserted against each other here.
+ */
+describe('the role word', () => {
+  it('says teacher and tester, matching ROLE_LABEL', () => {
+    expect(roleWord('peer')).toBe(ROLE_LABEL.peer);
+    expect(roleWord('challenger')).toBe(ROLE_LABEL.challenger);
+    expect(roleWord('peer')).toBe('teacher');
+    expect(roleWord('challenger')).toBe('tester');
+  });
+
+  it('leaves the stored role strings alone — this is a display mapping only', () => {
+    // A test that would fail if someone "fixed" the column instead of the label.
+    expect(agent('peer', 'Ellie').role).toBe('peer');
   });
 });

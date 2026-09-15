@@ -105,6 +105,19 @@ export interface CreateClientInput extends ResolveInput {
   /** Read lazily so the plaintext key is fetched only when the API path is actually chosen. */
   apiKey: () => string | null;
   cliTimeoutMs?: number;
+  /**
+   * What the session was started from, when the caller knows — `materials.file_path` and the
+   * material's sha, which for a flow room is the file's own `content_sha`.
+   *
+   * `scripts.ts` says the client has to sniff because "the IPC layer that knows the material is
+   * owned by another piece of work this week". It is not any more: `AppService.openRoom()` has
+   * the material row in its hand, so it passes it and the script is **pinned** rather than
+   * recognised. Sniffing still runs for every caller that does not pass one, and it is still the
+   * only thing standing between a REFERENCE call over one segment and the wrong voice — a
+   * single crop of a slide may carry no marker at all, which is exactly what happened on the
+   * first live run of this path.
+   */
+  material?: { fileName?: string | null; contentSha?: string | null };
 }
 
 export function createClient(input: CreateClientInput): LLMClient {
@@ -112,14 +125,14 @@ export function createClient(input: CreateClientInput): LLMClient {
     case 'claude_cli': {
       const binary = input.resolved.detection?.path;
       if (binary) return new ClaudeCliClient({ binary, timeoutMs: input.cliTimeoutMs });
-      return new ScriptedClient();
+      return new ScriptedClient({ material: input.material });
     }
     case 'anthropic': {
       const key = input.apiKey();
-      return key ? new AnthropicClient({ apiKey: key }) : new ScriptedClient();
+      return key ? new AnthropicClient({ apiKey: key }) : new ScriptedClient({ material: input.material });
     }
     default:
-      return new ScriptedClient();
+      return new ScriptedClient({ material: input.material });
   }
 }
 
