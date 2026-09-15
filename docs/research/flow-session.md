@@ -249,7 +249,66 @@ Participation in Group Conversations: A Human-Centered Approach", arXiv:2501.172
 ## 8. The recommended definition
 
 ### 8.1 A flow session — open and close rules
+
+> **A flow session is a contiguous span of engaged work in one document, opened by the learner's
+> first meaningful action and closed by absence, not by duration.**
+
+**Opens** on the first *learner-authored* action in a document: a turn in any thread, a split, an
+Ask, or a whisper. **Opening the document is not enough** — a reader who scrolls and leaves has not
+started a session, and a session that opens on `document.open` will be full of one-action sessions
+that corrupt the §11 gap distribution.
+
+**Closes** on the first of:
+1. **`GAP = 20 min` with no learner activity**, where *activity* means keystrokes in any composer
+   as well as turns, splits and scroll-driven page changes — the `timer.ts` definition, inherited
+   verbatim (§5, `design-brief.md` §D3). Typing pauses the clock.
+2. **Explicit "End session"** by the learner. Always available; it is the learner-controlled edge
+   of an otherwise automatic mechanism, which is the §7 argument.
+3. **Sleep, quit or crash past the gap.** Reuse `timer.ts`'s pattern exactly: the close condition
+   is an **absolute deadline persisted before anything is armed**, compared against wall-clock on a
+   1 s tick, so it survives sleep and relaunch (`timer.ts` header, *"the row is the timer"*). A
+   session cannot be closed by a `setTimeout` that never fired.
+4. **Switching to a different document**, if sessions stay document-scoped (§12 q. 4). The old
+   session closes with `reason = 'document_switch'`; the learner returning within the gap
+   **resumes** it rather than opening a new one.
+
+**Stored** as a `flow_sessions` row: `id`, `document_id`, `scope` ('document' for A1),
+`opened_at`, `closed_at`, `close_reason`, `config_hash`, and the ordered list of anchors touched.
+
+**Resume vs. reopen.** Returning to a document **inside** the gap re-enters the open session — no
+greeting, no recap, nothing changes. Returning **after** it opens a new session, and the Teacher
+offers a short retrieval prompt on the previous session's still-fresh items *only* if any survive
+the horizon (§8.3); otherwise it states what was covered in one line and moves on. The asymmetry is
+the point: a 90-second coffee break must cost the learner nothing.
+
+**What closing actually does.** Exactly three things — clears stored whisper turns (§10), expires
+any unanswered Tester question (§12 q. 6), and stops the flow window. **It does not touch the
+ledger.** The ledger is cumulative and monotonic (`progress-tracking.md` §4.4); decay governs what
+may be *asked*, never what has been *achieved*.
+
 ### 8.2 "Ready to be quizzed"
+
+The predicate is a conjunction of four conditions, all evaluated on each learner turn. The Teacher
+hands off only when all four hold **and** the Tester's rate setting permits (§7).
+
+| # | Condition | Default | Rationale |
+|---|---|---|---|
+| **R1 — engagement** | ≥ `k` learner turns in the last `m` minutes | **k = 3, m = 10 min** | §5. A behavioural proxy for sustained engagement, not validated flow. m is half the gap so the window cannot outlive its session; k = 3 is the smallest count that distinguishes a conversation from a single question. **Designer's choice — say so.** |
+| **R2 — coverage** | ≥ 2 elements in the taught set with freshness above the floor | **2** | A one-element quiz is a comprehension check (§9); two is the minimum at which the Tester can ask the learner to *relate* things, which is what the ledger's levels 2–4 score (`progress-tracking.md` §3.1). |
+| **R3 — maturity** | the youngest quizzable element is older than `MIN_AGE` | **10 min** (was 3 min) | §3.2 and §6. Raised from #33's proposal on Anki's shipped `1m 10m` learning steps and on the desirable-difficulties argument that an immediate test can be passed out of working memory. |
+| **R4 — clear floor** | no unanswered Teacher question pending, no silence-timer window open, no whisper popover open, composer idle ≥ 3 s | — | §5's ambiguity finding. Quizzing into an impasse is the D'Mello path from confusion to frustration; quizzing mid-keystroke is the failure `design-brief.md` §D3 built the keystroke rule to prevent. |
+
+**Which element the Tester picks.** Among elements passing R3 and inside the horizon, prefer the
+one with the **highest freshness × lowest ledger level** — the thing most recently taught that the
+learner has least demonstrated. This reuses the Challenger's existing target-selection idea
+(`progress-tracking.md` §5, level → probe type) instead of adding a second policy.
+
+**The hand-off is an offer, not an event.** *"You've covered X and Y — Max, want to take it?"* The
+learner may decline ("later"), which sets a **cool-down** of one full `m` window before R1 can hold
+again, and is logged (§11). Three declines in one session drop the Tester to *reactive* for the
+rest of it and say so once. This is the Koala control expressed as behaviour rather than as a
+settings panel (§7.2.1: *"ask for permission"*).
+
 ### 8.3 The constants, with a citation each
 
 ## 9. Alternatives rejected
