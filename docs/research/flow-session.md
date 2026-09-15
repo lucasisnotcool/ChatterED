@@ -254,6 +254,21 @@ Participation in Group Conversations: A Human-Centered Approach", arXiv:2501.172
 
 ## 9. Alternatives rejected
 
+| Alternative | Why it was rejected |
+|---|---|
+| **The unit is the segment / anchor** (one crop + its thread) | #33's own objection stands: a quiz on one snippet is a comprehension check, not retrieval practice, and the Tester would fire on every crop. It also fails the spacing evidence (§3.3) — the gap between study and test collapses to seconds. Kept for the *silence-timer cap* only (§10), where locality is the point. |
+| **The unit is the document / file** | A 60-slide deck is several sittings. A quiz over the whole file ignores decay entirely, and the ledger already covers the file-level view. |
+| **The unit is a fixed duration (25 min, Pomodoro; 45 min, a lecture slot)** | §2: the evidence for any specific duration is thin (3 RCTs) and the 10–15 min attention claim is actively debunked. A duration also cannot tell an absent learner from an absorbed one, which is the only distinction that matters here. |
+| **A 30-minute inactivity gap (the analytics default)** | §1: the number is a 1995 statistical convenience, later rounded, and the one modern re-examination places the antimode at 15–20 min. 30 min would also keep whisper content alive far past the aside that produced it (§10). |
+| **A 5- or 10-minute gap** | Below a plausible single think-pause on a hard slide, and below the m = 10 min flow window — the session could close inside its own flow window. It would also close a session every time the learner reads the slide properly. |
+| **Ask the learner "are you in flow?"** | The only *validated* way to measure flow is self-report (§5), so this is the methodologically correct option — and it is wrong for the product. ESM interrupts the state it measures, and Lucas's framing is explicit that the state should be inferred, not asked. Mentioned in the report as the road not taken. |
+| **Infer flow from an affect detector (Baker-style)** | Genuinely the state of the art (§5), and out of scope for A1: those detectors are trained per-system on labelled log corpora ChatterED does not have. The §11 logging is the first step toward it, and that is the honest A2 sentence. |
+| **Trigger the Tester on a BKT-style mastery probability instead of engagement** | ChatterED's ledger *is* its knowledge estimate, and §8.2 uses it — but as a **gate**, not as the trigger. Mastery answers *what* is worth asking; it cannot answer *when*, because a learner at level 1 on four elements is equally "ready" at 2 a.m. and mid-conversation. |
+| **A pure clock: quiz every N minutes regardless** | Predictable and trivially implementable, and it is #33's open question (b). Rejected for A1: §5's ambiguity finding (a pause is confusion or departure) means a blind clock will interrupt an impasse, which is the D'Mello path from confusion to frustration. Revisit if the hand-off proves too rare in the A1 pilot. |
+| **Decay by count (last N concepts) rather than by time** | Simpler and needs no half-life. Rejected because it contradicts the framing directly — Lucas's unit is *time-based with decay*, and a learner who covered three concepts yesterday would be quizzed on them today as if they were fresh. |
+| **A hard expiry with no half-life — "quizzable for exactly 6 h, then not"** | This is nearly what §8.3 recommends, and the difference matters: a **continuous freshness score** lets the Tester *prefer* the item at the sweet spot instead of picking arbitrarily among everything inside the window, and it degrades gracefully if the horizon is wrong. The cost is one `exp()`. |
+| **Sessions scoped to the topic folder rather than the document** | Deferred, not rejected — §12 q. 4. The stored payload is "segments touched" and segments are document-scoped, so per-document is the smaller A1 change; a `scope` field keeps the door open. |
+
 ## 10. How the round-based rules map on
 
 `pivot-spec.md` §G Q3 listed four rules keyed on "a round" and recommended reading a round as **a
