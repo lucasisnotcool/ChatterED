@@ -330,10 +330,19 @@ export class VaultService {
     return this.#repo.files.get(fileId);
   }
 
-  revealPath(fileId: string): string {
+  /**
+   * The absolute path for a file id, for the few main-process callers that need the bytes
+   * themselves (Reveal in Finder; the segmentation pipeline, issue #25). Still id-addressed:
+   * the renderer never sees a path and cannot ask for one this did not hand out.
+   */
+  sourcePath(fileId: string): string {
     const file = this.#repo.files.get(fileId);
     if (!file) throw new Error('That file is not in the vault any more.');
     return this.#absPath(file);
+  }
+
+  revealPath(fileId: string): string {
+    return this.sourcePath(fileId);
   }
 
   /**

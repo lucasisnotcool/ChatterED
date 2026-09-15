@@ -203,3 +203,63 @@ export const DEFAULTS: SegmentOptions = {
   buildContainment: 0.95,
   snapPt: 8,
 };
+
+/** Page size in PDF points, so the renderer can snap in points without opening the document. */
+export interface PageSize {
+  page: number;
+  width: number;
+  height: number;
+}
+
+/** Why an operation did nothing. `reason` is for code; `message` is shown to the learner. */
+export interface SegmentRefusal {
+  reason:
+    | CutBlock
+    | 'no-segment'
+    | 'degenerate'
+    | 'different-pages'
+    | 'not-adjacent'
+    | 'not-a-pdf';
+  message: string;
+}
+
+/** Everything the flow needs for one document. Returned by all four `segments:*` channels. */
+export interface SegmentDocumentView {
+  fileId: string;
+  /** sha256 of the file's bytes — the key the segmentation is cached under. */
+  contentSha: string;
+  genre: Genre;
+  /** `null` for slides; the sentence above the first card otherwise. */
+  notice: string | null;
+  /** Kept pages, after the Stage 0 build-group merge. */
+  pageCount: number;
+  pageSizes: PageSize[];
+  builds: BuildGroup[];
+  segments: SegmentView[];
+  /** `null` when the operation succeeded, or when none was asked for. */
+  refused: SegmentRefusal | null;
+}
+
+/** One sentence per refusal, defined once so main and the dev mock bridge cannot disagree. */
+export function refusalMessage(reason: SegmentRefusal['reason']): string {
+  switch (reason) {
+    case 'figure':
+      return 'That cut would slice a figure. Use a tick, or drag above or below it.';
+    case 'title-band':
+      return 'That cut would separate the slide’s title from the slide.';
+    case 'chrome':
+      return 'That gap is only there because of a repeating footer.';
+    case 'gap-too-small':
+      return 'There is not enough space between those lines to cut.';
+    case 'degenerate':
+      return 'There is nothing to cut there.';
+    case 'no-segment':
+      return 'That cut is not inside a segment.';
+    case 'different-pages':
+      return 'Segments on different pages cannot be merged yet.';
+    case 'not-adjacent':
+      return 'Only two neighbouring segments on one page can be merged.';
+    case 'not-a-pdf':
+      return 'Only PDFs can be split into segments.';
+  }
+}

@@ -7,6 +7,7 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 import type { ChatterEdApi } from '../../shared/ipc.js';
+import { refusalMessage, type SegmentDocumentView, type SegmentRefusal } from '../../shared/segment/index.js';
 import type {
   AgentProfile,
   Bootstrap,
@@ -36,6 +37,20 @@ const EMPTY_VAULT: VaultView = {
   lastScanAt: null,
   index: { total: 0, done: 0, failed: 0, running: false, current: null },
 };
+
+function emptyFlow(fileId: string, refused?: SegmentRefusal['reason']): SegmentDocumentView {
+  return {
+    fileId,
+    contentSha: '',
+    genre: 'prose',
+    notice: 'No document store outside Electron.',
+    pageCount: 0,
+    pageSizes: [],
+    builds: [],
+    segments: [],
+    refused: refused ? { reason: refused, message: refusalMessage(refused) } : null,
+  };
+}
 
 const ROOM = 'mock-room-1';
 const SILENCE = 45000;
@@ -369,6 +384,15 @@ export function createMockBridge(): ChatterEdApi {
       text: '', topic: null,
     }),
     showDocument: async () => undefined,
+
+    // Segments need pdf.js, a file and SQLite, none of which `vite dev` has. An empty flow with
+    // the honest notice, for the same reason the vault above is empty: a mock deck of invented
+    // slide titles would be a screenshot of a lie.
+    getSegments: async ({ fileId }) => emptyFlow(fileId),
+    splitSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
+    mergeSegments: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
+    reorderSegments: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
+    renameSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
     onVaultChanged() { return () => undefined; },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },

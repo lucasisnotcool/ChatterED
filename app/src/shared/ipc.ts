@@ -24,6 +24,7 @@ import type {
   AppCommand,
   WindowState,
 } from './types.js';
+import type { SegmentDocumentView } from './segment/types.js';
 
 export const IPC = {
   bootstrap: 'app:bootstrap',
@@ -67,6 +68,13 @@ export const IPC = {
   showDocument: 'room:showDocument',
   /** main → renderer: a scan finished, or the background indexer advanced. */
   vaultChanged: 'vault:changed',
+
+  // The flow's segments (issue #25).
+  segmentsGet: 'segments:get',
+  segmentsSplit: 'segments:split',
+  segmentsMerge: 'segments:merge',
+  segmentsReorder: 'segments:reorder',
+  segmentsRename: 'segments:rename',
 } as const;
 
 export interface ChatterEdApi {
@@ -167,6 +175,35 @@ export interface ChatterEdApi {
   }): Promise<void>;
   /** Subscribe to vault changes pushed by the scanner and the background indexer. */
   onVaultChanged(listener: (view: VaultView) => void): () => void;
+
+  // ── The flow's segments (issue #25) ─────────────────────────────────────
+  /**
+   * The flow for one document: whole-page segments, the candidate ticks inside each, the build
+   * chips, and a notice when the document is not a slide deck.
+   *
+   * Runs stages 0–3 on the first call for these bytes and caches the result against
+   * `content_sha`; every later call is a SQLite read. **No model call, ever** (issue #25
+   * decision 4), so this works with the network off and costs nothing per page.
+   */
+  getSegments(input: { fileId: string }): Promise<SegmentDocumentView>;
+  /**
+   * Split one segment. `at` is normalised — a `y` for a horizontal cut, an `x` for a vertical
+   * one. It snaps to a candidate within ~8 pt unless `free` is set, and is **refused** if the
+   * resulting line would cross a figure: the view comes back unchanged with `refused` set.
+   */
+  splitSegment(input: {
+    fileId: string;
+    segmentId: string;
+    at: number;
+    axis?: 'horizontal' | 'vertical';
+    free?: boolean;
+  }): Promise<SegmentDocumentView>;
+  /** Same-page merge of two adjacent segments — the undo of a split. */
+  mergeSegments(input: { fileId: string; segmentIds: [string, string] }): Promise<SegmentDocumentView>;
+  /** Move a card in the flow. Pixels never move. */
+  reorderSegments(input: { fileId: string; segmentId: string; toIndex: number }): Promise<SegmentDocumentView>;
+  /** Rename a segment. Labels are the learner's, and the text-layer guess is only a default. */
+  renameSegment(input: { fileId: string; segmentId: string; label: string }): Promise<SegmentDocumentView>;
 
   /**
    * Subscribe to application-menu commands.

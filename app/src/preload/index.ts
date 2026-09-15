@@ -46,6 +46,11 @@ const api: ChatterEdApi = {
   revealFile: (input) => ipcRenderer.invoke(IPC.vaultReveal, input),
   sessionSeed: (input) => ipcRenderer.invoke(IPC.vaultSeed, input),
   showDocument: (input) => ipcRenderer.invoke(IPC.showDocument, input),
+  getSegments: (input) => ipcRenderer.invoke(IPC.segmentsGet, input),
+  splitSegment: (input) => ipcRenderer.invoke(IPC.segmentsSplit, input),
+  mergeSegments: (input) => ipcRenderer.invoke(IPC.segmentsMerge, input),
+  reorderSegments: (input) => ipcRenderer.invoke(IPC.segmentsReorder, input),
+  renameSegment: (input) => ipcRenderer.invoke(IPC.segmentsRename, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

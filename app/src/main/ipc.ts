@@ -31,6 +31,7 @@ import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './
 import { createSession, draftConcept, newId } from './sessions.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
+import { SegmentService, type SplitInput } from './vault/segments.js';
 
 export interface IpcDeps {
   store: LocalStore;
@@ -47,6 +48,7 @@ export class AppService {
   readonly #d: IpcDeps;
   readonly #apiKey: ApiKeyStore;
   readonly #vault: VaultService;
+  readonly #segments: SegmentService;
   #actor: RoomActor | null = null;
 
   constructor(deps: IpcDeps) {
@@ -57,6 +59,16 @@ export class AppService {
       settings: deps.store.settings,
       onChanged: (view) => this.#d.getWindow()?.webContents.send(IPC.vaultChanged, view),
     });
+    // The segmentation pipeline gets the vault's id→path resolver and nothing else: it can read
+    // a file the renderer already has an id for, and no other file (issue #22's rule, unchanged).
+    this.#segments = new SegmentService({
+      db: deps.db,
+      sourcePath: (fileId) => this.#vault.sourcePath(fileId),
+    });
+  }
+
+  get segments(): SegmentService {
+    return this.#segments;
   }
 
   get vault(): VaultService {
@@ -393,6 +405,19 @@ export class AppService {
         pageText,
       });
     });
+
+    // ── The flow's segments (issue #25) ───────────────────────────────────
+    handle<{ fileId: string }>(IPC.segmentsGet, (input) => this.#segments.document(input.fileId));
+    handle<SplitInput>(IPC.segmentsSplit, (input) => this.#segments.split(input));
+    handle<{ fileId: string; segmentIds: [string, string] }>(IPC.segmentsMerge, (input) =>
+      this.#segments.merge(input),
+    );
+    handle<{ fileId: string; segmentId: string; toIndex: number }>(IPC.segmentsReorder, (input) =>
+      this.#segments.reorder(input),
+    );
+    handle<{ fileId: string; segmentId: string; label: string }>(IPC.segmentsRename, (input) =>
+      this.#segments.rename(input),
+    );
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>
