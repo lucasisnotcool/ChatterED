@@ -275,8 +275,43 @@
     drawn.delete(pageNumber);
   }
 
-  function canvasFor(pageNumber: number): HTMLCanvasElement | null {
+  /**
+   * The canvas one page is rasterised into, or null when that page is not laid out yet.
+   *
+   * Exported for the flow (`flow-build-plan.md` §4.1): this component is **modified, not
+   * replaced** — it stays the Original-pages renderer and the compare panel's renderer, and a
+   * caller that wants a page's pixels asks for them here rather than mounting a second viewer.
+   * `FlowCanvas` deliberately does *not* use this: it owns its own render-at-card-scale path
+   * with its own LRU, because this viewer releases a page ±3 away and a crop drawn off a
+   * released canvas is a blank card (risk 3).
+   */
+  export function canvasFor(pageNumber: number): HTMLCanvasElement | null {
     return scroller?.querySelector<HTMLCanvasElement>(`[data-page="${pageNumber}"] canvas`) ?? null;
+  }
+
+  /**
+   * Rasterise `page` if it is not already, and hand back the canvas.
+   *
+   * `atLeast` is a *request*, not an instruction: when the viewer's own fit scale is below it,
+   * the canvas still comes back at the viewer's scale and the caller upscales. The zoom belongs
+   * to the learner, and no caller may change what they are looking at to get a sharper crop.
+   */
+  export async function ensureRendered(pageNumber: number, atLeast = 0): Promise<HTMLCanvasElement | null> {
+    void atLeast;
+    const canvas = canvasFor(pageNumber);
+    if (!canvas || scale <= 0) return null;
+    await draw(canvas, pageNumber);
+    return drawn.get(pageNumber)?.canvas ?? null;
+  }
+
+  /** Every page's own size in points, as measured. The flow's cards need the page's own box. */
+  export function pageSizes(): Record<number, PageSize> {
+    return sizes;
+  }
+
+  /** The scale the viewer is currently rendering at. 0 means "not measured yet, do not paint". */
+  export function renderScale(): number {
+    return scale;
   }
 
   /** Draw whatever is on screen, and release whatever has drifted more than ±3 pages away. */

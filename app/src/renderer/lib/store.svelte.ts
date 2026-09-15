@@ -24,6 +24,7 @@ import type {
   VaultView,
   WhisperThreadView,
 } from '../../shared/types.js';
+import type { SegmentDocumentView } from '../../shared/segment/index.js';
 import { bridge } from './bridge.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
@@ -104,6 +105,33 @@ class Store {
   docScroll: Record<string, number> = $state({});
   /** Set by a search hit so the PDF jumps to the page the snippet came from. */
   pendingPage: number | null = $state(null);
+
+  // ── The flow (issue #25) ───────────────────────────────────────────────
+  /**
+   * How an open PDF is shown. `'flow'` is the default and is the product
+   * (`flow-build-plan.md` §1: "ChatterED opens a lecture deck as a *flow*"); `'viewer'` is the
+   * document pane exactly as it shipped on 15 Sep, one click away and not regressed.
+   */
+  docView: 'flow' | 'viewer' = $state('flow');
+  /**
+   * The open document's segments. Everything about them is decided in the main process — the
+   * renderer only draws what `segments:*` returns, and never patches this optimistically, so a
+   * refused gesture cannot leave the flow showing something SQLite does not agree with.
+   */
+  flow: SegmentDocumentView | null = $state(null);
+  flowBusy = $state(false);
+  flowFor: string | null = $state(null);
+  /**
+   * The last refusal, addressed to the card that caused it. `FlowCanvas` shows it inline for
+   * ~2 s and clears it; the sentence is `refusalMessage()`'s, verbatim (SEGMENTS.md §3).
+   */
+  flowRefusal: { segmentId: string; message: string } | null = $state(null);
+  /**
+   * "+ Ask here", until the REFERENCE track wires it (`flow-build-plan.md` §3.3 track B). It
+   * records which segment was asked at and nothing else — deliberately a stub with a real
+   * signature, so the composer lands in one place rather than being retro-fitted into the card.
+   */
+  askedAt: string | null = $state(null);
 
   /**
    * The document behind the room's source pane — the slide being explained, as a page rather
@@ -376,10 +404,93 @@ class Store {
     this.docTo = null;
     this.docPageCount = 0;
     this.pendingPage = null;
+    this.clearFlow();
   }
 
   revealFile(fileId: string): Promise<void | null> {
     return run(this, () => bridge().revealFile({ fileId }));
+  }
+
+  // ── The flow (issue #25) ─────────────────────────────────────────────────
+  /**
+   * Open a document's flow. The first call for these bytes runs stages 0–3 in the main process;
+   * every later one is a SQLite read. **No model call, ever** — so this is fast, free, offline,
+   * and cannot fail on camera.
+   */
+  async loadFlow(fileId: string): Promise<void> {
+    if (this.flowFor === fileId && this.flow) return;
+    this.flowFor = fileId;
+    this.flow = null;
+    this.flowBusy = true;
+    const view = await run(this, () => bridge().getSegments({ fileId }));
+    this.flowBusy = false;
+    // A second document opened while this one was loading wins.
+    if (this.flowFor !== fileId) return;
+    if (view) this.flow = view;
+  }
+
+  clearFlow(): void {
+    this.flow = null;
+    this.flowFor = null;
+    this.flowRefusal = null;
+    this.askedAt = null;
+  }
+
+  /**
+   * The one place a `SegmentDocumentView` is taken in.
+   *
+   * All five channels return a complete view, and a refused operation returns it **unchanged**
+   * with `refused` set rather than throwing (SEGMENTS.md §3) — so there is no try/catch around a
+   * gesture, and the refusal becomes an inline sentence on the card instead of a banner.
+   * Returns true when the view actually changed, which is what the undo stack records.
+   */
+  #applyFlow(view: SegmentDocumentView | null, segmentId: string): boolean {
+    if (!view) return false;
+    this.flow = view;
+    if (view.refused) {
+      this.flowRefusal = { segmentId, message: view.refused.message };
+      return false;
+    }
+    this.flowRefusal = null;
+    return true;
+  }
+
+  async splitSegment(input: {
+    segmentId: string;
+    at: number;
+    axis?: 'horizontal' | 'vertical';
+    free?: boolean;
+  }): Promise<boolean> {
+    const fileId = this.flowFor;
+    if (!fileId) return false;
+    const view = await run(this, () => bridge().splitSegment({ fileId, ...input }));
+    return this.#applyFlow(view, input.segmentId);
+  }
+
+  async mergeSegments(ids: [string, string]): Promise<boolean> {
+    const fileId = this.flowFor;
+    if (!fileId) return false;
+    const view = await run(this, () => bridge().mergeSegments({ fileId, segmentIds: ids }));
+    return this.#applyFlow(view, ids[0]);
+  }
+
+  async reorderSegment(segmentId: string, toIndex: number): Promise<boolean> {
+    const fileId = this.flowFor;
+    if (!fileId) return false;
+    const view = await run(this, () => bridge().reorderSegments({ fileId, segmentId, toIndex }));
+    return this.#applyFlow(view, segmentId);
+  }
+
+  async renameSegment(segmentId: string, label: string): Promise<boolean> {
+    const fileId = this.flowFor;
+    if (!fileId) return false;
+    const view = await run(this, () => bridge().renameSegment({ fileId, segmentId, label }));
+    return this.#applyFlow(view, segmentId);
+  }
+
+  /** The "+ Ask here" stub. The REFERENCE path (§4.3) replaces the body, not the call site. */
+  askHere(segmentId: string): void {
+    this.askedAt = segmentId;
   }
 
   // ── Finding and searching ────────────────────────────────────────────────
