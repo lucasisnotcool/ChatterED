@@ -5,7 +5,7 @@ report has to be guessed at. The rule used throughout: a mechanic that carries a
 is real; content and infrastructure that carry none may be scripted or stubbed, and are listed
 here as such.
 
-Run it: `npm install && npm run dev`. Test it: `npm test` (**267 tests**, no network).
+Run it: `npm install && npm run dev`. Test it: `npm test` (**356 tests**, no network).
 
 **Updated 14 Sep 2026** for issues #19 (local Claude CLI backend, per-role model selection) and
 #20 (local install with a launchd auto-rebuild), and **15 Sep 2026** for the UI-review fixes —
@@ -39,6 +39,11 @@ committed** while `git` is blocked on this Mac.
 | Event log with the §7.1 vocabulary, and an outbox with deterministic doc ids | `actor.ts`, `db/` | Event payloads never contain message bodies (asserted in a test) |
 | **App icon, wired** (#20) | `assets/AppIcon.*`, `electron-builder.yml`, `src/main/index.ts` | `mac.icon` for the bundle; `app.dock.setIcon` so `npm run dev` shows it too |
 | **Local install + launchd auto-rebuild** (#20) | `tools/install-local.sh`, `tools/com.chattered.updater.plist` | `npm run install:local` → `~/Applications/ChatterED.app` plus a LaunchAgent that rebuilds at login and every 6 h after `git pull --ff-only`. A failed build leaves the previous app untouched. Unsigned, ad-hoc only (#17) |
+| **Segmentation, stages 0–3 — geometry only, no model call** (#25) | `src/shared/segment/` | Build groups, chrome removal, candidate cut lines (horizontal + the §C6 vertical), labels from the text layer, and split/merge/reorder with the §C5 invariants asserted by `checkPartition`. Pure: no Electron, no SQLite, no pdf.js, no DOM. Contract in `docs/SEGMENTS.md` |
+| **Page geometry from pdf.js** (#25) | `src/main/vault/geometry.ts` | Text boxes per §B1.1 (zero-width `hasEOL` items dropped), non-text ink by a CTM walk over `getOperatorList` per §B1.3 Method 1, tagged struct roles per §B1.4. One extra rule the briefs do not have: ink holding ≥ 25 % of its page's text runs is a *container*, not a figure — without it, 5 of the fixture's 7 pages refuse every cut |
+| **Genre router** (#31) | `src/shared/segment/genre.ts` | The four §H threshold rules; only `slides` produces candidates in A1, everything else opens whole-page with a notice |
+| **Segments persisted, and on the IPC bridge** (#25) | `009_segments.sql`, `src/main/db/repos/segments.ts`, `src/main/vault/segments.ts` | Cached against `content_sha`; `segments_touched` means a learner-edited flow is never recomputed. Five channels (`segments:get/split/merge/reorder/rename`), each returning the whole view, a refusal included. Nothing reflowed is stored — §C3 |
+| **Measured on a real deck** | `src/main/vault/geometry.test.ts` | The 7-page 16:9 critique deck in `Academia/Sources/btw interaction/`: 4/2/3/0/2/3/4 accepted candidates per page (18 total, one empty page), inside `segmentation-genres.md` §D1's 1–5 per page. Page 4 is §C6's figure-beside-bullets case and correctly offers nothing horizontal |
 
 ## Scripted — real machinery, scripted content
 
@@ -58,6 +63,9 @@ committed** while `git` is blocked on this Mac.
 | ~~No PDF page-range picker; setup is paste-only~~ | Landed in issue #22 and corrected in the UI-review pass: the range is marked by scrolling, shown and validated as `Pages N–M of X` | done |
 | `ensurePrefixFloor`'s widen/glossary steps are not implemented | Needs real token counts first | M2 |
 | Consent screen, participant code, withdrawal path | Compliance is handled by Lucas with the prof; the schema holds `consents` already | A2 |
+| The flow UI itself — cards, ticks, drag-to-cut, build chips, "Original pages" | The pipeline, the store and the IPC surface are built and tested against the real deck; the renderer is a separate piece of work against `docs/SEGMENTS.md` | A1, next |
+| Stage 4, the Claude vision pass over candidate cuts | Removed from A1 by issue #25 decision 4: it was the only API dependency, the only per-page cost and the most visible failure mode on the deadline path | A2, on demand |
+| Cross-page merge; non-slide genres (papers, readings, scans, handwriting) | Same-page merge is enough to undo a split; other genres open whole-page with a notice, and `G = 16 pt` is a *slides* constant that §D3 says must be derived per document first | A2 |
 | History, export to `~/Documents/ChatterED/` | Not on a marked A1 requirement | A2 |
 | Theo's teach-back round | The recap now offers it only when something is on the record, and **Yes, invite Theo** records the acceptance in the event log and says what happens next. The round itself is not built | A2 |
 | Settings: Reply speed, pacing toggle, the `don't do this` target | The Settings screen now exists (#19) but carries only the backend and model choices | A2 |
