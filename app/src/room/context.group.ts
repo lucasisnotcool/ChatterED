@@ -13,7 +13,7 @@
  * and approved by the student, and this builder reads it from there like any other message.
  */
 import type { AgentProfile } from '../shared/types.js';
-import { ROLE_LABEL } from './agents.js';
+import { ROLE_LABEL, otherStandingAgent } from './agents.js';
 import type { GroupStore } from './ports.js';
 import type { ConceptPack } from './records.js';
 import { referenceBlock, roleBlock, sharedBlock, turnDirective, type TurnDirective } from './prompts.js';
@@ -36,7 +36,7 @@ export function buildGroupContext(store: GroupStore, input: GroupContextInput): 
   if (!material) throw new Error(`No material for room ${input.roomId}`);
 
   const shared = sharedBlock({ material, pack: input.pack, topic: room.topic, roster: input.roster });
-  const other = input.roster.find((a) => a.role !== input.speaker.role && a.role !== 'tutee');
+  const other = otherStandingAgent(input.roster, input.speaker);
   const role = roleBlock(input.speaker.role, input.speaker, other);
 
   // Breakpoint 1 after the shared block (byte-identical for every agent, so the second caller

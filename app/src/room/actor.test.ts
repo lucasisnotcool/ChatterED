@@ -10,8 +10,30 @@ import { DEFAULT_ROOM_CONFIG, seedRoom } from '../test-support/db.js';
 import { rosterFor } from './agents.js';
 import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js';
 import { RoomActor } from './actor.js';
+import { DEMO, openSession, type TaughtItem } from './flow.js';
 import { ScriptedClient } from './llm/scripted.js';
 import { buildGroupContext } from './context.group.js';
+import type { RoomActorDeps } from './actor.js';
+
+/**
+ * A sitting that satisfies flow-session.md §8.2: two concepts taught comfortably past the 3 min
+ * UI guard, and three learner turns inside the 10 min window.
+ */
+function readySitting(clock: FakeClock): RoomActorDeps['flowState'] {
+  const now = clock.now();
+  let session = openSession({ id: 'fs_ready', documentId: 'room_test' }, now - 8 * 60_000);
+  session = {
+    ...session,
+    lastActivityAt: now,
+    gapDeadlineTs: now + session.profile.sessionGapMs,
+    learnerTurns: [now - 180_000, now - 120_000, now - 60_000],
+  };
+  const taught: TaughtItem[] = [
+    { elementId: 'R1', taughtAt: now - 7 * 60_000, by: 'teacher', sessionId: 'fs_ready', label: 'the PSD condition' },
+    { elementId: 'R2', taughtAt: now - 6 * 60_000, by: 'teacher', sessionId: 'fs_ready', label: 'the domain' },
+  ];
+  return { session, taught };
+}
 
 const TURN_2 =
   'Basically if the Hessian is positive semidefinite then the function is convex. That is the second-order condition, so you compute the Hessian, check it is PSD, and you are done.';
@@ -20,7 +42,13 @@ const TURN_4 =
 const TURN_7 =
   "Right — it's zᵀHz ≥ 0 for every vector z, not the entries. It has to be PSD everywhere on S, not just at the stationary point. I was mixing this up with the second-order condition for a local min.";
 
-function build(mode: 'scripted' = 'scripted') {
+/**
+ * `flowState` primes the flow session the way a relaunch would (`actor.flowSnapshot()` is what
+ * the app persists). It is how a test reaches the hand-off: since #32/#33 the Tester is eligible
+ * **only** when `handOffDue()` says the sitting is ready, so a room with an empty taught set can
+ * never put Max on the floor, whatever the orchestrator's model asks for.
+ */
+function build(mode: 'scripted' = 'scripted', flowState?: RoomActorDeps['flowState']) {
   const seeded = seedRoom();
   const clock = new FakeClock();
   const events: RoomEvent[] = [];
@@ -37,6 +65,8 @@ function build(mode: 'scripted' = 'scripted') {
     pack: PSD_HESSIAN_CONVEXITY_V1,
     config: { ...DEFAULT_ROOM_CONFIG, mode },
     appVersion: '0.1.0-test',
+    flowProfile: DEMO,
+    flowState,
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,
   });
@@ -64,8 +94,11 @@ describe('the room actor', () => {
     expect(h.store.rooms.get(h.roomId)!.deadline_ts).not.toBeNull();
   });
 
-  it('holds the Challenger for its latency floor and shows nothing for the first 8 s', async () => {
-    const h = build();
+  it('holds the Tester for its latency floor and shows nothing for the first 8 s', async () => {
+    // Max only ever reaches the floor through the hand-off now (#33), so the sitting is primed
+    // to satisfy the flow rule. The latency band itself is unchanged and is a report paragraph.
+    const clock = new FakeClock();
+    const h = build('scripted', readySitting(clock));
     await settle(h.clock, h.actor.open());
     const before = h.clock.now();
     const events: RoomEvent[] = [];
@@ -78,8 +111,15 @@ describe('the room actor', () => {
     expect(events.some((e) => e.type === 'agent.thinking')).toBe(false);
     await settle(h.clock, sending);
 
-    const challenge = h.store.messages.forRoom(h.roomId).at(-1)!;
-    expect(challenge.body).toContain('PSD **where**?');
+    const messages = h.store.messages.forRoom(h.roomId);
+    // Two rows, in this order: Ellie's hand-off line, written by `flow.handOffLine()` and not by
+    // the model, then Max's one question. The line is what makes the rule visible on camera.
+    const line = messages.at(-2)!;
+    expect(line.model).toBe('rule:handoff');
+    expect(line.body).toMatch(/^You've covered .* — Max, over to you\.$/);
+
+    const challenge = messages.at(-1)!;
+    expect(challenge.body).toContain('give me a matrix');
     expect(challenge.latency_target_ms).toBeGreaterThanOrEqual(9_000);
     expect(challenge.latency_target_ms).toBeLessThanOrEqual(12_000);
     expect(Date.parse(challenge.created_at) - before).toBeGreaterThanOrEqual(9_000);
@@ -162,7 +202,10 @@ describe('the room actor', () => {
 
     const thread = h.actor.openWhisper('peer.ellie');
     expect(thread.limitsLine).toContain("won't answer");
-    await settle(h.clock, h.actor.sendWhisper(thread.threadId, 'does PSD just mean all the entries are ≥ 0?'));
+    // 8 s, not 30: a whisper is held 1–2 s, and a longer window would let the *silence timer*
+    // add a group message, which would be the timer working correctly and this test failing for
+    // the wrong reason. Whispers deliberately do not pause that clock (architecture-mac.md §C.4).
+    await settle(h.clock, h.actor.sendWhisper(thread.threadId, 'does PSD just mean all the entries are ≥ 0?'), 8_000);
 
     const turns = h.store.whispers.forThread(thread.threadId);
     expect(turns).toHaveLength(2);
@@ -214,7 +257,6 @@ describe('the room actor', () => {
     expect(recap.conceptTitle).toBe('Convexity and the Hessian');
     expect(recap.before.every((r) => r.state === 'not_yet')).toBe(true);
     expect(recap.after.some((r) => r.state !== 'not_yet')).toBe(true);
-    expect(recap.teachbackOffer?.displayName).toBe('Theo');
     expect(h.store.rooms.get(h.roomId)!.state).toBe('closed');
   });
 
@@ -250,11 +292,19 @@ describe('the room actor', () => {
     expect(recap.actProfile).toEqual([]);
   });
 
-  it('does not offer Theo over an empty ledger', async () => {
+  /**
+   * Theo has left the standing roster (#32): a teach-back *is* a quiz, so it folded into the
+   * Tester's question. `acceptTeachback` and `teachbackOffer` still compile — the shared types,
+   * the IPC surface and `RecapCard.svelte` are untouched — but there is no tutee in the roster
+   * any more, so the offer is structurally unreachable rather than merely unbuilt. That is the
+   * §B6 rule satisfied by construction: an unavailable reward is never shown.
+   */
+  it('never offers the teach-back, because Theo is no longer in the roster', async () => {
     const h = build();
     await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.sendMessage(TURN_2));
     const recap = await settle(h.clock, h.actor.wrapUp());
-    expect(recap.after.every((r) => r.state === 'not_yet')).toBe(true);
+    expect(h.actor.snapshot().agents.map((a) => a.role)).toEqual(['peer', 'challenger']);
     expect(recap.teachbackOffer).toBeNull();
   });
 
@@ -270,17 +320,12 @@ describe('the room actor', () => {
     }
   });
 
-  it('records an accepted teach-back invitation and says what happens next', async () => {
+  it('turns down a teach-back invitation for an agent who is not in the room', async () => {
     const h = build();
     await settle(h.clock, h.actor.open());
-    await settle(h.clock, h.actor.sendMessage(TURN_2));
-    const recap = await settle(h.clock, h.actor.wrapUp());
-    const offer = recap.teachbackOffer!;
-    const result = h.actor.acceptTeachback(offer.agentKey);
-    // Theo's round is A2, so the button tells the truth rather than doing nothing at all.
+    const result = h.actor.acceptTeachback('tutee.theo');
     expect(result.available).toBe(false);
-    expect(result.note).toContain('Theo');
-    expect(h.store.events.forSession(h.sessionId).map((e) => e.type)).toContain('teachback.accepted');
+    expect(result.note).toContain('not in this room');
   });
 
   it('opens the room with a round card built from this session\'s own pack', async () => {

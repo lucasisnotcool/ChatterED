@@ -25,22 +25,26 @@ describe('roundCardFor', () => {
     const card = roundCardFor({ pack: PACK, roster, mode: 'live' });
     expect(card.body).toContain('Your slide: Pedagogical roles in learning-by-explaining.');
     expect(card.body).not.toContain('convexity and the Hessian');
-    expect(card.title).toBe('Round 1 · Explain');
+    expect(card.title).toBe('Explain');
   });
 
-  it('keeps every house rule the scripted card states', () => {
+  it('keeps the pacing disclosure, which is the one line that may never be dropped', () => {
+    // flow-build-plan.md §4.5: undisclosed pacing is performative deliberation. When the card
+    // itself is replaced by the first-open strip, this sentence moves with it.
     const card = roundCardFor({ pack: PACK, roster, mode: 'live' });
-    expect(card.body).toContain("they won't answer for you");
-    expect(card.body).toContain('disagree with each other');
+    expect(card.body).toContain('tests you on what has been covered');
     expect(card.body).toContain('deliberately paced');
-    expect(card.body).toContain('whisper');
+    expect(card.body).toContain('privately');
     expect(card.body).toContain('last word');
   });
 
-  it('names the two agents who are in the room, and never the tutee', () => {
+  it('names the Teacher and the Tester, and never a cast or a group', () => {
     const card = roundCardFor({ pack: PACK, roster, mode: 'live' });
-    expect(card.body).toContain('Ellie and Max');
+    expect(card.body).toContain('Ellie teaches from it');
+    expect(card.body).toContain('Max tests you');
     expect(card.body).not.toContain('Theo');
+    // The social-group framing is gone (#32): no room, no group, no cast introduction.
+    expect(card.body).not.toMatch(/the group|the room|study group/i);
   });
 
   it('is the scripted card in scripted mode, where the fixed pack is the session', () => {
@@ -57,12 +61,12 @@ describe('roundCardFor', () => {
   it('says something usable even with an empty title or an empty roster', () => {
     const card = roundCardFor({ pack: { ...PACK, title: '   ' }, roster: [], mode: 'live' });
     expect(card.body).toContain('Your slide: your slide.');
-    expect(card.body).toContain('the group');
+    expect(card.body).toContain('Ellie teaches from it');
   });
 });
 
 describe('roomMates and titlePhrase', () => {
-  it('lists one, two or three names the way a person would', () => {
+  it('lists one or two names the way a person would', () => {
     expect(roomMates([])).toBe('the group');
     expect(roomMates(roster.filter((a) => a.role === 'peer'))).toBe('Ellie');
     expect(roomMates(roster)).toBe('Ellie and Max');

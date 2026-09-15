@@ -10,7 +10,10 @@
  * and the whisper scoping all run for real against it. That is what makes the scripted demo an
  * honest demonstration of the interaction rather than a video of a slideshow.
  *
- * Cues are deterministic: 'open', 'student:N', 'silence:N', 'whisper:N'.
+ * Cues are deterministic: 'open', 'student:N', 'silence:N', 'whisper:N', and — since the
+ * Teacher + Tester reframe (#32) — 'handoff:N' for the Tester's quiz, 'feedback:N' for the
+ * feedback turn it owes afterwards (flow-session.md §8.3, Rowland 2014), and 'reference:N' for
+ * a REFERENCE answer, which is not an agent turn at all (pivot-spec.md §B1).
  */
 import type { AgentRole } from '../../shared/types.js';
 
@@ -40,6 +43,8 @@ export interface ScriptedBeat {
   decision: ScriptedDecision;
   /** The agent's message, if one is spoken. */
   text?: string;
+  /** Which segment of the document this beat happens on (flow-build-plan.md §4.4). */
+  segment?: string;
   disagreement?: { marker: 'pushes back on' | "isn't sure about" | 'sides with you against'; targetRole: AgentRole };
   ledger?: {
     elements: ScriptedLedgerElement[];
@@ -53,6 +58,28 @@ export interface ScriptedWhisperBeat {
   cue: string;
   text: string;
   relayOffer?: { draftText: string; defaultAttribution: 'as_me' | 'as_agent' };
+}
+
+/**
+ * A REFERENCE answer, replayed. It is **not an agent turn** and carries no decision: it never
+ * takes the floor, never counts toward anything and can never move the ledger (§B1). The
+ * 120-word cap is applied in `reference.ts`, in code, so a script that overruns is truncated
+ * exactly as a real answer would be — the script cannot smuggle a longer answer onto camera.
+ */
+export interface ScriptedReferenceBeat {
+  cue: string;
+  segment?: string;
+  text: string;
+}
+
+/**
+ * What a script is, as a shape. `script.critique1.ts` implements the same three lookups over the
+ * Critique 1 deck and is dropped into `ScriptedClient` without editing it.
+ */
+export interface ScriptSource {
+  beatFor(cue: string): ScriptedBeat | undefined;
+  whisperBeatFor(cue: string): ScriptedWhisperBeat | undefined;
+  referenceBeatFor(cue: string): ScriptedReferenceBeat | undefined;
 }
 
 /** Turn 1 — the Peer's opener (Xu et al. §4.1). */
@@ -147,16 +174,18 @@ export const SCRIPT_BEATS: ScriptedBeat[] = [
     cue: 'student:4',
     decision: {
       role: 'peer',
-      move: 'mandated_disagreement',
+      move: 'teach_from_slide',
       targetElementId: 'R1',
-      rationale: 'S2 quota: visibly differ with the Challenger, and side with the learner where that is honest.',
+      // Was the S2 quota's mandated-disagreement beat. The quota went with the social-group
+      // framing (#32); the turn stays because what it actually does is *teach*, which is the
+      // Teacher's job now, and it keeps the hedged-uncertainty safeguard S4 on camera.
+      rationale: 'The Teacher explains why the distinction matters and flags her own uncertainty (S4).',
     },
     text:
-      "I'll push back on Max here — I'd have let your first version through, because in most tutorial problems S " +
-      "is all of ℝⁿ and the distinction never shows up. I think he was right to press it and I was being lazy. " +
+      "Worth saying why that distinction matters — in most tutorial problems S is all of ℝⁿ and it never shows " +
+      'up, which is exactly why it bites when it does. ' +
       "I'm also not fully certain whether openness of S is doing real work or just keeping the derivative " +
       'well-defined at the boundary — worth checking against your slide rather than taking my word for it.',
-    disagreement: { marker: 'pushes back on', targetRole: 'challenger' },
     ledger: {
       elements: [
         { id: 'R3', level: 4, confidence: 0.94, evidence: 'last_student' },
@@ -178,6 +207,57 @@ export const SCRIPT_BEATS: ScriptedBeat[] = [
       ],
       notesForAgents: 'Full restatement with quantifier, definition and domain conditions.',
     },
+  },
+];
+
+/**
+ * The hand-off pair. `handoff:N` is Max's question; `feedback:N` is the turn he **owes** after
+ * the learner answers it — mandatory, not optional (flow-session.md §8.3: Rowland 2014's
+ * meta-analysis gives g = 0.73 for retrieval practice with feedback against 0.39 without).
+ *
+ * Ellie's hand-off *line* is deliberately not here: it is written by `flow.handOffLine()` and
+ * posted by the actor, so that what the camera sees is the rule firing, not a scripted sentence.
+ */
+export const SCRIPT_HANDOFFS: ScriptedBeat[] = [
+  {
+    cue: 'handoff:1',
+    decision: {
+      role: 'challenger',
+      move: 'quiz',
+      probeType: 'reasons_evidence',
+      targetElementId: 'R1',
+      challenges: ['R1'],
+      rationale: 'The flow rule fired; the Tester asks the learner to apply what was just taught.',
+    },
+    text:
+      "Alright — one question, and take your time with it. Ellie showed you that PSD is about zᵀHz, not the " +
+      'entries. So: give me a matrix whose entries are all positive that is **not** PSD, and say how you know.',
+  },
+  {
+    cue: 'feedback:1',
+    decision: {
+      role: 'challenger',
+      move: 'quiz_feedback',
+      targetElementId: 'R1',
+      challenges: ['R1'],
+      rationale: 'Feedback is required after every quiz answer, before anything else.',
+    },
+    text:
+      "That's right, and the reason it's right is the part worth keeping: you picked a z that made the cross " +
+      'terms dominate, rather than checking entries. The one thing you left out was saying which set the ' +
+      'condition has to hold on — you said "it fails", not "it fails for this z".',
+  },
+];
+
+export const SCRIPT_REFERENCES: ScriptedReferenceBeat[] = [
+  {
+    cue: 'reference:1',
+    text:
+      'A symmetric matrix H is positive semidefinite when zᵀHz ≥ 0 for every vector z. It is not a statement ' +
+      'about the entries of H: a matrix of positive entries can fail the condition, and a matrix with negative ' +
+      'entries can satisfy it. For a twice-differentiable f on an open convex set S, convexity on S is ' +
+      'equivalent to ∇²f(x) being positive semidefinite at every x in S — the quantifier over S is part of the ' +
+      'statement, not a detail of it.',
   },
 ];
 
@@ -205,17 +285,27 @@ export const SCRIPT_WHISPERS: ScriptedWhisperBeat[] = [
   },
 ];
 
-/** The round card the room opens with (design-brief.md §G). */
+/**
+ * The card the sitting opens with (design-brief.md §G).
+ *
+ * The group framing is out (#32): no "the group", no cast, no "they'll disagree with each other".
+ * The **pacing disclosure** is the one line that must survive every rewrite of this card —
+ * undisclosed pacing is performative deliberation (flow-build-plan.md §4.5).
+ */
 export const SCRIPT_ROUND_CARD = {
-  title: 'Round 1 · Explain',
+  title: 'Explain',
   body:
-    "Your slide: convexity and the Hessian. You'll explain it to the group. House rules: they won't answer for you, " +
-    "they'll disagree with each other sometimes, and replies here are deliberately paced so you get room to think " +
-    'first. You can whisper to either of them privately. You have the last word.',
+    'Your slide: convexity and the Hessian. Ellie teaches from it; Max tests you on what she has covered, once ' +
+    "you've been at it long enough for that to be worth doing. Replies here are deliberately paced so you get " +
+    'room to think first. You can ask Ellie privately at any point. You have the last word.',
 };
 
 export function beatFor(cue: string): ScriptedBeat | undefined {
-  return SCRIPT_BEATS.find((b) => b.cue === cue);
+  return SCRIPT_BEATS.find((b) => b.cue === cue) ?? SCRIPT_HANDOFFS.find((b) => b.cue === cue);
+}
+
+export function referenceBeatFor(cue: string): ScriptedReferenceBeat | undefined {
+  return SCRIPT_REFERENCES.find((b) => b.cue === cue) ?? SCRIPT_REFERENCES[0];
 }
 
 export function whisperBeatFor(cue: string): ScriptedWhisperBeat | undefined {

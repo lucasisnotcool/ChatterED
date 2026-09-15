@@ -42,7 +42,8 @@ export interface SeededRoom {
   studentParticipantId: string;
   peerParticipantId: string;
   challengerParticipantId: string;
-  agentKeys: { peer: string; challenger: string; tutee: string };
+  /** 'peer' is the Teacher and 'challenger' is the Tester: the stored strings are unchanged (#32). */
+  agentKeys: { peer: string; challenger: string };
 }
 
 const T0 = '2026-09-13T10:00:00.000Z';
@@ -237,7 +238,6 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
     agentKeys: {
       peer: roster[0]!.key,
       challenger: roster[1]!.key,
-      tutee: roster[2]!.key,
     },
   };
 }

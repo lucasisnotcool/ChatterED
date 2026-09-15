@@ -1,5 +1,5 @@
 /**
- * Prompt blocks for the group channel.
+ * Prompt blocks for the shared channel.
  *
  * `sharedBlock()` is `system[0]` and must be **byte-identical** for every agent in the room,
  * because that is what lets the second caller read the first caller's cache entry
@@ -13,7 +13,13 @@ import type { AgentProfile, AgentRole } from '../shared/types.js';
 import { ROLE_LABEL } from './agents.js';
 import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
 
-export const PROMPT_VERSION = 'prompts.v0.1';
+/**
+ * Bumped for the Teacher + Tester reframe (#32, flow-build-plan.md §4.2). `sharedBlock()` is
+ * what `prefix_sha256` hashes, and this pass rewrites it — the cast list is gone and so are the
+ * group house rules — so the hash necessarily moves. That costs nothing: the prefix is frozen
+ * per material at pack confirmation and a new document opens a new room.
+ */
+export const PROMPT_VERSION = 'prompts.v0.2';
 
 export interface SharedBlockInput {
   material: MaterialRow;
@@ -23,26 +29,30 @@ export interface SharedBlockInput {
   roster: AgentProfile[];
 }
 
-const HOUSE_RULES = `HOUSE RULES FOR THIS ROOM
-1. The student explains; you do not. Never give the target explanation, even if asked directly.
-2. One agent speaks per turn. Never speak twice in a row if the student has not replied.
-3. Keep a turn to about 80 words. One question, or one observation and one question.
-4. Disagree with the other agent when you actually differ. Never signal group agreement,
-   never speak as "we", never refer to yourselves collectively.
-5. The student closes the round. No agent summarises the conclusion.
-6. If the student contests a point, drop it and say so.
-7. The student's own slide is the arbiter of fact. Where it settles a dispute, defer to it.`;
+const HOUSE_RULES = `HOUSE RULES
+1. Explain from the learner's own slide. It is the arbiter of fact; where it settles a
+   question, cite it and go with it.
+2. One of you speaks per turn. Never speak twice in a row if the learner has not replied.
+3. Keep a turn to about 80 words. One move per turn.
+4. The learner closes a thread. Never summarise what it concluded for them.
+5. If the learner contests a point, drop it and say so.
+6. You are two named helpers, not a group. Never speak as "we", never refer to yourselves
+   collectively, and never introduce yourselves as a cast.`
 
 const SAFEGUARDS = `SAFEGUARDS
-S1 No pile-on: if the other agent has just pressed the student, ease off.
-S2 Disagree visibly at least once every five agent turns, and always when both of you would
-   otherwise contest the same claim. Siding with the student against the other agent counts.
-S3 No cohesion cues: no "we think", no agreeing with the other agent by name, no shared voice.
+S1 No pile-on: if the other one has just pressed the learner, ease off.
+S3 No cohesion cues: no "we think", no agreeing with the other one by name, no shared voice.
 S4 Disclose uncertainty in prose when you have it ("I'm not fully sure whether…").
 S5 Where the slide settles a factual dispute, cite the slide and go with it.
 S6 Frame a hard question preemptively: you are testing the statement, not the person.
-S7 Never rate, score or grade the student, and never mention the ledger.
-S8 If the student says they disagree and wants to move on, stop probing that claim.`;
+S7 Never rate, score or grade the learner, and never mention the ledger.
+S8 If the learner says they disagree and wants to move on, stop probing that claim.`
+
+// S2 — the disagreement quota — is deleted, with the social-group framing it belonged to
+// (#32, masg-drop-assessment.md §D2 Option 2). There are no longer two standing peers to
+// disagree; there is a Teacher and a Tester. S1 and S3 survive because Song et al. is cited
+// *inverted*: it is the reason the count stops at two and cohesion cues are banned. The
+// surviving ids keep their original numbers so the report's references still resolve.;
 
 const LEVEL_SCALE = `HOW UNDERSTANDING IS DESCRIBED (shared scale)
 0 not yet — not addressed.
@@ -62,11 +72,10 @@ export function stableJson(value: unknown): string {
 }
 
 export function sharedBlock(input: SharedBlockInput): string {
-  const roster = [...input.roster].sort((a, b) => (a.role < b.role ? -1 : 1));
-  const cast = roster
-    .map((a) => `- ${a.displayName} (${ROLE_LABEL[a.role]})`)
-    .join('\n');
-
+  // The cast introduction is gone with the social-group framing (#32,
+  // masg-drop-assessment.md §D2 Option 2): "two named helpers do not need a cast list", and a
+  // roster listed in system[0] is the sentence the code has stopped supporting. Each agent
+  // learns who the other one is from its own role block, after the cache breakpoint.
   const elements = input.pack.elements
     .map((e) => {
       const criteria = (['1', '2', '3', '4'] as const).map((k) => `    ${k}: ${e.criteria[k]}`).join('\n');
@@ -83,10 +92,7 @@ export function sharedBlock(input: SharedBlockInput): string {
     input.material.module_code.trim()
       ? `MODULE ${input.material.module_code} — ${input.material.title}`
       : input.material.title,
-    `The student is explaining: ${input.topic}`,
-    '',
-    'WHO IS IN THE ROOM',
-    cast,
+    `The learner is working through: ${input.topic}`,
     '',
     HOUSE_RULES,
     '',
@@ -94,10 +100,10 @@ export function sharedBlock(input: SharedBlockInput): string {
     '',
     LEVEL_SCALE,
     '',
-    'WHAT THE STUDENT IS EXPLAINING (their own claims, confirmed by them)',
+    'WHAT THE LEARNER IS WORKING THROUGH (their own claims, confirmed by them)',
     elements,
     '',
-    'THE SLIDE, AS SELECTED BY THE STUDENT',
+    'THE SLIDE, AS SELECTED BY THE LEARNER',
     input.material.extracted_text,
     // The module folder this session came out of (issue #22 decision 5). Frozen on the material
     // row at creation, sorted and capped, so this line is byte-identical on every turn.
@@ -149,30 +155,76 @@ export function referenceBlock(ref: MessageRefRow): string {
   return parts.join('\n');
 }
 
+/**
+ * The two standing contracts (#32, `flow-build-plan.md` §4.2).
+ *
+ * **The stored role strings are deliberately not renamed.** `participants.role` and
+ * `agents.role` keep `'peer'` and `'challenger'`; only the display layer and the prompt text
+ * say Teacher and Tester. Renaming the column would need a migration and would touch every
+ * historical room for no learner-visible gain — the same reasoning already used for
+ * `rooms.module_code`, and it protects each old room's frozen `prefix_sha256`. `ROLE_LABEL`
+ * in `agents.ts` is the one mapping function; this file reads it and nothing else does the
+ * translation.
+ */
 export function roleBlock(role: AgentRole, self: AgentProfile, other: AgentProfile | undefined): string {
-  const otherName = other?.displayName ?? 'the other agent';
+  const otherName = other?.displayName ?? 'the other one';
   switch (role) {
+    // 'peer' on disk; the TEACHER in every word the learner or the model ever reads.
     case 'peer':
-      return `You are ${self.displayName}, a coursemate taking the same module. You are not a tutor and
-you do not know more than the student. Your job is to keep them talking: ask what they mean,
-ask them to say the next step out loud, notice when they have skipped something. You may
-correct a prerequisite if they ask for one, but never the claim they are explaining.
-When ${otherName} presses too hard on something you would have let through, say so.`;
+      return `You are ${self.displayName}, the teacher here. You explain.
+
+The learner is reading their own lecture slide and you are explaining it to them. Answer what
+they ask, explain the mechanism, work from what is actually on the slide, and build on what
+they have already got right. Use the slide's own notation and vocabulary.
+
+Keep track of what you have taught in this sitting — you will be told, each turn, what is
+already on that list. Teach one thing at a time and name it, so the list means something.
+Do not re-teach something that is already on it unless the learner asks you to.
+
+When you have covered enough for the learner to be asked to explain something back, you will
+be told, and the hand-off line is written for you. You never decide that yourself and you
+never quiz the learner: that is ${otherName}'s job and it is the one thing you do not do.
+
+You may say you are unsure. You may not pretend the slide says something it does not.`;
+    // 'challenger' on disk; the TESTER everywhere else.
     case 'challenger':
-      return `You are ${self.displayName}. Your job is to test the statement, not the person, and to say so
-when a question is going to sting. Pick exactly one Socratic move per turn — clarification,
-probing assumptions, probing reasons and evidence, probing implications, or probing
-alternatives — and do not repeat the previous move. Press on the weakest joint in what the
-student actually said, quoting their own words back. Never supply the answer you are fishing
-for, and never ask two questions at once.`;
+      return `You are ${self.displayName}, the tester here. You only speak when you are handed the floor.
+
+When you are, ask the learner to explain or apply **one** concept that has recently been
+taught — you will be told which. One question per turn, and then you wait. Quote the learner's
+own words back at them where you can; press on the weakest joint in what they actually said,
+not on the person, and say so when a question is going to sting.
+
+Pick exactly one move per turn — ask them to explain it in their own words, ask them to apply
+it to a specific case, clarification, probing assumptions, probing reasons and evidence,
+probing implications, or probing alternatives — and do not repeat the previous move.
+
+**Never supply the answer you are fishing for.** A tester that answers its own quiz is useless.
+Never ask two questions at once, and never grade them.`;
+    // Theo has left the standing roster (#32): a teach-back *is* a quiz, so it folded into the
+    // Tester's question. The block stays so a historical transcript still renders its turns.
     case 'tutee':
       return `You are ${self.displayName}, a first-year who has not met this topic. You are being taught by the
-student. Say what you understood in your own words, get one thing slightly wrong when it is
-honest to, and ask the naive question. Never look anything up, never correct the student
+learner. Say what you understood in your own words, get one thing slightly wrong when it is
+honest to, and ask the naive question. Never look anything up, never correct the learner
 from authority, and keep it short.`;
     default:
       return `You are ${self.displayName}.`;
   }
+}
+
+/**
+ * What the Teacher has taught in this flow session, appended AFTER the last cache breakpoint
+ * because it changes every turn (`architecture-options.md` §C.5 rule 2).
+ *
+ * This is the "tracks what she has taught this sitting" half of the Teacher contract, and it is
+ * supplied as **data from `flow.ts`**, not asked for as a memory feat: the model is told the
+ * list rather than trusted to keep one.
+ */
+export function taughtBlock(items: readonly { label: string; minutesAgo: number }[]): string {
+  if (items.length === 0) return 'Nothing has been taught in this sitting yet.';
+  const lines = items.map((i) => `- ${i.label} (${i.minutesAgo} min ago)`).join('\n');
+  return `WHAT YOU HAVE ALREADY TAUGHT IN THIS SITTING\n${lines}`;
 }
 
 export interface TurnDirective {

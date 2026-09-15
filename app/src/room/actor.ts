@@ -22,16 +22,34 @@ import type {
   ThinkingView,
   WhisperThreadView,
 } from '../shared/types.js';
-import { agentByKey, agentByRole, latencyTargetMs } from './agents.js';
+import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './agents.js';
 import { buildGroupContext } from './context.group.js';
 import { buildWhisperContext } from './context.whisper.js';
 import { applyLedgerRules, type LedgerProposal } from './ledger.js';
 import type { LLMClient, LlmBackend } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
+import {
+  FLOW,
+  answerQuiz,
+  handOffDue,
+  handOffLine,
+  markFeedbackGiven,
+  noteActivity,
+  openQuiz,
+  openSession,
+  tickSession,
+  type FlowProfile,
+  type FlowSession,
+  type PendingQuiz,
+  type TaughtItem,
+  type TesterMode,
+} from './flow.js';
 import { decideTurn, type TurnDecision, type TurnTrigger } from './orchestrator.js';
 import type { Clock, Store, Transport } from './ports.js';
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
+import { latestByElement } from './flow.js';
+import { taughtBlock } from './prompts.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
@@ -73,6 +91,15 @@ export interface RoomActorDeps {
    */
   models?: ModelPlan;
   appVersion: string;
+  /** `FLOW` by default; `DEMO` is the disclosed filming profile (flow.ts). */
+  flowProfile?: FlowProfile;
+  /**
+   * The flow session as it stood when the app last ran, restored on relaunch. A flow session is
+   * bounded by an absolute deadline, so a sitting must survive a quit the way the silence timer
+   * does — `tickSession` then closes it on the first tick if the gap elapsed while the app was
+   * shut (flow-session.md §8.1 close condition 3).
+   */
+  flowState?: { session?: FlowSession | null; taught?: TaughtItem[]; pendingQuiz?: PendingQuiz | null };
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
   random?: () => number;
@@ -94,14 +121,28 @@ export class RoomActor {
   #silenceFires = 0;
   #whisperTurns = 0;
   #lastProbeType: string | null = null;
+  #handOffs = 0;
   #lastFillWasScaffold = false;
   #typingUntil = 0;
   #openedAt: number;
   #firstHelpAt: number | null = null;
+  /**
+   * The flow session (#33). It opens on the first **learner-authored** action, never on the room
+   * simply being open: `flow-session.md` §8.1 — a reader who scrolls and leaves has not started
+   * a session, and sessions that open on `document.open` corrupt the gap distribution the A1 log
+   * exists to collect.
+   */
+  #flow: FlowSession | null = null;
+  #taught: TaughtItem[] = [];
+  #pendingQuiz: PendingQuiz | null = null;
+  #testerMode: TesterMode = 'proactive';
 
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
     this.#openedAt = deps.clock.now();
+    this.#flow = deps.flowState?.session ?? null;
+    this.#taught = [...(deps.flowState?.taught ?? [])];
+    this.#pendingQuiz = deps.flowState?.pendingQuiz ?? null;
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -186,10 +227,14 @@ export class RoomActor {
       }
       this.#timer.cancel();
       this.#studentTurns += 1;
+      this.#noteLearnerActivity('turn');
       const row = this.#insertMessage({
         participantId: this.#studentParticipant().id,
         body,
       });
+      // An answer to the Tester's outstanding question puts the room in feedback debt, which
+      // `ruleDecision` then discharges before anything else can be decided.
+      if (this.#pendingQuiz) this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id);
       this.#event('student', 'message.send', { seq: row.seq, chars: body.length });
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
     });
@@ -263,6 +308,9 @@ export class RoomActor {
   typing(): void {
     this.#typingUntil = this.#d.clock.now() + 3_500;
     this.#timer.typing();
+    // Keystrokes pause the flow session's gap clock too, or a learner writing a long answer for
+    // twenty-five minutes would be treated as having left (flow-session.md §8.1).
+    if (this.#flow) this.#noteLearnerActivity('keystroke');
   }
 
   hold(): void {
@@ -283,7 +331,7 @@ export class RoomActor {
     if (!participant) throw new Error(`No participant for ${agent.key}`);
     const threadId =
       this.#d.store.whispers.openThread(this.#d.roomId, participant.id) ?? this.#d.newId('wthread');
-    const other = this.#d.roster.find((a) => a.key !== agent.key && a.role !== 'tutee');
+    const other = otherStandingAgent(this.#d.roster, agent);
     this.#event('student', 'whisper.open', { agent_key: agent.key });
     return {
       threadId,
@@ -495,12 +543,50 @@ export class RoomActor {
     this.#pending = pending;
 
     const room = this.#room();
+    // The flow verdict is computed here, on the room's clock, and handed to the rules. The
+    // Tester is eligible only when it says so (#33, flow-session.md §8.2).
+    const now = this.#d.clock.now();
+    this.#flow = this.#flow ? tickSession(this.#flow, now) : null;
+    const verdict = handOffDue(
+      {
+        session: this.#flow,
+        taught: this.#taught,
+        pendingTeacherQuestion: this.#room().expects_reply === 1 && trigger !== 'student_message',
+        silenceWindowOpen: trigger === 'silence',
+        whisperOpen: false,
+        referenceLocked: this.#referenceLocked(),
+        lastKeystrokeAt: this.#typingUntil > 0 ? this.#typingUntil - 3_500 : null,
+        ledgerLevels: Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level])),
+        mode: this.#testerMode,
+      },
+      now,
+    );
+    this.#event('system', 'progress.update', {
+      flow: 'state.changed',
+      ready: verdict.due,
+      reasons: verdict.reasons,
+      taught_count: verdict.candidates.length,
+      learner_turns_in_window: verdict.learnerTurnsInWindow,
+      youngest_quizzable_age_ms: verdict.youngestQuizzableAgeMs,
+      profile: (this.#flow?.profile ?? FLOW).name,
+    });
+
     const decisionInput = {
       trigger,
       consecutiveAgentTurns: room.consecutive_agent_turns,
-      agreementRun: room.agreement_run,
       silenceStage: opts.silenceStage,
       lastProbeType: this.#lastProbeType,
+      handOff: verdict,
+      handOffLine: verdict.due
+        ? handOffLine(
+            agentByRole(this.#d.roster, 'peer').displayName,
+            agentByRole(this.#d.roster, 'challenger').displayName,
+            verdict.candidates,
+            (id) => this.#learnerLabel(id),
+          )
+        : null,
+      pendingQuiz: this.#pendingQuiz,
+      referenceLocked: this.#referenceLocked(),
     };
 
     const cue =
@@ -541,8 +627,36 @@ export class RoomActor {
       decided_by: decision.decidedBy,
     });
 
+    /**
+     * The Teacher's hand-off line is posted **before** the Tester generates anything, and it is
+     * written by `flow.handOffLine()` rather than by the model (flow-build-plan.md §4.2). On
+     * camera that is the difference between "a rule I can see and turn down" and a model's whim;
+     * in the code it is the same treatment the stage-1 nudge pool already gets.
+     */
+    if (decision.decidedBy === 'rule:handoff' && decision.handOffLine) {
+      this.#handOffs += 1;
+      const teacher = agentByRole(this.#d.roster, 'peer');
+      await this.#mailbox.enqueue(() => {
+        this.#insertMessage({
+          participantId: this.#d.store.participants.byAgentKey(this.#d.roomId, teacher.key)!.id,
+          body: decision.handOffLine!,
+          model: 'rule:handoff',
+        });
+        this.#event('peer', 'agent.turn.dispatched', { move: 'hand_off', decided_by: decision.decidedBy });
+      });
+    }
+
+    // A hand-off and its feedback turn have their own script cues, so the video path can carry
+    // Max's question and his feedback without the orchestrator's cue doing double duty.
+    const turnCue =
+      decision.decidedBy === 'rule:handoff'
+        ? `handoff:${this.#handOffs}`
+        : decision.moveType === 'quiz_feedback'
+          ? `feedback:${this.#handOffs}`
+          : cue;
+
     // Generate now; hold the tokens until the floor. The buffer is the product decision.
-    const generation = this.#generate(agent, decision, cue);
+    const generation = this.#generate(agent, decision, turnCue);
 
     const yieldMs = this.#lastFillWasScaffold ? FLOOR_YIELD_AFTER_SCAFFOLD_MS : FLOOR_YIELD_MS;
     if (trigger === 'student_message' || trigger === 'promote') {
@@ -592,13 +706,9 @@ export class RoomActor {
         latencyTargetMs: target,
         ttftActualMs: ttft,
         dividerCause: trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent) : null,
-        disagreement: decision.disagreement
-          ? JSON.stringify({
-              marker: decision.disagreement.marker,
-              targetAgentKey: agentByRole(this.#d.roster, decision.disagreement.targetRole).key,
-              targetMessageId: this.#lastMessageIdByRole(decision.disagreement.targetRole),
-            })
-          : null,
+        // `disagreement` is never written any more: the S2 quota and the whole social-group
+        // framing went with #32. The column and the view field stay so that a room recorded
+        // before this build still renders its markers (masg-drop-assessment.md §D2 Option 2).
       });
       const roomNow = this.#room();
       this.#d.store.rooms.update(this.#d.roomId, {
@@ -606,7 +716,6 @@ export class RoomActor {
         pending_turn_id: null,
         pending_turn_due_ts: null,
         consecutive_agent_turns: roomNow.consecutive_agent_turns + 1,
-        agreement_run: decision.disagreement ? 0 : roomNow.agreement_run + 1,
         last_speaker_id: agent.key,
       });
       this.#event(decision.role!, 'agent.turn.dispatched', {
@@ -615,6 +724,7 @@ export class RoomActor {
         ttft_actual_ms: ttft,
         usage,
       });
+      this.#noteTurnForFlow(decision, row.id);
       if (trigger === 'silence') this.#markFirstHelp();
     });
 
@@ -669,9 +779,7 @@ export class RoomActor {
         move: decision.moveType,
         probeType: decision.probeType ?? undefined,
         targetElementId: decision.targetElementId ?? undefined,
-        note: decision.mustDisagree
-          ? 'You have agreed with the other agent for several turns. Differ with them visibly this turn where you honestly do.'
-          : undefined,
+        note: this.#taughtNote(decision),
       },
     });
     request.meta.scriptCue = cue;
@@ -740,6 +848,85 @@ export class RoomActor {
       ledger: ledgerView(applied.rows, this.#d.pack),
       changed: applied.changed,
     });
+  }
+
+  /** What the caller must persist to make the sitting survive a quit. */
+  flowSnapshot(): { session: FlowSession | null; taught: TaughtItem[]; pendingQuiz: PendingQuiz | null } {
+    return { session: this.#flow, taught: [...this.#taught], pendingQuiz: this.#pendingQuiz };
+  }
+
+  // ── the flow session (#33) ────────────────────────────────────────────────
+
+  /**
+   * Opens the flow session on the first learner-authored action, or extends the open one.
+   * Typing is activity, exactly as it is for the silence timer (`design-brief.md` §D3): the two
+   * clocks must agree about what "still here" means or one of them will close on a learner who
+   * is mid-sentence.
+   */
+  #noteLearnerActivity(kind: 'turn' | 'keystroke' | 'ask' | 'whisper', anchorId?: string | null): void {
+    const now = this.#d.clock.now();
+    if (this.#flow) this.#flow = tickSession(this.#flow, now);
+    if (!this.#flow || this.#flow.closedAt !== null) {
+      this.#flow = openSession(
+        { id: this.#d.newId('fs'), documentId: this.#d.roomId, anchorId, profile: this.#d.flowProfile ?? FLOW },
+        now,
+      );
+      this.#event('student', 'session.start', {
+        flow: 'session.open',
+        session_id: this.#flow.id,
+        trigger: kind,
+        profile: this.#flow.profile.name,
+      });
+    }
+    this.#flow = noteActivity(this.#flow, { kind, anchorId }, now);
+  }
+
+  /**
+   * What the Teacher has taught, and what the learner has evidenced, with `taught_at`.
+   *
+   * `taught_at` is **derived, not a new column** (flow-session.md §10): the ledger already
+   * stores `evidence_msg_id` per element and message rows carry timestamps. A re-teach appends
+   * rather than resetting, and `flow.quizzable` reads the most recent (§12 q. 7).
+   */
+  #noteTurnForFlow(decision: TurnDecision, messageId: string): void {
+    const now = this.#d.clock.now();
+    if (decision.role === 'peer' && decision.targetElementId) {
+      this.#taught.push({
+        elementId: decision.targetElementId,
+        taughtAt: now,
+        by: 'teacher',
+        sessionId: this.#flow?.id,
+        label: this.#learnerLabel(decision.targetElementId),
+      });
+    }
+    if (decision.moveType === 'quiz' && decision.targetElementId) {
+      this.#pendingQuiz = openQuiz({ quizMessageId: messageId, elementId: decision.targetElementId }, now);
+    }
+    if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
+      // Rowland 2014's constraint is discharged only when the feedback turn actually landed.
+      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz);
+    }
+  }
+
+  #learnerLabel(elementId: string): string {
+    const element = this.#d.pack.elements.find((e) => e.id === elementId);
+    return element?.learner_label ?? element?.label ?? elementId;
+  }
+
+  /** The turn directive's taught-set line — data from `flow.ts`, not a memory feat asked of the model. */
+  #taughtNote(decision: TurnDecision): string | undefined {
+    if (decision.role !== 'peer') return undefined;
+    const now = this.#d.clock.now();
+    const items = latestByElement(this.#taught)
+      .filter((t) => t.by === 'teacher')
+      .slice(0, 6)
+      .map((t) => ({ label: t.label ?? t.elementId, minutesAgo: Math.max(0, Math.round((now - t.taughtAt) / 60_000)) }));
+    return taughtBlock(items);
+  }
+
+  /** Overridden in Track C once anchors exist; false until a REFERENCE answer can be locked. */
+  #referenceLocked(): boolean {
+    return false;
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ describe('migrations and the repository layer', () => {
     const seeded = seedRoom(store);
     expect(seeded.store.materials.get(seeded.materialId)?.module_code).toBe('MA3236');
     expect(seeded.store.rooms.get(seeded.roomId)?.state).toBe('open');
-    expect(seeded.store.participants.forRoom(seeded.roomId)).toHaveLength(4);
+    expect(seeded.store.participants.forRoom(seeded.roomId)).toHaveLength(3);
     expect(seeded.store.sessions.forRoom(seeded.roomId)?.id).toBe(seeded.sessionId);
     expect(seeded.store.ledger.forSession(seeded.sessionId)).toHaveLength(3);
   });

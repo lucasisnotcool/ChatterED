@@ -20,7 +20,12 @@ export interface LlmMessage {
   content: string;
 }
 
-export type LlmScope = 'group' | 'whisper' | 'orchestrator' | 'ledger' | 'ingest';
+/**
+ * `'reference'` is the neutral REFERENCE voice (pivot-spec.md §B1, flow-build-plan.md §4.3): a
+ * **new scope, not a new agent**. It answers the learner's "+ Ask here" question in the deck's
+ * own register, and what it produces is not an agent turn — see `src/room/reference.ts`.
+ */
+export type LlmScope = 'group' | 'whisper' | 'orchestrator' | 'ledger' | 'ingest' | 'reference';
 
 export interface LlmRequest {
   model: string;

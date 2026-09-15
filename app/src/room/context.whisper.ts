@@ -6,7 +6,7 @@
  * and nothing after it), plus this one thread.
  */
 import type { AgentProfile } from '../shared/types.js';
-import { ROLE_LABEL } from './agents.js';
+import { ROLE_LABEL, otherStandingAgent } from './agents.js';
 import type { WhisperStore } from './ports.js';
 import type { ConceptPack } from './records.js';
 import { sharedBlock } from './prompts.js';
@@ -30,7 +30,7 @@ export function buildWhisperContext(store: WhisperStore, input: WhisperContextIn
   if (!material) throw new Error(`No material for room ${input.roomId}`);
 
   const shared = sharedBlock({ material, pack: input.pack, topic: room.topic, roster: input.roster });
-  const other = input.roster.find((a) => a.key !== input.speaker.key && a.role !== 'tutee');
+  const other = otherStandingAgent(input.roster, input.speaker);
   const system: CacheableBlock[] = [
     // Byte-identical to the group system[0], so the whisper call reads the same cache entry.
     { type: 'text', text: shared, cache_control: { type: 'ephemeral' } },

@@ -19,8 +19,8 @@ export interface RoundCard {
 }
 
 /**
- * "Ellie and Max" — the two agents who are actually in the room. Theo is never named here: he
- * is invited at the end of a round and never co-occurs with them (agents.ts, §P2).
+ * "Ellie and Max" — the Teacher and the Tester. Theo is not named here and is no longer in the
+ * roster at all (#32): a teach-back is a quiz, and it folded into the Tester's question.
  */
 export function roomMates(roster: readonly AgentProfile[]): string {
   const names = roster
@@ -36,6 +36,14 @@ export function titlePhrase(title: string): string {
   return title.trim().replace(/[.\s]+$/, '');
 }
 
+function teacherName(roster: readonly AgentProfile[]): string {
+  return roster.find((a) => a.role === 'peer')?.displayName ?? 'Ellie';
+}
+
+function testerName(roster: readonly AgentProfile[]): string {
+  return roster.find((a) => a.role === 'challenger')?.displayName ?? 'Max';
+}
+
 export function roundCardFor(input: {
   pack: ConceptPack;
   roster: readonly AgentProfile[];
@@ -47,11 +55,12 @@ export function roundCardFor(input: {
   if (input.mode === 'scripted') return { ...SCRIPT_ROUND_CARD };
   const subject = titlePhrase(input.pack.title) || 'your slide';
   return {
-    title: `Round ${input.round ?? 1} · Explain`,
+    title: 'Explain',
     body:
-      `Your slide: ${subject}. You'll explain it to ${roomMates(input.roster)}. ` +
-      "House rules: they won't answer for you, they'll disagree with each other sometimes, and " +
-      'replies here are deliberately paced so you get room to think first. You can whisper to ' +
-      'either of them privately. You have the last word.',
+      `Your slide: ${subject}. ${teacherName(input.roster)} teaches from it; ` +
+      `${testerName(input.roster)} tests you on what has been covered, once you have been at it ` +
+      'long enough for that to be worth doing. Replies here are deliberately paced so you get ' +
+      `room to think first. You can ask ${teacherName(input.roster)} privately at any point. ` +
+      'You have the last word.',
   };
 }

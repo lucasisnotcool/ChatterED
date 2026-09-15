@@ -12,19 +12,29 @@
  */
 import type { LLMClient, LlmRequest, LlmResult } from './types.js';
 import { EMPTY_USAGE } from './types.js';
-import { beatFor, whisperBeatFor } from './script.psd-hessian.js';
+import { beatFor, referenceBeatFor, whisperBeatFor, type ScriptSource } from './script.psd-hessian.js';
+
+/** The default script: design-brief.md §G, the one `actor.test.ts` runs on. */
+export const PSD_HESSIAN_SCRIPT: ScriptSource = { beatFor, whisperBeatFor, referenceBeatFor };
 
 export interface ScriptedClientOptions {
   /** Simulated time to first token. The *hold* is the room actor's job, not the client's. */
   ttftMs?: number;
+  /**
+   * Which script to replay. `script.critique1.ts` implements the same three lookups over the
+   * Critique 1 deck and drops in here without this file changing (flow-build-plan.md §4.4).
+   */
+  script?: ScriptSource;
 }
 
 export class ScriptedClient implements LLMClient {
   readonly kind = 'scripted' as const;
   #ttftMs: number;
+  #script: ScriptSource;
 
   constructor(opts: ScriptedClientOptions = {}) {
     this.#ttftMs = opts.ttftMs ?? 900;
+    this.#script = opts.script ?? PSD_HESSIAN_SCRIPT;
   }
 
   async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
@@ -43,20 +53,24 @@ export class ScriptedClient implements LLMClient {
   #textFor(request: LlmRequest, cue: string): string {
     switch (request.meta.scope) {
       case 'orchestrator':
-        return JSON.stringify(decisionFor(cue));
+        return JSON.stringify(decisionFor(cue, this.#script));
       case 'ledger':
-        return JSON.stringify(ledgerFor(cue, lastStudentText(request)));
+        return JSON.stringify(ledgerFor(cue, lastStudentText(request), this.#script));
       case 'whisper':
-        return whisperBeatFor(cue)?.text ?? 'Still read-only over here.';
+        return this.#script.whisperBeatFor(cue)?.text ?? 'Still read-only over here.';
+      // Not an agent turn, and deliberately not a persona: the register of the deck, never a
+      // voice (pivot-spec.md §B1). The 120-word cap is applied by `reference.ts`, in code.
+      case 'reference':
+        return this.#script.referenceBeatFor(cue)?.text ?? '';
       case 'group':
       default:
-        return beatFor(cue)?.text ?? '';
+        return this.#script.beatFor(cue)?.text ?? '';
     }
   }
 }
 
-export function decisionFor(cue: string): Record<string, unknown> {
-  const beat = beatFor(cue);
+export function decisionFor(cue: string, script: ScriptSource = PSD_HESSIAN_SCRIPT): Record<string, unknown> {
+  const beat = script.beatFor(cue);
   const d = beat?.decision;
   return {
     speak: d?.role !== null && d !== undefined,
@@ -66,12 +80,15 @@ export function decisionFor(cue: string): Record<string, unknown> {
     target_element_id: d?.targetElementId ?? null,
     challenges: d?.challenges ?? (d?.targetElementId ? [d.targetElementId] : []),
     rationale: d?.rationale ?? 'No scripted beat for this cue; the room stays quiet.',
-    disagreement: beat?.disagreement ?? null,
   };
 }
 
-export function ledgerFor(cue: string, studentText: string): Record<string, unknown> {
-  const beat = beatFor(cue);
+export function ledgerFor(
+  cue: string,
+  studentText: string,
+  script: ScriptSource = PSD_HESSIAN_SCRIPT,
+): Record<string, unknown> {
+  const beat = script.beatFor(cue);
   const quote = verbatimQuote(studentText);
   const elements = (beat?.ledger?.elements ?? []).map((e) => ({
     id: e.id,
@@ -115,7 +132,9 @@ function lastStudentText(request: LlmRequest): string {
     for (let j = lines.length - 1; j >= 0; j -= 1) {
       const line = lines[j]!;
       if (line.startsWith('Student: ')) return line.slice('Student: '.length);
-      if (!/^[A-Z][\w ]+ \((peer|challenger|first year)\):/.test(line)) return line;
+      // The transcript labels agents by their *display* role (agents.ts ROLE_LABEL), which is
+      // teacher/tester since #32. The old spellings stay so a historical room still parses.
+      if (!/^[A-Z][\w ]+ \((teacher|tester|peer|challenger|first year)\):/.test(line)) return line;
     }
   }
   return '';
