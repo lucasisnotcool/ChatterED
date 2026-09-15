@@ -54,7 +54,13 @@ export const ASK_LINE = 26;
 export const CARD_GAP = 16;
 /** Everything a card is made of that is not the crop itself. */
 export const CARD_CHROME = LABEL_STRIP + ASK_LINE;
-/** How much taller the flow gets when one card becomes two: a second card's chrome and gap. */
+/**
+ * How much taller the flow gets when one card becomes two: a second card's chrome and gap.
+ *
+ * The analytic value, and `scrollAfterSplit`'s default. The component measures the real change
+ * and passes it in, because a split also brings a merge affordance into the gap between the two
+ * halves — and an anchor that is 18 px out is an anchor that visibly slips.
+ */
 export const SPLIT_ADDED_HEIGHT = CARD_CHROME + CARD_GAP;
 
 /**

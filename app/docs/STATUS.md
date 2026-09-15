@@ -586,3 +586,46 @@ are here, and if the pivot removes the screen they go with it.
 two-column glyph delta and its footer buttons (M9, partly), `Explain this` on file-tree rows on
 hover (B2, the document-header button landed), the `Thread` live-region fix (§5.7), and the
 whisper-picker `<kbd>` hints (m8).
+
+---
+
+## The flow renderer — Track A of `flow-build-plan.md` §3.2, §4.1 (16 Sep, issue #25)
+
+A PDF opened from the Library now arrives as a **flow of crop cards** instead of a page viewer.
+`PdfViewer.svelte` is **modified, not replaced** — it gained `canvasFor(page)`,
+`ensureRendered(page)` and `pageSizes()` / `renderScale()`, and is one click away in the flow's
+header as **Page viewer**, so nothing that shipped on 15 Sep regresses.
+
+| File | What it is |
+|---|---|
+| `lib/flowview.ts` + `.test.ts` (**new**, 53 tests) | Every number: card geometry, tick positions, the snap preview, the `PageLru`, `colourFromPixel`, the split's scroll anchor, `flowCards` (the whole Original-pages claim) and the undo ops with their inverses. Node-only, in the shape of `lib/pdfview.ts`. |
+| `components/FlowCanvas.svelte` (**new**) | The screen. Its own render-at-card-scale path with its own LRU (it deliberately does not borrow `PdfViewer`'s canvases — that viewer releases a page ±3 away, which is risk 3's blank card), the scroll anchor, the undo stack, the Original-pages toggle, the genre notice band. |
+| `components/SegmentCard.svelte` (**new**) | One crop: `drawImage` off a source rectangle, editable label strip, page chip with compare-on-hover, build-steps chip, ticks in the gutter, the dashed guide, the free cut, the merge affordance, the drag handle and the faint "+ Ask here" line. |
+| `lib/store.svelte.ts`, `VaultBrowser.svelte`, `DocumentPane.svelte` | `docView`, the flow state, the four `segments:*` calls, the `askHere(segmentId)` stub, and the route both ways. |
+
+**Verified in a running dev build over CDP** (own port 9333, own `--user-data-dir`, vault =
+`/Users/lohzh/ChatterED/Academia`) against `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`:
+
+| Check | Measured |
+|---|---|
+| Opens as the flow | genre `slides`, 7 pages, 7 cards, **18 ticks** — page-for-page identical to SEGMENTS.md §7 (4/2/3/**0**/2/3/4, including the two vertical ones on pages 6 and 7) |
+| No blank card | 159 in-viewport crop samples over three end-to-end passes, **0 blank**; 63 more over the 31-page Koala paper, **0 blank** |
+| Hover a tick | dashed guide at `top: 218px` on a 428 px card — exactly `offsetFromNorm(0.510)` |
+| Click a tick | splits in place, 7 → 8 segments, page 1 becomes `0.000–0.510` + `0.510–1.000` |
+| ⌘Z | 8 → 7, and again: `split→8, undo→7, split→8, undo→7` |
+| The scroll anchor | cut on screen: `scrollTop` 1400 → 1400. Cut above the fold: 1400 → 1488, and the card under the eye stayed at **743 px, unmoved** |
+| Merge | the affordance between two same-page cards merges 8 → 7; ⌘Z restores the boundary at exactly 0.510 (split and merge are inverses, live) |
+| Drag reorder | `[1,2,3,4,5,6,7]` → `[2,3,1,4,5,6,7]`, ⌘Z back |
+| Refused cut | a free cut on page 4 (0 ticks, 13 blocked) returns *"That cut would slice a figure…"* verbatim, inline, nothing split, cleared after ~2.2 s |
+| Original pages | 8 cards → 7 full pages, segments untouched in the store, **painted on the first frame**, no ticks |
+| Compare-on-hover | the source page dimmed with the segment outlined, *"Region of page 1 · nothing has been re-typeset"* |
+| Keyboard | a focused tick draws its guide and **Enter splits** (landed at 0.634, page 1's second accepted cut) |
+| The genre notice | the Koala paper routes to `prose`, 31 whole pages, 0 ticks, and the band says *"This document is not a slide deck — segments are whole pages."* |
+
+Screenshots in the session scratchpad under `flow/`. The anchor's added height is **measured**
+rather than assumed — `SPLIT_ADDED_HEIGHT` is the analytic value and the fallback, but a split
+also brings a merge affordance into the gap, and an 18 px error is an anchor that visibly slips.
+
+**Not in this pass:** the "+ Ask here" composer and the REFERENCE card (track C), AI cards in the
+flow, the whisper popover, and cross-page merge (A2). `SPLIT_ENABLED` in `lib/flowview.ts` is the
+§3.8 F1 switch and is `true`.

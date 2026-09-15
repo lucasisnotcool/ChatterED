@@ -32,6 +32,7 @@
     PAGE_CACHE,
     PLACEHOLDER,
     PageLru,
+    SPLIT_ADDED_HEIGHT,
     colourFromPixel,
     flowCards,
     invert,
@@ -250,6 +251,7 @@
     const before = flow.segments.map((s) => ({ id: s.id }));
     const el = scroller;
     const keptTop = el?.scrollTop ?? 0;
+    const heightBefore = el?.scrollHeight ?? 0;
     const cutTop = cutTopOf(segmentId, input.cutOffset);
     const ok = await store.splitSegment({ segmentId, at: input.at, axis: input.axis, free: input.free });
     busy = false;
@@ -263,7 +265,16 @@
     }
     // The card above the cut keeps its pixels and its position; everything below slides down by
     // one card's chrome. Follow it only if the cut was above the fold.
-    if (el) requestAnimationFrame(() => (el.scrollTop = scrollAfterSplit(keptTop, cutTop)));
+    //
+    // The added height is **measured**, not assumed: `SPLIT_ADDED_HEIGHT` is the analytic value
+    // and the fallback, but a split also brings a merge affordance into the gap between the two
+    // halves, and an anchor that is 18 px out is an anchor that visibly slips.
+    if (el) {
+      requestAnimationFrame(() => {
+        const added = el.scrollHeight - heightBefore;
+        el.scrollTop = scrollAfterSplit(keptTop, cutTop, added > 0 ? added : SPLIT_ADDED_HEIGHT);
+      });
+    }
   }
 
   async function onmerge(a: { segmentId: string }, b: { segmentId: string }, seam: { at: number; axis: 'horizontal' | 'vertical' }): Promise<void> {
@@ -271,6 +282,7 @@
     busy = true;
     const el = scroller;
     const keptTop = el?.scrollTop ?? 0;
+    const heightBefore = el?.scrollHeight ?? 0;
     const seamTop = el?.querySelector<HTMLElement>(`[data-segment="${b.segmentId}"]`)?.offsetTop ?? Number.POSITIVE_INFINITY;
     const ok = await store.mergeSegments([a.segmentId, b.segmentId]);
     busy = false;
@@ -279,7 +291,12 @@
       return;
     }
     undoStack = [...undoStack, { kind: 'merge', ids: [a.segmentId, b.segmentId], at: seam.at, axis: seam.axis }];
-    if (el) requestAnimationFrame(() => (el.scrollTop = scrollAfterMerge(keptTop, seamTop)));
+    if (el) {
+      requestAnimationFrame(() => {
+        const removed = heightBefore - el.scrollHeight;
+        el.scrollTop = scrollAfterMerge(keptTop, seamTop, removed > 0 ? removed : SPLIT_ADDED_HEIGHT);
+      });
+    }
   }
 
   async function onrename(segmentId: string, label: string): Promise<void> {
