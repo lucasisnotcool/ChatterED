@@ -34,6 +34,9 @@
     type FlowCard,
     type PagePt,
   } from '../lib/flowview.js';
+  import type { AnchorClaim } from '../../shared/flowthread.js';
+  import { LEDGER_GLYPH, LEDGER_WORD } from '../lib/labels.js';
+  import AskHereLine from './AskHereLine.svelte';
 
   let {
     card,
@@ -50,9 +53,16 @@
     active = false,
     dragging = false,
     dropHere = false,
+    /** The claims this segment has moved, for the glyph strip. Empty until one has. */
+    claims = [],
+    /** This card's "+ Ask here" prompt is open / its question is in flight. */
+    askOpen = false,
+    askBusy = false,
     onsplit,
     onrename,
     onask,
+    onaskopen,
+    onaskcancel,
     onactivate,
     ondragbegin,
     ondragover,
@@ -71,9 +81,14 @@
     active?: boolean;
     dragging?: boolean;
     dropHere?: boolean;
+    claims?: AnchorClaim[];
+    askOpen?: boolean;
+    askBusy?: boolean;
     onsplit?: (input: { at: number; axis: 'horizontal' | 'vertical'; free: boolean; cutOffset: number }) => void;
     onrename?: (label: string) => void;
-    onask?: () => void;
+    onask?: (question: string) => void;
+    onaskopen?: () => void;
+    onaskcancel?: () => void;
     onactivate?: () => void;
     ondragbegin?: () => void;
     ondragover?: (before: boolean) => void;
@@ -289,6 +304,23 @@
       </button>
     {/if}
 
+    <!--
+      The ledger glyphs for this segment (`flow-build-plan.md` §3.4 track C). Monochrome and a
+      progression, not a traffic light — `LedgerRow`'s glyphs and words, verbatim, moved out of
+      the retired rail and onto the card the evidence was written under. A glyph appears only
+      when the learner's own words on *this* thread became the evidence for a claim, which is why
+      reading a REFERENCE answer can never put one here.
+    -->
+    {#if claims.length > 0}
+      <span class="glyphs" role="note" aria-label={`Claims moved here: ${claims.map((c) => `${c.learnerLabel}, ${LEDGER_WORD[c.state]}`).join('; ')}`}>
+        {#each claims as claim (claim.elementId)}
+          <span class="glyph" class:filled={claim.state === 'defended'} title={`${claim.elementId} · ${claim.learnerLabel} — ${LEDGER_WORD[claim.state]}`}>
+            {LEDGER_GLYPH[claim.state]}
+          </span>
+        {/each}
+      </span>
+    {/if}
+
     {#if buildChip}
       <span class="chip build" title={`Built up over pages ${card.buildSteps.join(', ')} — the finished slide is shown`}>
         {buildChip}
@@ -383,7 +415,15 @@
   {/if}
 
   <!-- Every boundary in this document is the learner's, and so is every question (beat 7). -->
-  <button type="button" class="ask" onclick={() => onask?.()}>+ Ask here</button>
+  <div class="askrow" style={`width: ${box.w}px`}>
+    <AskHereLine
+      open={askOpen}
+      busy={askBusy}
+      onopen={() => onaskopen?.()}
+      oncancel={() => onaskcancel?.()}
+      onask={(question) => onask?.(question)}
+    />
+  </div>
 
   {#if comparing}
     <div class="comparepanel">
@@ -537,17 +577,22 @@
   }
   .tick.v:hover, .tick.v:focus-visible { border-left-color: var(--indigo); border-left-width: 2px; height: 14px; width: 0; }
 
-  /* 26 px, matching ASK_LINE. Faint on purpose: it is an offer, not a call to action. */
-  .ask {
-    height: 26px;
-    width: 100%;
-    text-align: left;
-    padding: 0 4px;
-    font-size: 11px;
-    color: var(--muted);
-    opacity: 0.6;
+  /* The "+ Ask here" line lives in AskHereLine.svelte; this only gives it the card's width. */
+  .askrow { align-self: flex-start; }
+
+  /* The ledger glyphs. 400 ms fade on arrival, carried over from LedgerRow verbatim. */
+  .glyphs { display: inline-flex; align-items: baseline; gap: 3px; flex: none; }
+  .glyph {
+    font-size: 12px;
+    color: var(--glyph, var(--text-2));
+    animation: glyphin 400ms ease-out;
+    cursor: help;
   }
-  .ask:hover { opacity: 1; color: var(--indigo); }
+  .glyph.filled { color: var(--text); }
+  @keyframes glyphin {
+    0% { opacity: 0.15; }
+    100% { opacity: 1; }
+  }
 
   .comparepanel {
     position: absolute;

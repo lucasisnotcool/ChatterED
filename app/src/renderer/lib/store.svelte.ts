@@ -126,12 +126,27 @@ class Store {
    * ~2 s and clears it; the sentence is `refusalMessage()`'s, verbatim (SEGMENTS.md §3).
    */
   flowRefusal: { segmentId: string; message: string } | null = $state(null);
+  // ── The conversation inside the flow (issue #25, §3.3 track B) ─────────
   /**
-   * "+ Ask here", until the REFERENCE track wires it (`flow-build-plan.md` §3.3 track B). It
-   * records which segment was asked at and nothing else — deliberately a stub with a real
-   * signature, so the composer lands in one place rather than being retro-fitted into the card.
+   * Which segment's "+ Ask here" prompt is open. One at a time, by construction: a second
+   * open closes the first, because two prompts in a document are two places the next keystroke
+   * could go.
    */
-  askedAt: string | null = $state(null);
+  askingAt: string | null = $state(null);
+  /** The segment whose question is in flight. The card shows the 2–3 s retrieval hold on it. */
+  askBusy: string | null = $state(null);
+  /** The segment whose thread composer is open — set by **Explain it back →**. */
+  composerAt: string | null = $state(null);
+  /**
+   * Which segment threads are locked to Ellie and Max, and by which REFERENCE card
+   * (`reference.ts` property 4). The main process is the authority; this is its projection, and
+   * it is patched locally on the two actions that change it so the buttons do not lag the fact.
+   */
+  flowLocks: Record<string, string> = $state({});
+  /** Answer cards collapsed to one line by **Explain it back →** (`pivot-spec.md` §B1). */
+  answersCollapsed: Record<string, boolean> = $state({});
+  /** Answer cards the learner dismissed with **✕ Remove**. Local: the transcript is not edited. */
+  answersRemoved: Record<string, boolean> = $state({});
 
   /**
    * The document behind the room's source pane — the slide being explained, as a page rather
@@ -427,13 +442,24 @@ class Store {
     // A second document opened while this one was loading wins.
     if (this.flowFor !== fileId) return;
     if (view) this.flow = view;
+    // The conversation this document already has, if any. Separate call, and it creates nothing:
+    // most documents have never been asked a question, and opening one must cost no room.
+    await this.loadFlowRoom(fileId);
   }
 
   clearFlow(): void {
     this.flow = null;
     this.flowFor = null;
     this.flowRefusal = null;
-    this.askedAt = null;
+    this.askingAt = null;
+    this.askBusy = null;
+    this.composerAt = null;
+    this.flowLocks = {};
+    this.answersCollapsed = {};
+    this.answersRemoved = {};
+    // The room itself is *not* closed: the actor stays on it in the main process, and the
+    // transcript is the document's. Only this renderer's view of it is dropped.
+    if (this.screen !== 'room') this.room = null;
   }
 
   /**
@@ -488,9 +514,88 @@ class Store {
     return this.#applyFlow(view, segmentId);
   }
 
-  /** The "+ Ask here" stub. The REFERENCE path (§4.3) replaces the body, not the call site. */
-  askHere(segmentId: string): void {
-    this.askedAt = segmentId;
+  /**
+   * "+ Ask here" opens the prompt at the card. Pre-focused, `Esc` cancels — the Cursor ⌘K
+   * gesture `pivot-spec.md` §B1 asks for, moved from a box-select to a card.
+   */
+  openAsk(segmentId: string): void {
+    this.askingAt = segmentId;
+  }
+
+  cancelAsk(): void {
+    this.askingAt = null;
+  }
+
+  /**
+   * Ask. **This is what creates the document's room**, the first time (§3.3) — there is no setup
+   * screen. The answer is held 2–3 s in the main process, so the card appears with the question
+   * still on screen and the learner has not been asked to wait for anything.
+   */
+  async askHere(segmentId: string, question: string): Promise<void> {
+    const fileId = this.flowFor;
+    if (!fileId || question.trim().length === 0) return;
+    this.askingAt = null;
+    this.askBusy = segmentId;
+    const answer = await run(this, () => bridge().flowAskHere({ fileId, segmentId, question: question.trim() }));
+    this.askBusy = null;
+    if (!answer) return;
+    this.#takeFlowRoom(answer.flow);
+  }
+
+  /**
+   * "Explain it back →": the card collapses to one line, the composer opens on the same anchor,
+   * and Ellie and Max become eligible on it for the first time. The order matters — the lock is
+   * released by the main process, and the composer only opens if it said so.
+   */
+  async explainBack(answerId: string): Promise<void> {
+    const result = await run(this, () => bridge().flowExplainBack({ answerId }));
+    if (!result?.unlocked || result.anchorId === null) return;
+    this.answersCollapsed = { ...this.answersCollapsed, [answerId]: true };
+    const { [result.anchorId]: _gone, ...rest } = this.flowLocks;
+    this.flowLocks = rest;
+    this.composerAt = result.anchorId;
+  }
+
+  /** **✕ Remove**: the card goes off this learner's screen. The transcript is never edited. */
+  removeAnswer(answerId: string): void {
+    this.answersRemoved = { ...this.answersRemoved, [answerId]: true };
+  }
+
+  /**
+   * A learner turn inside one segment's thread.
+   *
+   * Deliberately not awaited, for the reason `showTheRoom()` gives: the call does not resolve
+   * until the agent that answers has finished its latency floor, which is 9–12 s for the Tester.
+   */
+  flowSend(segmentId: string, text: string): void {
+    const roomId = this.room?.roomId;
+    if (!roomId || !text.trim()) return;
+    this.lastTypedAt = 0;
+    void run(this, () => bridge().flowSend({ roomId, segmentId, text: text.trim() }));
+  }
+
+  /** The document's room, if it has one. Called when a flow opens; creates nothing. */
+  async loadFlowRoom(fileId: string): Promise<void> {
+    const view = await run(this, () => bridge().flowMessages({ fileId }));
+    if (!view || this.flowFor !== fileId) return;
+    this.#takeFlowRoom(view);
+  }
+
+  /**
+   * The one place a `FlowRoomView` is taken in.
+   *
+   * `room` is an ordinary `RoomSnapshot`, and it goes in `this.room` on purpose: every event the
+   * flow needs — `message.appended`, `agent.thinking`, `ledger.updated`, `timer.updated` — is
+   * already applied there by `apply()`, so the flow's threads stay live without a second
+   * subscription and without a second copy of the transcript to keep in step. The screen is not
+   * changed: the flow is the screen.
+   */
+  #takeFlowRoom(view: { room: RoomSnapshot; threads: { anchorId: string; lockedByAnswerId: string | null }[] }): void {
+    this.room = view.room;
+    this.timerReceivedAt = Date.now();
+    const locks: Record<string, string> = {};
+    for (const t of view.threads) if (t.lockedByAnswerId) locks[t.anchorId] = t.lockedByAnswerId;
+    this.flowLocks = locks;
   }
 
   // ── Finding and searching ────────────────────────────────────────────────

@@ -46,7 +46,9 @@
     type FlowOp,
     type PagePt,
   } from '../lib/flowview.js';
+  import { claimsForAnchor, threadFor } from '../../shared/flowthread.js';
   import { store } from '../lib/store.svelte.js';
+  import FlowThread from './FlowThread.svelte';
   import SegmentCard from './SegmentCard.svelte';
 
   let { doc, onclose }: { doc: DocumentView; onclose: () => void } = $props();
@@ -67,6 +69,18 @@
 
   const flow = $derived(store.flow);
   const cards = $derived(flowCards(flow?.segments ?? [], mode));
+
+  /**
+   * The conversation, read straight off the live room snapshot.
+   *
+   * There is no second copy and no second subscription: `store.room` is the ordinary
+   * `RoomSnapshot` the main process already pushes `message.appended`, `agent.thinking`,
+   * `ledger.updated` and `timer.updated` into, and the grouping is `shared/flowthread.ts` — the
+   * same functions the main process built `FlowRoomView.threads` with. One implementation, so
+   * the flow and the transcript can never disagree about where a turn landed.
+   */
+  const room = $derived(store.room);
+  const messages = $derived(room?.messages ?? []);
 
   /**
    * The page canvases. Not reactive state on purpose (the same reasoning as `PdfViewer.drawn`):
@@ -408,13 +422,6 @@
         <p class="band">{flow.notice}</p>
       {/if}
 
-      {#if store.askedAt}
-        <p class="band asked">
-          “+ Ask here” is wired to the REFERENCE card next — the segment is recorded.
-          <button type="button" class="btn-link" onclick={() => (store.askedAt = null)}>Dismiss</button>
-        </p>
-      {/if}
-
       {#each cards as card, i (card.key)}
         {@const next = cards[i + 1]}
         {@const seam = mode === 'segments' && next
@@ -434,7 +441,12 @@
             dropHere={dropAt?.key === card.key && dropAt.before}
             onsplit={(input) => void onsplit(card.segmentId, input)}
             onrename={(label) => void onrename(card.segmentId, label)}
-            onask={() => store.askHere(card.segmentId)}
+            claims={claimsForAnchor(card.segmentId, messages, room?.ledger ?? null)}
+            askOpen={store.askingAt === card.segmentId}
+            askBusy={store.askBusy === card.segmentId}
+            onaskopen={() => store.openAsk(card.segmentId)}
+            onaskcancel={() => store.cancelAsk()}
+            onask={(question) => void store.askHere(card.segmentId, question)}
             ondragbegin={() => (dragId = card.segmentId)}
             ondragover={(before) => (dragId ? (dropAt = { key: card.key, before }) : undefined)}
             ondropon={() => void dropNow()}
@@ -443,6 +455,23 @@
               dropAt = null;
             }}
           />
+          <!--
+            The thread, under the crop it is about. `AiSegment` keeps every AI card outside the
+            crop's bounds and in the app's font; this only decides that the conversation belongs
+            *here* rather than in a column beside the document (`pivot-spec.md` §C0).
+          -->
+          {#if room}
+            {@const here = threadFor(messages, card.segmentId)}
+            {#if here.length > 0 || store.composerAt === card.segmentId}
+              <FlowThread
+                anchorId={card.segmentId}
+                messages={here}
+                {room}
+                lockedByAnswerId={store.flowLocks[card.segmentId] ?? null}
+                composerOpen={store.composerAt === card.segmentId}
+              />
+            {/if}
+          {/if}
         </div>
         {#if seam && next}
           <div class="seam">
@@ -517,8 +546,6 @@
     border-left: 3px solid var(--muted);
     border-radius: 4px;
   }
-  .band.asked { border-left-color: var(--indigo); }
-
   .slot { display: block; }
 
   .seam { display: flex; justify-content: center; margin: -8px 0 8px; }
