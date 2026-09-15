@@ -12,29 +12,60 @@
  */
 import type { LLMClient, LlmRequest, LlmResult } from './types.js';
 import { EMPTY_USAGE } from './types.js';
-import { beatFor, referenceBeatFor, whisperBeatFor, type ScriptSource } from './script.psd-hessian.js';
+import type { ScriptSource } from './script.psd-hessian.js';
+import { PSD_HESSIAN_SCRIPT, pickScript, scriptNameForRequest, SCRIPTS } from './scripts.js';
 
-/** The default script: design-brief.md §G, the one `actor.test.ts` runs on. */
-export const PSD_HESSIAN_SCRIPT: ScriptSource = { beatFor, whisperBeatFor, referenceBeatFor };
+export { PSD_HESSIAN_SCRIPT };
 
 export interface ScriptedClientOptions {
   /** Simulated time to first token. The *hold* is the room actor's job, not the client's. */
   ttftMs?: number;
   /**
-   * Which script to replay. `script.critique1.ts` implements the same three lookups over the
-   * Critique 1 deck and drops in here without this file changing (flow-build-plan.md §4.4).
+   * Which script to replay, when the caller already knows. Setting it pins the client: no
+   * material is consulted and no request is sniffed.
    */
   script?: ScriptSource;
+  /**
+   * What the session was started from. `scripts.ts` picks `critique1` for the fixture deck and
+   * `psd-hessian` for anything else (flow-build-plan.md §4.4).
+   */
+  material?: { fileName?: string | null; contentSha?: string | null };
+  /** A Settings override — a script name. It wins over `material`. */
+  override?: string | null;
 }
 
 export class ScriptedClient implements LLMClient {
   readonly kind = 'scripted' as const;
   #ttftMs: number;
-  #script: ScriptSource;
+  /** Set when the script is known up front; null while the client is still sniffing. */
+  #pinned: ScriptSource | null;
+  /**
+   * The last script a request was recognised as. One recognised request keeps the whole sitting
+   * on the right script, so a reference call over a single segment — which may carry no marker
+   * at all — still gets the right voice.
+   */
+  #latched: ScriptSource | null = null;
 
   constructor(opts: ScriptedClientOptions = {}) {
     this.#ttftMs = opts.ttftMs ?? 900;
-    this.#script = opts.script ?? PSD_HESSIAN_SCRIPT;
+    this.#pinned =
+      opts.script ??
+      (opts.material || opts.override ? pickScript({ ...opts.material, override: opts.override }) : null);
+  }
+
+  /** Which script is answering right now. Exposed for the actor's relay draft and for tests. */
+  get script(): ScriptSource {
+    return this.#pinned ?? this.#latched ?? PSD_HESSIAN_SCRIPT;
+  }
+
+  /**
+   * The relay draft that goes with a whisper turn, taken from **whichever script is live**. The
+   * actor asks the client for it rather than importing one script directly: in scripted mode the
+   * offer is part of the beat, and a client replaying the Critique 1 deck must not hand back the
+   * PSD/Hessian draft (`actor.ts` `#relayOfferFor`).
+   */
+  relayOfferFor(turn: number): { draftText: string; defaultAttribution: 'as_me' | 'as_agent' } | null {
+    return this.script.whisperBeatFor(`whisper:${turn}`)?.relayOffer ?? null;
   }
 
   async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
@@ -50,21 +81,34 @@ export class ScriptedClient implements LLMClient {
     };
   }
 
+  /**
+   * Resolve the script for one request, and remember the answer. A request the sniffer does not
+   * recognise never *un*-latches: the deck does not change inside a sitting, and a single
+   * segment's reference call can legitimately carry no marker.
+   */
+  #scriptFor(request: LlmRequest): ScriptSource {
+    if (this.#pinned) return this.#pinned;
+    const name = scriptNameForRequest(request);
+    if (name) this.#latched = SCRIPTS[name];
+    return this.#latched ?? PSD_HESSIAN_SCRIPT;
+  }
+
   #textFor(request: LlmRequest, cue: string): string {
+    const script = this.#scriptFor(request);
     switch (request.meta.scope) {
       case 'orchestrator':
-        return JSON.stringify(decisionFor(cue, this.#script));
+        return JSON.stringify(decisionFor(cue, script));
       case 'ledger':
-        return JSON.stringify(ledgerFor(cue, lastStudentText(request), this.#script));
+        return JSON.stringify(ledgerFor(cue, lastStudentText(request), script));
       case 'whisper':
-        return this.#script.whisperBeatFor(cue)?.text ?? 'Still read-only over here.';
+        return script.whisperBeatFor(cue)?.text ?? 'Still read-only over here.';
       // Not an agent turn, and deliberately not a persona: the register of the deck, never a
       // voice (pivot-spec.md §B1). The 120-word cap is applied by `reference.ts`, in code.
       case 'reference':
-        return this.#script.referenceBeatFor(cue)?.text ?? '';
+        return script.referenceBeatFor(cue)?.text ?? '';
       case 'group':
       default:
-        return this.#script.beatFor(cue)?.text ?? '';
+        return script.beatFor(cue)?.text ?? '';
     }
   }
 }
@@ -100,7 +144,8 @@ export function ledgerFor(
   }));
   return {
     schema: 'ledger.v1',
-    concept_id: 'psd-hessian-convexity-v1',
+    // The script says which pack its element ids belong to (#32: there are two decks now).
+    concept_id: script.conceptId ?? 'psd-hessian-convexity-v1',
     message_id: '',
     elements,
     suggested_target_element: beat?.ledger?.suggestedTargetElement ?? null,

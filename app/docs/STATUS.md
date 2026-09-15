@@ -62,6 +62,23 @@ committed** while `git` is blocked on this Mac.
 - **Stage-1 silence nudges are drawn from a fixed pool in both modes, deliberately** — content-free
   by construction, never generated against the concept (`product-design.md` §C5).
 
+**The Critique 1 script — the whole video path, offline** (`flow-build-plan.md` §3.3 Track C, §4.4).
+`src/room/llm/script.critique1.ts` carries beats 7–13 over the deck the video is filmed on, with
+its own pack (`concepts/btw-side-channel-v1.ts`, claims C1–C3, every criterion traceable to a
+page). `script.critique1.test.ts` drives all six beats through the **real** actor on a fake clock:
+the REFERENCE card (100 words, no floor, no timer, no ledger, thread locked until *Explain it
+back*), Ellie teaching from page 6, the hand-off fired by `handOffDue()` on the DEMO profile, Max's
+one question on C1 — taught four minutes earlier, not the thing taught seconds ago — the answer
+moving **two** rows (C1 → defended, C3 → justified) on evidence lifted verbatim from what is
+typed, `rule:quiz_feedback`, and the whisper with its relay draft. The canary runs again over this
+deck and over both agents' contexts. `ScriptedClient` now picks its script: the material's file
+name or content hash, a Settings override, or — when nobody told it, which is the app's case today
+— by recognising the deck in the request and latching it. Two things the take depends on and the
+script cannot fake: **the presenter types the learner's lines** (`CRITIQUE1_LEARNER_LINES`,
+verbatim, or the ledger quotes the improvisation instead), and **the sitting must be warmed up** —
+`MIN_AGE` stays at 3 min in the demo profile, so beat 10 is not reachable from a cold open;
+`critique1Sitting()` is that warm-up as data, for the test and the rehearsal, not for the take.
+
 ## Stubbed or not built yet
 
 | Gap | Why it is acceptable now | Where it belongs |

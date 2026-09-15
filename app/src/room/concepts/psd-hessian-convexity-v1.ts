@@ -11,6 +11,7 @@
  * process, and cannot go missing from a packaged `app.asar`.
  */
 import type { ConceptPack } from '../records.js';
+import { BTW_SIDE_CHANNEL_V1 } from './btw-side-channel-v1.js';
 
 export const PSD_HESSIAN_CONVEXITY_V1: ConceptPack = {
   concept_id: 'psd-hessian-convexity-v1',
@@ -89,6 +90,9 @@ export const PSD_HESSIAN_CONVEXITY_V1: ConceptPack = {
 
 export const FIXED_PACKS: Record<string, ConceptPack> = {
   [PSD_HESSIAN_CONVEXITY_V1.concept_id]: PSD_HESSIAN_CONVEXITY_V1,
+  // The Critique 1 deck's pack (#32): the A1 video is filmed on it, so a session started from
+  // that file must be able to name it by `conceptId` rather than eliciting claims on camera.
+  [BTW_SIDE_CHANNEL_V1.concept_id]: BTW_SIDE_CHANNEL_V1,
 };
 
 /** The slide text the demo session is pinned to (product-design.md §B2/§B3 source pane). */

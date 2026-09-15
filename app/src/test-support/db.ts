@@ -7,6 +7,7 @@ import { openTestDatabase, type SqlDatabase } from '../main/db/driver.js';
 import { runMigrations } from '../main/db/migrations.js';
 import { createStore, type LocalStore } from '../main/db/store.js';
 import { PSD_HESSIAN_CONVEXITY_V1, PSD_HESSIAN_SLIDE_TEXT } from '../room/concepts/psd-hessian-convexity-v1.js';
+import type { ConceptPack } from '../room/records.js';
 import { rosterFor } from '../room/agents.js';
 import { PROMPT_VERSION, stableJson } from '../room/prompts.js';
 import type { RoomConfig } from '../room/records.js';
@@ -48,7 +49,26 @@ export interface SeededRoom {
 
 const T0 = '2026-09-13T10:00:00.000Z';
 
-export function seedRoom(store: LocalStore = openTestStore(), messages: string[] = []): SeededRoom {
+/**
+ * A second deck can be seeded without a second fixture: the A1 video is filmed on the Critique 1
+ * deck with its own pack (`concepts/btw-side-channel-v1.ts`), and the ledger rows, the material
+ * text and the file name all have to match it or the sitting is not the one being demonstrated.
+ * Everything defaults to the PSD/Hessian fixture, so every existing caller is untouched.
+ */
+export interface SeedRoomOptions {
+  pack?: ConceptPack;
+  materialText?: string;
+  fileName?: string | null;
+  title?: string;
+}
+
+export function seedRoom(
+  store: LocalStore = openTestStore(),
+  messages: string[] = [],
+  opts: SeedRoomOptions = {},
+): SeededRoom {
+  const pack = opts.pack ?? PSD_HESSIAN_CONVEXITY_V1;
+  const materialText = opts.materialText ?? PSD_HESSIAN_SLIDE_TEXT;
   const roster = rosterFor('ellie_peer');
   const userId = 'u_test';
   const materialId = 'mat_test';
@@ -91,20 +111,20 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
     store.materials.insert({
       id: materialId,
       module_code: 'MA3236',
-      title: 'Convexity and the Hessian',
+      title: opts.title ?? 'Convexity and the Hessian',
       source_kind: 'pasted_text',
-      file_path: null,
+      file_path: opts.fileName ?? null,
     file_id: null,
       file_sha256: null,
       file_mtime: null,
       page_from: null,
       page_to: null,
       page_count: null,
-      extracted_text: PSD_HESSIAN_SLIDE_TEXT,
+      extracted_text: materialText,
       extract_engine: 'paste',
       padding_text: '',
       topic_context: '',
-      concept_pack: stableJson(PSD_HESSIAN_CONVEXITY_V1),
+      concept_pack: stableJson(pack),
       pack_provenance: 'fixed',
       pack_confirmed_at: T0,
       token_count: 4600,
@@ -193,7 +213,7 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
       orchestrator_model: null,
     });
 
-    for (const e of PSD_HESSIAN_CONVEXITY_V1.elements) {
+    for (const e of pack.elements) {
       store.ledger.upsert({
         id: `led_${e.id}`,
         session_id: sessionId,

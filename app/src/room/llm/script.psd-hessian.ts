@@ -77,6 +77,12 @@ export interface ScriptedReferenceBeat {
  * Critique 1 deck and is dropped into `ScriptedClient` without editing it.
  */
 export interface ScriptSource {
+  /**
+   * The Concept Pack this script's element ids belong to. It is stamped on the ledger proposal,
+   * so a script over a different deck cannot quietly file its rows under another concept.
+   * Optional for the original script, which predates the second one.
+   */
+  conceptId?: string;
   beatFor(cue: string): ScriptedBeat | undefined;
   whisperBeatFor(cue: string): ScriptedWhisperBeat | undefined;
   referenceBeatFor(cue: string): ScriptedReferenceBeat | undefined;
