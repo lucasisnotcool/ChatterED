@@ -76,7 +76,13 @@ export function sharedBlock(input: SharedBlockInput): string {
     .join('\n\n');
 
   return [
-    `MODULE ${input.material.module_code} — ${input.material.title}`,
+    // No module code is legal now — the `MA3236` literal that used to fill it is gone
+    // (ui-review-ux.md M2). Old materials keep the code they were hashed with, so this branch
+    // changes nothing for a room that already exists: `prefix_sha256` is frozen per material
+    // at pack confirmation (§E.3) and only a *new* session takes the short line.
+    input.material.module_code.trim()
+      ? `MODULE ${input.material.module_code} — ${input.material.title}`
+      : input.material.title,
     `The student is explaining: ${input.topic}`,
     '',
     'WHO IS IN THE ROOM',

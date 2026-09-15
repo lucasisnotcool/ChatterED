@@ -77,10 +77,15 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
 
   const material: MaterialRow = {
     id: materialId,
-    module_code: input.moduleCode || 'MA3236',
+    // No literal module code. `MA3236` used to be the fallback in two places, so every session
+    // started without one was stamped with a real module the learner had never taken, and the
+    // nav rail then listed it as a course (ui-review-ux.md M2). Empty is legal: `module_code`
+    // is `TEXT NOT NULL` with no CHECK on its contents (001_init.sql:29, :66).
+    module_code: input.moduleCode?.trim() ?? '',
     title: input.title || pack.title,
     source_kind: input.sourceKind ?? 'pasted_text',
     file_path: input.fileName ?? null,
+    file_id: input.fileId ?? null,
     file_sha256: createHash('sha256').update(input.text).digest('hex'),
     file_mtime: null,
     page_from: input.pageFrom ?? null,
@@ -226,6 +231,43 @@ export function ensureLocalUser(store: LocalStore, now: string): string {
   return id;
 }
 
+/**
+ * The ledger rail is 260 px wide and is meant to be *scanned in the half-second a learner can
+ * spare mid-sentence* (§D1). A `learner_label` is the phrase that goes in it — "what PSD means",
+ * not the whole claim. The ingest model was given no constraint at all, so it returned the claim
+ * again, and the rail became a wall of prose 1362 px tall in a 792 px column; the recap then
+ * rendered `What about <60-word paragraph>.?` five times (ui-review-ux.md B5).
+ *
+ * Eight words and sixty characters, enforced here rather than trusted to the prompt.
+ */
+export const LEARNER_LABEL_MAX_WORDS = 8;
+export const LEARNER_LABEL_MAX_CHARS = 60;
+
+export function isShortLabel(label: string): boolean {
+  const trimmed = label.trim();
+  if (trimmed.length === 0) return false;
+  return trimmed.length <= LEARNER_LABEL_MAX_CHARS && trimmed.split(/\s+/).length <= LEARNER_LABEL_MAX_WORDS;
+}
+
+/**
+ * The truncating fallback. Cut on a word boundary, never mid-word, and drop the trailing comma
+ * or conjunction the cut leaves behind so the rail reads as a phrase and not as a severed
+ * sentence. An ellipsis says plainly that there is more, which the expanded row still shows.
+ */
+export function shortLabel(label: string): string {
+  const trimmed = label.trim().replace(/\s+/g, ' ');
+  if (trimmed.length === 0) return '';
+  if (isShortLabel(trimmed)) return trimmed.replace(/[.,;:]+$/, '');
+  const words = trimmed.split(' ').slice(0, LEARNER_LABEL_MAX_WORDS);
+  let out = words.join(' ');
+  while (out.length > LEARNER_LABEL_MAX_CHARS - 1 && words.length > 1) {
+    words.pop();
+    out = words.join(' ');
+  }
+  out = out.replace(/[.,;:]+$/, '').replace(/\s+(and|or|the|a|an|of|to|for|in|on|that|which|by|is|are)$/i, '');
+  return `${out}…`;
+}
+
 function packFor(input: CreateSessionInput): ConceptPack {
   const fixed = input.conceptId ? FIXED_PACKS[input.conceptId] : undefined;
   const base = fixed ?? PSD_HESSIAN_CONVEXITY_V1;
@@ -238,14 +280,17 @@ function packFor(input: CreateSessionInput): ConceptPack {
     title: input.title || base.title,
     elements: input.claims.map((claim, i) => {
       const template = base.elements.find((e) => e.id === claim.id) ?? base.elements[i] ?? base.elements[0]!;
-      // Keep the short, learner-facing label unless the learner actually rewrote the claim —
-      // the rail is scanned mid-sentence and a full claim sentence does not fit it.
+      // The short, learner-facing label the rail shows. Order of preference: what the learner
+      // typed into the short field, then what ingest proposed, then the template's — and
+      // whichever it is, it is shortened here, because the rail cannot show a paragraph and the
+      // recap's "what stayed open" is built out of it.
       const edited = claim.label.trim() !== template.label.trim();
+      const proposed = claim.learnerLabel?.trim() || (edited ? claim.label : template.learner_label);
       return {
         ...template,
         id: claim.id,
         label: claim.label,
-        learner_label: edited ? claim.label : template.learner_label,
+        learner_label: shortLabel(proposed) || template.learner_label,
       };
     }),
   };
@@ -268,7 +313,13 @@ const DRAFT_SCHEMA: Record<string, unknown> = {
         properties: {
           id: { type: 'string' },
           label: { type: 'string' },
-          learner_label: { type: 'string' },
+          learner_label: {
+            type: 'string',
+            maxLength: LEARNER_LABEL_MAX_CHARS,
+            description:
+              'At most eight words and sixty characters. The phrase shown in the learner\'s ' +
+              'progress rail, e.g. "what PSD means" — not the claim restated.',
+          },
           level_three_criterion: { type: 'string' },
         },
       },
@@ -284,45 +335,65 @@ const DRAFT_SCHEMA: Record<string, unknown> = {
  * With no key (or in scripted mode) the committed fixed pack is returned instead, which is
  * also the offline fallback §B.3 prescribes.
  */
+interface RawDraft {
+  title: string;
+  claims: { id: string; label: string; learner_label: string; level_three_criterion: string }[];
+}
+
+const INGEST_SYSTEM =
+  'You extract the 3\u20135 separable claims a student would have to defend to have explained ' +
+  'the attached lecture material. Show what "applied" looks like for each claim. Never ' +
+  'invent content that is not in the material. `learner_label` is a short handle for the claim, ' +
+  'at most eight words \u2014 it is shown in a narrow progress rail beside the chat and has to be ' +
+  'scannable at a glance. It is never the claim restated.';
+
 export async function draftConcept(
   llm: LLMClient | null,
   input: { moduleCode: string; title: string; text: string },
   models: ModelPlan = API_PLAN,
 ): Promise<ConceptDraft> {
   if (!llm || llm.kind === 'scripted') return fixedDraft();
-  try {
+  const ask = async (correction?: string): Promise<RawDraft> => {
+    // No module line when there is no module. The old code always emitted `MODULE ` followed by
+    // whatever the hard-coded default happened to be.
+    const material = input.moduleCode.trim()
+      ? `MODULE ${input.moduleCode.trim()}\n\nMATERIAL\n${input.text}`
+      : `MATERIAL\n${input.text}`;
     const result = await llm.complete({
       model: models.orchestrator,
       max_tokens: 1500,
-      system: [
-        {
-          type: 'text',
-          text:
-            'You extract the 3–5 separable claims a student would have to defend to have explained ' +
-            'the attached lecture material. Show what "applied" looks like for each claim. Never ' +
-            'invent content that is not in the material.',
-        },
-      ],
-      messages: [
-        {
-          role: 'user',
-          content: `MODULE ${input.moduleCode}\n\nMATERIAL\n${input.text}`,
-        },
-      ],
+      system: [{ type: 'text', text: INGEST_SYSTEM }],
+      messages: [{ role: 'user', content: correction ? `${material}\n\n${correction}` : material }],
       jsonSchema: DRAFT_SCHEMA,
       meta: { scope: 'ingest' },
     });
-    const parsed = JSON.parse(result.text) as {
-      title: string;
-      claims: { id: string; label: string; learner_label: string; level_three_criterion: string }[];
-    };
+    return JSON.parse(result.text) as RawDraft;
+  };
+
+  try {
+    let parsed = await ask();
+    // One re-prompt when the model restates the claim instead of naming it. `maxLength` in the
+    // schema is not enforced on every path \u2014 the local CLI backend is a prompt, not the
+    // structured-output API \u2014 so the constraint is checked here and asked for once more
+    // before the truncating fallback has to step in.
+    if (!parsed.claims.every((c) => isShortLabel(c.learner_label ?? ''))) {
+      try {
+        parsed = await ask(
+          'Every `learner_label` must be at most eight words and sixty characters: a handle for ' +
+            'the claim, not the claim. Return the whole object again with shorter labels.',
+        );
+      } catch {
+        /* keep the first answer; shortLabel() below still guarantees the length. */
+      }
+    }
     return {
       conceptId: `elicited-${createHash('sha1').update(input.text).digest('hex').slice(0, 8)}`,
       title: parsed.title || input.title,
       claims: parsed.claims.map((c, i) => ({
         id: c.id || `R${i + 1}`,
         label: c.label,
-        learnerLabel: c.learner_label,
+        // Whatever came back, the rail gets something it can actually show.
+        learnerLabel: shortLabel(c.learner_label ?? '') || shortLabel(c.label),
         levelThreeCriterion: c.level_three_criterion,
       })),
       provenance: 'elicited',

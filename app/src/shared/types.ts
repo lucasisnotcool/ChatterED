@@ -131,6 +131,8 @@ export interface MaterialView {
   title: string;
   sourceKind: 'pdf_pages' | 'pasted_text';
   fileName: string | null;
+  /** The vault file, when there is one, so the room can render the page and not a text dump. */
+  fileId: string | null;
   pageFrom: number | null;
   pageTo: number | null;
   pageCount: number | null;
@@ -195,10 +197,44 @@ export interface RecapView {
   teachbackOffer: { agentKey: string; displayName: string; blurb: string } | null;
 }
 
+/**
+ * What came back from accepting the teach-back invitation. `available` is false until Theo's
+ * round exists (A2); the note is what the recap card shows in place of the two buttons.
+ */
+export interface TeachbackResult {
+  available: boolean;
+  note: string;
+}
+
+/**
+ * What the application menu (and the macOS three-finger swipe) can ask the renderer to do.
+ * Deliberately a closed union: the preload allowlist carries one channel, and the renderer
+ * decides what each name means — the main process never reaches into the view.
+ */
+export type AppCommand =
+  | 'zoom.in'
+  | 'zoom.out'
+  | 'zoom.reset'
+  | 'fit.width'
+  | 'fit.page'
+  | 'page.next'
+  | 'page.prev'
+  | 'vault.open'
+  | 'vault.rescan'
+  | 'topics.edit'
+  | 'search.files'
+  | 'settings.open';
+
 export interface RecentSession {
   roomId: string;
   conceptTitle: string;
-  moduleCode: string;
+  /**
+   * `rooms.module_code` is deliberately **not** here. It was read only by the nav rail's
+   * `COURSES` list, which was a second taxonomy of "a course" beside the vault's topics and was
+   * fed by a hard-coded `'MA3236'` (ui-review-code.md §3). The column stays in the database —
+   * every historical room's frozen prompt prefix was hashed with the code in it (§E.3) — it is
+   * just no longer displayed anywhere.
+   */
   states: LedgerState[];
   endedAt: string | null;
   updatedAt: string;
@@ -234,7 +270,8 @@ export interface SettingsView {
   /** The dropdown options, in order. Fable is deliberately not among them (CLAUDE.md). */
   modelChoices: string[];
   hasApiKey: boolean;
-  slidesFolder: string | null;
+  /** The vault root, so Settings can offer "Change vault…" without opening the Library. */
+  vaultRoot: string | null;
 }
 
 export interface SettingsPatch {
@@ -252,7 +289,6 @@ export interface Bootstrap {
   backend: BackendKind;
   backendChoice: BackendChoice;
   cli: CliStatus;
-  slidesFolder: string | null;
   pairing: RolePairing;
   agents: AgentProfile[];
   recentSessions: RecentSession[];
@@ -267,7 +303,11 @@ export interface CreateSessionInput {
   text: string;
   /** Optional: load a committed fixed pack instead of eliciting one (progress-tracking.md §3). */
   conceptId?: string;
-  claims?: { id: string; label: string }[];
+  /**
+   * The claim rows as the learner confirmed them. `learnerLabel` is the short handle the
+   * progress rail shows; it is shortened again in `packFor` whatever arrives here.
+   */
+  claims?: { id: string; label: string; learnerLabel?: string }[];
   sourceKind?: 'pdf_pages' | 'pasted_text';
   fileName?: string;
   pageFrom?: number;

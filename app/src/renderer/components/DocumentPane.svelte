@@ -9,6 +9,8 @@
    */
   import type { DocumentView } from '../../shared/types.js';
   import { store } from '../lib/store.svelte.js';
+  import { agentNames } from '../lib/labels.js';
+  import { validateRange } from '../lib/pdfview.js';
   import ImageViewer from './ImageViewer.svelte';
   import MarkdownViewer from './MarkdownViewer.svelte';
   import PdfViewer from './PdfViewer.svelte';
@@ -39,6 +41,7 @@
     store.docFrom = null;
     store.docTo = null;
     store.docSelection = '';
+    store.docPageCount = 0;
     return () => void id;
   });
 
@@ -50,11 +53,18 @@
     }
   });
 
+  /**
+   * The marked range, as everything downstream must read it. An inverted range used to reach
+   * `sessionSeed` and come back as an empty paste box with no explanation (ui-review-code.md
+   * §5.4); now the viewer says so inline and the primary action is disabled until it is fixed.
+   */
+  const range = $derived(validateRange(store.docFrom, store.docTo, store.docPageCount));
+
   /** Where in the file "Show the room" would point: the marked range, else the page on screen. */
   const where = $derived.by(() => {
     if (doc.kind !== 'pdf') return null;
-    const from = store.docFrom ?? store.docPage;
-    const to = store.docTo ?? store.docPage;
+    const from = range.from ?? store.docPage;
+    const to = range.to ?? store.docPage;
     return from === to ? `p. ${from}` : `pp. ${from}\u2013${to}`;
   });
 
@@ -75,6 +85,17 @@
     store.showTheRoom();
   }
 
+  /**
+   * The primary action, and it says what it does. It used to be `Explain p. 1 →` in the same
+   * 11 px grey as **Reveal in Finder** and **Close** — the single most important control in the
+   * app styled identically to the window-close affordance next to it (ui-review-ux.md B2).
+   *
+   * The names come off the live roster, so the learner knows who is on the other side of the
+   * button before they press it — and §B1's rule that no agent *appears* in the Library holds:
+   * this is the app saying what will happen, not Ellie standing there waiting.
+   */
+  const mates = $derived(agentNames(store.boot?.agents));
+
   const sizeLabel = $derived(
     doc.size < 1024
       ? `${doc.size} B`
@@ -93,13 +114,19 @@
     <span class="gap"></span>
     {#if inRoom}
       <!-- The whole point of the pane while a room is open (issue #22 decision 4). -->
-      <button type="button" class="show" onclick={show}>
+      <button type="button" class="show" onclick={show} disabled={!range.valid}>
         Show the room{where ? ` · ${where}` : ''}
         <kbd>⌘⇧S</kbd>
       </button>
     {:else}
-      <button type="button" class="mini" onclick={() => void store.setupFromFile(doc.fileId, store.docFrom, store.docTo)}>
-        Explain {where ?? 'this'} →
+      <button
+        type="button"
+        class="show"
+        disabled={!range.valid}
+        aria-describedby="page-range"
+        onclick={() => void store.setupFromFile(doc.fileId, range.from, range.to)}
+      >
+        Explain {where ?? 'this'} with {mates}
       </button>
     {/if}
     <button type="button" class="mini" onclick={() => void store.revealFile(doc.fileId)}>Reveal in Finder</button>
@@ -120,6 +147,9 @@
         bind:currentPage={store.docPage}
         bind:pageFrom={store.docFrom}
         bind:pageTo={store.docTo}
+        bind:pageCount={store.docPageCount}
+        initialScroll={store.docScroll[doc.fileId] ?? 0}
+        onscrolled={(top) => (store.docScroll[doc.fileId] = top)}
       />
     {:else if doc.kind === 'image' && doc.bytes}
       <ImageViewer bytes={doc.bytes} ext={doc.ext} name={doc.name} />
@@ -161,16 +191,18 @@
   .head {
     flex: none;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 9px 14px;
     border-bottom: 1px solid var(--hairline);
   }
   .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
   .gap { flex: 1; }
   .mini { font-size: 11px; color: var(--text-2); white-space: nowrap; }
-  .mini:hover { color: var(--indigo); }
+  .mini:hover:not(:disabled) { color: var(--indigo); }
+  .mini:disabled { color: var(--muted); cursor: default; }
+  .show:disabled { background: var(--hairline); border-color: var(--hairline); color: var(--muted); cursor: default; }
 
   /* Indigo, because bringing a document to the group is the learner acting (§C2 rule 3). */
   .show {

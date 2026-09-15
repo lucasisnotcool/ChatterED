@@ -18,7 +18,8 @@
 
 <div class="row" class:lift={animating} class:empty={row.state === 'not_yet'}>
   <button type="button" class="top" onclick={ontoggle} aria-expanded={expanded}>
-    <span class="label">{row.learnerLabel}</span>
+    <span class="cid">{row.elementId}</span>
+    <span class="label" title={row.label}>{row.learnerLabel}</span>
     <span class="state">
       <span class="glyph" class:cross={animating} aria-hidden="true">{LEDGER_GLYPH[row.state]}</span>
       <span class="word">{LEDGER_WORD[row.state]}</span>
@@ -64,11 +65,28 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
     text-align: left;
   }
-  .label { font-size: 12px; color: var(--text); line-height: 1.45; }
+  .top .label { flex: 1; min-width: 0; }
+  /* Two lines, hard. New sessions get short labels from the ingest schema; a session recorded
+     before that fix still has a paragraph in `learner_label`, and the rail has to stay
+     scannable for it too (product-design.md §D1, ui-review-ux.md B5). The full claim is the
+     row's `title`, and the expanded view carries the learner's own words. */
+  .label {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* §B5's own wireframe prints the row id; the round card lists `·C1 ·C2 …` and until now
+     nothing in the rail said which row was which (ui-review-ux.md m4). */
+  .cid { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
   .empty .label { opacity: 0.6; }
 
   .state { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }

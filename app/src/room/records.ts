@@ -25,6 +25,12 @@ export interface MaterialRow {
   title: string;
   source_kind: 'pdf_pages' | 'pasted_text';
   file_path: string | null;
+  /**
+   * The vault file id, when the session was started from one (migration 008). Null for pasted
+   * text and for every room created before that column existed; the room's source pane falls
+   * back to `extracted_text` in both cases.
+   */
+  file_id: string | null;
   file_sha256: string | null;
   file_mtime: string | null;
   page_from: number | null;

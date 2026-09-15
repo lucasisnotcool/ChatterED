@@ -218,6 +218,79 @@ describe('the room actor', () => {
     expect(h.store.rooms.get(h.roomId)!.state).toBe('closed');
   });
 
+  /**
+   * The recap, after ui-review-ux.md M9. Three things it used to get wrong on the one screen
+   * the whole design points at: it printed "0 claims established · 0 defended under challenge ·
+   * 0 revisited" (a score, P5), it offered Theo with a completely empty ledger (§B6: an
+   * unavailable reward is a punishment), and "what stayed open" came out as `What about <the
+   * whole claim>.?`.
+   */
+  it('describes what the learner did, and never scores it', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.sendMessage(TURN_2));
+    await settle(h.clock, h.actor.sendMessage(TURN_4));
+    await settle(h.clock, h.actor.sendMessage(TURN_7));
+    const recap = await settle(h.clock, h.actor.wrapUp());
+
+    const labels = recap.actProfile.map((a) => a.label);
+    expect(labels).toContain('turns you took');
+    expect(recap.actProfile.find((a) => a.label === 'turns you took')!.count).toBe(3);
+    // Nothing that reads as a mark out of five.
+    expect(labels).not.toContain('claims established');
+    expect(labels).not.toContain('defended under challenge');
+    // A count of zero is never printed: the block is dropped, not filled with zeroes.
+    expect(recap.actProfile.every((a) => a.count > 0)).toBe(true);
+  });
+
+  it('offers no act profile at all when the learner said nothing', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    const recap = await settle(h.clock, h.actor.wrapUp());
+    expect(recap.actProfile).toEqual([]);
+  });
+
+  it('does not offer Theo over an empty ledger', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    const recap = await settle(h.clock, h.actor.wrapUp());
+    expect(recap.after.every((r) => r.state === 'not_yet')).toBe(true);
+    expect(recap.teachbackOffer).toBeNull();
+  });
+
+  it('states what is still open instead of asking a mangled question', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.sendMessage(TURN_2));
+    const recap = await settle(h.clock, h.actor.wrapUp());
+    for (const q of recap.openQuestions) {
+      expect(q).toMatch(/^Nothing yet on /);
+      expect(q).not.toContain('.?');
+      expect(q.endsWith('.')).toBe(true);
+    }
+  });
+
+  it('records an accepted teach-back invitation and says what happens next', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    await settle(h.clock, h.actor.sendMessage(TURN_2));
+    const recap = await settle(h.clock, h.actor.wrapUp());
+    const offer = recap.teachbackOffer!;
+    const result = h.actor.acceptTeachback(offer.agentKey);
+    // Theo's round is A2, so the button tells the truth rather than doing nothing at all.
+    expect(result.available).toBe(false);
+    expect(result.note).toContain('Theo');
+    expect(h.store.events.forSession(h.sessionId).map((e) => e.type)).toContain('teachback.accepted');
+  });
+
+  it('opens the room with a round card built from this session\'s own pack', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.open());
+    // `build()` runs in scripted mode, where the fixed pack *is* the session, so the assertion
+    // that matters is the wiring: the card comes from the pack, not from a constant.
+    expect(h.actor.snapshot().roundCard.body).toContain('convexity and the Hessian');
+  });
+
   it('writes an event stream with no message bodies in it', async () => {
     const h = build();
     await settle(h.clock, h.actor.open());

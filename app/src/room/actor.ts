@@ -18,6 +18,7 @@ import type {
   RecapView,
   RelayAttribution,
   RoomSnapshot,
+  TeachbackResult,
   ThinkingView,
   WhisperThreadView,
 } from '../shared/types.js';
@@ -32,7 +33,8 @@ import { decideTurn, type TurnDecision, type TurnTrigger } from './orchestrator.
 import type { Clock, Store, Transport } from './ports.js';
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import { limitsLine } from './prompts.whisper.js';
-import { SCRIPT_ROUND_CARD, SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
+import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
+import { roundCardFor } from './roundcard.js';
 import { SilenceTimer } from './timer.js';
 import { ledgerView, messageView, timerView, whisperTurnView } from './views.js';
 
@@ -423,6 +425,25 @@ export class RoomActor {
     });
   }
 
+  /**
+   * "Yes, invite Theo."
+   *
+   * Theo's teach-back round is A2 work and is not built. Until it is, the honest thing a button
+   * can do is be a real button: the acceptance is written to the event log — it is a finding,
+   * the recap's reward gate is one of the things the study is measuring — and the card says
+   * plainly what happens next instead of sitting there with no handler at all
+   * (ui-review-ux.md M9: "wire or remove the Theo button").
+   */
+  acceptTeachback(agentKey: string): TeachbackResult {
+    const tutee = this.#d.roster.find((a) => a.key === agentKey && a.role === 'tutee');
+    if (!tutee) return { available: false, note: 'That study partner is not in this room.' };
+    this.#event('student', 'teachback.accepted', { agent_key: tutee.key });
+    return {
+      available: false,
+      note: `Noted — ${tutee.displayName}'s round is the next thing being built. Nothing here is lost: the transcript and your ledger stay with this session.`,
+    };
+  }
+
   snapshot(): RoomSnapshot {
     const room = this.#room();
     const material = this.#d.store.materials.get(room.material_id)!;
@@ -442,6 +463,7 @@ export class RoomActor {
         title: material.title,
         sourceKind: material.source_kind,
         fileName: material.file_path,
+        fileId: material.file_id,
         pageFrom: material.page_from,
         pageTo: material.page_to,
         pageCount: material.page_count,
@@ -458,7 +480,10 @@ export class RoomActor {
       thinking: this.#thinking,
       nudgesPaused: this.#timer.snapshot.nudgesPaused,
       mode: this.#d.config.mode,
-      roundCard: SCRIPT_ROUND_CARD,
+      // Built from *this* session's pack and roster. It used to be the PSD/Hessian demo
+      // script's card in every real session, so a room about pedagogical agent roles opened
+      // with "Your slide: convexity and the Hessian" (ui-review-ux.md B4).
+      roundCard: roundCardFor({ pack: this.#d.pack, roster: this.#d.roster, mode: this.#d.config.mode }),
     };
   }
 
@@ -949,27 +974,52 @@ export class RoomActor {
       }));
     });
     const tutee = this.#d.roster.find((a) => a.role === 'tutee');
+
+    /**
+     * What the learner *did*, not how well they did it (P5, §B6). The three numbers here used
+     * to be a re-count of ledger states — "0 claims established · 0 defended under challenge ·
+     * 0 revisited" — which is a score, and three zeroes on the payoff screen is precisely the
+     * evaluation apprehension the design exists to remove (ui-review-ux.md M9). A count of zero
+     * is dropped rather than printed, and when nothing is left the recap omits the block.
+     */
+    const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
+    const learnerTurns = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .filter((m) => participants.get(m.participant_id)?.kind === 'student').length;
+    const acts = ([
+      ['turn you took', 'turns you took', learnerTurns],
+      ['challenge you answered', 'challenges you answered', rows.filter((r) => r.defended_against !== null).length],
+      ['time you corrected yourself', 'times you corrected yourself', resolvedByLearner.length],
+      ['document you brought in', 'documents you brought in', this.#d.store.messageRefs.forRoom(this.#d.roomId).length],
+    ] as const)
+      .filter(([, , count]) => count > 0)
+      .map(([one, many, count]) => ({ label: count === 1 ? one : many, count }));
+
+    // §B6: "gate not met ⇒ the Theo block is absent entirely, not shown greyed — an unavailable
+    // reward is a punishment". It used to be offered whenever a tutee existed in the roster,
+    // i.e. always, including on a completely empty ledger.
+    const anythingOnTheRecord = view.rows.some((r) => r.state !== 'not_yet');
     return {
       roomId: this.#d.roomId,
       conceptTitle: this.#d.pack.title,
       before: beforeView.rows,
       after: view.rows,
       bloom: view.bloom,
-      actProfile: [
-        { label: 'claims established', count: view.rows.filter((r) => r.state !== 'not_yet').length },
-        { label: 'defended under challenge', count: view.rows.filter((r) => r.state === 'defended').length },
-        { label: 'revisited', count: view.rows.filter((r) => r.revisit).length },
-      ],
+      actProfile: acts,
       unaidedMs: (this.#firstHelpAt ?? this.#d.clock.now()) - this.#openedAt,
       corrections: [...resolvedByLearner, ...openMisconceptions],
-      openQuestions: view.rows.filter((r) => r.state === 'not_yet').map((r) => `What about ${r.learnerLabel}?`),
-      teachbackOffer: tutee
-        ? {
-            agentKey: tutee.key,
-            displayName: tutee.displayName,
-            blurb: `${tutee.displayName} is a first year who hasn't seen this yet. Want 3 minutes to teach it to him?`,
-          }
-        : null,
+      // A statement, not a question. `What about ${learnerLabel}?` produced "What about <60-word
+      // paragraph>.?" five times over (ui-review-ux.md B5); the labels are short now, and this
+      // is not pretending to be a question the learner has to answer.
+      openQuestions: view.rows.filter((r) => r.state === 'not_yet').map((r) => `Nothing yet on ${r.learnerLabel}.`),
+      teachbackOffer:
+        tutee && anythingOnTheRecord
+          ? {
+              agentKey: tutee.key,
+              displayName: tutee.displayName,
+              blurb: `${tutee.displayName} is a first year who hasn't seen this yet. Want 3 minutes to teach it to him?`,
+            }
+          : null,
     };
   }
 

@@ -24,6 +24,7 @@ describe('migrations and the repository layer', () => {
         title: 'too short to cache',
         source_kind: 'pasted_text',
         file_path: null,
+    file_id: null,
         file_sha256: null,
         file_mtime: null,
         page_from: null,

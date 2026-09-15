@@ -2,7 +2,14 @@
  * View-layer naming. Agent names and hues always come from AgentProfile data at
  * runtime — nothing here hardcodes Ellie, Max or Theo (product-design.md §C2).
  */
-import type { AgentRole, BloomRung, LedgerState, MessageView, VaultFileKind } from '../../shared/types.js';
+import type {
+  AgentProfile,
+  AgentRole,
+  BloomRung,
+  LedgerState,
+  MessageView,
+  VaultFileKind,
+} from '../../shared/types.js';
 
 /** The role word printed in every agent label — the standing reminder of the contract (§C1). */
 export function roleWord(role: AgentRole): string {
@@ -22,6 +29,23 @@ export function speakerLabel(m: MessageView): string {
   if (m.speaker.kind === 'student') return 'You';
   const word = roleWord(m.speaker.role);
   return word ? `${m.speaker.displayName} · ${word}` : m.speaker.displayName;
+}
+
+/**
+ * "Ellie and Max" — the two agents who would be in the room, for the primary action that opens
+ * one. Read off the live roster, never hardcoded (§C2), and the tutee is never named: Theo is
+ * invited at the end of a round and never co-occurs with them (§P2).
+ *
+ * Exported because the Library's `Explain p. 3 with Ellie and Max` button is the one place the
+ * learner is told what the button actually does before they press it (ui-review-ux.md B2).
+ */
+export function agentNames(agents: readonly AgentProfile[] | undefined, fallback = 'your study group'): string {
+  const names = (agents ?? [])
+    .filter((a) => a.role === 'peer' || a.role === 'challenger')
+    .map((a) => a.displayName);
+  if (names.length === 0) return fallback;
+  if (names.length === 1) return names[0]!;
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
 export function monogram(displayName: string): string {

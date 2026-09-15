@@ -17,7 +17,6 @@
    * learner who is mid-keystroke.
    */
   import Finder from './Finder.svelte';
-  import TopicSheet from './TopicSheet.svelte';
   import VaultBrowser from './VaultBrowser.svelte';
   import { LEDGER_GLYPH, glyphAlt } from '../lib/labels.js';
   import { store } from '../lib/store.svelte.js';
@@ -67,17 +66,27 @@
           {#if vault.totalFiles === 0}
             <p>Nothing readable in this folder yet.</p>
             <p class="path">{vault.rootPath}</p>
+          {:else if vault.topics.length === 0}
+            <!-- "17 files across 0 topics. Pick one on the left" was a sentence about nothing:
+                 there was nothing on the left to pick (ui-review-ux.md m2). -->
+            <p>
+              {vault.totalFiles} files here, no topics yet. Pick which folders are your topics and
+              they become the list on the left — everything else stays browsable under Other.
+            </p>
+            <button type="button" class="btn-primary" onclick={() => void store.openTopicSheet()}>
+              Pick your topics →
+            </button>
           {:else}
             <p>
               {vault.totalFiles} files across {vault.topics.length}
-              {vault.topics.length === 1 ? 'topic' : 'topics'}. Pick one on the left to read it, or
-              search across all of them.
+              {vault.topics.length === 1 ? 'topic' : 'topics'}. Pick a file on the left to read it, or
+              search inside all of them from the box above.
             </p>
             {#if vault.index.failed > 0}
               <p class="path">{vault.index.failed} couldn't be read for search — their rows say which.</p>
             {/if}
           {/if}
-          <button type="button" class="btn-link" onclick={() => void store.chooseVault()}>Choose another folder…</button>
+
         </div>
       </div>
     {/if}
@@ -117,10 +126,6 @@
 
 {#if store.finderOpen}
   <Finder onopen={openById} />
-{/if}
-
-{#if store.topicSheetOpen}
-  <TopicSheet />
 {/if}
 
 <style>

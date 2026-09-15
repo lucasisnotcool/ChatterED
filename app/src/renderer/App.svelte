@@ -11,6 +11,7 @@
   import SessionSetup from './components/SessionSetup.svelte';
   import Settings from './components/Settings.svelte';
   import StatusBar from './components/StatusBar.svelte';
+  import TopicSheet from './components/TopicSheet.svelte';
   import TitleBar from './components/TitleBar.svelte';
   import { store } from './lib/store.svelte.js';
 
@@ -40,7 +41,7 @@
     <FirstRun />
   {:else}
     <div class="cols">
-      <NavRail collapsed={store.navCollapsed} />
+      <NavRail />
       {#if store.screen === 'loading'}
         <div class="loading"><span>Opening…</span></div>
       {:else if store.screen === 'library'}
@@ -58,6 +59,13 @@
     {/if}
   {/if}
 </div>
+
+<!-- The topic sheet is reachable from the Library sidebar, from Settings ▸ Your files, and from
+     first run (opening a vault with no topics opens it), so it is mounted above the screen
+     router rather than inside one screen. -->
+{#if store.topicSheetOpen}
+  <TopicSheet />
+{/if}
 
 <NoticeBanner />
 

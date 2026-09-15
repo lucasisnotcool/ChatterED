@@ -48,12 +48,17 @@
     }
   }
 
+  /**
+   * Card 3 opens the **vault**, through exactly the same call the Library uses.
+   *
+   * It used to call `chooseSlidesFolder()`, which wrote a `settings.slides_folder` row that
+   * nothing ever read back — so a learner pointed ChatterED at their files, pressed Start, and
+   * landed on a Library asking them to choose a folder (ui-review-ux.md m1). One picker, one
+   * concept, one row in the database.
+   */
   async function pickFolder(): Promise<void> {
-    const picked = await bridge().chooseSlidesFolder();
-    if (picked) {
-      folder = picked;
-      if (store.boot) store.boot.slidesFolder = picked;
-    }
+    await store.chooseVault();
+    folder = store.vault?.rootPath ?? null;
   }
 </script>
 
@@ -132,15 +137,21 @@
         </button>
       </div>
     {:else}
-      <h1>Choose your slides folder</h1>
+      <h1>Open your notes folder</h1>
       <p>
-        ChatterED reads the slides already sitting on your Mac. Nothing is uploaded anywhere you
-        didn't put it.
+        Point ChatterED at the folder where your course material already lives — the whole tree,
+        not one module. It reads the files from disk; nothing is uploaded anywhere you didn't put
+        it, and there is no upload button anywhere in the app.
       </p>
+      <p class="quiet">You pick which folders inside it are your topics next. The rest stays browsable.</p>
       {#if folder}<p class="quiet">{folder}</p>{/if}
       <div class="acts">
-        <button type="button" class="btn" onclick={() => void pickFolder()}>Choose a folder…</button>
-        <button type="button" class="btn-primary" onclick={() => void store.completeFirstRun()}>Start</button>
+        <button type="button" class="btn" disabled={store.vaultBusy} onclick={() => void pickFolder()}>
+          {store.vaultBusy ? 'Reading…' : folder ? 'Choose a different folder…' : 'Open a folder…'}
+        </button>
+        <button type="button" class="btn-primary" onclick={() => void store.completeFirstRun()}>
+          {folder ? 'Start' : 'Skip for now'}
+        </button>
       </div>
     {/if}
   </section>

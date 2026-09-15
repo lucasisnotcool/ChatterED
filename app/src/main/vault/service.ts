@@ -107,9 +107,10 @@ export class VaultService {
       });
     }
     this.#settings.set(SETTINGS_VAULT_ID, id, this.#now());
-    // §F.4 L1247's `slides_folder` still answers "where did the learner last point us", and the
-    // first-run copy refers to it, so it is kept in step rather than orphaned.
-    this.#settings.set('slides_folder', rootPath, this.#now());
+    // `slides_folder` used to be written here too, to keep §F.4's first-run copy in step. That
+    // copy is gone: first run now opens the vault itself, and nothing read the key back into
+    // the Library, so a learner picked their slides folder and immediately got asked again
+    // (ui-review-ux.md m1, ui-review-code.md §3). Migration 007 drops the row.
     this.rescan();
     return this.view();
   }

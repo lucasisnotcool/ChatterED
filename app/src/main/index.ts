@@ -13,6 +13,7 @@ import { openDatabase } from './db/driver.js';
 import { runMigrations } from './db/migrations.js';
 import { createStore } from './db/store.js';
 import { AppService } from './ipc.js';
+import { installMenuFor } from './menu.js';
 import { IPC } from '../shared/ipc.js';
 
 let mainWindow: BrowserWindow | null = null;
@@ -67,6 +68,29 @@ function createWindow(): BrowserWindow {
     },
   });
 
+  /**
+   * Nothing is allowed to scale the UI chrome.
+   *
+   * `setZoomMode('disabled')` is stronger than pinning `zoomFactor`, which a later
+   * `setZoomLevel` could still move: with it "all zoom changes will be ignored"
+   * (electron.d.ts). Visual (pinch) zoom is already off by default in Electron, and the viewer
+   * calls `preventDefault()` on its own ctrl-wheel anyway; the limits call is belt and braces.
+   * ⌘+/⌘−/⌘0 now reach the PDF instead, through the application menu (main/menu.ts).
+   */
+  win.webContents.setZoomMode('disabled');
+  void win.webContents.setVisualZoomLevelLimits(1, 1);
+
+  /**
+   * The macOS three-finger swipe, as a *secondary* path to a page turn. Its own typing says it
+   * only fires when System Settings ▸ Trackpad ▸ More Gestures ▸ "Swipe between pages" is set to
+   * "Swipe with two or three fingers", which is not the default — so the viewer's own
+   * horizontal-wheel latch is the mechanic, and this is a bonus for the people who have it on.
+   */
+  win.on('swipe', (_event, direction) => {
+    if (direction !== 'left' && direction !== 'right') return;
+    win.webContents.send(IPC.appCommand, direction === 'left' ? 'page.next' : 'page.prev');
+  });
+
   const devServer = process.env.CHATTERED_DEV_SERVER;
   if (devServer) void win.loadURL(devServer);
   else void win.loadFile(join(__dirname, '../renderer/index.html'));
@@ -106,6 +130,8 @@ function boot(): void {
   service.register();
 
   mainWindow = createWindow();
+  // Reload and DevTools are in this menu only while `app.isPackaged` is false.
+  installMenuFor(() => mainWindow);
 
   // Keep App Nap off while the app is open: a napping process does not tick.
   powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');

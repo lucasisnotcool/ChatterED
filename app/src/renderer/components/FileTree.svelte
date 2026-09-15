@@ -16,15 +16,40 @@
     nodes,
     depth,
     onopen,
-  }: { nodes: VaultTreeNode[]; depth: number; onopen: (file: VaultFileView) => void } = $props();
+    /**
+     * Folders start open in a topic: a vault is browsed, not navigated, and one click to see a
+     * week's slides is one click too many when the whole tree is twenty rows. **"Other" is the
+     * exception** — it is the whole unpromoted remainder of the tree, thousands of files deep in
+     * the developer's own vault, and opening all of it by default is what produced hundreds of
+     * rows and a six-deep chain (ui-review-ux.md m5, p5).
+     */
+    defaultOpen = true,
+  }: {
+    nodes: VaultTreeNode[];
+    depth: number;
+    onopen: (file: VaultFileView) => void;
+    defaultOpen?: boolean;
+  } = $props();
 
-  // Folders start open: a vault is browsed, not navigated, and one click to see a week's slides
-  // is one click too many when the whole tree is twenty rows.
-  const collapsed = new SvelteSet<string>();
+  // Only the folders the learner has actually touched are remembered, in whichever direction
+  // they moved them; everything else follows `defaultOpen`.
+  const opened = new SvelteSet<string>();
+  const closed = new SvelteSet<string>();
+
+  function isOpen(relPath: string): boolean {
+    if (opened.has(relPath)) return true;
+    if (closed.has(relPath)) return false;
+    return defaultOpen;
+  }
 
   function toggle(relPath: string): void {
-    if (collapsed.has(relPath)) collapsed.delete(relPath);
-    else collapsed.add(relPath);
+    if (isOpen(relPath)) {
+      opened.delete(relPath);
+      closed.add(relPath);
+    } else {
+      closed.delete(relPath);
+      opened.add(relPath);
+    }
   }
 </script>
 
@@ -36,14 +61,14 @@
           type="button"
           class="row dir"
           style="padding-left: {8 + depth * 12}px"
-          aria-expanded={!collapsed.has(node.relPath)}
+          aria-expanded={isOpen(node.relPath)}
           onclick={() => toggle(node.relPath)}
         >
-          <span class="twist" aria-hidden="true">{collapsed.has(node.relPath) ? '›' : '⌄'}</span>
+          <span class="twist" aria-hidden="true">{isOpen(node.relPath) ? '⌄' : '›'}</span>
           <span class="label">{node.name}</span>
         </button>
-        {#if !collapsed.has(node.relPath)}
-          <Self nodes={node.children} depth={depth + 1} {onopen} />
+        {#if isOpen(node.relPath)}
+          <Self nodes={node.children} depth={depth + 1} {defaultOpen} {onopen} />
         {/if}
       {:else if node.file}
         <button

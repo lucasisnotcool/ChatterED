@@ -118,7 +118,7 @@ export class AppService {
       orchestratorModel: resolved.models.orchestrator,
       modelChoices: [...CLI_MODEL_CHOICES],
       hasApiKey: this.#apiKey.has(),
-      slidesFolder: this.#d.store.settings.get('slides_folder') ?? null,
+      vaultRoot: this.#vault.view().rootPath,
     };
   }
 
@@ -170,7 +170,6 @@ export class AppService {
       return {
         roomId: s.room_id,
         conceptTitle: room?.topic ?? 'Session',
-        moduleCode: room?.module_code ?? '',
         states: ledger.map((r) =>
           r.level >= 3 ? ('defended' as const) : r.level === 2 ? ('justified' as const) : r.level === 1 ? ('stated' as const) : ('not_yet' as const),
         ),
@@ -185,7 +184,6 @@ export class AppService {
       backend: resolved.kind,
       backendChoice: resolved.choice,
       cli: resolved.detection ?? NOT_FOUND,
-      slidesFolder: this.#d.store.settings.get('slides_folder') ?? null,
       pairing,
       agents: rosterFor(pairing, resolved.models.agent),
       recentSessions: recent,
@@ -284,16 +282,6 @@ export class AppService {
     };
 
     handle(IPC.bootstrap, () => this.bootstrap());
-
-    handle(IPC.chooseSlidesFolder, async () => {
-      const win = this.#d.getWindow();
-      const result = await (win
-        ? dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-        : dialog.showOpenDialog({ properties: ['openDirectory'] }));
-      const folder = result.canceled ? null : (result.filePaths[0] ?? null);
-      if (folder) this.#d.store.settings.set('slides_folder', folder, new Date().toISOString());
-      return folder;
-    });
 
     handle<string>(IPC.setApiKey, (key) => {
       if (!looksLikeAnthropicKey(key)) {
@@ -416,6 +404,9 @@ export class AppService {
       this.#requireActor(input.roomId).pauseNudges(input.paused),
     );
     handle<{ roomId: string }>(IPC.wrapUp, (input) => this.#requireActor(input.roomId).wrapUp());
+    handle<{ roomId: string; agentKey: string }>(IPC.acceptTeachback, (input) =>
+      this.#requireActor(input.roomId).acceptTeachback(input.agentKey),
+    );
     handle<{ roomId: string; agentKey: string }>(IPC.openWhisper, (input) =>
       this.#requireActor(input.roomId).openWhisper(input.agentKey),
     );

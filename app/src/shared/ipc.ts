@@ -16,16 +16,17 @@ import type {
   SessionSeed,
   SettingsPatch,
   SettingsView,
+  TeachbackResult,
   TopicCandidateView,
   VaultTreeNode,
   VaultView,
   WhisperThreadView,
+  AppCommand,
   WindowState,
 } from './types.js';
 
 export const IPC = {
   bootstrap: 'app:bootstrap',
-  chooseSlidesFolder: 'app:chooseSlidesFolder',
   setApiKey: 'app:setApiKey',
   clearApiKey: 'app:clearApiKey',
   completeFirstRun: 'app:completeFirstRun',
@@ -40,6 +41,7 @@ export const IPC = {
   holdTimer: 'room:hold',
   pauseNudges: 'room:pauseNudges',
   wrapUp: 'room:wrapUp',
+  acceptTeachback: 'room:acceptTeachback',
   openWhisper: 'whisper:open',
   sendWhisper: 'whisper:send',
   relayWhisper: 'whisper:relay',
@@ -47,6 +49,8 @@ export const IPC = {
   event: 'room:event',
   /** main → renderer: the window entered or left macOS fullscreen (issue #21). */
   windowState: 'app:windowState',
+  /** main → renderer: an application-menu item, or a trackpad swipe, was used. */
+  appCommand: 'app:command',
 
   // The vault (issue #22).
   vaultGet: 'vault:get',
@@ -67,7 +71,6 @@ export const IPC = {
 
 export interface ChatterEdApi {
   bootstrap(): Promise<Bootstrap>;
-  chooseSlidesFolder(): Promise<string | null>;
   /** Stored in <userData>/anthropic-api-key, mode 0600. Never written to SQLite (#15). */
   setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;
   clearApiKey(): Promise<void>;
@@ -95,6 +98,11 @@ export interface ChatterEdApi {
   /** `Wait for me`: pauses nudges for this round, with an undo. */
   pauseNudges(input: { roomId: string; paused: boolean }): Promise<void>;
   wrapUp(input: { roomId: string }): Promise<RecapView>;
+  /**
+   * "Yes, invite Theo" on the recap. Records the acceptance and says what happens next; Theo's
+   * round itself is A2 and `available` is false until it exists.
+   */
+  acceptTeachback(input: { roomId: string; agentKey: string }): Promise<TeachbackResult>;
 
   openWhisper(input: { roomId: string; agentKey: string }): Promise<WhisperThreadView>;
   sendWhisper(input: { roomId: string; threadId: string; text: string }): Promise<void>;
@@ -159,6 +167,16 @@ export interface ChatterEdApi {
   }): Promise<void>;
   /** Subscribe to vault changes pushed by the scanner and the background indexer. */
   onVaultChanged(listener: (view: VaultView) => void): () => void;
+
+  /**
+   * Subscribe to application-menu commands.
+   *
+   * ⌘+ / ⌘− / ⌘0 are **ChatterED's**, not Chromium's: the default Electron menu bound them to
+   * `zoomIn`/`zoomOut`/`resetZoom`, which scale the whole application chrome — sidebar, rail,
+   * composer and all — instead of the PDF (ui-review-code.md §4). The menu sends its intent
+   * here; the renderer routes it to whichever viewer is open.
+   */
+  onAppCommand(listener: (command: AppCommand) => void): () => void;
 
   /**
    * Subscribe to window chrome changes. The only thing the renderer needs from the window is

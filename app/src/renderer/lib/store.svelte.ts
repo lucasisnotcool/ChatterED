@@ -5,6 +5,7 @@
  * never computed here — see time.ts (product-design.md §C4).
  */
 import type {
+  AppCommand,
   Bootstrap,
   ConceptDraft,
   CreateSessionInput,
@@ -24,6 +25,8 @@ import type {
   WhisperThreadView,
 } from '../../shared/types.js';
 import { bridge } from './bridge.js';
+import { validateRange } from './pdfview.js';
+import { isViewerCommand, runViewerCommand } from './viewer.js';
 
 export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings';
 
@@ -46,6 +49,8 @@ class Store {
   boot: Bootstrap | null = $state(null);
   room: RoomSnapshot | null = $state(null);
   recap: RecapView | null = $state(null);
+  /** Set once the learner has accepted the teach-back invitation; the card then says so. */
+  teachbackNote: string | null = $state(null);
   whisper: WhisperThreadView | null = $state(null);
   whisperOpen = $state(false);
   notice: { level: 'info' | 'error'; text: string } | null = $state(null);
@@ -53,7 +58,6 @@ class Store {
   /** Local view preferences. */
   ledgerHidden = $state(false);
   sourceCollapsed = $state(false);
-  navCollapsed = $state(false);
 
   /** Local clock reading at the moment the current TimerView arrived (drift correction). */
   timerReceivedAt = $state(Date.now());
@@ -89,8 +93,27 @@ class Store {
   docFrom: number | null = $state(null);
   docTo: number | null = $state(null);
   docSelection = $state('');
+  /** How many pages the open PDF has, bound out of the viewer so a range can be validated. */
+  docPageCount = $state(0);
+  /**
+   * Where each file was last scrolled to, by file id. VaultBrowser's docstring already promised
+   * that "the page they were on" survives closing a document; it only ever did while the pane
+   * stayed mounted (ui-review-code.md §5.5). Per-app-session and in memory: it is a convenience,
+   * not something worth a row in SQLite.
+   */
+  docScroll: Record<string, number> = $state({});
   /** Set by a search hit so the PDF jumps to the page the snippet came from. */
   pendingPage: number | null = $state(null);
+
+  /**
+   * The document behind the room's source pane — the slide being explained, as a page rather
+   * than as a paragraph of hyphenated pdf.js output (ui-review-ux.md M11).
+   *
+   * Held separately from `openDoc` on purpose: `openDoc` is what the learner is browsing, and
+   * bringing a second document over must not replace the slide the room is about.
+   */
+  roomSource: DocumentView | null = $state(null);
+  roomSourceFor: string | null = $state(null);
 
   /**
    * The vault browser as an overlay over a live room (issue #22 decision 4). The learner goes
@@ -118,6 +141,37 @@ class Store {
 
   unsubscribe: (() => void) | null = null;
   unsubscribeVault: (() => void) | null = null;
+  unsubscribeCommands: (() => void) | null = null;
+
+  /**
+   * Application-menu items (and the macOS swipe) arrive here. Zoom, fit and page turns go to
+   * whichever viewer is open — ⌘+ scales the PDF, never the app chrome — and the rest are the
+   * same calls the buttons make, so there is one implementation of each intention.
+   */
+  runCommand(command: AppCommand): void {
+    if (isViewerCommand(command)) {
+      runViewerCommand(command);
+      return;
+    }
+    switch (command) {
+      case 'vault.open':
+        void this.chooseVault();
+        break;
+      case 'vault.rescan':
+        if (this.vault?.rootPath) void this.rescanVault();
+        break;
+      case 'topics.edit':
+        if (this.vault?.rootPath) void this.openTopicSheet();
+        break;
+      case 'search.files':
+        // ⌘K is the whisper inside a room (§C10); the finder is not reachable from there.
+        if (this.screen !== 'room' && this.vault?.rootPath) this.openFinder();
+        break;
+      case 'settings.open':
+        void this.openSettings();
+        break;
+    }
+  }
 
   async init(): Promise<void> {
     this.unsubscribe?.();
@@ -127,6 +181,8 @@ class Store {
     this.unsubscribeVault = bridge().onVaultChanged((view) => {
       this.vault = view;
     });
+    this.unsubscribeCommands?.();
+    this.unsubscribeCommands = bridge().onAppCommand((command) => this.runCommand(command));
     try {
       const boot = await bridge().bootstrap();
       this.boot = boot;
@@ -195,7 +251,6 @@ class Store {
   // ── Settings ─────────────────────────────────────────────────────────────
   async openSettings(): Promise<void> {
     this.screen = 'settings';
-    this.navCollapsed = false;
     await this.loadSettings();
   }
 
@@ -319,6 +374,7 @@ class Store {
     this.docSelection = '';
     this.docFrom = null;
     this.docTo = null;
+    this.docPageCount = 0;
     this.pendingPage = null;
   }
 
@@ -396,18 +452,43 @@ class Store {
     const roomId = this.room?.roomId;
     const doc = this.openDoc;
     if (!roomId || !doc) return false;
+    // An inverted range resolves to no page text at all, so it never leaves the renderer.
+    const range = validateRange(this.docFrom, this.docTo, this.docPageCount);
+    if (!range.valid) {
+      this.notice = { level: 'error', text: range.error ?? 'That page range runs backwards.' };
+      return false;
+    }
     const selection = this.docSelection.trim();
     const payload = {
       roomId,
       fileId: doc.fileId,
-      pageFrom: doc.kind === 'pdf' ? (this.docFrom ?? this.docPage) : null,
-      pageTo: doc.kind === 'pdf' ? (this.docTo ?? this.docPage) : null,
+      pageFrom: doc.kind === 'pdf' ? (range.from ?? this.docPage) : null,
+      pageTo: doc.kind === 'pdf' ? (range.to ?? this.docPage) : null,
       selection: selection.length > 0 ? selection : null,
     };
     this.browserOpen = false;
     this.docSelection = '';
     void run(this, () => bridge().showDocument(payload));
     return true;
+  }
+
+  /**
+   * Fetch the material's own file once per room. Failure is silent: the pane falls back to the
+   * extracted text, which is what a pasted-text session and every pre-migration room show.
+   */
+  async loadRoomSource(fileId: string | null): Promise<void> {
+    if (fileId === null) {
+      this.roomSource = null;
+      this.roomSourceFor = null;
+      return;
+    }
+    if (this.roomSourceFor === fileId) return;
+    this.roomSourceFor = fileId;
+    try {
+      this.roomSource = await bridge().openDocument({ fileId });
+    } catch {
+      this.roomSource = null;
+    }
   }
 
   async openRoom(roomId: string): Promise<void> {
@@ -418,17 +499,18 @@ class Store {
     this.recap = null;
     this.whisper = null;
     this.whisperOpen = false;
-    this.navCollapsed = true;
     this.screen = 'room';
+    void this.loadRoomSource(snapshot.material.fileId);
   }
 
   leaveRoom(): void {
     this.browserOpen = false;
     this.room = null;
+    this.roomSource = null;
+    this.roomSourceFor = null;
     this.recap = null;
     this.whisper = null;
     this.whisperOpen = false;
-    this.navCollapsed = false;
     this.screen = 'library';
   }
 
@@ -482,9 +564,22 @@ class Store {
     void run(this, () => bridge().pauseNudges({ roomId, paused }));
   }
 
+  /**
+   * "Yes, invite Theo." The teach-back round itself is A2; this records the acceptance and
+   * brings back the line the card shows in place of the two buttons, so the primary button on
+   * the payoff screen is no longer a button with no handler (ui-review-ux.md M9).
+   */
+  async acceptTeachback(agentKey: string): Promise<void> {
+    const roomId = this.room?.roomId;
+    if (!roomId) return;
+    const result = await run(this, () => bridge().acceptTeachback({ roomId, agentKey }));
+    this.teachbackNote = result?.note ?? null;
+  }
+
   async wrapUp(): Promise<void> {
     const roomId = this.room?.roomId;
     if (!roomId) return;
+    this.teachbackNote = null;
     const recap = await run(this, () => bridge().wrapUp({ roomId }));
     if (recap) this.recap = recap;
   }

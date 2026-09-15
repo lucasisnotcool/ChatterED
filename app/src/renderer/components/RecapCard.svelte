@@ -3,6 +3,7 @@
    *  stays visible and scrollable behind it. */
   import type { RecapView } from '../../shared/types.js';
   import { LEDGER_GLYPH, glyphAlt } from '../lib/labels.js';
+  import { store } from '../lib/store.svelte.js';
   import { minsSecs } from '../lib/time.js';
 
   let { recap, onclose }: { recap: RecapView; onclose: () => void } = $props();
@@ -11,9 +12,13 @@
   const moved = $derived(
     recap.after.some((r, i) => r.state !== (recap.before[i]?.state ?? 'not_yet')),
   );
-  const acts = $derived(
-    recap.actProfile.map((a) => `${a.count} ${a.label}`).join(' · '),
-  );
+  /**
+   * What the learner did, in words. `actProfile` no longer carries a count of ledger states —
+   * "0 claims established · 0 defended · 0 revisited" was a score on the one screen that exists
+   * to remove evaluation apprehension (P5, ui-review-ux.md M9). Zero counts never reach here,
+   * and when nothing did, the block is absent rather than empty.
+   */
+  const acts = $derived(recap.actProfile.map((a) => `${a.count} ${a.label}`).join(' · '));
 </script>
 
 <div class="wrap">
@@ -72,18 +77,35 @@
       {/each}
     {/if}
 
-    <h3 class="label-caps">This round</h3>
-    <p class="body">
-      {acts}. You explained for {minsSecs(recap.unaidedMs)} before asking for any help.
-    </p>
+    {#if recap.actProfile.length > 0}
+      <h3 class="label-caps">This round</h3>
+      <p class="body">
+        {acts}. You explained for {minsSecs(recap.unaidedMs)} before asking for any help.
+      </p>
+    {/if}
 
+    <!-- §B6: an unavailable reward is a punishment, so the whole block is absent unless the
+         gate is met — which is now "something is on the record", not "a tutee exists". -->
     {#if recap.teachbackOffer}
       <hr class="hairline" />
-      <p class="body">{recap.teachbackOffer.blurb}</p>
-      <div class="acts">
-        <button type="button" class="btn-primary">Yes, invite {recap.teachbackOffer.displayName}</button>
-        <button type="button" class="btn" onclick={onclose}>Not now</button>
-      </div>
+      {#if store.teachbackNote}
+        <p class="body">{store.teachbackNote}</p>
+        <div class="acts">
+          <button type="button" class="btn" onclick={onclose}>Close</button>
+        </div>
+      {:else}
+        <p class="body">{recap.teachbackOffer.blurb}</p>
+        <div class="acts">
+          <button
+            type="button"
+            class="btn-primary"
+            onclick={() => void store.acceptTeachback(recap.teachbackOffer!.agentKey)}
+          >
+            Yes, invite {recap.teachbackOffer.displayName}
+          </button>
+          <button type="button" class="btn" onclick={onclose}>Not now</button>
+        </div>
+      {/if}
     {/if}
   </section>
 </div>

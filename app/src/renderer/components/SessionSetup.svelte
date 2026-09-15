@@ -8,12 +8,49 @@
   // ingest path: the extracted text pre-fills this very box, and everything after it is the
   // concept-pack flow that paste has always used.
   const from = store.setupFrom;
-  let moduleCode = $state(from?.moduleCode ?? 'MA3236');
+  /**
+   * The module code, derived from the topic folder this file came out of and **empty when there
+   * is nothing to derive it from**. It used to default to the literal `'MA3236'`, so every
+   * session started without one was stamped with a real module the learner had never taken, and
+   * it then showed up as a course in the nav rail (ui-review-ux.md M2).
+   */
+  let moduleCode = $state(from?.moduleCode ?? '');
   let draft = $state<ConceptDraft | null>(null);
   let loading = $state(false);
   let opening = $state(false);
   let title = $state('');
-  let claims = $state<{ id: string; label: string }[]>([]);
+  /**
+   * `learnerLabel` is the short handle the ledger rail shows. It is edited here, beside the
+   * claim, because the rail is 260 px wide and the claim is a sentence — §D1's whole argument
+   * for a live rail is that it can be scanned in half a second (ui-review-ux.md B5, M7).
+   */
+  let claims = $state<{ id: string; label: string; learnerLabel: string }[]>([]);
+
+  /**
+   * A textarea that grows with what is in it. The claim rows were single-line `<input>`s and
+   * the claims are now paragraphs, so the confirmation step the spec calls "the learner's first
+   * act of ownership" was asking them to confirm five things they could not read.
+   */
+  function autogrow(node: HTMLTextAreaElement): { destroy: () => void } {
+    const fit = (): void => {
+      node.style.height = 'auto';
+      node.style.height = `${node.scrollHeight}px`;
+    };
+    fit();
+    node.addEventListener('input', fit);
+    // The rows are filled in from a model response after mount, not typed, so the first fit has
+    // to happen once the value has landed too.
+    const observer = new MutationObserver(fit);
+    observer.observe(node, { attributes: true, attributeFilter: ['value'] });
+    const frame = requestAnimationFrame(fit);
+    return {
+      destroy: () => {
+        node.removeEventListener('input', fit);
+        observer.disconnect();
+        cancelAnimationFrame(frame);
+      },
+    };
+  }
 
   const tooFew = $derived(claims.length > 0 && claims.length < 3);
   const tooMany = $derived(claims.length > 6);
@@ -27,7 +64,7 @@
     if (!result) return;
     draft = result;
     title = result.title;
-    claims = result.claims.map((c) => ({ id: c.id, label: c.label }));
+    claims = result.claims.map((c) => ({ id: c.id, label: c.label, learnerLabel: c.learnerLabel }));
   }
 
   async function open(): Promise<void> {
@@ -38,7 +75,7 @@
       title: title.trim(),
       text,
       conceptId: draft.conceptId,
-      claims: claims.map((c) => ({ id: c.id, label: c.label.trim() })),
+      claims: claims.map((c) => ({ id: c.id, label: c.label.trim(), learnerLabel: c.learnerLabel.trim() })),
       // The file provenance and the topic are added by the store when setup was seeded from a
       // file; paste stays exactly what it was.
       sourceKind: 'pasted_text',
@@ -47,7 +84,7 @@
   }
 
   function addClaim(): void {
-    claims = [...claims, { id: `R${claims.length + 1}`, label: '' }];
+    claims = [...claims, { id: `R${claims.length + 1}`, label: '', learnerLabel: '' }];
   }
 </script>
 
@@ -55,8 +92,8 @@
   <div class="col source">
     <h1>Set up this session</h1>
     <label class="field">
-      <span>Module</span>
-      <input bind:value={moduleCode} spellcheck="false" />
+      <span>Module <span class="opt">optional</span></span>
+      <input bind:value={moduleCode} spellcheck="false" placeholder="e.g. CS3249" />
     </label>
     {#if from}
       <p class="from">
@@ -95,7 +132,23 @@
 
       {#each claims as claim, i (claim.id)}
         <div class="claim">
-          <input bind:value={claims[i]!.label} aria-label="Claim {i + 1}" />
+          <span class="cid">{claim.id}</span>
+          <div class="fields">
+            <textarea
+              class="ctext"
+              rows="2"
+              bind:value={claims[i]!.label}
+              aria-label="Claim {i + 1}"
+              use:autogrow
+            ></textarea>
+            <input
+              class="clabel"
+              bind:value={claims[i]!.learnerLabel}
+              aria-label="Short label for claim {i + 1}"
+              placeholder="short label for the rail"
+              maxlength="60"
+            />
+          </div>
           <button
             type="button"
             class="del"
@@ -142,7 +195,7 @@
   h2 { margin: 18px 0 6px; color: var(--muted); font-size: 10px; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-2); }
   .field.grow { flex: 1; }
-  .field input, .field textarea, .title, .claim input {
+  .field input, .field textarea, .title, .claim .ctext, .claim .clabel {
     border: 1px solid var(--hairline);
     border-radius: var(--radius);
     background: var(--pane);
@@ -154,7 +207,12 @@
   .acts { display: flex; }
 
   .caption { margin: 0 0 10px; font-size: 12px; color: var(--text-2); line-height: 1.55; }
-  .claim { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .claim { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+  .claim .fields { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .claim .ctext { resize: none; overflow: hidden; line-height: 1.5; min-height: 2.6em; }
+  .claim .clabel { font-size: 11px; padding: 4px 8px; color: var(--text-2); }
+  .cid { font-size: 10px; color: var(--muted); padding-top: 10px; font-variant-numeric: tabular-nums; }
+  .opt { color: var(--muted); }
   .del { color: var(--muted); font-size: 11px; padding: 4px; }
   .del:hover { color: var(--text-2); }
   .add { font-size: 11px; color: var(--text-2); margin-top: 2px; }

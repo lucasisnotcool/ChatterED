@@ -36,18 +36,31 @@
   <VaultSidebar onopen={open} />
 
   <div class="right">
+    <!-- One search entry, not two. A 240 px `Search everything…` box sitting beside a
+         `Find a file ⌘K` link, with nothing saying how they differ, is the classic "we built two
+         features" tell (ui-review-ux.md M4). The box searches *inside* the files; ⌘K is the
+         filename finder; the placeholder says which is which and the hint is inside the box. -->
     <header class="top">
-      <input
-        class="search"
-        type="search"
-        placeholder="Search everything…"
-        autocomplete="off"
-        spellcheck="false"
-        aria-label="Search the vault"
-        value={store.searchQuery}
-        oninput={(e) => void store.runSearch(e.currentTarget.value)}
-      />
-      <button type="button" class="btn-link kbd" onclick={() => store.openFinder()}>Find a file ⌘K</button>
+      <span class="searchwrap">
+        <input
+          class="search"
+          type="search"
+          placeholder="Search inside your files…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search inside your files. Press Command K to search filenames instead."
+          value={store.searchQuery}
+          oninput={(e) => void store.runSearch(e.currentTarget.value)}
+        />
+        <button
+          type="button"
+          class="hint"
+          title="Jump to a file by name"
+          onclick={() => store.openFinder()}
+        >
+          ⌘K names
+        </button>
+      </span>
       {#if inRoom}
         <span class="gap"></span>
         <button type="button" class="btn-link" onclick={() => (store.browserOpen = false)}>Back to the room</button>
@@ -82,18 +95,29 @@
     padding: 10px 16px;
     border-bottom: 1px solid var(--hairline);
   }
+  .searchwrap { position: relative; display: inline-flex; align-items: center; }
   .search {
-    flex: none;
-    width: 240px;
+    width: 320px;
+    max-width: 46vw;
     background: var(--pane);
     border: 1px solid var(--hairline);
     border-radius: var(--radius);
-    padding: 5px 10px;
+    padding: 5px 78px 5px 10px;
     font-size: 12px;
     outline: none;
   }
   .search:focus { border-color: var(--indigo); }
-  .kbd { font-size: 11px; }
+  .hint {
+    position: absolute;
+    right: 5px;
+    font-size: 10px;
+    color: var(--muted);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 1px 5px;
+    background: var(--ground);
+  }
+  .hint:hover { color: var(--text-2); border-color: var(--muted); }
   .gap { flex: 1; }
 
   .scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 16px 20px 40px; }

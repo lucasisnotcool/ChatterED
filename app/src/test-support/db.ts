@@ -93,6 +93,7 @@ export function seedRoom(store: LocalStore = openTestStore(), messages: string[]
       title: 'Convexity and the Hessian',
       source_kind: 'pasted_text',
       file_path: null,
+    file_id: null,
       file_sha256: null,
       file_mtime: null,
       page_from: null,

@@ -61,7 +61,7 @@ const mockSettings: SettingsView = {
   orchestratorModel: 'sonnet',
   modelChoices: ['haiku', 'sonnet', 'opus'],
   hasApiKey: false,
-  slidesFolder: null,
+  vaultRoot: null,
 };
 
 const row = (id: string, label: string, learnerLabel: string): LedgerRowView => ({
@@ -203,16 +203,15 @@ export function createMockBridge(): ChatterEdApi {
   return {
     async bootstrap(): Promise<Bootstrap> {
       return {
-        appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted', slidesFolder: null,
+        appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted',
         backend: 'scripted', backendChoice: 'auto', cli: MOCK_CLI,
         pairing: 'ellie_peer', agents: AGENTS, firstRun: true,
         recentSessions: [
-          { roomId: ROOM, conceptTitle: 'Convexity and the Hessian', moduleCode: 'MA3236', states: ['defended', 'defended', 'justified'], endedAt: iso(-2 * 864e5), updatedAt: iso(-2 * 864e5) },
-          { roomId: 'mock-room-0', conceptTitle: 'Amortised append', moduleCode: 'CS2040S', states: ['stated', 'not_yet', 'not_yet'], endedAt: iso(-8 * 864e5), updatedAt: iso(-8 * 864e5) },
+          { roomId: ROOM, conceptTitle: 'Convexity and the Hessian', states: ['defended', 'defended', 'justified'], endedAt: iso(-2 * 864e5), updatedAt: iso(-2 * 864e5) },
+          { roomId: 'mock-room-0', conceptTitle: 'Amortised append', states: ['stated', 'not_yet', 'not_yet'], endedAt: iso(-8 * 864e5), updatedAt: iso(-8 * 864e5) },
         ],
       };
     },
-    async chooseSlidesFolder() { return '~/Documents/NUS/MA3236'; },
     async setApiKey(_key: string) { return { ok: true }; },
     async clearApiKey() { /* no-op */ },
     async completeFirstRun() { /* no-op */ },
@@ -251,7 +250,7 @@ export function createMockBridge(): ChatterEdApi {
         thinking: null, nudgesPaused: false, mode: 'scripted',
         material: {
           id: 'mat1', moduleCode: 'MA3236', title: 'Second-order condition for convexity',
-          sourceKind: 'pdf_pages', fileName: 'Slides_L06_Convexity.pdf', pageFrom: 30, pageTo: 31,
+          sourceKind: 'pdf_pages', fileName: 'Slides_L06_Convexity.pdf', fileId: null, pageFrom: 30, pageTo: 31,
           pageCount: 38, cacheEligible: false, tokenCount: 180,
           extractedText: 'Second-order condition for convexity\n\nA twice-differentiable f is convex on an open convex set S if and only if ∇²f(x) ⪰ 0 for every x ∈ S.\n\nHere ⪰ 0 means positive semidefinite: zᵀ∇²f(x)z ≥ 0 for every z.',
         },
@@ -307,6 +306,14 @@ export function createMockBridge(): ChatterEdApi {
       };
       emit({ type: 'session.recap', roomId: ROOM, recap });
       return recap;
+    },
+
+    async acceptTeachback({ agentKey }) {
+      const agent = AGENTS.find((a) => a.key === agentKey);
+      return {
+        available: false,
+        note: `Noted — ${agent?.displayName ?? 'Theo'}'s round is the next thing being built.`,
+      };
     },
 
     async openWhisper({ agentKey }): Promise<WhisperThreadView> {
@@ -366,6 +373,7 @@ export function createMockBridge(): ChatterEdApi {
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     // `vite dev` has no window to be fullscreen; the traffic lights are never drawn there.
+    onAppCommand() { return () => undefined; },
     onWindowState(listener) { listener({ fullScreen: false }); return () => undefined; },
   };
 }

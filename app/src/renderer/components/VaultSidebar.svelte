@@ -14,6 +14,7 @@
 
   const vault = $derived(store.vault);
   const indexing = $derived(vault?.index.running === true && vault.index.done < vault.index.total);
+  const onOther = $derived(store.selectedTopic === 'other');
 
   function nodeCount(nodes: VaultTreeNode[]): number {
     let n = 0;
@@ -24,9 +25,20 @@
 
 <aside class="sidebar" aria-label="Vault">
   {#if vault?.rootPath}
+    <!-- The header used to be one line: a name ellipsed to `OneDrive-NationalUnivers…` with no
+         tooltip, and an 11 px `Topics…` link nobody could read as "this is how you choose what a
+         topic is" (ui-review-ux.md M5, p3). Two lines: the vault, then what you can do to it —
+         including changing it, which was previously only reachable from an empty-state card that
+         disappeared the moment a file was open. -->
     <header class="head">
       <span class="root" title={vault.rootPath}>{vault.displayName}</span>
-      <button type="button" class="mini" onclick={() => void store.openTopicSheet()}>Topics…</button>
+      <div class="rowacts">
+        <button type="button" class="mini" onclick={() => void store.openTopicSheet()}>Edit topics</button>
+        <span class="sep" aria-hidden="true">·</span>
+        <button type="button" class="mini" disabled={store.vaultBusy} onclick={() => void store.chooseVault()}>
+          Change vault…
+        </button>
+      </div>
     </header>
 
     <nav class="topics" aria-label="Topics">
@@ -42,17 +54,24 @@
           <span class="count">{t.fileCount}</span>
         </button>
       {/each}
+    </nav>
+
+    <!-- "Other" is the rest of the tree, not a topic. It sat in the same visual weight as the
+         real ones and dominated the list at `Other 3940` (§p5), so it is pinned to the bottom of
+         the topic list, under a hairline, muted, and closed until it is asked for. -->
+    <div class="other">
       <button
         type="button"
-        class="topic"
-        class:active={store.selectedTopic === 'other'}
-        onclick={() => void store.selectTopic('other')}
+        class="topic muted"
+        class:active={onOther}
+        aria-expanded={onOther}
+        onclick={() => void store.selectTopic(onOther ? (vault.topics[0]?.id ?? 'other') : 'other')}
       >
-        <span class="dot hollow" aria-hidden="true"></span>
+        <span class="twist" aria-hidden="true">{onOther ? '⌄' : '›'}</span>
         <span class="name">Other</span>
         <span class="count">{vault.otherCount}</span>
       </button>
-    </nav>
+    </div>
 
     {#if indexing}
       <!-- §B1 L212: beyond two seconds, a determinate strip under the course name. -->
@@ -66,7 +85,7 @@
       {#if store.vaultTree.length === 0}
         <p class="none">Nothing here.</p>
       {:else}
-        <FileTree nodes={store.vaultTree} depth={0} {onopen} />
+        <FileTree nodes={store.vaultTree} depth={0} defaultOpen={!onOther} {onopen} />
       {/if}
     </div>
 
@@ -96,18 +115,24 @@
 
   .head {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 14px 12px 8px;
+    flex-direction: column;
+    gap: 3px;
+    padding: 12px 12px 8px;
   }
   .root {
-    flex: 1;
     font-size: 12px;
     font-weight: 600;
-    white-space: nowrap;
+    line-height: 1.35;
+    /* Two lines before it ellipses, and the full path is always in the tooltip. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
   }
+  .rowacts { display: flex; align-items: baseline; gap: 5px; }
+  .sep { color: var(--muted); font-size: 11px; }
   .mini { font-size: 11px; color: var(--text-2); }
   .mini:hover { color: var(--indigo); }
   .mini:disabled { color: var(--muted); cursor: default; }
@@ -127,7 +152,10 @@
   .topic:hover { background: #eeeef5; }
   .topic.active { background: #eaeaf4; color: var(--text); font-weight: 500; }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-  .dot.hollow { border: 1px solid var(--muted); background: none; }
+  .other { padding: 4px 8px 6px; border-top: 1px solid var(--hairline); margin: 2px 0 0; }
+  .topic.muted { color: var(--muted); }
+  .topic.muted.active { color: var(--text-2); }
+  .twist { width: 7px; font-size: 10px; color: var(--muted); flex: none; }
   .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 

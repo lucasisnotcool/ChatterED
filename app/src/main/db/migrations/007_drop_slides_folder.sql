@@ -1,0 +1,13 @@
+-- The `slides_folder` setting, removed.
+--
+-- It was the pre-vault concept: "one module = one slides folder" (product-design.md §B1 L179).
+-- Issue #22 replaced it with a vault root in its own table and `settings.vault_id`, but the key
+-- was kept in step so §F.4's first-run copy would not be orphaned. The UX review found what that
+-- actually produced: first run asks the learner to choose their slides folder, writes this key,
+-- and the Library — which reads `vaults` — immediately asks them again in different words
+-- (ui-review-ux.md m1). The first-run card now opens the vault itself, so nothing writes this
+-- key and nothing reads it.
+--
+-- A settings row, so there is nothing to migrate and nothing to lose: the vault root is already
+-- in `vaults.root_path` for anyone who ever opened one.
+DELETE FROM settings WHERE key = 'slides_folder';

@@ -5,10 +5,12 @@ report has to be guessed at. The rule used throughout: a mechanic that carries a
 is real; content and infrastructure that carry none may be scripted or stubbed, and are listed
 here as such.
 
-Run it: `npm install && npm run dev`. Test it: `npm test` (82 tests, no network).
+Run it: `npm install && npm run dev`. Test it: `npm test` (**267 tests**, no network).
 
 **Updated 14 Sep 2026** for issues #19 (local Claude CLI backend, per-role model selection) and
-#20 (local install with a launchd auto-rebuild).
+#20 (local install with a launchd auto-rebuild), and **15 Sep 2026** for the UI-review fixes —
+see *UI review fixes* near the end of this file, which is also the record of what is **not yet
+committed** while `git` is blocked on this Mac.
 
 ## Real — it runs, it is persisted, and it is tested
 
@@ -53,11 +55,11 @@ Run it: `npm install && npm run dev`. Test it: `npm test` (82 tests, no network)
 |---|---|---|
 | Firestore mirror does nothing | Out of scope for M0/M1 by instruction; the `outbox` table and the interface exist so the drain is the only missing piece | A2 W5 |
 | `cache_eligible` uses a ~1.3 tokens/word estimate, not `messages.count_tokens` | The real count needs an API call at setup time; the estimate is recorded and flagged rather than assumed correct | M2 |
-| No PDF page-range picker; setup is paste-only | `architecture-mac.md` §E: pdf.js + pdf-lib ingestion is its own milestone | M2 |
+| ~~No PDF page-range picker; setup is paste-only~~ | Landed in issue #22 and corrected in the UI-review pass: the range is marked by scrolling, shown and validated as `Pages N–M of X` | done |
 | `ensurePrefixFloor`'s widen/glossary steps are not implemented | Needs real token counts first | M2 |
 | Consent screen, participant code, withdrawal path | Compliance is handled by Lucas with the prof; the schema holds `consents` already | A2 |
 | History, export to `~/Documents/ChatterED/` | Not on a marked A1 requirement | A2 |
-| Theo's teach-back round | The recap renders the invitation; accepting it does nothing yet | A2 |
+| Theo's teach-back round | The recap now offers it only when something is on the record, and **Yes, invite Theo** records the acceptance in the event log and says what happens next. The round itself is not built | A2 |
 | Settings: Reply speed, pacing toggle, the `don't do this` target | The Settings screen now exists (#19) but carries only the backend and model choices | A2 |
 | Signing / notarisation | Unsigned by decision (#17). `npm run install:local` ad-hoc signs so macOS does not see a *broken* signature; `npm run dist:mac` still produces an unsigned DMG, untested this pass | Later milestone |
 | Firebase Auth, the `claudeProxy` function | Superseded for now by per-user keys (#15) | Revisit with the cohort |
@@ -376,3 +378,159 @@ loader cannot `import()` out of an asar archive.
 `cache_eligible = 0` at 2,809 tokens is the honest, expected answer, not a regression:
 architecture-mac.md §E.2 L1004 says every realistic single-slide selection misses the 4,096
 floor, and `ensurePrefixFloor`'s widen and glossary steps are still M2 work.
+
+## UI review fixes, 15 Sep 2026 — **uncommitted** (git is blocked on this Mac)
+
+`git` exits 69 (`You have not agreed to the Xcode license agreements`; only Lucas can run
+`sudo xcodebuild -license accept`), so none of the work below is committed. It is all in the
+working tree. The per-stage file lists are here so nothing is lost if this has to be picked up
+in another session.
+
+Source: the merged list from `docs/research/ui-review-code.md` and `docs/research/ui-review-ux.md`.
+**Deliberately not done this pass** (Lucas's decision, a later pass): the persistent third chat
+pane in the Library (code review §2, UX B1) and the "Bring a document replaces the room"
+restructure (UX M10).
+
+### Stage 1 — PDF fit and viewer correctness (code review §1, §5.1–5.6, §5.8)
+
+| File | What changed |
+|---|---|
+| `src/renderer/lib/pdfview.ts` | **New.** Every number the viewer depends on, as plain functions: `fitScale` (fit-width / fit-page against the real page box, 0 = "not measured, do not paint"), `governingSize`, `pageAtViewportTop`, `validateRange`, `markStart`/`markEnd`, `evictable`, `pinchScale`, `anchorScroll`, `pushHorizontal` (the page-turn latch), the zoom ladder |
+| `src/renderer/lib/pdfview.test.ts` | **New.** 36 tests, against the numbers measured in the review (960 pt deck, 841.9 pt landscape, 891 px pane) |
+| `src/renderer/components/PdfViewer.svelte` | Rewritten around that module: real `base.w`, a **Fit width / Fit page** pair, `scrollbar-gutter: stable`, per-page sizes measured in background chunks, canvas eviction outside ±3 pages, scroll-position page counter, range validation with an inline error, keyboard-reachable scroll area, one integer for both the page box and the canvas |
+| `src/renderer/components/DocumentPane.svelte` | Binds `pageCount`, restores and records scroll per file, disables **Explain** / **Show the room** on an inverted range |
+| `src/renderer/lib/store.svelte.ts` | `docPageCount`, `docScroll`, and `showTheRoom()` refuses an invalid range |
+
+Verified in a running dev build over CDP (own port 9333, own `--user-data-dir`, vault =
+`/Users/lohzh/ChatterED/Academia`):
+
+| Check | Before | After |
+|---|---|---|
+| 16:9 deck (960 pt), pane 891 px | page 1346 px, `scrollWidth` 1345, h-scrollbar, "140 %" | page **843 px**, `scrollWidth` 891, no h-scrollbar, "88 %" |
+| 31-page paper, scrolled end to end | 31 of 31 canvases live | **4** live, 56 MB (27 released to 0×0) |
+| Page counter at 300 % (max ratio 0.285) | frozen on page 1 | tracks: 8 at 25 %, 19 at 60 % |
+| `pp. 9–3` | `Explain pp. 9–3 →` seeded an empty paste box | inline *"Pages 9–3 runs backwards…"*, Explain disabled, nothing outlined |
+
+### Stage 2 — the on-camera blockers (ui-review-ux.md B4, B5, M2, M7, M9, m4)
+
+| File | What changed |
+|---|---|
+| `src/room/roundcard.ts` + `.test.ts` | **New.** The round card is built from the live Concept Pack and the live roster; `SCRIPT_ROUND_CARD` is used only in scripted mode, where the fixed pack *is* the session |
+| `src/room/actor.ts` | Uses it; recap rewritten — act counts of what the learner *did* (turns, challenges answered, self-corrections, documents brought in) with zero counts dropped and the block absent when nothing happened; the Theo block gated on something being on the record; `Nothing yet on X.` instead of `What about X?`; new `acceptTeachback()` |
+| `src/main/sessions.ts` | `module_code` may be empty — no `MA3236` literal; `learner_label` constrained in `DRAFT_SCHEMA` (≤ 8 words / ≤ 60 chars) plus one line in the ingest system prompt, a single re-prompt when it comes back long, and `shortLabel()` as the truncating fallback; `packFor` shortens whatever arrives |
+| `src/room/prompts.ts` | The `MODULE` line is omitted when there is no module. Old materials all have one, so the frozen prefix of every historical room is byte-identical |
+| `src/renderer/components/SessionSetup.svelte` | No `MA3236` default (optional field, `e.g. CS3249` placeholder); claim rows are auto-growing textareas with the short rail label beside each |
+| `src/renderer/components/RecapCard.svelte` | No score block when there is nothing to describe; **Yes, invite Theo** is wired |
+| `src/renderer/components/LedgerRow.svelte` | Row id shown (§B5's own wireframe), label clamped to two lines with the full claim as the row title |
+| `shared/types.ts`, `shared/ipc.ts`, `preload/`, `main/ipc.ts`, `mockBridge.ts`, `store.svelte.ts` | `acceptTeachback` through the bridge; `CreateSessionInput.claims[].learnerLabel` |
+
+**Theo, honestly.** His teach-back round is still A2. The button now records `teachback.accepted`
+in the event log and answers *"Noted — Theo's round is the next thing being built. Nothing here is
+lost…"*, which is a real handler and a true sentence; it is not the round itself.
+
+Tests: `roundcard.test.ts` (8), `sessions.test.ts` +17 (`shortLabel`, the empty module code and
+the prefix, `packFor`, `draftConcept`'s re-prompt against a fake client), `actor.test.ts` +6
+(act profile, the Theo gate, the open-question template, the round card, `acceptTeachback`).
+
+### Stage 3 — the navigation merge (ui-review-code.md §3, ui-review-ux.md M1–M5, m1, m2, B2)
+
+| File | What changed |
+|---|---|
+| `src/renderer/components/NavRail.svelte` | 48 px, icons only, always. `COURSES` and the `dot()` hue function deleted; **History is absent, not greyed** — it comes back with its own screen |
+| `src/renderer/App.svelte`, `store.svelte.ts` | `navCollapsed` and its three writers gone; `TopicSheet` mounted above the screen router so Settings and first run can open it |
+| `src/renderer/components/VaultSidebar.svelte` | Two-line header: the vault name (2-line clamp, full path as `title`) over **Edit topics · Change vault…**. "Other" pinned below a hairline, muted, and its tree starts closed |
+| `src/renderer/components/FileTree.svelte` | `defaultOpen` prop; only folders the learner actually touched are remembered |
+| `src/renderer/components/VaultBrowser.svelte` | One search entry: the box searches inside files, a `⌘K names` chip inside it opens the filename finder |
+| `src/renderer/components/DocumentPane.svelte` | The primary action is a real indigo button — **Explain p. 3 with Ellie and Max** — `aria-describedby` the page-range fields; Reveal in Finder / Close stay secondary |
+| `src/renderer/components/PdfViewer.svelte` | The range group is `#page-range`, labelled `Pages … of N`, and outlined indigo when set |
+| `src/renderer/components/FirstRun.svelte` | Card 3 opens the **vault**, through the same call the Library uses |
+| `src/renderer/components/Settings.svelte` | New **Your files** group: vault name, path, counts, Change vault… / Re-scan / Edit topics… |
+| `src/renderer/components/Library.svelte` | Empty-state copy fixed (`n files here, no topics yet` + **Pick your topics →**) |
+| `src/renderer/lib/labels.ts` | `agentNames()` — the button's "Ellie and Max", read off the live roster |
+| `src/main/db/migrations/007_drop_slides_folder.sql` | **New.** Deletes the `slides_folder` settings row |
+| `shared/ipc.ts`, `preload/`, `main/ipc.ts`, `main/vault/service.ts`, `shared/types.ts`, `mockBridge.ts` | `chooseSlidesFolder` and `slidesFolder` deleted end to end; `SettingsView.vaultRoot` replaces it; `RecentSession.moduleCode` dropped from the view type |
+
+**`rooms.module_code` is untouched in the database.** Only the display path is gone. Every
+historical material's `prefix_sha256` was hashed with the code in the `MODULE` line, and
+rewriting the column would silently invalidate the frozen prefix of every room that already
+exists (architecture-mac.md §E.3). Asserted in `navigation.test.ts`.
+
+Tests: `navigation.test.ts` (5 — the two dead paths swept out of `src/`, migration 007 against a
+database that already had the row, and the columns still present), `labels.test.ts` (5).
+
+Verified live: nav rail 48 px, document scroll area **1011 px** (was 891 — the 120 px went to the
+document), header reads `Explain p. 1 with Ellie and Max` as an indigo button, one search box
+with a `⌘K names` chip, `Pages … of 7` beside it, Other closed.
+
+### Stage 4 — the application menu and trackpad gestures (ui-review-code.md §4, §5.9)
+
+| File | What changed |
+|---|---|
+| `src/main/menu.ts` + `.test.ts` | **New.** App / File / Edit / View / Window / Help. View owns **Zoom In ⌘+ (and a hidden ⌘= twin), Zoom Out ⌘−, Actual Size ⌘0, Fit Width ⌘1, Fit Page ⌘2, Next/Previous Page ⌘↓ ⌘↑** and routes each to the viewer over one `app:command` channel. **Reload / Force Reload / Toggle DevTools only when `!app.isPackaged`** |
+| `src/main/index.ts` | Installs it; `webContents.setZoomMode('disabled')` + `setVisualZoomLevelLimits(1, 1)` so nothing scales the UI chrome; the BrowserWindow `'swipe'` event as a secondary page-turn path |
+| `src/renderer/lib/viewer.ts` + `.test.ts` | **New.** The registry from a menu item to whichever viewer is open |
+| `src/renderer/lib/store.svelte.ts` | `runCommand()` — viewer commands to the viewer, `vault.open` / `vault.rescan` / `topics.edit` / `search.files` / `settings.open` to the same calls the buttons make |
+| `src/renderer/components/PdfViewer.svelte` | Pinch (`wheel` + `ctrlKey`, `preventDefault`, zoom about the cursor, one CSS transform on a `.pages` wrapper, re-render at the final scale after 150 ms idle); two-finger horizontal `wheel` with a momentum latch → page turn, suppressed while the page is pannable; double-click toggles Fit ↔ 100 % about the click point |
+| `shared/ipc.ts`, `shared/types.ts`, `preload/`, `mockBridge.ts` | The `app:command` channel and the closed `AppCommand` union |
+
+Verified live over CDP and the macOS accessibility API:
+
+| Check | Result |
+|---|---|
+| Menu bar | `Apple / Electron / File / Edit / View / Window / Help` — the app's own, not Electron's default |
+| View menu | `Zoom In / Zoom Out / Actual Size / — / Fit Width / Fit Page / — / Next Page / Previous Page / — / Toggle Full Screen / — / Reload / Force Reload / Toggle Developer Tools` (the last three dev-only) |
+| Clicking **Zoom In** | PDF 100 % → 125 %, page 960 → 1200 px; `devicePixelRatio` still 2, `innerWidth` still 1320 — the chrome did not move |
+| `Input.synthesizePinchGesture` ×2.0 at (600, 400) | PDF 100 % → **201 %**, page 963 → 1926 px, scroll anchored to (289, 225); `visualViewport.scale` still 1 |
+| One horizontal flick (13 wheel events with momentum) | page 1 → **2**, exactly once |
+| Double-click, twice | Fit width → 100 % → Fit width |
+
+### Stage 5 — the room shows the slide (ui-review-ux.md M11)
+
+| File | What changed |
+|---|---|
+| `src/main/db/migrations/008_material_file_id.sql` | **New.** `materials.file_id`, nullable. `CreateSessionInput.fileId` has existed since issue #22 and was thrown away, so the room had no way to find the bytes again |
+| `src/main/sessions.ts`, `src/room/records.ts`, `src/room/actor.ts`, `shared/types.ts` | Store it, carry it into `MaterialView` |
+| `src/renderer/components/SourcePane.svelte` | Renders the referenced page with `PdfViewer` (read-only, page-locked). The extracted text stays as a closed `› text I read from this page` disclosure — it is exactly what the agents were given, and it is the thing to look at when extraction went wrong |
+| `src/renderer/components/PdfViewer.svelte` | `locked` + `pageWindow` props: no toolbar, no gestures, no menu registration, fit-page always, a 4 px gutter because the pane is 320–420 px wide |
+| `src/renderer/lib/pdfview.ts` | `visiblePages()` — clamped rather than validated, so a range that outlived a re-scan still shows something |
+| `src/renderer/lib/store.svelte.ts` | `roomSource` / `loadRoomSource()`, separate from `openDoc` so bringing a second document over does not replace the slide the room is about |
+
+**The prefix is untouched.** `sharedBlock()` reads named fields and `file_id` is not one of them;
+asserted by hashing two materials that differ only in it. The room layout is otherwise unchanged —
+"Bring a document…" still replaces the room, which is the deferred restructure.
+
+Verified live (scripted session started from `…Critique1_slides (1).pdf`, p. 3): the source pane
+renders **one** page, 269 × 151 CSS px in the 320 px pane, no toolbar, no page stamp, the
+hyphenated dump (`educa- tional`) absent from the pane, and the text disclosure closed.
+
+Tests: `pdfview.test.ts` +4 (`visiblePages`), `sessions.test.ts` +3 (`file_id` stored, null for
+pasted text, and two materials differing only in it hashing identically).
+
+### Stage 6 — docs, and what could not be done
+
+`README.md` gained a **document viewer, menu and trackpad** section (the gesture table, the
+`app:command` contract, the dev-only Reload/DevTools rule, canvas eviction) and the layout block
+now names `lib/pdfview.ts` and `lib/viewer.ts`.
+
+**Not done, and why.**
+
+- **`npm run install:local` and the installed-app check.** `tools/install-local.sh` calls
+  `git status --porcelain`, `git rev-parse HEAD` and `git rev-list --count HEAD` and `die`s if any
+  of them fail, so it cannot run while `git` exits 69. The `!app.isPackaged` gate on Reload /
+  Force Reload / Toggle DevTools is therefore asserted in `menu.test.ts` (both ways) and confirmed
+  present in a **dev** build over the accessibility API; its *absence* in the installed app has
+  not been observed on this machine.
+- **Nothing is committed or pushed.** See the note at the top of this section.
+
+**Deferred by decision, not missed** (Lucas, 15 Sep): the persistent third chat pane in the
+Library (ui-review-code.md §2, ui-review-ux.md B1) and making "Bring a document…" an overlay over
+the source pane instead of replacing the room (ui-review-ux.md M10). Issue #23's pivot — the
+conversation living inside the document — drops the third pane for good and also drops the recap
+screen; the recap fixes in stage 2 were asked for explicitly after that issue was opened, so they
+are here, and if the pivot removes the screen they go with it.
+
+**Still open from the review, not in this pass**: Settings ▸ Pacing and the `don't do this` target
+(M12), session setup keeping the document on screen with a `①──②` indicator (M6), the recap's
+two-column glyph delta and its footer buttons (M9, partly), `Explain this` on file-tree rows on
+hover (B2, the document-header button landed), the `Thread` live-region fix (§5.7), and the
+whisper-picker `<kbd>` hints (m8).

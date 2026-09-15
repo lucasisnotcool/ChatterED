@@ -1,101 +1,83 @@
 <script lang="ts">
-  /** Left nav rail (product-design.md §B0). Collapses to 56px icons during a session. */
-  import type { RecentSession } from '../../shared/types.js';
+  /**
+   * The icon rail (product-design.md §B0's global navigation, narrowed).
+   *
+   * It used to be 168 px of labels holding three destinations — one of them a permanently greyed
+   * `History` span that was not even focusable — plus a `COURSES` list derived from
+   * `rooms.module_code`, which was hard-coded to `'MA3236'` in two places. That put **two
+   * taxonomies of "a course" 76 px apart**, and the one on the left was a single fabricated
+   * entry (ui-review-code.md §3, ui-review-ux.md M1/M2/M3).
+   *
+   * So: 48 px, icons only, and the vault's own topic list next to it is the one taxonomy. The
+   * 120 px this gives back goes to the document.
+   *
+   * **History is absent, not greyed.** The data is there — `sessions`, `rooms`, `ledger` — and
+   * the screen is half a day's work, but a permanently disabled control teaches the learner that
+   * parts of the app are broken (§M3). It comes back as a real item with its own screen.
+   */
   import { store } from '../lib/store.svelte.js';
-
-  let { collapsed = false }: { collapsed?: boolean } = $props();
-
-  const courses = $derived.by(() => {
-    const out: { code: string; count: number }[] = [];
-    for (const s of (store.boot?.recentSessions ?? []) as RecentSession[]) {
-      const found = out.find((o) => o.code === s.moduleCode);
-      if (found) found.count += 1;
-      else out.push({ code: s.moduleCode, count: 1 });
-    }
-    return out;
-  });
-
-  const dot = (code: string): string => {
-    const hues = ['#4F46E5', '#0F7B6C', '#B45309', '#7C3AED', '#56566B'];
-    let h = 0;
-    for (const ch of code) h = (h * 31 + ch.charCodeAt(0)) % hues.length;
-    return hues[h] ?? '#56566B';
-  };
 </script>
 
-<nav class="rail" class:collapsed aria-label="Main">
+<nav class="rail" aria-label="Main">
   <button
     type="button"
     class="item"
     class:active={store.screen === 'library'}
+    title="Library"
+    aria-label="Library"
     onclick={() => (store.screen === 'room' ? store.leaveRoom() : (store.screen = 'library'))}
   >
     <span class="icon" aria-hidden="true">⌂</span>
-    {#if !collapsed}<span>Library</span>{/if}
-    <span class="sr-only">Library</span>
   </button>
 
-  <span class="item off" title="Not in this build">
-    <span class="icon" aria-hidden="true">▤</span>
-    {#if !collapsed}<span>History</span>{/if}
-  </span>
+  <span class="spacer"></span>
+
   <button
     type="button"
     class="item"
     class:active={store.screen === 'settings'}
+    title="Settings"
+    aria-label="Settings"
     onclick={() => void store.openSettings()}
   >
     <span class="icon" aria-hidden="true">⚙</span>
-    {#if !collapsed}<span>Settings</span>{/if}
-    <span class="sr-only">Settings</span>
   </button>
-
-  {#if !collapsed && courses.length > 0}
-    <p class="head label-caps">Courses</p>
-    {#each courses as c (c.code)}
-      <div class="course">
-        <span class="cdot" style="background: {dot(c.code)}" aria-hidden="true"></span>
-        <span class="code">{c.code}</span>
-        <span class="count">{c.count}</span>
-      </div>
-    {/each}
-  {/if}
 </nav>
 
 <style>
   .rail {
-    width: 168px;
+    width: 48px;
     flex: none;
     background: var(--ground);
     border-right: 1px solid var(--hairline);
-    padding: 12px 10px 14px;
+    padding: 10px 6px 12px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    transition: width 180ms ease-out;
+    gap: 4px;
     overflow: hidden;
   }
-  .rail.collapsed { width: 56px; }
+  .spacer { flex: 1; }
 
   .item {
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    font-size: 12px;
+    justify-content: center;
+    height: 34px;
+    border-radius: 7px;
     color: var(--text-2);
-    white-space: nowrap;
   }
   .item:hover { background: #eeeef5; }
-  .item.active { background: #eaeaf4; color: var(--text); font-weight: 500; }
-  .item.off { color: var(--muted); cursor: default; }
-  .item.off:hover { background: none; }
-  .icon { width: 14px; text-align: center; }
-
-  .head { margin: 18px 0 6px; padding: 0 8px; color: var(--muted); font-size: 10px; }
-  .course { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; color: var(--text-2); }
-  .cdot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-  .code { flex: 1; }
-  .count { color: var(--muted); font-size: 11px; }
+  /* NUSSync's active row: an indigo tint with a 2 px marker, not a grey wash (§p1). */
+  .item.active { background: var(--indigo-tint); color: var(--text); position: relative; }
+  .item.active::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 7px;
+    bottom: 7px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--indigo);
+  }
+  .icon { font-size: 15px; line-height: 1; }
 </style>

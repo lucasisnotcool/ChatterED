@@ -1,0 +1,16 @@
+-- Which vault file the session's material came out of.
+--
+-- `CreateSessionInput.fileId` has existed since issue #22 decision 4 and was thrown away: the
+-- material kept `file_path` (the file's *name*, for provenance) and the page range, but nothing
+-- that could find the bytes again. So the room's source pane could only render
+-- `material.extracted_text` — the hyphenated pdf.js dump, `explored as educa- tional tools` —
+-- where product-design.md §B0 says "the slide you are explaining" and §C6's arbiter move needs a
+-- page to scroll to (ui-review-ux.md M11).
+--
+-- Nullable, and not a foreign key, for the same reason `message_refs.file_id` is not: a re-scan
+-- may remove the row the material was made from, and the session must still open. The pane falls
+-- back to the extracted text, which is what every room created before this column does.
+--
+-- Adding a column does not touch the frozen prompt prefix: `sharedBlock()` reads named fields
+-- (module_code, title, extracted_text, topic_context, padding_text) and this is not one of them.
+ALTER TABLE materials ADD COLUMN file_id TEXT;

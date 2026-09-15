@@ -4,11 +4,10 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
-import type { RoomEvent, VaultView, WindowState } from '../shared/types.js';
+import type { AppCommand, RoomEvent, VaultView, WindowState } from '../shared/types.js';
 
 const api: ChatterEdApi = {
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
-  chooseSlidesFolder: () => ipcRenderer.invoke(IPC.chooseSlidesFolder),
   setApiKey: (key) => ipcRenderer.invoke(IPC.setApiKey, key),
   clearApiKey: () => ipcRenderer.invoke(IPC.clearApiKey),
   completeFirstRun: () => ipcRenderer.invoke(IPC.completeFirstRun),
@@ -23,6 +22,7 @@ const api: ChatterEdApi = {
   holdTimer: (input) => ipcRenderer.invoke(IPC.holdTimer, input),
   pauseNudges: (input) => ipcRenderer.invoke(IPC.pauseNudges, input),
   wrapUp: (input) => ipcRenderer.invoke(IPC.wrapUp, input),
+  acceptTeachback: (input) => ipcRenderer.invoke(IPC.acceptTeachback, input),
   openWhisper: (input) => ipcRenderer.invoke(IPC.openWhisper, input),
   sendWhisper: (input) => ipcRenderer.invoke(IPC.sendWhisper, input),
   relayWhisper: (input) => ipcRenderer.invoke(IPC.relayWhisper, input),
@@ -51,6 +51,13 @@ const api: ChatterEdApi = {
     ipcRenderer.on(IPC.vaultChanged, handler);
     return () => {
       ipcRenderer.removeListener(IPC.vaultChanged, handler);
+    };
+  },
+  onAppCommand: (listener) => {
+    const handler = (_event: unknown, payload: AppCommand) => listener(payload);
+    ipcRenderer.on(IPC.appCommand, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC.appCommand, handler);
     };
   },
   onWindowState: (listener) => {

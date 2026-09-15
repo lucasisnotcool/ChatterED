@@ -16,7 +16,7 @@ has to deliver is `docs/research/product-design.md` §B–§D and `docs/research
 | `npm install` | Installs, then rebuilds `better-sqlite3` against Electron's ABI (`postinstall`) |
 | `npm run dev` | Compiles main + preload, starts Vite on :5273, launches Electron against it |
 | `npm run build` | `tsc` for main/preload/room/shared → `dist/`, Vite for the renderer → `dist/renderer/` |
-| `npm test` | Vitest — room actor, silence timer, ledger gates, whisper leak canary |
+| `npm test` | Vitest — room actor, silence timer, ledger gates, whisper leak canary, PDF viewer arithmetic, the application-menu template |
 | `npm run lint` | ESLint, including the whisper-import restriction and the `src/room` portability rule |
 | `npm run typecheck` | `tsc --noEmit` plus `svelte-check` |
 | `npm run dist:mac` | Unsigned DMG into `out/` (no signing, no notarisation — issue #17) |
@@ -146,13 +146,39 @@ in `~/Library/Application Support/ChatterED/`.
 The distribution path is unchanged: `npm run dist:mac` still produces an **unsigned** DMG in
 `out/`, and nothing here signs or notarises it.
 
+## The document viewer, the menu and the trackpad
+
+Everything the PDF viewer computes lives in `src/renderer/lib/pdfview.ts` as plain functions with
+their own tests — the fit scale, which page the counter reads, whether a marked range is usable,
+which canvases may be released, where a pinch leaves the scroll position. `PdfViewer.svelte` does
+layout and pdf.js; that module does the sums.
+
+| Gesture / key | What happens |
+|---|---|
+| Pinch | `wheel` + `ctrlKey`, zoom about the cursor. During the gesture one CSS transform on the page wrapper; pdf.js is asked for new bitmaps 150 ms after the fingers stop |
+| Two-finger horizontal flick | One page turn per flick — momentum is latched, so thirty trailing events do not turn thirty pages. Suppressed while the page is wider than the pane, where horizontal scrolling pans it |
+| Double-click | Fit ⇄ 100 %, about the point clicked |
+| ⌘+ / ⌘− / ⌘0 | **ChatterED's**, not Chromium's. They scale the PDF; `webContents.setZoomMode('disabled')` means nothing can scale the UI chrome |
+| ⌘1 / ⌘2 | Fit width / Fit page |
+| ⌘↓ / ⌘↑, ⌥-swipe, PageUp/PageDown, Home/End, ←/→ | Page and scroll navigation. The scroll area is focusable, so none of it needs a click inside the PDF first |
+
+The application menu is `src/main/menu.ts`: App / File / Edit / View / Window / Help. **Reload,
+Force Reload and Toggle Developer Tools are present only while `app.isPackaged` is false** — ⌘R in
+a live study session used to reload the renderer mid-round. Menu items never reach into the view;
+each sends one `AppCommand` string over `app:command` and the renderer decides what it means.
+
+Canvases outside ±3 pages of the one on screen are released (`canvas.width = 0`), which is what
+keeps a long deck from costing ~15 MB per page for the life of the document.
+
 ## Layout
 
 ```
 src/
   main/        Electron main process: window, IPC, SQLite store, API key file, room host
   preload/     contextBridge surface (the only thing the renderer can call)
-  renderer/    Svelte 5 SPA — library / document / chat shell, ledger rail, whisper pane
+  renderer/    Svelte 5 SPA — 48 px icon rail, vault sidebar, document pane, room, ledger rail,
+               whisper pane. lib/pdfview.ts holds the viewer's arithmetic; lib/viewer.ts routes
+               application-menu commands to whichever viewer is open
   room/        PORTABLE. The room actor, orchestrator, silence timer, context builder,
                ledger gates and the two LLM clients. Imports no Electron, no SQLite driver,
                no Firebase — it takes Clock / Store / Transport / LLMClient interfaces.
