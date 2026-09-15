@@ -31,7 +31,15 @@ export interface MessageView {
   seq: number;
   speaker:
     | { kind: 'student'; displayName: 'You' }
-    | { kind: 'agent'; key: string; role: AgentRole; displayName: string; colour: string };
+    | { kind: 'agent'; key: string; role: AgentRole; displayName: string; colour: string }
+    /**
+     * The REFERENCE voice — **a scope, not an agent** (`src/room/reference.ts`). It has no
+     * `agent_key`, no row in `agents` and no role, which is exactly what keeps it out of the
+     * roster; it therefore cannot be an `'agent'` speaker, and it must not fall through to
+     * `'student'` either, because a machine answer wearing the learner's face is the one
+     * confusion the whole 120-word card exists to prevent.
+     */
+    | { kind: 'reference'; displayName: 'REFERENCE' };
   body: string;
   createdAt: string;
   latencyTargetMs: number | null;
@@ -49,6 +57,19 @@ export interface MessageView {
    * shown, because the card is a reference, not a paste.
    */
   reference: MessageReferenceView | null;
+  /**
+   * Which segment of the flow this message hangs off (migration 010). `null` is a room-level
+   * message — every message written before the flow existed, and the opener.
+   */
+  anchorId: string | null;
+  /**
+   * Set when this turn was **written** by a rule rather than generated — today that is exactly
+   * `'handoff'`, Ellie's hand-off line from `flow.handOffLine()`. The flow renders it as a small
+   * `by rule` tag, which is the whole point of writing that line in `flow.ts` instead of asking
+   * a model for it (`flow-build-plan.md` §4.2: "a rule I can see and turn down"). A quiz turn is
+   * *decided* by a rule but still generated, and is deliberately not tagged.
+   */
+  byRule: string | null;
 }
 
 export interface MessageReferenceView {
@@ -315,6 +336,13 @@ export interface CreateSessionInput {
   /** The vault file this came from, when it did (issue #22 decision 4). */
   fileId?: string;
   /**
+   * The digest to key this material on. The flow passes the file's own `content_sha` — the same
+   * one the segment cache uses — so that a document's room is reopened rather than duplicated on
+   * the second question, and a *changed* deck correctly opens a new one. Omitted everywhere else,
+   * and then `file_sha256` is the sha of `text`, exactly as it always was.
+   */
+  fileSha?: string;
+  /**
    * The vault topic the file sits in. Its name and file list go into the frozen prompt prefix,
    * so the agents know which module they are in (issue #22 decision 5).
    */
@@ -335,6 +363,51 @@ export interface ConceptDraft {
  */
 export interface WindowState {
   fullScreen: boolean;
+}
+
+// ── The conversation inside the flow (issue #25, flow-build-plan.md §3.3 / §4.1) ──────────
+/**
+ * One segment's thread.
+ *
+ * Deliberately **ids, not messages**: the full `MessageView`s already travel on `room.messages`
+ * and on the `message.appended` event stream, and duplicating them here would give the renderer
+ * two copies of the same turn that could disagree the moment one of them is stale.
+ */
+export interface FlowThreadView {
+  /** The `SegmentView.id` this thread hangs off. */
+  anchorId: string;
+  messageIds: string[];
+  /**
+   * The REFERENCE answer still waiting for **Explain it back →**, if any. While it is set,
+   * neither Ellie nor Max may post into this thread — enforced in `reference.ts`, reported here
+   * so the renderer can show the two buttons rather than a composer.
+   */
+  lockedByAnswerId: string | null;
+}
+
+/**
+ * The room behind one document, plus its threads. Returned by `flow:messages` on open and by
+ * `flow:askHere` when the first question creates the room.
+ *
+ * `room` is the ordinary `RoomSnapshot` — the flow is not a second kind of room, and everything
+ * downstream of it (the event stream, the ledger, the timer, the whisper scoping) is the shipped
+ * machinery, unchanged.
+ */
+export interface FlowRoomView {
+  room: RoomSnapshot;
+  threads: FlowThreadView[];
+}
+
+/** What `flow:askHere` gives back: the room (possibly just created) and the card that landed. */
+export interface FlowAnswerView {
+  roomId: string;
+  anchorId: string;
+  questionId: string;
+  answerId: string;
+  /** The capped answer, the rule and the hand-back line, exactly as `reference.ts` composed it. */
+  body: string;
+  truncated: boolean;
+  flow: FlowRoomView;
 }
 
 /** Events pushed from main to the renderer. The renderer never polls. */

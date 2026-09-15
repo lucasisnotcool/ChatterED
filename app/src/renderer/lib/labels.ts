@@ -27,6 +27,9 @@ export function roleWord(role: AgentRole): string {
 
 export function speakerLabel(m: MessageView): string {
   if (m.speaker.kind === 'student') return 'You';
+  // The neutral voice is labelled by what it is, with no role word — it has no role, which is
+  // the point of it (`pivot-spec.md` §C4: `REFERENCE` for a system answer).
+  if (m.speaker.kind === 'reference') return 'REFERENCE';
   const word = roleWord(m.speaker.role);
   return word ? `${m.speaker.displayName} · ${word}` : m.speaker.displayName;
 }

@@ -87,7 +87,9 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
     source_kind: input.sourceKind ?? 'pasted_text',
     file_path: input.fileName ?? null,
     file_id: input.fileId ?? null,
-    file_sha256: createHash('sha256').update(input.text).digest('hex'),
+    // The flow keys a document's room on the file's own `content_sha` so the second "+ Ask here"
+    // reopens the room instead of starting a second one; every other caller keys on the text.
+    file_sha256: input.fileSha ?? createHash('sha256').update(input.text).digest('hex'),
     file_mtime: null,
     page_from: input.pageFrom ?? null,
     page_to: input.pageTo ?? null,

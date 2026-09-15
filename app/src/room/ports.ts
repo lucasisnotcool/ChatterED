@@ -39,6 +39,8 @@ export interface UsersRepo {
 export interface MaterialsRepo {
   get(id: string): MaterialRow | undefined;
   insert(row: MaterialRow): void;
+  /** The newest material for these bytes of this file — the flow's "reopen, don't duplicate". */
+  forFile(fileId: string, sha: string): MaterialRow | undefined;
   confirmPack(id: string, confirmedAt: string): void;
 }
 
@@ -46,6 +48,8 @@ export interface MessagesRepo {
   insert(row: MessageRow): void;
   forRoom(roomId: string): MessageRow[];
   forRoomUpToSeq(roomId: string, seq: number): MessageRow[];
+  /** One segment's thread, in `seq` order (migration 010's index). */
+  forAnchor(roomId: string, anchorId: string): MessageRow[];
   tail(roomId: string, n: number): MessageRow[];
   bodyAtSeq(roomId: string, seq: number): string | undefined;
   get(id: string): MessageRow | undefined;

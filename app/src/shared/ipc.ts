@@ -25,6 +25,7 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
+import type { FlowAnswerView, FlowRoomView } from './types.js';
 
 export const IPC = {
   bootstrap: 'app:bootstrap',
@@ -75,6 +76,12 @@ export const IPC = {
   segmentsMerge: 'segments:merge',
   segmentsReorder: 'segments:reorder',
   segmentsRename: 'segments:rename',
+
+  // The conversation inside the flow (issue #25, flow-build-plan.md §3.3 track B).
+  flowAskHere: 'flow:askHere',
+  flowExplainBack: 'flow:explainBack',
+  flowSend: 'flow:send',
+  flowMessages: 'flow:messages',
 } as const;
 
 export interface ChatterEdApi {
@@ -204,6 +211,37 @@ export interface ChatterEdApi {
   reorderSegments(input: { fileId: string; segmentId: string; toIndex: number }): Promise<SegmentDocumentView>;
   /** Rename a segment. Labels are the learner's, and the text-layer guess is only a default. */
   renameSegment(input: { fileId: string; segmentId: string; label: string }): Promise<SegmentDocumentView>;
+
+  // ── The conversation inside the flow (issue #25) ────────────────────────
+  /**
+   * "+ Ask here" on one segment.
+   *
+   * **This call is what creates the document's room**, the first time it is made for a file
+   * (`flow-build-plan.md` §3.3): there is no setup screen any more. It resolves in ~2–3 s — the
+   * REFERENCE hold, which is deliberately shorter than any agent's, because retrieval is not
+   * deliberation (`pivot-spec.md` §B1) — and returns the card that landed plus the room it
+   * landed in, so the renderer never has to ask a second question to find out where it is.
+   *
+   * Four things it is *not*, all enforced in `actor.askHere()` rather than in a prompt: it does
+   * not take the turn floor, does not reset the silence timer, can never be ledger evidence, and
+   * it **locks Ellie and Max out of that segment's thread** until `explainBack`.
+   */
+  flowAskHere(input: { fileId: string; segmentId: string; question: string }): Promise<FlowAnswerView>;
+  /**
+   * "Explain it back →". The card collapses to one line, the composer opens on the same anchor,
+   * and Ellie and Max become eligible on it for the first time.
+   */
+  flowExplainBack(input: { answerId: string }): Promise<{ unlocked: boolean; anchorId: string | null }>;
+  /**
+   * A learner turn inside one segment's thread. Not awaited for the reply: like `sendMessage`,
+   * the agent's answer arrives on the event stream at its latency floor.
+   */
+  flowSend(input: { roomId: string; segmentId: string; text: string }): Promise<void>;
+  /**
+   * The document's room and its threads, grouped by segment. `null` when the document has never
+   * been asked a question — which is the common case, and is why nothing is created here.
+   */
+  flowMessages(input: { fileId: string }): Promise<FlowRoomView | null>;
 
   /**
    * Subscribe to application-menu commands.

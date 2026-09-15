@@ -109,7 +109,17 @@ export interface RoomActorDeps {
    * does — `tickSession` then closes it on the first tick if the gap elapsed while the app was
    * shut (flow-session.md §8.1 close condition 3).
    */
-  flowState?: { session?: FlowSession | null; taught?: TaughtItem[]; pendingQuiz?: PendingQuiz | null };
+  flowState?: {
+    session?: FlowSession | null;
+    taught?: TaughtItem[];
+    pendingQuiz?: PendingQuiz | null;
+    /**
+     * The REFERENCE cards and whether each has been explained back. Restored with the rest,
+     * because property 4 — no agent posts into that thread until the learner says it back — is
+     * a promise about the *card*, and the card is still on screen after a relaunch.
+     */
+    answers?: ReferenceAnswerState[];
+  };
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
   random?: () => number;
@@ -148,6 +158,8 @@ export class RoomActor {
   #testerMode: TesterMode = 'proactive';
   /** Every REFERENCE card inserted this session, and whether it has been explained back. */
   #answers: ReferenceAnswerState[] = [];
+  /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
+  #lastAnchorId: string | null = null;
   #asks = 0;
 
   constructor(deps: RoomActorDeps) {
@@ -156,6 +168,8 @@ export class RoomActor {
     this.#flow = deps.flowState?.session ?? null;
     this.#taught = [...(deps.flowState?.taught ?? [])];
     this.#pendingQuiz = deps.flowState?.pendingQuiz ?? null;
+    this.#answers = [...(deps.flowState?.answers ?? [])];
+    this.#asks = this.#answers.length;
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -228,7 +242,13 @@ export class RoomActor {
 
   // ── inbound from the renderer ─────────────────────────────────────────────
 
-  async sendMessage(text: string): Promise<void> {
+  /**
+   * A learner turn. `anchorId` is the segment its thread hangs off — the flow always passes one,
+   * and `null` is the room-level composer the chat shipped with, which is the same call it has
+   * always been. Everything downstream (the cancel, the timer, the ledger, the 8 s floor-yield)
+   * is unchanged: an anchored turn is an ordinary turn that knows where it is.
+   */
+  async sendMessage(text: string, anchorId: string | null = null): Promise<void> {
     const body = text.trim();
     if (body.length === 0) return;
 
@@ -251,19 +271,20 @@ export class RoomActor {
        * sent message is the end of the sentence).
        */
       this.#typingUntil = 0;
-      this.#noteLearnerActivity('turn');
+      this.#noteLearnerActivity('turn', anchorId);
       const row = this.#insertMessage({
         participantId: this.#studentParticipant().id,
         body,
+        anchorId,
       });
       // An answer to the Tester's outstanding question puts the room in feedback debt, which
       // `ruleDecision` then discharges before anything else can be decided.
       if (this.#pendingQuiz) this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id);
-      this.#event('student', 'message.send', { seq: row.seq, chars: body.length });
+      this.#event('student', 'message.send', { seq: row.seq, chars: body.length, anchor_id: anchorId });
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
     });
 
-    await this.#runAgentTurn('student_message', { studentBody: body });
+    await this.#runAgentTurn('student_message', { studentBody: body, anchorId });
   }
 
   /**
@@ -709,7 +730,16 @@ export class RoomActor {
 
   // ── the turn itself ───────────────────────────────────────────────────────
 
-  async #runAgentTurn(trigger: TurnTrigger, opts: { studentBody?: string; silenceStage?: 1 | 2 } = {}): Promise<void> {
+  async #runAgentTurn(
+    trigger: TurnTrigger,
+    opts: { studentBody?: string; silenceStage?: 1 | 2; anchorId?: string | null } = {},
+  ): Promise<void> {
+    /**
+     * The segment this turn belongs to. Every message the turn writes carries it — the hand-off
+     * line, the agent's reply — so a thread stays a thread and the flow never has to guess where
+     * a turn landed. `null` is the room-level stream, which is every pre-flow room.
+     */
+    const anchorId = opts.anchorId ?? null;
     const turnStart = this.#d.clock.now();
     const pending: PendingTurn = { id: this.#d.newId('turn'), cancelled: false };
     this.#pending = pending;
@@ -726,7 +756,7 @@ export class RoomActor {
         pendingTeacherQuestion: this.#room().expects_reply === 1 && trigger !== 'student_message',
         silenceWindowOpen: trigger === 'silence',
         whisperOpen: false,
-        referenceLocked: this.#referenceLocked(),
+        referenceLocked: this.#referenceLocked(anchorId),
         lastKeystrokeAt: this.#typingUntil > 0 ? this.#typingUntil - 3_500 : null,
         ledgerLevels: Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level])),
         mode: this.#testerMode,
@@ -758,7 +788,7 @@ export class RoomActor {
           )
         : null,
       pendingQuiz: this.#pendingQuiz,
-      referenceLocked: this.#referenceLocked(),
+      referenceLocked: this.#referenceLocked(anchorId),
     };
 
     const cue =
@@ -813,6 +843,7 @@ export class RoomActor {
           participantId: this.#d.store.participants.byAgentKey(this.#d.roomId, teacher.key)!.id,
           body: decision.handOffLine!,
           model: 'rule:handoff',
+          anchorId,
         });
         this.#event('peer', 'agent.turn.dispatched', { move: 'hand_off', decided_by: decision.decidedBy });
       });
@@ -878,6 +909,7 @@ export class RoomActor {
         latencyTargetMs: target,
         ttftActualMs: ttft,
         dividerCause: trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent) : null,
+        anchorId,
         // `disagreement` is never written any more: the S2 quota and the whole social-group
         // framing went with #32. The column and the view field stay so that a room recorded
         // before this build still renders its markers (masg-drop-assessment.md §D2 Option 2).
@@ -914,9 +946,15 @@ export class RoomActor {
     this.#d.store.rooms.update(this.#d.roomId, { pending_turn_id: null, pending_turn_due_ts: null, state: 'open' });
   }
 
+  /**
+   * The silence nudge lands **in the thread the learner was last in**, not at the bottom of a
+   * room-level stream nobody is looking at. In the flow there is no single bottom of the page:
+   * a nudge posted with no anchor would be written into a transcript that is not on screen, and
+   * a nudge nobody can see is worse than no nudge — it burns one of the two fires per round.
+   */
   async #runSilenceFill(stage: 1 | 2): Promise<void> {
     this.#silenceFires += 1;
-    await this.#runAgentTurn('silence', { silenceStage: stage });
+    await this.#runAgentTurn('silence', { silenceStage: stage, anchorId: this.#lastAnchorId });
   }
 
   async #decide(input: Parameters<typeof decideTurn>[0]['input'], cue: string): Promise<TurnDecision> {
@@ -1022,9 +1060,34 @@ export class RoomActor {
     });
   }
 
+  /**
+   * Which segment threads are still locked to Ellie and Max, and by which REFERENCE card.
+   *
+   * The flow renders that as the two buttons — **Explain it back →** and **✕ Remove** — instead
+   * of a composer, so the state the actor enforces and the state the learner sees are the same
+   * state. `reference.ts` property 4 is the authority; this is its read-only projection.
+   */
+  lockedAnchors(): Map<string, string> {
+    const locked = new Map<string, string>();
+    for (const a of this.#answers) {
+      if (a.anchorId !== null && a.explainedBackAt === null) locked.set(a.anchorId, a.answerId);
+    }
+    return locked;
+  }
+
   /** What the caller must persist to make the sitting survive a quit. */
-  flowSnapshot(): { session: FlowSession | null; taught: TaughtItem[]; pendingQuiz: PendingQuiz | null } {
-    return { session: this.#flow, taught: [...this.#taught], pendingQuiz: this.#pendingQuiz };
+  flowSnapshot(): {
+    session: FlowSession | null;
+    taught: TaughtItem[];
+    pendingQuiz: PendingQuiz | null;
+    answers: ReferenceAnswerState[];
+  } {
+    return {
+      session: this.#flow,
+      taught: [...this.#taught],
+      pendingQuiz: this.#pendingQuiz,
+      answers: [...this.#answers],
+    };
   }
 
   // ── the flow session (#33) ────────────────────────────────────────────────
@@ -1051,6 +1114,7 @@ export class RoomActor {
       });
     }
     this.#flow = noteActivity(this.#flow, { kind, anchorId }, now);
+    if (anchorId !== undefined && anchorId !== null) this.#lastAnchorId = anchorId;
   }
 
   /**

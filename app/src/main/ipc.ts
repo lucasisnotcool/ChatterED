@@ -10,6 +10,8 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type {
   Bootstrap,
   CreateSessionInput,
+  FlowAnswerView,
+  FlowRoomView,
   RoomEvent,
   RoomSnapshot,
   SessionSeed,
@@ -29,6 +31,14 @@ import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './ap
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
+import {
+  flowRoomView,
+  loadFlowState,
+  openOrCreateFlowRoom,
+  saveFlowState,
+  segmentText,
+  type FlowRoomDeps,
+} from './flowroom.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
 import { SegmentService, type SplitInput } from './vault/segments.js';
@@ -203,7 +213,16 @@ export class AppService {
     };
   }
 
-  openRoom(roomId: string): RoomSnapshot {
+  /**
+   * `opener` is false for a flow room (issue #25).
+   *
+   * `RoomActor.open()` posts Ellie's opening question into an empty room. That is right for the
+   * chat, where the opener is the first thing at the top of the one column the learner is
+   * reading; it is wrong for a flow, where a message with no anchor belongs to no thread and is
+   * therefore drawn nowhere. The flow's opening move is the learner's own question, which is
+   * also the better opening — beat 7: "no agent writes anywhere I have not asked".
+   */
+  openRoom(roomId: string, opts: { opener?: boolean } = {}): RoomSnapshot {
     if (this.#actor && this.#actor.snapshot().roomId === roomId) return this.#actor.snapshot();
     this.#actor?.stop();
     const room = this.#d.store.rooms.get(roomId);
@@ -229,11 +248,15 @@ export class AppService {
       models: resolved.models,
       config: { ...config, mode: modeFor(resolved.kind) },
       appVersion: this.#d.appVersion,
+      // The sitting as it stood when the app last ran (#33). A flow session is bounded by an
+      // absolute deadline, so it has to survive a quit the way the silence timer does; without
+      // it, every relaunch would look to `handOffDue` like a learner who has just arrived.
+      flowState: loadFlowState(this.#d.store, roomId),
       newId,
     });
     this.#actor.start();
     this.#actor.recover();
-    void this.#actor.open();
+    if (opts.opener !== false) void this.#actor.open();
     return this.#actor.snapshot();
   }
 
@@ -243,9 +266,102 @@ export class AppService {
   }
 
   dispose(): void {
+    this.#persistFlow();
     this.#actor?.stop();
     this.#actor = null;
     this.#vault.dispose();
+  }
+
+  // ── The conversation inside the flow (issue #25, §3.3 track B) ───────────
+
+  #flowDeps(): FlowRoomDeps {
+    const resolved = this.backend();
+    return {
+      store: this.#d.store,
+      segments: this.#segments,
+      vault: this.#vault,
+      pairing: this.pairing(),
+      appVersion: this.#d.appVersion,
+      osVersion: this.#d.osVersion,
+      mode: modeFor(resolved.kind),
+      backend: resolved.kind,
+      models: resolved.models,
+      llm: resolved.kind === 'scripted' ? null : this.llm(resolved),
+    };
+  }
+
+  /**
+   * The sitting, written back to SQLite.
+   *
+   * Called after every learner-authored action rather than on a timer: the actions are seconds
+   * apart at their fastest, the payload is a few hundred bytes, and a sitting that is lost
+   * because the app was force-quit between two writes is a sitting the A1 log has a hole in.
+   */
+  #persistFlow(): void {
+    const actor = this.#actor;
+    if (!actor) return;
+    saveFlowState(this.#d.store, actor.snapshot().roomId, actor.flowSnapshot());
+  }
+
+  /** The room behind a document, and its threads. Opens the actor on it if it is not already. */
+  async flowMessages(fileId: string): Promise<FlowRoomView | null> {
+    // Keyed on the same `content_sha` the segment cache uses, and computed from the cache: after
+    // the first open this is a SQLite read, never a second pdf.js pass.
+    const { contentSha } = await this.#segments.document(fileId);
+    const material = this.#d.store.materials.forFile(fileId, contentSha);
+    if (!material) return null;
+    const room = this.#d.store.rooms.openOrScheduled().find((r) => r.material_id === material.id);
+    if (!room) return null;
+    // Nothing is *created* here — a document with no room returns null above. This only brings
+    // the actor back onto a room that already exists, which is what reopening a deck is.
+    this.openRoom(room.id, { opener: false });
+    const actor = this.#requireActor(room.id);
+    return flowRoomView(actor, actor.lockedAnchors());
+  }
+
+  /**
+   * "+ Ask here". Creates the document's room on the first question, then inserts one REFERENCE
+   * card on that segment. The room is opened through the same `openRoom` every other path uses,
+   * so the actor, the timer and the event stream are the shipped ones.
+   */
+  async flowAskHere(input: { fileId: string; segmentId: string; question: string }): Promise<FlowAnswerView> {
+    const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), input.fileId);
+    // `opener: false` — see `openRoom`. A flow room has no bottom of the page for an opener to
+    // land at, and the learner has just asked a question, which is a better opening than any.
+    this.openRoom(roomId, { opener: false });
+    const actor = this.#requireActor(roomId);
+    const { text } = await segmentText({ segments: this.#segments, vault: this.#vault }, input.fileId, input.segmentId);
+    const answer = await actor.askHere({
+      anchorId: input.segmentId,
+      question: input.question,
+      segmentText: text,
+    });
+    this.#persistFlow();
+    return {
+      roomId,
+      anchorId: input.segmentId,
+      questionId: answer.questionId,
+      answerId: answer.answerId,
+      body: answer.body,
+      truncated: answer.truncated,
+      flow: flowRoomView(actor, actor.lockedAnchors()),
+    };
+  }
+
+  flowExplainBack(answerId: string): { unlocked: boolean; anchorId: string | null } {
+    if (!this.#actor) throw new Error('No open room');
+    const result = this.#actor.explainBack(answerId);
+    this.#persistFlow();
+    return result;
+  }
+
+  async flowSend(input: { roomId: string; segmentId: string; text: string }): Promise<void> {
+    const actor = this.#requireActor(input.roomId);
+    try {
+      await actor.sendMessage(input.text, input.segmentId);
+    } finally {
+      this.#persistFlow();
+    }
   }
 
   /**
@@ -418,6 +534,13 @@ export class AppService {
     handle<{ fileId: string; segmentId: string; label: string }>(IPC.segmentsRename, (input) =>
       this.#segments.rename(input),
     );
+
+    handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
+    handle<{ fileId: string; segmentId: string; question: string }>(IPC.flowAskHere, (input) =>
+      this.flowAskHere(input),
+    );
+    handle<{ answerId: string }>(IPC.flowExplainBack, (input) => this.flowExplainBack(input.answerId));
+    handle<{ roomId: string; segmentId: string; text: string }>(IPC.flowSend, (input) => this.flowSend(input));
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>

@@ -49,6 +49,19 @@ export function materialsRepo(db: SqlDatabase): MaterialsRepo {
   return {
     get: (id) => plain(db.prepare('SELECT * FROM materials WHERE id = @id').get<MaterialRow>({ id })),
     insert: (row) => insert(db, 'materials', row as unknown as Record<string, unknown>),
+    /**
+     * The newest material for these exact bytes of this exact file — how a document's room is
+     * **reopened** rather than duplicated (`flow-build-plan.md` §3.3: the room is keyed on the
+     * file's `content_sha`). Both halves of the key matter: the id alone would reopen a room
+     * about a file that has since been edited, and the sha alone would merge two copies of the
+     * same deck in different folders, which are two different documents to the learner.
+     */
+    forFile: (fileId, sha) =>
+      plain(
+        db
+          .prepare('SELECT * FROM materials WHERE file_id = @f AND file_sha256 = @s ORDER BY created_at DESC LIMIT 1')
+          .get<MaterialRow>({ f: fileId, s: sha }),
+      ),
     confirmPack: (id, confirmedAt) => updateById(db, 'materials', id, { pack_confirmed_at: confirmedAt }),
   };
 }
@@ -72,6 +85,21 @@ export function messagesRepo(db: SqlDatabase): MessagesRepo {
     insert: (row) => insert(db, 'messages', row as unknown as Record<string, unknown>),
     forRoom: (roomId) =>
       plainAll(db.prepare('SELECT * FROM messages WHERE room_id = @r ORDER BY seq').all<MessageRow>({ r: roomId })),
+    /**
+     * One segment's thread, straight out of SQL. Migration 010 added
+     * `idx_messages_anchor (room_id, anchor_id, seq)` for exactly this query, so it is an index
+     * scan in the order it is returned in — no sort, no filter in JavaScript.
+     *
+     * `reference.ts` still carries `messagesForAnchor()`, a pure filter over an array, because
+     * the reference tests run against fixtures rather than a database. They must agree, and
+     * `store.test.ts` asserts that they do.
+     */
+    forAnchor: (roomId, anchorId) =>
+      plainAll(
+        db
+          .prepare('SELECT * FROM messages WHERE room_id = @r AND anchor_id = @a ORDER BY seq')
+          .all<MessageRow>({ r: roomId, a: anchorId }),
+      ),
     forRoomUpToSeq: (roomId, seq) =>
       plainAll(
         db

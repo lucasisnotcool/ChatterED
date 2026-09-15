@@ -51,6 +51,10 @@ const api: ChatterEdApi = {
   mergeSegments: (input) => ipcRenderer.invoke(IPC.segmentsMerge, input),
   reorderSegments: (input) => ipcRenderer.invoke(IPC.segmentsReorder, input),
   renameSegment: (input) => ipcRenderer.invoke(IPC.segmentsRename, input),
+  flowAskHere: (input) => ipcRenderer.invoke(IPC.flowAskHere, input),
+  flowExplainBack: (input) => ipcRenderer.invoke(IPC.flowExplainBack, input),
+  flowSend: (input) => ipcRenderer.invoke(IPC.flowSend, input),
+  flowMessages: (input) => ipcRenderer.invoke(IPC.flowMessages, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

@@ -32,12 +32,21 @@ export function messageView(
   const p = participants.get(row.participant_id);
   const agent = p?.agent_key ? roster.find((a) => a.key === p.agent_key) : undefined;
   const disagreement = row.disagreement ? (JSON.parse(row.disagreement) as MessageView['disagreement']) : null;
+  /**
+   * The reference participant is `kind = 'agent'` with a **null** `agent_key` — that is how the
+   * schema says "not an agent" (`reference.ts`). Before this it fell through the `agent` lookup
+   * and came out of here as `{ kind: 'student' }`, i.e. the 120-word machine answer rendered
+   * wearing the learner's face. It gets its own speaker kind instead.
+   */
+  const isReference = p?.kind === 'agent' && !p.agent_key;
   return {
     id: row.id,
     seq: row.seq,
     speaker: agent
       ? { kind: 'agent', key: agent.key, role: agent.role, displayName: agent.displayName, colour: agent.colour }
-      : { kind: 'student', displayName: 'You' },
+      : isReference
+        ? { kind: 'reference', displayName: 'REFERENCE' }
+        : { kind: 'student', displayName: 'You' },
     body: row.body,
     createdAt: row.created_at,
     latencyTargetMs: row.latency_target_ms,
@@ -45,6 +54,12 @@ export function messageView(
     promotedFromWhisper: row.promoted_from_whisper !== null,
     disagreement,
     divider: row.divider_cause ? { cause: row.divider_cause, control: 'dont_do_this' } : null,
+    anchorId: row.anchor_id,
+    // `model` carries `rule:handoff` for the one turn `flow.ts` *writes* rather than generates
+    // (`handOffLine()`). The flow shows that as a small `by rule` tag; nothing else reads it.
+    // A quiz or feedback turn is decided by rule but still generated, so it is not tagged —
+    // claiming otherwise would be the kind of overclaim the tag exists to rule out.
+    byRule: row.model?.startsWith('rule:') ? row.model.slice('rule:'.length) : null,
     // The page text the agents were given is deliberately absent: the card says a document was
     // shown and which pages, not the pages themselves (issue #22 decision 4).
     reference: reference

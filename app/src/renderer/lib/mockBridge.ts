@@ -116,6 +116,7 @@ export function createMockBridge(): ChatterEdApi {
     const m: MessageView = {
       id: `m${seq}`, seq, body, createdAt: iso(), latencyTargetMs: null, ttftActualMs: null,
       promotedFromWhisper: false, disagreement: null, divider: null, reference: null,
+      anchorId: null, byRule: null,
       speaker: from
         ? { kind: 'agent', key: from.key, role: from.role, displayName: from.displayName, colour: from.colour }
         : { kind: 'student', displayName: 'You' },
@@ -213,7 +214,63 @@ export function createMockBridge(): ChatterEdApi {
     }
   }
 
+  function snapshot(): RoomSnapshot {
+    return {
+    roomId: ROOM, sessionId: 's1', moduleCode: 'MA3236', topic: 'Convexity and the Hessian',
+    round: 1, state: 'open', startedAt: iso(-60000), agents: AGENTS,
+    messages: messages.map((m) => ({ ...m })),
+    ledger: { ...ledger, rows: ledger.rows.map((r) => ({ ...r })) },
+    timer,
+    thinking: null, nudgesPaused: false, mode: 'scripted',
+    material: {
+      id: 'mat1', moduleCode: 'MA3236', title: 'Second-order condition for convexity',
+      sourceKind: 'pdf_pages', fileName: 'Slides_L06_Convexity.pdf', fileId: null, pageFrom: 30, pageTo: 31,
+      pageCount: 38, cacheEligible: false, tokenCount: 180,
+      extractedText: 'Second-order condition for convexity\n\nA twice-differentiable f is convex on an open convex set S if and only if ∇²f(x) ⪰ 0 for every x ∈ S.\n\nHere ⪰ 0 means positive semidefinite: zᵀ∇²f(x)z ≥ 0 for every z.',
+    },
+    roundCard: {
+      title: 'Round 1 · Explain',
+      body: "Your slide: convexity and the Hessian. You'll explain it to Ellie and Max. They won't answer for you, they'll disagree with each other sometimes, and replies here are deliberately paced so you get room to think first. You can whisper to either of them privately. You have the last word.",
+    },
+    };
+  }
+
   const whisperTurns: WhisperTurnView[] = [];
+
+  // ── the flow's thread (issue #25) ────────────────────────────────────────
+  const locked = new Map<string, string>();
+  let flowRoomOpen = false;
+  let flowTurns = 0;
+
+  const REFERENCE_ANSWER = [
+    '`/btw` asks a question inside the session you already have open. It reads the conversation',
+    'so far and nothing else: it has no tools of its own, no memory between calls, and the',
+    'exchange is not appended to the conversation history the main agent goes on to use.',
+    '',
+    '───',
+    "Now say it back in your own words and I'll tell you what's missing.",
+  ].join('\n');
+
+  const FLOW_TEACHER = [
+    'That is the right half of it. You have said what it reads — now say what it cannot do, because that is where the interesting part is. What happens to the answer afterwards?',
+    'Good. So the side channel is read-only *and* the exchange is discarded. Hold on to both halves; they come apart under pressure.',
+  ];
+
+  const FLOW_TESTER =
+    'You might not like this next question, and that is fine — I am testing the statement, not you. ' +
+    'You said the exchange "is not added to the history". The deck has a test where it claimed to write a todo and did not. ' +
+    'Is that the same property, or a different one? If it is different, name both.';
+
+  function flowView() {
+    return {
+      room: snapshot(),
+      threads: [...new Set(messages.filter((m) => m.anchorId).map((m) => m.anchorId!))].map((anchorId) => ({
+        anchorId,
+        messageIds: messages.filter((m) => m.anchorId === anchorId).map((m) => m.id),
+        lockedByAnswerId: locked.get(anchorId) ?? null,
+      })),
+    };
+  }
 
   return {
     async bootstrap(): Promise<Bootstrap> {
@@ -256,24 +313,7 @@ export function createMockBridge(): ChatterEdApi {
         post("I'm curious how you'd set this one up — what's your first move when you see \"convex\" and \"Hessian\" in the same sentence?", ellie);
         later(400, () => arm(0));
       }
-      return {
-        roomId: ROOM, sessionId: 's1', moduleCode: 'MA3236', topic: 'Convexity and the Hessian',
-        round: 1, state: 'open', startedAt: iso(-60000), agents: AGENTS,
-        messages: messages.map((m) => ({ ...m })),
-        ledger: { ...ledger, rows: ledger.rows.map((r) => ({ ...r })) },
-        timer,
-        thinking: null, nudgesPaused: false, mode: 'scripted',
-        material: {
-          id: 'mat1', moduleCode: 'MA3236', title: 'Second-order condition for convexity',
-          sourceKind: 'pdf_pages', fileName: 'Slides_L06_Convexity.pdf', fileId: null, pageFrom: 30, pageTo: 31,
-          pageCount: 38, cacheEligible: false, tokenCount: 180,
-          extractedText: 'Second-order condition for convexity\n\nA twice-differentiable f is convex on an open convex set S if and only if ∇²f(x) ⪰ 0 for every x ∈ S.\n\nHere ⪰ 0 means positive semidefinite: zᵀ∇²f(x)z ≥ 0 for every z.',
-        },
-        roundCard: {
-          title: 'Round 1 · Explain',
-          body: "Your slide: convexity and the Hessian. You'll explain it to Ellie and Max. They won't answer for you, they'll disagree with each other sometimes, and replies here are deliberately paced so you get room to think first. You can whisper to either of them privately. You have the last word.",
-        },
-      };
+      return snapshot();
     },
 
     async sendMessage({ text }) {
@@ -388,6 +428,60 @@ export function createMockBridge(): ChatterEdApi {
     // Segments need pdf.js, a file and SQLite, none of which `vite dev` has. An empty flow with
     // the honest notice, for the same reason the vault above is empty: a mock deck of invented
     // slide titles would be a screenshot of a lie.
+    /**
+     * The conversation inside the flow (issue #25).
+     *
+     * The deck is still not faked — `getSegments` below is empty for the reason it always was —
+     * but the *thread* is, because the thread is the thing being built and it has to be drivable
+     * without Electron. It replays the shape `flow-build-plan.md` §2 beats 8–12 film, on
+     * whichever segment id the caller names: REFERENCE card → (Explain it back) → learner →
+     * Ellie → hand-off line → Max, with the ledger moving only on the learner's own words.
+     */
+    async flowAskHere({ segmentId, question }) {
+      flowRoomOpen = true;
+      const asked = post(question, null, { anchorId: segmentId });
+      await new Promise((r) => setTimeout(r, 2400));
+      const answer = post(REFERENCE_ANSWER, null, {
+        anchorId: segmentId,
+        speaker: { kind: 'reference', displayName: 'REFERENCE' },
+      });
+      locked.set(segmentId, answer.id);
+      return {
+        roomId: ROOM, anchorId: segmentId, questionId: asked.id, answerId: answer.id,
+        body: answer.body, truncated: false, flow: flowView(),
+      };
+    },
+    async flowExplainBack({ answerId }) {
+      for (const [anchorId, id] of locked) {
+        if (id !== answerId) continue;
+        locked.delete(anchorId);
+        return { unlocked: true, anchorId };
+      }
+      return { unlocked: false, anchorId: null };
+    },
+    async flowSend({ segmentId, text }) {
+      post(text, null, { anchorId: segmentId });
+      flowTurns += 1;
+      const n = flowTurns;
+      later(1200, () => {
+        moveLedger([['R1', n === 1 ? 'stated' : 'justified', text.slice(0, 64), null]]);
+      });
+      if (n < 2) {
+        think(ellie, 4500, FLOW_TEACHER[Math.min(n - 1, FLOW_TEACHER.length - 1)]!, { anchorId: segmentId });
+        return;
+      }
+      // Two concepts in, Ellie hands off — written by the rule, then Max reads for 11 s.
+      later(4200, () => {
+        post(`You have covered what /btw can see and what it cannot — ${max.displayName}, over to you.`, ellie, {
+          anchorId: segmentId, byRule: 'handoff',
+        });
+        think(max, 11000, FLOW_TESTER, { anchorId: segmentId });
+      });
+    },
+    async flowMessages() {
+      return flowRoomOpen ? flowView() : null;
+    },
+
     getSegments: async ({ fileId }) => emptyFlow(fileId),
     splitSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
     mergeSegments: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
