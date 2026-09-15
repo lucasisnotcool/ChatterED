@@ -240,6 +240,17 @@ export class RoomActor {
       }
       this.#timer.cancel();
       this.#studentTurns += 1;
+      /**
+       * The composer is empty again, so the learner is no longer mid-sentence.
+       *
+       * This matters beyond the typing indicator: `flow.handOffDue`'s R4 refuses to quiz within
+       * `composerIdleMs` of a keystroke, and a message is *always* sent within milliseconds of
+       * the last one. Without this line the hand-off could never fire on the turn that satisfies
+       * R1 — it would be blocked by the very keystrokes that produced the turn — and beat 10
+       * would be unreachable on camera (flow-session.md §8.2 R4: "never quiz mid-sentence"; a
+       * sent message is the end of the sentence).
+       */
+      this.#typingUntil = 0;
       this.#noteLearnerActivity('turn');
       const row = this.#insertMessage({
         participantId: this.#studentParticipant().id,
@@ -1296,8 +1307,17 @@ export class RoomActor {
   #relayOfferFor(turn: number): { draftText: string; defaultAttribution: RelayAttribution } | null {
     // In scripted mode the offer text comes from the script; in live mode the whisper agent is
     // asked for a draft in its own reply, and the UI's Preview step is what makes it real.
-    const beat = this.#d.config.mode === 'scripted' ? scriptRelayOffer(turn) : null;
-    return beat;
+    //
+    // *Which* script is the client's business, not the actor's: `ScriptedClient` latches the
+    // deck it is replaying, and a sitting on the Critique 1 deck must not be handed the
+    // PSD/Hessian draft (flow-build-plan.md §4.4). The actor asks if it can and falls back to
+    // the original script otherwise, so no other backend has to grow this method.
+    if (this.#d.config.mode !== 'scripted') return null;
+    const client = this.#d.llm as Partial<{
+      relayOfferFor(turn: number): { draftText: string; defaultAttribution: RelayAttribution } | null;
+    }>;
+    if (typeof client.relayOfferFor === 'function') return client.relayOfferFor(turn);
+    return scriptRelayOffer(turn);
   }
 
   #buildRecap(): RecapView {
