@@ -20,9 +20,28 @@ is a more impt decision."*
 
 ## 0. The recommendation in one box
 
-<!-- FILL: constants table -->
+**A flow session is a contiguous span of engaged work in one document, opened by the learner's
+first meaningful action and closed by 20 minutes of inactivity, an explicit end, or a document
+switch. A concept is quizzable when it is at least 3 minutes old, inside the horizon (this session,
+or the previous one if it closed under 6 h ago), and the learner has taken ≥ 3 turns in the last
+10 minutes with ≥ 2 covered concepts and a clear floor.** Constants and citations: §8.3.
 
----
+**Four things this brief changes about #33's proposal.**
+
+1. **The 2 h half-life goes.** No evidence supports it for conceptual material — even nonsense
+   syllables decay slower (§4). It survives demoted to a 60-minute *ranking* weight.
+2. **The 6 h horizon stays but is re-justified.** It is a **conversational-context** bound, not a
+   decay constant, and the report should say memory would permit far longer (§4).
+3. **The 3-minute minimum age stays, and must not be raised.** For *prose* material the only direct
+   evidence found immediate testing **better** than a 10-minute delay, so `MIN_AGE` is a UI guard,
+   not a pedagogical delay (§3.2).
+4. **Feedback after every quiz answer becomes mandatory** — g = 0.73 with it versus 0.39 without
+   (§3.1). This is the single best-evidenced constraint in the brief and #33 does not mention it.
+
+**And one that is honest rather than flattering:** "flow" here is a **behavioural proxy for
+sustained engagement**, not flow in Csikszentmihalyi's sense, which is measured by self-report and
+has no validated log proxy (§5). Nobody ships an engagement-triggered quiz (§6), so this is a
+design proposal with a logging plan (§11), not established practice.
 
 ## 1. Session boundaries: where the 20-minute gap comes from
 
@@ -100,13 +119,113 @@ resume path (§8.1) carries the continuity.
 
 ## 3. Retrieval-practice timing: when is a concept ready to be quizzed?
 
-### 3.1 The testing effect and why the quiz must not be immediate
-### 3.2 Is there a defensible *minimum* age?
-### 3.3 Spacing and the lag effect
+### 3.1 The testing effect, and why an immediate quiz looks *worse*
+
+Roediger & Karpicke had students read TOEFL-style prose passages then either restudy for 7 min or
+take a 7-min free-recall test **without feedback**, with final recall at **5 min, 2 days or 1 week**.
+The result is a genuine crossover: at **5 min restudy won, 81 % vs 75 %** of idea units (d = 0.52);
+at **2 days testing won, 68 % vs 54 %** (d = 0.95); at **1 week, 56 % vs 42 %** (d = 0.83);
+interaction F(2,117) = 32.10, ηp² = .35. Experiment 2 shows the dose–response: proportional
+forgetting over a week was **SSSS 52 %, SSST 28 %, STTT 14 %** (Roediger & Karpicke, 2006,
+*Test-enhanced learning*, **Psychological Science** 17(3), 249–255,
+[PDF](https://colinallen.dnsalias.org/Readings/2006_Roediger_Karpicke_PsychSci.pdf) — **VERIFIED
+primary**).
+
+**Three design consequences.** (1) The payoff is *delayed*, so the Tester will feel less useful
+than the Teacher in the moment — say so in the product copy and in the report, rather than
+promising an immediate gain the evidence denies. (2) **The Tester must give feedback.** Rowland's
+meta-analysis (159 effects, 61 studies) puts the overall testing effect at **g = 0.50
+[0.42, 0.58]**, rising to **g = 0.73 [0.61, 0.86] with feedback** versus **0.39 without**, and to
+**g = 0.69** when the retention interval is ≥ 1 day versus 0.41 below (Rowland, 2014,
+**Psychological Bulletin** 140(6), 1432–1463, [PubMed](https://pubmed.ncbi.nlm.nih.gov/25150680/)
+— **VERIFIED primary**). A Tester that asks and moves on throws away a third of the effect.
+(3) **Prose is in scope**: g = 0.58 [0.34, 0.82] for prose materials, so explaining-back a slide is
+the right task shape.
+
+### 3.2 Is there a defensible *minimum* age? — the evidence argues **against** raising it
+
+**State this plainly in the report; it is the brief's most counter-intuitive finding.** The one
+experiment isolating study-to-first-test lag delayed the first test by **5 intervening items — about
+42 s**: initial accuracy fell (97 % → 72 %) and slowed (2,521 → 3,247 ms), yet **at 2 days the
+delayed-first-test conditions won, 52 % vs 44 %** (d = 0.35; single-test conditions 39 % vs 21 %)
+(Karpicke & Roediger, 2007, **JEP:LMC** 33(4), 704–719,
+[PDF](https://learninglab.psych.purdue.edu/downloads/2007/2007_Karpicke_Roediger_JEPLMC.pdf) —
+**VERIFIED primary**). **But the same authors report the opposite for prose** (pp. 717–718): a free
+recall test taken relatively *immediately* after studying a passage promoted long-term retention
+**more** than a first test delayed by 10 min, because prose recall does not draw on primary memory
+and is *"inherently difficult enough… and need not be delayed"*; they close by saying the optimal
+delay *"awaits future research."* **ChatterED's task is explaining a lecture concept — prose-like,
+not paired-associate — so the closer analogue argues against imposing a delay at all.**
+
+Rowland's meta-regression on initial test lag agrees: **no reliable effect** (slope 0.00015,
+CI [−0.00017, 0.00046], Z = 0.91). Dunlosky et al.'s applied review gives no study-to-first-test
+minimum, saying only that tests *"in immediate succession within a session"* show minimal effects;
+its one quantitative rule — 10–20 % of the retention interval — governs the gap *between* practice
+sessions (Dunlosky, Rawson, Marsh, Nathan & Willingham, 2013, **PSPI** 14(1), 4–58,
+[PDF](https://acs.ist.psu.edu/ist521/dunloskyRMNW13.pdf) — **VERIFIED primary**).
+
+**Recommendation: keep `MIN_AGE = 3 min` as #33 proposed, but change its justification.** It is
+**not** a retrieval-practice delay — the evidence for prose points the other way — it is a
+**user-interface guard** against quizzing the sentence the learner is visibly still reading, in the
+same family as `timer.ts`'s keystroke rule. **Do not raise it to 10 min** on Anki's learning steps
+(`1m 10m`, [Anki Manual](https://docs.ankiweb.net/deck-options.html) — VERIFIED primary): Anki
+schedules *repeat exposures of the same card*, a different operation from a first explain-back.
+Because the constant now carries no theoretical load, it is safe to tune from A1 data (§11) and
+cheap to set to zero if the R4 clear-floor conditions turn out to do the whole job.
+
+### 3.3 Spacing: the *reopen* quiz is the valuable one
+
+Cepeda et al.'s meta-analysis (839 assessments, 317 experiments) finds spaced **47.3 %** vs massed
+**36.7 %** correct, and concludes for education that episodes should be separated **by at least one
+day** — *"learning within a single day impaired learning, compared with a 1-day interval"* (2006,
+**Psychological Bulletin** 132(3), 354–380,
+[PDF](https://augmentingcognition.com/assets/Cepeda2006.pdf) — **VERIFIED primary**). The ridgeline
+study puts optimal gaps at **1, 11, 21 and 21 days for retention intervals of 7, 35, 70 and
+350 days**, i.e. roughly 10–30 % of the retention interval, and note that **at a 7-day interval the
+optimal gap bought only 10 %** (Cepeda et al., 2008, **Psychological Science** 19(11), 1095–1102,
+[PDF](https://files.eric.ed.gov/fulltext/ED505660.pdf) — **VERIFIED primary**).
+
+**The consequence is uncomfortable and should be reported as a limitation.** By this evidence the
+*within-session* hand-off is the weaker half of the mechanism and the **cross-session retrieval
+prompt on reopening (§8.1, rule 4) is the stronger half** — but ChatterED's horizon (§4) caps it at
+hours, i.e. below the one-day spacing the literature prefers. ChatterED's within-session quiz is
+defensible as *the first retrieval attempt* (§3.1–3.2), not as spaced practice; spaced practice is
+what the ledger's recap and any future review feature would serve.
 
 ## 4. Decay: the half-life and the horizon
 
-<!-- FILL: Ebbinghaus/Murre & Dros, Rubin & Wenzel, half-life regression -->
+**The 2 h half-life does not survive contact with the evidence and should be dropped as a memory
+claim.** Murre & Dros's Ebbinghaus replication — 70 lists of 104 CVC **nonsense syllables** —
+reports savings of **0.472 at 20 min, 0.373 at 1 h, 0.276 at 9 h, 0.317 at 1 day, 0.230 at 2 days,
+0.041 at 31 days** (power fit R² = 98.7 %; note the curve is **non-monotonic** — 1-day savings
+exceed 9-hour savings in three of four datasets, plausibly a sleep effect) (2015, **PLOS ONE**
+10(7), e0120644,
+[open access](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0120644) —
+**VERIFIED primary**). Even for *nonsense syllables* the decay is slower than a 2 h half-life. For
+**meaningful prose** the anchor is R&K 2006's own restudy arm — **81 % at 5 min, 54 % at 2 days,
+42 % at 1 week** — a half-life on the order of **days**, and longer once retrieval practice is
+added (STTT lost 14 % in a week). Course knowledge decays slower still (~70 % at one year is the
+modal figure; Custers, 2010, **Adv Health Sci Educ** 15, 109–128 — SECONDARY). **The popular "70 %
+lost in 24 hours" figure traces only to vendor blogs and nonsense-syllable data — do not cite it.**
+
+**So what is the 6 h horizon actually about?** Re-read Lucas's framing: *"a user is not expected to
+remember a **convo** more than 6 hours old."* That is a claim about **episodic memory of the
+exchange** — who said what, where on the page, what was being argued — not about retention of the
+concept. It is the right constraint for this product and it has nothing to do with forgetting
+curves. **Recommendation: keep 6 h, and re-justify it in the report as a conversational-context
+bound, not a decay constant** — the brief's strongest single correction to #33. State the trade
+openly: memory would permit quizzing *days* later; ChatterED chooses not to, because a question
+about a conversation the learner cannot reconstruct is a worse experience than no question.
+
+**The half-life survives in a demoted role.** Keep an exponential freshness score — used **only to
+rank** candidate elements (§8.2), never to exclude one — with `RECENCY_HALF_LIFE = 60 min`.
+Labelled as a ranking weight it needs no memory evidence; labelled a retention estimate it would
+need evidence that does not exist. Shipped precedent for exponential-in-time recall with a fitted
+half-life: Duolingo's half-life regression, `p̂ = 2^(−Δ/ĥ)`, **half-life clamped to [15 min,
+9 months]**, trained on 12.9 M traces, MAE 0.128 vs Leitner 0.235, +12 % daily engagement (Settles
+& Meeder, 2016, **ACL**, [paper](https://aclanthology.org/P16-1174/) — **VERIFIED primary**). Its
+half-life floor of 15 min is a model clamp, not a scheduler rule, and is **not** evidence for a
+minimum quiz age (§3.2).
 
 ## 5. Flow state and its proxies in interaction logs
 
@@ -250,7 +369,7 @@ before the Teacher hands off.
 |---|---|---|---|
 | **R1 — engagement** | ≥ `k` learner turns in the last `m` minutes | **k = 3, m = 10 min** | §5. A behavioural proxy for sustained engagement, not validated flow. m is half the gap so the window cannot outlive its session; k = 3 is the smallest count that distinguishes a conversation from a single question. **Designer's choice — say so.** |
 | **R2 — coverage** | ≥ 2 elements in the taught set with freshness above the floor | **2** | A one-element quiz is a comprehension check (§9); two is the minimum at which the Tester can ask the learner to *relate* things, which is what the ledger's levels 2–4 score (`progress-tracking.md` §3.1). |
-| **R3 — maturity** | the youngest quizzable element is older than `MIN_AGE` | **10 min** (was 3 min) | §3.2 and §6. Raised from #33's proposal on Anki's shipped `1m 10m` learning steps and on the desirable-difficulties argument that an immediate test can be passed out of working memory. |
+| **R3 — maturity** | the youngest quizzable element is older than `MIN_AGE` | **3 min** (as #33 proposed) | §3.2, **with a new justification**: a UI guard against quizzing the sentence still being read, *not* a retrieval-practice delay. Karpicke & Roediger found immediate testing better than a 10-min delay for **prose**, so do not raise it. |
 | **R4 — clear floor** | no unanswered Teacher question pending, no silence-timer window open, no whisper popover open, composer idle ≥ 3 s | — | §5's ambiguity finding. Quizzing into an impasse is the D'Mello path from confusion to frustration; quizzing mid-keystroke is the failure `design-brief.md` §D3 built the keystroke rule to prevent. |
 
 **Which element the Tester picks.** Among elements passing R3 and inside the horizon, prefer
@@ -265,6 +384,19 @@ Koala control expressed as behaviour rather than as a settings panel (§7.2.1: *
 permission"*).
 
 ### 8.3 The constants, with a citation each
+
+All live in one file, `src/room/flow.ts`, unit-tested on a fake clock like `timer.ts`.
+
+| Constant | Value | Status | Basis |
+|---|---|---|---|
+| `GAP` — inactivity that closes a session | **20 min** | **Evidence-informed** | The only published re-examination of the 30-min convention puts the natural antimode at **15–20 min** ([Ringside 2025](https://www.ringside.ai/articles/30-minute-sessions/), SECONDARY); the convention itself is Catledge & Pitkow's 9.3 min + 1.5 SD = 25.5 min, later rounded (1995, *Comp. Networks & ISDN Systems* 27(6), UNVERIFIED primary). GA4 default 30 min ([Google](https://support.google.com/analytics/answer/12131703), VERIFIED); WakaTime 15 min ([FAQ](https://wakatime.com/faq), SECONDARY). No learning-specific number exists (§1). |
+| `MIN_AGE` — youngest quizzable element | **3 min** | **Designer's choice — no evidence supports any number** | §3.2. Karpicke & Roediger 2007 pp. 717–718: for **prose**, immediate testing beat a 10-min delayed first test ([PDF](https://learninglab.psych.purdue.edu/downloads/2007/2007_Karpicke_Roediger_JEPLMC.pdf), VERIFIED). Rowland 2014's lag meta-regression: n.s. ([PubMed](https://pubmed.ncbi.nlm.nih.gov/25150680/), VERIFIED). Justified as a UI guard only. |
+| `RECENCY_HALF_LIFE` — freshness **ranking** weight | **60 min** | **Ranking weight, not a memory estimate** | §4. Exponential-in-time recall with a fitted half-life is shipped practice (Settles & Meeder 2016, [ACL](https://aclanthology.org/P16-1174/), VERIFIED), but **a 2 h half-life for conceptual material has no support**: even nonsense syllables retain 0.276 savings at 9 h (Murre & Dros 2015, [PLOS ONE](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0120644), VERIFIED), and meaningful prose has a half-life in **days** (R&K 2006 restudy arm: 81 % → 54 % → 42 %). Used only to order candidates; **never to exclude one**. |
+| `HORIZON` — quizzable window | **the open session, plus the immediately preceding session if it closed < 6 h ago** | **Product constraint, re-justified** | §4. **Not** a decay constant. It encodes Lucas's framing — *"a user is not expected to remember a **convo** more than 6 hours old"* — which is about episodic memory of the exchange, not retention of the concept. Memory would permit days (Custers 2010; Cepeda et al. 2006 prefers ≥ 1 day between episodes, [PDF](https://augmentingcognition.com/assets/Cepeda2006.pdf), VERIFIED). ChatterED deliberately under-quizzes; the report should say so as a limitation. |
+| `k`, `m` — engagement window | **3 turns / 10 min** | **Designer's choice** | §5. No source gives a k-in-m rule for learning; flow has no validated log proxy. Structural defence only: m = GAP/2 so the window cannot outlive its session; k = 3 is the smallest count distinguishing a conversation from a question. |
+| `MIN_TAUGHT` — coverage floor | **2 elements** | **Design argument** | §8.2 R2. One element is a comprehension check, not retrieval practice (#33's own objection). |
+| `DECLINE_COOLDOWN` / `DECLINES_TO_REACTIVE` | **1 × m** / **3** | **Designer's choice, Koala-shaped** | §7.2.1: triggers and rate must be learner-controllable; P6.2 wanted the agent to *"ask for permission"*. |
+| **Feedback after every quiz answer** | **required, not optional** | **Strongest cited constraint in the brief** | Rowland 2014: **g = 0.73 with feedback vs 0.39 without** ([PubMed](https://pubmed.ncbi.nlm.nih.gov/25150680/), VERIFIED). A Tester that asks and moves on discards roughly half the effect. The ledger already produces the material; the Tester must voice it. |
 
 ## 9. Alternatives rejected
 
