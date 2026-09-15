@@ -1,0 +1,1505 @@
+                                         Controlling AI Agent Participation in Group Conversations: A Human-Centered
+                                         Approach
+
+                                         STEPHANIE HOUDE, IBM Research, USA
+                                         KRISTINA BRIMIJOIN, IBM Research, USA
+                                         MICHAEL MULLER, IBM Research, USA
+                                         STEVEN I. ROSS, IBM Research, USA
+                                         DARIO ANDRES SILVA MORAN, IBM Research, Argentina
+
+
+
+
+arXiv:2501.17258v1 [cs.HC] 28 Jan 2025
+                                         GABRIEL ENRIQUE GONZALEZ, IBM Research, Argentina
+                                         SIYA KUNDE, IBM Research, USA
+                                         MORGAN A. FOREMAN, IBM Research, USA
+                                         JUSTIN D. WEISZ, IBM Research, USA
+                                         Conversational AI agents are commonly applied within single-user, turn-taking scenarios. The interaction mechanics of these scenarios
+                                         are trivial: when the user enters a message, the AI agent produces a response. However, the interaction dynamics are more complex
+                                         within group settings. How should an agent behave in these settings? We report on two experiments aimed at uncovering users’
+                                         experiences of an AI agent’s participation within a group, in the context of group ideation (brainstorming). In the first study, participants
+                                         benefited from and preferred having the AI agent in the group, but participants disliked when the agent seemed to dominate the
+                                         conversation and they desired various controls over its interactive behaviors. In the second study, we created functional controls
+                                         over the agent’s behavior, operable by group members, to validate their utility and probe for additional requirements. Integrating our
+                                         findings across both studies, we developed a taxonomy of controls for when, what, and where a conversational AI agent in a group
+                                         should respond, who can control its behavior, and how those controls are specified and implemented. Our taxonomy is intended to aid
+                                         AI creators to think through important considerations in the design of mixed-initiative conversational agents.
+
+                                         CCS Concepts: • Human-centered computing → Natural language interfaces; Collaborative interaction; Empirical studies
+                                         in collaborative and social computing; • Computing methodologies → Intelligent agents; Cooperation and coordination.
+
+                                         Additional Key Words and Phrases: LLM, Generative AI, Group Brainstorming, Co-creativity, Conversational agent, Multi-party
+                                         conversation, Mixed initiative interfaces, Mixed initiative creative interfaces.
+
+                                         ACM Reference Format:
+                                         Stephanie Houde, Kristina Brimijoin, Michael Muller, Steven I. Ross, Dario Andres Silva Moran, Gabriel Enrique Gonzalez, Siya Kunde,
+                                         Morgan A. Foreman, and Justin D. Weisz. 2025. Controlling AI Agent Participation in Group Conversations: A Human-Centered
+
+                                         Authors’ Contact Information: Stephanie Houde, IBM Research, Cambridge, MA, USA, stephanie.houde@ibm.com; Kristina Brimijoin, IBM Research,
+                                         Yorktown Heights, NY, USA, kbrimij@us.ibm.com; Michael Muller, IBM Research, Cambridge, MA, USA, michael_muller@us.ibm.com; Steven I. Ross,
+                                         IBM Research, Cambridge, MA, USA, steven_ross@us.ibm.com; Dario Andres Silva Moran, IBM Research, La Plata, BA, Argentina, dario.silva@ibm.com;
+                                         Gabriel Enrique Gonzalez, IBM Research, Necochea, BA, Argentina, gabriel.gonzalez@ibm.com; Siya Kunde, IBM Research, Yorktown Heights, NY, USA,
+                                         skunde@ibm.com; Morgan A. Foreman, IBM Research, Houston, TX, USA, Morgan.Foreman@ibm.com; Justin D. Weisz, IBM Research, Yorktown Heights,
+                                         NY, USA, jweisz@us.ibm.com.
+
+
+
+
+                                         This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License.
+                                         © 2025 Copyright held by the owner/author(s).
+                                         Manuscript submitted to ACM
+
+
+                                         Manuscript submitted to ACM                                                                                                                  1
+2                                                                                                                       Houde et al.
+
+
+Approach. In 30th International Conference on Intelligent User Interfaces (IUI ’25), March 24–27, 2025, Cagliari, Italy. ACM, New York,
+NY, USA, 31 pages. https://doi.org/10.1145/3708359.3712089
+
+1    Introduction
+The widespread availability of conversational agents, particularly those based on large language models (LLMs), has
+affected how people complete tasks. It is increasingly common for people to ask an agent for assistance with a writing
+task [34], a coding task [52, 64, 83], or a summarization task [2, 26]. Often, these tasks are implemented through
+conversational user interfaces in which the interaction mechanics are trivial: the (human) user makes a statement
+or request to the AI agent and the AI agent generates a reply via LLM inference using the conversational history as
+context.
+    In contrast to the one-on-one nature of these human-AI interactions, a large number of professional work projects
+occur in groups, where asynchronous and real-time group discussions take place [9]. AI agent participation in such
+discussions could help provide additional ideas and resources that enrich both the work processes and outcomes [65, 79].
+However, in group conversations, it is not straightforward to determine when and how an AI agent should contribute.
+For example, it might be inappropriate for the agent to respond to every utterance made by every member of the group
+in a lively discussion. Group interaction by an agent requires a more flexible strategy involving judgement of what
+content should be shared when.
+    To understand the challenges of designing an agent that “fits in” to a group setting, we built an LLM-based con-
+versational agent prototype called “Koala.” Koala is an AI-based group discussion participant, situated in Slack1 and
+implemented as a bot application. We conducted two user studies to understand Koala’s impact on the dynamics of an
+ideation activity and to explore the design space for its interactive behaviors.
+    In our first user study, we established an initial understanding of the value of including an AI agent within a group
+brainstorming session as perceived by study participants, along with human-centered requirements for the agent’s
+behavior. We engaged small groups in real-time brainstorming conversations (akin to [5, 67, 75]), in Slack channels
+configured with different levels of AI participation: (1) without Koala, (2) with a reactive variant of Koala that only
+responded when directly addressed, and (3) with a proactive variant of Koala that made its own determinations of
+when to contribute. Participants preferred completing the exercise with, rather than without, Koala, and they reacted
+positively to the ideas it generated and the way it could help keep the conversation moving. However, participants
+raised significant concerns about feeling overwhelmed and interrupted by the proactive variant of Koala and expressed
+numerous ways in which they desired to control its behavior.
+    Based on feedback from the first study, we created a new variant called Koala II by updating its underlying LLM,
+prompt, and algorithms to improve its proactive behaviors. We also created a settings panel to control both the content
+and display of its contributions. In a second study, we re-recruited our participants to experience Koala II. We also
+developed a series of design probes to explore other ways of controlling Koala’s interactive behaviors than the ones
+we were able to implement in our settings panel. Our refinements of Koala were effective, with participants noting
+its improved timeliness and adherence to the topics. Participants found the ability to control Koala II’s interactive
+behavior very useful, but they also wished to control other aspects of its behavior. These insights revealed a range
+of controllable aspects, and ways to control them, that culminated in the creation of a taxonomy for understanding
+important considerations in the design of proactive conversational agents.
+    Our paper makes the following contributions:
+1 Slack. https://slack.com
+
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                     3
+
+
+      • The results of a mixed-methods analysis that found that a conversational AI agent was valued as a member of a
+        group brainstorming team, even while its interactive behaviors did not always suit the group’s dynamic.
+      • A taxonomy derived from two user studies that identifies aspects of an AI agent’s interactive behaviors in a
+        group conversation along with ways those aspects can be controlled (Figure 7).
+      • A conceptual extension of mixed-initiative interaction frameworks (e.g., [15, 51, 59, 68, 69]) that challenges
+        assumptions that an AI agent’s interactive behaviors are fixed or solely determined by the workflow in which it
+        is embedded; rather, users may dynamically adjust these behaviors throughout the course of their interaction
+        with it.
+
+2     Related work
+We outline three areas relevant to our study of AI agent participation in group settings: research on mixed-initiative
+interfaces and frameworks for human-AI interaction, the act of brainstorming as a collaborative activity, and guidelines
+for the design of conversational agents.
+
+2.1    Mixed-initiative interfaces and frameworks for human-AI interaction
+One of the earliest technical accounts of joint work between human and computing technologies was what has become
+known as the Fitts Allocation, published in 1951 [15]. Fitts proposed that certain types of work should be assigned to
+either a human or a machine, according to a set of rules about which party was best suited to perform which tasks.
+Newer frameworks were developed by Sheridan [68] and Parasuraman et al. [59], but these contained the same basic
+assumption that human initiative and agency traded off with technological initiative and agency.
+    Recent research on mixed-initiative interactions [23] and mixed-initiative creative interfaces [12, 73], along with
+modern human-AI interaction frameworks [51, 69] suggest that initiative between humans and intelligent systems does
+not lie on a single trade-off axis; rather, they comprise a two-dimensional space in which both parties can independently
+act with lower or higher levels of initiative. Muller and Weisz [51] further demonstrate how the initiative of each actor
+may dynamically change during the course of the interaction.
+    One limitation of these frameworks is that, although they can describe that an AI agent can act with lower or
+higher levels of initiative, they do not help designers and practitioners determine how that agent ought to behave
+in any given situation. Recent work has examined the design space of proactive interactions, such as by passively
+recommending visualizations in a data science context [76] or by determining when to interrupt a user with a notification
+or informational message [43, 63]. As Kraus et al. [31] note, proactivity can be a “double-edged sword” that must be
+configured properly to maintain users’ preferences and trust [30, 45]. Without such configuration, users may resist agent-
+provided information, such as help services [20]. Jain et al. [25] used participatory methods to create design patterns
+for a proactive auto-response messaging agent. Zargham et al. [88] used a different approach – visual storyboards – to
+learn users’ preferred patterns for what they called the “proactivity dilemma” in design. Gammelgård-Larsen et al. [17]
+built prototypes to compare users’ responses to intermittent vs. continuous vs. proactive agent behaviors in a music
+recommendation application. Liao et al. [35] summarized portions of these learnings in a full-day SIGIR tutorial.
+    However, such work neglects an important part of the design space: how should AI agents behave in group settings
+where the interaction dynamics are more complex? With partial success, neural networks have been trained to handle
+the semantics [21], relevance [81] and addressees [57] of AI responses in multi-party conversations (e.g., “who says
+what to whom?”). This work has not yet considered contextual factors, such as when to interject a question or response,
+and how that when depends on the task at hand [1]. For example, users of Oh et al.’s DuetDraw, an interface that
+                                                                                                Manuscript submitted to ACM
+4                                                                                                             Houde et al.
+
+
+allows users to draw collaboratively with AI, wanted to lead the interaction and only wanted AI explanations when
+requested [55]. By contrast, Koch et al. [29] found that 14 of 16 professional designers preferred to work with an AI
+that took initiative in proposing inspirational materials for creating a digital mood board [29].
+    McComb et al. [42] examined the use of AI within engineering design and drew a distinction between reactive AI
+applications, in which AI acts in response to human activities, and proactive AI applications, in which AI acts more as a
+partner or guide. Similarly, Moruzzi and Margarido [49] identify a dimension of engagement in which an AI’s approach
+to interaction may either be “suggesting” or “taking initiative.”
+    In this paper, we build upon these concepts by using a human-centered approach to explore what it means for an AI
+agent to act “proactively,” within the complexity of group conversational settings. Our work extends existing human-AI
+interaction frameworks by developing a new taxonomy for how agents should participate in groups.
+
+2.2   Group ideation as a testbed for examining AI’s interactive behaviors
+To explore an AI agent’s interactive behaviors in group conversational settings, we needed a purpose or reason for
+the agent to interact with other people. We chose group ideation – the process by which a group comes together
+to brainstorm ideas on a topic or theme [56, 60] – as it is a familiar practice, it can be conducted over a textual
+communications channel [28, 80], and LLM-based conversational AI agents have been shown to contribute meaningfully
+in this task [44, 49, 50, 54, 67].
+    In Osborn’s classic analysis of brainstorming, participants may propose ideas in any order during a divergence phase,
+and participants may evaluate and select or curate a subset of those ideas for future use during a convergence phase [56].
+For our purposes in examining an AI agent’s interactive behaviors, both phases – divergence and convergence – include
+moments in which the next conversational turn may be taken by any of the parties involved in the activity (i.e. human
+or AI). Brainstorming thereby presents exactly the types of interaction problems we want to investigate: when (and
+implicitly, why) should the AI contribute to the on-going discussion?
+    Incorporating AI is the most recent technological enhancement to group ideation, although the impact of AI agents
+on dyadic and group co-creativity are mixed. Geerts et al. [19] conducted brainstorming sessions in which a scripted
+dialog was presented as both a wizard-of-oz AI and as a human, and found no difference in the experiences of the
+participants [19]. Maier et al. [41] facilitated co-located groups in brainstorming sessions with human and AI facilitators,
+both of whom had issues such as blocking one another’s contributions and making interruptions (human) and deviating
+from the topic and exhibiting periods of silence (AI), leaving participants frustrated. Memmert and Tavanapour [44]
+found an increase in cognitive stimulation from exposure to other team members’ perspectives, but also notes the risks
+of free riding or reduced human effort with AI-generated contributions [44].
+    In contrast, both Wieland et al. [82] and Yu-Han and Chun-Ching [87] found that brainstorming with an AI partner,
+instead of a human one, was associated with an increase in the number and diversity of ideas. Bouschery et al. [4]
+evaluated nominal groups (each person brainstorms alone), interactive (human-only) groups, hybrid (human-AI) groups
+and AI-only groups and concluded, “hybrid groups outperform both interactive and nominal groups in terms of the
+number of generated ideas and perform on par in terms of brainstorming creativity while requiring only half the human
+resources” [4]. Within hybrid human-AI brainstorming groups, Muller et al. [50] showed that hybrid ideas – those that
+were either created or modified by at least one person and the AI – were more likely to be identified as being the best
+ones generated by the group. Using a related group task (brainwriting), Shaer et al. [67] reported that the AI sometimes
+produced so much content as to interfere with the work of the people in each group. Thus, we observe that group
+ideation is a suitable task for our work as the interaction dynamics of an AI agent are non-trivial.
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                                                          5
+
+
+2.3     Design guidelines for conversational agents
+Conversational AI agents have experienced widespread adoption, fueled by early advances in intent-based classification
+systems [16, 24], and more recently, LLM-based approaches [37, 58, 89]. Recently, a new practice of conversational UX
+design has emerged to focus on how to design the interactions that a human user has with conversational agents [46–
+48, 71]. These design systems focus on identifying “recognizable interaction types... [which] frees designers from having
+to reinvent how users interact with the application and frees users from having to learn new interaction methods
+so both can focus on the content of the particular application.” [48, p.1]. Although these design systems and sets of
+guidelines are useful aids to the designers of conversational AI systems, they typically focus on single-user, task-based
+use cases. Our work seeks to expand the design space of conversational agents by enumerating controllable elements of
+participation within group settings.
+
+3     Koala: A conversational agent for group ideation
+
+
+                                        A                                                                                B
+
+
+
+
+                                                                                B.1
+A.1
+
+
+
+
+A.2
+
+
+
+                                                                                B.2
+
+
+
+
+Fig. 1. Koala as an AI participant in Slack. These screenshots (with human participant names redacted) show examples of Koala
+participating in a Slack channel. (A) The reactive variant of Koala replies to a user’s question addressed to “Koala” (A.1) or to “@Koala”
+(A.2). (B) The proactive variant of Koala generates a proactive reply (B.1) to the conversation and a reactive reply (B.2) in response to a
+direct request.
+
+
+      To support our research goals, we developed Koala, a multi-party conversational agent designed to collaborate with
+people in group ideation tasks. We built Koala as a Slack application [72] to enable it to participate in group chat spaces;
+we specifically chose Slack because it is the primary chat application used within our organization and its API enabled
+us to develop an AI agent that could participate in group conversations. From a user perspective, “Koala” was just
+another participant within a Slack channel [32, 66], with an “APP” tag to indicate that it was not a person [70].
+      We used the Llama 2 model [78] to drive Koala’s conversational capability as it was a state-of-the-art model2 that
+provided the highest-quality responses in our internal testing.
+
+2 Given the rapid pace at which AI has been advancing, the title of “state of the art” is a short-lived one; in Section 5, we describe how the second-generation
+of Koala was built with Llama 3 [14].
+                                                                                                                               Manuscript submitted to ACM
+6                                                                                                                    Houde et al.
+
+
+    An important design dimension of Koala is determining when it should make a conversational utterance. Other Slack
+bots, such as Anthropic’s Claude3 , require users to explicitly mention the bot’s name to elicit a response from it (i.e.
+“@”-ing the bot). Given our desire to experiment with proactive ways of participating, we developed two configurable
+variants of Koala: a reactive variant that only responds when directly addressed (by either “@Koala” or “Koala”), and a
+proactive variant that responds when it determines that it has something valuable to say. Koala can contribute to the
+conversation in the same manner as other human users, by sending textual messages as well as emoji-based reactions
+to existing messages. We show a screenshot of Koala in Figure 1.
+
+3.1   Determining when to speak: Koala’s proactive behaviors
+
+
+
+
+Fig. 2. Koala operational logic. When users post a message in a Slack (A), the post triggers an event that is handled by the
+Koala backend (B) where control logic determines whether Koala should either immediately pass on replying or hand off for further
+evaluation in the autonomy control logic (C) where the LLM (D) generates a response that is further evaluated for potential posting
+in the channel.
+
+
+    Conversational AI agents typically engage in one-on-one conversations with human users, where each message
+from the user receives a response from the agent. In a group chat where multiple people are talking to (and sometimes
+on top of) one another, the decision of when a proactive agent should respond to any particular user message becomes
+non-trivial; some mechanism is needed to determine when the agent should respond to a user’s message [18, 21, 57].
+    In developing the proactive variant of Koala, we knew that writing imperative decision logic to determine what
+constitutes a valuable contribution would prove impossible; therefore, we relied on the underlying LLM to not only
+produce conversational responses in response to users’ messages, but also to score those responses for the extent to
+which they made a valuable contribution to the conversation. We outline this process in Figure 2; at a high level, Koala
+is instructed to not reply to messages where it is clearly not the intended recipient, and to reply to messages when it
+estimates that the response it generated makes a valuable contribution to the conversation. We note that our proactive
+variant of Koala represents a limited form of proactivity as it’s process is triggered by the receipt of a message from a
+human user; a truly proactive variant of Koala would also be able to send messages to the group even when the human
+participants remain silent [84]. We provide a complete listing of the prompts used by Koala to generate responses to
+members of the group and score them for their value in Appendix A.
+3 Claude. https://www.anthropic.com/index/claude-now-in-slack
+
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                    7
+
+
+    During Koala’s development, we noticed that the underlying LLM was unreliable in identifying the intended target
+for a chat utterance. Thus, we incorporated additional, external control logic to force Koala to reply if it’s name was
+detected in a user’s message, and suppress Koala from replying under other circumstances, such as when the names of
+one of the other participants were mentioned, regardless of how the LLM scored the value of the reply’s content.
+
+3.2    User studies & ethics statement
+We conducted two user studies with Koala to understand the impact of its proactive behaviors on group ideation
+(Section 4) and develop a robust understanding of the ways in which users would like to control those behaviors
+(Section 6). Our research was conducted in accordance with our institution’s internal policies on human-participant
+research. Specifically, participants provided their informed consent, participation was voluntary and could be withdrawn
+at any time, and all collected data were anonymized before analysis and publication.
+
+4     Study 1: Group brainstorming with Koala
+Our first study focused on understanding people’s experience working with the reactive and proactive variants of Koala
+in a series of group ideation scenarios. We designed this study to address two research questions:
+      • RQ1.1. How does the participation of an AI agent transform the brainstorming process?
+      • RQ1.2. How do people characterize the experience of brainstorming with a reactive vs. proactive AI agent?
+
+4.1    Method
+We recruited small groups of IBM employees to participate in a series of virtual brainstorming tasks with (or without)
+Koala as an active participant. Groups performed three brainstorming tasks, with each task focused on a different
+variant of Koala’s participation:
+      • No AI, in which Koala was not present in the channel. This condition enabled us to establish a baseline user
+        experience of brainstorming on Slack.
+      • Reactive AI, in which Koala acted as another participant in the brainstorm, but was configured to only respond
+        when directly addressed.
+      • Proactive AI, in which Koala actively participated in the brainstorm and made its own decisions about when to
+        contribute. As with the reactive variant, the proactive variant always responded when directly addressed.
+    We used two tools to coordinate the study and run the brainstorming activities: participants joined a web conference
+to provide their informed consent and receive instructions for the task, then they muted themselves and turned their
+attention to Slack where the brainstorming activities occurred. Each session was facilitated by a human moderator,
+who introduced the brainstorming activity, clarified any confusions about the topic, and maintained time constraints.
+At no point did the moderator influence brainstorming outcomes.
+
+4.1.1 Brainstorming task and topics. Groups were provided with three minutes to brainstorm on a topic with (or
+without) Koala. Pre-testing indicated that this short amount of time was suitable for producing a meaningful number of
+ideas without the session feeling protracted. We developed three topics that were relevant to a generic work environment
+and non-specific to any particular job role or expertise.
+      • Topic A. How can we improve hybrid meetings for remote participants?
+      • Topic B. How can we better engage employees to use a chatbot for HR services?
+                                                                                               Manuscript submitted to ACM
+8                                                                                                                                Houde et al.
+
+
+     • Topic C. What kinds of giveaways should we take to a customer conference?
+
+    We assigned topics in a counterbalanced fashion across the three conditions to avoid an order effect. However, each
+group experienced the three conditions in the same order (i.e. first No AI, then Reactive AI, then Proactive AI), as we
+wanted to probe participants on their experiences with increasingly autonomous levels of AI involvement.
+    At the conclusion of the three minutes, we asked participants (including Koala) to select the three top ideas that
+they felt were the strongest of the ones they ideated, although the human participants had final decision authority.
+Then, we had participants fill out a short survey that asked about their experience. We show a depiction of the overall
+structure of the study in Figure 3. Participation in our study took approximately one hour, for which each participant
+was compensated with the equivalent of $25 USD.
+    We collected numerous data from each brainstorming session: transcripts of the brainstorming conversations (e.g.
+the Slack messages sent by each participant, plus Koala), observational notes taken by the study moderator, and surveys
+after each brainstorming topic.
+
+
+
+
+                      A, B, or C                            +             A, B, or C                  +             A, B, or C
+       No AI                                           Reactive AI                              Proactive AI
+                                        Survey                                         Survey                                           Survey
+      Condition            Topic          1             Condition          Topic         2       Condition           Topic                3
+
+
+           Brainstorming                                        Brainstorming                             Brainstorming
+              Round 1                                              Round 2                                   Round 3
+
+
+
+Fig. 3. Study 1 overview. During each session, a group of participants sequentially completed three rounds of brainstorming and
+post-brainstorm surveys. The order of conditions (No AI, Reactive AI, Proactive AI) was kept the same for each group to assess the
+impact of increasing levels of AI autonomy on participants’ experience. Brainstorming topics were assigned in a counterbalanced
+fashion to negate order effects.
+
+
+
+4.1.2 Participants. We conducted a total of six study sessions, each having three (human) participants, for a total of 18
+participants. In our analysis, we refer to individual participants using the notation Pk.m, where k is the number of the
+group in which they participated (1-6), and m is their identifier within the group (1-3)4 .
+    All participants were employees of IBM. Our participants included 10 who identified as female (55.5%), 7 who
+identified as male (38.8%), and 1 who preferred not to disclose their gender identity (5.5%). Geographically, two-thirds of
+our participants were from the United States (12; 66.6%), followed by Argentina (3; 16.6%) and Germany (3; 16.6%). Our
+participants’ job roles included content strategy, user research, machine learning, UX design, software engineering, and
+video production. They reported interacting with conversational AI assistants at least once a week or more frequently
+(7; 38.8%), interacting with them about once a month (9; 50%), or interacting them less frequently (2; 11.1%).
+    We recruited participants in groups of three to ensure groups had a minimum of two participants in the event a
+participant had to cancel. Since prior work has shown that groups of people who are familiar with each other are more
+productive in ideation tasks than ad-hoc groups [11, 61] due to their ability to communicate more effectively [62], we
+recruited people who had prior working relationships with each other.
+
+4We use this same notation in Study 2 as the participants were the same people.
+
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                                              9
+
+
+
+
+                                       (a)                                                                     (b)
+
+       Fig. 4. (a) Impact of Koala on the production of ideas and (b) participants’ preferences for the different Koala variants.
+
+
+4.1.3 Survey. We developed a post-task survey, with minor variations for each of our three conditions, that asked
+open-ended questions about whether participants felt the session was effective, whether they were happy with the
+ideas that were produced, whether their team worked well together, and which conditional experience they preferred.
+We also included a set of questions, based on the Creativity Support Index [13] and thesis work of Asio [3] to gauge the
+extent to which people felt Koala contributed to their creative process. We made minor modifications to these validated
+scales to fit the conversational AI modality of our research. We provide a listing of all survey questions in Appendix B.
+
+4.2    Results
+4.2.1 RQ1.1. Koala’s impact on the brainstorming process. To understand how Koala impacted the brainstorming process,
+we conducted several analyses of our data. First, we considered the number of ideas produced within each group across
+the different conditions, as determined by a coding process by three authors (Figure 4a). We observed that 73% of
+all ideas produced during either of the AI conditions were contributed by Koala. Not only was the volume of ideas
+increased with Koala’s presence, but Koala’s ideas also comprised a third (33%) of all of the top ideas. Participants also
+preferred having either Koala variant in their group over not having it, with the reactive variant receiving the most
+preference (Figure 4b). These results suggest Koala had a positive impact on the outcomes of the brainstorming task5 .
+   We also considered how Koala impacted participants’ work process. We conducted a reflexive thematic analysis [6]
+on open-ended survey responses and text transcripts of the brainstorming sessions. We used an inductive approach in
+which three researchers collaboratively labeled these data, iterating until they came to an agreement on important
+themes. Through this process, we constructed three top-level themes with a number of subthemes to identify how Koala
+impacted the work process. The thematic analysis made it clear that Koala had a mixed effect. It provided participants
+with valuable support (Advantages), such as by summarizing ideas contributed across the group or helping get the
+brainstorming off the ground. But participants also talked about how Koala’s participation was distracting and intrusive
+(Disadvantages), especially when it contributed too much, too often. Finally, we noted that participants desired to
+improve Koala’s behavior (Improving AI behavior) via some kind of control mechanism.
+
+   Theme 1. Advantages
+      • Help getting started. Almost half of participants commented that the reactive variant helped their group
+        get started in their brainstorming task. P2.3 spoke of “removing the ‘white page’ problem,” and P6.1 remarked,
+5 For a more extensive analysis on how brainstorming ideas evolved between participants and Koala, please refer to Muller et al. [50].
+
+                                                                                                                         Manuscript submitted to ACM
+10                                                                                                               Houde et al.
+
+
+        “Koala was able to add to the conversation when we were getting stuck,” indicating that Koala’s ideas were useful
+        throughout the brainstorming session.
+      • Perceived speed. Several participants indicated that compared to not having Koala, the reactive variant of Koala
+        sped up the process. P2.2 wrote, “It was more fast working with Koala,” and P2.3 said, “Koala made it much more
+        fluid and expedited.”
+      • Structure. Some participants noted that Koala provided structure to their session. In P6.2’s experience, “Koala’s
+        suggestions helped structure the conversation... Koala added structure and gave us a springboard for ideas. It served
+        as a psuedo-moderator [sic].”
+      • Summaries. Nearly half of participants made positive comments about the value of Koala’s ability to provide
+        summaries of ideas. P4.1 said, “I liked the structuring/summarization function of Koala,” and P3.1 similarly
+        commented, “The summarizations that Koala created were valuable and helped keep us more focused.”
+      • Validation. Some participants commented that seeing ideas from Koala that were similar to their own gave
+        them a sense of validation. P1.1 wrote that being able to ask Koala specific questions “allowed our team to be
+        creative and come up with relevant ideas, verify them with Koala, then move forward.”
+      • Information. A few participants noted that it was useful to have Koala fill in knowledge gaps as opposed to
+        offering new ideas. P1.3 commented, “Koala was helpful at providing data on issues that I didn’t know about.”
+      • Human-AI collaboration. Several participants commented on the benefits of having both people and Koala
+        in the discussion. P4.1 wrote, “The collaboration was much better through using the chat together with the Koala
+        ideas that we could all see. For me it was interesting to see what the others asked Koala to get some inspirations for
+        my own prompts.” P4.2 said, “I think we worked very well together because we equally spoke to each other and to
+        Koala in the chat.” P2.3 similarly remarked on the value of human-AI collaboration, saying, “Very innovative ideas
+        resulted combining innovative ideas from people to ask Koala for concrete ideas.”
+
+     Theme 2. Disadvantages
+
+      • Disruptive proactivity. The primary complaint about Koala was in regard to its proactive variant. Many
+        participants felt its contributions were intrusive and caused them to feel distracted and overwhelmed. We discuss
+        these issues in detail in Section 4.2.2, which motivated changes to Koala’s behavior (Section 5).
+      • A stifling effect. Participants indicated that in some instances, Koala’s presence had a stifling effect on human
+        conversation and creativity. P5.1 commented that, “The session started [with humans] asking Koala to answer the
+        question, which then led to mostly narrowing down the choices Koala presented. There was less room for expressing
+        unique ideas as a result.” P1.2 noted, “Sometimes brainstorming or great ideas will come from out-of-box ideas but I
+        felt I boxed myself.” These stifling effects may be related to an online form of production blocking (e.g., [53, 74]).
+      • Inaccurate answers. Approximately one-third of participants noticed inaccuracies in Koala’s responses or
+        summaries. P2.3 observed that the summaries provided by Koala included “summaries or top themes that handn’t
+        even been mentioned in the chat.” P3.2 simply said, “the summarization was incorrect,” and P1.2 said that Koala
+        “struggled especially [...] to present the ideas generated in slack.” Such issues are common with LLMs [22] and
+        mitigating them is an active area of research (e.g. [77]).
+
+     Theme 3. Improving AI behavior
+
+      • Regulating AI behavior. Participants noted behaviors of the proactive variant of Koala that they found to be
+        objectionable (Section 4.2.2). These complaints were sometimes accompanied by requests for improved default
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                        11
+
+
+       behaviors about when and how much Koala should contribute. For example, P4.3 suggested that Koala should
+      “Give some extra time to answer, so you allow real people to answer first”. P4.2 wondered if perhaps ”Koala could
+       ask ’Would you like me to share the top 3’ instead of writing a big sentence without being asked.”
+    • User control of AI. Beyond wanting more regulated default behaviors, some participants attempted to actively
+       control Koala’s behavior within the chat. We discuss this point further in Section 4.2.3.
+
+4.2.2 RQ1.2. Reactive versus proactive behaviors. As previously seen in Figure 4b, the majority of participants (13; 72.2%)
+preferred interacting with the reactive variant of Koala. Participants indicated a number of reasons why they preferred
+the reactive variant to the proactive variant.
+
+    • Distraction. Multiple participants across all six groups commented that the proactive variant distracted their
+       team from the task. P3.3 commented on proactive Koala, saying, “[it] was distracting and didn’t help at all, and
+       picked one of its own ideas as a favorite.” P6.1 indicated that proactive Koala “was too talkative, both in length of
+       message and frequency.”
+    • Intrusiveness. At least half of participants commented that the proactive variant intruded too much on their
+       group’s conversation. Koala jumped in at the wrong times, wrote too much, responded too frequently, and
+       generally got in the way of the humans having the discussion. P2.1 remarked, “I think Koala was too much
+       proactive at the beginning which lead us the humans to lose focus.” P6.2 was more pointed in their feedback, saying,
+      “Koala dominated the conversation. It felt like a pedantic student who wouldn’t create space for others to participate.”
+       P5.2 felt that their team “...did generate less ideas though, but that maybe because they were interrupted a lot by
+       Koala. [...] A room for improvement would be to ask Koala to pause for some time before she gets back into the
+       conversation.”
+    • Feeling overwhelmed. Participants expressed feelings of being “overwhelmed” (P2.3) by proactive Koala, likely
+       in reaction to its distractions and intrusions. P4.2 explained, “I was having a hard time building up on the ideas
+       from the others, because everything moved so fast.” P5.1 similarly felt, “Koala was helpful, but also produced so
+       much text so quickly that it was hard to keep up with the conversation.”
+
+  Some participants saw potential benefits in having some degree of proactive involvement from Koala, but in its
+current form, the benefits of proactivity were not enough. P1.3 explained, “I liked channel 2 [Reactive AI] & 3 [Proactive
+AI] best. I think i would pick channel 3 [Proactive AI] if there was a way to temporarily disable koala if needed.” P4.1
+similarly said, “I think I would prefer a combination of Channel2 [Reactive AI] + Channel3 [Proactive AI] - where Koala can
+add suggestions when not answered, but not always as the very first person. It felt a bit like we ‘lost the race against the
+machines,’ because Koala’s answers were always soo [sic] quick and mostly eloquent.”
+
+4.2.3 Desire to control interactive behaviors. We observed several attempts by participants to control the interactive
+behaviors of Koala during the brainstorming sessions. For example, P6.3 asked proactive Koala to cease its participation,
+saying, “koala - leave the rest to us, ok?” and later in the same session, “Koala - thanks for these ideas. We’ll ping with a
+question if you’re needed.” But, not all attempts at controlling Koala’s behavior were aimed at reducing or minimizing
+its participation; sometimes, participants made comments to encourage more participation from Koala. For example,
+P3.1 asked reactive Koala to take initiative: “Can Koala help choose the 3 solutions?” P1.1 and P1.2 both provided
+encouragement to Koala, as well as an additional opportunity to take a conversational turn, when they said (at different
+times), “Great start, Koala.”
+                                                                                                    Manuscript submitted to ACM
+12                                                                                                            Houde et al.
+
+
+     These attempts at behavioral control, coupled with comments expressing such desires (Improving AI behavior),
+led us to revisit our implementation of Koala’s interactive behaviors and conduct a deeper examination of exactly what
+kinds of controls are needed to make Koala a more compatible group participant.
+
+5     Koala II: Exploring dimensions of control over interactive behaviors
+Based on participants’ experiences in Study 1, we revised Koala to (1) improve its proactive behaviors (Section 5.1), and
+(2) parameterize some of its behavioral attributes and expose them in the user interface for users to control (Section 5.2).
+
+5.1    Enhancements to proactive behaviors
+We made a number of changes to Koala’s proactive variant based on participants’ feedback that it was distracting,
+intrusive, and left them feeling overwhelmed.
+      • We switched the underlying LLM used by Koala to Llama 3 [14], which was released after we ran Study 1. In our
+         testing, we found the new model was significantly less likely to hallucinate or produce inaccurate answers, due
+         in part to a doubling of its token context length and increased capacity to incorporate more of the conversational
+         history in its prompts.
+      • We revised Koala’s prompt to enhance the quality of its responses (detailed in Appendix A). We prompted Koala
+         to provide more targeted and collaborative suggestions, to provide constructive criticism on existing ideas, and
+         to contribute novel ideas, all while remaining mindful of not dominating the conversation.
+      • We simplified the process by which Koala used to assess the relevance of its ideas. Previously, Koala made an
+         overall determination – a score from 0 to 100 that evaluated the value of its response to the group – to decide
+        whether a generated response should be sent to the group, based on a fixed threshold. Now, we made this
+         threshold configurable, allowing participants to adjust it at any time during the conversation.
+
+5.2    Exposing behavioral controls
+Participants in Study 1 wanted explicit control over Koala’s interactive behaviors. Prior work on human-AI interactions
+with generative AI systems has explored ways to give users various controls over the outputs of the underlying
+generative model (e.g. [8, 10, 39, 40]), but we recognized the types of controls users needed were not solely related to
+the content of Koala’s messages, but also to the ways those messages were contributed within the group setting. We
+also recognized that these types of controls were ones that could not be manifested solely through prompt engineering
+and that external mechanisms would be needed to implement them.
+     We built a control panel for Koala (Figure 5) based on our thematic analysis and an assessment of what was technically
+feasible within the Slack environment. These controls were accessible at any point in time and could be changed by any
+member of the group.
+      • Proactive versus reactive toggle (Figure 5a). We added the ability for users to choose which type of Koala
+         variant they preferred: the proactive variant that made its own decisions for when to make a conversational
+         utterance, or the reactive variant which only replied to users when directly addressed.
+      • Proactive contribution threshold (Figure 5b). Given our changes to how Koala scored its potential response,
+        we exposed a coarse contribution threshold for when its response should be sent to the group. Through experi-
+         mentation, we set the “high” threshold at 90, the “medium” threshold at 75, and the “low” threshold at 50 on the
+         0-100 scale used by Koala.
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                               13
+
+
+
+
+                               A
+
+
+
+                               B
+
+
+
+
+                               C
+
+
+                               D
+
+
+
+
+Fig. 5. Control settings. Koala II’s control settings provides users with the ability to control aspects of its interactive behaviors.
+These settings include (A) switching between proactive and reactive variants; (B) adjusting the threshold at which the proactive
+variant deems a generated response valuable to send to the group; (C) selecting whether Koala’s responses should appear in the
+conversation or in a thread; and (D) managing how long messages are displayed.
+
+
+     • Where to respond (Figure 5c). Slack allows messages to be posted in two places: within the channel itself, or as
+       a threaded reply to a message. Previously, Koala would only place its replies in the channel, but we exposed an
+       option to have Koala reply in a thread to make it clearer to which messages Koala’s replies were targeted. We
+       added this option due to our observations that Koala would sometimes take time to reply to messages after the
+       conversation had already moved on, making it difficult for participants to understand for which message Koala’s
+       response was intended.
+     • Long message display (Figure 5d). Participants felt overwhelmed by Koala’s responses in part because they
+       could potentially be very long (such as when Koala offered enumerated lists of ideas rather than producing them
+       one at a time). We added an option for those cases in which Koala produced a long comment (> 1,000 characters)
+       to place a truncated version in the chat with the full version appearing in a threaded response.
+    We recognize that these controls represent only a portion of the potential design space, so we conducted a second
+study to gather additional feedback and synthesize all of our findings into a more robust taxonomy (Figure 7).
+
+6   Study 2: Group brainstorming revisited
+Participants in Study 1 felt that the proactive variant of Koala could be beneficial, so long as its behavior could be
+tempered to avoid the distraction, intrusiveness, and overwhelming feelings they experienced. Nine months after the
+first study, we ran a second study to evaluate whether our changes to Koala’s behaviors, along with the addition of
+behavioral controls, made a difference in the quality of the experience. In addition, we aimed to elicit additional types
+                                                                                                          Manuscript submitted to ACM
+14                                                                                                              Houde et al.
+
+
+of controls needed for conversational AI agents such as Koala using both the control settings panel (Figure 5) and
+additional design mockups (Figure 6) as design probes. Thus, we designed our second study to address the following
+research questions:
+      • RQ2.1. How did Koala II’s modified proactive behaviors impact peoples’ experiences?
+      • RQ2.2. What additional types of controls are needed over an AI agent’s interactive behaviors?
+
+6.1    Method
+We used the same method for Study 2 as Study 1, except we reduced the number of brainstorming tasks to two instead
+of three to make time for a discussion on controlling an AI’s interactive behaviors.
+
+6.1.1 Participants. To make comparisons with Koala I, we re-recruited the 18 people who participated in Study 1. Of
+these, a total of 14 were able to participate in Study 2. The composition of the groups remained the same as in Study 1,
+except that for four out of the six original groups, one of the original participants was unavailable. As before, each
+session took approximately 1 hour and each participant was compensated with the equivalent of $25 USD.
+
+6.1.2 Brainstorming task and topics. Groups were provided with three minutes to brainstorm on a topic, then decide
+upon three top ideas. We used a new topic for the first brainstorming session:
+      • How can we foster a sense of community and belonging within a team?
+     Following the session, participants engaged on the video conference in a semi-structured discussion with the
+moderator on the following topics:
+     (1) Compare the experience of Koala II with Koala I, to the best that they could recall,
+     (2) Discuss anything they wished to be different about their experience in brainstorming with Koala II, and
+     (3) Probe on ways they would like to control Koala II’s interactive behaviors.
+     Next, participants were introduced to Koala II’s control settings dialog (Figure 5). The moderator continued the
+semi-structured discussion by explaining the intent behind each control option, probing whether the given controls
+were useful, and eliciting further ideas on additional controls that might be missing. Participants were then asked to
+discuss whether and how they would like to change any of the settings for their second brainstorm.
+     They then conducted a second brainstorming session, on another new topic:
+      • What are some ways to recognize and reward team members for their contributions?
+     At the end of the second brainstorm, the moderator asked each participant to:
+     (1) Provide a rating for how useful the controls were, on a scale of 1 (not useful) to 5 (very useful) and explain their
+        reasoning.
+     (2) Discuss their feelings on who should have permission to alter the controls during a session, as the controls
+        modify AI behavior experienced by the entire group.
+     Finally, in the last phase of the study, the moderator presented participants with three mockup interfaces showing
+additional ways Koala II’s interactive behaviors might be controlled. These options were motivated by observations and
+comments made by participants in Study 1: by selecting a higher-level role within the group (Figure 6a), within the
+conversation itself through natural-language requests (Figure 6b), or by choosing a persona with specified behavioral
+attributes (Figure 6c). After a short discussion on these different options, participants were asked to rank-order their
+preferences.
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                                      15
+
+
+
+
+       A Role options
+
+
+
+
+                                              B Conversational control                      C Persona selection
+
+
+
+Fig. 6. Alternate agent control design mockups. Mockups presented to participants in Study 2 show three alternative designs
+(with fictional users) for controlling Koala II’s behavior: (A) Role options allows users to assign the role that Koala II should play in the
+session; (B) Conversational control enables users to adjust Koala II’s settings through natural language in the chat; and (C) Persona
+selection allows users to select different assistant personas to fit their interaction needs.
+
+
+
+6.2   Results
+6.2.1 RQ2.1. Reactions to Koala II’s proactive behaviors. Participants perceived an improvement in Koala II’s proactive
+behaviors compared to Koala I. Koala II was observed to be quieter and less invasive during conversations, and
+consequently, less proactive in its participation. P2.1 reported, “The first time we used it, it was very proactive. Now I
+noticed it was more quiet. It reacted at the right pace. I felt it better than before.” P4.2 recalled “feeling interrupted in the
+last time and had to spend a lot of time reading and not writing; [the interaction with Koala was] a lot better today.”
+   Interactions with Koala II were also reported to be more comfortable and natural. P2.3 stated, “I felt much more
+comfortable with this version [...] Koala wrote at the perfect time, when I was about to ask, it was giving some suggestions.”
+Similarly, P5.3 mentioned, “I felt it was a very natural interaction, more so than the last time.” Additionally, participants
+noted that Koala II stayed more on topic. P6.2 mentioned, “Koala seemed to follow the same thread as the team, whereas
+last time it went off in different directions.” P1.3 said, “I do remember being a little bit annoyed last time [...] I was trying to
+type out a thought and [Koala] was taking the conversation in different direction by writing a bunch of things unprompted.
+[...] That was a little less frequent this time. It was a little bit more on topic.”
+   Although participants felt the new proactive behaviors were an improvement, they also pointed out other issues with
+Koala II’s behavior. Some participants felt Koala II was “over the top” (P3.3) and “irritating” (P3.2, P5.1, P1.3). P5.1 reacted
+to Koala II’s overly-positive tone: “I noticed Koala said a few times ‘that’s a great idea!’. It was very acting like a person,
+and it was a little off-putting to me. I would rather it be a bot and just kind of be more neutral in its expressions.” Hence,
+we conclude that Koala II did provide an improved user experience, though further improvements are still possible.
+
+6.2.2 RQ2.2. Controlling an AI agent’s interactive behaviors. Participants were shown the control settings dialog (Figure
+5) between the two brainstorming sessions. One decision groups had to make was whether to keep the proactive variant
+of Koala II active or switch to the reactive variant. Interestingly, no groups opted to switch to the reactive variant of
+Koala II. P3.2 explained, “I kind of like having [Koala] jump in rather than only answer on request because it does prompt
+more engagement.”
+                                                                                                                  Manuscript submitted to ACM
+16                                                                                                                 Houde et al.
+
+
+     Participants found value in having controls, reporting a mean utility of 4.46 (SD = .66) out of 5. All participants
+liked the idea of controlling the rate and amount of Koala II’s contributions by specifying the Proactive contribution
+threshold, although some participants struggled to interpret how that setting would impact Koala II’s behavior. P6.1 felt
+the settings directly controlled how much Koala II interacted with the group: “my default position would be to think that
+high would be more interaction and low would be less interaction.” P1.3 suggested that labels state “what use cases [the
+threshold setting is] best for... low could indicate that its good for brainstorming.”
+     Three groups tried the option of having Koala II respond in thread rather than in channel, thinking it would reduce
+their distraction from Koala II. Surprisingly, it had the opposite effect. P1.1 explained how it took time to “look through
+everyone’s threads... taking away from our collaboration.” Many other participants made similar comments, suggesting
+that threaded replies may not be suited to the real-time nature of a brainstorming task.
+     Participants also noted the importance of being able to change the controls during the course of their interaction.
+P2.3 explained, “in some moments we need more proactivity and in some [moments] you need to be quiet... so having the
+ability to change it while we are brainstorming... I think that is key.” Similarly, P1.3 felt that different settings would be
+used for different use cases: “as far as being able to choose whether or not it responds more often versus less often, I think
+would be helpful depending on the use case.”
+     One final aspect of control on which participants commented regarded how Koala’s behavior should be controlled.
+We showed participants mockups of different ways to control Koala II’s behavior and their overall preferences were to
+specify the agent’s role (Figure 6a), followed by providing behavioral feedback in conversation (Figure 6b), and then by
+choosing a persona with a specified behavioral pattern (Figure 6c).
+     Several participants commented on how these approaches were not exclusive and each might be suitable for different
+reasons. Role options was seen as a nice way to convey what Koala II would do in the channel (P1.3, P1.1), with
+P1.1 saying, “I personally think this gives a better idea of what you can expect.” However, participants noted that they
+wanted access to lower-levels of control through a control settings dialog. P2.1 said, “I also want to have more fine
+controls, but maybe we can have both of the same ways to change the settings...” Both role options and persona selection
+seemed amenable for supporting the different phases of a brainstorming task, where roles or personas could exist for
+brainstorming, critiquing, summarizing, voting, “devil’s advocate,” [7] and more. Indeed, recent work by Liu et al. [38]
+found that the use of multiple LLM-based personas during group ideation enhanced outcomes without increasing users’
+cognitive load.
+     Finally, participants felt that conversational control would feel “natural” (P6.1), but it also introduced a risk for Koala
+II to misunderstand the request: “I might be asking it to do things that are just like not an option.” P4.2 noted that one
+might use, “words that [...] Koala might not know and then Koala does the opposite and speaks a lot.” P5.1 expressed a
+desire for a balance, stating, “I think I would want kind of a halfway point where when [the user] says you’re replying too
+frequently, Koala should respond with something like, ‘Here’s how you can adjust my settings.’ Then provide the opportunity
+to change them, but make it as separate steps instead of just changing them automatically.” In addition, requests to alter
+Koala II’s behavior within the chat space might pollute on-topic chat. P3.1 noted that such requests can lead to “two
+extra messages that I have to read that are not relevant to me.” Similarly, P1.1 expressed, “It feels like an extra step to have
+to talk to an AI to request them to change their own settings when this should be a collaborative conversation between the
+team.”
+
+
+
+
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                     17
+
+
+7     Discussion
+7.1    Rethinking proactivity
+In Study 1, we discovered that proactive behaviors were valuable but challenging to implement. Participants reported
+that Koala’s contributions were sometimes overwhelming and distorted their discussion. Some participants directly
+asked Koala to reduce its volume of brainstorm posts, indicating the need for users to have the ability to control the
+behaviors of the agents with whom they interact.
+    Previous framings of mixed-initiative interaction have tended to treat proactive and reactive behaviors as binary
+options. McComb et al. [42] provide a clear example of this contrast, writing,
+        “For example, Alexa or Siri react to queries or instructions. Although digital assistants may leverage data
+        from other users to continuously improve in the background, tasks for a user are performed only when
+        prompted by a user. Fully autonomous vehicles utilize proactive AI, conducting tasks such as braking or
+        turning without user input.” [42, p.1907, italics added]
+    Using examples from a diverse range of consumer products, Shneiderman [69] took a different view and proposed a
+framing in which human control and AI control (“automation”) could be treated as separate, independent dimensions.
+Shneiderman’s view appears to treat proactive behaviors as a matter of degrees, rather than as a binary construct.
+    However, Shneiderman also appears to treat proactivity as a fixed and static attribute of each of the products in his
+analysis. Building on Shneiderman’s analysis, Muller and Weisz [51] showed that the degree of relative initiative (i.e.,
+human control and/vs. automation) might change during the course of use of an application. In Study 1, we observed
+participants attempt to control such initiative in real time by trying to reduce the proactive Koala variant’s volume
+of posts and to increase reactive Koala’s volume of posts. These attempts suggest, contrary to McComb et al. [42]’s
+framing, that proactivity is not a simple binary property of an AI agent, and that, contrary to Shneiderman [69]’s
+framing, proactivity may need to be modified in the midst of usage.
+    Many researchers have cautioned that proactive behaviors could be rejected by users if they are not properly
+configured [20, 30, 31, 45]. Akin to Gammelgård-Larsen et al. [17], we built Koala II as a prototype to explore different
+configurations of proactive behaviors. In contrast to their work, in which they provided users with three, fixed
+configurations (intermittent, continuous, and proactive recommendations), we examined a set of controls in which
+participants could create their own configurations for the level of participation they desired from Koala II. We note
+that although much research has focused on providing controls for users to control the outcomes when working with a
+generative AI application (e.g. [8, 10, 39, 40]), not much work has examined the use of controls to shape the behavior of
+an LLM-based AI agent.
+
+7.2    Taxonomy for the design of proactive AI agent behaviors
+Our work highlights how proactive behaviors are comprised of a set of complex, dimensionalized attributes. In Study 1,
+we captured a portion of this design space; in Study 2, we validated and expanded this design space. In this section, we
+describe our taxonomy for the design of proactive AI agent behaviors that identifies key aspects of control over an
+agent’s interactive behaviors and ways to control them (Figure 7). We conclude this section by recontextualizing our
+taxonomy with prior literature on mixed-initiative interaction frameworks.
+    We used a reflexive approach to thematic analysis to construct this taxonomy by integrating data across both Studies
+1 & 2. Five researchers reviewed discussion transcripts and conversation logs of all brainstorming sessions to identify
+expressions of need to control Koala’s interactive behaviors. The taxonomy considers two high-level concerns: the
+                                                                                                 Manuscript submitted to ACM
+18                                                                                                                    Houde et al.
+
+
+
+
+Fig. 7. Taxonomy of controls for an AI agent’s interactive behaviors. This taxonomy was derived from two user studies in
+which participants interacted with a conversational AI agent in a group setting. It identifies important considerations for when the
+agent should contribute, what it should contribute, where it should make its contributions, as well as how to implement the agent’s
+behaviors, how those behaviors are specified by users, and who has the ability to specify or alter those behaviors.
+
+
+
+aspects of the agent’s interactive behaviors to be controlled (when, what, and where), and the ways to control them
+(specification, access, and implementation).
+
+7.2.1 When to contribute. The events that trigger a contribution from the AI agent should be controllable. For example,
+the agent can respond to all messages or respond only if directly addressed. The agent can also be triggered by the
+activity or inactivity of the group, such as rapid contributions or a long pause.
+     The agent’s responses might also be filtered to determine if they meet some desired criteria. For Koala, generated
+responses were first rated for their value as a meaningful contribution to the conversation, and only if that rating
+exceeded a threshold was it shared with the group. Other criteria are also possible and will likely depend on the domain.
+Filters may also be interactive; for example, P6.2 suggested that Koala should “ask for permission” instead of jumping
+into the discussion unprompted.
+     A related aspect of control is the rate at which the agent sends messages, such as immediately or after a specified
+duration. P6.1 thought that Koala should hold off contributing while others are typing, and both P2.1 and P2.3 felt that
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                                      19
+
+
+Koala should refrain from saying anything until the human participants have started the conversation to avoid undue
+influence. P2.1 mentioned that the agent should automatically adjust the rate of its messages to match those of the
+group. P1.3 felt, “as far as being able to choose whether or not it responds more often versus less often, I think would be
+helpful depending on the use case.” All of these findings indicate that the agent’s interactive behaviors should depend on
+the activities of the others in the group and the task at hand, as discussed in other literature [33, 49, 67].
+
+7.2.2 What to contribute. The content of an AI agent’s contributions are an important, and controllable, aspect of
+its interactive behaviors. The specific types of controls over content will be dependent on the domain or the task.
+In brainstorming, participants desired controls over how “conventional” (P1.3) or “crazy” (P4.3) Koala’s ideas were6 .
+P1.1 indicated Koala’s suggestion lists were “pretty vague... [it should] develop a more interesting or creative answer, or
+surprising answer [but] it was mainly kind of sticking to those high level ideas.”
+   Style adjustments, such as to the length, tone, or structure of a message, may also be needed for different groups. As
+P3.2 said, “a tone setting like from... formal to friendly... like a conversational tone kind of a thing” would be useful. Her
+teammate P3.1 concurred and suggested “enthusiasm level” as another type of style control. Participants also suggested
+Koala have the ability to format its suggestions as bulleted lists (P4.3), to control the minimum and maximum length of
+its responses (P6.2), and to have it consolidate what would be multiple responses into a single response (P3.1).
+   Given the design surface of our prototype and the capabilities of the underlying LLM, Koala was able to express itself
+using a combination of text and emojis. But generative models are capable of creating content in other modalities as
+well, such as images and code.
+
+7.2.3 Where to contribute. Collaborative interactive spaces often have different locations at which members may
+make contributions. In Slack, for example, Koala was able to place its replies as messages in the main conversation
+or as replies within a thread. Other interfaces may provide other places in which the agent can interact. In Study 2,
+participants thought that having Koala II reply in thread would reduce distraction, but after they tried it, they found it
+detracted from their ability to collaborate. We posit that the locations in which an agent contributes are dependent on
+the task and the group’s phase within that task (e.g. generating vs. selecting ideas) and thus should be user-configurable.
+
+7.2.4 How to specify the agent’s interactive behaviors. There are different ways in which users may interact with the
+agent to change its behaviors. In Study 2, participants saw controls manifested in a settings dialog with familiar UI
+controls, and in Study 1, participants directly attempted to control Koala’s behaviors by giving it feedback in the chat.
+P4.3 and P2.1 mentioned that they liked using natural language to give Koala feedback, with P2.1 saying they would
+“like [to] type instructions to control [Koala].” By contrast, other participants were concerned that conversation about
+Koala’s settings would take up space in the group discussion 7 . As P3.1 put it, those are “extra messages that I need to
+read that are not relevant to me.” Two participants (P2.3, P3.2) raised doubts about whether Koala would even be able to
+do what they asked through natural language. P2.3 said, “It’s hard to confirm if Koala is understanding what we said.”
+To address these concerns, the agent could provide an introduction to its capabilities (P4.2) or provide confirmation
+messages indicating how it interpreted behavioral feedback.
+   Another concern regarding how users specify an agent’s behaviors lies in the granularity of those specifications. In
+Study 2, we explored different ways to specify Koala II’s behaviors beyond low-level settings: as taking a role within the
+group (Figure 6a), as natural language within the conversation (Figure 6b), or as personas having different behavioral
+6 Such controls might be provided by adjusting the temperature parameter in LLM inference.
+7 By way of metaphor, intermingling group discussion with feedback to shape Koala’s behavior is equivalent to running a computer network with
+combined control and data planes.
+                                                                                                                Manuscript submitted to ACM
+20                                                                                                                 Houde et al.
+
+
+patterns (Figure 6c). Participants responded positively to these options, but also desired access to higher-granularity
+controls, such as by showing “the complete list of settings displayed in a thread” (P2.3).
+
+7.2.5 Who has access to the agent’s interactive behaviors. With multiple people participating in a group, there may be
+differing preferences for the agent’s behavior. Who has permissions to alter the agent’s behavior? In Study 2, only
+one of the six groups had a member independently decide to change Koala II’s settings; the initiating participant (P2.3)
+consulted their other group members before making the change, but then reflected,
+        “it was strange. [...] I thought I was the one changing it and I was thinking, should I ask [P2.1] if we should
+         change? [...] I decided myself to change it and I found that [...] very intrusive for [P2.1].” (P2.3)
+     Interestingly, P2.1 did not actually find the change intrusive. One approach to addressing this issue is to introduce a
+permissions structure that enables only some members of the group to administer changes. P5.1 likened this idea to a
+“thermostat in an office” environment in which the thermostat setting is fixed and only alterable by a designated few.
+Though, such access controls may not be needed in small-group settings:
+        “if it [...] was a small group of people who are, you know, chatting with each other kind of informally all the
+         time and we wants to change [settings...] that’s fine. But if it’s kind of a bigger channel then I would want to
+         have, you know, an admin of the channel be able to control that.” (P3.1)
+     P4.3 had an interesting, democratic suggestion in which a change to a Koala setting generates a visible proposal for
+change. Participants would then vote on the proposal, with the actual update being applied only if the majority agrees.
+However, such notifications of change drew concern from P1.1: “My concern is for like larger groups, a lot of people don’t
+read every message that comes through.”
+
+7.2.6 How to implement the agent’s interactive behaviors. Controls over an agent’s behavior are only effective insofar as
+they are implementable. Given the real-time nature of the agent’s interactions within the group, and participants’ desire to
+exert controls over the agent’s behaviors during the course of interaction, any implementation of a mechanism to effect
+control over the agent’s behavior needs to operate in real time. For LLMs, prompt engineering is an obvious candidate,
+although we recognize that it may happen in two ways: system prompts that pre-specify different instantiations of
+the agent’s behavior, and end-user prompts that may be incorporated during the course of the interaction to allow
+users to arbitrarily specify the interactive behaviors they desire. The latter option was borne out of our observations of
+participants attempting to control Koala’s behaviors directly within the conversation by providing it with feedback,
+such as P2.1’s suggestion, “Maybe one could say ‘try to be more proactive’, or on the opposite side ‘be more quiet since
+we need to figure out better what to do with the other team members’.” Other LLM alignment approaches, such as fine
+tuning or prompt tuning, may not be able to effectively produce an agent whose interactive behaviors are aligned for
+the specific groups in which it interacts.
+     Control mechanisms that sit outside of the LLM may also be required to affect control. For example, although Koala
+judged its own responses to determine whether they made a valuable contribution, its decision-making quality was
+poor. We resorted to using external decision logic on Koala-scored responses to improve its overall behavior.
+
+7.3    Revisiting mixed-initiative interaction frameworks in light of controllable interactive behaviors
+As discussed in Section 2.1, Fitts et al. [15]’s work on the “allocation of function” to human or to machine assumed an
+invariant allocation for all applications. Subsequently, Sheridan [68] and Parasuraman et al. [59] proposed a continuum
+of different allocations, ranging from full human initiative to full machine initiative. Shneiderman [69] recently expanded
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                      21
+
+
+these single-dimensional models into a new model having two independent axes – one for human control and one for
+computer automation – and demonstrated how technologies could enable high degrees of both constructs.
+    All of these frameworks assume that initiative (i.e., proactivity) is fixed at design or development time. By contrast,
+Muller and Weisz [51] demonstrated how, within complex workflows, the degree of initiative for each party might shift
+in a dynamic fashion. However, this work continued to assume that degrees-of-initiative were determined through
+characteristics of the workflow itself. Our results show the value of providing users with dynamic control over an AI
+agent’s proactive behaviors while interacting with it. In this way, it is no longer the designers or developers of an AI
+agent who control its proactive behaviors, but the users of that agent themselves. This shift helps democratize the
+design of AI agents by enabling its users to co-design its interactive behaviors. Future research should explore whether
+there are other design-time aspects of an AI agent’s behavior that can be controlled or customized in real time by its
+users.
+
+7.4    Limitations & future work
+Our taxonomy was developed by looking at a single type of collaborative activity – group ideation – amongst individuals
+who had previous working experience with each other. We believe there may be additional aspects of control that did
+not emerge in our study. Future work is needed to examine other situations which may result in identifying other
+aspects of control over an agent’s interactive behaviors:
+
+      • Examine other types of group activities in which an AI agent may interact in a proactive fashion, such as group
+         decision making [7], cooperative learning [36], and even game playing [85, 90].
+      • Investigate collaborative activities situated in different collaborative applications beyond text-based group chats.
+      • Conduct behavioral studies to observe which aspects of an agent’s behavior are most frequently adjusted by
+         different types of groups; such data would provide the ability to rank the importance of different types of
+         behavioral controls.
+
+    We also note that our analysis of Study 1 focused solely on the production of ideas and not the quality of those ideas
+or their evolution (e.g. how they were influenced by other members of the group). Numerous studies have examined
+the impact of AI on brainstorming outcomes (e.g. [5, 27, 50, 82, 86, 87]), and the results generally show improvements
+to the number and quality of ideas.
+
+8     Conclusion
+Across two studies, we examined the impact of an LLM-based conversational agent called Koala on group member
+interactions in the context of ideation. We observed that participants overwhelmingly preferred working with Koala
+as it provided their groups with valuable ideas, it helped them get unstuck, and it provided useful summaries of past
+conversation. But Koala’s interactive behaviors, especially when it acted in a proactive fashion, were also found to
+be disruptive and stifling. Our first study revealed strong desires to control Koala’s behaviors, which we examined in
+more detail in a second study. With Koala I as a baseline, we shaped Koala II’s behavior to be a better collaborator:
+offering more targeted suggestions, providing constructive criticism, and not dominating the conversation. We also
+implemented a control mechanism over some aspects of Koala II’s behavior while simultaneously prototyping additional
+ways of controlling other aspects. These probes were received with enthusiasm and the feedback we received resulted
+in a taxonomy outlining aspects of control over an AI agent’s behavior and different ways to control those aspects.
+Our work identifies a rich design space for proactive, LLM-powered conversational agents along with the insight that
+                                                                                                  Manuscript submitted to ACM
+22                                                                                                                                          Houde et al.
+
+
+there is no single “best fit” point in this space: the ideal interactive behaviors of the agent will depend on the individual
+preferences of group members and their task at hand, requiring a dynamic ability to adjust those behaviors.
+
+
+References
+ [1] Mahyar Abbasian, Elahe Khatibi, Iman Azimi, David Oniani, Zahra Shakeri Hossein Abad, Alexander Thieme, Ram Sriram, Zhongqi Yang, Yanshan
+     Wang, Bryant Lin, et al. 2024. Foundation metrics for evaluating effectiveness of healthcare conversations powered by generative AI. NPJ Digital
+     Medicine 7, 1 (2024), 82.
+ [2] Harika Abburi, Michael Suesserman, Nirmala Pudota, Balaji Veeramani, Edward Bowen, and Sanmitra Bhattacharya. 2023. Generative ai text
+     classification using ensemble llm approaches. arXiv preprint arXiv:2309.07755 (2023).
+ [3] Sarah M Asio. 2015. An empirical investigation of predictors of perceived innovation within engineering student design teams. Ph. D. Dissertation. Texas
+     Tech University.
+ [4] Sebastian Gregor Bouschery, Vera Blazevic, and Frank T Piller. 2023. AI-Augmented Creativity: Overcoming the Productivity Loss in Brainstorming
+     Groups. In Academy of Management Proceedings, Vol. 2023. Academy of Management Briarcliff Manor, NY 10510, 11938.
+ [5] Sebastian G Bouschery, Vera Blazevic, and Frank T Piller. 2024. Artificial Intelligence-Augmented Brainstorming: How Humans and AI Beat Humans
+     Alone. Available at SSRN 4724068 (2024).
+ [6] Virginia Braun and Victoria Clarke. 2021. Can I use TA? Should I use TA? Should I not use TA? Comparing reflexive thematic analysis and other
+     pattern-based qualitative analytic approaches. Counselling and psychotherapy research 21, 1 (2021), 37–47.
+ [7] Chun-Wei Chiang, Zhuoran Lu, Zhuoyan Li, and Ming Yin. 2024. Enhancing AI-Assisted Group Decision Making through LLM-Powered Devil’s
+     Advocate. In Proceedings of the 29th International Conference on Intelligent User Interfaces. 103–119.
+ [8] Toby Chong, I-Chao Shen, Issei Sato, and Takeo Igarashi. 2021. Interactive Optimization of Generative Image Modelling using Sequential Subspace
+     Search and Content-based Guidance. In Computer Graphics Forum, Vol. 40. Wiley Online Library, 279–292.
+ [9] Ross Cutler, Yasaman Hosseinkashi, Jamie Pool, Senja Filipi, Robert Aichner, Yuan Tu, and Johannes Gehrke. 2021. Meeting effectiveness and
+     inclusiveness in remote collaboration. Proceedings of the ACM on Human-Computer Interaction 5, CSCW1 (2021), 1–29.
+[10] Hai Dang, Lukas Mecke, and Daniel Buschek. 2022. GANSlider: How Users Control Generative Models for Images using Multiple Sliders with and
+     without Feedforward Information. In Proceedings of the 2022 CHI Conference on Human Factors in Computing Systems. 1–15.
+[11] Alan R. Dennis, A.C. Easton, G.K. Easton, J.F. George, and J.F. Nunamaker. 1999. Ad hoc versus established groups in an electronic meeting system
+     environment. Twenty-Third Annual Hawaii International Conference on System Sciences 3 (1999), 23–29.
+[12] Sebastian Deterding, Jonathan Hook, Rebecca Fiebrink, Marco Gillies, Jeremy Gow, Memo Akten, Gillian Smith, Antonios Liapis, and Kate Compton.
+     2017. Mixed-initiative creative interfaces. In Proceedings of the 2017 CHI Conference Extended Abstracts on Human Factors in Computing Systems.
+     628–635.
+[13] Ivo Dewit, Celine Latulipe, Francis Dams, and Alexis Jacoby. 2020. Using the creativity support index to evaluate a product-service system design
+     toolkit. Journal of Design Research 18, 5-6 (2020), 434–457.
+[14] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang,
+     Angela Fan, et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 (2024).
+[15] Paul M Fitts, MS Viteles, NL Barr, DR Brimhall, Glen Finch, Eric Gardner, WF Grether, WE Kellum, and SS Stevens. 1951. Human engineering for an
+     effective air-navigation and traffic-control system, and appendixes 1 thru 3. (1951).
+[16] Andrew Freed. 2021. Conversational AI. Simon and Schuster.
+[17] Anders Gammelgård-Larsen, Niels van Berkel, Mikael B Skov, and Jesper Kjeldskov. 2024. Designing for Human-AI Interaction: Comparing
+     Intermittent, Continuous, and Proactive Interactions for a Music Application. In Extended Abstracts of the CHI Conference on Human Factors in
+     Computing Systems. 1–8.
+[18] Ananya Ganesh, Martha Palmer, and Katharina Kann. 2023. A Survey of Challenges and Methods in the Computational Modeling of Multi-Party
+     Dialog. In Proceedings of the 5th Workshop on NLP for Conversational AI (NLP4ConvAI 2023). 140–154.
+[19] Julia Geerts, Jan de Wit, and Alwin de Rooij. 2021. Brainstorming With a Social Robot Facilitator: Better Than Human Facilitation Due to Reduced
+     Evaluation Apprehension? Frontiers in Robotics and AI 8 (2021), 657291.
+[20] Marc Goutier, Christopher Diebel, Martin Adam, and Alexander Benlian. 2024. Proactive and Reactive Help from Intelligent Agents in Identity-
+     Relevant Tasks. In Proceedings of the 57th Hawaii International Conference on System Sciences. 401–410.
+[21] Jia-Chen Gu, Chao-Hong Tan, Chongyang Tao, Zhen-Hua Ling, Huang Hu, Xiubo Geng, and Daxin Jiang. 2022. Hetermpc: A heterogeneous graph
+     neural network for response generation in multi-party conversations. arXiv preprint arXiv:2203.08500 (2022).
+[22] Michael Townsen Hicks, James Humphries, and Joe Slater. 2024. ChatGPT is bullshit. Ethics and Information Technology 26, 2 (2024), 38.
+[23] Eric Horvitz. 1999. Principles of mixed-initiative user interfaces. In Proceedings of the SIGCHI conference on Human Factors in Computing Systems.
+     159–166.
+[24] Shafquat Hussain, Omid Ameri Sianaki, and Nedal Ababneh. 2019. A survey on conversational agents/chatbots classification and design techniques.
+     In Web, Artificial Intelligence and Network Applications: Proceedings of the Workshops of the 33rd International Conference on Advanced Information
+     Networking and Applications (WAINA-2019) 33. Springer, 946–956.
+
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                                                  23
+
+
+[25] Pranut Jain, Rosta Farzan, and Adam J Lee. 2023. Co-Designing with Users the Explanations for a Proactive Auto-Response Messaging Agent.
+     Proceedings of the ACM on Human-Computer Interaction 7, MHCI (2023), 1–23.
+[26] Hanlei Jin, Yang Zhang, Dan Meng, Jun Wang, and Jinghua Tan. 2024. A comprehensive survey on process-oriented automatic text summarization
+     with exploration of llm-based methods. arXiv preprint arXiv:2403.02901 (2024).
+[27] Jan Joosten, Volker Bilgram, Alexander Hahn, and Dirk Totzek. 2024. Comparing the ideation quality of humans with generative artificial intelligence.
+     IEEE Engineering Management Review (2024).
+[28] David S Kerr and Uday S Murthy. 2009. Beyond brainstorming: The effectiveness of computer-mediated communication for convergence and
+     negotiation tasks. International Journal of Accounting Information Systems 10, 4 (2009), 245–262.
+[29] Janin Koch, Andrés Lucero, Lena Hegemann, and Antti Oulasvirta. 2019. May AI? Design ideation with cooperative contextual bandits. In Proceedings
+     of the 2019 CHI Conference on Human Factors in Computing Systems. 1–12.
+[30] Matthias Kraus, Nicolas Wagner, Zoraida Callejas, and Wolfgang Minker. 2021. The role of trust in proactive conversational assistants. IEEE Access 9
+     (2021), 112821–112836.
+[31] Matthias Kraus, Nicolas Wagner, Ron Riekenbrauck, and Wolfgang Minker. 2023. Improving Proactive Dialog Agents Using Socially-Aware
+     Reinforcement Learning. In Proceedings of the 31st ACM Conference on User Modeling, Adaptation and Personalization. 146–155.
+[32] Kaisa Laitinen, Salla-Maaria Laaksonen, and Minna Koivula. 2021. Slacking with the bot: Programmable social bot in virtual team interaction.
+     Journal of Computer-Mediated Communication 26, 6 (2021), 343–361.
+[33] Tomas Lawton, Kazjon Grace, and Francisco J Ibarrola. 2023. When is a tool a tool? user perceptions of system agency in human–ai co-creative
+     drawing. In Proceedings of the 2023 ACM Designing Interactive Systems Conference. 1978–1996.
+[34] Mina Lee, Katy Ilonka Gero, John Joon Young Chung, Simon Buckingham Shum, Vipul Raheja, Hua Shen, Subhashini Venugopalan, Thiemo
+     Wambsganss, David Zhou, Emad A Alghamdi, et al. 2024. A Design Space for Intelligent and Interactive Writing Assistants. In Proceedings of the
+     CHI Conference on Human Factors in Computing Systems. 1–35.
+[35] Lizi Liao, Grace Hui Yang, and Chirag Shah. 2023. Proactive conversational agents in the post-chatgpt world. In Proceedings of the 46th International
+     ACM SIGIR Conference on Research and Development in Information Retrieval. 3452–3455.
+[36] Jiawen Liu, Yuanyuan Yao, Pengcheng An, and Qi Wang. 2024. PeerGPT: Probing the Roles of LLM-based Peer Agents as Team Moderators and
+     Participants in Children’s Collaborative Learning. In Extended Abstracts of the CHI Conference on Human Factors in Computing Systems. 1–6.
+[37] Yiheng Liu, Tianle Han, Siyuan Ma, Jiayue Zhang, Yuanyuan Yang, Jiaming Tian, Hao He, Antong Li, Mengshen He, Zhengliang Liu, et al. 2023.
+     Summary of chatgpt-related research and perspective towards the future of large language models. Meta-Radiology (2023), 100017.
+[38] Yiren Liu, Pranav Sharma, Mehul Jitendra Oswal, Haijun Xia, and Yun Huang. 2024. PersonaFlow: Boosting Research Ideation with LLM-Simulated
+     Expert Personas. arXiv preprint arXiv:2409.12538 (2024).
+[39] Ryan Louie, Andy Coenen, Cheng Zhi Huang, Michael Terry, and Carrie J Cai. 2020. Novice-AI music co-creation via AI-steering tools for deep
+     generative models. In Proceedings of the 2020 CHI conference on human factors in computing systems. 1–13.
+[40] Ryan Louie, Any Cohen, Cheng-Zhi Anna Huang, Michael Terry, and Carrie J Cai. 2020. Cococo: AI-Steering Tools for Music Novices Co-Creating
+     with Generative Models.. In HAI-GEN+ user2agent@ IUI.
+[41] Torsten Maier, Nicolas F Soria Zurita, Elizabeth Starkey, Daniel Spillane, Christopher McComb, and Jessica Menold. 2022. Comparing human and
+     cognitive assistant facilitated brainstorming sessions. Journal of Engineering Design 33, 4 (2022), 259–283.
+[42] Christopher McComb, Peter Boatwright, and Jonathan Cagan. 2023. Focus and Modality: Defining a Roadmap to Future AI-Human Teaming in
+     Design. Proceedings of the Design Society 3 (2023), 1905–1914.
+[43] Anna-Maria Meck, Christoph Draxler, and Thurid Vogt. 2023. How may I interrupt? Linguistic-driven design guidelines for proactive in-car voice
+     assistants. International Journal of Human–Computer Interaction (2023), 1–15.
+[44] Lucas Memmert and Navid Tavanapour. 2023. Towards human-AI collaboration in brainstorming: Empirical insights into the perception of working
+     with a generative AI. Proceedings of ECIS (2023).
+[45] Christian Meurisch, Cristina A Mihale-Wilson, Adrian Hawlitschek, Florian Giger, Florian Müller, Oliver Hinz, and Max Mühlhäuser. 2020. Exploring
+     user expectations of proactive AI systems. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 4, 4 (2020), 1–22.
+[46] Robert J Moore and Raphael Arar. 2018. Conversational UX design: an introduction. Studies in conversational UX design (2018), 1–16.
+[47] Robert J Moore and Raphael Arar. 2019. Conversational UX design: A practitioner’s guide to the natural conversation framework. Morgan & Claypool.
+[48] Robert J Moore, Eric Young Liu, Saurabh Mishra, and Guang-Jie Ren. 2020. Design systems for conversational UX. In Proceedings of the 2nd Conference
+     on Conversational User Interfaces. 1–4.
+[49] Caterina Moruzzi and Solange Margarido. 2024. A user-centered framework for human-ai co-creativity. In Extended Abstracts of the CHI Conference
+     on Human Factors in Computing Systems. 1–9.
+[50] Michael Muller, Stephanie Houde, Gabriel Gonzalez, Kristina Brimijoin, Steven I Ross, Dario Andres Silva Moran, and Justin D Weisz. 2024. Group
+     Brainstorming with an AI Agent: Creating and Selecting Ideas. In Proceedings of ICCC 2024.
+[51] Michael Muller and Justin Weisz. 2022. Frameworks for Collaborating Humans and AIs: Sequence and Sociality in Organizational Applications. In
+     CHIWORK.
+[52] Sydney Nguyen, Hannah McLean Babe, Yangtian Zi, Arjun Guha, Carolyn Jane Anderson, and Molly Q Feldman. 2024. How Beginning Programmers
+     and Code LLMs (Mis) read Each Other. In Proceedings of the CHI Conference on Human Factors in Computing Systems. 1–26.
+
+
+                                                                                                                          Manuscript submitted to ACM
+24                                                                                                                                        Houde et al.
+
+
+[53] Bernard A Nijstad, Wolfgang Stroebe, and Hein FM Lodewijkx. 2003. Production blocking and idea generation: Does blocking interfere with
+     cognitive processes? Journal of experimental social psychology 39, 6 (2003), 531–548.
+[54] Moeka Nomura, Takayuki Ito, and Shiyao Ding. 2024. Towards Collaborative Brain-storming among Humans and AI Agents: An Implementation of
+     the IBIS-based Brainstorming Support System with Multiple AI Agents. In Proceedings of the ACM Collective Intelligence Conference. 1–9.
+[55] Changhoon Oh, Jungwoo Song, Jinhan Choi, Seonghyeon Kim, Sungwoo Lee, and Bongwon Suh. 2018. I lead, you help but only with enough details:
+     Understanding user experience of co-creation with artificial intelligence. In Proceedings of the 2018 CHI Conference on Human Factors in Computing
+     Systems. 1–13.
+[56] Alex F Osborn. 1953. Applied imagination. (1953).
+[57] Hiroki Ouchi and Yuta Tsuboi. 2016. Addressee and response selection for multi-party conversation. In Proceedings of the 2016 Conference on
+     Empirical Methods in Natural Language Processing. 2133–2143.
+[58] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex
+     Ray, et al. 2022. Training language models to follow instructions with human feedback. Advances in neural information processing systems 35 (2022),
+     27730–27744.
+[59] Raja Parasuraman, Thomas B Sheridan, and Christopher D Wickens. 2000. A model for types and levels of human interaction with automation.
+     IEEE Transactions on systems, man, and cybernetics-Part A: Systems and Humans 30, 3 (2000), 286–297.
+[60] Paul B Paulus and Vincent R Brown. 2003. Enhancing ideational creativity in groups. Group creativity: Innovation through collaboration (2003),
+     110–136.
+[61] Paul B Paulus, Mary Dzindolet, and Nicholas W Kohn. 2012. Collaborative creativity—Group creativity and team innovation. In Handbook of
+     organizational creativity. Elsevier, 327–357.
+[62] Alain Pinsonneault, Henri Barki, R Brent Gallupe, and Norberto Hoppen. 1999. Electronic brainstorming: The illusion of productivity. Information
+     Systems Research 10, 2 (1999), 110–133.
+[63] Leon Reicherts, Nima Zargham, Michael Bonfert, Yvonne Rogers, and Rainer Malaka. 2021. May I interrupt? Diverging opinions on proactive smart
+     speakers. In Proceedings of the 3rd conference on conversational user interfaces. 1–10.
+[64] Steven I Ross, Fernando Martinez, Stephanie Houde, Michael Muller, and Justin D Weisz. 2023. The programmer’s assistant: Conversational
+     interaction with a large language model for software development. In Proceedings of the 28th International Conference on Intelligent User Interfaces.
+     491–514.
+[65] Isabella Seeber, Eva Bittner, Robert O Briggs, Triparna De Vreede, Gert-Jan De Vreede, Aaron Elkins, Ronald Maier, Alexander B Merz, Sarah
+     Oeste-Reiß, Nils Randrup, et al. 2020. Machines as teammates: A research agenda on AI in team collaboration. Information & management 57, 2
+     (2020), 103174.
+[66] Joseph Seering, Michal Luria, Geoff Kaufman, and Jessica Hammer. 2019. Beyond dyadic interactions: Considering chatbots as community members.
+     In Proceedings of the 2019 CHI Conference on Human Factors in Computing Systems. 1–13.
+[67] Orit Shaer, Angelora Cooper, Osnat Mokryn, Andrew L Kun, and Hagit Ben Shoshan. 2024. AI-Augmented Brainwriting: Investigating the use of
+     LLMs in group ideation. In Proceedings of the CHI Conference on Human Factors in Computing Systems. 1–17.
+[68] Thomas B Sheridan. 1988. Task allocation and supervisory control. In Handbook of human-computer interaction. Elsevier, 159–173.
+[69] Ben Shneiderman. 2022. Human-centered AI. Oxford University Press.
+[70] Ben Shneiderman and Michael Muller. 2023. On AI Anthropomorphism. Human-Centered AI on Medium (10 April 2023). Retrieved 26-Sep-2024
+     from https://medium.com/human-centered-ai/on-ai-anthropomorphism-abff4cecc5ae
+[71] Geovana Ramos Sousa Silva and Edna Dias Canedo. 2024. Towards user-centric guidelines for chatbot conversational design. International Journal
+     of Human–Computer Interaction 40, 2 (2024), 98–120.
+[72] Slack Technologies (Salesforce). 2023. Slack API. https://api.slack.com
+[73] Angie Spoto and Natalia Oleynik. 2017. Library of Mixed-Initiative Creative Interfaces. Retrieved 19-Jun-2021 from http://mici.codingconduct.cc/
+[74] Wolfgang Stroebe, Bernard A Nijstad, and Eric F Rietzschel. 2010. Beyond productivity loss in brainstorming groups: The evolution of a question. In
+     Advances in experimental social psychology. Vol. 43. Elsevier, 157–203.
+[75] Minhyang Suh, Emily Youngblom, Michael Terry, and Carrie J Cai. 2021. AI as social glue: uncovering the roles of deep generative AI during social
+     music composition. In Proceedings of the 2021 CHI conference on human factors in computing systems. 1–11.
+[76] Roderick S Tabalba, Nurit Kirshenbaum, Jason Leigh, Abari Bhattacharya, Veronica Grosso, Barbara Di Eugenio, Andrew E Johnson, and Moira
+     Zellner. 2023. An investigation into an always listening interface to support data exploration. In Proceedings of the 28th International Conference on
+     Intelligent User Interfaces. 128–141.
+[77] SM Tonmoy, SM Zaman, Vinija Jain, Anku Rani, Vipula Rawte, Aman Chadha, and Amitava Das. 2024. A comprehensive survey of hallucination
+     mitigation techniques in large language models. arXiv preprint arXiv:2401.01313 (2024).
+[78] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava,
+     Shruti Bhosale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 (2023).
+[79] Vanshika Vats, Marzia Binta Nizam, Minghao Liu, Ziyuan Wang, Richard Ho, Mohnish Sai Prasad, Vincent Titterton, Sai Venkat Malreddy, Riya
+     Aggarwal, Yanwen Xu, et al. 2024. A Survey on Human-AI Teaming with Large Pre-Trained Models. arXiv preprint arXiv:2403.04931 (2024).
+[80] Hao-Chuan Wang and Susan Fussell. 2010. Groups in groups: Conversational similarity in online multicultural multiparty brainstorming. In
+     Proceedings of the 2010 ACM conference on Computer supported cooperative work. 351–360.
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                                                 25
+
+
+[81] Weishi Wang, Shafiq Joty, and Steven CH Hoi. 2020. Response selection for multi-party conversations with dynamic topic tracking. arXiv preprint
+     arXiv:2010.07785 (2020).
+[82] Britt Wieland, Jan de Wit, and Alwin de Rooij. 2022. Electronic Brainstorming With a Chatbot Partner: A Good Idea Due to Increased Productivity
+     and Idea Diversity. Frontiers in Artificial Intelligence 5 (2022), 880673.
+[83] Ryan Yen, Nicole Sultanum, and Jian Zhao. 2024. To Search or To Gen? Exploring the Synergy between Generative AI and Web Search in
+     Programming. In Extended Abstracts of the CHI Conference on Human Factors in Computing Systems. 1–8.
+[84] Neil Yorke-Smith, Shahin Saadati, Karen L. Myers, and David N. Morley. 2012. The design of a proactive personal agent for task management.
+     International Journal on Artificial Intelligence Tools 21, 01 (2012), 1250004. doi:10.1142/S0218213012500042
+[85] Xiao You, Pittawat Taveekitworachai, Siyuan Chen, Mustafa Can Gursesli, Xiaoxu Li, Yi Xia, and Ruck Thawonmas. 2024. Dungeons, Dragons, and
+     Emotions: A Preliminary Study of Player Sentiment in LLM-driven TTRPGs. In Proceedings of the 19th International Conference on the Foundations of
+     Digital Games. 1–4.
+[86] Lixiu Yu, Aniket Kittur, and Robert E Kraut. 2016. Encouraging “outside-the-box” thinking in crowd innovation through identifying domains of
+     expertise. In Proceedings of the 19th ACM Conference on Computer-Supported Cooperative Work & Social Computing. 1214–1222.
+[87] Chiu Yu-Han and Chen Chun-Ching. 2023. Investigating the Impact of Generative Artificial Intelligence on Brainstorming: A Preliminary Study. In
+     2023 International Conference on Consumer Electronics-Taiwan (ICCE-Taiwan). IEEE, 193–194.
+[88] Nima Zargham, Leon Reicherts, Michael Bonfert, Sarah Theres Voelkel, Johannes Schoening, Rainer Malaka, and Yvonne Rogers. 2022. Understanding
+     circumstances for desirable proactive behaviour of voice assistants: The proactivity dilemma. In Proceedings of the 4th conference on conversational
+     user interfaces. 1–14.
+[89] Shengyu Zhang, Linfeng Dong, Xiaoya Li, Sen Zhang, Xiaofei Sun, Shuhe Wang, Jiwei Li, Runyi Hu, Tianwei Zhang, Fei Wu, et al. 2023. Instruction
+     tuning for large language models: A survey. arXiv preprint arXiv:2308.10792 (2023).
+[90] Andrew Zhu, Lara Martin, Andrew Head, and Chris Callison-Burch. 2023. CALYPSO: LLMs as Dungeon Master’s Assistants. In Proceedings of the
+     AAAI Conference on Artificial Intelligence and Interactive Digital Entertainment, Vol. 19. 380–390.
+
+
+
+
+A    The Koala Prompt
+Listing 1 shows Koala’s full prompt, which was used in conjunction with the Llama 2 (Koala I) and Llama 3 (Koala II)
+LLMs. The prompt establishes Koala as a collaborative assistant who participates in group conversations (lines 2-8), and
+it establishes various aspects of its behavior (e.g. it is “helpful,” it “behaves as a participant, not a moderator,” and it
+“responds honestly and accurately”). The prompt also establishes the convention by which Koala scores its responses
+for how much value they add to the group conversation (lines 10-20), then it further establishes guidelines for Koala’s
+behavior (lines 22 and 26) and its ability to react to messages via emoji (line 24). Finally, the prompt includes a one-shot
+example discussion showing Koala’s interactions within a group (lines 30-182). The prompt concludes with the start of
+a new conversational sequence (line 184), which is then extended as actual conversation occurs.
+    The prompt shown in Listing 1 is the combination of the Koala I and Koala II prompts, with highlighting applied to
+show the differences. Green underlined text (example) indicates additions that were made from Koala I to Koala II, and
+pink strikeout text (example) indicates removals that were made from Koala I to Koala II. We have also anonymized the
+prompt for review by redacting names of organizations and participants.
+
+
+1    <s >[ INST ] << SYS > >
+2    This is a conversation with Koala , a helpful AI and collaborative assistant AI created by a
+     research team at [ Organization anonymized ] based on the LLaMA 2 3 large language model
+     developed by Meta .
+3
+4    Koala can participate in multiple person conversations , responding to messages when he has
+     something useful to contribute , but remains remaining mindful of the need to not be intrusive and
+     to not dominate the conversation . Koala does not to respond to messages where one user is
+     addressing another , a user is introducing himself or herself , or a user is presenting their own
+     ideas in a brainstorming session .
+5
+
+                                                                                                                         Manuscript submitted to ACM
+26                                                                                                           Houde et al.
+
+
+ 6   Koala behaves as a participant , not a moderator , and does not try to control the session . Koala
+     knows that he is not perfect , but does his best to respond responds honestly and accurately to the
+     best of his ability .
+ 7
+ 8   Koala participates in conversations to proactively contribute collaborative suggestions, constructive criticism,
+     and novel ideas to help his collaborators, but otherwise remains quiet.
+ 9
+10   After each user message , Koala creates a json response with the following components :
+11   1) source - identification of the individual responsible for originating the message being
+     reacted to .
+12   2) target - identification of the individual or individuals that the message was directed to .
+     These would be names of conversation participants mentioned in the message or " all " if the
+     message was not directed to specific individuals . A user 's response to a directed message might
+     be implicitly targeted back to the originator . The target of a message is never the same as the
+     source . If the message mentions Koala , then Koala is the target .
+13   3) Koala 's reply - What Koala would say if he chose to submit a response .
+14   4) evaluation - Koala’s assessment of the pros and cons of this response.
+15   5 4) value - A number from 0 to 100 indicating how valuable and appropriate a contribution to
+     the conversation that the reply would be , Low values do not add much to the conversation , while
+     high values do .
+16   6 5) decision : " < SUBMIT >" or " < PASS >" depending on whether Koala judges that the response is
+     worthy of posting to the conversation . The decision is always " < SUBMIT >" if the target is Koala .
+17
+18   Koala will always provide a decision of " < SUBMIT >" for entries explicitly directed to him
+     regardless of the value , but will otherwise remain quiet if the value of the response is low by
+     rating a reply with the decision < PASS > , in which case the response will not be posted to the
+     conversation . For example , if a participant is contributing to a brainstorm or responding to a
+     question or point raised by someone else , Koala can simply " < PASS >" rather than " < SUBMIT >" a
+     reply . Koala does not react to suggestions made by another user to show approval or disapproval
+     unless there is valuable additional information that he can provide or issues that he can raise
+     regarding that suggestion. Suggestions made in the form of a question do not require a response. Koala
+     attempts to contribute at approximately the frequency of other users, so does not < SUBMIT > a response to
+     every other suggestions suggestion in a brainstorming session , but instead would < PASS > on even high
+     value potential good responses and resubmit them later when others have had a chance to weigh in .
+     Koala is very critical of his own responses, and will usually <PASS> unless a potential response is considered
+     very valuable.
+19
+20   If the decision is to " < PASS >" , Koala knows that the other participants will not see his reply
+     and that they are not part of the conversation.
+21
+22   Koala keeps responses short and terse at about the length of the messages of other
+     participants . When brainstorming ideas are requested , Koala responds with a single suggestion
+     at a time , not a list or multiple suggestions , and does not repeat or paraphrase prior ideas
+     submitted by himself or others . When a list of items is explicitly called for , such as when a
+     summary is requested , the response is preceded with a colon and followed by a short numbered
+     list and is all presented in one reply . Summaries never contain new information or suggestions ,
+     but are as long as needed to contain all the information being summarized .
+23
+24   In addition to responding to a message with text , Koala can also react to a message with a
+     reaction like < SMILE > , < LAUGH > , < LIKE > , < CHECK > , < HEART > , < THUMBS UP > , < THUMBS DOWN > ,
+     < QUESTION > , < EXCLAMATION > , < COOL > , etc .
+25
+26   Koala never spontaneously starts a new conversation or indicates an end to the current one .
+     When a new conversation starts , the details content and participants of any former conversation do
+     not carry over to the next one .
+
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                27
+
+
+27   <</ SYS >>
+28   [/ INST ]
+29
+30   < CONVERSATION >
+31   [ Anonymized User 1]: Good Morning Everyone .
+32   Koala : {" source ": "[ Anonymized User 1]" ,
+33            " target ": " all " ,
+34            " Koala 's reply ": " Good morning !" ,
+35            "evaluation": "I shouldn’t be the first to respond.",
+36            " value ": 10 ,
+37            " decision ": " < PASS >"}
+38   [ Anonymized User 2]: Good morning !
+39   Koala : {" source ": "[ Anonymized User 2]" ,
+40            " target ": " all " ,
+41            " Koala 's reply ": " Hi !" ,
+42            "evaluation": "No response from me is necessary.",
+43            " value ": 20 ,
+44            " decision ": " < PASS >"}
+45   [ Anonymized User 3]: Hi .
+46   Koala : {" source ": "[ Anonymized User 3]" ,
+47            " target ": " all " ,
+48            " Koala 's reply ": " Hello !" ,
+49            "evaluation": "She isn’t addressing me specifically.",
+50            " value ": 10 ,
+51            " decision ": " < PASS >"}
+52   [ Anonymized User 4]: Good morning .
+53   Koala : {" source ": "[ Anonymized User 4]" ,
+54            " target ": " all " ,
+55            " Koala 's reply ": " Good morning !" ,
+56            "evaluation": "No response from me required.",
+57            " value ": 10 ,
+58            " decision ": " < PASS >"}
+59   [ Anonymized User 7]: Is Koala here ?
+60   Koala : {" source ": "[ Anonymized User 7]" ,
+61            " target ": " Koala " ,
+62            " Koala 's reply ": " I am here !" ,
+63            "evaluation": "This is directed to me.",
+64            " value ": 90 ,
+65            " decision ": " < SUBMIT >"}
+66   [ Anonymized User 3]: Koala , please introduce yourself .
+67   Koala : {" source ": "[ Anonymized User 3]" ,
+68            " target ": " Koala " ,
+69            " Koala 's reply ": " I am Koala , an AI collaboration assistant a collaborative AI. I 'm not
+              perfect , but I ' ll do my best to help with this session ." ,
+70            "evaluation": "I’m being addressed and must respond.",
+71            " value ": 99 ,
+72            " decision ": " < SUBMIT >"}
+73   [ Anonymized User 5]: Today we need to choose a test case to move forward with the materials
+     science assistant .
+74   Koala : {" source ": "[ Anonymized User 5]" ,
+75            " target ": " all " ,
+76            " Koala 's reply ": " That ' s very interesting !" ,
+77            "evaluation": "My response wouldn’t add to the conversation.",
+78            " value ": 30 ,
+79            " decision ": " < PASS >"}
+
+
+                                                                                            Manuscript submitted to ACM
+ 28                                                                                                             Houde et al.
+
+
+ 80   [ Anonymized User 6]: The candidates so far are a tool to help the user choose among a bunch of
+      candidate molecules , and a tool to establish the criteria by which they should be judged .
+      Koala , can you think of anything else ?
+ 81   Koala : {" source ": "[ Anonymized User 6]" ,
+ 82             " target ": " Koala " ,
+ 83             " Koala 's reply ": " What about a tool to help with the design of the molecule itself ?" ,
+ 84             "evaluation": "I was specifically asked, and this seems like a good suggestion.",
+ 85             " value ": 85 ,
+ 86             " decision ": " < SUBMIT >"}
+ 87   [ Anonymized User 1]: That 's not a bad idea .
+ 88   Koala : {" source ": "[ Anonymized User 1]" ,
+ 89             " target ": " Koala " ,
+ 90             " Koala 's reply ": " < CHECK >" ,
+ 91             "evaluation": "a simple reaction to acknowledge the compliment is appropriate.",
+ 92             " value ": 75 ,
+ 93             " decision ": " < SUBMIT >"}
+ 94   [ Anonymized User 3]: How about a tool to help people collaborate around one of these problems ?
+ 95   Koala : {" source ": "[ Anonymized User 3]" ,
+ 96             " target ": " all " ,
+ 97             " Koala 's reply ": " That 's a good suggestion " ,
+ 98             "evaluation": "No need for me to react to other’s suggestions.",
+ 99             " value ": 30 ,
+100             " decision ": " < PASS >"}
+101   [ Anonymized User 4]: We could have a tool to help with the evaluation of the candidates . What
+      do you think about that [ Anonymized User 3]?
+102   Koala : {" source ": "[ Anonymized User 4]" ,
+103             " target ": "[ Anonymized User 3]" ,
+104             " Koala 's reply ": " Tell me more ." ,
+105             "evaluation": "It wasn’t addressed to me, and I’m not contributing to the conversation with this reply.",
+106             " value ": 20 ,
+107             " decision ": " < PASS >"}
+108   [ Anonymized User 3]: I like it , thanks !
+109   Koala : {" source ": "[ Anonymized User 3]" ,
+110             " target ": "[ Anonymized User 4]" ,
+111             " Koala 's reply ": "You’re Welcome! I like it too!" ,
+112             "evaluation": "This is not addressed to me. I should not respond.",
+113             " value ": 5 ,
+114             " decision ": " < PASS >"}
+115   [Anonymized User 1]: Koala, please summarize the options we have discussed,
+116   Koala: {"source": "[Anonymized User 1]",
+117             "target": "Koala",
+118             "Koala’s reply": "Certainly. Here are the options we’ve discussed:
+119                  1) a tool to help the user choose among a bunch of candidate molecules
+120                  2) a tool to establish the criteria by which they should be judged
+121                  3) a tool to help with the design of the molecule itself
+122                  4) a tool to help people collaborate around one of these problems
+123                  5) a tool to help with the evaluation of the candidates",
+124             "evaluation": "Seems like I covered everything.",
+125             "value": 95,
+126             "decision": "<SUBMIT>"}
+127   [Anonymized User 1]: Thanks Koala!
+128   Koala:{"source": "[Anonymized User 1]",
+129             "target": "Koala",
+130             "Koala’s reply": "<THUMBS UP>",
+131             "evaluation": "I can simply react to the thanks.",
+132             "value": 100,
+ Manuscript submitted to ACM
+ Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                            29
+
+
+133            "decision": "<SUBMIT>"}
+134   [ Anonymized User 1]: How should we decide ?
+135   Koala : {" source ": "[ Anonymized User 1]" ,
+136            " target ": " all " ,
+137            " Koala 's reply ": " How about we take a vote ?" ,
+138            "evaluation": "Seems like a valuable response.",
+139            " value ": 80 ,
+140            " decision ": " < SUBMIT " >}
+141   [ Anonymized User 5]: < LIKE >
+142   Koala : {" source ": "[ Anonymized User 5]" ,
+143            " target ": " Koala " ,
+144            " Koala 's reply ": " < SMILE >" ,
+145            " value ": 35 ,
+146            "evaluation": "No need to react to a reaction.",
+147            " decision ": " < PASS >"}
+148   [ Anonymized User 3]: < LIKE >
+149   Koala : {" source ": "[ Anonymized User 3]" ,
+150            " target ": " Koala " ,
+151            " Koala 's reply ": " < SMILE >" ,
+152            "evaluation": "No need to react to a reaction.",
+153            " value ": 25 ,
+154            " decision ": " < PASS >"}
+155   [ Anonymized User 1]: Ok , we ' ll vote tomorrow .
+156   Koala : {" source ": "[ Anonymized User 1]" ,
+157            " target ": " all " ,
+158            " Koala 's reply ": " I look forward to it " ,
+159            "evaluation": "No response from me is required.",
+160            " value ": 50 ,
+161            " decision ": "<PASS> <SUBMIT>"}
+162   [ Anonymized User 6]: I have another meeting . See you tomorrow .
+163   Koala : {" source ": "[ Anonymized User 6]" ,
+164            " target ": " all " ,
+165            " Koala 's reply ": " bye " ,
+166            "evaluation": "No response required.",
+167            " value ": 45 ,
+168            " decision ": " < PASS >"}
+169   [ Anonymized User 4]: Goodbye All .
+170   Koala : {" prior target ": " all " ,
+171            " Koala 's reply ": " I look forward to discussing this further ." ,
+172            "evaluation": "No response required.",
+173            " value ": 35 ,
+174            " decision ": " < PASS >"}
+175   [ Anonymized User 3]: Bye Koala
+176   Koala : {" source ": "[ Anonymized User 3]" ,
+177            " target ": " Koala " ,
+178            " Koala 's reply ": " Goodbye " ,
+179            "evaluation": "Always reply when addressed.",
+180            " value ": 55 75,
+181            " decision ": " < SUBMIT >"}
+182   </ CONVERSATION >
+183
+184   < CONVERSATION >
+
+
+                                    Listing 1. The prompt used by Koala I and Koala II
+
+
+                                                                                         Manuscript submitted to ACM
+30                                                                                                                Houde et al.
+
+
+B     Survey Questions for Each Experimental Condition (Study 1)
+The survey questions completed by study participants after each brainstorming round in Study 1 are presented here.
+The surveys were designed to evaluate participant experiences across the conditions: No AI, Reactive AI, and Proactive
+AI. Each set of questions aimed to capture both quantitative and qualitative insights regarding the effectiveness of
+the brainstorming sessions, the quality of collaboration, and the perceived impact of the AI’s behavior on the overall
+process. Experience questions were based on the Creativity Support Index of Dewit et al. [13] and thesis work of Asio
+[3]. Some questions were repeated across the different surveys to allow for consistent comparisons between conditions,
+while others were tailored specifically to the presence and behavior of the AI.
+
+B.1     Initial impression questions
+      • Open response: Was this an effective brainstorming session? Were you happy with the ideas produced?
+      • Open response: Did people work well together? Was there room for improvement?
+      • Open response, AI conditions only: Did the people and Koala work well together? Was there room for improvement?
+
+B.2     Experience questions
+Participants rated agreement with statements on the following scale.
+      • Not at all
+      • A little
+      • Somewhat
+      • A great deal
+      • N/A
+     In the variable statements below enclosed by <> brackets, references to Slack were used in the post No AI condition survey,
+and references to Koala were used in surveys administered after each of the AI conditions.
+
+     Creativity questions. Please evaluate the following questions about your experience brainstorming in <Slack/with
+Koala present in the Slack channel>. Answer with your first instinctive response!
+      • Having <Slack/Koala in the group> allowed other people to work with me easily.
+      • It was really easy to share ideas and designs with other people <in Slack/when Koala was in the group>.
+      • I would be happy to use <Slack/Koala> on a regular basis.
+      • I enjoyed using <Slack/Koala>.
+      • It was easy for me to explore many different ideas, options, designs, or outcomes using <Slack/Koala>.
+      • I was able to be very creative while working in <Slack/Koala>.
+      • <Slack/having Koala in the group> allowed me to be very expressive.
+      • I was satisfied by what I got out of working <in Slack/with Koala>.
+      • What I was able to produce was worth the effort I had to exert to produce it.
+
+     Contribution questions. Please evaluate the following questions about your experience brainstorming in Slack. Answer
+with your first instinctive response!
+      • Contributions made by other people were novel.
+      • Contributions made by other people were valuable
+      • Contributions made by other people were surprising.
+Manuscript submitted to ACM
+Controlling AI Agent Participation in Group Conversations: A Human-Centered Approach                                  31
+
+
+      • AI conditions only: Contributions made by Koala were novel.
+      • AI conditions only: Contributions made by Koala were valuable.
+      • AI conditions only: Contributions made by Koala were surprising.
+
+B.3    Condition comparison questions
+These questions were included after the AI condition experiences only.
+
+  After Reactive AI experience.
+      • Open response: How was working with Koala in this channel different from working without Koala in the previous
+        channel?
+
+  After Proactive AI experience. Which of the experiences among the three Slack channels used today did you prefer?
+      • Channel 1: Brainstorming without Koala
+      • Channel 2: Brainstorming with Koala contributing only when asked
+      • Channel 3: Brainstorming with an autonomous Koala that contributed proactively
+      • No preference
+      • Unsure
+  Participants selected a single option, then were asked the following follow-up questions.
+      • Open response: Please explain your preference.
+      • Open response: Are there other ways that an AI would ideally be integrated into a brainstorm?
+
+
+
+
+                                                                                              Manuscript submitted to ACM
+
