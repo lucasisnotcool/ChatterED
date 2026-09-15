@@ -248,3 +248,52 @@ describe('the whisper invariant', () => {
     expect(seen.size).toBeGreaterThan(2);
   });
 });
+
+/**
+ * THE SAME CANARY, OVER THE FLOW RENDERER (`flow-build-plan.md` §3.4 gate G3).
+ *
+ * The test above walks from `context.group.ts`, which is a main-process graph: it proves the
+ * *prompt* can never carry a whisper. It says nothing about the screen. The flow moved the
+ * conversation into the document, and the whisper popover arrives on Friday as a component on
+ * the same cards — so from now on there is a second way the invariant could break: a flow
+ * **component** naming the whisper layer and drawing a private turn where a shared one goes.
+ *
+ * The walk is over the `.svelte` files the flow draws, and deliberately stops at `lib/`: the
+ * store is one object shared by every screen and `shared/types.ts` is the whole view surface, so
+ * "does the store mention whispers" is not a fact about the flow. What *is* a fact about the
+ * flow is whether any card it draws can name one — and none may, in this build, because the
+ * popover is Friday and ⌘K is unbound here.
+ *
+ * "Extend, never relax" (`flow-build-plan.md` §4.6). When the popover lands, this becomes an
+ * allowlist of the one component that may, not a deleted test.
+ */
+describe('the whisper invariant, over the flow renderer', () => {
+  it('cannot reach the whisper layer from any component the flow draws', () => {
+    const components = resolve(HERE, '../renderer/components');
+    const seen = new Set<string>();
+    const queue = [resolve(components, 'FlowCanvas.svelte')];
+    const offenders: string[] = [];
+
+    while (queue.length > 0) {
+      const file = queue.pop()!;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const src = readFileSync(file, 'utf8');
+
+      // Components only. `lib/` and `shared/` are app-wide and are covered by the walk above.
+      const importRe = /^\s*import\s+(?!type\s)(?:[\s\S]*?)from\s+['"](\.\/[A-Za-z0-9_]+\.svelte)['"]/gm;
+      for (const match of src.matchAll(importRe)) {
+        queue.push(resolve(dirname(file), match[1]!));
+      }
+
+      if (/whisper/i.test(file.replace(components, ''))) offenders.push(`component: ${file}`);
+      // Strip comments first, so the documentation of the invariant does not trip it.
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/<!--[\s\S]*?-->/g, '');
+      if (/whisper/i.test(code)) offenders.push(`whisper named in: ${file}`);
+    }
+
+    expect(offenders).toEqual([]);
+    // Sanity: the walk reached the card, the thread and the AI cards, not just the entry file.
+    expect(seen.size).toBeGreaterThanOrEqual(5);
+  });
+});

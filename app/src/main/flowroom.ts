@@ -85,6 +85,10 @@ export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): 
     fileId,
     fileName: file.name,
     fileSha: sha,
+    // The whole document, because in the flow the material *is* the document: there is no page
+    // range to mark any more, and 001_init.sql's CHECK on `pdf_pages` requires a `page_from`.
+    pageFrom: 1,
+    pageTo: Math.max(1, view.pageCount),
     ...(deps.vault.topicContext(file.topic_id) ? { topic: deps.vault.topicContext(file.topic_id)! } : {}),
     ...conceptFor(deps, { fileName: file.name, contentSha: sha }),
   };
