@@ -89,7 +89,7 @@ interface TextItem {
   transform?: number[];
 }
 
-interface PdfjsModule {
+export interface PdfjsModule {
   getDocument(src: Record<string, unknown>): {
     promise: Promise<PdfDocument>;
     destroy(): Promise<void>;
@@ -133,8 +133,14 @@ async function withoutPdfjsBanner<T>(fn: () => Promise<T>): Promise<T> {
 
 let pdfjsPromise: Promise<PdfjsModule> | undefined;
 
-/** Load pdf.js once, worker disabled, warnings silenced. */
-function loadPdfjs(): Promise<PdfjsModule> {
+/**
+ * Load pdf.js once, worker disabled, warnings silenced.
+ *
+ * Exported because `vault/geometry.ts` (issue #25 Stage 1) needs the *same* module instance and
+ * the same ESM-under-CommonJS dance; loading pdf.js twice would parse the 3 MB bundle twice and
+ * give two `GlobalWorkerOptions` objects to keep in step.
+ */
+export function loadPdfjs(): Promise<PdfjsModule> {
   pdfjsPromise ??= (async () => {
     const mod = await withoutPdfjsBanner(() => importEsm(resolveEsm(PDFJS_ENTRY)));
     // Under Node, pdf.js forces its in-process "fake worker" (no worker thread,
@@ -180,6 +186,23 @@ function itemsToText(items: Array<TextItem | object>): string {
     .trim();
 }
 
+/**
+ * The options every `getDocument` call in this app uses: no worker thread, no network, no
+ * canvas, no standard-font fetches. Shared with `vault/geometry.ts` so the two passes cannot
+ * drift into reading the same file under different rules.
+ */
+export function docOptions(bytes: Uint8Array, pdfjs: PdfjsModule): Record<string, unknown> {
+  return {
+    data: bytes,
+    isEvalSupported: false,
+    useSystemFonts: false,
+    useWorkerFetch: false,
+    disableFontFace: true,
+    stopAtErrors: false,
+    verbosity: pdfjs.VerbosityLevel.ERRORS,
+  };
+}
+
 /** Extract text per page. `range` is 1-indexed inclusive; omit for the whole document. */
 export async function extractPdfText(
   filePath: string,
@@ -188,16 +211,7 @@ export async function extractPdfText(
   const pdfjs = await loadPdfjs();
   const bytes = new Uint8Array(await readFile(filePath));
 
-  const task = pdfjs.getDocument({
-    data: bytes,
-    // No worker thread, no network, no canvas, no standard-font fetches.
-    isEvalSupported: false,
-    useSystemFonts: false,
-    useWorkerFetch: false,
-    disableFontFace: true,
-    stopAtErrors: false,
-    verbosity: pdfjs.VerbosityLevel.ERRORS, // silence pdf.js info/warn on stdout
-  });
+  const task = pdfjs.getDocument(docOptions(bytes, pdfjs));
 
   let doc: PdfDocument | undefined;
   try {
