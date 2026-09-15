@@ -646,3 +646,78 @@ also brings a merge affordance into the gap, and an 18 px error is an anchor tha
 **Not in this pass:** the "+ Ask here" composer and the REFERENCE card (track C), AI cards in the
 flow, the whisper popover, and cross-page merge (A2). `SPLIT_ENABLED` in `lib/flowview.ts` is the
 §3.8 F1 switch and is `true`.
+
+---
+
+## The conversation inside the flow — Track B of `flow-build-plan.md` §3.3, §4.1 (16 Sep, issue #25)
+
+"+ Ask here" is no longer a stub. A deck now opens as a flow of crops *and* holds the whole
+conversation about them, anchored segment by segment, with no setup screen anywhere in the path.
+
+### A room per document, created lazily
+
+| File | What it is |
+|---|---|
+| `src/main/flowroom.ts` + `.test.ts` (**new**, 12 tests) | `openOrCreateFlowRoom()` — the material is keyed on `file_id` + the segment cache's own **`content_sha`**, so the second question reopens the room and an *edited* deck opens a new one. It calls `createSession()`, unchanged, with a material assembled from what the vault already knows; claims come from the ingest draft when a backend is live and from the committed fixed pack in scripted mode, chosen with `pickScriptName()`. Also `segmentText()`, and the sitting's round trip through one settings row. |
+| `src/main/ipc.ts` | `flowAskHere` / `flowExplainBack` / `flowSend` / `flowMessages`; `openRoom(roomId, { opener: false })` for a flow room; `flowState` restored on open and persisted after every learner-authored action. |
+| `src/main/sessions.ts` | One optional field — `CreateSessionInput.fileSha`. Every other caller still keys on the sha of the text. |
+| `src/main/db/repos/core.ts`, `src/room/ports.ts` | `MessagesRepo.forAnchor` — the real SQL over migration 010's index, which `reference.ts` asked for once this file was free — and `MaterialsRepo.forFile`. |
+
+**Four things simplified, on purpose.** (1) There is no setup screen and nothing to confirm: the
+learner edits a claim by explaining it, not by editing a row. (2) A flow material is pages 1..N,
+because `001_init.sql` requires a `page_from` for `pdf_pages` and the material *is* the whole
+document now. (3) A REFERENCE call sees the segment's **page**, not its rectangle — the geometry
+pipeline keeps its text boxes in the main process (`SEGMENTS.md` §2) and cropping properly is a
+second geometry pass per question; a slide page is ~120 words, so the error is "can see the
+other half of the slide", which is the safe direction. (4) The sitting is one `settings` row per
+room (~1.1 KB measured), not a table.
+
+### IPC and the renderer
+
+| File | What it is |
+|---|---|
+| `shared/flowthread.ts` + `.test.ts` (**new**, 10 tests) | `groupByAnchor`, `threadFor`, `claimsForAnchor` — pure, and called by **both** sides, so the main process's view and the renderer's live recomputation cannot disagree about where a turn landed. |
+| `components/AskHereLine.svelte` (**new**) | The faint line, and the single-line prompt it opens: pre-focused, `Enter` asks, `Esc` cancels and discards the anchor. |
+| `components/AiSegment.svelte` (**new**) | REFERENCE / Teacher / Tester. §C4's four separations, enforced structurally: app UI font on the app ground, inset with a left rule in the speaker's colour, name + avatar in the header, and a callout rule drawn to the crop's **edge**, never inside it. KaTeX's Computer Modern is overridden — agent-written maths that looks like the lecturer's is the confusion S5 exists to prevent. |
+| `components/FlowThread.svelte` (**new**) | The thread under a crop: the learner's own writing full-width and indigo (§B2's asymmetry), the reserved slot with §B9's counter and the amber ring, the lock line while a REFERENCE card is unanswered, the composer after **Explain it back →**. |
+| `lib/aitext.ts` + `.test.ts` (**new**, 10 tests) | Escape first, then put back exactly two things — paragraphs and maths. Not `renderMarkdown()`: a turn is prose with notation, and marked would let a stray `#` restyle it and a stray tag reach the DOM. |
+| `components/SegmentCard.svelte`, `FlowCanvas.svelte`, `lib/store.svelte.ts`, `mockBridge.ts` | The glyph strip on the label strip, the ask prompt, the thread under each card, and a mock that replays the whole shape so the renderer is drivable without Electron. |
+| `shared/types.ts`, `room/views.ts` | `MessageView.anchorId` and `byRule`, and **a new `'reference'` speaker kind**: `messageView()` was mapping the reference participant — `kind = 'agent'` with a null `agent_key`, which is how the schema says *not an agent* — to `{ kind: 'student' }`, i.e. the machine's 120-word answer wearing the learner's face. |
+| `room/actor.ts` | `sendMessage(text, anchorId)`; `#runAgentTurn` carries the anchor onto the hand-off line and the reply; `referenceLocked` asked per anchor; a silence nudge lands in the thread the learner was last in, because a flow has no bottom of the page; `flowSnapshot()` gained the REFERENCE answers so the lock survives a relaunch. |
+
+**Verified live over CDP** (own port 9334, own `--user-data-dir`, vault = `/Users/lohzh/ChatterED/Academia`,
+backend `scripted`) on `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`:
+
+| Check | Measured |
+|---|---|
+| Tick click on page 3 | 7 → 8 segments; `/btw as a whisper` + `“Yeah, I cannot see` |
+| "+ Ask here" | prompt opens **pre-focused**, `⏎ ask · esc cancel`; `Esc` restores the line and discards the anchor |
+| The REFERENCE card | **3.4 s** from Enter (`Looking it up…` in between), anchored to the lower segment, `REFERENCE`, **100 words**, the rule, the hand-back line, **Explain it back →** and **✕ Remove**, in the app's UI font (`-apple-system…`) |
+| Ledger after the card | **0 glyphs** — nothing you read moves a row |
+| **Explain it back →** | card collapses to one line, buttons gone, lock line gone, composer opens **focused** on the same anchor |
+| The Teacher's thread | two learner turns → two replies, `MAX · TEACHER` with the callout rule; glyphs on the card's strip go `○ ○` |
+| The hand-off | fired on the 4th learner turn, once the 3-min freshness floor had passed: **`MAX · TEACHER` `BY RULE` — "You've covered what /btw can and cannot do and the forwarding gap — Ellie, over to you."** |
+| The Tester | `Ellie is thinking…`, counter climbing (caught at **8 s**, replied at ~10 s), ringed avatar, dashed amber rule, one question |
+| The quiz feedback turn | landed after the answer; glyphs move `● ◐ ◐` (C1 **defended**) |
+| ⌘K in the flow | unbound — 0 whisper nodes; the popover is Friday |
+| Close and reopen the document | 8 cards, **14 messages restored**, glyphs still `● ◐ ◐`; every message anchored, none room-level |
+| The persisted sitting | one settings row, **1094 bytes**: the session, 2 taught items, the pending quiz with `feedbackGiven`, and the answered REFERENCE card |
+
+Screenshots in the session scratchpad under `flow/`, numbered from 10.
+
+**Two bugs the live run found, both fixed** (`326809d`). The scripted client was answering the
+Critique 1 deck with the PSD/Hessian script — a REFERENCE call carries one segment of one slide,
+page 3's lower half contains `/btw` and nothing else, and `scriptNameForRequest` needs two
+markers; `openRoom` now passes the material and the client is **pinned**. And `roleWord()` in the
+renderer still said *peer* / *challenger* while `ROLE_LABEL` said *teacher* / *tester* since #32.
+
+**Not in this pass.** The whisper popover and `⌘K` (Friday, §3.5). The off-screen breadcrumb chip
+of §B9 device 3 — the thread shows a line in its foot instead, and R2 guarantees there is at most
+one held turn to point at. The `DEMO` flow profile in `flow.ts` is still not selectable in
+Settings, so the hand-off waits out the real 3-minute freshness floor; that is a filming-day
+concern and it is one wire from `RoomActorDeps.flowProfile`. `flow:messages` returns thread ids
+only and the renderer regroups live — there is no second copy of the transcript anywhere.
+
+**Two lint errors predate this work** and belong to the Teacher/Tester track: `#lastMessageIdByRole`
+in `actor.ts` and the `ROLE_LABEL` import in `prompts.ts` are both unused at `e8f3d78`. Left alone
+rather than edited under another agent.
