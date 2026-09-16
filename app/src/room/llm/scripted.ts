@@ -10,6 +10,8 @@
  * learner actually typed**, not from the script. The learner's side of the demo is live
  * (product-design.md §G3), so the quote in the rail is really theirs and rule 1 really passes.
  */
+import type { AgentProfile } from '../../shared/types.js';
+import { fillAgentNames, rosterFor } from '../agents.js';
 import type { LLMClient, LlmRequest, LlmResult } from './types.js';
 import { EMPTY_USAGE } from './types.js';
 import type { ScriptSource } from './script.psd-hessian.js';
@@ -32,6 +34,13 @@ export interface ScriptedClientOptions {
   material?: { fileName?: string | null; contentSha?: string | null };
   /** A Settings override — a script name. It wins over `material`. */
   override?: string | null;
+  /**
+   * The roster the room is actually running, so a beat that names the *other* agent — the
+   * Tester's question, a whisper reply — is filled from it rather than from a literal in the
+   * script (`agents.fillAgentNames`). Defaults to the pinned roster (#32), which is what every
+   * room gets; a caller that has the live one should still pass it.
+   */
+  roster?: readonly AgentProfile[];
 }
 
 export class ScriptedClient implements LLMClient {
@@ -45,9 +54,11 @@ export class ScriptedClient implements LLMClient {
    * at all — still gets the right voice.
    */
   #latched: ScriptSource | null = null;
+  #roster: readonly AgentProfile[];
 
   constructor(opts: ScriptedClientOptions = {}) {
     this.#ttftMs = opts.ttftMs ?? 900;
+    this.#roster = opts.roster ?? rosterFor();
     this.#pinned =
       opts.script ??
       (opts.material || opts.override ? pickScript({ ...opts.material, override: opts.override }) : null);
@@ -70,7 +81,9 @@ export class ScriptedClient implements LLMClient {
 
   async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
     const cue = request.meta.scriptCue ?? 'open';
-    const text = this.#textFor(request, cue);
+    // Names last, over whatever the beat produced: a decision or a ledger blob has no name in it
+    // and is untouched, and a turn's prose gets the roster's spelling of it.
+    const text = fillAgentNames(this.#textFor(request, cue), this.#roster);
     onDelta?.(text);
     return {
       text,

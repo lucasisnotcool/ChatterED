@@ -35,6 +35,7 @@ import {
   type HandOffInput,
   type TaughtItem,
 } from './flow.js';
+import { rosterFor } from './agents.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -416,15 +417,27 @@ describe('the hand-off line', () => {
       [taught('R1', t0, 'teacher', 'the PSD condition'), taught('R2', t0 + MINUTE, 'teacher', 'the domain')],
       t0 + 30 * MINUTE,
     );
-    expect(handOffLine('Ellie', 'Max', items)).toBe(
+    expect(handOffLine(rosterFor(), items)).toBe(
       "You've covered the domain and the PSD condition — Max, over to you.",
     );
+  });
+
+  it('names the Tester off the roster, whichever way round it is', () => {
+    const t0 = Date.parse('2026-09-15T10:00:00.000Z');
+    const items = quizzable(
+      [taught('R1', t0, 'teacher', 'the domain'), taught('R2', t0 + MINUTE, 'teacher', 'the PSD condition')],
+      t0 + 30 * MINUTE,
+    );
+    // The line is the Teacher's and names the Tester. Pinned (#32) that is Max; handed the
+    // pairing #16 could draw, it is Ellie — and never the speaker's own name either way.
+    expect(handOffLine(rosterFor('ellie_peer'), items)).toContain('Max, over to you.');
+    expect(handOffLine(rosterFor('ellie_challenger'), items)).toContain('Ellie, over to you.');
   });
 
   it('falls back to a label lookup when the taught item carries no label', () => {
     const t0 = Date.parse('2026-09-15T10:00:00.000Z');
     const items = quizzable([taught('R1', t0), taught('R2', t0)], t0 + 30 * MINUTE);
-    const line = handOffLine('Ellie', 'Max', items, (id) => (id === 'R1' ? 'convexity' : 'the Hessian'));
+    const line = handOffLine(rosterFor(), items, (id) => (id === 'R1' ? 'convexity' : 'the Hessian'));
     expect(line).toContain('Max, over to you.');
     expect(line).toMatch(/convexity|the Hessian/);
   });

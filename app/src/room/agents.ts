@@ -1,8 +1,21 @@
 /**
  * The agent roster — **Ellie the Teacher and Max the Tester** (#32).
  *
- * The **role–name pairing is randomised at install** and recorded in every log envelope, so the
- * study cannot confound role with gender (product-design.md §C2, Song et al. §3.2).
+ * **The pairing is pinned: Ellie is the Teacher, Max is the Tester** (#32, and the decision
+ * recorded on it). It used to be *randomised at install* so that a between-subjects study could
+ * not confound role with gender (product-design.md §C2, Song et al. §3.2) — that was a control
+ * for the **group framing**, and the group framing is gone (`masg-drop-assessment.md` Option 2).
+ * What is left is a two-agent flow whose copy names its agents out loud: the hand-off line, the
+ * Critique 1 script and the video's own narration all say *Ellie teaches, Max tests*. A coin
+ * flip at install made half of all installs read `MAX · TEACHER` under an *"Ellie, over to you"*
+ * hand-off, which is what a live run on 16 Sep actually showed. Deterministic wins.
+ *
+ * Old installs correct themselves: `AppService.pairing()` rewrites a stored `ellie_challenger`
+ * to `PINNED_PAIRING` on the next launch. That is safe because **the names are not in any frozen
+ * prefix** — `sharedBlock()` dropped the cast list with the group framing, so `prefix_sha256`
+ * does not depend on them — and a historical room keeps the names it was played with anyway:
+ * its `participants.display_name` is stored per room, and `views.messageView()` falls back to it
+ * for an `agent_key` the current roster no longer contains.
  *
  * **Theo has left the standing roster.** A teach-back *is* a quiz, so the Tutee's round folded
  * into the Tester's question (#32, flow-build-plan.md §4.2) and a third agent is not built for
@@ -81,8 +94,9 @@ export function otherStandingAgent(
  * learner's Settings choice (default `sonnet`) on the local-CLI path. The orchestrator and
  * ledger model is not here: those calls are not made *as* an agent.
  */
-export function rosterFor(pairing: RolePairing, agentModel: string = HAIKU): AgentProfile[] {
-  // 'ellie_peer' now reads as "Ellie is the Teacher". The stored string is unchanged on purpose.
+export function rosterFor(pairing: RolePairing = PINNED_PAIRING, agentModel: string = HAIKU): AgentProfile[] {
+  // The parameter survives so a historical room can still be rendered with the pairing it was
+  // played on; nothing in the running app passes anything but `PINNED_PAIRING`.
   const peerName = pairing === 'ellie_peer' ? 'Ellie' : 'Max';
   const challengerName = pairing === 'ellie_peer' ? 'Max' : 'Ellie';
   return [profile('peer', peerName, agentModel), profile('challenger', challengerName, agentModel)];
@@ -100,8 +114,34 @@ export function profile(role: AgentRole, displayName: string, model: string = HA
   };
 }
 
-export function randomPairing(rand: () => number = Math.random): RolePairing {
-  return rand() < 0.5 ? 'ellie_peer' : 'ellie_challenger';
+/**
+ * The one pairing this app ships. `'ellie_peer'` reads as *"Ellie is the Teacher"*; the stored
+ * string is unchanged so no setting, log envelope or historical row has to be rewritten.
+ */
+export const PINNED_PAIRING: RolePairing = 'ellie_peer';
+
+/** The Teacher's name, off the live roster. Never spelled out in copy — see `fillAgentNames`. */
+export function teacherName(roster: readonly AgentProfile[]): string {
+  return roster.find((a) => a.role === 'peer')?.displayName ?? 'Ellie';
+}
+
+/** The Tester's name, off the live roster. */
+export function testerName(roster: readonly AgentProfile[]): string {
+  return roster.find((a) => a.role === 'challenger')?.displayName ?? 'Max';
+}
+
+/**
+ * Fill `{teacher}` / `{tester}` from the live roster.
+ *
+ * Written copy that has to name an agent — the Critique 1 script's Tester question, its whisper
+ * replies — uses the tokens instead of a literal, so a swapped or renamed roster can never put
+ * *"Ellie had you on page 6"* in Ellie's own mouth. The hand-off line takes the names as
+ * arguments instead (`flow.handOffLine()`); this is for text that is written ahead of time.
+ */
+export function fillAgentNames(text: string, roster: readonly AgentProfile[]): string {
+  return text
+    .replaceAll('{teacher}', teacherName(roster))
+    .replaceAll('{tester}', testerName(roster));
 }
 
 export function agentByRole(roster: AgentProfile[], role: AgentRole): AgentProfile {

@@ -34,10 +34,12 @@ import { DEMO } from '../flow.js';
 import { HAND_BACK_LINE, REFERENCE_WORD_CAP } from '../reference.js';
 import { ScriptedClient } from './scripted.js';
 import {
+  CRITIQUE1_HANDOFFS,
   CRITIQUE1_LEARNER_LINES,
   CRITIQUE1_SCRIPT,
   CRITIQUE1_SEGMENTS,
   CRITIQUE1_SPLIT,
+  CRITIQUE1_WHISPERS,
   critique1Sitting,
   learnerLine,
 } from './script.critique1.js';
@@ -234,6 +236,37 @@ describe('beats 10–11 — the hand-off, and one question', () => {
     expect(quiz.latency_target_ms).toBeLessThanOrEqual(12_000);
   });
 
+  /**
+   * The bug this pins down was live on 16 Sep: the pairing was drawn at install (#16), this
+   * install drew the swap, and the flow rendered `MAX · TEACHER` over *"Ellie, over to you"*
+   * while the Tester's own question said *"Ellie had you on page 6"* — the Teacher quoting
+   * herself as somebody else. The pairing is pinned now (`agents.ts`) **and** neither sentence
+   * spells a name any more: the line takes the roster, the script writes `{teacher}`/`{tester}`.
+   */
+  it('names the Tester in the hand-off and the Teacher in the quiz, off the live roster (#32)', async () => {
+    const h = build();
+    await throughExplainBack(h);
+    await settle(h.clock, h.actor.sendMessage(L2));
+
+    const messages = h.store.messages.forRoom(h.roomId);
+    const i = messages.findIndex((m) => m.model === 'rule:handoff');
+    const line = messages[i]!;
+    const quiz = messages[i + 1]!;
+
+    const teacher = h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!;
+    const tester = h.store.participants.byAgentKey(h.roomId, 'challenger.max')!;
+
+    // The Teacher speaks the hand-off, and it names the Tester — never herself.
+    expect(line.participant_id).toBe(teacher.id);
+    expect(line.body).toContain('Max, over to you.');
+    expect(line.body).not.toContain('Ellie');
+
+    // The Tester speaks the quiz, and it names the Teacher — never himself.
+    expect(quiz.participant_id).toBe(tester.id);
+    expect(quiz.body).toContain('Ellie had you on page 6');
+    expect(quiz.body).not.toContain('Max');
+  });
+
   it('will not quiz the thing that was just taught — C3 is minutes too young', async () => {
     const h = build();
     await throughExplainBack(h);
@@ -413,6 +446,29 @@ describe('which script replays', () => {
     });
     expect(out.text).toContain('Pick a card');
     expect(client.script.conceptId).toBe('btw-side-channel-v1');
+  });
+
+  it('fills the agents\u2019 names from the roster it was given, never from the script', async () => {
+    // Belt and braces on the pin: even handed the pairing #16 used to be able to draw, the
+    // Tester\u2019s question names whoever is actually teaching. No literal survives in the file.
+    expect(CRITIQUE1_HANDOFFS.some((b) => (b.text ?? '').includes('{teacher}'))).toBe(true);
+    for (const beat of [...CRITIQUE1_HANDOFFS, ...CRITIQUE1_WHISPERS]) {
+      expect(beat.text ?? '').not.toMatch(/\bEllie\b|\bMax\b/);
+    }
+
+    const swapped = new ScriptedClient({ script: CRITIQUE1_SCRIPT, roster: rosterFor('ellie_challenger') });
+    const out = await swapped.complete({
+      ...request(CRITIQUE1_DECK_TEXT),
+      meta: { scope: 'group', scriptCue: 'handoff:1' },
+    });
+    expect(out.text).toContain('Max had you on page 6');
+
+    const pinned = new ScriptedClient({ script: CRITIQUE1_SCRIPT });
+    const out2 = await pinned.complete({
+      ...request(CRITIQUE1_DECK_TEXT),
+      meta: { scope: 'group', scriptCue: 'handoff:1' },
+    });
+    expect(out2.text).toContain('Ellie had you on page 6');
   });
 
   it('files its ledger rows under its own concept pack', async () => {

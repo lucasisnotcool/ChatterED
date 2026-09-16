@@ -780,12 +780,7 @@ export class RoomActor {
       lastProbeType: this.#lastProbeType,
       handOff: verdict,
       handOffLine: verdict.due
-        ? handOffLine(
-            agentByRole(this.#d.roster, 'peer').displayName,
-            agentByRole(this.#d.roster, 'challenger').displayName,
-            verdict.candidates,
-            (id) => this.#learnerLabel(id),
-          )
+        ? handOffLine(this.#d.roster, verdict.candidates, (id) => this.#learnerLabel(id))
         : null,
       pendingQuiz: this.#pendingQuiz,
       referenceLocked: this.#referenceLocked(anchorId),

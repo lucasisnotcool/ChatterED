@@ -24,6 +24,9 @@
  * relaunch, which a `setTimeout` does not.
  */
 
+import type { AgentProfile } from '../shared/types.js';
+import { testerName } from './agents.js';
+
 /** The tunable set. One object so a demo profile is a substitution, not a scatter of flags. */
 export interface FlowProfile {
   /** Name, so an event log can say which profile produced a hand-off (§11 `config_hash`). */
@@ -576,16 +579,17 @@ export function declineHandOff(session: FlowSession, now: number): FlowSession {
  * not a model's whim"*). A model-authored hand-off could not be shown to fire on the rule.
  */
 export function handOffLine(
-  teacherName: string,
-  testerName: string,
+  roster: readonly AgentProfile[],
   candidates: readonly QuizzableItem[],
   labelFor: (elementId: string) => string = (id) => id,
 ): string {
-  void teacherName;
+  // The **live** roster, not two name arguments a caller could hand over in the wrong order:
+  // this line is spoken by the Teacher and names the Tester, and an install that got the
+  // pairing backwards used to make Ellie say "Ellie, over to you" (#32, `agents.ts`).
   const names = candidates.slice(0, 2).map((c) => c.label ?? labelFor(c.elementId));
   const covered =
     names.length >= 2 ? `${names[0]} and ${names[1]}` : (names[0] ?? 'a couple of things');
-  return `You've covered ${covered} — ${testerName}, over to you.`;
+  return `You've covered ${covered} — ${testerName(roster)}, over to you.`;
 }
 
 // ── feedback after every quiz answer (the brief's strongest constraint) ─────

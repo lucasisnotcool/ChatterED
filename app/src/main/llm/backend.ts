@@ -24,7 +24,7 @@ import {
   DEFAULT_CLI_ORCHESTRATOR_MODEL,
   type ModelPlan,
 } from '../../room/llm/models.js';
-import type { BackendChoice, BackendKind } from '../../shared/types.js';
+import type { AgentProfile, BackendChoice, BackendKind } from '../../shared/types.js';
 import type { SettingsRepo } from '../db/repos/core.js';
 import { ClaudeCliClient } from './claude-cli.js';
 import { readCachedDetection, SETTINGS_KEYS, type CliDetection } from './detect.js';
@@ -118,6 +118,8 @@ export interface CreateClientInput extends ResolveInput {
    * first live run of this path.
    */
   material?: { fileName?: string | null; contentSha?: string | null };
+  /** The live roster, so a scripted beat names the agents the room is actually running (#32). */
+  roster?: readonly AgentProfile[];
 }
 
 export function createClient(input: CreateClientInput): LLMClient {
@@ -125,14 +127,14 @@ export function createClient(input: CreateClientInput): LLMClient {
     case 'claude_cli': {
       const binary = input.resolved.detection?.path;
       if (binary) return new ClaudeCliClient({ binary, timeoutMs: input.cliTimeoutMs });
-      return new ScriptedClient({ material: input.material });
+      return new ScriptedClient({ material: input.material, roster: input.roster });
     }
     case 'anthropic': {
       const key = input.apiKey();
-      return key ? new AnthropicClient({ apiKey: key }) : new ScriptedClient({ material: input.material });
+      return key ? new AnthropicClient({ apiKey: key }) : new ScriptedClient({ material: input.material, roster: input.roster });
     }
     default:
-      return new ScriptedClient({ material: input.material });
+      return new ScriptedClient({ material: input.material, roster: input.roster });
   }
 }
 

@@ -24,6 +24,13 @@
  * page of `Academia/Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf`,
  * the pack is `concepts/btw-side-channel-v1.ts` and the page text is quoted from it.
  *
+ * **No agent's name is spelled out below.** The Tester's question and the whisper replies name
+ * the *other* agent, and the roster used to be randomised at install (#16), so a literal
+ * *"Ellie had you on page 6"* was wrong on half of all installs — and a live run on 16 Sep, on
+ * an install that rendered `MAX · TEACHER`, printed exactly that. #32 pins the pairing
+ * (`agents.ts`), and this file belt-and-braces it: it writes `{teacher}` and `{tester}`, which
+ * `ScriptedClient` fills from the roster the room is actually running (`fillAgentNames`).
+ *
  * **The learner's lines are live.** `CRITIQUE1_LEARNER_LINES` is what the presenter types on
  * camera, verbatim — it is written down here only so the take can be rehearsed and so the test
  * can drive the same sitting. The ledger's evidence is lifted from what is *actually typed*
@@ -281,7 +288,7 @@ export const CRITIQUE1_HANDOFFS: ScriptedBeat[] = [
     },
     segment: 'p5',
     text:
-      'One question, and take your time with it. Ellie had you on page 6, but the evidence is back on page 5: three ' +
+      'One question, and take your time with it. {teacher} had you on page 6, but the evidence is back on page 5: three ' +
       'limit tests were run, and one of them came back wrong. Which one was it, and what does that result tell you ' +
       'about what /btw is allowed to touch?',
   },
@@ -354,7 +361,7 @@ export const CRITIQUE1_WHISPERS: ScriptedWhisperBeat[] = [
     cue: 'whisper:1',
     text:
       "Not embarrassing, and it's the question page 6 is about. Two things first: I can see the flow and I can " +
-      "explain background, but I won't answer Max's question for you, and nothing here reaches him unless you send " +
+      "explain background, but I won't answer {tester}'s question for you, and nothing here reaches him unless you send " +
       'it.\n\n' +
       'Short answer: **no**, not to the main thread. Steering mid-task puts your question *and* the reply into the ' +
       'main context — page 6’s left-hand column, where "why can’t we.." ends in "Nevermind." and the clutter ' +
@@ -371,7 +378,7 @@ export const CRITIQUE1_WHISPERS: ScriptedWhisperBeat[] = [
   {
     cue: 'whisper:2',
     text:
-      "Still read-only over here, so this stays between us. Say that version in the document — it's the part Max is " +
+      "Still read-only over here, so this stays between us. Say that version in the document — it's the part {tester} is " +
       "pushing on, and it will land better from you than from me.",
   },
 ];

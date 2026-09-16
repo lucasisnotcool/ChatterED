@@ -11,7 +11,7 @@ import type {
   TimerView,
   WhisperTurnView,
 } from '../shared/types.js';
-import { ROLE_LABEL } from './agents.js';
+import { profile, ROLE_LABEL } from './agents.js';
 import { bloomRung, coverage, levelToState } from './ledger.js';
 import type {
   ConceptPack,
@@ -23,6 +23,17 @@ import type {
 } from './records.js';
 import type { TimerSnapshot } from './timer.js';
 
+/**
+ * The speaker of a turn whose agent key has left the roster, rebuilt from the row itself.
+ * Display name from `participants.display_name` (stored per room, at join), role from the
+ * key prefix, colour from the role. Returns undefined for a key that is not role-shaped.
+ */
+function historicalAgent(p: ParticipantRow): AgentProfile | undefined {
+  const role = (p.agent_key ?? '').split('.')[0];
+  if (role !== 'peer' && role !== 'challenger' && role !== 'tutee' && role !== 'whisper') return undefined;
+  return { ...profile(role, p.display_name), key: p.agent_key! };
+}
+
 export function messageView(
   row: MessageRow,
   participants: Map<string, ParticipantRow>,
@@ -30,7 +41,18 @@ export function messageView(
   reference?: MessageRefRow,
 ): MessageView {
   const p = participants.get(row.participant_id);
-  const agent = p?.agent_key ? roster.find((a) => a.key === p.agent_key) : undefined;
+  /**
+   * An `agent_key` the **current** roster does not contain is a historical room: the pairing was
+   * randomised at install until #32 pinned it (`agents.ts`), so a room played before the pin can
+   * hold `peer.max` while today's roster holds `peer.ellie`. The row is not re-written and the
+   * transcript is not rebranded — the participant carries the display name it was played under,
+   * and the role is the key's own prefix. Without this the turn fell through to
+   * `{ kind: 'student' }` and an agent's words came out wearing the learner's face, which is the
+   * same defect the reference participant hit above.
+   */
+  const agent = p?.agent_key
+    ? (roster.find((a) => a.key === p.agent_key) ?? historicalAgent(p))
+    : undefined;
   const disagreement = row.disagreement ? (JSON.parse(row.disagreement) as MessageView['disagreement']) : null;
   /**
    * The reference participant is `kind = 'agent'` with a **null** `agent_key` — that is how the

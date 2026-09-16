@@ -11,15 +11,19 @@ import type {
   Bootstrap,
   CreateSessionInput,
   FlowAnswerView,
+  FlowRelayView,
   FlowRoomView,
+  FlowWhisperView,
+  RelayAttribution,
   RoomEvent,
+  RolePairing,
   RoomSnapshot,
   SessionSeed,
   SettingsPatch,
   SettingsView,
 } from '../shared/types.js';
 import { IPC } from '../shared/ipc.js';
-import { rosterFor, randomPairing } from '../room/agents.js';
+import { rosterFor, PINNED_PAIRING } from '../room/agents.js';
 import { RoomActor } from '../room/actor.js';
 import type { LLMClient } from '../room/llm/types.js';
 import { CLI_MODEL_CHOICES, isBlockedModelId, normaliseModelId } from '../room/llm/models.js';
@@ -93,13 +97,18 @@ export class AppService {
     return this.#actor;
   }
 
-  /** Role–name pairing is randomised once, at install, and never changes after (#16). */
-  pairing(): 'ellie_peer' | 'ellie_challenger' {
-    const stored = this.#d.store.settings.get('role_pairing');
-    if (stored === 'ellie_peer' || stored === 'ellie_challenger') return stored;
-    const chosen = randomPairing();
-    this.#d.store.settings.set('role_pairing', chosen, new Date().toISOString());
-    return chosen;
+  /**
+   * Ellie is the Teacher, Max is the Tester — **pinned**, not drawn (#32; `agents.ts` says why
+   * the #16 randomisation went). An install that stored the swapped pairing corrects itself
+   * here, on the next launch: the row is rewritten rather than read. Safe because the names are
+   * in no frozen `prefix_sha256`, and a historical room still renders under the names it was
+   * played on (`views.messageView()`).
+   */
+  pairing(): RolePairing {
+    if (this.#d.store.settings.get('role_pairing') !== PINNED_PAIRING) {
+      this.#d.store.settings.set('role_pairing', PINNED_PAIRING, new Date().toISOString());
+    }
+    return PINNED_PAIRING;
   }
 
   /**
@@ -128,6 +137,7 @@ export class AppService {
       hasApiKey: this.#apiKey.has(),
       resolved,
       apiKey: () => this.#apiKey.get(),
+      roster: rosterFor(this.pairing(), resolved.models.agent),
       ...(material ? { material } : {}),
     });
   }
@@ -373,6 +383,89 @@ export class AppService {
     }
   }
 
+  // ── The whisper popover on a segment (§3.5) ──────────────────────────────
+
+  /**
+   * The anchored context a private question is answered against: the **same** page text
+   * `flowAskHere` hands the REFERENCE call, plus the segment's label so Ellie can name where
+   * she is. One resolver, so a private answer and a public one can never be looking at
+   * different slides.
+   */
+  async #segmentContext(
+    fileId: string,
+    segmentId: string,
+  ): Promise<{ label: string; page: number | null; text: string }> {
+    const [{ text, page }, view] = await Promise.all([
+      segmentText({ segments: this.#segments, vault: this.#vault }, fileId, segmentId),
+      this.#segments.document(fileId),
+    ]);
+    const label = view.segments.find((s) => s.id === segmentId)?.label ?? '';
+    return { label: label.trim() || 'this part of the document', page, text };
+  }
+
+  /** ⌘K. Opens (or creates) the document's room, then the segment's private thread. */
+  async flowWhisperOpen(input: {
+    fileId: string;
+    segmentId: string;
+  }): Promise<{ roomId: string; whisper: FlowWhisperView }> {
+    const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), input.fileId);
+    this.openRoom(roomId, { opener: false });
+    const whisper = this.#requireActor(roomId).openSegmentWhisper(input.segmentId);
+    this.#persistFlow();
+    return { roomId, whisper };
+  }
+
+  async flowWhisperSend(input: {
+    roomId: string;
+    fileId: string;
+    segmentId: string;
+    threadId: string;
+    text: string;
+  }): Promise<void> {
+    const actor = this.#requireActor(input.roomId);
+    const segment = await this.#segmentContext(input.fileId, input.segmentId);
+    try {
+      await actor.sendSegmentWhisper({
+        threadId: input.threadId,
+        anchorId: input.segmentId,
+        text: input.text,
+        segment,
+      });
+    } finally {
+      this.#persistFlow();
+    }
+  }
+
+  /** **Insert into the document**: the approved relay, as a new shared card on the segment. */
+  async flowWhisperRelay(input: {
+    roomId: string;
+    segmentId: string;
+    threadId: string;
+    whisperId: string;
+    attribution: RelayAttribution;
+    text: string;
+  }): Promise<FlowRelayView> {
+    const actor = this.#requireActor(input.roomId);
+    let messageId = '';
+    try {
+      ({ messageId } = await actor.relay({
+        threadId: input.threadId,
+        whisperId: input.whisperId,
+        attribution: input.attribution,
+        text: input.text,
+        anchorId: input.segmentId,
+      }));
+    } finally {
+      this.#persistFlow();
+    }
+    return {
+      messageId,
+      anchorId: input.segmentId,
+      attribution: input.attribution,
+      flow: flowRoomView(actor, actor.lockedAnchors()),
+    };
+  }
+
   /**
    * Session setup from a file and a page range (issue #22 decision 4). Not a second ingest
    * path: it pre-fills the paste box that already exists, and everything after that is the
@@ -550,6 +643,26 @@ export class AppService {
     );
     handle<{ answerId: string }>(IPC.flowExplainBack, (input) => this.flowExplainBack(input.answerId));
     handle<{ roomId: string; segmentId: string; text: string }>(IPC.flowSend, (input) => this.flowSend(input));
+    handle<{ fileId: string; segmentId: string }>(IPC.flowWhisperOpen, (input) => this.flowWhisperOpen(input));
+    handle<{ roomId: string; fileId: string; segmentId: string; threadId: string; text: string }>(
+      IPC.flowWhisperSend,
+      (input) => this.flowWhisperSend(input),
+    );
+    handle<{
+      roomId: string;
+      segmentId: string;
+      threadId: string;
+      whisperId: string;
+      attribution: RelayAttribution;
+      text: string;
+    }>(IPC.flowWhisperRelay, (input) => this.flowWhisperRelay(input));
+    handle<{ roomId: string; threadId: string }>(IPC.flowWhisperClose, (input) => {
+      // The popover's turns are dropped by the renderer on this event, exactly as the shipped
+      // pane's "clears at the end of the round" always did. Nothing is deleted: the rows stay
+      // for the research export, and the sitting's thread id is what becomes unreachable.
+      this.#actor?.closeSegmentWhisper();
+      this.emit({ type: 'whisper.cleared', roomId: input.roomId, threadId: input.threadId });
+    });
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>

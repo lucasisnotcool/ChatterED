@@ -10,6 +10,7 @@
  * in scripted mode, where it *is* the live pack.
  */
 import type { AgentProfile } from '../shared/types.js';
+import { teacherName, testerName } from './agents.js';
 import type { ConceptPack } from './records.js';
 import { SCRIPT_ROUND_CARD } from './llm/script.psd-hessian.js';
 
@@ -34,14 +35,6 @@ export function roomMates(roster: readonly AgentProfile[]): string {
 /** Trim a concept title so it reads inside a sentence rather than ending it twice. */
 export function titlePhrase(title: string): string {
   return title.trim().replace(/[.\s]+$/, '');
-}
-
-function teacherName(roster: readonly AgentProfile[]): string {
-  return roster.find((a) => a.role === 'peer')?.displayName ?? 'Ellie';
-}
-
-function testerName(roster: readonly AgentProfile[]): string {
-  return roster.find((a) => a.role === 'challenger')?.displayName ?? 'Max';
 }
 
 export function roundCardFor(input: {
