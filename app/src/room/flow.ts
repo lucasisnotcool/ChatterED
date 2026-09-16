@@ -368,6 +368,11 @@ export interface TaughtItem {
   by: 'teacher' | 'learner';
   /** Short label for the hand-off line. */
   label?: string;
+  /**
+   * The objective's deck order (issue #38 §2), when this element came from a learning-objective
+   * tree. Used only to break a tie in `pickTarget`; absent for a pack that has no tree behind it.
+   */
+  order?: number;
 }
 
 export function recordTaught(taught: readonly TaughtItem[], item: TaughtItem): TaughtItem[] {
@@ -437,6 +442,9 @@ export interface QuizzableItem extends TaughtItem {
   recency: number;
 }
 
+/** Level 3 is `defended` — it survived a Tester probe (`ledger.ts`'s fifth gate). */
+const DEFENDED_LEVEL = 3;
+
 /**
  * The elements the Tester may ask about *now*: older than `minAgeMs` and inside the horizon.
  * Sorted by the recency weight, freshest first.
@@ -462,18 +470,36 @@ export function quizzable(
  * Which element the Tester picks: **highest recency weight × lowest ledger level** (§8.2) — the thing
  * most recently taught that the learner has least demonstrated. This reuses the existing
  * target-selection idea (`progress-tracking.md` §5) rather than adding a second policy.
+ *
+ * Two clauses added with the learning-objective tree (issue #38 §4: the Tester quizzes objectives
+ * that are "taught and not yet defended, preferring `order`"):
+ *
+ *  - **A defended objective is not quizzed while an undefended one is available.** The old score
+ *    only *deprioritised* it — 1/(1+3) is small but not zero — so a freshly re-taught level-3
+ *    node could still outrank an untouched one, and the learner would be asked again about the
+ *    one thing they had already survived a probe on. It is still the fallback when everything
+ *    quizzable is defended, because a Tester with nothing to ask is worse than a repeat.
+ *  - **`order` breaks a tie**, so two nodes taught in the same breath are quizzed in the deck's
+ *    own sequence rather than in map-iteration order.
  */
 export function pickTarget(
   items: readonly QuizzableItem[],
   ledgerLevels: Readonly<Record<string, number>> = {},
 ): QuizzableItem | null {
+  const level = (item: QuizzableItem): number => ledgerLevels[item.elementId] ?? 0;
+  const undefended = items.filter((item) => level(item) < DEFENDED_LEVEL);
+  const pool = undefended.length > 0 ? undefended : items;
   let best: QuizzableItem | null = null;
   let bestScore = -Infinity;
-  for (const item of items) {
-    const level = ledgerLevels[item.elementId] ?? 0;
-    const score = item.recency * (1 / (1 + level));
+  for (const item of pool) {
+    const score = item.recency * (1 / (1 + level(item)));
     if (score > bestScore) {
       bestScore = score;
+      best = item;
+      continue;
+    }
+    // A tie on the weight is common: two things taught in the same turn have the same age.
+    if (score === bestScore && best !== null && (item.order ?? Infinity) < (best.order ?? Infinity)) {
       best = item;
     }
   }

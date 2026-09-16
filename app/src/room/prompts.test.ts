@@ -13,7 +13,7 @@
  * strings, the test is the place to argue about it.
  */
 import { describe, expect, it } from 'vitest';
-import { PROMPT_VERSION, roleBlock, sharedBlock, turnDirective } from './prompts.js';
+import { PROMPT_VERSION, quizBlock, roleBlock, sharedBlock, teachObjectiveBlock, turnDirective } from './prompts.js';
 import type { AgentProfile } from '../shared/types.js';
 import type { ConceptPack, MaterialRow } from './records.js';
 
@@ -187,5 +187,69 @@ describe('the safeguards that did not change, restated so the model reads them',
 describe('the version', () => {
   it('is bumped, because the prefix hash moves with the rules', () => {
     expect(PROMPT_VERSION).toBe('prompts.v0.3');
+  });
+});
+
+/**
+ * Issue #38 §4 and §5: what the Tester is given to ask from, and what the Teacher is given when
+ * the learner clicks a prerequisite the deck never teaches.
+ */
+describe('quizBlock', () => {
+  it('offers the objective’s own stems rather than dictating one', () => {
+    const block = quizBlock({
+      label: 'what /btw can see',
+      seeds: ['What does /btw promise about the history?', 'Where does its answer come from?'],
+      demonstration: ['names both halves'],
+    })!;
+    expect(block).toContain('what /btw can see');
+    expect(block).toContain('What does /btw promise about the history?');
+    expect(block).toContain('or one of your own');
+    expect(block).toContain('names both halves');
+  });
+
+  /** Rowland 2014's constraint: the feedback turn carries no new question. */
+  it('on the feedback turn says what a correct answer contains and asks nothing', () => {
+    const block = quizBlock({
+      label: 'what /btw can see',
+      seeds: ['A question nobody should ask now.'],
+      demonstration: ['names the missing tools'],
+      feedback: true,
+    })!;
+    expect(block).toContain('names the missing tools');
+    expect(block).toContain('No new question this turn.');
+    expect(block).not.toContain('A question nobody should ask now.');
+  });
+
+  it('is absent for an element with no seeds and no criteria, so nothing empty is appended', () => {
+    expect(quizBlock({ label: 'x', seeds: [], demonstration: [] })).toBeUndefined();
+  });
+});
+
+describe('teachObjectiveBlock', () => {
+  it('says plainly that an assumed prerequisite is not in the deck', () => {
+    const block = teachObjectiveBlock({
+      title: 'What an MDP is',
+      statement: 'States, actions, transitions and a reward.',
+      criteria: ['names the four parts'],
+      assumedByDeck: true,
+      requiring: 'State the Bellman optimality equation',
+    });
+    expect(block).toContain('What an MDP is');
+    expect(block).toContain('assumes');
+    expect(block).toContain('general knowledge');
+    expect(block).toContain('State the Bellman optimality equation');
+    // The learner asked for an explanation, not a conversation.
+    expect(block).toContain('End with no question');
+  });
+
+  it('does not claim the deck assumes something it teaches', () => {
+    const block = teachObjectiveBlock({
+      title: 'A taught thing',
+      statement: 'It is on page 4.',
+      criteria: [],
+      assumedByDeck: false,
+      requiring: null,
+    });
+    expect(block).not.toContain('general knowledge');
   });
 });

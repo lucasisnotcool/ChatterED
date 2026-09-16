@@ -298,6 +298,81 @@ export function taughtBlock(items: readonly { label: string; minutesAgo: number 
   return `WHAT YOU HAVE ALREADY TAUGHT IN THIS SITTING\n${lines}`;
 }
 
+/**
+ * **The Tester's question, from the objective's own stems** (issue #38 §4: "The Tester quizzes
+ * from `quizSeeds` of objectives that are taught and not yet defended").
+ *
+ * The seeds come from the ingest that read the deck, so they are about *this* deck — which is
+ * the whole difference between "what in the material makes that true?" and a question a learner
+ * recognises as being about the slide they just read. They are offered rather than dictated: the
+ * Tester may ask one verbatim or ask its own, because a stem that does not fit what the learner
+ * actually said is worse than no stem. What it may **not** do is invent a different objective.
+ *
+ * `demonstration` is what a correct answer contains — the objective's criteria — and it is here
+ * for the feedback turn, which is the one Rowland 2014 says is worth half the effect.
+ */
+export function quizBlock(input: {
+  label: string;
+  seeds: readonly string[];
+  demonstration?: readonly string[];
+  /** True on the feedback turn: no new question, say what landed and what was missing. */
+  feedback?: boolean;
+}): string | undefined {
+  const seeds = input.seeds.filter((s) => s.trim().length > 0);
+  const criteria = (input.demonstration ?? []).filter((c) => c.trim().length > 0);
+  if (seeds.length === 0 && criteria.length === 0) return undefined;
+  const lines: string[] = [`THIS TURN IS ABOUT: ${input.label}`];
+  if (criteria.length > 0) {
+    lines.push('A correct demonstration contains:', ...criteria.map((c) => `- ${c}`));
+  }
+  if (input.feedback) {
+    lines.push(
+      'Say what the learner\u2019s answer actually had of that, what was missing, and the correction.',
+      'No new question this turn.',
+    );
+    return lines.join('\n');
+  }
+  if (seeds.length > 0) {
+    lines.push(
+      'Questions written for this objective \u2014 ask one of these, or one of your own that is about',
+      'the same objective:',
+      ...seeds.map((s) => `- ${s}`),
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * **Teach me this** (issue #38 §5, #36's contract): the learner clicked a prerequisite the deck
+ * assumes and never teaches. There is no slide to be faithful to, which is exactly the situation
+ * the Teacher's role block forbids her to invent her way out of — so the directive has to say,
+ * in as many words, that general knowledge is the source here and that she should say so.
+ */
+export function teachObjectiveBlock(input: {
+  title: string;
+  statement: string;
+  criteria: readonly string[];
+  assumedByDeck: boolean;
+  /** The objective that needs this one, so the explanation can land somewhere. */
+  requiring: string | null;
+}): string {
+  const lines = [`THE LEARNER ASKED YOU TO TEACH: ${input.title}`, input.statement];
+  const criteria = input.criteria.filter((c) => c.trim().length > 0);
+  if (criteria.length > 0) {
+    lines.push('They should come away able to:', ...criteria.map((c) => `- ${c}`));
+  }
+  if (input.assumedByDeck) {
+    lines.push(
+      'This deck **assumes** this and never teaches it, so there is no slide to quote. Explain it',
+      'from general knowledge, say plainly that it is not in the deck, and keep it to what this',
+      'deck actually needs \u2014 not the whole topic.',
+    );
+  }
+  if (input.requiring) lines.push(`Land it on what it is needed for here: ${input.requiring}.`);
+  lines.push('End with no question: the learner asked for an explanation, not a conversation.');
+  return lines.join('\n');
+}
+
 export interface TurnDirective {
   agentRole: AgentRole;
   move: string;
@@ -347,6 +422,17 @@ export function turnDirective(d: TurnDirective): string {
       'The learner has not answered your question. Give one hint that narrows it — a first step,',
       'a case to try, or the piece of it to look at first. **Do not answer it**, do not rephrase',
       'the whole question, and do not ask a second one.',
+    );
+  }
+  /**
+   * **Teach me this** (#38 §5). The move exists so that a prerequisite the deck assumes is
+   * teachable on click; the note carries the objective, and this is the sentence nearest the
+   * generation that says what kind of turn it is.
+   */
+  if (d.move === 'teach_objective') {
+    bits.push(
+      'The learner clicked one item in their objectives panel and asked to be taught it. Explain',
+      'that one thing, in two short paragraphs at most, and nothing adjacent to it.',
     );
   }
   if (d.probeType) bits.push(`Socratic type: ${d.probeType}.`);

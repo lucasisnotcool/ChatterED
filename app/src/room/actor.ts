@@ -74,7 +74,7 @@ import { SILENT_LOG, type Clock, type Store, type Transport, type TurnLog } from
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import type { ReferenceContext } from './reference.js';
 import { latestByElement } from './flow.js';
-import { decisionDirective, ledgerDirective, taughtBlock } from './prompts.js';
+import { decisionDirective, ledgerDirective, quizBlock, taughtBlock, teachObjectiveBlock } from './prompts.js';
 import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
@@ -145,6 +145,8 @@ export interface RoomActorDeps {
      */
     seen?: Record<string, number>;
     cards?: Record<string, { collapsed?: boolean; removed?: boolean }>;
+    /** anchorId → the objective a thread was opened about (issue #38 §5). */
+    objectives?: Record<string, string>;
   };
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
@@ -154,6 +156,17 @@ export interface RoomActorDeps {
    * main process passes `src/main/log.ts`. Sizes, ids, models and durations only — never a body.
    */
   log?: TurnLog;
+  /**
+   * **The learning-objective states, written from the ledger's own output** (issue #38 §4).
+   *
+   * A callback rather than a repository on the `Store` port, because an objective is keyed per
+   * *file* and this module knows about rooms, sessions and elements. The actor says "these rows
+   * moved"; the main process, which knows which file the room is on, mirrors them. Nothing is
+   * judged twice — these are `applyLedgerRules`' rows, after its four rules.
+   */
+  onLedgerApplied?: (input: { rows: LedgerRow[]; changed: string[] }) => void;
+  /** The Teacher taught this element, just now. Feeds `taughtAt` on the file's state (§4). */
+  onTaught?: (input: { elementId: string; at: string }) => void;
 }
 
 interface PendingTurn {
@@ -267,6 +280,24 @@ export class RoomActor {
    */
   #flow: FlowSession | null = null;
   #taught: TaughtItem[] = [];
+  /**
+   * **Which objective a thread is about** (issue #38 §5), anchor by anchor.
+   *
+   * Set when the learner opens an Ask from a node in the objectives panel, or presses *Teach me
+   * this*; read by `#insertMessage`, so every message in that thread carries it — the question,
+   * the REFERENCE answer, the learner's explanation and Ellie's reply. That is what makes an
+   * explanation given there attributable to the node the learner clicked, rather than only the
+   * first message of it.
+   */
+  #objectiveByAnchor = new Map<string, string>();
+  /** The objective a `teach_objective` turn is about, for the length of that turn. */
+  #teachTarget: {
+    title: string;
+    statement: string;
+    criteria: string[];
+    assumedByDeck: boolean;
+    requiring: string | null;
+  } | null = null;
   #pendingQuiz: PendingQuiz | null = null;
   #testerMode: TesterMode = 'proactive';
   /** Every REFERENCE card inserted this session, and whether it has been explained back. */
@@ -355,6 +386,7 @@ export class RoomActor {
     this.#replySpeed = deps.replySpeed ?? 'default';
     this.#seen = new Map(Object.entries(deps.flowState?.seen ?? {}));
     this.#cards = new Map(Object.entries(deps.flowState?.cards ?? {}));
+    this.#objectiveByAnchor = new Map(Object.entries(deps.flowState?.objectives ?? {}));
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -595,10 +627,18 @@ export class RoomActor {
      * `scopeShown` — one resolver, so the answer and the footer cannot describe different reads.
      */
     context: ReferenceContext;
+    /**
+     * The objective this Ask was opened from (issue #38 §5). Tags the whole thread, not just
+     * this question — see `#objectiveByAnchor`.
+     */
+    objectiveId?: string | null;
   }): Promise<{ questionId: string; answerId: string; body: string; truncated: boolean; scopeShown: string }> {
     const question = input.question.trim();
     if (question.length === 0) throw new Error('An "Ask here" needs a question');
     this.#asks += 1;
+    if (input.anchorId !== null && input.objectiveId) {
+      this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
+    }
 
     const asked = await this.#mailbox.enqueue(() => {
       this.#noteLearnerActivity('ask', input.anchorId);
@@ -906,6 +946,51 @@ export class RoomActor {
     return { messageId: inserted.id };
   }
 
+  /**
+   * **Teach me this** (issue #38 §5; #36's contract for a prerequisite the deck assumes).
+   *
+   * A Teacher turn on the segment the requiring objective points at — or the deck anchor when
+   * nothing in the deck points at it — with the objective in the directive and the orchestrator
+   * bypassed. Bypassed deliberately: the learner has *named the move*, there is nothing for a
+   * model to decide, and the alternative is 20 s of Sonnet to be told what the button already
+   * said (`orchestrator.ts`'s own argument for `rule:teacher_answers`).
+   *
+   * It goes through `#runAgentTurn`, so the turn is an ordinary Teacher turn in every other
+   * respect: the floor, the thinking indicator, Stop, the trace, the failure card — and
+   * `#noteTurnForFlow` records it as taught, which is what writes `taughtAt` and what makes the
+   * Tester able to quiz it later.
+   */
+  async teachObjective(input: {
+    anchorId: string;
+    objectiveId: string;
+    title: string;
+    statement: string;
+    criteria: string[];
+    assumedByDeck: boolean;
+    /** The objective that requires this one, by title, so the explanation can land somewhere. */
+    requiring: string | null;
+  }): Promise<{ anchorId: string }> {
+    // The tag first: every message this turn writes into the thread carries the objective.
+    this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
+    this.#noteLearnerActivity('ask', input.anchorId);
+    this.#teachTarget = {
+      title: input.title,
+      statement: input.statement,
+      criteria: input.criteria,
+      assumedByDeck: input.assumedByDeck,
+      requiring: input.requiring,
+    };
+    try {
+      await this.#runAgentTurn('promote', {
+        anchorId: input.anchorId,
+        teach: { objectiveId: input.objectiveId, title: input.title },
+      });
+    } finally {
+      this.#teachTarget = null;
+    }
+    return { anchorId: input.anchorId };
+  }
+
   // ── the whisper popover, on a segment (flow-build-plan.md §3.5) ───────────
 
   /**
@@ -1075,6 +1160,11 @@ export class RoomActor {
       anchorId?: string | null;
       /** The learner row this turn is answering, so `turn.received` can name it. */
       studentMessageId?: string | null;
+      /**
+       * **Teach me this** (#38 §5): the learner named the move, so there is nothing to decide
+       * and the orchestrator is skipped. Everything else about the turn is unchanged.
+       */
+      teach?: { objectiveId: string; title: string };
     } = {},
   ): Promise<void> {
     /**
@@ -1215,7 +1305,20 @@ export class RoomActor {
       void this.#updateLedger(cue, turnStart).catch(() => undefined);
     }
     const decidedAt = this.#d.clock.now();
-    const decision = await this.#decide(decisionInput, cue, turnLog, turnStart);
+    const decision = opts.teach
+      ? ({
+          speak: true,
+          role: 'peer',
+          moveType: 'teach_objective',
+          probeType: null,
+          targetElementId: opts.teach.objectiveId,
+          challenges: [],
+          rationale: `The learner asked to be taught "${opts.teach.title}" from their objectives panel.`,
+          decidedBy: 'rule:teach_objective',
+          handOffLine: null,
+          failure: null,
+        } satisfies TurnDecision)
+      : await this.#decide(decisionInput, cue, turnLog, turnStart);
     this.#trace(pending.id, {
       decisionMs: this.#d.clock.now() - decidedAt,
       decidedBy: decision.decidedBy,
@@ -1760,7 +1863,7 @@ export class RoomActor {
         move: decision.moveType,
         probeType: decision.probeType ?? undefined,
         targetElementId: decision.targetElementId ?? undefined,
-        note: this.#taughtNote(decision),
+        note: this.#turnNote(decision),
       },
     });
     request.meta.scriptCue = cue;
@@ -1883,6 +1986,9 @@ export class RoomActor {
       for (const row of applied.rows) this.#d.store.ledger.upsert(row);
       for (const h of applied.history) this.#d.store.ledger.appendHistory({ ...h, session_id: this.#d.sessionId });
     });
+    // §4: the same move, mirrored onto the file's objective states with the learner's own
+    // message ids as its evidence. After the rules, never instead of them.
+    this.#d.onLedgerApplied?.({ rows: applied.rows, changed: applied.changed });
     this.#event('system', 'progress.update', {
       changed: applied.changed,
       skipped: applied.skipped,
@@ -2001,6 +2107,7 @@ export class RoomActor {
     answers: ReferenceAnswerState[];
     seen: Record<string, number>;
     cards: Record<string, { collapsed?: boolean; removed?: boolean }>;
+    objectives: Record<string, string>;
   } {
     return {
       session: this.#flow,
@@ -2009,6 +2116,9 @@ export class RoomActor {
       answers: [...this.#answers],
       seen: this.seenSnapshot(),
       cards: this.cardStateSnapshot(),
+      // A thread opened from a node keeps its tag across a quit: the next message the learner
+      // writes in it is about the same objective the deck was reopened on.
+      objectives: Object.fromEntries(this.#objectiveByAnchor),
     };
   }
 
@@ -2058,7 +2168,11 @@ export class RoomActor {
         by: 'teacher',
         sessionId: this.#flow?.id,
         label: this.#learnerLabel(decision.targetElementId),
+        ...(this.#orderOf(decision.targetElementId) !== null ? { order: this.#orderOf(decision.targetElementId)! } : {}),
       });
+      // The panel's `taughtAt` (#38 §4), so a node the learner has been taught is quizzable in
+      // the next sitting too and `taughtBlock` and the tree read the same fact.
+      this.#d.onTaught?.({ elementId: decision.targetElementId, at: this.#nowIso() });
     }
     if (decision.moveType === 'quiz' && decision.targetElementId) {
       this.#pendingQuiz = openQuiz({ quizMessageId: messageId, elementId: decision.targetElementId }, now);
@@ -2085,6 +2199,38 @@ export class RoomActor {
   #learnerLabel(elementId: string): string {
     const element = this.#d.pack.elements.find((e) => e.id === elementId);
     return element?.learner_label ?? element?.label ?? elementId;
+  }
+
+  /** Deck order, when the pack came from a learning-objective tree. `pickTarget`'s tie-break. */
+  #orderOf(elementId: string): number | null {
+    const index = this.#d.pack.elements.findIndex((e) => e.id === elementId);
+    return index < 0 ? null : index + 1;
+  }
+
+  /**
+   * The turn directive's note — the one slot in `turnDirective` that carries data rather than
+   * instructions, and therefore the one place three different turns are told what they are about.
+   *
+   *  - the **Teacher**: what she has already taught this sitting (`taughtBlock`);
+   *  - the **Teacher on a Teach-me-this**: the objective the learner clicked (#38 §5);
+   *  - the **Tester**: the objective's own `quizSeeds`, and on the feedback turn what a correct
+   *    demonstration contains (#38 §4).
+   */
+  #turnNote(decision: TurnDecision): string | undefined {
+    if (decision.moveType === 'teach_objective' && this.#teachTarget) {
+      return teachObjectiveBlock(this.#teachTarget);
+    }
+    if (decision.role === 'challenger' && decision.targetElementId) {
+      const element = this.#d.pack.elements.find((e) => e.id === decision.targetElementId);
+      if (!element) return undefined;
+      return quizBlock({
+        label: element.learner_label || element.label,
+        seeds: element.quiz_seeds ?? [],
+        demonstration: element.demonstration ?? [],
+        feedback: decision.moveType === 'quiz_feedback',
+      });
+    }
+    return this.#taughtNote(decision);
   }
 
   /** The turn directive's taught-set line — data from `flow.ts`, not a memory feat asked of the model. */
@@ -2174,6 +2320,8 @@ export class RoomActor {
       divider_cause: input.dividerCause ?? null,
       disagreement: input.disagreement ?? null,
       anchor_id: input.anchorId ?? null,
+      // §5's tag, carried by the whole thread rather than by one message — see `#objectiveByAnchor`.
+      objective_id: input.anchorId ? (this.#objectiveByAnchor.get(input.anchorId) ?? null) : null,
       stopped: input.stopped ? 1 : 0,
       total_ms: input.totalMs ?? null,
       decided_by: input.decidedBy ?? null,

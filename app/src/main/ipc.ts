@@ -29,7 +29,7 @@ import { RoomActor } from '../room/actor.js';
 import { FLOW_PROFILE_SETTING, flowProfileFor, type FlowProfile } from '../room/flow.js';
 import type { LLMClient } from '../room/llm/types.js';
 import { CLI_MODEL_CHOICES, isBlockedModelId, normaliseModelId } from '../room/llm/models.js';
-import type { ConceptPack, RoomConfig } from '../room/records.js';
+import type { ConceptPack, LedgerRow, RoomConfig } from '../room/records.js';
 import { systemClock } from './clock.js';
 import type { SqlDatabase } from './db/driver.js';
 import { groupView, type LocalStore } from './db/store.js';
@@ -39,6 +39,7 @@ import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './
 import { createSession, draftConcept, newId } from './sessions.js';
 import { ensurePack } from './pack.js';
 import { ensureTree, treeIsCurrent } from './objectives/ingest.js';
+import { mirrorLedger, taughtFromStates } from './objectives/states.js';
 import { errorClass, log, tailLog, type Logger } from './log.js';
 import type { TurnLog } from '../room/ports.js';
 /**
@@ -339,13 +340,17 @@ export class AppService {
       // The sitting as it stood when the app last ran (#33). A flow session is bounded by an
       // absolute deadline, so it has to survive a quit the way the silence timer does; without
       // it, every relaunch would look to `handOffDue` like a learner who has just arrived.
-      flowState: loadFlowState(this.#d.store, roomId),
+      flowState: this.#flowStateFor(roomId, material.file_id, pack),
       flowProfile: this.flowProfile(),
       replySpeed: this.replySpeed(),
       newId,
       // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
       // all stamped with the turn id the LLM calls underneath them carry too.
       log: roomLog(roomId),
+      // Issue #38 §4. The actor says which rows the ledger's rules moved; this knows which file
+      // the room is on, and writes them there.
+      onLedgerApplied: ({ rows, changed }) => this.#mirrorObjectives(roomId, rows, changed),
+      onTaught: ({ elementId, at }) => this.#noteObjectiveTaught(roomId, elementId, at),
     });
     this.#actor.start();
     this.#actor.recover();
@@ -495,6 +500,49 @@ export class AppService {
     return this.#d.store.rooms.openOrScheduled().find((r) => r.material_id === material.id)?.id ?? null;
   }
 
+  /**
+   * The sitting as it was, **plus what this file's objectives say was taught** (§4).
+   *
+   * The sitting's own taught array is about this sitting; `taughtAt` is about the file, and it is
+   * what lets the Tester quiz something the learner was taught before they quit. `flow.ts`'s
+   * horizon still governs whether it may actually be asked — an item restored with no session id
+   * falls back to the plain six-hour bound.
+   */
+  #flowStateFor(roomId: string, fileId: string | null, pack: ConceptPack): ReturnType<typeof loadFlowState> {
+    const stored = loadFlowState(this.#d.store, roomId);
+    if (fileId === null) return stored;
+    const existing = stored?.taught ?? [];
+    const restored = taughtFromStates(this.#d.store, { fileId, pack, existing });
+    if (restored.length === 0) return stored;
+    return { ...(stored ?? { session: null, taught: [], pendingQuiz: null, answers: [] }), taught: [...existing, ...restored] };
+  }
+
+  /** The file a room's deck is, or null for a pasted-text room. */
+  #fileIdForRoom(roomId: string): string | null {
+    const room = this.#d.store.rooms.get(roomId);
+    if (!room) return null;
+    return this.#d.store.materials.get(room.material_id)?.file_id ?? null;
+  }
+
+  /** §4: one `objectives.state` per node the ledger's rules actually moved. */
+  #mirrorObjectives(roomId: string, rows: LedgerRow[], changed: string[]): void {
+    const fileId = this.#fileIdForRoom(roomId);
+    if (fileId === null || changed.length === 0) return;
+    for (const state of mirrorLedger(this.#d.store, { fileId, rows, changed })) {
+      this.emit({ type: 'objectives.state', roomId, fileId, state });
+    }
+  }
+
+  /** §4: `taughtAt`, written when the Teacher teaches an objective. */
+  #noteObjectiveTaught(roomId: string, objectiveId: string, at: string): void {
+    const fileId = this.#fileIdForRoom(roomId);
+    if (fileId === null) return;
+    const tree = this.#d.store.objectives.tree(fileId);
+    if (!tree || !tree.objectives.some((o) => o.id === objectiveId)) return;
+    const state = this.#d.store.objectives.markTaught({ fileId, objectiveId, at });
+    this.emit({ type: 'objectives.state', roomId, fileId, state });
+  }
+
   /** §6's `objectives:tree`. Null when no ingest has ever been asked for this file. */
   objectivesTree(fileId: string): LearningTree | null {
     return this.#d.store.objectives.tree(fileId);
@@ -564,6 +612,65 @@ export class AppService {
     return this.#d.store.objectives.states(fileId);
   }
 
+  /**
+   * **Teach me this** (§5): a Teacher turn about one node, anchored where the deck actually
+   * talks about it.
+   *
+   * The anchor, in order: the objective's own first ref; the first ref of the earliest objective
+   * that **requires** it (an assumed prerequisite has no ref of its own, and the place it bites
+   * is the place to explain it); and the deck anchor when neither exists, because an explanation
+   * with nowhere to go still belongs above the flow rather than under an arbitrary slide.
+   */
+  async objectivesTeach(input: { fileId: string; objectiveId: string }): Promise<{
+    roomId: string;
+    anchorId: string;
+    objectiveId: string;
+  } | null> {
+    const tree = this.#d.store.objectives.tree(input.fileId);
+    const objective = tree?.objectives.find((o) => o.id === input.objectiveId) ?? null;
+    if (!tree || !objective) return null;
+
+    const requirer = tree.objectives
+      .filter((o) => o.requires.includes(objective.id))
+      .sort((a, b) => a.order - b.order)[0] ?? null;
+    const anchorId = await this.#anchorForObjective(input.fileId, objective.refs[0] ?? requirer?.refs[0] ?? null);
+
+    const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), input.fileId);
+    this.openRoom(roomId, { opener: false });
+    const actor = this.#requireActor(roomId);
+    log().info('objectives.teach', {
+      file_id: input.fileId,
+      objective_id: objective.id,
+      assumed: objective.assumedByDeck,
+      anchor_id: anchorId,
+    });
+    try {
+      await actor.teachObjective({
+        anchorId,
+        objectiveId: objective.id,
+        title: objective.title,
+        statement: objective.statement,
+        criteria: objective.criteria,
+        assumedByDeck: objective.assumedByDeck,
+        requiring: requirer?.title ?? null,
+      });
+    } finally {
+      this.#persistFlow();
+    }
+    return { roomId, anchorId, objectiveId: objective.id };
+  }
+
+  /**
+   * A ref is a page (and sometimes a segment id); the flow's threads hang off segments. Resolve
+   * the page to the first card on it, which is where the learner's eye is when they click.
+   */
+  async #anchorForObjective(fileId: string, ref: { page: number; segmentId?: string } | null): Promise<string> {
+    if (!ref) return DECK_ANCHOR_ID;
+    if (ref.segmentId) return ref.segmentId;
+    const view = await this.#segments.document(fileId);
+    return view.segments.find((s) => s.page === ref.page)?.id ?? DECK_ANCHOR_ID;
+  }
+
   #flowDeps(): FlowRoomDeps {
     const resolved = this.backend();
     return {
@@ -619,8 +726,10 @@ export class AppService {
     segmentId: string;
     question: string;
     scope?: AskScope;
+    /** The node the Ask was opened from (issue #38 §5). Tags the thread, not just the question. */
+    objectiveId?: string;
   }): Promise<FlowAnswerView> {
-    return this.#ask(input.fileId, input.segmentId, input.question, input.scope);
+    return this.#ask(input.fileId, input.segmentId, input.question, input.scope, input.objectiveId);
   }
 
   /**
@@ -633,7 +742,13 @@ export class AppService {
     return this.#ask(input.fileId, DECK_ANCHOR_ID, input.question);
   }
 
-  async #ask(fileId: string, anchorId: string, question: string, scope?: AskScope): Promise<FlowAnswerView> {
+  async #ask(
+    fileId: string,
+    anchorId: string,
+    question: string,
+    scope?: AskScope,
+    objectiveId?: string,
+  ): Promise<FlowAnswerView> {
     const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), fileId);
     // `opener: false` — see `openRoom`. A flow room has no bottom of the page for an opener to
     // land at, and the learner has just asked a question, which is a better opening than any.
@@ -652,7 +767,7 @@ export class AppService {
         outline: material.outline,
       },
     );
-    const answer = await actor.askHere({ anchorId, question, context });
+    const answer = await actor.askHere({ anchorId, question, context, objectiveId: objectiveId ?? null });
     this.#persistFlow();
     // Now, and not before: a draft started ahead of the answer holds the CLI lane, and a draft
     // that was pre-empted by this very question has to be told to start again.
@@ -994,10 +1109,12 @@ export class AppService {
     handle<{ fileId: string }>(IPC.objectivesStates, (input) => this.objectivesStates(input.fileId));
     handle<{ fileId: string }>(IPC.objectivesRegenerate, (input) => this.objectivesRegenerate(input.fileId));
     handle<{ fileId: string }>(IPC.objectivesReset, (input) => this.objectivesReset(input.fileId));
+    handle<{ fileId: string; objectiveId: string }>(IPC.objectivesTeach, (input) => this.objectivesTeach(input));
 
     handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
-    handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope }>(IPC.flowAskHere, (input) =>
-      this.flowAskHere(input),
+    handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope; objectiveId?: string }>(
+      IPC.flowAskHere,
+      (input) => this.flowAskHere(input),
     );
     handle<{ fileId: string; question: string }>(IPC.flowAskDeck, (input) => this.flowAskDeck(input));
     handle<{ answerId: string }>(IPC.flowExplainBack, (input) => this.flowExplainBack(input.answerId));

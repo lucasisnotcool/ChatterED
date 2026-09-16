@@ -628,3 +628,41 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     expect(expireQuizOnClose(answerQuiz(unanswered, 'm_10')).expired).toBeNull();
   });
 });
+
+/**
+ * Issue #38 §4: the Tester quizzes objectives that are taught and **not yet defended**,
+ * preferring `order`. The two clauses `pickTarget` gained with the objective tree.
+ */
+describe('pickTarget and the objective tree', () => {
+  const item = (elementId: string, taughtAt: number, order?: number): TaughtItem =>
+    order === undefined ? { elementId, taughtAt, by: 'teacher' } : { elementId, taughtAt, by: 'teacher', order };
+
+  const quizzableAt = (items: TaughtItem[], now: number) => quizzable(items, now, FLOW);
+
+  it('will not re-quiz a defended objective while an undefended one is available', () => {
+    const now = 10 * 60_000;
+    // The defended one is *fresher*, so on the old score it would have won.
+    const items = quizzableAt([item('defended', now - 4 * 60_000), item('untouched', now - 9 * 60_000)], now);
+    expect(pickTarget(items, { defended: 3, untouched: 0 })!.elementId).toBe('untouched');
+  });
+
+  it('falls back to a defended one when everything quizzable is defended', () => {
+    const now = 10 * 60_000;
+    const items = quizzableAt([item('a', now - 4 * 60_000), item('b', now - 9 * 60_000)], now);
+    expect(pickTarget(items, { a: 3, b: 3 })!.elementId).toBe('a');
+  });
+
+  it('breaks a tie on deck order', () => {
+    const now = 10 * 60_000;
+    const taughtAt = now - 5 * 60_000;
+    const items = quizzableAt([item('later', taughtAt, 7), item('earlier', taughtAt, 2)], now);
+    expect(pickTarget(items, {})!.elementId).toBe('earlier');
+  });
+
+  it('still prefers the least demonstrated over the merely earlier', () => {
+    const now = 10 * 60_000;
+    const taughtAt = now - 5 * 60_000;
+    const items = quizzableAt([item('earlier', taughtAt, 1), item('later', taughtAt, 9)], now);
+    expect(pickTarget(items, { earlier: 2, later: 0 })!.elementId).toBe('later');
+  });
+});
