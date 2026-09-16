@@ -25,7 +25,14 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
-import type { FlowAnswerView, FlowRelayView, FlowRoomView, FlowWhisperView } from './types.js';
+import type {
+  FlowAnswerView,
+  FlowRelayView,
+  FlowRoomView,
+  FlowWhisperView,
+  StopTurnResult,
+  TurnTraceView,
+} from './types.js';
 
 export const IPC = {
   bootstrap: 'app:bootstrap',
@@ -96,6 +103,16 @@ export const IPC = {
   flowWhisperRelay: 'flow:whisperRelay',
   flowWhisperClose: 'flow:whisperClose',
   flowSelection: 'flow:selection',
+
+  // Turn status (cui-standards-audit.md §2 / §7 / §10, issue #34).
+  /** **Stop** on a generating turn. Refused while the floor is still running. */
+  flowStop: 'flow:stop',
+  /** One turn's timings for the ⌥⌘D debug drawer. No bodies. */
+  flowTurnTrace: 'flow:turnTrace',
+  /** The learner has seen this thread up to `seq`; clears its unread dot. */
+  flowMarkSeen: 'flow:markSeen',
+  /** Per-card `collapsed` / `removed`, persisted so a dismissed card stays dismissed. */
+  flowCardState: 'flow:cardState',
 } as const;
 
 export interface ChatterEdApi {
@@ -330,6 +347,37 @@ export interface ChatterEdApi {
   }): Promise<FlowRelayView>;
   /** `Esc` or click-away. Closes the popover in the main process's model; writes nothing. */
   flowWhisperClose(input: { roomId: string; threadId: string }): Promise<void>;
+
+  // ── Turn status (audit §2 / §7 / §10, issue #34) ────────────────────────
+  /**
+   * **Stop** a turn that is generating.
+   *
+   * Lucas's decision of 16 Sep 2026: *Stop appears only after the floor has elapsed*. A learner
+   * who can cancel every Tester turn can opt out of the retrieval practice the app exists for,
+   * so the deliberate wait cannot be skipped — but a hung backend can always be escaped. A stop
+   * during the floor comes back `{ stopped: false, refused: 'floor' }` and the renderer should
+   * not have offered the button yet; `turnId` comes from `turn.received` or `turn.delta`.
+   *
+   * What a stop does: aborts the client call (the CLI child process is killed), keeps whatever
+   * text had already arrived as the message with `stopped: true`, releases the floor, and
+   * **does not count as a failure** — no card, no Retry, and the silence timer does not nudge
+   * on top of it.
+   */
+  flowStop(input: { roomId: string; turnId: string }): Promise<StopTurnResult>;
+  /**
+   * Per-turn timings for the debug drawer, newest last. Omit `turnId` for the whole in-memory
+   * ring (the last 50 turns of the open room). Bodies are never in it.
+   */
+  flowTurnTrace(input: { roomId: string; turnId?: string | null }): Promise<TurnTraceView[]>;
+  /** The learner has read this thread up to `seq`. Persisted with the sitting. */
+  flowMarkSeen(input: { roomId: string; anchorId: string; seq: number }): Promise<void>;
+  /** Persist a card's `collapsed` / `removed`; either may be omitted to leave it alone. */
+  flowCardState(input: {
+    roomId: string;
+    anchorId: string;
+    collapsed?: boolean;
+    removed?: boolean;
+  }): Promise<void>;
   /**
    * A **selection change**: the learner focused a segment card (`pivot-spec.md` §B8).
    *

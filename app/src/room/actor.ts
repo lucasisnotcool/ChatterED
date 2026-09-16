@@ -180,6 +180,10 @@ export class RoomActor {
   #answers: ReferenceAnswerState[] = [];
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
+  /** anchorId → the highest `seq` the learner has seen there (audit §7). */
+  #seen = new Map<string, number>();
+  /** anchorId → the card's renderer state, which must survive a reopen (audit §7). */
+  #cards = new Map<string, { collapsed?: boolean; removed?: boolean }>();
   #asks = 0;
   /**
    * **The whisper's ephemerality, and the whole of it** (`flow-build-plan.md` §3.5,
@@ -1445,6 +1449,35 @@ export class RoomActor {
       if (a.anchorId !== null && a.explainedBackAt === null) locked.set(a.anchorId, a.answerId);
     }
     return locked;
+  }
+
+  // ── unread and per-card state (audit §7) ─────────────────────────────────
+  /**
+   * The highest `seq` the learner has seen in each thread, and each card's `collapsed` /
+   * `removed`.
+   *
+   * Both live here rather than in the renderer because both are answers to *"what did I already
+   * deal with?"*, and a reopened deck that brings back a dismissed card and hides a reply the
+   * learner never read is the app forgetting on their behalf. They ride out with
+   * `flowSnapshot()`, in the settings row the sitting already uses.
+   */
+  markSeen(anchorId: string, seq: number): void {
+    this.#seen.set(anchorId, Math.max(this.#seen.get(anchorId) ?? 0, seq));
+  }
+
+  setCardState(anchorId: string, patch: { collapsed?: boolean; removed?: boolean }): void {
+    const next = { ...(this.#cards.get(anchorId) ?? {}) };
+    if (patch.collapsed !== undefined) next.collapsed = patch.collapsed;
+    if (patch.removed !== undefined) next.removed = patch.removed;
+    this.#cards.set(anchorId, next);
+  }
+
+  seenSnapshot(): Record<string, number> {
+    return Object.fromEntries(this.#seen);
+  }
+
+  cardStateSnapshot(): Record<string, { collapsed?: boolean; removed?: boolean }> {
+    return Object.fromEntries(this.#cards);
   }
 
   /** What the caller must persist to make the sitting survive a quit. */

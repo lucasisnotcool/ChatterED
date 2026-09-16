@@ -19,6 +19,7 @@ import type {
   RolePairing,
   RoomSnapshot,
   SessionSeed,
+  ReplySpeed,
   SettingsPatch,
   SettingsView,
 } from '../shared/types.js';
@@ -43,6 +44,8 @@ import type { TurnLog } from '../room/ports.js';
  * (`flow-build-plan.md` §3.5) — one row, like `first_run_complete` next to it.
  */
 const PACING_STRIP_SETTING = 'pacing_strip_seen';
+/** Settings ▸ Reply speed (audit §9). See `ReplySpeed` in shared/types.ts. */
+const REPLY_SPEED_SETTING = 'reply_speed';
 import {
   flowRoomView,
   loadFlowState,
@@ -186,6 +189,7 @@ export class AppService {
       vaultRoot: this.#vault.view().rootPath,
       flowProfile: this.flowProfile().name,
       pacingStripSeen: this.#d.store.settings.get(PACING_STRIP_SETTING) === '1',
+      replySpeed: this.replySpeed(),
     };
   }
 
@@ -196,6 +200,15 @@ export class AppService {
    */
   flowProfile(): FlowProfile {
     return flowProfileFor(this.#d.store.settings.get(FLOW_PROFILE_SETTING));
+  }
+
+  /**
+   * Settings ▸ Reply speed. An unrecognised row reads as `'default'` for the same reason
+   * `flowProfileFor` does: an install must never fall into an un-paced mode by accident.
+   */
+  replySpeed(): ReplySpeed {
+    const raw = this.#d.store.settings.get(REPLY_SPEED_SETTING);
+    return raw === 'faster' || raw === 'off' ? raw : 'default';
   }
 
   /**
@@ -227,6 +240,7 @@ export class AppService {
     // against them would be the kind of silent change the pacing strip promises not to make.
     if (patch.flowProfile !== undefined) set(FLOW_PROFILE_SETTING, patch.flowProfile);
     if (patch.pacingStripSeen !== undefined) set(PACING_STRIP_SETTING, patch.pacingStripSeen ? '1' : '');
+    if (patch.replySpeed !== undefined) set(REPLY_SPEED_SETTING, patch.replySpeed);
     return { ok: true };
   }
 

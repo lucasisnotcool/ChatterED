@@ -23,6 +23,8 @@ import type {
   SettingsPatch,
   SettingsView,
   TimerView,
+  TurnParticipantView,
+  TurnTraceView,
   VaultView,
   WhisperThreadView,
   WhisperTurnView,
@@ -78,6 +80,7 @@ const mockSettings: SettingsView = {
   hasApiKey: false,
   vaultRoot: null,
   flowProfile: 'default',
+  replySpeed: 'default',
   // The mock renderer shows the pacing strip, because the strip's first-open state is the one
   // worth being able to look at without Electron.
   pacingStripSeen: false,
@@ -96,6 +99,16 @@ export function createMockBridge(): ChatterEdApi {
 
   let seq = 0;
   let turn = 0;
+  let mockTurn = 0;
+  /** Turns that have reached the floor and can therefore be stopped (audit §2 decision 2). */
+  const stoppable = new Map<
+    string,
+    { agent: AgentProfile; anchorId: string | null; extra: Partial<MessageView>; body: string; floorAt: number }
+  >();
+  const traces: TurnTraceView[] = [];
+  /** `flow:markSeen` and `flow:cardState`, which the real build persists with the sitting. */
+  const seen = new Map<string, number>();
+  const cardState = new Map<string, { collapsed?: boolean; removed?: boolean }>();
   let learnerTurns = 0;
   const messages: MessageView[] = [];
   const ledger: LedgerView = {
@@ -121,6 +134,8 @@ export function createMockBridge(): ChatterEdApi {
       id: `m${seq}`, seq, body, createdAt: iso(), latencyTargetMs: null, ttftActualMs: null,
       promotedFromWhisper: false, disagreement: null, divider: null, reference: null,
       anchorId: null, byRule: null,
+      model: from ? 'mock' : null, backend: from ? 'scripted' : null, totalMs: null,
+      decidedBy: null, stopped: false,
       speaker: from
         ? { kind: 'agent', key: from.key, role: from.role, displayName: from.displayName, colour: from.colour }
         : { kind: 'student', displayName: 'You' },
@@ -131,16 +146,65 @@ export function createMockBridge(): ChatterEdApi {
     return m;
   }
 
+  /**
+   * One agent turn, with the **whole** event sequence the real actor emits (audit §2):
+   * `agent.thinking` → the floor → `turn.delta` in word chunks → `message.appended` →
+   * `turn.released`. Nothing streams before the floor: the mock buffers exactly as `actor.ts`
+   * does, so a renderer that looks right here looks right against the CLI backend too.
+   */
   function think(agent: AgentProfile, ms: number, body: string, extra: Partial<MessageView> = {}) {
+    const turnId = `turn_mock_${(mockTurn += 1)}`;
+    const anchorId = extra.anchorId ?? null;
+    const participant: TurnParticipantView = {
+      agentKey: agent.key, role: agent.role, displayName: agent.displayName, colour: agent.colour,
+    };
+    const startedAt = Date.now();
+    stoppable.set(turnId, { agent, anchorId, extra, body, floorAt: startedAt + ms });
     emit({ type: 'agent.thinking', roomId: ROOM, thinking: {
       agentKey: agent.key, displayName: agent.displayName, role: agent.role, colour: agent.colour,
       verb: agent.verb, startedAt: iso(), etaMs: ms, showCounter: agent.role === 'challenger',
     } });
     later(ms, () => {
-      emit({ type: 'agent.thinking.cleared', roomId: ROOM });
-      post(body, agent, extra);
-      arm();
+      const live = stoppable.get(turnId);
+      if (!live) return;
+      // The flush: everything generated during the hold arrives as one delta, then the rest
+      // unrolls. `ttftActualMs` is the first *visible* token, which is the floor.
+      const chunks = chunkWords(body);
+      let sent = 0;
+      const step = () => {
+        if (!stoppable.has(turnId)) return;
+        const chunk = chunks[sent];
+        if (chunk === undefined) {
+          stoppable.delete(turnId);
+          emit({ type: 'agent.thinking.cleared', roomId: ROOM });
+          const row = post(body, agent, {
+            ...extra, latencyTargetMs: ms, ttftActualMs: ms, totalMs: Date.now() - startedAt,
+            decidedBy: 'mock:script',
+          });
+          emit({ type: 'turn.released', roomId: ROOM, turnId, messageId: row.id, stopped: false });
+          traces.push({
+            turnId, roomId: ROOM, anchorId, trigger: 'student_message', startedAt: iso(),
+            decidedBy: 'mock:script', role: agent.role, moveType: 'respond', model: 'mock',
+            backend: 'scripted', decisionMs: 2, generationMs: ms, ttftActualMs: ms,
+            latencyTargetMs: ms, totalMs: Date.now() - startedAt, usage: {}, stopped: false, failed: null,
+          });
+          arm();
+          return;
+        }
+        sent += 1;
+        emit({ type: 'turn.delta', roomId: ROOM, turnId, anchorId, participant, text: chunk });
+        later(45, step);
+      };
+      step();
     });
+  }
+
+  /** ~4 words a chunk, the rate a real stream arrives at. The first chunk is the flush. */
+  function chunkWords(body: string): string[] {
+    const words = body.split(/(\s+)/);
+    const out: string[] = [];
+    for (let i = 0; i < words.length; i += 8) out.push(words.slice(i, i + 8).join(''));
+    return out;
   }
 
   function moveLedger(changes: [string, LedgerState, string | null, string | null][]) {
@@ -274,6 +338,9 @@ export function createMockBridge(): ChatterEdApi {
         anchorId,
         messageIds: messages.filter((m) => m.anchorId === anchorId).map((m) => m.id),
         lockedByAnswerId: locked.get(anchorId) ?? null,
+        lastSeenSeq: seen.get(anchorId) ?? 0,
+        collapsed: cardState.get(anchorId)?.collapsed ?? false,
+        removed: cardState.get(anchorId)?.removed ?? false,
       })),
     };
   }
@@ -478,7 +545,12 @@ export function createMockBridge(): ChatterEdApi {
       return { unlocked: false, anchorId: null };
     },
     async flowSend({ segmentId, text }) {
-      post(text, null, { anchorId: segmentId });
+      const mine = post(text, null, { anchorId: segmentId });
+      // "The room has your message", emitted before anything agent-shaped. Neutral, no name.
+      emit({ type: 'turn.received', roomId: ROOM, received: {
+        turnId: `turn_mock_${mockTurn + 1}`, messageId: mine.id, anchorId: segmentId,
+        receivedAt: iso(), yieldMs: 8000, etaMs: null, responder: null,
+      } });
       flowTurns += 1;
       const n = flowTurns;
       later(1200, () => {
@@ -554,6 +626,36 @@ export function createMockBridge(): ChatterEdApi {
     },
     async flowWhisperClose({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
     async flowSelection() { /* §B8's selection change: the mock has no silence timer to extend. */ },
+
+    /**
+     * Stop, with the real refusal: **only after the floor**. Before it the turn is still in the
+     * deliberate wait the app exists for, and the renderer should not have offered the button.
+     */
+    async flowStop({ turnId }) {
+      const live = stoppable.get(turnId);
+      if (!live) return { stopped: false, refused: 'unknown' };
+      if (Date.now() < live.floorAt) return { stopped: false, refused: 'floor' };
+      stoppable.delete(turnId);
+      emit({ type: 'agent.thinking.cleared', roomId: ROOM });
+      const row = post(live.body.slice(0, Math.max(24, Math.floor(live.body.length / 3))), live.agent, {
+        ...live.extra, stopped: true, decidedBy: 'mock:script',
+      });
+      emit({ type: 'turn.released', roomId: ROOM, turnId, messageId: row.id, stopped: true });
+      arm();
+      return { stopped: true, turnId };
+    },
+    async flowTurnTrace({ turnId }) {
+      return turnId ? traces.filter((t) => t.turnId === turnId) : [...traces];
+    },
+    async flowMarkSeen({ anchorId, seq: upTo }) {
+      seen.set(anchorId, Math.max(seen.get(anchorId) ?? 0, upTo));
+    },
+    async flowCardState({ anchorId, collapsed, removed }) {
+      const next = { ...(cardState.get(anchorId) ?? {}) };
+      if (collapsed !== undefined) next.collapsed = collapsed;
+      if (removed !== undefined) next.removed = removed;
+      cardState.set(anchorId, next);
+    },
 
     getSegments: async ({ fileId }) => emptyFlow(fileId),
     splitSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),

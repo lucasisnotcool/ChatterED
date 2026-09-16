@@ -210,16 +210,22 @@ export function saveFlowState(store: LocalStore, roomId: string, state: StoredFl
  */
 export function flowRoomView(actor: RoomActor, lockedByAnchor: Map<string, string>): FlowRoomView {
   const room = actor.snapshot();
-  const threads: FlowThreadView[] = groupByAnchor(room.messages).map((t) => ({
-    anchorId: t.anchorId,
-    messageIds: t.messageIds,
-    lockedByAnswerId: lockedByAnchor.get(t.anchorId) ?? null,
-  }));
+  const seen = actor.seenSnapshot();
+  const cards = actor.cardStateSnapshot();
+  const threadView = (anchorId: string, messageIds: string[]): FlowThreadView => ({
+    anchorId,
+    messageIds,
+    lockedByAnswerId: lockedByAnchor.get(anchorId) ?? null,
+    lastSeenSeq: seen[anchorId] ?? 0,
+    collapsed: cards[anchorId]?.collapsed ?? false,
+    removed: cards[anchorId]?.removed ?? false,
+  });
+  const threads: FlowThreadView[] = groupByAnchor(room.messages).map((t) => threadView(t.anchorId, t.messageIds));
   // A thread can be locked before it has any message the renderer has seen (the question and the
   // answer land in the same tick), so a locked anchor with no group is still reported.
-  for (const [anchorId, answerId] of lockedByAnchor) {
+  for (const anchorId of lockedByAnchor.keys()) {
     if (!threads.some((t) => t.anchorId === anchorId)) {
-      threads.push({ anchorId, messageIds: [], lockedByAnswerId: answerId });
+      threads.push(threadView(anchorId, []));
     }
   }
   return { room, threads };

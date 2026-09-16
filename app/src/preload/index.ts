@@ -64,6 +64,10 @@ const api: ChatterEdApi = {
   flowWhisperRelay: (input) => ipcRenderer.invoke(IPC.flowWhisperRelay, input),
   flowWhisperClose: (input) => ipcRenderer.invoke(IPC.flowWhisperClose, input),
   flowSelection: (input) => ipcRenderer.invoke(IPC.flowSelection, input),
+  flowStop: (input) => ipcRenderer.invoke(IPC.flowStop, input),
+  flowTurnTrace: (input) => ipcRenderer.invoke(IPC.flowTurnTrace, input),
+  flowMarkSeen: (input) => ipcRenderer.invoke(IPC.flowMarkSeen, input),
+  flowCardState: (input) => ipcRenderer.invoke(IPC.flowCardState, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

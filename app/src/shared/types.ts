@@ -54,7 +54,27 @@ export interface MessageView {
   body: string;
   createdAt: string;
   latencyTargetMs: number | null;
+  /** Time to the first **visible** token, i.e. measured from the floor, not from the call. */
   ttftActualMs: number | null;
+  /**
+   * Provenance, added 16 Sep 2026 (audit §6). *"A turn that does not say which backend produced
+   * it is a claim about a model that never ran"* — and a research prototype can silently be
+   * answering from `ScriptedClient`. Render `model`/`backend`/`ttftActualMs`/`totalMs` on hover;
+   * render `scripted` **unconditionally**.
+   */
+  model?: string | null;
+  /**
+   * The **client** kind, as the message row stores it: `'claude-cli' | 'anthropic' | 'scripted'`.
+   * Deliberately not `BackendKind` — that is Settings' vocabulary (`claude_cli`, underscore) and
+   * the two must not be silently conflated.
+   */
+  backend?: string | null;
+  /** Turn start → the message row: what the learner actually waited. */
+  totalMs?: number | null;
+  /** `rule:teacher_answers`, `rule:handoff`, `model:sonnet`, … — who chose this speaker. */
+  decidedBy?: string | null;
+  /** True when this body is the partial the learner stopped (`flow:stop`). Not a failure. */
+  stopped?: boolean;
   /**
    * True when this message was relayed out of a whisper.
    *
@@ -323,6 +343,17 @@ export interface CliStatus {
   checkedAt: string;
 }
 
+/**
+ * Settings ▸ **Reply speed** (audit §9, `design-brief.md` §D4, `product-design.md` §C3).
+ *
+ * `'default'` is the studied pacing. `'faster'` halves every floor and the floor-yield window.
+ * `'off'` sets them to zero and **must be disclosed in the control itself** — "for testing, not
+ * the studied pacing" — because §C3's own closing argument is that a paced system the learner
+ * cannot un-pace is a dark pattern, and an un-paced system that does not say so is worse.
+ * Applied at the **next** turn, never to a turn already in flight.
+ */
+export type ReplySpeed = 'default' | 'faster' | 'off';
+
 export interface SettingsView {
   appVersion: string;
   /** What the learner chose. 'auto' means CLI → API key → scripted, in that order. */
@@ -349,6 +380,8 @@ export interface SettingsView {
   flowProfile: 'default' | 'demo';
   /** False until the learner has dismissed the flow's first-open pacing strip (§3.5). */
   pacingStripSeen: boolean;
+  /** See `ReplySpeed`. Takes effect on the next turn, in the open room, without a reopen. */
+  replySpeed: ReplySpeed;
 }
 
 export interface SettingsPatch {
@@ -359,6 +392,7 @@ export interface SettingsPatch {
   flowProfile?: 'default' | 'demo';
   /** Set false from Settings to show the pacing strip again; set true when it is dismissed. */
   pacingStripSeen?: boolean;
+  replySpeed?: ReplySpeed;
 }
 
 export interface Bootstrap {
@@ -437,6 +471,16 @@ export interface FlowThreadView {
   anchorId: string;
   messageIds: string[];
   /**
+   * The highest `seq` in this thread the learner has seen, from `flow:markSeen`. `0` means the
+   * thread has never been marked. Anything in `messageIds` above it is unread — which is what
+   * the dot on the card's label strip is for (audit §7), and it matters most for the reply that
+   * landed eight slides up.
+   */
+  lastSeenSeq: number;
+  /** Per-card renderer state that must survive a reopen: a dismissed card must stay dismissed. */
+  collapsed: boolean;
+  removed: boolean;
+  /**
    * The REFERENCE answer still waiting for **Explain it back →**, if any. While it is set,
    * neither Ellie nor Max may post into this thread — enforced in `reference.ts`, reported here
    * so the renderer can show the two buttons rather than a composer.
@@ -496,6 +540,98 @@ export interface FlowAnswerView {
   flow: FlowRoomView;
 }
 
+// ── Turn status on the wire (cui-standards-audit.md §2, issue #34) ─────────────────────────
+/**
+ * **Three new events, 16 Sep 2026.** The flow inherited the conversation's *content* from the
+ * chat room and none of its *status surfaces*; these are the missing ones. Read them in order.
+ *
+ * 1. **`turn.received`** — *the room has your message.* Emitted the instant the actor accepts a
+ *    learner turn: **before** the floor-yield sleep, before the orchestrator, before any model
+ *    call. It exists so the 3–8 s window that `product-design.md` §C3 deliberately keeps free of
+ *    **agent** chrome is never a blank screen (`design-brief.md` §D4 asks for an indicator during
+ *    the hold; the audit reconciles the two — the yield window shows **room** state, not agent
+ *    state). Render it neutral and un-attributed: *"Sent · the room has 8s to respond"*, no name,
+ *    no avatar, no verb. `responder` is filled only when a rule already fixes the speaker (an
+ *    anchored thread is the Teacher's by `rule:teacher_answers`); it is there for the reserved
+ *    slot's **position** and for the debug drawer, and must not put a name on screen during the
+ *    yield.
+ *
+ * 2. **`turn.delta`** — one chunk of an agent reply, **already past the floor**. Nothing is ever
+ *    emitted before the floor has elapsed: whatever the model produced during the hold is
+ *    flushed as a single first delta at the moment the floor passes, and the remainder streams
+ *    live. The floor is a floor on *visible* TTFT, not on generation (`design-brief.md` §D4,
+ *    Tan et al. §3.2.3), so `ttft_actual_ms` on the message is the first **visible** token.
+ *    Render the accumulating text as a provisional block keyed on `turnId`.
+ *
+ * 3. **`turn.released`** — the provisional block for `turnId` is now a real message. It arrives
+ *    immediately after the `message.appended` that carries the final body, so the renderer drops
+ *    the provisional block and keeps the message. `stopped` is true when the body is the partial
+ *    the learner stopped (`flow:stop`), which is not a failure and never nudges.
+ *
+ * A turn that produces no delta at all (a pool nudge, a rule-written hand-off line, the scripted
+ * client's instant beats before this build) still ends in `message.appended`; `turn.released` is
+ * emitted for every agent turn that had a `turn.received` or a delta, so a renderer can always
+ * clear by `turnId`.
+ */
+export interface TurnParticipantView {
+  agentKey: string;
+  role: AgentRole;
+  displayName: string;
+  colour: string;
+}
+
+export interface TurnReceivedView {
+  /** The correlation id every event, log line and `flow:turnTrace` row for this turn carries. */
+  turnId: string;
+  /** The learner message that was accepted — already on `message.appended`. */
+  messageId: string;
+  anchorId: string | null;
+  receivedAt: string;
+  /**
+   * How long the room will show **no agent chrome at all**, in ms (`FLOOR_YIELD_MS`, halved or
+   * zeroed by Settings ▸ Reply speed). The neutral "the room has your message" line is the only
+   * thing that may be on screen for this long.
+   */
+  yieldMs: number;
+  /** The floor target for the reply, when a rule already fixed the speaker; null otherwise. */
+  etaMs: number | null;
+  /** See the note above: position and diagnostics only, never a name during the yield. */
+  responder: TurnParticipantView | null;
+}
+
+/** What `flow:stop` answers. A stop before the floor has elapsed is refused, not queued. */
+export type StopTurnResult = { stopped: true; turnId: string } | { stopped: false; refused: 'floor' | 'unknown' };
+
+/**
+ * One turn's timings for the ⌥⌘D debug drawer (audit §10). **No bodies, ever** — the same rule
+ * the log sink enforces by key name. Read from an in-memory ring in the actor, newest last.
+ */
+export interface TurnTraceView {
+  turnId: string;
+  roomId: string;
+  anchorId: string | null;
+  trigger: string;
+  startedAt: string;
+  decidedBy: string | null;
+  role: AgentRole | null;
+  moveType: string | null;
+  model: string | null;
+  backend: string | null;
+  /** Orchestrator round trip. 0–4 ms on the rule path, seconds on the model path. */
+  decisionMs: number | null;
+  /** Wall time of the generation call itself, floor excluded. */
+  generationMs: number | null;
+  /** Time to the first **visible** token — after the floor, which is the whole point. */
+  ttftActualMs: number | null;
+  latencyTargetMs: number | null;
+  /** Turn start → the message row. What the learner actually waited. */
+  totalMs: number | null;
+  usage: Record<string, number>;
+  stopped: boolean;
+  /** The failure reason, when the turn ended in a card instead of a message. */
+  failed: string | null;
+}
+
 /** Events pushed from main to the renderer. The renderer never polls. */
 export type RoomEvent =
   | { type: 'message.appended'; roomId: string; message: MessageView }
@@ -509,7 +645,10 @@ export type RoomEvent =
   | { type: 'session.recap'; roomId: string; recap: RecapView }
   | { type: 'notice'; roomId: string | null; level: 'info' | 'error'; text: string }
   | { type: 'turn.failed'; roomId: string; failure: TurnFailureView }
-  | { type: 'turn.failed.cleared'; roomId: string; failureId: string };
+  | { type: 'turn.failed.cleared'; roomId: string; failureId: string }
+  | { type: 'turn.received'; roomId: string; received: TurnReceivedView }
+  | { type: 'turn.delta'; roomId: string; turnId: string; anchorId: string | null; participant: TurnParticipantView; text: string }
+  | { type: 'turn.released'; roomId: string; turnId: string; messageId: string; stopped: boolean };
 
 // ── The vault (issue #22) ──────────────────────────────────────────────────
 // Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner
