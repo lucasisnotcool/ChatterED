@@ -28,9 +28,19 @@ import {
 } from './repos/core.js';
 // eslint-disable-next-line no-restricted-imports -- composition root; see the note above.
 import { whispersRepo } from './repos/whispers.js';
+import { objectivesRepo, type ObjectivesRepo } from './repos/objectives.js';
 
 export interface LocalStore extends Store {
   settings: SettingsRepo;
+  /**
+   * The learning-objective tree and its states (issue #38, migration 016).
+   *
+   * On `LocalStore` and deliberately **not** on the room's `Store` port: an objective is keyed
+   * per *file* and `src/room` knows about rooms, sessions and elements. The actor mirrors its
+   * ledger moves out through a callback the main process supplies (`RoomActorDeps.onLedgerApplied`),
+   * which keeps the file-scoped half where the files are.
+   */
+  objectives: ObjectivesRepo;
 }
 
 export function createStore(db: SqlDatabase): LocalStore {
@@ -49,6 +59,7 @@ export function createStore(db: SqlDatabase): LocalStore {
     turnDecisions: turnDecisionsRepo(db),
     agents: agentsRepo(db),
     settings: settingsRepo(db),
+    objectives: objectivesRepo(db),
     transaction<T>(fn: () => T): T {
       db.exec('BEGIN');
       try {

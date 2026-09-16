@@ -199,6 +199,11 @@ export interface MessageRow {
    */
   anchor_id: string | null;
   /**
+   * Which learning objective this thread was opened about (migration 016, issue #38 §5), or
+   * null — which is every message not started from a node in the objectives panel.
+   */
+  objective_id?: string | null;
+  /**
    * 1 when the learner pressed **Stop** and this body is the partial that had already arrived
    * (migration 011). Not a failure, and never a considered turn: the latency columns on a
    * stopped row describe a turn nobody let finish.
