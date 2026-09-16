@@ -319,6 +319,36 @@ export function turnDirective(d: TurnDirective): string {
   if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
     bits.push('Answer what they asked in your first sentence, then teach it. No opening question.');
   }
+  /**
+   * **The silence moves** (#37). The learner went quiet for 45 s after you explained something.
+   * That is not impatience, it is not knowing where to start — so the move is to say the same
+   * thing again, differently, and the directive has to say what "differently" means or the model
+   * paraphrases itself at the same level and the second try fails the same way as the first.
+   */
+  if (d.move === 'reexplain_simpler') {
+    bits.push(
+      'The learner has gone quiet since you explained this. Read that as "I did not follow it",',
+      'not as impatience. Say the same point again one level simpler: assume less than you did,',
+      'drop or unpack the notation, and carry it on an everyday analogy or one concrete worked',
+      'example. Open with something like "Let me try that a different way". Do not repeat your',
+      'previous wording, do not add new material, do not apologise, and **end with no question**',
+      '— a full stop, so the floor is theirs without a demand attached.',
+    );
+  }
+  if (d.move === 'offer_step_back') {
+    bits.push(
+      'Still quiet after the simpler version. Offer to go back to whatever this rests on, or ask',
+      'which part lost them — exactly one question, warm, and with a concrete option in it so it',
+      'can be answered in three words.',
+    );
+  }
+  if (d.move === 'quiz_hint') {
+    bits.push(
+      'The learner has not answered your question. Give one hint that narrows it — a first step,',
+      'a case to try, or the piece of it to look at first. **Do not answer it**, do not rephrase',
+      'the whole question, and do not ask a second one.',
+    );
+  }
   if (d.probeType) bits.push(`Socratic type: ${d.probeType}.`);
   if (d.targetElementId) bits.push(`Aim it at ${d.targetElementId}.`);
   if (d.note) bits.push(d.note);

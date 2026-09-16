@@ -122,6 +122,16 @@ export class SilenceTimer {
   /** §B8's two activity clocks. In memory: they only ever decide the *current* window. */
   #lastKeystrokeTs: number | null = null;
   #lastSelectionTs: number | null = null;
+  /**
+   * Idle carried into the current window from the one before it (#37).
+   *
+   * `tick()` **overwrites** `cumulativeIdleMs` with `now - windowStartTs`, so "cumulative" was
+   * only ever this window's elapsed time and the 90 s stage-2 threshold could not be crossed:
+   * `arm()` runs after a fill and starts a new window, and the next tick threw the first 45 s
+   * away. This is the base the tick adds to. Restored as whatever was persisted, which is right
+   * for a relaunch mid-window and never makes stage 2 arrive earlier than it should.
+   */
+  #carriedIdleMs: number;
 
   constructor(opts: { clock: Clock; config: RoomConfig; hooks: TimerHooks; initial?: Partial<TimerSnapshot> }) {
     this.#clock = opts.clock;
@@ -138,6 +148,7 @@ export class SilenceTimer {
       ...opts.initial,
     };
     this.#persistedDeadline = this.#state.deadlineTs;
+    this.#carriedIdleMs = this.#state.windowStartTs === null ? this.#state.cumulativeIdleMs : 0;
   }
 
   get snapshot(): TimerSnapshot {
@@ -154,13 +165,25 @@ export class SilenceTimer {
     this.#stopTick = null;
   }
 
-  /** Arm a fresh window. Called after every agent turn and at room open. */
-  arm(): void {
+  /**
+   * Arm a fresh window. Called after every agent turn and at room open.
+   *
+   * **`keepCumulativeIdle` is how stage 2 is reachable at all** (#37). The header promises
+   * *"stage 2 at 90 s cumulative idle"* and *"`cumulativeIdleMs` is NOT reset by typing — it is
+   * what drives stage 2 on schedule"*, but `arm()` runs after **every** agent turn, and a
+   * stage-1 fill is an agent turn: it zeroed the counter, so the next fire was stage 1 again and
+   * `incomplete_scaffold` could never happen. The learner's quiet did not end because an agent
+   * spoke into it, so a fill re-arms the window without clearing what the learner has been
+   * quiet for. Every other caller — a real turn, room open — still resets, because those
+   * follow something the learner actually did or was answered by.
+   */
+  arm(opts: { keepCumulativeIdle?: boolean } = {}): void {
     const now = this.#clock.now();
     this.#state.epoch += 1;
     this.#state.deadlineTs = now + this.#config.silence_ms;
     this.#state.windowStartTs = now;
-    this.#state.cumulativeIdleMs = 0;
+    this.#carriedIdleMs = opts.keepCumulativeIdle === true ? this.#state.cumulativeIdleMs : 0;
+    this.#state.cumulativeIdleMs = this.#carriedIdleMs;
     this.#state.windowExtensionMs = 0;
     this.#persist(now, true);
     this.#hooks.changed(this.snapshot);
@@ -173,6 +196,7 @@ export class SilenceTimer {
     this.#state.deadlineTs = null;
     this.#state.windowStartTs = null;
     this.#state.cumulativeIdleMs = 0;
+    this.#carriedIdleMs = 0;
     this.#state.windowExtensionMs = 0;
     this.#persist(now, true);
     this.#hooks.changed(this.snapshot);
@@ -261,7 +285,7 @@ export class SilenceTimer {
     const deadline = this.#state.deadlineTs;
     if (deadline === null) return;
     if (this.#state.windowStartTs !== null) {
-      this.#state.cumulativeIdleMs = now - this.#state.windowStartTs;
+      this.#state.cumulativeIdleMs = this.#carriedIdleMs + (now - this.#state.windowStartTs);
     }
     if (now < deadline) return;
 

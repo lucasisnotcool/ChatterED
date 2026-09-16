@@ -62,7 +62,14 @@ import {
   type TaughtItem,
   type TesterMode,
 } from './flow.js';
-import { decideTurn, extractJson as extractJsonObject, type TurnDecision, type TurnTrigger } from './orchestrator.js';
+import {
+  classifyAgentTurn,
+  decideTurn,
+  extractJson as extractJsonObject,
+  type LastAgentTurn,
+  type TurnDecision,
+  type TurnTrigger,
+} from './orchestrator.js';
 import { SILENT_LOG, type Clock, type Store, type Transport, type TurnLog } from './ports.js';
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import type { ReferenceContext } from './reference.js';
@@ -266,6 +273,13 @@ export class RoomActor {
   #answers: ReferenceAnswerState[] = [];
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
+  /**
+   * **What the last agent turn in the thread was** (#37) — the input that tells a silence after
+   * an explanation apart from a silence after a question. Classified by the **move**, not the
+   * speaker: a Teacher content-free nudge is a Teacher message and must not itself count as an
+   * explanation to try again, or a second silence would re-explain the nudge.
+   */
+  #lastAgentTurn: LastAgentTurn = 'none';
   /** The turn whose `turn.received` is still on screen, so exactly one `turn.released` closes it. */
   #received: string | null = null;
   /** Settings ▸ Reply speed. Read per turn, so a change applies to the next turn, never this one. */
@@ -650,6 +664,11 @@ export class RoomActor {
         scopeShown: input.context.scopeShown,
       });
       this.#answers.push({ answerId: row.id, anchorId: input.anchorId, explainedBackAt: null });
+      // A REFERENCE card is not an agent turn, and a silence after one is not a failed
+      // explanation (#37). While it is unanswered no agent may speak there at all
+      // (`rule:reference_locked`); once the learner presses *Explain it back* the thread is
+      // theirs to open, so the fill falls back to §C5's content-free line.
+      this.#lastAgentTurn = 'reference';
       this.#event('system', 'agent.turn.dispatched', {
         seq: row.seq,
         scope: 'reference',
@@ -1166,6 +1185,8 @@ export class RoomActor {
       // Teacher's to answer by rule — no model call, no 20 s, no null role (orchestrator.ts
       // `rule:teacher_answers`). `null` is the pre-flow room-level stream.
       anchoredThread: anchorId !== null,
+      // What the quiet is quiet *about* (#37, `silenceDecision`).
+      lastAgentTurn: this.#lastAgentTurn,
     };
 
     const cue =
@@ -1442,7 +1463,8 @@ export class RoomActor {
         ttftActualMs: visibleTtft,
         totalMs: this.#d.clock.now() - turnStart,
         decidedBy: decision.decidedBy,
-        dividerCause: trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent) : null,
+        dividerCause:
+          trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent, decision.moveType) : null,
         anchorId,
         // `disagreement` is never written any more: the S2 quota and the whole social-group
         // framing went with #32. The column and the view field stay so that a room recorded
@@ -1488,10 +1510,11 @@ export class RoomActor {
     });
 
     this.#pending = null;
+    this.#lastAgentTurn = classifyAgentTurn(decision, this.#lastAgentTurn);
     this.#lastFillWasScaffold = trigger === 'silence' && opts.silenceStage === 2;
     if (decision.probeType) this.#lastProbeType = decision.probeType;
     for (const id of decision.challenges) this.#challenged.add(id);
-    this.#armTimer();
+    this.#armTimer(trigger === 'silence');
   }
 
   /**
@@ -2220,11 +2243,27 @@ export class RoomActor {
     return `defended against ${challenger.displayName}'s probe${probe}`;
   }
 
-  #dividerFor(stage: 1 | 2, agent: AgentProfile): string {
-    const seconds = Math.round(this.#d.config.silence_ms / 1000);
-    return stage === 1
-      ? `${seconds}s quiet · ${agent.displayName} stepped in`
-      : `${Math.round(this.#d.config.stage_two_ms / 1000)}s quiet · ${agent.displayName} offered a starting point`;
+  /**
+   * The divider names the cause so the learner can attribute the message (§C5) — and since #37
+   * there is more than one thing a fill can be, it must name **which**. "Ellie stepped in" after
+   * a re-explanation would be a lie about what just happened, and the divider is the only place
+   * the learner is told a timer fired at all.
+   */
+  #dividerFor(stage: 1 | 2, agent: AgentProfile, moveType: string): string {
+    const seconds = Math.round(
+      (stage === 1 ? this.#d.config.silence_ms : this.#d.config.stage_two_ms) / 1000,
+    );
+    const what =
+      moveType === 'reexplain_simpler'
+        ? 'tried again'
+        : moveType === 'offer_step_back'
+          ? 'offered to step back'
+          : moveType === 'quiz_hint'
+            ? 'offered a hint'
+            : stage === 1
+              ? 'stepped in'
+              : 'offered a starting point';
+    return `${seconds}s quiet · ${agent.displayName} ${what}`;
   }
 
   /**
@@ -2408,15 +2447,22 @@ export class RoomActor {
    * respond *to*. Nudging into that is the app blaming the learner for its own outage, so the
    * window stays shut until they act (`#clearFailureHold`).
    */
-  #armTimer(): void {
+  /**
+   * `afterFill` keeps the cumulative-idle counter, so the *second* fire of a round is stage 2
+   * (#37, `timer.arm`). An agent speaking into a silence does not end the silence.
+   */
+  #armTimer(afterFill = false): void {
     if (this.#room().state === 'closed') return;
     if (this.#nudgesHeldForFailure || this.#nudgesHeldForStop) {
       this.#timer.cancel();
       this.#turnLog.event('warn', 'timer.held', { reason: this.#nudgesHeldForFailure ? 'turn_failed' : 'turn_stopped' });
       return;
     }
-    this.#timer.arm();
-    this.#turnLog.event('debug', 'timer.armed', { silence_ms: this.#d.config.silence_ms });
+    this.#timer.arm({ keepCumulativeIdle: afterFill });
+    this.#turnLog.event('debug', 'timer.armed', {
+      silence_ms: this.#d.config.silence_ms,
+      after_fill: afterFill,
+    });
   }
 
   #emitTimer(): void {

@@ -5,7 +5,11 @@
  * the rules have not already settled it (architecture-options.md §C.3). The rules that matter:
  *
  *  - **Anti-dog-pile** (MASG §5.4.4): at most two consecutive agent turns, ever.
- *  - **Only the Teacher fills a silence** (design-brief.md §D3): "Max never fires the timer."
+ *  - **What a silence means depends on what was said into it** (#37, `silenceDecision`): after a
+ *    Teacher explanation the Teacher re-explains one level simpler; after a Tester question
+ *    stage 1 stays content-free (`product-design.md` §C5) and stage 2 is the Tester's own hint.
+ *    This narrows design-brief.md §D3's "Max never fires the timer", which was written when
+ *    every silence was the learner not starting to explain.
  *  - **The hand-off** (#33, flow-session.md §8.2): the Tester is eligible *only* when
  *    `handOffDue()` says the flow session is ready, and the Teacher's hand-off line is written
  *    here rather than generated — see `TurnDecision.handOffLine`.
@@ -74,7 +78,34 @@ export interface DecisionInput {
    * model has nothing left to decide.
    */
   anchoredThread?: boolean;
+  /**
+   * **What the last agent said in this thread**, which is what the silence *means* (#37).
+   *
+   * Silence after a Tester question is a learner thinking — retrieval practice, and the one
+   * thing that must not be interrupted with subject matter. Silence after a Teacher explanation
+   * is a learner who did not follow it, and the human response to that is to say it again more
+   * simply, not to say "take your time". The old rule could not tell those apart because it was
+   * written when the only thing an agent ever did was ask (`product-design.md` §C5, the
+   * learner-explains era); #32 made the Teacher explain, and this is the half of §C5 that did
+   * not move with it.
+   */
+  lastAgentTurn?: LastAgentTurn;
 }
+
+/**
+ * How the thread's last agent turn is classified. Derived from the *move* that produced it, not
+ * from the speaker — a Teacher content-free nudge is a Teacher message and is emphatically not
+ * an explanation to try again.
+ */
+export type LastAgentTurn =
+  /** An explanation, an answer, a correction, a worked example — anything that taught. */
+  | 'teacher_explanation'
+  /** A quiz or a probe: the learner owes an answer and the silence is them producing it. */
+  | 'tester_question'
+  /** A REFERENCE card. Not an agent turn at all; the thread is the learner's until they act. */
+  | 'reference'
+  /** Nothing has been said yet, or the last thing said was itself a nudge. */
+  | 'none';
 
 export interface TurnDecision {
   speak: boolean;
@@ -193,6 +224,18 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
       failure: null,
     };
   }
+  /**
+   * **A silence fill is not a dog-pile, and is checked before the cap** (#37).
+   *
+   * MASG §5.4.4's cap exists so agents do not talk over a learner who is trying to speak. A
+   * silence fill is, by construction, 45 or 90 seconds in which the learner did not — so the cap
+   * is the wrong instrument here, and it was silently eating the stage-2 fill: an explanation
+   * (1 consecutive turn) plus a stage-1 fill (2) put the room at the cap, so `incomplete_scaffold`
+   * and now `offer_step_back` could never be reached. The governing limit on fills is §C5's own
+   * *"the timer fires at most twice per round"*, which `timer.ts` enforces on the clock and which
+   * no model or rule here can exceed.
+   */
+  if (input.trigger === 'silence') return silenceDecision(input);
   if (input.consecutiveAgentTurns >= MAX_CONSECUTIVE_AGENT_TURNS) {
     return {
       ...SILENT,
@@ -226,24 +269,6 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
         `${handOff.candidates.length} concepts quizzable); the Teacher hands off.`,
       decidedBy: 'rule:handoff',
       handOffLine: input.handOffLine ?? null,
-      failure: null,
-    };
-  }
-  if (input.trigger === 'silence') {
-    const stage = input.silenceStage ?? 1;
-    return {
-      speak: true,
-      role: 'peer',
-      moveType: stage === 1 ? 'content_free_nudge' : 'incomplete_scaffold',
-      probeType: null,
-      targetElementId: stage === 2 ? (input.suggestedTargetElement ?? null) : null,
-      challenges: [],
-      rationale:
-        stage === 1
-          ? 'Stage 1: the Teacher notices the quiet and adds no subject matter.'
-          : 'Stage 2: a hedged, incomplete starting point aimed at the current target element.',
-      decidedBy: 'rule:silence_peer',
-      handOffLine: null,
       failure: null,
     };
   }
@@ -283,6 +308,146 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
     };
   }
   return null;
+}
+
+/**
+ * **What a silence means depends on what was said into it** (#37).
+ *
+ * `product-design.md` §C5 makes stage 1 content-free unconditionally, and gives the reason:
+ * *"a nudge that supplies subject matter converts a persistence problem into a comprehension
+ * shortcut."* That reason is exactly right for the room it was written for, where the learner's
+ * job was to explain and the silence was them not starting. **#32 changed the room**: the
+ * Teacher now explains, so the commonest silence in the flow is a learner who did not follow the
+ * explanation — and to that silence a content-free line is not neutral, it is a non-answer. On
+ * the CS4246 MDP slide (#37) Ellie finished an ELI5 and 45 s later said "Take your time. If it
+ * helps, say the bit you're sure about first." A human teacher says it again, differently.
+ *
+ * §C5 is therefore **narrowed, not overruled**: content-free stage 1 is kept in full for the
+ * case its argument is about — the Tester is waiting for an answer, and the silence is retrieval
+ * practice, which is the one silence that must not be filled with subject matter.
+ *
+ * Three cases, in the order they are checked:
+ *
+ *  a. **After a Teacher explanation.** Stage 1 re-explains the same point one level simpler,
+ *     with an everyday analogy or a concrete example, assuming less, and with **no question** —
+ *     a real generated turn, not the pool, because "say it again more simply" is by definition
+ *     content. Stage 2 offers to step back to the prerequisite, or asks which part lost them:
+ *     one question, because by 90 s the re-explanation has also failed and the useful move is to
+ *     find out where.
+ *  b. **After a Tester question.** Stage 1 is §C5 unchanged. Stage 2 is a **hint from the
+ *     Tester**, who owns the question — the Teacher supplying it would be answering Max's quiz,
+ *     which is the one thing `ledger.ts` exists to keep out of the `defended` state. This is a
+ *     deliberate narrowing of `design-brief.md` §D3's "Max never fires the timer", recorded in
+ *     STATUS: that line was written when every silence was the learner not starting to explain.
+ *  c. **After a REFERENCE card, or nothing yet.** Unchanged. (A REFERENCE card that is still
+ *     waiting for *Explain it back* never reaches here at all — `rule:reference_locked` is
+ *     checked first — so this branch is the one where the learner already pressed it.)
+ */
+export function silenceDecision(input: DecisionInput): TurnDecision {
+  const stage = input.silenceStage ?? 1;
+  const last = input.lastAgentTurn ?? 'none';
+
+  if (last === 'teacher_explanation') {
+    return {
+      speak: true,
+      role: 'peer',
+      moveType: stage === 1 ? 'reexplain_simpler' : 'offer_step_back',
+      probeType: null,
+      targetElementId: input.suggestedTargetElement ?? null,
+      challenges: [],
+      rationale:
+        stage === 1
+          ? 'The quiet followed an explanation, not a question: the Teacher says it again one level simpler, with no question.'
+          : 'The simpler version did not land either; the Teacher offers to step back to the prerequisite.',
+      decidedBy: 'rule:silence_reexplain',
+      handOffLine: null,
+      failure: null,
+    };
+  }
+
+  if (last === 'tester_question' && stage === 2) {
+    return {
+      speak: true,
+      role: 'challenger',
+      moveType: 'quiz_hint',
+      probeType: null,
+      targetElementId: input.pendingQuiz?.elementId ?? input.suggestedTargetElement ?? null,
+      challenges: [],
+      rationale:
+        'The learner is stuck on the Tester\'s question; the Tester hints, because the Teacher ' +
+        'supplying it would be answering the quiz.',
+      decidedBy: 'rule:silence_hint',
+      handOffLine: null,
+      failure: null,
+    };
+  }
+
+  // §C5 as written: the Tester is waiting (stage 1), or nobody has taught anything yet.
+  return {
+    speak: true,
+    role: 'peer',
+    moveType: stage === 1 ? 'content_free_nudge' : 'incomplete_scaffold',
+    probeType: null,
+    targetElementId: stage === 2 ? (input.suggestedTargetElement ?? null) : null,
+    challenges: [],
+    rationale:
+      stage === 1
+        ? 'Stage 1: the Teacher notices the quiet and adds no subject matter.'
+        : 'Stage 2: a hedged, incomplete starting point aimed at the current target element.',
+    decidedBy: 'rule:silence_peer',
+    handOffLine: null,
+    failure: null,
+  };
+}
+
+/**
+ * Moves that say nothing about what the thread is *about*, and so leave the classification where
+ * it was.
+ *
+ * The five fills are here because a fill is a response to a silence, not new material: if the
+ * learner went quiet after an explanation and Ellie re-explained, the thread is still about that
+ * explanation; if she posted a content-free line because Max was waiting, Max is still waiting.
+ * Without this a second silence would re-explain the nudge.
+ *
+ * **`yield` is here because it is not a turn at all**, and this is not theoretical: the scripted
+ * PSD/Hessian room yields after the learner's second message, and `decideTurn` forces `speak` on
+ * a learner turn even when the model declined (so that a declining model cannot produce silence
+ * after a question). That arrives here as a `peer`/`yield` decision which, counted as teaching,
+ * overwrote Max's outstanding probe and turned the video's content-free beat into a
+ * re-explanation of nothing.
+ */
+const NON_TEACHING_MOVES = new Set([
+  'yield',
+  'content_free_nudge',
+  'incomplete_scaffold',
+  'reexplain_simpler',
+  'offer_step_back',
+  'quiz_hint',
+]);
+
+/**
+ * Classify a dispatched turn for the next silence (#37).
+ *
+ * `previous` is returned rather than defaulted, so that a fill leaves the thread's meaning where
+ * it was, and so the opener — which asks rather than teaches — does not make the first 45 s of a
+ * room look like a failed explanation.
+ */
+export function classifyAgentTurn(decision: TurnDecision, previous: LastAgentTurn): LastAgentTurn {
+  if (!decision.speak || decision.role === null) return previous;
+  if (NON_TEACHING_MOVES.has(decision.moveType.trim().toLowerCase())) return previous;
+  const move = decision.moveType.trim().toLowerCase();
+  // The opener asks rather than teaches, so the first 45 s of a room is not a failed explanation.
+  if (move === 'opener') return 'none';
+  /**
+   * **Keyed on the move, not on `decision.role`.** The role a decision carries is not reliable
+   * for this: `decideTurn` silently demotes `challenger` to `peer` whenever `handOffDue()` has
+   * not agreed (#33), so a probe that Ellie ends up delivering still arrives here as `'peer'`.
+   * What matters is whether the learner was left owing an answer, and the move is what says so.
+   */
+  if (/^(quiz|prob)/.test(move) && move !== 'quiz_feedback') return 'tester_question';
+  // Feedback is the Tester explaining what the answer should have been, and a learner who goes
+  // quiet on it has the same problem as one who goes quiet on Ellie: they did not follow it.
+  return 'teacher_explanation';
 }
 
 export interface DecideOptions {

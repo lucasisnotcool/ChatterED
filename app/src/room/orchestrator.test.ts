@@ -9,7 +9,15 @@
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from '../test-support/clock.js';
 import { answerQuiz, openQuiz, type HandOffVerdict, type QuizzableItem } from './flow.js';
-import { decideTurn, roleFromMove, roleFromName, ruleDecision, type DecisionInput } from './orchestrator.js';
+import {
+  classifyAgentTurn,
+  decideTurn,
+  roleFromMove,
+  roleFromName,
+  ruleDecision,
+  type DecisionInput,
+  type TurnDecision,
+} from './orchestrator.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 
 function item(elementId: string, recency: number): QuizzableItem {
@@ -51,7 +59,9 @@ describe('the hand-off rule', () => {
     expect(ruleDecision(input({ handOff: due({ due: false, reasons: ['r1_engagement'] }) }))).toBeNull();
   });
 
-  it('never fires on a silence — the Teacher fills a silence, not the Tester', () => {
+  it('is not put on the floor by a silence, even when the hand-off is due', () => {
+    // Narrowed by #37, not dropped: the Tester speaks into a silence in exactly one case —
+    // stage 2 of a quiet that followed his own question — and never on a hand-off verdict.
     const d = ruleDecision(input({ trigger: 'silence', silenceStage: 1, handOff: due() }))!;
     expect(d.role).toBe('peer');
     expect(d.moveType).toBe('content_free_nudge');
@@ -280,5 +290,122 @@ describe('the Teacher answers a segment thread without a model call', () => {
 
   it('leaves the room-level stream to the model', () => {
     expect(ruleDecision(input({ anchoredThread: false, handOff: due({ due: false }) }))).toBeNull();
+  });
+});
+
+/**
+ * **What a silence means depends on what was said into it** (#37).
+ *
+ * `product-design.md` §C5 makes stage 1 content-free unconditionally, and the argument it gives
+ * — *"a nudge that supplies subject matter converts a persistence problem into a comprehension
+ * shortcut"* — is about a room where the learner's job was to explain and the silence was them
+ * not starting. #32 made the Teacher explain, so the commonest silence in the flow is now a
+ * learner who did not follow the explanation, and to that silence "Take your time" is not
+ * neutral, it is a non-answer (#37's transcript). §C5 is narrowed to the case its argument is
+ * about, and kept whole there.
+ */
+describe('the silence rule reads what the quiet is quiet about', () => {
+  const silence = (overrides: Partial<DecisionInput> = {}) =>
+    ruleDecision(input({ trigger: 'silence', silenceStage: 1, ...overrides }))!;
+
+  it('re-explains one level simpler when the quiet followed a Teacher explanation', () => {
+    const d = silence({ lastAgentTurn: 'teacher_explanation' });
+    expect(d.speak).toBe(true);
+    expect(d.role).toBe('peer');
+    expect(d.moveType).toBe('reexplain_simpler');
+    expect(d.decidedBy).toBe('rule:silence_reexplain');
+    // A real generated turn, not the pool: `#generate` only short-circuits `content_free_nudge`.
+    expect(d.moveType).not.toBe('content_free_nudge');
+  });
+
+  it('offers to step back at stage 2, when the simpler version did not land either', () => {
+    const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2 });
+    expect(d.role).toBe('peer');
+    expect(d.moveType).toBe('offer_step_back');
+    expect(d.decidedBy).toBe('rule:silence_reexplain');
+  });
+
+  it('keeps §C5 whole while the Tester is waiting: stage 1 adds no subject matter', () => {
+    const d = silence({ lastAgentTurn: 'tester_question' });
+    expect(d.role).toBe('peer');
+    expect(d.moveType).toBe('content_free_nudge');
+    expect(d.decidedBy).toBe('rule:silence_peer');
+  });
+
+  it('hints from the Tester at stage 2, because the Teacher hinting would answer the quiz', () => {
+    const d = silence({
+      lastAgentTurn: 'tester_question',
+      silenceStage: 2,
+      // Asked, not yet answered — so `feedbackDue` is false and the quiz is genuinely pending.
+      pendingQuiz: openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0),
+    });
+    expect(d.role).toBe('challenger');
+    expect(d.moveType).toBe('quiz_hint');
+    expect(d.targetElementId).toBe('R2');
+    expect(d.decidedBy).toBe('rule:silence_hint');
+  });
+
+  it('leaves a REFERENCE card and an empty thread on the old behaviour', () => {
+    for (const last of ['reference', 'none'] as const) {
+      expect(silence({ lastAgentTurn: last }).moveType).toBe('content_free_nudge');
+      expect(silence({ lastAgentTurn: last, silenceStage: 2 }).moveType).toBe('incomplete_scaffold');
+    }
+    // And with the field absent altogether, which is every caller that predates #37.
+    expect(silence().moveType).toBe('content_free_nudge');
+  });
+
+  it('is checked before the dog-pile cap, because a silence is nobody piling on', () => {
+    // An explanation (1) plus a stage-1 fill (2) sits at the cap, so before #37 stage 2 could
+    // never be reached at all — `incomplete_scaffold` and `offer_step_back` were both dead code.
+    const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2, consecutiveAgentTurns: 2 });
+    expect(d.speak).toBe(true);
+    expect(d.decidedBy).toBe('rule:silence_reexplain');
+    // The cap still governs everything that is not a silence.
+    expect(ruleDecision(input({ consecutiveAgentTurns: 2 }))!.decidedBy).toBe('rule:no_dogpile');
+  });
+
+  it('still yields to the REFERENCE lock, which outranks every fill', () => {
+    const d = ruleDecision(
+      input({ trigger: 'silence', silenceStage: 1, lastAgentTurn: 'teacher_explanation', referenceLocked: true }),
+    )!;
+    expect(d.speak).toBe(false);
+    expect(d.decidedBy).toBe('rule:reference_locked');
+  });
+});
+
+describe('classifying the turn a silence follows', () => {
+  const decision = (moveType: string, role: 'peer' | 'challenger' | null = 'peer'): TurnDecision => ({
+    speak: role !== null,
+    role,
+    moveType,
+    probeType: null,
+    targetElementId: null,
+    challenges: [],
+    rationale: '',
+    decidedBy: '',
+    handOffLine: null,
+    failure: null,
+  });
+
+  it('reads the move, not the role — a demoted probe is still a question', () => {
+    // `decideTurn` demotes `challenger` to `peer` whenever the hand-off is not due (#33), so the
+    // role on a dispatched probe is unreliable and the move is what says who owes an answer.
+    expect(classifyAgentTurn(decision('probing_assumptions', 'peer'), 'none')).toBe('tester_question');
+    expect(classifyAgentTurn(decision('quiz', 'challenger'), 'none')).toBe('tester_question');
+    expect(classifyAgentTurn(decision('answer_then_teach'), 'none')).toBe('teacher_explanation');
+    expect(classifyAgentTurn(decision('correct_misconception'), 'none')).toBe('teacher_explanation');
+  });
+
+  it('treats quiz feedback as teaching, because that is what it is', () => {
+    expect(classifyAgentTurn(decision('quiz_feedback', 'challenger'), 'tester_question')).toBe('teacher_explanation');
+  });
+
+  it('does not let a fill, a yield or the opener rewrite what the thread is about', () => {
+    for (const move of ['yield', 'content_free_nudge', 'incomplete_scaffold', 'reexplain_simpler', 'offer_step_back', 'quiz_hint']) {
+      expect(classifyAgentTurn(decision(move), 'tester_question')).toBe('tester_question');
+      expect(classifyAgentTurn(decision(move), 'teacher_explanation')).toBe('teacher_explanation');
+    }
+    expect(classifyAgentTurn(decision('opener'), 'teacher_explanation')).toBe('none');
+    expect(classifyAgentTurn(decision('anything', null), 'tester_question')).toBe('tester_question');
   });
 });

@@ -544,9 +544,17 @@ describe('a failed turn', () => {
 });
 
 describe('the stage-1 nudge pool', () => {
+  /**
+   * **Unanchored on purpose, since #37.** The pool is no longer what every stage-1 fill draws
+   * from: it is what a silence draws from when the *Tester* is waiting for an answer, which is
+   * the case `product-design.md` §C5's argument is actually about. The scripted room's turn 3 is
+   * Max probing assumptions, so this stream is in that state; an anchored thread would be under
+   * `rule:teacher_answers`, where the last agent turn is always an explanation and the fill is a
+   * re-explanation instead (`rule:silence_reexplain`, covered in orchestrator.test.ts).
+   */
   it('rotates, so the same line never lands twice running', async () => {
     const h = build();
-    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    await settle(h.clock, h.actor.sendMessage(TURN_2));
     const seen: string[] = [];
     for (let i = 0; i < 4; i += 1) {
       await h.clock.run(50_000);
@@ -554,7 +562,7 @@ describe('the stage-1 nudge pool', () => {
       const last = nudges.at(-1);
       if (last && seen.at(-1) !== last.body) seen.push(last.body);
       // A new round so the two-fires-per-round budget does not run out mid-test.
-      await settle(h.clock, h.actor.sendMessage(TURN_4, 'seg_1'));
+      await settle(h.clock, h.actor.sendMessage(TURN_4));
     }
     expect(seen.length).toBeGreaterThanOrEqual(2);
     for (let i = 1; i < seen.length; i += 1) expect(seen[i]).not.toBe(seen[i - 1]);
@@ -645,5 +653,87 @@ describe('the rail is a side-channel', () => {
     releaseLedger();
     await settle(h.clock, Promise.resolve());
     expect(h.events.some((e) => e.type === 'ledger.updated')).toBe(true);
+  });
+});
+
+/**
+ * **The silence after an explanation** (#37), end to end on the fake clock.
+ *
+ * Lucas's transcript: Ellie finished an ELI5 of the MDP tuple, the learner went quiet, and 45 s
+ * later she said *"Take your time. If it helps, say the bit you're sure about first."* — the
+ * content-free pool line, which is the right move only when the learner owes somebody an answer.
+ * These drive the real timer through the real actor, and assert on what the learner sees: the
+ * message's provenance and the divider copy above it.
+ */
+describe('a silence after the Teacher explained', () => {
+  /** An anchored thread is `rule:teacher_answers`'s, so the last agent turn is an explanation. */
+  async function explainedThenQuiet(seconds: number) {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    const before = h.store.messages.forRoom(h.roomId).length;
+    await h.clock.run(seconds * 1_000);
+    const fills = h.store.messages.forRoom(h.roomId).slice(before);
+    return { h, fills };
+  }
+
+  it('re-explains rather than reaching for the pool, and says so on the divider', async () => {
+    const { fills } = await explainedThenQuiet(50);
+    expect(fills.length).toBe(1);
+    const fill = fills[0]!;
+    /**
+     * **Not the pool.** A re-explanation is content, and content cannot come out of three fixed
+     * lines: the fill was generated, so it carries the model that produced it. (The *body* here
+     * is still the video script's silence beat — `ScriptedClient` keys on the cue, not the move —
+     * so what is asserted is the provenance, which is the thing this change decides.)
+     */
+    expect(fill.model).not.toBe('pool:content_free');
+    expect(fill.model).toContain('scripted:');
+    expect(fill.decided_by).toBe('rule:silence_reexplain');
+    // §C5: the divider names the cause, and since #37 it must name *which* cause.
+    expect(fill.divider_cause).toBe('45s quiet · Ellie tried again');
+  });
+
+  it('offers to step back at 90 s, which the dog-pile cap used to make unreachable', async () => {
+    const { h, fills } = await explainedThenQuiet(50);
+    expect(fills.length).toBe(1);
+    // The room is now at two consecutive agent turns — the explanation and the fill.
+    expect(h.store.rooms.get(h.roomId)!.consecutive_agent_turns).toBe(2);
+    const before = h.store.messages.forRoom(h.roomId).length;
+    await h.clock.run(60_000);
+    const second = h.store.messages.forRoom(h.roomId).slice(before);
+    expect(second.length).toBe(1);
+    expect(second[0]!.decided_by).toBe('rule:silence_reexplain');
+    expect(second[0]!.divider_cause).toBe('90s quiet · Ellie offered to step back');
+  });
+
+  it('fires at most twice, so a third quiet produces nothing at all (§C5)', async () => {
+    const { h } = await explainedThenQuiet(50);
+    await h.clock.run(60_000);
+    const before = h.store.messages.forRoom(h.roomId).length;
+    await h.clock.run(300_000);
+    expect(h.store.messages.forRoom(h.roomId).length).toBe(before);
+  });
+
+  it('goes back to the content-free line once a REFERENCE card is the last thing said', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage(TURN_2));
+    await settle(
+      h.clock,
+      h.actor.askHere({
+        anchorId: null,
+        question: 'what is a PSD matrix',
+        context: { scope: 'segment', passageText: 'PAGE', outline: '', retrievedPages: [], scopeShown: 'p. 1' },
+      }),
+    );
+    const before = h.store.messages.forRoom(h.roomId).length;
+    await h.clock.run(50_000);
+    const fills = h.store.messages.forRoom(h.roomId).slice(before);
+    expect(fills.length).toBe(1);
+    // §C5 unchanged for this case, and the divider still says "stepped in" / "offered a starting
+    // point" rather than "tried again". (Which of the two depends on the stage the timer had
+    // reached — a REFERENCE answer deliberately does not reset it, `reference.ts` property 2.)
+    expect(fills[0]!.decided_by).toBe('rule:silence_peer');
+    expect(fills[0]!.divider_cause).toMatch(/stepped in|offered a starting point/);
+    expect(fills[0]!.divider_cause).not.toContain('tried again');
   });
 });
