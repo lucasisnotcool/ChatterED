@@ -8,6 +8,8 @@
    */
   import type { BackendChoice } from '../../shared/types.js';
   import { store } from '../lib/store.svelte.js';
+  // The strip and these radios describe the same setting, so they read the same copy.
+  import { PACING_PROFILES, pacingProfile } from '../lib/labels.js';
 
   const settings = $derived(store.settings);
 
@@ -16,23 +18,6 @@
     { value: 'claude_cli', label: 'Claude Code on this Mac', hint: 'Uses the subscription you are already signed in to. No API key, no per-token cost.' },
     { value: 'anthropic', label: 'Anthropic API key', hint: 'Your own key, billed to you. Haiku 4.5 for the group, Sonnet 5 for the ledger.' },
     { value: 'scripted', label: 'Scripted demo', hint: 'Replays a fixed transcript. No network calls at all.' },
-  ];
-
-  /**
-   * The two pacing profiles, in the learner's words rather than the constants'. `flow.ts` is the
-   * only place the numbers live; these are what they mean.
-   */
-  const PROFILES: { value: 'default' | 'demo'; label: string; hint: string }[] = [
-    {
-      value: 'default',
-      label: 'Study',
-      hint: 'What ships: Max is offered the floor after three turns in ten minutes, two concepts covered, and nothing quizzed inside three minutes of being taught.',
-    },
-    {
-      value: 'demo',
-      label: 'Demo — faster, for recording',
-      hint: 'Two turns in three minutes, and a concept can be quizzed twenty seconds after it is taught. For a filmed walkthrough; it quizzes sooner than the shipped app.',
-    },
   ];
 
   const BACKEND_LABEL: Record<string, string> = {
@@ -232,7 +217,7 @@
         Right now: <strong>{settings.flowProfile === 'demo' ? 'Demo' : 'Study'}</strong>
       </p>
       <div class="choices">
-        {#each PROFILES as p (p.value)}
+        {#each PACING_PROFILES as p (p.value)}
           <label class="choice" class:on={settings.flowProfile === p.value}>
             <input
               type="radio"
@@ -244,16 +229,28 @@
             />
             <span class="choice-text">
               <span class="choice-label">{p.label}</span>
-              <span class="quiet">{p.hint}</span>
+              <span class="quiet">{p.hint} The Tester is offered the floor after {p.rule}.</span>
             </span>
           </label>
         {/each}
       </div>
       <p class="quiet">
-        Neither setting changes what Max asks or how long he holds a reply — replies are paced at
-        9–12 seconds on both. It changes only how much of a sitting has to happen before he is
-        offered the floor. A change applies to the next document you open.
+        Neither setting changes what the Tester asks or how long he holds a reply — replies are
+        paced at 9–12 seconds on both. It changes only how much of a sitting has to happen before
+        he is offered the floor: {pacingProfile(settings.flowProfile).rule}. A change applies to
+        the next document you open.
       </p>
+      <div class="acts">
+        <button
+          type="button"
+          class="btn"
+          disabled={store.settingsBusy || !settings.pacingStripSeen}
+          onclick={() => void store.saveSettings({ pacingStripSeen: false })}
+        >
+          {settings.pacingStripSeen ? 'Show the pacing note again' : 'The pacing note is showing'}
+        </button>
+        <span class="quiet">It appears once at the top of a document you open.</span>
+      </div>
     </section>
 
     <!-- §B7's "Sources" group, and the answer to "once a document is open there is no way in the

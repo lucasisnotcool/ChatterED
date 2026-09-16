@@ -100,3 +100,41 @@ export const KIND_GLYPH: Record<VaultFileKind, string> = {
   image: '▣',
   other: '□',
 };
+
+/**
+ * Tester pacing, in the learner's words — the copy the Settings radios and the flow's first-open
+ * pacing strip both read, so the two can never describe the same setting differently.
+ *
+ * `src/room/flow.ts` owns the numbers; these sentences are what they mean. `rule` is the
+ * hand-off rule spelled out, because §3.5's disclosure is not "the Tester is paced" but *what*
+ * paces him — a rule the learner can see, and turn down.
+ */
+export interface PacingProfileCopy {
+  value: 'default' | 'demo';
+  label: string;
+  /** The hand-off rule in one sentence. */
+  rule: string;
+  /** Why you would pick it. */
+  hint: string;
+}
+
+export const PACING_PROFILES: PacingProfileCopy[] = [
+  {
+    value: 'default',
+    label: 'Study',
+    rule:
+      'three of your turns within ten minutes, at least two concepts covered, and nothing asked about inside three minutes of being taught',
+    hint: 'What ships, and what the study runs on.',
+  },
+  {
+    value: 'demo',
+    label: 'Demo',
+    rule:
+      'two of your turns within three minutes, at least two concepts covered, and nothing asked about inside twenty seconds of being taught',
+    hint: 'For a recorded walkthrough. It reaches the hand-off sooner than the shipped app does.',
+  },
+];
+
+export function pacingProfile(name: 'default' | 'demo' | undefined): PacingProfileCopy {
+  return PACING_PROFILES.find((p) => p.value === name) ?? PACING_PROFILES[0]!;
+}

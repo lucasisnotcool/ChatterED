@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentProfile } from '../../shared/types.js';
 import { ROLE_LABEL } from '../../room/agents.js';
-import { agentNames, roleWord } from './labels.js';
+import { DEMO, FLOW } from '../../room/flow.js';
+import { agentNames, pacingProfile, roleWord } from './labels.js';
 
 const agent = (role: AgentProfile['role'], displayName: string): AgentProfile => ({
   key: `${role}.${displayName.toLowerCase()}`,
@@ -62,5 +63,33 @@ describe('the role word', () => {
   it('leaves the stored role strings alone — this is a display mapping only', () => {
     // A test that would fail if someone "fixed" the column instead of the label.
     expect(agent('peer', 'Ellie').role).toBe('peer');
+  });
+});
+
+/**
+ * The pacing disclosure is a rubric and ethics requirement (`flow-build-plan.md` §3.5), and the
+ * failure mode is not a crash — it is Settings and the strip quietly describing the same setting
+ * differently. One source of the sentence, asserted here against `flow.ts`'s own constants.
+ */
+describe('the pacing copy', () => {
+  it('describes each profile with the numbers that profile actually runs', () => {
+    const study = pacingProfile('default');
+    const demo = pacingProfile('demo');
+    expect(study.rule).toContain(`${FLOW.turnsK === 3 ? 'three' : FLOW.turnsK} of your turns`);
+    expect(study.rule).toContain('ten minutes');
+    expect(study.rule).toContain('three minutes of being taught');
+    expect(demo.rule).toContain('two of your turns');
+    expect(demo.rule).toContain('three minutes');
+    expect(demo.rule).toContain('twenty seconds of being taught');
+    expect(FLOW.windowMs).toBe(10 * 60_000);
+    expect(FLOW.minAgeMs).toBe(3 * 60_000);
+    expect(DEMO.turnsK).toBe(2);
+    expect(DEMO.windowMs).toBe(3 * 60_000);
+    expect(DEMO.minAgeMs).toBe(20_000);
+  });
+
+  it('falls back to Study for anything it does not know, exactly as flowProfileFor does', () => {
+    expect(pacingProfile(undefined).value).toBe('default');
+    expect(pacingProfile(undefined).label).toBe('Study');
   });
 });
