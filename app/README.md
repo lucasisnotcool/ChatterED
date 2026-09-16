@@ -48,7 +48,7 @@ Video beats 4–15 of `docs/research/flow-build-plan.md` §2. Paths under `app/s
 | 9 | **Explain it back →**, type `student:1`, then `student:2` | `components/FlowThread.svelte`, `room/actor.ts` |
 | 10 | The hand-off fires, tagged **BY RULE** | `room/flow.ts`, `room/orchestrator.ts` |
 | 11 | Max reads 9–12 s, counter climbing, one question | `room/agents.ts`, `room/actor.ts` |
-| 12 | Type `student:3` — two ledger rows move, ● ◐ | `room/ledger.ts`, `SegmentCard.svelte` |
+| 12 | Type `student:3` — the first two rows to move all sitting, ○→● and ○→◐ | `room/ledger.ts`, `SegmentCard.svelte` |
 | 13 | ⌘K, ask `whisper:1` privately, **Insert into the document** | `components/WhisperPopover.svelte`, `room/context.whisper.ts` |
 | 14 | Toggle **Original pages** | `renderer/lib/flowview.ts` |
 | 15 | Hover a page chip; open the 31-page Koala paper | `shared/segment/genre.ts` |
@@ -57,17 +57,21 @@ Video beats 4–15 of `docs/research/flow-build-plan.md` §2. Paths under `app/s
 agreement-is-not-evidence rule. They and `whisper:1` are `CRITIQUE1_LEARNER_LINES` in
 `room/llm/script.critique1.ts`.
 
-> **student:1** — The bottom row is the same catch as the top row, except the person I am whispering
-> to is the agent itself. I can ask while it is still working, so the warning about exposing data
-> reaches me without cutting into what it is doing.
+> **student:1** — Let me try saying it back. The card has the two rows with the same structure, and
+> the only thing that changes underneath is that the whispering partner is the agent itself. Is that
+> the whole of it, or does the bottom row buy something the top one does not?
 >
-> **student:2** — And it is not a second agent with its own tools. Page 5 says it answers from the
-> main session context only, with no tools and no memory of its own.
+> **student:2** — And where is any of that tested rather than asserted? Page 5 has a table of limit
+> tests on it, and I have not worked out yet what the three of them add up to.
 >
 > **student:3** — The third one — it was asked to add a todo to memory, claimed it had, and nothing
 > was written. So it can read the session and reason about the tool calls, but it cannot act: memory
 > was protected, and the same wall is why nothing we settle in the side channel reaches the main
 > agent unless I re-type it as a steering prompt.
+
+The first two are **questions on purpose**. The ledger stays at ○ ○ ○ until Max has been answered,
+so beat 12's *"that moved because **I** wrote it"* points at the turn it is about; a hedged read-back
+of the REFERENCE card the app has just written is not the learner explaining anything.
 
 ## 4. Real, scripted, stubbed
 

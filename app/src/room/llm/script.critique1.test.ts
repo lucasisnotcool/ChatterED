@@ -13,7 +13,8 @@
  *   1. "+ Ask here" on page 3's lower segment → a REFERENCE answer, ≤ 120 words, in the register;
  *   2. "Explain it back" → Ellie teaches from the slide, on the learner's own verbatim lines;
  *   3. the hand-off fires **by rule**, then Max asks exactly one question about C1;
- *   4. the answer moves two ledger rows, because it contains the evidence verbatim;
+ *   4. the ledger does not move at all until Max has been answered, and then moves two rows,
+ *      because that answer contains the evidence verbatim;
  *   5. Max's next turn is feedback (`rule:quiz_feedback`);
  *   6. a whisper is answered privately, with the Critique 1 relay draft ready to insert.
  *
@@ -278,11 +279,45 @@ describe('beats 10–11 — the hand-off, and one question', () => {
 });
 
 describe('beat 12 — two rows move, on the learner’s own words', () => {
+  /**
+   * The gate run of 16 Sep had `C1` **defended** and `C3` **justified** before Max had asked
+   * anything — the blocks were keyed to the learner-turn ordinal and the take needed a spare
+   * turn — so beat 12's *"that moved because **I** wrote it"* pointed at the wrong turn. Beats 9
+   * and 10 are questions now and propose no element at all, which is what this pins: not that a
+   * gate refused an advance, but that nothing was ever proposed.
+   */
+  it('does not move before the hand-off — the read-back and the question score nothing', async () => {
+    const h = build();
+    const levels = () =>
+      h.store.ledger.forSession(h.sessionId).map((r) => `${r.element_id}:${r.level}`);
+    const atRest = levels();
+    expect(atRest).toEqual(['C1:0', 'C2:0', 'C3:0']);
+
+    // Beat 9 — "Explain it back", then the card said back and a question asked.
+    await throughExplainBack(h);
+    expect(levels()).toEqual(atRest);
+
+    // Beat 10 — the turn the hand-off fires on. Still nothing.
+    await settle(h.clock, h.actor.sendMessage(L2));
+    expect(h.store.messages.forRoom(h.roomId).some((m) => m.model === 'rule:handoff')).toBe(true);
+    expect(levels()).toEqual(atRest);
+
+    // And no gate was involved: an empty proposal leaves no history row to explain away.
+    expect(h.store.ledger.historyForSession(h.sessionId)).toEqual([]);
+
+    // Beat 12 — the answer to Max is the first thing in the sitting that moves anything.
+    await settle(h.clock, h.actor.sendMessage(L3));
+    expect(levels()).toEqual(['C1:3', 'C2:0', 'C3:2']);
+    expect(h.store.ledger.historyForSession(h.sessionId).map((r) => r.element_id).sort()).toEqual(['C1', 'C3']);
+  });
+
   it('moves C1 to defended and C3 to justified, quoting what was actually typed', async () => {
     const h = build();
     await throughExplainBack(h);
     await settle(h.clock, h.actor.sendMessage(L2));
     const before = new Map(h.store.ledger.forSession(h.sessionId).map((r) => [r.element_id, r.level]));
+    // Both rows start the take at `not_yet`, so what the camera sees is ○ → ● and ○ → ◐.
+    expect([...before.values()]).toEqual([0, 0, 0]);
 
     await settle(h.clock, h.actor.sendMessage(L3));
 
@@ -467,11 +502,40 @@ describe('which script replays', () => {
     });
     expect(fb.text).toContain('ephemerality');
 
-    // Repeating a question is safe only because no hand-off beat carries a ledger block; a
-    // learner cue does, and must therefore not fall back.
+    // Repeating a question is safe only because no hand-off beat carries a ledger block.
     for (const beat of CRITIQUE1_HANDOFFS) expect(beat.ledger).toBeUndefined();
-    expect(beatFor('student:9')).toBeUndefined();
     expect(beatFor('silence:9')).toBeUndefined();
+  });
+
+  it('answers a learner cue the script has run out of, so beat 9 is never a silence nudge', async () => {
+    // The same actor-lifetime argument as the hand-off cues: `student:N` counts the *process's*
+    // learner turns, so a second walkthrough reaches `student:6` and Ellie used to generate
+    // empty — the learner typed, nothing came back, and 45 s later the silence timer spoke.
+    const client = new ScriptedClient({ script: CRITIQUE1_SCRIPT });
+    for (const cue of ['student:6', 'student:7', 'student:8', 'student:9']) {
+      const out = await client.complete({
+        ...request(CRITIQUE1_DECK_TEXT),
+        meta: { scope: 'group', scriptCue: cue },
+      });
+      expect(out.text.length).toBeGreaterThan(40);
+    }
+    // It cycles rather than pinning one line: three teaching beats, so 6 and 9 differ.
+    const at = async (cue: string) =>
+      (await client.complete({ ...request(CRITIQUE1_DECK_TEXT), meta: { scope: 'group', scriptCue: cue } })).text;
+    expect(await at('student:6')).not.toBe(await at('student:7'));
+    expect(await at('student:6')).toBe(await at('student:9'));
+
+    // The safety property, structural rather than conventional: every beat the cycle can reach
+    // proposes no ledger element, so a repeat can never move a row a second time.
+    for (const n of [6, 7, 8, 9, 10, 11]) {
+      expect(beatFor(`student:${n}`)!.ledger?.elements ?? []).toHaveLength(0);
+    }
+    // And a ledger call on a recycled cue proposes nothing, through the client the app uses.
+    const proposal = await client.complete({
+      ...request(CRITIQUE1_DECK_TEXT),
+      meta: { scope: 'ledger', scriptCue: 'student:7' },
+    });
+    expect(JSON.parse(proposal.text).elements).toEqual([]);
   });
 
   it('fills the agents\u2019 names from the roster it was given, never from the script', async () => {

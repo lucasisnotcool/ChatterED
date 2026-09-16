@@ -8,7 +8,8 @@
  *   9    "Explain it back" → the Teacher's thread, Ellie explaining from the slide;
  *   10   the hand-off, fired by `handOffDue()` on the DEMO profile, never by this file;
  *   11   Max's one question about a concept taught minutes earlier;
- *   12   the learner's answer moving two ledger rows, on their own verbatim words;
+ *   12   the learner's answer — and **only** that answer — moving two ledger rows, on their own
+ *        verbatim words;
  *   13   a whisper to Ellie, answered privately, with a relay draft to insert into the document.
  *
  * **What this file is not.** It is not a fake app and it is not a transcript player. Every beat
@@ -17,8 +18,17 @@
  * holds Max for 9–12 s, `handOffDue()` decides whether beat 10 happens at all, `reference.ts`
  * truncates beat 8 in code, and `ledger.ts`'s four hard rules score beat 12. Three of the beats
  * below are therefore *overridden by rules on purpose* — `student:2`'s and `student:3`'s
- * decisions are never used when the hand-off and the feedback rules fire, and their **ledger
- * blocks still are**. That is the design: the script supplies content, never control flow.
+ * decisions are never used when the hand-off and the feedback rules fire. That is the design: the
+ * script supplies content, never control flow.
+ *
+ * **Nothing moves the ledger before the hand-off, and that is a claim about evidence rather than
+ * about pacing.** The gate run of 16 Sep had `C1` already `defended` by the time Max opened his
+ * mouth, so beat 12's narration — *"that moved because **I** wrote it"* — pointed at the wrong
+ * turn. The fix is not to re-time the blocks: `student:1` and `student:2` are now **questions**,
+ * and the two rows they used to move are the two rows the answer to Max moves. A hedged
+ * read-back of the REFERENCE card the app has just written is not the learner explaining
+ * anything — quoting it as their evidence would be scoring the machine's own words back at them
+ * — so those beats propose no element at all and `ledger.ts` is never asked to refuse them.
  *
  * **The content is Lucas's own critique**, not a story written around it: every claim is on a
  * page of `Academia/Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf`,
@@ -103,16 +113,18 @@ export const CRITIQUE1_LEARNER_LINES: Critique1LearnerLine[] = [
   },
   {
     cue: 'student:1',
-    beat: 'beat 9 — "Explain it back", the learner says it back in their own words',
+    beat: 'beat 9 — "Explain it back": the card said back, and the question it leaves open',
     text:
-      'The bottom row is the same catch as the top row, except the person I am whispering to is the agent itself. ' +
-      'I can ask while it is still working, so the warning about exposing data reaches me without cutting into what it is doing.',
+      'Let me try saying it back. The card has the two rows with the same structure, and the only thing that changes ' +
+      'underneath is that the whispering partner is the agent itself. Is that the whole of it, or does the bottom row ' +
+      'buy something the top one does not?',
   },
   {
     cue: 'student:2',
-    beat: 'beat 10 — the turn the hand-off rule fires on',
+    beat: 'beat 10 — the turn the hand-off rule fires on; still a question, so still nothing claimed',
     text:
-      'And it is not a second agent with its own tools. Page 5 says it answers from the main session context only, with no tools and no memory of its own.',
+      'And where is any of that tested rather than asserted? Page 5 has a table of limit tests on it, and I have not ' +
+      'worked out yet what the three of them add up to.',
   },
   {
     cue: 'student:3',
@@ -185,10 +197,13 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
       "lands. It lands with *you*. The deck is blunt about it: “discussion and decisions in btw cannot be forwarded " +
       'to agent”, so whatever you settle in the whisper, you are the one who has to carry it back.',
     ledger: {
-      elements: [{ id: 'C2', level: 1, confidence: 0.88, evidence: 'last_student' }],
+      // Empty on purpose — see the file docstring. The learner has read the card back and asked a
+      // question; there is no claim of theirs to quote, so nothing is proposed and no gate fires.
+      elements: [],
       suggestedTargetElement: 'C2',
       suggestedProbeType: 'reasons_evidence',
-      notesForAgents: 'Mapped the human–human row onto the human–AI row; has not yet named which property is doing the work.',
+      notesForAgents:
+        'Read the REFERENCE card back and asked what the lower row buys that the upper one does not. A question, not a claim.',
     },
   },
   {
@@ -204,14 +219,16 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
     decision: peer('teach_from_slide', 'Fallback only: if the flow rule has not fired, the Teacher keeps teaching.', 'C1'),
     segment: 'p5',
     text:
-      "Exactly — and page 5 is where that was tested rather than asserted. Three runs: it declined to discuss a file " +
-      'that was never opened, it answered a mid-task question about the test run accurately, and it claimed to write ' +
-      'a todo to memory that it had no way of writing.',
+      'Page 5 is where it was tested rather than asserted. Three runs: it declined to discuss a file that was never ' +
+      'opened, it answered a mid-task question about the test run accurately, and it claimed to write a todo to memory ' +
+      'that it had no way of writing.',
     ledger: {
-      elements: [{ id: 'C1', level: 1, confidence: 0.9, evidence: 'last_student' }],
+      // Empty, for the same reason as beat 9's, and for one more: this is the turn the hand-off
+      // fires on, so anything scored here would land one beat before Max has asked anything.
+      elements: [],
       suggestedTargetElement: 'C1',
       suggestedProbeType: 'reasons_evidence',
-      notesForAgents: 'States the read-only contract; has not yet used any of page 5’s three tests as a case.',
+      notesForAgents: 'Asked where the read-only contract is tested; has named page 5 but used none of its three results.',
     },
   },
   {
@@ -221,11 +238,17 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
      * `rule:quiz_feedback` fires and the turn is generated from `feedback:1`. The fallback is
      * silence: nobody but Max may speak to a Max question.
      *
-     * **The two rows that move on camera.** `C1` was the quiz target, so it is the only element
-     * that can reach `defended` — `ledger.ts`'s fifth gate refuses level ≥ 3 for anything the
-     * Tester has not probed. `C3` moves to `justified` on the same sentence, because the
-     * learner's own line carries both halves. Neither moves unless the evidence really is a
-     * substring of what was typed.
+     * **The two rows that move on camera, and the only two rows that move at all.** Both start
+     * the take at `not_yet` — beats 9 and 10 propose nothing — so what §2 beat 12 shows is
+     * `○ → ●` on `C1` and `○ → ◐` on `C3`, one answer, both on the learner's own sentence.
+     *
+     * **Both states are reachable in this one turn**, which is a fact about `ledger.ts` and not
+     * an assumption: `applyLedgerRules` gates an advance on rule 1 (the evidence is a verbatim
+     * substring of a learner message), rule 3 (confidence ≥ 0.6) and, for level ≥ 3, on the
+     * Tester having probed that element — and it does **not** require the previous level to have
+     * been passed through first. `C1` was the quiz target, so it clears the `defended` gate here
+     * and nowhere else; `C3` was never probed, so `justified` is its ceiling and the gate would
+     * hold it there even if this block asked for more. No `student:4` is needed after the probe.
      */
     cue: 'student:3',
     decision: { role: null, move: 'yield', rationale: 'Fallback only: an answer to Max belongs to Max.' },
@@ -237,7 +260,7 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
       suggestedTargetElement: 'C2',
       suggestedProbeType: 'clarification',
       notesForAgents:
-        'Used the memory-todo test under challenge and separated "cannot act" from "claimed to have acted"; connected it to the forwarding gap.',
+        'First claim of the sitting, and it is made under challenge: used the memory-todo test, separated "cannot act" from "claimed to have acted", and connected it to the forwarding gap.',
     },
   },
   {
@@ -399,16 +422,37 @@ export function beatFor(cue: string): ScriptedBeat | undefined {
    * from the taught set, so the rule really has fired and the floor really has been passed.
    *
    * Falling back to the last scripted question of the same kind repeats a question rather than
-   * dropping a turn. It is safe to repeat: `CRITIQUE1_HANDOFFS` carries **no `ledger` block** —
-   * only `CRITIQUE1_BEATS`' learner cues do — so nothing here can move a row a second time.
-   * `student:N` deliberately does **not** fall back for exactly that reason, and running out of
-   * learner cues is what the rehearsal notes call one take per sitting.
+   * dropping a turn. It is safe to repeat: `CRITIQUE1_HANDOFFS` carries **no `ledger` block**, so
+   * nothing there can move a row a second time.
    *
    * The same convention `referenceBeatFor` and `whisperBeatFor` already use, two lines below.
    */
   const repeat = /^(handoff|feedback):\d+$/.exec(cue);
-  if (!repeat) return undefined;
-  return [...CRITIQUE1_HANDOFFS].reverse().find((b) => b.cue.startsWith(`${repeat[1]}:`));
+  if (repeat) return [...CRITIQUE1_HANDOFFS].reverse().find((b) => b.cue.startsWith(`${repeat[1]}:`));
+
+  /**
+   * **And the Teacher must not go quiet on a second walkthrough either.**
+   *
+   * The same actor-lifetime argument applies to the learner's cues: `student:N` counts the
+   * learner turns of the process, so a second pass through §2 reaches `student:6` and beyond,
+   * which nothing above answers. Until now that returned `undefined` and beat 9 generated empty
+   * — the learner typed, Ellie said nothing, and forty-five seconds later the silence timer
+   * nudged, which is the app's correct behaviour reached by the script's failure. `ccc5b9d`
+   * called it a filming-day constraint; it is not, it is this function returning nothing.
+   *
+   * So the learner cues **cycle** rather than stop, over the teaching beats only, and the filter
+   * is the safety property rather than a convention: a beat is eligible only if it has text to
+   * say and proposes **no ledger element**. That was the objection to a learner-cue fallback and
+   * it is now structural — `student:3` and `student:5` are the beats that score, they are the
+   * ones without text, and they can never be reached from here.
+   */
+  const learner = /^student:(\d+)$/.exec(cue);
+  if (!learner) return undefined;
+  const cycle = CRITIQUE1_BEATS.filter(
+    (b) => b.cue.startsWith('student:') && (b.text ?? '').length > 0 && (b.ledger?.elements?.length ?? 0) === 0,
+  );
+  if (cycle.length === 0) return undefined;
+  return cycle[(Number(learner[1]) - 1) % cycle.length];
 }
 
 export function referenceBeatFor(cue: string): ScriptedReferenceBeat | undefined {

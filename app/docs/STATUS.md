@@ -70,7 +70,30 @@ the REFERENCE card (100 words, no floor, no timer, no ledger, thread locked unti
 back*), Ellie teaching from page 6, the hand-off fired by `handOffDue()` on the DEMO profile, Max's
 one question on C1 — taught four minutes earlier, not the thing taught seconds ago — the answer
 moving **two** rows (C1 → defended, C3 → justified) on evidence lifted verbatim from what is
-typed, `rule:quiz_feedback`, and the whisper with its relay draft. The canary runs again over this
+typed, `rule:quiz_feedback`, and the whisper with its relay draft.
+
+**The ledger does not move until Max has been answered**, and the test pins the negative as well as
+the positive: `C1:0 C2:0 C3:0` through beat 9 and through the hand-off, an **empty**
+`ledger_history` (no gate refused an advance — nothing was proposed), then `C1:3 C2:0 C3:2` on the
+answer, with exactly two history rows. Beats 9 and 10 are questions for that reason; a hedged
+read-back of the REFERENCE card the app has just written is not the learner explaining anything, so
+quoting it as their evidence would be scoring the machine's own words back at them. Both states are
+reachable in that one turn — `ledger.ts` gates an advance on rule 1, rule 3 and, for `defended`, on
+the Tester having probed that element, and never on the previous level having been passed through —
+so no fourth learner turn is needed after the probe. **The three lines the presenter types,
+verbatim:**
+
+> **student:1** — Let me try saying it back. The card has the two rows with the same structure, and
+> the only thing that changes underneath is that the whispering partner is the agent itself. Is that
+> the whole of it, or does the bottom row buy something the top one does not?
+>
+> **student:2** — And where is any of that tested rather than asserted? Page 5 has a table of limit
+> tests on it, and I have not worked out yet what the three of them add up to.
+>
+> **student:3** — The third one — it was asked to add a todo to memory, claimed it had, and nothing
+> was written. So it can read the session and reason about the tool calls, but it cannot act: memory
+> was protected, and the same wall is why nothing we settle in the side channel reaches the main
+> agent unless I re-type it as a steering prompt. The canary runs again over this
 deck and over both agents' contexts. `ScriptedClient` now picks its script: the material's file
 name or content hash, a Settings override, or — when nobody told it, which is the app's case today
 — by recognising the deck in the request and latching it. Two things the take depends on and the
@@ -983,17 +1006,20 @@ no `console.error` was emitted.
 2. **Beat 10 costs a spare turn and about 90 seconds.** From a cold open on Demo the hand-off needs
    a *third* learner line and ~20 s of quiet after the second concept is taught (Demo's 20 s
    `minAgeMs`). `CRITIQUE1_LEARNER_LINES`'s `student:4` spare is what the gate used.
-3. **A consequence of 2: the ledger moves one beat early.** By the time Max's question landed, `C1`
-   was already **defended** and `C3` **justified** — scored on the spare turn, because the ledger
-   blocks are keyed to the learner-turn ordinal. Beat 12's claim still holds (the evidence really is
-   verbatim from what was typed) but *"that moved because I wrote it"* has to point at the right
-   turn, or the rows should be shown moving rather than landing.
+3. ~~**A consequence of 2: the ledger moves one beat early.**~~ **Fixed.** By the time Max's
+   question landed, `C1` was already **defended** and `C3` **justified** — scored on the spare turn,
+   because the ledger blocks are keyed to the learner-turn ordinal. Beats 9 and 10 now propose *no
+   element at all* and their learner lines are questions, so the two rows that move are the two the
+   answer to Max moves, and `ledger_history` is empty until then. Re-time the ordinal and nothing
+   can be scored early, because there is nothing left before the probe to score.
 4. **Pause for ~45 s and Ellie nudges.** *"Still turning it over? Happy to wait."* / *"Take your
    time. If it helps, say the bit you're sure about first."* The silence timer is real and it will
    speak over a slow take.
-5. **One take per sitting.** A second pass in the same session now completes (fix 2), but Ellie
-   stops teaching once the learner cues run out. Quit between takes — and re-read note 1 before
-   deciding what to open.
+5. ~~**One take per sitting.**~~ **Fixed.** A second pass in the same session completes (fix 2),
+   and Ellie no longer stops teaching once the learner cues run out: `student:N` **cycles** over the
+   teaching beats, filtered to those that propose no ledger element, so a repeat can never move a
+   row twice. Beat 9 on a second walkthrough is a Teacher turn again rather than a 45 s silence
+   nudge. Note 1 still governs *what to open*.
 6. **Copy drift, no code change.** The app says **`Max is thinking… 7s`**; §2 beat 11 and
    `FlowThread.svelte`'s own docstring say *"Max is reading…"*. §4.2 freezes `VERB`, so the brief
    and the docstring are the ones out of step. Left alone deliberately.
