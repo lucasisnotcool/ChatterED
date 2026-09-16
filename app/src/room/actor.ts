@@ -107,6 +107,8 @@ export interface RoomActorDeps {
    * the way the roster already stamps the agent model on a group turn.
    */
   models?: ModelPlan;
+  /** Settings ▸ Reply speed as it stands when the room opens; `rebind()` updates it after. */
+  replySpeed?: ReplySpeed;
   appVersion: string;
   /** `FLOW` by default; `DEMO` is the disclosed filming profile (flow.ts). */
   flowProfile?: FlowProfile;
@@ -257,7 +259,7 @@ export class RoomActor {
   /** The turn whose `turn.received` is still on screen, so exactly one `turn.released` closes it. */
   #received: string | null = null;
   /** Settings ▸ Reply speed. Read per turn, so a change applies to the next turn, never this one. */
-  #replySpeed: ReplySpeed = 'default';
+  #replySpeed: ReplySpeed;
   /** anchorId → the highest `seq` the learner has seen there (audit §7). */
   #seen = new Map<string, number>();
   /** anchorId → the card's renderer state, which must survive a reopen (audit §7). */
@@ -326,6 +328,7 @@ export class RoomActor {
     this.#pendingQuiz = deps.flowState?.pendingQuiz ?? null;
     this.#answers = [...(deps.flowState?.answers ?? [])];
     this.#asks = this.#answers.length;
+    this.#replySpeed = deps.replySpeed ?? 'default';
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -614,7 +617,7 @@ export class RoomActor {
     // "Held 2–3 s: this is retrieval, not deliberation — it must not borrow the Challenger's
     // considered pacing" (§B1). A short floor, and it is a floor on visible TTFT like every
     // other one in this file.
-    await this.#holdUntil(started, Math.round((2_000 + this.#rand() * 1_000) * this.#d.config.latency_scale));
+    await this.#holdUntil(started, this.#floor(Math.round((2_000 + this.#rand() * 1_000) * this.#d.config.latency_scale)));
 
     // The 120-word cap is applied here, in code. A prompt that asks for 120 words is a prompt
     // that produces 180 on the take you keep.
@@ -784,7 +787,9 @@ export class RoomActor {
 
     const started = this.#d.clock.now();
     const result = await this.#d.llm.complete(request);
-    const target = latencyTargetMs({ ...agent, latency: { ttftMinMs: 1000, ttftMaxMs: 2000 } }, this.#d.config.latency_scale, this.#rand);
+    const target = this.#floor(
+      latencyTargetMs({ ...agent, latency: { ttftMinMs: 1000, ttftMaxMs: 2000 } }, this.#d.config.latency_scale, this.#rand),
+    );
     await this.#holdUntil(started, target);
 
     const scripted = this.#relayOfferFor(this.#whisperTurns);
@@ -1206,7 +1211,7 @@ export class RoomActor {
     }
 
     const agent = agentByRole(this.#d.roster, decision.role);
-    const target = latencyTargetMs(agent, this.#d.config.latency_scale, this.#rand);
+    const target = this.#floor(latencyTargetMs(agent, this.#d.config.latency_scale, this.#rand));
     this.#d.store.rooms.update(this.#d.roomId, {
       state: 'agent_scheduled',
       pending_turn_id: pending.id,
@@ -1556,6 +1561,41 @@ export class RoomActor {
     this.#releaseTurn(pending.id, messageId, true);
     this.#nudgesHeldForStop = true;
     this.#armTimer();
+  }
+
+  /**
+   * **Re-bind the backend without reopening the room** (the bug the 16 Sep live run turned up).
+   *
+   * `openRoom` returns the already-open actor when the room is the same one, and the client was
+   * bound once, at construction. So changing the backend or a model in Settings did nothing until
+   * the deck was closed and reopened — which is also why an attempt to force a live failure by
+   * pointing Settings at a broken binary never reached the actor at all, and the failed-turn card
+   * could only be proved in tests. Same for the roster, which carries the agent model id.
+   *
+   * It is applied **between** turns, never inside one: `#runAgentTurn` reads the client once and
+   * a turn that changed backend halfway through would produce a message whose `backend` column
+   * is a lie. A turn in flight keeps the client it started with, which is what the abort is for
+   * if the learner does not want to wait for it.
+   */
+  rebind(next: {
+    llm?: LLMClient;
+    models?: ModelPlan;
+    roster?: AgentProfile[];
+    mode?: RoomConfig['mode'];
+    replySpeed?: ReplySpeed;
+  }): void {
+    if (next.llm) this.#d.llm = next.llm;
+    if (next.models) this.#d.models = next.models;
+    if (next.roster) this.#d.roster = next.roster;
+    if (next.mode) this.#d.config = { ...this.#d.config, mode: next.mode };
+    if (next.replySpeed) this.#replySpeed = next.replySpeed;
+    this.#log.event('info', 'room.rebound', {
+      backend: this.#d.llm.kind,
+      agent_model: this.#d.roster[0]?.model ?? null,
+      orchestrator_model: this.#models.orchestrator,
+      mode: this.#d.config.mode,
+      reply_speed: this.#replySpeed,
+    });
   }
 
   /** A held reply that the learner spoke over is dropped, logged, and never posted. */
@@ -2196,6 +2236,20 @@ export class RoomActor {
   /** 1 / 0.5 / 0. `'off'` collapses every floor, and the control that sets it must say so. */
   #speedScale(): number {
     return this.#replySpeed === 'off' ? 0 : this.#replySpeed === 'faster' ? 0.5 : 1;
+  }
+
+  /**
+   * Settings ▸ Reply speed, applied to a floor **where the floor is computed** rather than where
+   * it is slept on, so `latency_target_ms` on the row and `etaMs` on the wire are the floor that
+   * actually ran. A research log whose target column says 9 s for a turn the app released in 4.5
+   * is a log that cannot be analysed.
+   *
+   * Every floor is scaled, not only the agent turn: a pacing control that reaches the group reply
+   * but not the REFERENCE hold or the whisper hold makes the app feel half-un-paced, which is
+   * worse than either setting.
+   */
+  #floor(ms: number): number {
+    return Math.round(ms * this.#speedScale());
   }
 
   /** The floor-yield window as it stands now — Settings ▸ Reply speed scales it (audit §9). */

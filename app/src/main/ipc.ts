@@ -296,7 +296,13 @@ export class AppService {
    * also the better opening — beat 7: "no agent writes anywhere I have not asked".
    */
   openRoom(roomId: string, opts: { opener?: boolean } = {}): RoomSnapshot {
-    if (this.#actor && this.#actor.snapshot().roomId === roomId) return this.#actor.snapshot();
+    if (this.#actor && this.#actor.snapshot().roomId === roomId) {
+      // The room is already open, so nothing below runs — and until this line the client it was
+      // constructed with was the client it kept for the rest of the sitting. Settings changes
+      // reached SQLite and never reached the actor. Re-bind before handing it back.
+      this.rebindActor();
+      return this.#actor.snapshot();
+    }
     this.#actor?.stop();
     const room = this.#d.store.rooms.get(roomId);
     if (!room) throw new Error(`No such room: ${roomId}`);
@@ -326,6 +332,7 @@ export class AppService {
       // it, every relaunch would look to `handOffDue` like a learner who has just arrived.
       flowState: loadFlowState(this.#d.store, roomId),
       flowProfile: this.flowProfile(),
+      replySpeed: this.replySpeed(),
       newId,
       // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
       // all stamped with the turn id the LLM calls underneath them carry too.
@@ -335,6 +342,27 @@ export class AppService {
     this.#actor.recover();
     if (opts.opener !== false) void this.#actor.open();
     return this.#actor.snapshot();
+  }
+
+  /**
+   * Push the current Settings into the open actor: backend, models, roster, mode, reply speed.
+   *
+   * Called from `openRoom`'s reuse path and straight after a successful `saveSettings`, so a
+   * backend or model change takes effect on the **next turn** rather than on the next reopen.
+   * No-op when no room is open.
+   */
+  rebindActor(): void {
+    const actor = this.#actor;
+    if (!actor) return;
+    const resolved = this.backend();
+    const material = this.#d.store.materials.get(this.#d.store.rooms.get(actor.snapshot().roomId)?.material_id ?? '');
+    actor.rebind({
+      llm: this.llm(resolved, { fileName: material?.file_path ?? null, contentSha: material?.file_sha256 ?? null }),
+      models: resolved.models,
+      roster: rosterFor(this.pairing(), resolved.models.agent),
+      mode: modeFor(resolved.kind),
+      replySpeed: this.replySpeed(),
+    });
   }
 
   /** Runs on launch and on every `powerMonitor` resume. Idempotent by timerEpoch. */
@@ -635,6 +663,9 @@ export class AppService {
 
     handle<SettingsPatch>(IPC.saveSettings, (patch) => {
       const result = this.saveSettings(patch);
+      // Settings ▸ backend / model / reply speed reach the room that is already open, now, and
+      // apply to its next turn. Before this they waited for a reopen (STATUS, 16 Sep).
+      if (result.ok) this.rebindActor();
       if (!result.ok) return result;
       return { ok: true, settings: this.settingsView() };
     });

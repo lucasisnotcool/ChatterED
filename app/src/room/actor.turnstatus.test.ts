@@ -421,3 +421,66 @@ describe('timings on the wire (audit §6 and §10)', () => {
     expect(trace!.totalMs).not.toBeNull();
   });
 });
+
+describe('Reply speed, and a backend that changes under an open room', () => {
+  it('halves every floor on "faster" and collapses them on "off", from the next turn', async () => {
+    const h = build(streamingClient(['Yes, everywhere on S.']));
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const paced = h.store.messages.forRoom(h.roomId).at(-1)!.latency_target_ms!;
+    expect(paced).toBeGreaterThan(2_000);
+
+    h.actor.rebind({ replySpeed: 'faster' });
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const faster = h.store.messages.forRoom(h.roomId).at(-1)!.latency_target_ms!;
+    // The floor that actually ran is the floor on the row: a target column that disagrees with
+    // what the app did is a research log that cannot be analysed.
+    expect(faster).toBeLessThan(paced);
+    expect(faster).toBeGreaterThan(0);
+
+    h.actor.rebind({ replySpeed: 'off' });
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.latency_target_ms).toBe(0);
+  });
+
+  it('never re-paces a turn that is already in flight', async () => {
+    const h = build(streamingClient(['Steady on.']));
+    const sending = h.actor.sendMessage(TURN, ANCHOR);
+    await h.clock.run(1);
+    h.actor.rebind({ replySpeed: 'off' });
+    await settle(h.clock, sending);
+    // The turn kept the floor it started with; the change applies to the next one.
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.latency_target_ms).toBeGreaterThan(0);
+  });
+
+  it('answers the next turn on the backend Settings now names, with no reopen', async () => {
+    const h = build(streamingClient(['From the first backend.']));
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.backend).toBe('anthropic');
+
+    // What Settings does: a different client, bound to the actor that is already open. Before
+    // this the actor kept the client it was constructed with for the life of the sitting, and a
+    // backend change took effect only on the next reopen (STATUS, 16 Sep).
+    const swapped: LLMClient = {
+      kind: 'claude-cli',
+      async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+        if (request.meta.scope !== 'group') {
+          return { text: '{}', model: 'sonnet', usage: { ...EMPTY_USAGE }, ttftMs: 0 };
+        }
+        onDelta?.('From the second backend.');
+        return {
+          text: 'From the second backend.',
+          model: 'claude-sonnet-5',
+          usage: { ...EMPTY_USAGE },
+          ttftMs: 3,
+          backend: 'claude-cli',
+        };
+      },
+    };
+    h.actor.rebind({ llm: swapped });
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const reply = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(reply.backend).toBe('claude-cli');
+    expect(reply.model).toBe('claude-sonnet-5');
+    expect(h.actor.turnTrace().at(-1)!.backend).toBe('claude-cli');
+  });
+});
