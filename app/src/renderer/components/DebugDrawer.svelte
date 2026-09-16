@@ -13,8 +13,24 @@
    * sink enforces by key name. Nothing here can leak a transcript into a screenshot.
    */
   import { store } from '../lib/store.svelte.js';
+  import { tokensLabel, usdApprox } from '../lib/cost.js';
+  import { COST_SCOPE_LABEL, totalTokens, type CostScope } from '../../shared/cost.js';
 
   const rows = $derived([...store.turnTraces].reverse());
+
+  /**
+   * **The last calls, from the cost ledger** (issue #41 item 5).
+   *
+   * A turn is not a call: one turn can be an orchestrator decision, a generation and a ledger
+   * evaluation, and the row above shows the turn. This table shows what was actually billed,
+   * which is the other half of "hung, or thinking?" — and on the evening the window runs out it
+   * is the only view that says so. Same rule as the turn log: **no bodies**, by construction in
+   * `CostCallView`, which carries sizes and ids and nothing else.
+   */
+  const calls = $derived(store.costRecent);
+  function scopeWord(scope: string): string {
+    return COST_SCOPE_LABEL[scope as CostScope] ?? scope;
+  }
 
   function ms(n: number | null): string {
     return n === null ? '—' : `${(n / 1000).toFixed(2)}s`;
@@ -35,6 +51,45 @@
     <button type="button" class="mini" onclick={() => void store.loadTurnTraces()}>Refresh</button>
     <button type="button" class="mini" onclick={() => (store.debugOpen = false)}>Close ⌥⌘D</button>
   </header>
+
+  {#if store.costOn}
+    <div class="calls">
+      <header class="sub">
+        <span class="title">Last calls</span>
+        <span class="quiet">{calls.length} · newest first · sizes only</span>
+        <span class="gap"></span>
+        <button type="button" class="mini" onclick={() => void store.loadRecentCalls()}>Refresh</button>
+      </header>
+      {#if calls.length === 0}
+        <p class="empty">No model calls recorded yet.</p>
+      {:else}
+        <div class="scroll short">
+          <table>
+            <thead>
+              <tr>
+                <th>when</th><th>scope</th><th>model</th><th>backend</th>
+                <th>tok</th><th>est</th><th>ms</th><th>anchor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each calls as call (call.id)}
+                <tr class:backfilled={call.backfilled}>
+                  <td>{call.createdAt.slice(11, 19)}</td>
+                  <td>{scopeWord(call.scope)}</td>
+                  <td>{call.model}</td>
+                  <td>{call.backend}</td>
+                  <td>{tokensLabel(totalTokens(call.tokens))}</td>
+                  <td>{usdApprox(call.estimatedUsd)}</td>
+                  <td>{call.durationMs === null ? '—' : Math.round(call.durationMs)}</td>
+                  <td>{call.anchorId ?? '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if rows.length === 0}
     <p class="empty">
@@ -105,6 +160,14 @@
 
   .empty { margin: 0; padding: 18px 12px; font-size: 11.5px; color: var(--muted); }
   .scroll { overflow: auto; min-height: 0; }
+
+  /* The calls table, above the turn log and capped so it can never push it off screen. */
+  .calls { flex: none; display: flex; flex-direction: column; border-bottom: 1px solid var(--hairline); }
+  .sub { border-bottom: 1px solid var(--hairline); background: var(--ground); }
+  .scroll.short { max-height: 132px; }
+  /* A row the backfill reconstructed from the logs rather than recorded live, said quietly and
+     said at all — the difference matters to anyone reading these numbers as evidence. */
+  tr.backfilled td { opacity: 0.7; font-style: italic; }
 
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
   th, td {
