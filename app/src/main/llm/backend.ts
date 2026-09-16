@@ -130,6 +130,13 @@ export interface CreateClientInput extends ResolveInput {
  * Every backend comes back wrapped in `loggedClient`, so `llm.request`/`first_token`/`complete`/
  * `error` are a property of *calling a model*, not of one implementation remembering to.
  */
+/**
+ * How fast a scripted turn unrolls, in ms between word chunks. The class defaults to 0 so the
+ * fake-clock tests stay instant; the *app* wants a plausible rate, because the point of the
+ * scripted backend is that the video and the live session look the same.
+ */
+const SCRIPTED_CHUNK_MS = 35;
+
 export function createClient(input: CreateClientInput): LLMClient {
   return loggedClient(rawClient(input), input.logger ?? log);
 }
@@ -139,14 +146,14 @@ function rawClient(input: CreateClientInput): LLMClient {
     case 'claude_cli': {
       const binary = input.resolved.detection?.path;
       if (binary) return new ClaudeCliClient({ binary, timeoutMs: input.cliTimeoutMs });
-      return new ScriptedClient({ material: input.material, roster: input.roster });
+      return new ScriptedClient({ material: input.material, roster: input.roster, chunkMs: SCRIPTED_CHUNK_MS });
     }
     case 'anthropic': {
       const key = input.apiKey();
-      return key ? new AnthropicClient({ apiKey: key }) : new ScriptedClient({ material: input.material, roster: input.roster });
+      return key ? new AnthropicClient({ apiKey: key }) : new ScriptedClient({ material: input.material, roster: input.roster, chunkMs: SCRIPTED_CHUNK_MS });
     }
     default:
-      return new ScriptedClient({ material: input.material, roster: input.roster });
+      return new ScriptedClient({ material: input.material, roster: input.roster, chunkMs: SCRIPTED_CHUNK_MS });
   }
 }
 

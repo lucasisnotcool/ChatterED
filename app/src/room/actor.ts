@@ -140,6 +140,70 @@ interface PendingTurn {
   cancelled: boolean;
 }
 
+/**
+ * **The floor, applied to tokens instead of to the whole reply.**
+ *
+ * `design-brief.md` §D4 asks for a floor on *visible* time to first token, and Tan et al. §3.2.3
+ * is about when a reply starts arriving, not about when it finishes. Until now the actor honoured
+ * that by buffering the entire generation and posting it as one block, which is correct and also
+ * means a 200-word Teacher turn behind a 40 s cold start shows nothing for 40 s and then
+ * everything at once. Both clients have streamed all along (`claude-cli.ts` parses
+ * `content_block_delta`, `anthropic.ts` likewise) and the deltas were accumulated and thrown away.
+ *
+ * So: deltas that arrive **during** the hold go into the buffer and nothing is emitted. The
+ * moment the floor elapses the buffer is flushed as a single delta — that is the visible first
+ * token, and `ttft_actual_ms` is measured there — and everything after it streams live. Nothing
+ * becomes visible one millisecond earlier than it did before; a long turn now unrolls instead of
+ * thudding.
+ */
+class TurnStream {
+  readonly #emit: (text: string) => void;
+  readonly #now: () => number;
+  #buffer = '';
+  #open = false;
+  #closed = false;
+  #text = '';
+  /** When the first token became **visible**, not when the model produced it. */
+  firstVisibleAt: number | null = null;
+
+  constructor(emit: (text: string) => void, now: () => number) {
+    this.#emit = emit;
+    this.#now = now;
+  }
+
+  /** Everything the client has produced so far, floor or no floor. */
+  get text(): string {
+    return this.#text;
+  }
+
+  push(delta: string): void {
+    if (this.#closed || delta.length === 0) return;
+    this.#text += delta;
+    if (!this.#open) {
+      this.#buffer += delta;
+      return;
+    }
+    if (this.firstVisibleAt === null) this.firstVisibleAt = this.#now();
+    this.#emit(delta);
+  }
+
+  /** The floor has elapsed. Flush what the hold accumulated, then go live. */
+  openFloor(): void {
+    if (this.#open || this.#closed) return;
+    this.#open = true;
+    if (this.#buffer.length === 0) return;
+    this.firstVisibleAt = this.#now();
+    const flush = this.#buffer;
+    this.#buffer = '';
+    this.#emit(flush);
+  }
+
+  /** A cancelled or stopped turn stops emitting; whatever was said stays in `text`. */
+  close(): void {
+    this.#closed = true;
+  }
+}
+
 /** What `Retry` needs to replay the *same* turn rather than schedule a new one. */
 interface TurnReplay {
   trigger: TurnTrigger;
@@ -1182,22 +1246,51 @@ export class RoomActor {
      * path is exactly the path this commit exists to make visible; it must not take the app down
      * on the way to the card.
      */
-    const generation = this.#generate(agent, decision, turnCue).then(
+    const participant: TurnParticipantView = {
+      agentKey: agent.key,
+      role: agent.role,
+      displayName: agent.displayName,
+      colour: agent.colour,
+    };
+    const stream = new TurnStream(
+      (text) =>
+        this.#d.transport.emit({
+          type: 'turn.delta',
+          roomId: this.#d.roomId,
+          turnId: pending.id,
+          anchorId,
+          participant,
+          text,
+        }),
+      () => this.#d.clock.now(),
+    );
+    const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta)).then(
       (value) => ({ ok: true as const, value }),
       (error: unknown) => ({ ok: false as const, error }),
     );
+    /**
+     * The floor runs **concurrently with the generation**, not after it. That is the whole change:
+     * the hold is a wall-clock deadline measured from `turnStart`, and what it gates is when the
+     * tokens become visible, not when the call is allowed to finish. `await`ing it below gives
+     * the same total timing it always had — the later of the two — with the deltas already out.
+     */
+    const floor = this.#holdUntil(turnStart, target).then(() => {
+      if (!pending.cancelled) stream.openFloor();
+    });
 
     const yieldMs = this.#yieldMs();
     if (trigger === 'student_message' || trigger === 'promote') {
       await this.#sleep(Math.max(0, Math.min(yieldMs, target - 1_000) - (this.#d.clock.now() - turnStart)));
     }
     if (pending.cancelled) {
+      stream.close();
       this.#cancelTurn(decision.role, pending);
       return;
     }
     this.#showThinking(agent, turnStart, target);
 
     let text: string;
+    /** The model's own time to first token. The *visible* one is computed after the floor. */
     let ttft = 0;
     let model = agent.model;
     let backend: LlmBackend | null = null;
@@ -1208,6 +1301,7 @@ export class RoomActor {
        * This used to emit a transient banner that said "retrying" and then retried nothing. The
        * card stays in the thread, names what broke, and the button actually replays the turn.
        */
+      stream.close();
       this.#clearThinking();
       this.#pending = null;
       this.#releaseTurn(pending.id, null);
@@ -1231,11 +1325,23 @@ export class RoomActor {
       usage = result.usage as unknown as Record<string, number>;
     }
 
-    await this.#holdUntil(turnStart, target);
+    await floor;
     if (pending.cancelled) {
+      stream.close();
       this.#cancelTurn(decision.role, pending);
       return;
     }
+    stream.close();
+    /**
+     * `ttft_actual_ms` is the **visible** first token, which is the number the manipulation is
+     * about and the number the message card shows. The client's own `ttftMs` is the model's, and
+     * it is smaller than this by however much of the floor was left when it arrived; it stays in
+     * the log line under `llm.complete`, where it belongs.
+     */
+    const visibleTtft =
+      stream.firstVisibleAt !== null
+        ? stream.firstVisibleAt - turnStart
+        : Math.max(0, this.#d.clock.now() - turnStart);
 
     await this.#mailbox.enqueue(() => {
       this.#clearThinking();
@@ -1246,7 +1352,7 @@ export class RoomActor {
         backend,
         usage: JSON.stringify(usage),
         latencyTargetMs: target,
-        ttftActualMs: ttft,
+        ttftActualMs: visibleTtft,
         dividerCause: trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent) : null,
         anchorId,
         // `disagreement` is never written any more: the S2 quota and the whole social-group
@@ -1264,7 +1370,7 @@ export class RoomActor {
       this.#event(decision.role!, 'agent.turn.dispatched', {
         seq: row.seq,
         latency_target_ms: target,
-        ttft_actual_ms: ttft,
+        ttft_actual_ms: visibleTtft,
         usage,
       });
       turnLog.event('info', 'turn.dispatched', {
@@ -1275,7 +1381,9 @@ export class RoomActor {
         model,
         backend,
         latency_target_ms: target,
-        ttft_actual_ms: ttft,
+        // Both: what the learner saw, and what the model did behind the floor.
+        ttft_actual_ms: visibleTtft,
+        ttft_model_ms: ttft,
         total_ms: this.#d.clock.now() - turnStart,
         // The length of what was said, never what was said.
         reply_chars: text.length,
@@ -1359,7 +1467,7 @@ export class RoomActor {
     return decision;
   }
 
-  async #generate(agent: AgentProfile, decision: TurnDecision, cue: string) {
+  async #generate(agent: AgentProfile, decision: TurnDecision, cue: string, onDelta?: (text: string) => void) {
     // Stage-1 fills are never generated against the concept (product-design.md §C5).
     if (decision.moveType === 'content_free_nudge') {
       const pool = CONTENT_FREE_NUDGES;
@@ -1368,6 +1476,10 @@ export class RoomActor {
       if (this.#nudgeCursor < 0) this.#nudgeCursor = Math.floor(this.#rand() * pool.length);
       else this.#nudgeCursor = (this.#nudgeCursor + 1) % pool.length;
       const line = pool[this.#nudgeCursor] ?? pool[0]!;
+      // Through the same pump as a generated turn: a nudge that appears by a different mechanism
+      // than every other message is a nudge that looks different, and §C5 already makes it look
+      // different enough.
+      onDelta?.(line);
       return { text: line, model: 'pool:content_free', usage: {}, ttftMs: 0, backend: undefined };
     }
     const request = buildGroupContext(this.#d.groupStore, {
@@ -1388,7 +1500,7 @@ export class RoomActor {
     // `llm.complete` pair carried no correlation id and fell out of `jq 'select(.turn==…)'`,
     // which is the one query the log exists to answer.
     request.meta.turnId = this.#pending?.id;
-    return this.#d.llm.complete(request);
+    return this.#d.llm.complete(request, onDelta);
   }
 
   async #updateLedger(cue: string, turnStart: number): Promise<void> {

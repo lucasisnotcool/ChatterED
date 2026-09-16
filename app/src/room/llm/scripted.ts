@@ -35,6 +35,16 @@ export interface ScriptedClientOptions {
   /** A Settings override — a script name. It wins over `material`. */
   override?: string | null;
   /**
+   * Milliseconds between the word chunks a scripted turn is streamed in.
+   *
+   * **Zero by default, and that is deliberate.** Every test in this repo runs the actor on a fake
+   * clock; a real timer inside the client would either hang those tests or make them wait real
+   * seconds. So the default streams the chunks back to back — still many `onDelta` calls in
+   * order, still the same text — and the app asks for a plausible rate (`llm/backend.ts`), which
+   * is what makes scripted mode *look* like the live one rather than merely behave like it.
+   */
+  chunkMs?: number;
+  /**
    * The roster the room is actually running, so a beat that names the *other* agent — the
    * Tester's question, a whisper reply — is filled from it rather than from a literal in the
    * script (`agents.fillAgentNames`). Defaults to the pinned roster (#32), which is what every
@@ -55,9 +65,11 @@ export class ScriptedClient implements LLMClient {
    */
   #latched: ScriptSource | null = null;
   #roster: readonly AgentProfile[];
+  #chunkMs: number;
 
   constructor(opts: ScriptedClientOptions = {}) {
     this.#ttftMs = opts.ttftMs ?? 900;
+    this.#chunkMs = Math.max(0, opts.chunkMs ?? 0);
     this.#roster = opts.roster ?? rosterFor();
     this.#pinned =
       opts.script ??
@@ -84,7 +96,15 @@ export class ScriptedClient implements LLMClient {
     // Names last, over whatever the beat produced: a decision or a ledger blob has no name in it
     // and is untouched, and a turn's prose gets the roster's spelling of it.
     const text = fillAgentNames(this.#textFor(request, cue), this.#roster);
-    onDelta?.(text);
+    /**
+     * Prose is streamed in word chunks; a JSON object is not. An orchestrator or ledger reply is
+     * parsed, never rendered, and chunking it would only invite a half-object to be parsed by
+     * some future caller that forgot the difference.
+     */
+    if (onDelta) {
+      if (request.meta.scope === 'orchestrator' || request.meta.scope === 'ledger') onDelta(text);
+      else await this.#streamWords(text, onDelta);
+    }
     return {
       text,
       model: `scripted:${request.model}`,
@@ -92,6 +112,17 @@ export class ScriptedClient implements LLMClient {
       ttftMs: this.#ttftMs,
       backend: 'scripted',
     };
+  }
+
+  /** ~4 words at a time, which is about what a real stream delivers per event. */
+  async #streamWords(text: string, onDelta: (text: string) => void): Promise<void> {
+    const parts = text.split(/(\s+)/);
+    for (let i = 0; i < parts.length; i += 8) {
+      const chunk = parts.slice(i, i + 8).join('');
+      if (chunk.length === 0) continue;
+      onDelta(chunk);
+      if (this.#chunkMs > 0) await new Promise((resolve) => setTimeout(resolve, this.#chunkMs));
+    }
   }
 
   /**
