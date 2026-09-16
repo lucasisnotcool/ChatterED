@@ -373,7 +373,13 @@ const DRAFT_SCHEMA: Record<string, unknown> = {
               'At most eight words and sixty characters. The phrase shown in the learner\'s ' +
               'progress rail, e.g. "what PSD means" — not the claim restated.',
           },
-          level_three_criterion: { type: 'string' },
+          level_three_criterion: {
+            type: 'string',
+            maxLength: 180,
+            description:
+              'One sentence, at most twenty-five words: what using this claim on a specific ' +
+              'instance looks like. Not the claim restated.',
+          },
         },
       },
     },
@@ -398,7 +404,10 @@ const INGEST_SYSTEM =
   'the attached lecture material. Show what "applied" looks like for each claim. Never ' +
   'invent content that is not in the material. `learner_label` is a short handle for the claim, ' +
   'at most eight words \u2014 it is shown in a narrow progress rail beside the chat and has to be ' +
-  'scannable at a glance. It is never the claim restated.';
+  'scannable at a glance. It is never the claim restated. `level_three_criterion` is one ' +
+  'sentence, at most twenty-five words, naming what *using* the claim on a specific instance ' +
+  'would look like. Reply with the JSON object and nothing else: no preamble, no reasoning ' +
+  'before it, no commentary after it.';
 
 export async function draftConcept(
   llm: LLMClient | null,
@@ -416,8 +425,12 @@ export async function draftConcept(
       ? `MODULE ${input.moduleCode.trim()}\n\n${outline}MATERIAL\n${input.text}`
       : `${outline}MATERIAL\n${input.text}`;
     const result = await llm.complete({
-      model: models.orchestrator,
-      max_tokens: 1500,
+      // The fast lane (issue #35 item 5a). 37.0 s of Sonnet, 4,053 output tokens, for a rail
+      // the learner has not looked at yet — see `ModelPlan.fast`.
+      model: models.fast,
+      // Was 1,500. The object itself is ~600 tokens; the rest was reasoning, and the system
+      // prompt now says not to write any. A ceiling is not a target, but it is a backstop.
+      max_tokens: 1000,
       system: [{ type: 'text', text: INGEST_SYSTEM }],
       messages: [{ role: 'user', content: correction ? `${material}\n\n${correction}` : material }],
       jsonSchema: DRAFT_SCHEMA,

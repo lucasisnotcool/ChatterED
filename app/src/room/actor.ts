@@ -68,6 +68,7 @@ import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } fr
 import type { ReferenceContext } from './reference.js';
 import { latestByElement } from './flow.js';
 import { decisionDirective, ledgerDirective, taughtBlock } from './prompts.js';
+import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
@@ -1787,9 +1788,20 @@ export class RoomActor {
       }),
       maxTokens: 900,
     });
-    // The ledger is a structured-output call, not an agent turn: it runs on the orchestrator
-    // model, which is the whole point of the two-dropdown split (#19).
-    request.model = this.#models.orchestrator;
+    /**
+     * **Not a turn, and no longer prompted or priced as one** (issue #35 item 5b).
+     *
+     * `buildGroupContext` gave this call the frozen room prefix — house rules, safeguards, the
+     * concept pack and the learner's *whole document* — plus Ellie's role block: 15,090 system
+     * characters, measured, for a call that does not speak and is judging four sentences. The
+     * message stream is kept, because it is the transcript and there must be exactly one
+     * builder of it (and one whisper invariant); the system block is replaced with the rubric.
+     *
+     * And it runs on `models.fast`, not on the orchestrator: 17.2 s and 9.8 s on Sonnet, all of
+     * it reasoning tokens, for a glyph nobody is waiting to read. See `ModelPlan.fast`.
+     */
+    request.system = [{ type: 'text', text: ledgerSystemBlock(this.#d.pack), cache_control: { type: 'ephemeral' } }];
+    request.model = this.#models.fast;
     request.meta = { ...request.meta, scope: 'ledger', scriptCue: cue };
     // Structured output, for the same reason the decision uses it: the CLI enforces the schema
     // and repairs one bad answer before the caller ever sees it (`claude-cli.ts`).

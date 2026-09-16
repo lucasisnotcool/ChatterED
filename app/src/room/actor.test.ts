@@ -14,6 +14,7 @@ import { DEMO, openSession, type TaughtItem } from './flow.js';
 import { ScriptedClient } from './llm/scripted.js';
 import { buildGroupContext } from './context.group.js';
 import { LEDGER_SCHEMA } from './ledger.js';
+import { API_PLAN } from './llm/models.js';
 import type { RoomActorDeps } from './actor.js';
 import type { LLMClient, LlmRequest, LlmResult, LlmScope } from './llm/types.js';
 
@@ -595,6 +596,24 @@ describe('the ledger call', () => {
     expect(directive).toContain('character for character');
     // And it must not still be told to reply with a message.
     expect(directive).not.toContain('Reply with the message only');
+  });
+
+  it('runs on the fast model and is not given the room (issue #35 item 5b)', async () => {
+    const client = new CapturingClient();
+    const h = build('scripted', undefined, client);
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+
+    const ledger = client.seen.find((r) => r.meta.scope === 'ledger')!;
+    const reply = client.seen.find((r) => r.meta.scope === 'group')!;
+    const system = ledger.system.map((b) => b.text).join('\n');
+
+    // `models.fast` is Haiku on both backends: a glyph nobody is waiting to read does not get
+    // the room's best model, and 17.2 s of it was all reasoning tokens.
+    expect(ledger.model).toBe(API_PLAN.fast);
+    // The rubric, not the room. Measured before this: 15,090 system characters of prefix.
+    expect(system).toContain('0 not yet');
+    expect(system).not.toContain('HOUSE RULES');
+    expect(system.length).toBeLessThan(reply.system.map((b) => b.text).join('\n').length / 2);
   });
 });
 

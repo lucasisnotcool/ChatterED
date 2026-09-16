@@ -65,6 +65,14 @@ export interface LlmResult {
   backend?: LlmBackend;
   /** The local CLI reports a dollar figure per call; the API path does not. */
   costUsd?: number;
+  /**
+   * How long this call sat in the CLI backend's queue before a `claude` child was spawned
+   * (issue #35 item 5c). Absent when it did not wait, and on every other backend. It is
+   * **not** part of `ttftMs`, which measures the call: a turn that took 6 s of which 4 s was
+   * queue is a different problem from one that took 6 s of generation, and the log must be
+   * able to tell them apart.
+   */
+  queuedMs?: number;
 }
 
 /**

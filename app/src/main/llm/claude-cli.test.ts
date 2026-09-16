@@ -7,7 +7,7 @@
  * five ways a local subprocess goes wrong": it is not on the PATH, it is there but not logged
  * in, it exits non-zero, it prints something that is not JSON, and it never returns at all.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,12 +22,14 @@ import {
   normaliseCliUsage,
   OWN_TURN_PREFIX,
   promptFor,
+  cliQueue,
+  isEmptyExitOne,
   resolveClaudeBinary,
   systemTextFor,
 } from './claude-cli.js';
 import { readProbe } from './detect.js';
 import { AnthropicClient } from '../../room/llm/anthropic.js';
-import type { LlmRequest } from '../../room/llm/types.js';
+import { LlmAbortedError, type LlmRequest } from '../../room/llm/types.js';
 
 let root: string;
 let binDir: string;
@@ -82,6 +84,26 @@ case "$MODE" in
     else
       echo '{"type":"result","subtype":"success","is_error":false,"result":"{\"speak\":false}","usage":{}}'
     fi
+    ;;
+  emptyexit)
+    # Exit 1 with nothing on stderr - the 2026-09-16 05:10:48 failure shape. Succeeds on the
+    # second attempt, which is what the one retry is for.
+    COUNT_FILE="$FAKE_COUNT"
+    N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+    N=$((N + 1))
+    echo "$N" > "$COUNT_FILE"
+    if [ "$N" = "1" ]; then
+      exit 1
+    fi
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"second time lucky","usage":{}}'
+    ;;
+  emptyexitalways)
+    exit 1
+    ;;
+  slow)
+    # Long enough that a second call started at the same instant would overlap it.
+    sleep 0.4
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"slow","usage":{}}'
     ;;
   hang)
     sleep 30
@@ -395,5 +417,76 @@ describe('which model answered', () => {
       }),
     ).toBe('claude-sonnet-5-20260401');
     expect(modelFromResultForTest({})).toBeNull();
+  });
+});
+
+describe('one `claude` at a time (issue #35 item 5c)', () => {
+  beforeEach(() => cliQueue.reset());
+
+  it('serialises two calls that were dispatched in the same tick', async () => {
+    // 2026-09-16 05:10:47.206 / .209 — the ledger and the group call three milliseconds apart,
+    // and both came back `exited 1: no output` 1.7 s later. The fake binary sleeps 0.4 s, so a
+    // second child that ran concurrently would report no queue wait at all.
+    const c = client('slow');
+    const [a, b] = await Promise.all([
+      c.complete(request({ meta: { scope: 'group' } })),
+      c.complete(request({ meta: { scope: 'ledger' } })),
+    ]);
+    expect([a.text, b.text]).toEqual(['slow', 'slow']);
+    const waited = [a, b].filter((r) => (r.queuedMs ?? 0) > 0);
+    expect(waited).toHaveLength(1);
+    expect(waited[0]!.queuedMs).toBeGreaterThanOrEqual(300);
+  });
+
+  it('lets the reply overtake a ledger call that is already waiting', async () => {
+    const c = client('slow');
+    const order: string[] = [];
+    // Hold the lane with something already running.
+    const holding = c.complete(request({ meta: { scope: 'group' } })).then(() => order.push('holding'));
+    // Queue the ledger first, then the reply. The reply must still go second overall.
+    await new Promise((r) => setTimeout(r, 20));
+    const ledger = c.complete(request({ meta: { scope: 'ledger' } })).then(() => order.push('ledger'));
+    const reply = c.complete(request({ meta: { scope: 'reference' } })).then(() => order.push('reference'));
+    await Promise.all([holding, ledger, reply]);
+    expect(order).toEqual(['holding', 'reference', 'ledger']);
+  });
+
+  it('does not hold the lane for a call that was stopped while queued', async () => {
+    const c = client('slow');
+    const holding = c.complete(request({ meta: { scope: 'group' } }));
+    await new Promise((r) => setTimeout(r, 20));
+    const controller = new AbortController();
+    const queued = c.complete(request({ meta: { scope: 'ledger' } }), undefined, controller.signal);
+    controller.abort();
+    await expect(queued).rejects.toBeInstanceOf(LlmAbortedError);
+    await expect(holding).resolves.toMatchObject({ text: 'slow' });
+    // The lane is free: a call after the abort runs rather than waiting forever.
+    await expect(c.complete(request())).resolves.toMatchObject({ text: 'slow' });
+  });
+});
+
+describe('the empty `exited 1`', () => {
+  beforeEach(() => cliQueue.reset());
+
+  it('is retried once, and the second attempt is the answer', async () => {
+    const count = capture();
+    const result = await client('emptyexit', { FAKE_COUNT: count }).complete(request());
+    expect(result.text).toBe('second time lucky');
+    expect(readFileSync(count, 'utf8').trim()).toBe('2');
+  });
+
+  it('is retried once and no more', async () => {
+    await expect(client('emptyexitalways').complete(request())).rejects.toThrow(/exited 1/);
+  });
+
+  it('is not retried when the CLI said why it failed', async () => {
+    // `fail` exits 3 with a reason on stderr. A real failure is not a race.
+    await expect(client('fail').complete(request())).rejects.toThrow(/something went wrong/);
+  });
+
+  it('recognises only the empty shape', () => {
+    expect(isEmptyExitOne('The Claude CLI exited 1: no output')).toBe(true);
+    expect(isEmptyExitOne('The Claude CLI exited 1: Invalid model name')).toBe(false);
+    expect(isEmptyExitOne('The Claude CLI exited 3: no output')).toBe(false);
   });
 });

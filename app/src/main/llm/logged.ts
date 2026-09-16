@@ -68,8 +68,14 @@ export function loggedClient(inner: LLMClient, logger: () => Logger): LLMClient 
           chunks,
           reply_chars: result.text.length,
           usage: result.usage,
+          ...(result.queuedMs === undefined ? {} : { queued_ms: result.queuedMs }),
           ...(result.costUsd === undefined ? {} : { cost_usd: result.costUsd }),
         });
+        // Its own line as well as a field, because "was this turn slow because another call
+        // held the CLI" is a question asked by grepping for one event name.
+        if (result.queuedMs !== undefined && result.queuedMs > 0) {
+          log.info('llm.queued_ms', { scope: request.meta.scope, model: request.model, ms: result.queuedMs });
+        }
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

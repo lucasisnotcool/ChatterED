@@ -144,6 +144,118 @@ interface CliRun {
   subtype: string | null;
 }
 
+
+// ── one `claude` at a time ──────────────────────────────────────────────────
+
+/**
+ * **The reply goes first, and it goes alone.**
+ *
+ * 2026-09-16 05:10:48, `room_6a9609d5c6fb`: the group call and the ledger call were dispatched
+ * three milliseconds apart (`llm.request` scope=group at 47.209, scope=ledger at 47.206) and
+ * **both** came back `CliExitError "The Claude CLI exited 1: no output"` 1.7 s later. Two
+ * `claude` children starting into the same config at the same instant is a shape the CLI does
+ * not survive, and the learner saw a failed turn and a failed rail from one keystroke.
+ *
+ * So: one child at a time, process-wide. Module-level and not per-instance on purpose —
+ * `AppService.llm()` constructs a fresh `ClaudeCliClient` on every room open and every rebind,
+ * so a queue owned by the client would be several queues and would serialise nothing.
+ *
+ * **Priority, because serialising is not enough.** If the ledger merely went first the learner
+ * would wait for it, which is the failure the ledger was moved off the critical path to avoid.
+ * Lower number wins; within a priority it is first-come, first-served, so nothing starves.
+ */
+export const CLI_PRIORITY: Record<string, number> = {
+  // What the learner is watching for.
+  group: 0,
+  reference: 0,
+  whisper: 0,
+  // Decides who speaks. Usually settled by rule now (`rule:teacher_answers`), rarely a call.
+  orchestrator: 1,
+  // Nobody is waiting to read either of these.
+  ledger: 2,
+  ingest: 2,
+};
+
+export const CLI_DEFAULT_PRIORITY = 1;
+
+interface Waiter {
+  priority: number;
+  seq: number;
+  start: () => void;
+  fail: (err: Error) => void;
+}
+
+class CliQueue {
+  #running = false;
+  #waiting: Waiter[] = [];
+  #seq = 0;
+
+  /** Resolves with the milliseconds spent waiting. The caller must call `release()`. */
+  acquire(priority: number, signal?: AbortSignal): Promise<number> {
+    const queuedAt = Date.now();
+    if (!this.#running) {
+      this.#running = true;
+      return Promise.resolve(0);
+    }
+    return new Promise<number>((resolve, reject) => {
+      const waiter: Waiter = {
+        priority,
+        seq: (this.#seq += 1),
+        start: () => {
+          if (onAbort) signal?.removeEventListener('abort', onAbort);
+          resolve(Date.now() - queuedAt);
+        },
+        fail: (err) => {
+          if (onAbort) signal?.removeEventListener('abort', onAbort);
+          reject(err);
+        },
+      };
+      // Stop pressed while queued: the call never starts, and it does not hold the lane.
+      const onAbort = signal
+        ? () => {
+            this.#waiting = this.#waiting.filter((w) => w !== waiter);
+            waiter.fail(new LlmAbortedError());
+          }
+        : null;
+      if (onAbort) signal?.addEventListener('abort', onAbort, { once: true });
+      this.#waiting.push(waiter);
+    });
+  }
+
+  release(): void {
+    const next = this.#waiting.reduce<Waiter | null>(
+      (best, w) => (best === null || w.priority < best.priority || (w.priority === best.priority && w.seq < best.seq) ? w : best),
+      null,
+    );
+    if (!next) {
+      this.#running = false;
+      return;
+    }
+    this.#waiting = this.#waiting.filter((w) => w !== next);
+    next.start();
+  }
+
+  /** Tests only. The app has exactly one queue for its whole life. */
+  reset(): void {
+    this.#running = false;
+    this.#waiting = [];
+    this.#seq = 0;
+  }
+}
+
+export const cliQueue = new CliQueue();
+
+/**
+ * The failure the retry is for: `exited 1` with **nothing on stderr**. That is the CLI losing a
+ * race with itself, not a bad request — a bad request exits 1 with a reason printed. One retry,
+ * after a breath, and then it is a real failure like any other.
+ */
+export function isEmptyExitOne(message: string): boolean {
+  return /exited 1: no output/i.test(message);
+}
+
+export const CLI_RETRY_DELAY_MS = 500;
+
 export class ClaudeCliClient implements LLMClient {
   readonly kind = 'claude-cli' as const;
   readonly binary: string;
@@ -161,7 +273,18 @@ export class ClaudeCliClient implements LLMClient {
   }
 
   async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
-    const run = await this.#run(request, systemTextFor(request), promptFor(request), onDelta, signal);
+    const priority = CLI_PRIORITY[request.meta.scope] ?? CLI_DEFAULT_PRIORITY;
+    const queuedMs = await cliQueue.acquire(priority, signal);
+    try {
+      const result = await this.#complete(request, onDelta, signal);
+      return queuedMs > 0 ? { ...result, queuedMs } : result;
+    } finally {
+      cliQueue.release();
+    }
+  }
+
+  async #complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
+    const run = await this.#runOnce(request, systemTextFor(request), promptFor(request), onDelta, signal);
 
     let text = pickText(run);
 
@@ -170,7 +293,7 @@ export class ClaudeCliClient implements LLMClient {
     // repair retry, then let the caller's own parse failure handle it — the orchestrator and
     // the ledger both already treat an unparseable answer as "stay quiet".
     if (request.jsonSchema && !parsesAsJson(text)) {
-      const repaired = await this.#run(
+      const repaired = await this.#runOnce(
         request,
         systemTextFor(request),
         `${promptFor(request)}\n\n[Your previous answer was not valid JSON. Reply with the JSON object only — no prose, no code fence.]\n\nPrevious answer:\n${text}`,
@@ -224,7 +347,31 @@ export class ClaudeCliClient implements LLMClient {
     ];
   }
 
-  #run(
+  /**
+   * One spawn, with **one retry on the empty `exited 1`**. See `isEmptyExitOne`: that shape is
+   * the CLI losing a race, and the serialising queue above makes it rare rather than impossible
+   * — a `claude` the *user* is running in another window is outside this process's control.
+   * Anything with a reason on stderr is a real failure and is not retried.
+   */
+  async #runOnce(
+    request: LlmRequest,
+    systemText: string,
+    prompt: string,
+    onDelta?: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<CliRun> {
+    try {
+      return await this.#spawnOnce(request, systemText, prompt, onDelta, signal);
+    } catch (err) {
+      if (err instanceof LlmAbortedError || !isEmptyExitOne((err as Error).message)) throw err;
+      if (signal?.aborted) throw new LlmAbortedError();
+      await new Promise((r) => setTimeout(r, CLI_RETRY_DELAY_MS));
+      if (signal?.aborted) throw new LlmAbortedError();
+      return this.#spawnOnce(request, systemText, prompt, onDelta, signal);
+    }
+  }
+
+  #spawnOnce(
     request: LlmRequest,
     systemText: string,
     prompt: string,

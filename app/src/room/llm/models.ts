@@ -34,16 +34,36 @@ export const DEFAULT_CLI_ORCHESTRATOR_MODEL: CliModelChoice = 'sonnet';
 export interface ModelPlan {
   /** Ellie, Max and Theo's group turns and whisper replies. */
   agent: string;
-  /** The orchestrator decision, the ledger update and concept ingestion. */
+  /** The orchestrator decision. */
   orchestrator: string;
+  /**
+   * **The two calls nobody is waiting to read**: the concept ingest and the ledger update
+   * (issue #35 item 5). Always Haiku, and deliberately **not** a Settings choice.
+   *
+   * Measured on the CLI against `room_6a9609d5c6fb` (`app/docs/STATUS.md`): ingest 37.0 s for
+   * 4,053 output tokens, ledger 17.2 s for 1,523 and 9.8 s for 858. Both are dominated by
+   * reasoning tokens, not by the prompt — `whole-file-context.md` §2: *latency scales with
+   * output, not input*. Neither call produces a word the learner reads: ingest fills a rail
+   * that is empty for the first few seconds either way, and the ledger moves a glyph. Spending
+   * the room's best model on them buys nothing and costs the learner the wait.
+   *
+   * The learner's two dropdowns still govern everything they actually hear — the agents' voice
+   * and the turn-taking decision. This is the third role they were never offered, because
+   * "which model writes the JSON nobody reads" is not a choice worth a row in Settings.
+   */
+  fast: string;
 }
 
-export const API_PLAN: ModelPlan = { agent: HAIKU_API, orchestrator: SONNET_API };
+export const API_PLAN: ModelPlan = { agent: HAIKU_API, orchestrator: SONNET_API, fast: HAIKU_API };
+
+/** The CLI's alias for the fast lane. Fixed, for the reason `ModelPlan.fast` gives. */
+export const CLI_FAST_MODEL = 'haiku';
 
 export function cliPlan(agent: string, orchestrator: string): ModelPlan {
   return {
     agent: normaliseModelId(agent) ?? DEFAULT_CLI_AGENT_MODEL,
     orchestrator: normaliseModelId(orchestrator) ?? DEFAULT_CLI_ORCHESTRATOR_MODEL,
+    fast: CLI_FAST_MODEL,
   };
 }
 
