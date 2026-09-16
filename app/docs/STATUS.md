@@ -1381,3 +1381,47 @@ pointing Settings at a broken binary never reached the actor.
 - **`vault:find` returned ids that `segments:get` rejects** with *"That file is not in the vault any
   more"*, for every PDF tried, in a profile whose `app.db` was copied and then rescanned. Seen
   once, cause not chased, not this track's.
+
+## The Teacher teaches — the #36 prompt pass, 16 Sep 2026
+
+**The bug.** On the CS4246 model-free-RL slide Ellie refused to say what an MDP is: *"your slide
+doesn't name other formalisms, so I don't want to invent ones it doesn't mention."* She ended six
+turns out of six on a Socratic question, including both turns after the learner said "no idea",
+never answered a direct question before probing it, and ran 70–90 words a turn — too short to
+teach a prerequisite.
+
+**The diagnosis — four sentences in `src/room/prompts.ts`, one per failure.**
+
+| Failure | The sentence that produced it |
+|---|---|
+| (a) refuses knowledge the slide does not name | HOUSE RULE 1, *"Explain **from** the learner's own slide. It is the arbiter of fact"*, read with `roleBlock`'s *"work from what is actually on the slide"*. Together they turn S5 — which `pivot-spec.md` §B0 R4 says is about **fidelity**, and is encoded in the data model rather than in a prompt — into a fence on subject matter. Reinforced by `roleBlock`'s closing *"You may not pretend the slide says something it does not"* standing alone: a prohibition with no matching licence reads as a boundary. |
+| (b) a Socratic question every turn | HOUSE RULE 4 (*"the learner closes a thread"*) with nothing anywhere saying *answer first*. A question is the cheapest way to hand the floor back, so every turn ended on one. The Peer contract retired by #32 (`design-brief.md` §D1, *"never supplies a complete correct explanation"*, *"one or two of {ask for elaboration, suggest a focus area…}"*) was gone from the text, but its **shape** survived in the vacuum. |
+| (c) does not answer directly first | `roleBlock`'s *"Answer what they ask, explain the mechanism, work from what is actually on the slide, and build on what they have already got right"* — "answer" is one of four clauses and the diagnostic one comes last. The move was `respond`, which any reply satisfies, including a probe. |
+| (d) replies too short to teach | HOUSE RULE 3, *"Keep a turn to about 80 words"*. The transcript's replies are 70–90 words, so the model compressed each answer into a hint plus a question. **The REFERENCE 120-word cap does not leak here** — `truncateToWords` is only ever called from `composeReferenceBody`, on the reference path. |
+
+**The fix.** House rule 1 now says the slide is the arbiter of *fidelity*; S5 carries the one clause
+that replaces the fence (*"the slide doesn't say this, but…"*). The Teacher's block gains ANSWER
+FIRST, THEN TEACH; an explicit licence for prerequisites, analogies, worked examples, equivalent
+formalisms and ELI5; and A QUESTION IS A TOOL, NOT A REFLEX — one question a turn, never two turns
+running, and no question of any kind (not even *"does that make sense?"*) in the turn after a "no
+idea". House rule 3 becomes ~200 words, 250 ceiling, structured; `context.group.ts`'s `max_tokens`
+goes 400 → 700 to fit it. `rule:teacher_answers` emits `answer_then_teach` instead of `respond`,
+and `turnDirective` restates answer-first in the sentence nearest the generation. `PROMPT_VERSION`
+→ `prompts.v0.3`. Four unchanged safeguards are now stated in the prompt one line each — agent text
+is never the learner's evidence, nothing an agent writes goes inside a crop, the learner closes the
+thread, the Tester asks one question and owes feedback after the answer.
+
+**Verified live on the CLI backend** (`claude-sonnet-5`, Week 5 `Lecture-rl-modelfree.pdf` slide 2,
+the learner's exact seven turns). All four failures gone: turn 1 opens *"An MDP, a Markov decision
+process, is the mathematical object used to describe a sequential decision-making problem"*; the
+"equivalents" turn names MRP, Markov chain, POMDP and stochastic games with the clause *"the slide
+doesn't mention any of this, but it's useful context"*; **no turn after a "no idea" contains a
+question**; lengths are 224–266 words against 70–90 before. Replies are in the issue comment.
+
+**Not verified.** The live run went through `buildGroupContext` + `ClaudeCliClient` in a headless
+harness — the real request builder and the real backend, but not the Electron GUI, because the app
+was being reinstalled by another track. The actor path between them is covered by
+`actor.test.ts`/`orchestrator.test.ts` and unchanged by this pass. The first run before the tighten
+came back at 259–306 words and slipped one soft *"does that make it more concrete?"* into the turn
+after the first "no idea"; both are why house rule 3 has a ceiling and why the no-question rule
+names the soft check explicitly. 699 tests, typecheck and lint clean.

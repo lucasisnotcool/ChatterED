@@ -141,7 +141,9 @@ describe('answer first, then teach', () => {
     expect(t).toContain('A QUESTION IS A TOOL, NOT A REFLEX.');
     expect(t).toContain('At most one question per turn');
     expect(t).toContain('Never two turns running unless they answered the first.');
-    expect(t).toMatch(/"no idea"[\s\S]{0,120}NO question at all/);
+    expect(t).toMatch(/"no idea"[\s\S]{0,140}NO question of any kind/);
+    // The soft check-in is the one the live run of 2026-09-16 still slipped through.
+    expect(t).toContain('not a soft check like "does that make sense?"');
   });
 });
 
@@ -149,7 +151,7 @@ describe('length fits the job', () => {
   it('replaces the flat 80-word cap with a range that can teach a prerequisite', () => {
     const s = shared();
     expect(s).not.toContain('about 80 words');
-    expect(s).toContain('up to about 200 words');
+    expect(s).toContain('aims at about 200 words, with 250 as the ceiling');
     expect(s).toContain('do not compress an explanation into a hint');
   });
 
