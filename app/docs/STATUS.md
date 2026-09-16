@@ -721,3 +721,92 @@ only and the renderer regroups live — there is no second copy of the transcrip
 **Two lint errors predate this work** and belong to the Teacher/Tester track: `#lastMessageIdByRole`
 in `actor.ts` and the `ROLE_LABEL` import in `prompts.ts` are both unused at `e8f3d78`. Left alone
 rather than edited under another agent.
+
+---
+
+## Ellie teaches, Max tests — the pairing pinned, the pacing disclosed (16 Sep, #32, #33)
+
+Four fixes the flow build left behind, each its own commit.
+
+### 1. The roster pairing is pinned (`30500aa`, swept in by a concurrent `commit -a`; `361df91`)
+
+`rosterFor()` drew the role–name pairing at install (#16) as a study control against confounding
+role with gender. That control belonged to the **group framing**, which #32 deleted. What is left
+is a two-agent flow whose copy names its agents out loud, and a coin flip made half of all
+installs read **`MAX · TEACHER`** under an *"Ellie, over to you"* hand-off, with the Tester's own
+question saying *"Ellie had you on page 6"* — the Teacher quoting herself as somebody else. That
+is what this install actually rendered on 16 Sep, and it is in the table in the previous section.
+
+- `PINNED_PAIRING = 'ellie_peer'`; `randomPairing()` is gone. `AppService.pairing()` **rewrites**
+  a stored `ellie_challenger` on the next launch, so old installs correct themselves.
+- **No migration of room data, and none needed**: the names are in no frozen `prefix_sha256` —
+  `sharedBlock()` dropped the cast list with the group framing — so the hash does not move.
+- A room played *before* the pin keeps the names it was played under. `messageView()` falls back
+  to the room's own `participants.display_name` for an `agent_key` the live roster no longer
+  contains, with the role from the key's prefix. Without it the old room's agent turns fell
+  through to `{ kind: 'student' }`, which is the REFERENCE defect of `b6bbbbb` all over again.
+  `views.test.ts` (**new**, 4 tests) pins that; this install's own database still holds a
+  `peer.max` room to be wrong about.
+- **Nothing spells a name any more.** `handOffLine()` takes the roster, not two name arguments a
+  caller could swap. `script.critique1.ts` writes `{teacher}` / `{tester}` and `ScriptedClient`
+  fills them from the roster the room is running (`agents.fillAgentNames`), asserted both ways.
+
+### 2. Lint is clean (`52850be`)
+
+`#lastMessageIdByRole` was the deleted disagreement marker's helper, not the relay's; the
+`ROLE_LABEL` import in `prompts.ts` went unused when `roleBlock()` started reading the profile.
+`npm run lint` exits 0, `svelte-check` 0 errors.
+
+### 3. Tester pacing is a setting (`895878e`)
+
+Settings ▸ **Tester pacing** offers **Study** (the `FLOW` constants) and **Demo**, default Study,
+one `flow_profile` row, handed to the actor at `openRoom` and applying to the next document.
+`DEMO` also lowers `minAgeMs` to **20 s** — `flow-session.md` §3.2/§8.3 argues that constant in
+one direction only (never *raised*), and from a cold sitting it is the only thing between two
+taught concepts and a hand-off.
+
+> **The conflict this creates, said out loud.** §2 beat 10 narrates *"minutes old, not seconds"*,
+> and `critique1Sitting()` seeds a warm-up so the Tester lands on a concept taught four minutes
+> ago. At 20 s the concept Ellie teaches at beat 9 becomes eligible and **wins `pickTarget` for
+> being fresher and less demonstrated** — the live run below picked `C3`, the thing just taught,
+> while the scripted question is written about `C1` on page 5. A real backend generates its
+> question for the target it is given, so the mismatch is a scripted-mode artefact; the *target
+> choice* is not. The take therefore pins `CRITIQUE1_TAKE` (= DEMO with the guard back at
+> `MIN_AGE_CAP_MS`) and the storyboard is unchanged. **If filming ends up cold rather than warmed
+> up, beat 10's narration is the line that has to change.** Lucas's call.
+
+### 4. The first-open pacing strip (`98ae8b4`, `cd2e84b`)
+
+§3.5's disclosure, rescued from the dead round card: the reply hold is deliberate (with Tan et
+al. and the real counter), the Tester is invoked by a **rule spelled out in the active profile's
+own numbers**, which profile is running, and — when the backend is scripted — that the words are
+replayed while the timer, the rules and the ledger are real. Names off the live roster. Dismissed
+per install in one settings row; **Settings ▸ Tester pacing ▸ "Show the pacing note again"**
+clears it. Settings and the strip read one copy module (`labels.PACING_PROFILES`), asserted
+against `flow.ts`'s constants — the failure mode here is two surfaces describing one setting
+differently, not a crash.
+
+### Verified live over CDP
+
+Own port 9335, own `--user-data-dir`, vault = `/Users/lohzh/ChatterED/Academia`, backend
+`scripted`, on `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`. The dir was seeded with
+`role_pairing = ellie_challenger` to make the migration do work.
+
+| Check | Measured |
+|---|---|
+| The stored pairing corrects itself | `ellie_challenger` → **`ellie_peer`** on the first launch, before any room opened |
+| The headers | **`ELLIE · TEACHER`** on every Teacher turn, **`MAX · TESTER`** on the quiz |
+| The hand-off names the Tester | **"You've covered what /btw can and cannot do and the forwarding gap — Max, over to you."**, `BY RULE` |
+| The quiz names the Teacher | **"Ellie had you on page 6, but the evidence is back on page 5…"** — filled from the roster, not the script |
+| Demo hands off inside a minute | second concept taught 01:26:22.27, hand-off line 01:27:14.60 — **52.3 s**; Max's question 11.7 s later, inside Tan's band |
+| The rule that fired | `rule:handoff`, `move_type = quiz`, on the DEMO profile persisted in the sitting (`minAge 20 s, k 2, m 3 min`) |
+| The target it picked | **`C3`** — the fresher concept, as §3 predicts and the shipped profile would not have allowed |
+| The strip, first open | shows above the first card, four paragraphs, names Study and the scripted backend |
+| Dismiss | gone; `pacing_strip_seen = 1`; **not shown again** after a reload and a reopen |
+| Re-open from Settings | the row is cleared, the button reads *"The pacing note is showing"*, and the strip returns on the next open — reading **Demo**, with the demo rule spelled out |
+
+Screenshots in the session scratchpad under `flow/`, numbered from 20. Tests 491 → 521 green.
+
+**Not verified live:** that Study does *not* hand off inside a minute — that is the fake-clock
+pair in `flow.test.ts` (the same 55-second sitting, `r1_engagement` and `r3_maturity` by name),
+because waiting out the shipped floor live is what the previous section already measured.
