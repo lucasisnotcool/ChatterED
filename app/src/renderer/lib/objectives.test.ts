@@ -11,7 +11,7 @@ import {
   newlyOnline,
   nodeIndex,
   objectivesForSegment,
-  onlineCount,
+  treeCount,
   onlineLabel,
   panelStatus,
   refLabel,
@@ -140,7 +140,7 @@ describe('glyphs and the count', () => {
 
   it('counts prerequisites in "n of m online"', () => {
     const objectives = [obj('a'), obj('b'), obj('p', { kind: 'prerequisite', refs: [] })];
-    const count = onlineCount(objectives, [state('a', 2), state('b', 1), state('p', 3)]);
+    const count = treeCount(objectives, [state('a', 2), state('b', 1), state('p', 3)]);
     expect(count).toEqual({ online: 2, total: 3 });
     expect(onlineLabel(count)).toBe('2 of 3 online');
   });

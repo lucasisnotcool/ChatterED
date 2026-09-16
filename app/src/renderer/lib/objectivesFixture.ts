@@ -18,7 +18,12 @@
  * agent", 7 pages) and the refs are its real pages, because a fixture whose refs point nowhere
  * would hide exactly the bug the click path is most likely to have.
  */
-import type { LearningObjective, LearningObjectiveState, LearningTree, ObjectiveLevel } from './objectives.js';
+import type {
+  LearningObjective,
+  LearningObjectiveState,
+  LearningTree,
+  ObjectiveLevel,
+} from '../../shared/objectives.js';
 
 /** Is this the deck the fixture is about? Matched on the file name, not on an id we cannot know. */
 export function isFixtureDeck(input: { name?: string; relPath?: string }): boolean {

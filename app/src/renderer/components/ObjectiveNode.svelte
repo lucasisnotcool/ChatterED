@@ -33,7 +33,6 @@
     /** Offered on an assumed prerequisite, which by definition has no segment to scroll to. */
     teachable = false,
     onactivate,
-    onask,
     ontoggle,
     onfocusrow,
     onteach,
@@ -43,8 +42,8 @@
     lit?: boolean;
     selected?: boolean;
     teachable?: boolean;
-    onactivate?: () => void;
-    onask?: () => void;
+    /** `ask` is what separates Enter from a click and ⌘Enter (§5): navigate, or also ask. */
+    onactivate?: (ask: boolean) => void;
     ontoggle?: () => void;
     onfocusrow?: () => void;
     onteach?: () => void;
@@ -73,15 +72,14 @@
   aria-label={`${objective.title}. ${wordFor(level)}.${objective.assumedByDeck ? ' Assumed by the deck.' : ''}`}
   tabindex={focused ? 0 : -1}
   style={`padding-left: ${(row.depth - 1) * 14}px`}
-  onclick={() => onactivate?.()}
+  onclick={() => onactivate?.(true)}
   onfocus={() => onfocusrow?.()}
   onkeydown={(e) => {
     // Enter scrolls, ⌘Enter opens the Ask (§5). The panel owns every other key.
     if (e.key !== 'Enter') return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.metaKey || e.ctrlKey) onask?.();
-    else onactivate?.();
+    onactivate?.(e.metaKey || e.ctrlKey);
   }}
 >
   <!-- The twist is a real button so a pointer can open a branch without scrolling the flow. -->

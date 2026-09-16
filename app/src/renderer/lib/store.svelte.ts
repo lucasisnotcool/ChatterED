@@ -71,46 +71,15 @@ function quiet<T>(fn: () => Promise<T>): Promise<T | null> {
 }
 
 /**
- * §6's channels, if the main process has landed them.
+ * Are §6's channels actually reachable?
  *
- * Two spellings are accepted because only one of them will exist and this track must not guess
- * wrong: a namespace (`bridge().objectives.tree`) or the flat preload naming every other channel
- * here uses (`bridge().objectivesTree`, for `objectives:tree`). Whichever arrives, the store
- * sees one adapter and the panel sees none of it. Null means the fixture path.
+ * `shared/objectives.ts` and the five `objectives:*` channels landed while this panel was being
+ * built, so the typed calls below are the real contract. The check stays, because `has()` reads
+ * the **preload object**: a build whose preload predates the channels (or the dev mock) still
+ * has to draw a panel, and on that path the committed fixture supplies the tree.
  */
-interface ObjectivesChannels {
-  tree(input: { fileId: string }): Promise<LearningTree | null>;
-  states(input: { fileId: string }): Promise<LearningObjectiveState[]>;
-  regenerate?(input: { fileId: string }): Promise<LearningTree | null>;
-  reset?(input: { fileId: string }): Promise<LearningObjectiveState[] | null>;
-  teach?(input: { fileId: string; objectiveId: string }): Promise<unknown>;
-}
-
-type Fn = (...args: never[]) => unknown;
-
-function objectivesApi(): ObjectivesChannels | null {
-  const api = bridge() as unknown as Record<string, unknown>;
-  const ns = api.objectives as Record<string, unknown> | undefined;
-  if (ns && typeof ns.tree === 'function' && typeof ns.states === 'function') {
-    return ns as unknown as ObjectivesChannels;
-  }
-  if (typeof api.objectivesTree !== 'function' || typeof api.objectivesStates !== 'function') return null;
-  const call = <T>(name: string, input: unknown): Promise<T> =>
-    (api[name] as (arg: unknown) => Promise<T>)(input);
-  const channels: ObjectivesChannels = {
-    tree: (input) => call('objectivesTree', input),
-    states: (input) => call('objectivesStates', input),
-  };
-  if (typeof (api.objectivesRegenerate as Fn | undefined) === 'function') {
-    channels.regenerate = (input) => call('objectivesRegenerate', input);
-  }
-  if (typeof (api.objectivesReset as Fn | undefined) === 'function') {
-    channels.reset = (input) => call('objectivesReset', input);
-  }
-  if (typeof (api.objectivesTeach as Fn | undefined) === 'function') {
-    channels.teach = (input) => call('objectivesTeach', input);
-  }
-  return channels;
+function objectivesLanded(): boolean {
+  return has('objectivesTree') && has('objectivesStates');
 }
 
 /**
@@ -431,16 +400,6 @@ class Store {
 
   apply(e: RoomEvent): void {
     const room = this.room;
-    /**
-     * The two objectives events (§6). They are not in `RoomEvent` yet — the main side owns that
-     * union — so they are matched on the wire name and handed over loosely. Doing it here rather
-     * than in a `default:` keeps the exhaustive switch below exhaustive.
-     */
-    const wire: string = (e as { type: string }).type;
-    if (wire === 'objectives.tree' || wire === 'objectives.state') {
-      this.#applyObjectivesEvent(wire, e as unknown as Record<string, unknown>);
-      return;
-    }
     switch (e.type) {
       case 'message.appended': {
         if (room && !room.messages.some((m) => m.id === e.message.id)) room.messages.push(e.message);
@@ -519,6 +478,24 @@ class Store {
          * a re-read of states that have already been pushed, which is cheap and idempotent.
          */
         void this.refreshObjectiveStates();
+        break;
+      /**
+       * A status change on the file's tree (§6): `pending` → `ready` / `failed`, and a
+       * Regenerate going back to `pending`. Ignored for any file but the open one — the ingest
+       * of a deck the learner has since closed is not this panel's business.
+       */
+      case 'objectives.tree':
+        if (e.fileId === this.objectivesFor) {
+          this.objectivesTree = e.tree;
+          void this.refreshObjectiveStates();
+        }
+        break;
+      /** One node moved. Per node, because the panel animates the one that just lit. */
+      case 'objectives.state':
+        if (e.fileId === this.objectivesFor) {
+          const rest = this.objectivesStates.filter((s) => s.objectiveId !== e.state.objectiveId);
+          this.#takeObjectiveStates([...rest, e.state], true);
+        }
         break;
       case 'ledger.updated':
         if (room) {
@@ -1094,7 +1071,7 @@ class Store {
 
   /** True when §6's channels are actually reachable — the feature check the panel builds behind. */
   get objectivesLive(): boolean {
-    return objectivesApi() !== null;
+    return objectivesLanded();
   }
 
   setObjectivesOpen(open: boolean): void {
@@ -1133,13 +1110,14 @@ class Store {
     this.askObjective = null;
     if (this.objectivesOpenWithFile) this.setObjectivesOpen(true);
 
-    const api = objectivesApi();
-    if (api) {
+    if (objectivesLanded()) {
       this.objectivesBusy = true;
-      const tree = await quiet(() => api.tree({ fileId }));
-      const states = await quiet(() => api.states({ fileId }));
+      const tree = await quiet(() => bridge().objectivesTree({ fileId }));
+      const states = await quiet(() => bridge().objectivesStates({ fileId }));
       this.objectivesBusy = false;
       if (this.objectivesFor !== fileId) return;
+      // `null` means no ingest has ever been asked for this file — not a pending one. The panel
+      // says nothing rather than claiming Ellie is reading a deck nobody opened.
       this.objectivesTree = tree ?? null;
       this.#takeObjectiveStates(states ?? [], false);
       return;
@@ -1188,9 +1166,8 @@ class Store {
    */
   async refreshObjectiveStates(): Promise<void> {
     const fileId = this.objectivesFor;
-    const api = objectivesApi();
-    if (!fileId || !api) return;
-    const states = await quiet(() => api.states({ fileId }));
+    if (!fileId || !objectivesLanded()) return;
+    const states = await quiet(() => bridge().objectivesStates({ fileId }));
     if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, true);
   }
 
@@ -1198,14 +1175,12 @@ class Store {
   async regenerateObjectives(): Promise<void> {
     const fileId = this.objectivesFor;
     if (!fileId) return;
-    const api = objectivesApi();
+    if (!has('objectivesRegenerate')) return;
     this.objectivesBusy = true;
-    if (api?.regenerate) {
-      const tree = await quiet(() => api.regenerate!({ fileId }));
-      if (tree && this.objectivesFor === fileId) this.objectivesTree = tree;
-      const states = await quiet(() => api.states({ fileId }));
-      if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, false);
-    }
+    const tree = await quiet(() => bridge().objectivesRegenerate({ fileId }));
+    if (tree && this.objectivesFor === fileId) this.objectivesTree = tree;
+    const states = await quiet(() => bridge().objectivesStates({ fileId }));
+    if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, false);
     this.objectivesBusy = false;
   }
 
@@ -1216,9 +1191,10 @@ class Store {
   async resetObjectives(): Promise<void> {
     const fileId = this.objectivesFor;
     if (!fileId) return;
-    const api = objectivesApi();
-    if (api?.reset) {
-      const states = await quiet(() => api.reset!({ fileId }));
+    if (has('objectivesReset')) {
+      // It answers with the reset states, so the panel redraws from the answer rather than
+      // racing the per-node events (`shared/objectives.ts`, deviation 2).
+      const states = await quiet(() => bridge().objectivesReset({ fileId }));
       if (this.objectivesFor === fileId) this.#takeObjectiveStates(states ?? [], false);
       return;
     }
@@ -1229,42 +1205,25 @@ class Store {
   /**
    * **Teach me this** on an assumed prerequisite (§5, the #36 contract).
    *
-   * Returns false when `objectives:teach` is not on the bridge, and the panel then falls back to
-   * opening the Ask composer on the requiring objective's segment with the question pre-filled —
-   * which is the same turn asked for in the learner's own voice, and is therefore a fallback
-   * rather than a stub.
+   * Returns the anchor the Teacher's turn landed on, so the flow can scroll to it. Null when the
+   * channel is not on this build, or when the main process did not recognise the objective — and
+   * the flow then falls back to opening the Ask composer on the requiring objective's segment
+   * with the question pre-filled, which is the same turn asked for in the learner's own voice.
    */
-  async teachObjective(objectiveId: string): Promise<boolean> {
+  async teachObjective(objectiveId: string): Promise<string | null> {
     const fileId = this.objectivesFor;
-    const api = objectivesApi();
-    if (!fileId || !api?.teach) return false;
-    await quiet(() => api.teach!({ fileId, objectiveId }));
+    if (!fileId || !has('objectivesTeach')) return null;
+    const landed = await quiet(() => bridge().objectivesTeach({ fileId, objectiveId }));
+    if (!landed) return null;
+    // The turn creates the document's room the first time, exactly as "+ Ask here" does.
+    if (!this.room || this.room.roomId !== landed.roomId) await this.loadFlowRoom(fileId);
     void this.refreshObjectiveStates();
-    return true;
+    return landed.anchorId;
   }
 
   /** The `about:` chip on the composer. Set by a click in the panel, removable by the learner. */
   setAskObjective(objective: { id: string; title: string } | null): void {
     this.askObjective = objective;
-  }
-
-  /** `objectives.tree` / `objectives.state` (§6), handled loosely until the shapes land. */
-  #applyObjectivesEvent(kind: string, payload: Record<string, unknown>): void {
-    const fileId = typeof payload.fileId === 'string' ? payload.fileId : null;
-    if (fileId !== null && fileId !== this.objectivesFor) return;
-    if (kind === 'objectives.tree') {
-      const tree = payload.tree as LearningTree | undefined;
-      if (tree) this.objectivesTree = tree;
-      void this.refreshObjectiveStates();
-      return;
-    }
-    const state = payload.state as LearningObjectiveState | undefined;
-    if (!state) {
-      void this.refreshObjectiveStates();
-      return;
-    }
-    const rest = this.objectivesStates.filter((s) => s.objectiveId !== state.objectiveId);
-    this.#takeObjectiveStates([...rest, state], true);
   }
 
   // ── The whisper popover on a segment (§3.5, issue #16) ──────────────────

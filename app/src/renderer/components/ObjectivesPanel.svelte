@@ -28,7 +28,7 @@
     buildTree,
     firstRef,
     moveFocus,
-    onlineCount,
+    treeCount,
     onlineLabel,
     panelStatus,
     visibleRows,
@@ -58,7 +58,7 @@
   const tree = $derived(store.objectivesTree);
   const objectives = $derived(tree?.objectives ?? []);
   const nodes = $derived(buildTree(objectives, store.objectivesStates));
-  const count = $derived(onlineCount(objectives, store.objectivesStates));
+  const count = $derived(treeCount(objectives, store.objectivesStates));
   const status = $derived(panelStatus(tree));
   const note = $derived(
     backendNote({
@@ -241,11 +241,10 @@
         teachable={row.node.objective.assumedByDeck && firstRef(row.node.objective) === null}
         onfocusrow={() => (focusId = row.id)}
         ontoggle={() => toggle(row.id)}
-        onactivate={() => {
+        onactivate={(ask) => {
           focusRow(row.id);
-          onactivate?.(row.id, true);
+          onactivate?.(row.id, ask);
         }}
-        onask={() => onactivate?.(row.id, true)}
         onteach={() => onteach?.(row.id)}
       />
     {/each}

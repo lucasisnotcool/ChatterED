@@ -1,67 +1,32 @@
 /**
- * The learning-objective tree, as the panel needs it
+ * The learning-objective tree, as the **panel** needs it
  * (`docs/research/learning-objectives.md` — §2 the object, §5 the panel).
  *
- * Every number and every ordering decision the panel makes is here, and only here, because the
- * panel is a tree of buttons and a tree of buttons is exactly the kind of component that grows
- * an untested `sort()` in a `{#each}`.
+ * The shapes are `shared/objectives.ts`'s — the contract the main process mints and validates
+ * trees against. Nothing here holds a second copy of what a level *means*: `isOnline` and the
+ * levels come from there, and this module is only the view arithmetic on top of them.
  *
- * ## Why the shapes are declared here and not imported
- *
- * §2's object is the main process's to own: when `src/shared/objectives.ts` lands (the schema,
- * the ingest, the IPC of §6) these interfaces are deleted and the import moves one directory up.
- * Until then the renderer builds against the **spec's** shapes rather than against nothing, and
- * `store.objectivesLive` decides whether the tree on screen came from `objectives:tree` or from
- * the committed fixture. The names and the field spellings here are §2's, verbatim, so that
- * swap is an import change and not a rewrite.
+ * It exists because the panel is a tree of buttons, and a tree of buttons is exactly the kind of
+ * component that grows an untested `sort()` inside an `{#each}`. Every ordering decision, every
+ * count, the ref → card resolution and the whole keyboard model are here, where there are tests.
  */
+import {
+  isOnline,
+  type LearningObjective,
+  type LearningObjectiveState,
+  type LearningTree,
+  type ObjectiveLevel,
+  type ObjectiveRef,
+} from '../../shared/objectives.js';
 
-/** 0 untouched · 1 stated · 2 justified (**online**) · 3 defended — §2, and the ledger's rules. */
-export type ObjectiveLevel = 0 | 1 | 2 | 3;
-
-export interface ObjectiveRef {
-  page: number;
-  segmentId?: string;
-  quote?: string;
-}
-
-export interface LearningObjective {
-  id: string;
-  fileId: string;
-  title: string;
-  kind: 'objective' | 'prerequisite';
-  statement: string;
-  criteria: string[];
-  quizSeeds: string[];
-  /** Where the deck teaches it. Empty for a prerequisite the deck only assumes. */
-  refs: ObjectiveRef[];
-  parentId: string | null;
-  /** Prerequisite edges (ids), acyclic. */
-  requires: string[];
-  assumedByDeck: boolean;
-  /** Deck order of the first ref; prerequisites before their dependants. */
-  order: number;
-}
-
-export interface LearningObjectiveState {
-  objectiveId: string;
-  fileId: string;
-  level: ObjectiveLevel;
-  evidenceMessageIds: string[];
-  lastMovedAt: string | null;
-  taughtAt: string | null;
-}
-
-export interface LearningTree {
-  fileId: string;
-  contentSha: string;
-  generatedAt: string;
-  model: string;
-  version: number;
-  objectives: LearningObjective[];
-  status: 'pending' | 'ready' | 'failed';
-  error?: string;
-}
+export { isOnline };
+export type {
+  LearningObjective,
+  LearningObjectiveState,
+  LearningTree,
+  ObjectiveLevel,
+  ObjectiveRef,
+} from '../../shared/objectives.js';
 
 /**
  * `LedgerRow`'s vocabulary, extended down by one (§5: "dim / outline / half / full, reusing
@@ -86,11 +51,6 @@ export function glyphFor(level: ObjectiveLevel): string {
 
 export function wordFor(level: ObjectiveLevel): string {
   return OBJECTIVE_WORD[level] ?? OBJECTIVE_WORD[0]!;
-}
-
-/** Online is level 2 — explained in the learner's own words. Level 3 is a fuller state on top. */
-export function isOnline(level: ObjectiveLevel): boolean {
-  return level >= 2;
 }
 
 // ── The tree ────────────────────────────────────────────────────────────────
@@ -240,8 +200,12 @@ export interface OnlineCount {
  * Every node counts, prerequisites included: an assumed prerequisite is a thing the learner has
  * to be able to say, and a count that quietly excluded the hard ones would be the flattering
  * kind of progress bar this app does not want.
+ *
+ * Not `shared/objectives.ts`'s `onlineCount`, which counts *states*: the denominator the header
+ * needs is the number of nodes in the tree, and a node the learner has never touched has no
+ * state row at all.
  */
-export function onlineCount(
+export function treeCount(
   objectives: readonly LearningObjective[],
   states: readonly LearningObjectiveState[],
 ): OnlineCount {

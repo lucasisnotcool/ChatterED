@@ -905,13 +905,15 @@
     const node = objectiveIndex.get(objectiveId);
     if (!node) return;
     selectedObjective = objectiveId;
-    const taken = await store.teachObjective(objectiveId);
-    const segmentId = resolveRefSegment(teachAnchorRef(node, objectiveIndex), cards);
+    // `objectives:teach` answers with where the Teacher's turn landed, so the scroll goes to the
+    // turn itself rather than to where this side guessed it would be.
+    const landed = await store.teachObjective(objectiveId);
+    const segmentId = landed ?? resolveRefSegment(teachAnchorRef(node, objectiveIndex), cards);
     if (segmentId) {
       bringIntoView(segmentId);
       ring(segmentId);
     }
-    if (taken || !segmentId) return;
+    if (landed !== null || !segmentId) return;
     askPrefill = { segmentId, text: teachPrefill(node.objective.title) };
     store.setAskObjective({ id: objectiveId, title: node.objective.title });
     store.openAsk(segmentId);
