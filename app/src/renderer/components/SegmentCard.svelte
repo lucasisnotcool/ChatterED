@@ -38,6 +38,7 @@
   } from '../lib/flowview.js';
   import type { AnchorClaim } from '../../shared/flowthread.js';
   import { LEDGER_GLYPH, LEDGER_WORD } from '../lib/labels.js';
+  import { glyphFor, wordFor, type SegmentObjective } from '../lib/objectives.js';
   import AskHereLine from './AskHereLine.svelte';
   import type { AskScope } from '../../shared/scope.js';
 
@@ -68,6 +69,18 @@
     /** This card's "+ Ask here" prompt is open / its question is in flight. */
     askOpen = false,
     askBusy = false,
+    /** The objective the open question is about — the removable `about:` chip (§5). */
+    askAbout = null,
+    /** A question the app has proposed and the learner has not yet sent (**Teach me this**). */
+    askPrefill = '',
+    /**
+     * The objectives this segment teaches, from the file's tree. The glyph strip now means
+     * "what this slide is for and how far you have got with it" as well as which claims moved
+     * here (`learning-objectives.md` §5).
+     */
+    objectives = [],
+    /** Jumped to from the objectives panel: a ring, for a moment. */
+    highlight = false,
     /** The private popover is open on this card (§3.5). Only the affordance's state. */
     privateOpen = false,
     /** A public turn is held on this card — `pivot-spec.md` §B9 device 1 draws the anchor ring. */
@@ -79,6 +92,7 @@
     onask,
     onaskopen,
     onaskcancel,
+    onaskabout,
     onaskprivately,
     onactivate,
     ondragbegin,
@@ -102,6 +116,10 @@
     claims?: AnchorClaim[];
     askOpen?: boolean;
     askBusy?: boolean;
+    askAbout?: { id: string; title: string } | null;
+    askPrefill?: string;
+    objectives?: SegmentObjective[];
+    highlight?: boolean;
     privateOpen?: boolean;
     pending?: boolean;
     unread?: boolean;
@@ -110,6 +128,8 @@
     onask?: (question: string, scope: AskScope) => void;
     onaskopen?: () => void;
     onaskcancel?: () => void;
+    /** ✕ on the `about:` chip. The question stays; what it is tagged with does not. */
+    onaskabout?: () => void;
     /** "Ask privately" / ⌘K. The card raises it; `FlowCanvas` owns what opens (§3.5). */
     onaskprivately?: () => void;
     onactivate?: () => void;
@@ -283,6 +303,7 @@
   class:dragging
   class:drophere={dropHere}
   class:pending
+  class:highlight
   data-segment={card.segmentId}
   data-page={card.page}
   tabindex="0"
@@ -343,6 +364,26 @@
       when the learner's own words on *this* thread became the evidence for a claim, which is why
       reading a REFERENCE answer can never put one here.
     -->
+    <!--
+      **The objectives this slide teaches** (`learning-objectives.md` §5: "the glyph now means
+      the objectives the card's segment teaches"). Same four marks as the panel and the same four
+      as the ledger rail, so one vocabulary covers all three; the claims strip below is unchanged
+      and stays what it always was — the claims whose evidence was written *here*.
+    -->
+    {#if objectives.length > 0}
+      <span
+        class="glyphs objectives"
+        role="note"
+        aria-label={`This slide teaches: ${objectives.map((o) => `${o.title}, ${wordFor(o.level)}`).join('; ')}`}
+      >
+        {#each objectives as o (o.id)}
+          <span class="glyph" class:dim={o.level === 0} title={`${o.title} — ${wordFor(o.level)}`}>
+            {glyphFor(o.level)}
+          </span>
+        {/each}
+      </span>
+    {/if}
+
     {#if claims.length > 0}
       <span class="glyphs" role="note" aria-label={`Claims moved here: ${claims.map((c) => `${c.learnerLabel}, ${LEDGER_WORD[c.state]}`).join('; ')}`}>
         {#each claims as claim (claim.elementId)}
@@ -481,6 +522,9 @@
       open={askOpen}
       busy={askBusy}
       anchorId={card.segmentId}
+      about={askAbout}
+      prefill={askPrefill}
+      onabout={() => onaskabout?.()}
       onopen={() => onaskopen?.()}
       oncancel={() => onaskcancel?.()}
       onask={(question, scope) => onask?.(question, scope)}
@@ -506,6 +550,25 @@
     outline-offset: 3px;
   }
   .card:focus-visible { outline: 2px solid var(--indigo); }
+  /* Jumped to from the objectives panel. A ring rather than a fill, and it fades: the learner
+     asked to be brought here, so this only has to answer "which card" for a second or two. */
+  .card.highlight::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border: 2px solid var(--indigo);
+    border-radius: 8px;
+    pointer-events: none;
+    animation: ringout 1600ms ease-out forwards;
+  }
+  @keyframes ringout {
+    0% { opacity: 0.9; }
+    70% { opacity: 0.9; }
+    100% { opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card.highlight::after { animation: none; opacity: 0.9; }
+  }
   .card.dragging { opacity: 0.45; }
   .card.drophere::before {
     content: '';
@@ -693,6 +756,10 @@
     cursor: help;
   }
   .glyph.filled { color: var(--text); }
+  /* An objective the learner has not touched yet is present but quiet: the strip should read as
+     "this slide is for four things" at a glance, without four dots competing with the label. */
+  .glyphs.objectives .glyph { animation: none; opacity: 0.9; }
+  .glyphs.objectives .glyph.dim { color: var(--muted); opacity: 0.45; }
   @keyframes glyphin {
     0% { opacity: 0.15; }
     100% { opacity: 1; }

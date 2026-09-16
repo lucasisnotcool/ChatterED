@@ -36,9 +36,22 @@
     scopeChip = true,
     placeholder = 'Ask about this…',
     label = '+ Ask here',
+    /**
+     * The objective this question is about (`learning-objectives.md` §5), shown as a removable
+     * `about:` chip. It is set by a click in the objectives panel and by nothing else: the
+     * learner asked a question *from* a node, so the thread it opens is tagged with that node.
+     */
+    about = null,
+    /**
+     * A question the app has proposed — **Teach me this** on a prerequisite the deck assumes.
+     * Pre-filled and **not sent**: nothing writes into this document that the learner did not
+     * press Enter on (`pivot-spec.md` §B1).
+     */
+    prefill = '',
     onopen,
     oncancel,
     onask,
+    onabout,
   }: {
     open?: boolean;
     busy?: boolean;
@@ -46,9 +59,13 @@
     scopeChip?: boolean;
     placeholder?: string;
     label?: string;
+    about?: { id: string; title: string } | null;
+    prefill?: string;
     onopen?: () => void;
     oncancel?: () => void;
     onask?: (question: string, scope: AskScope) => void;
+    /** ✕ on the chip: the question stays, its tag goes. */
+    onabout?: () => void;
   } = $props();
 
   let text = $state('');
@@ -64,6 +81,21 @@
   // Pre-focused: the line is clicked and the next keystroke is already in the field.
   $effect(() => {
     if (open && box) box.focus();
+  });
+
+  /**
+   * A proposed question, put in the box once. Guarded on the box being empty so it can never
+   * overwrite something the learner has started typing, and re-armed only by the prompt closing.
+   */
+  let prefilled = $state('');
+  $effect(() => {
+    if (!open) {
+      prefilled = '';
+      return;
+    }
+    if (prefill.length === 0 || prefilled === prefill) return;
+    prefilled = prefill;
+    if (text.trim().length === 0) text = prefill;
   });
 
   function submit(): void {
@@ -108,6 +140,23 @@
         if (text.trim().length === 0) cancel();
       }}
     />
+    {#if about}
+      <!-- What this question is *about*, as a thing the learner can take off again. -->
+      <span class="about" title={`This question is about “${about.title}”`}>
+        about: <span class="what">{about.title}</span>
+        <button
+          type="button"
+          class="drop"
+          aria-label={`Stop tagging this question with ${about.title}`}
+          onmousedown={(e) => e.preventDefault()}
+          onclick={() => {
+            onabout?.();
+            box?.focus();
+          }}
+        >✕</button>
+      </span>
+    {/if}
+
     {#if scopeChip}
       <!--
         Two states, one click apart, and it says which one is live rather than offering a menu:
@@ -177,6 +226,26 @@
   }
   .scope:hover { color: var(--indigo); border-color: var(--indigo); }
   .scope.deck { color: var(--indigo); border-color: var(--indigo); background: var(--indigo-tint); }
+
+  /* The objective tag. Indigo like the deck scope, because both say what the answer will be
+     about; the ✕ is inside it so removing it is one click and no menu. */
+  .about {
+    flex: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    max-width: 40%;
+    font-size: 10px;
+    color: var(--indigo);
+    background: var(--indigo-tint);
+    border: 1px solid var(--indigo);
+    border-radius: 999px;
+    padding: 2px 4px 2px 9px;
+    white-space: nowrap;
+  }
+  .about .what { overflow: hidden; text-overflow: ellipsis; }
+  .about .drop { font-size: 9px; color: var(--indigo); opacity: 0.7; padding: 0 3px; }
+  .about .drop:hover { opacity: 1; }
 
   .busy {
     margin: 0;

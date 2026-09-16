@@ -61,8 +61,18 @@
   import { DECK_ANCHOR_ID } from '../../shared/scope.js';
   import AskHereLine from './AskHereLine.svelte';
   import { pillLabel, scrollDecision, thinkingAnchor } from '../lib/flowchat.js';
+  import {
+    buildTree,
+    firstRef,
+    nodeIndex,
+    objectivesForSegment,
+    resolveRefSegment,
+    teachAnchorRef,
+    teachPrefill,
+  } from '../lib/objectives.js';
   import { store } from '../lib/store.svelte.js';
   import DebugDrawer from './DebugDrawer.svelte';
+  import ObjectivesPanel from './ObjectivesPanel.svelte';
   import FlowThread from './FlowThread.svelte';
   import PacingStrip from './PacingStrip.svelte';
   import SegmentCard from './SegmentCard.svelte';
@@ -670,6 +680,19 @@
       return;
     }
     /**
+     * ⌥⌘L — the objectives panel (`learning-objectives.md` §5).
+     *
+     * ⌘L is Chromium's address bar and ⌥⌘L is free; the modifier pair matches ⌥⌘D's, which is
+     * the other panel this surface toggles. The duplicate visible control is in the header,
+     * because a panel that can only be brought back by a shortcut is a panel the learner who
+     * closed it once has lost.
+     */
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault();
+      store.setObjectivesOpen(!store.objectivesOpen);
+      return;
+    }
+    /**
      * ⌥⌘D — the debug drawer (audit §10). `latency_target_ms`, `ttft_actual_ms`, usage and cost
      * are all persisted and none of it is visible while running, so diagnosing "hung or
      * thinking?" has meant opening SQLite. Deliberately a hidden gesture: it is for the
@@ -814,6 +837,98 @@
     scroller?.querySelector<HTMLElement>(`[data-segment="${heldAnchor}"]`)?.scrollIntoView({ block: 'center' });
   }
 
+  // ── The objectives panel (`learning-objectives.md` §5) ────────────────────
+  /**
+   * The flow owns three things about the panel, and all three are things only the flow knows:
+   * **where a card is**, **what the Ask prompt is**, and **which page a ref means**.
+   *
+   * The panel raises an objective id. Everything after that — resolving its first ref to a card
+   * that still exists, bringing that card into view with the same `scrollIntoView` the reply
+   * breadcrumb uses, ringing it for a moment, and opening its question with the objective
+   * attached — happens here, so the panel can never scroll to somewhere the flow disagrees with.
+   */
+  const objectiveNodes = $derived(buildTree(store.objectivesTree?.objectives ?? [], store.objectivesStates));
+  const objectiveIndex = $derived(nodeIndex(objectiveNodes));
+
+  /** The card that was just jumped to. A ring for a moment, then nothing. */
+  let highlightId = $state<string | null>(null);
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The objective the panel last sent us to, so the panel can mark the row it corresponds to. */
+  let selectedObjective = $state<string | null>(null);
+  /** A question the app is proposing rather than asking — the learner still presses Enter. */
+  let askPrefill = $state<{ segmentId: string; text: string } | null>(null);
+
+  function ring(segmentId: string): void {
+    highlightId = segmentId;
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => (highlightId = null), 1600);
+  }
+
+  function bringIntoView(segmentId: string): void {
+    scroller?.querySelector<HTMLElement>(`[data-segment="${segmentId}"]`)?.scrollIntoView({ block: 'center' });
+  }
+
+  /**
+   * A click, Enter or ⌘Enter on a node.
+   *
+   * `ask` is what separates them (§5): Enter is navigation, a click and ⌘Enter also open the
+   * question. The chip goes on the composer either way the question opens, because a thread
+   * opened from an objective is *about* that objective and `flow:askHere` is told so.
+   */
+  function goToObjective(objectiveId: string, ask: boolean): void {
+    const node = objectiveIndex.get(objectiveId);
+    if (!node) return;
+    selectedObjective = objectiveId;
+    const segmentId = resolveRefSegment(firstRef(node.objective), cards);
+    if (!segmentId) {
+      // Nothing in the deck teaches it — an assumed prerequisite. **Teach me this** is its path.
+      return;
+    }
+    askPrefill = null;
+    bringIntoView(segmentId);
+    ring(segmentId);
+    if (!ask) return;
+    store.setAskObjective({ id: objectiveId, title: node.objective.title });
+    store.openAsk(segmentId);
+  }
+
+  /**
+   * **Teach me this** on a prerequisite the deck assumes (§5, the #36 contract).
+   *
+   * `objectives:teach` is a Teacher turn anchored to the requiring objective's segment. Until
+   * that channel exists the same turn is available in the learner's own voice: the Ask composer,
+   * on that same segment, pre-filled with "Explain <title> to me" — pre-filled and **not sent**,
+   * because a button that posts words the learner did not write is the one thing this document
+   * does not do (`pivot-spec.md` §B1).
+   */
+  async function teachObjective(objectiveId: string): Promise<void> {
+    const node = objectiveIndex.get(objectiveId);
+    if (!node) return;
+    selectedObjective = objectiveId;
+    const taken = await store.teachObjective(objectiveId);
+    const segmentId = resolveRefSegment(teachAnchorRef(node, objectiveIndex), cards);
+    if (segmentId) {
+      bringIntoView(segmentId);
+      ring(segmentId);
+    }
+    if (taken || !segmentId) return;
+    askPrefill = { segmentId, text: teachPrefill(node.objective.title) };
+    store.setAskObjective({ id: objectiveId, title: node.objective.title });
+    store.openAsk(segmentId);
+  }
+
+  /** Esc in the panel comes back to the deck, at the card the panel sent the learner to. */
+  function focusFlow(): void {
+    const node = selectedObjective ? (objectiveIndex.get(selectedObjective) ?? null) : null;
+    const target = (node ? resolveRefSegment(firstRef(node.objective), cards) : null) ?? cards[0]?.segmentId ?? null;
+    if (!target) return;
+    scroller?.querySelector<HTMLElement>(`[data-segment="${target}"]`)?.focus();
+  }
+
+  $effect(() => () => {
+    if (highlightTimer) clearTimeout(highlightTimer);
+  });
+
   // ── Drag reorder ──────────────────────────────────────────────────────────
   let dragId = $state<string | null>(null);
   let dropAt = $state<{ key: string; before: boolean } | null>(null);
@@ -871,6 +986,18 @@
       <button type="button" class="seg" class:on={mode === 'pages'} onclick={() => (mode = 'pages')}>Original pages</button>
     </span>
 
+    <!-- The panel's visible handle. It says how many are online while it is shut, which is the
+         one thing a learner would open it to find out. -->
+    <button
+      type="button"
+      class="mini"
+      aria-pressed={store.objectivesOpen}
+      title="What you have to be able to say about this deck (⌥⌘L)"
+      onclick={() => store.setObjectivesOpen(!store.objectivesOpen)}
+    >
+      Objectives <kbd>⌥⌘L</kbd>
+    </button>
+
     <button type="button" class="mini" onclick={() => (store.docView = 'viewer')}>Page viewer</button>
     <button type="button" class="mini" onclick={() => void store.revealFile(doc.fileId)}>Reveal in Finder</button>
     <button type="button" class="mini" onclick={onclose} aria-label="Close">Close</button>
@@ -891,6 +1018,12 @@
   -->
   <p class="sr-only" aria-live="polite" aria-atomic="true">{store.liveMessage}</p>
 
+  <!--
+    The deck and the panel, side by side (`learning-objectives.md` §5). The panel is outside the
+    scroller and outside the zoom wrapper on purpose: it is chrome about the document, not part
+    of it, so zooming the deck to 200 % must not make the objectives 200 % too.
+  -->
+  <div class="split">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroll" bind:this={scroller} {onscroll} {onwheel} {ondblclick}>
     {#if error}
@@ -985,8 +1118,20 @@
             )}
             askOpen={store.askingAt === card.segmentId}
             askBusy={store.askBusy === card.segmentId}
+            askAbout={store.askingAt === card.segmentId ? store.askObjective : null}
+            askPrefill={askPrefill?.segmentId === card.segmentId ? askPrefill.text : ''}
+            onaskabout={() => store.setAskObjective(null)}
+            highlight={highlightId === card.segmentId}
+            objectives={objectivesForSegment(
+              store.objectivesTree?.objectives ?? [],
+              store.objectivesStates,
+              { segmentId: card.segmentId, page: card.page },
+            )}
             onaskopen={() => store.openAsk(card.segmentId)}
-            onaskcancel={() => store.cancelAsk()}
+            onaskcancel={() => {
+              askPrefill = null;
+              store.cancelAsk();
+            }}
             onask={(question, scope) => void store.askHere(card.segmentId, question, scope)}
             privateOpen={store.flowWhisper?.anchorId === card.segmentId}
             onactivate={() => store.noteFlowSelection(card.segmentId)}
@@ -1060,6 +1205,18 @@
       {/if}
       </div>
     {/if}
+  </div>
+
+  {#if store.objectivesOpen}
+    <ObjectivesPanel
+      fileName={doc.name}
+      selectedId={selectedObjective}
+      onactivate={(id, ask) => goToObjective(id, ask)}
+      onteach={(id) => void teachObjective(id)}
+      onescape={focusFlow}
+      onclose={() => store.setObjectivesOpen(false)}
+    />
+  {/if}
   </div>
 
   <!--
@@ -1139,6 +1296,10 @@
   .toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: var(--radius); overflow: hidden; }
   .seg { font-size: 11px; padding: 3px 9px; color: var(--text-2); }
   .seg.on { background: var(--indigo-tint); color: var(--text); }
+
+  /* The deck and the panel. The row is what is left of the pane under the header, so the panel
+     is full height and the deck keeps its own scroller. */
+  .split { flex: 1; display: flex; min-height: 0; min-width: 0; }
 
   .scroll {
     flex: 1;
