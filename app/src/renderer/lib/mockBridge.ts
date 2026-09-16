@@ -58,7 +58,7 @@ const iso = (offset = 0) => new Date(Date.now() + offset).toISOString();
 
 const AGENTS: AgentProfile[] = [
   { key: 'peer.ellie', role: 'peer', displayName: 'Ellie', colour: '#0F7B6C', verb: 'typing', model: 'mock', latency: { ttftMinMs: 4000, ttftMaxMs: 6000 } },
-  { key: 'challenger.max', role: 'challenger', displayName: 'Max', colour: '#B45309', verb: 'thinking', model: 'mock', latency: { ttftMinMs: 9000, ttftMaxMs: 12000 } },
+  { key: 'challenger.max', role: 'challenger', displayName: 'Max', colour: '#B45309', verb: 'reading', model: 'mock', latency: { ttftMinMs: 9000, ttftMaxMs: 12000 } },
   { key: 'tutee.theo', role: 'tutee', displayName: 'Theo', colour: '#7C3AED', verb: 'typing', model: 'mock', latency: { ttftMinMs: 2000, ttftMaxMs: 3000 } },
 ];
 const ellie = AGENTS[0]!;

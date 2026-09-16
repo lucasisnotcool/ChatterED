@@ -126,7 +126,8 @@ describe('the room actor', () => {
 
     const thinking = h.events.find((e) => e.type === 'agent.thinking');
     expect(thinking && thinking.type === 'agent.thinking' && thinking.thinking.showCounter).toBe(true);
-    expect(thinking && thinking.type === 'agent.thinking' && thinking.thinking.verb).toBe('thinking');
+    // §B9: the Tester's hold names an act — `Max is reading…` — not a mental state.
+    expect(thinking && thinking.type === 'agent.thinking' && thinking.thinking.verb).toBe('reading');
   });
 
   it('moves the ledger inside the hold, quoting the learner verbatim', async () => {

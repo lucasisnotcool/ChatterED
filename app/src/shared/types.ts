@@ -8,6 +8,13 @@
 
 export type AgentRole = 'peer' | 'challenger' | 'tutee' | 'whisper';
 
+/**
+ * What an agent is shown doing while its reply is held (`pivot-spec.md` §B9). One union rather
+ * than a boolean because the verb is per *role*, and `'thinking'` is retained only so a stored
+ * `ThinkingView` from a build before 16 Sep still parses — `agents.ts` no longer mints it.
+ */
+export type AgentVerb = 'reading' | 'typing' | 'thinking';
+
 /** 'ellie_peer' = Ellie is the Peer and Max is the Challenger; 'ellie_challenger' is the flip. */
 export type RolePairing = 'ellie_peer' | 'ellie_challenger';
 
@@ -18,8 +25,12 @@ export interface AgentProfile {
   displayName: string;
   /** Hue used ONLY for this agent's rule, avatar and label (product-design.md §C2 rule 2). */
   colour: string;
-  /** 'thinking' for the Challenger, 'typing' for everyone else (product-design.md §C3). */
-  verb: 'thinking' | 'typing';
+  /**
+   * The hold verb, per role (`product-design.md` §C3, `pivot-spec.md` §B9). `'reading'` for the
+   * Tester — what he does first is read your region — `'typing'` for everyone else. `'thinking'`
+   * is kept in the union so a historical `ThinkingView` still parses; nothing mints it now.
+   */
+  verb: AgentVerb;
   model: string;
   latency: { ttftMinMs: number; ttftMaxMs: number };
 }
@@ -146,7 +157,7 @@ export interface ThinkingView {
   displayName: string;
   role: AgentRole;
   colour: string;
-  verb: 'thinking' | 'typing';
+  verb: AgentVerb;
   startedAt: string;
   etaMs: number;
   /** Only the Challenger shows the climbing seconds counter (product-design.md §C3). */

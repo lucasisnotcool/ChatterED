@@ -113,7 +113,7 @@ describe('the thread, end to end', () => {
 
       // The Tester answers after it, and the counter is asked for on his hold only.
       const thinking = events.filter((e) => e.type === 'agent.thinking').map((e) => e.thinking);
-      expect(thinking.some((t) => t.role === 'challenger' && t.showCounter && t.verb === 'thinking')).toBe(true);
+      expect(thinking.some((t) => t.role === 'challenger' && t.showCounter && t.verb === 'reading')).toBe(true);
       expect(thinking.some((t) => t.role === 'peer' && !t.showCounter)).toBe(true);
 
       // One thread, and the glyph is on it.

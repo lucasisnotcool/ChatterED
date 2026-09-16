@@ -29,7 +29,7 @@
  * already made for `rooms.module_code`. `ROLE_LABEL` is the one mapping function; read it rather
  * than spelling the display name out again anywhere else.
  */
-import type { AgentProfile, AgentRole, RolePairing } from '../shared/types.js';
+import type { AgentProfile, AgentRole, AgentVerb, RolePairing } from '../shared/types.js';
 import { HAIKU_API, SONNET_API } from './llm/models.js';
 
 /**
@@ -60,9 +60,19 @@ export const LATENCY: Record<AgentRole, { ttftMinMs: number; ttftMaxMs: number }
   whisper: { ttftMinMs: 1000, ttftMaxMs: 2000 },
 };
 
-/** Max *thinks*; everyone else *types*. The verb does the persona work for free (§C3). */
-const VERB: Record<AgentRole, 'thinking' | 'typing'> = {
-  challenger: 'thinking',
+/**
+ * Max *reads*; everyone else *types*. The verb does the persona work for free (§C3), and which
+ * verb is not cosmetic: `pivot-spec.md` §B9 and §2 beat 11 both say the chip on a held Tester
+ * turn reads **`Max is reading…`** — *"what Max is doing first is reading your region"* — which is
+ * the retrieval framing the hand-off is about. The app said `Max is thinking…`, which is the
+ * generic LLM-wait verb and claims a mental state instead of naming an act. §4.2 of the build plan
+ * said `VERB` was unchanged **and** that Max "still reads"; the code was the half that was wrong.
+ *
+ * Ellie is untouched: §B9 is equally explicit that *"Ellie types"*, and a Teacher composing an
+ * explanation is typing one.
+ */
+const VERB: Record<AgentRole, AgentVerb> = {
+  challenger: 'reading',
   peer: 'typing',
   tutee: 'typing',
   whisper: 'typing',

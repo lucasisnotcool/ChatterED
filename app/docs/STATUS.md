@@ -1020,9 +1020,13 @@ no `console.error` was emitted.
    teaching beats, filtered to those that propose no ledger element, so a repeat can never move a
    row twice. Beat 9 on a second walkthrough is a Teacher turn again rather than a 45 s silence
    nudge. Note 1 still governs *what to open*.
-6. **Copy drift, no code change.** The app says **`Max is thinking… 7s`**; §2 beat 11 and
-   `FlowThread.svelte`'s own docstring say *"Max is reading…"*. §4.2 freezes `VERB`, so the brief
-   and the docstring are the ones out of step. Left alone deliberately.
+6. ~~**Copy drift, no code change.**~~ **Fixed — it was a code fix after all.** The app said
+   **`Max is thinking… 7s`**; §2 beat 11, `pivot-spec.md` §B9 and `FlowThread.svelte`'s own
+   docstring all say *"Max is reading…"*. §4.2's cell claimed `VERB` was unchanged **and** that
+   Max "still reads", so the freeze was never the point — the code was the half that was out of
+   step. `VERB` is per role and the Tester's is now `reading`; Ellie still *types*, which §B9 is
+   equally explicit about. `product-design.md` §C3's older `Max is thinking…` is superseded for
+   the flow by §B9, which cites §C3 and extends it: what Max does first is read your region.
 7. **First-run step 1 still describes the group.** *"you explain … to a small group … they'll
    disagree with each other … a ledger on the right"* — three claims #32 and the pivot removed. It
    is the first screen on camera if the take starts from a fresh install.
