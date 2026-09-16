@@ -79,6 +79,18 @@ export interface ConceptElement {
     implications: string;
     alternatives: string;
   };
+  /**
+   * **The question stems the Tester quizzes from** (issue #38 §4), when this element came out of
+   * a learning objective. Optional: a pack from a fixture or from `draftConcept` has none, and
+   * the Tester falls back to `probe_seeds` exactly as it always did.
+   *
+   * Distinct from `probe_seeds`, which is five Socratic *types* the model picks between. These
+   * are the deck's own questions about this objective, written by the ingest that read it, and
+   * `prompts.quizNote()` puts them in front of the generation verbatim.
+   */
+  quiz_seeds?: string[];
+  /** What a correct demonstration contains — the objective's `criteria`, for the feedback turn. */
+  demonstration?: string[];
 }
 
 export interface ConceptPack {

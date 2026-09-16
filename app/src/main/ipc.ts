@@ -38,6 +38,7 @@ import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './l
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
 import { ensurePack } from './pack.js';
+import { ensureTree, treeIsCurrent } from './objectives/ingest.js';
 import { errorClass, log, tailLog, type Logger } from './log.js';
 import type { TurnLog } from '../room/ports.js';
 /**
@@ -48,14 +49,18 @@ const PACING_STRIP_SETTING = 'pacing_strip_seen';
 /** Settings ▸ Reply speed (audit §9). See `ReplySpeed` in shared/types.ts. */
 const REPLY_SPEED_SETTING = 'reply_speed';
 import {
+  deckMaterial,
   flowRoomView,
   loadFlowState,
   openOrCreateFlowRoom,
   referenceContext,
   saveFlowState,
   segmentText,
+  titleFor,
   type FlowRoomDeps,
 } from './flowroom.js';
+import type { SegmentDocumentView } from '../shared/segment/types.js';
+import type { LearningObjectiveState, LearningTree } from '../shared/objectives.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../shared/scope.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
@@ -426,6 +431,137 @@ export class AppService {
       },
       roomId,
     ).catch(() => undefined);
+  }
+
+  // ── The learning-objective tree (issue #38) ──────────────────────────────
+
+  /**
+   * **The ingest, fired on the first open of a PDF in the flow** (§3's trigger — not the first
+   * Ask), and not awaited.
+   *
+   * `segments:get` is where a document becomes a flow: it is the call the renderer makes to draw
+   * the cards, it has already resolved the bytes and their `content_sha`, and it is made exactly
+   * once per open. Hooking here rather than on `flowAskHere` is §3's own wording and is also the
+   * only place the panel can show `pending` *before* the learner has done anything.
+   *
+   * Everything expensive is behind the cache check: `treeIsCurrent` is a single SQLite read, and
+   * only a deck that actually needs a tree pays for `deckMaterial`.
+   */
+  #ensureTree(fileId: string, view: SegmentDocumentView, opts: { force?: boolean } = {}): void {
+    // A document the pipeline refused, or one with no pages, is not a deck to read.
+    if (view.refused !== null || view.pageCount < 1) return;
+    if (!opts.force && treeIsCurrent(this.#d.store.objectives.tree(fileId), view.contentSha)) return;
+    const resolved = this.backend();
+    void (async () => {
+      const file = this.#vault.fileRow(fileId);
+      const { text, outline } = await deckMaterial({ segments: this.#segments, vault: this.#vault }, fileId);
+      // An image-only PDF has no text layer and therefore no objectives; the flow still works.
+      if (text.trim().length === 0) return;
+      await ensureTree(
+        {
+          store: this.#d.store,
+          llm: resolved.kind === 'scripted' ? null : this.llm(resolved),
+          models: resolved.models,
+          mode: modeFor(resolved.kind),
+          onTree: (tree) => this.#onTree(tree),
+        },
+        {
+          fileId,
+          contentSha: view.contentSha,
+          title: titleFor(file?.name ?? '', view.segments),
+          outline,
+          text,
+          fileName: file?.name ?? null,
+        },
+        opts,
+      );
+    })().catch(() => undefined);
+  }
+
+  /**
+   * A status change on a file's tree: told to the renderer, and — when it is `ready` — told to
+   * the room, because the tree **is** that room's concept pack (`objectives/pack.ts`).
+   */
+  #onTree(tree: LearningTree): void {
+    const roomId = this.#roomIdForFile(tree.fileId);
+    this.emit({ type: 'objectives.tree', roomId, fileId: tree.fileId, tree });
+    if (tree.status === 'ready' && roomId !== null) this.#ensurePack(roomId);
+  }
+
+  /** The room a file's deck was opened in, or null when nobody has asked it anything yet. */
+  #roomIdForFile(fileId: string): string | null {
+    const material = this.#d.store.materials.forFileId(fileId);
+    if (!material) return null;
+    return this.#d.store.rooms.openOrScheduled().find((r) => r.material_id === material.id)?.id ?? null;
+  }
+
+  /** §6's `objectives:tree`. Null when no ingest has ever been asked for this file. */
+  objectivesTree(fileId: string): LearningTree | null {
+    return this.#d.store.objectives.tree(fileId);
+  }
+
+  objectivesStates(fileId: string): LearningObjectiveState[] {
+    return this.#d.store.objectives.states(fileId);
+  }
+
+  /**
+   * **Regenerate** (§3). Re-reads the deck even when the cache is valid, and keeps the states
+   * whose objective ids still match — `pruneStates` in the ingest is the half that drops the
+   * rest. Returns the `pending` tree at once; the real one arrives on `objectives.tree`.
+   */
+  async objectivesRegenerate(fileId: string): Promise<LearningTree | null> {
+    const view = await this.#segments.document(fileId);
+    this.#ensureTree(fileId, view, { force: true });
+    return this.#d.store.objectives.tree(fileId);
+  }
+
+  /**
+   * **Reset** (§4), one confirm on the renderer side: every state to level 0, evidence cleared,
+   * `taughtAt` cleared. The tree stays.
+   *
+   * It resets the **session's ledger rows too**, and that is deliberate rather than overreach.
+   * The states are a projection of the ledger (`objectives/pack.ts`), so a reset that left the
+   * ledger alone would be undone by the next learner turn — `applyLedgerRules` is monotonic and
+   * would re-propose the levels it already holds. The ledger's monotonicity is a rule about what
+   * *a model* may do to a learner's record; this is the learner asking, with a confirm in front
+   * of it, and `progress-tracking.md` §4.4's rules are about the former.
+   */
+  objectivesReset(fileId: string): LearningObjectiveState[] {
+    const cleared = this.#d.store.objectives.reset(fileId);
+    const roomId = this.#roomIdForFile(fileId);
+    let ledgerRows = 0;
+    if (roomId !== null) {
+      const session = this.#d.store.sessions.forRoom(roomId);
+      if (session) {
+        const now = new Date().toISOString();
+        const rows = this.#d.store.ledger.forSession(session.id).map((row) => ({
+          ...row,
+          level: 0 as const,
+          level_proposed: 0 as const,
+          confidence: null,
+          evidence_text: null,
+          evidence_msg_id: null,
+          evidence_seq: null,
+          defended_against: null,
+          revisit: 0,
+          updated_at: now,
+        }));
+        ledgerRows = rows.length;
+        this.#d.store.transaction(() => {
+          for (const row of rows) this.#d.store.ledger.upsert(row);
+        });
+        // The taught set goes with it: a Tester that goes on quizzing what the learner has just
+        // said they want to start again from would be quizzing a record that no longer exists.
+        this.#actor?.resetTaught();
+        this.#persistFlow();
+        const actor = this.#actor;
+        if (actor && actor.snapshot().roomId === roomId) {
+          this.emit({ type: 'ledger.updated', roomId, ledger: actor.snapshot().ledger, changed: [] });
+        }
+      }
+    }
+    log().info('objectives.reset', { file_id: fileId, states: cleared, ledger_rows: ledgerRows, room_id: roomId });
+    return this.#d.store.objectives.states(fileId);
   }
 
   #flowDeps(): FlowRoomDeps {
@@ -834,7 +970,14 @@ export class AppService {
     });
 
     // ── The flow's segments (issue #25) ───────────────────────────────────
-    handle<{ fileId: string }>(IPC.segmentsGet, (input) => this.#segments.document(input.fileId));
+    handle<{ fileId: string }>(IPC.segmentsGet, async (input) => {
+      const view = await this.#segments.document(input.fileId);
+      // **The learning-objective ingest's trigger** (issue #38 §3): the first open of a PDF in
+      // the flow, which is this call. Fired, never awaited — the cards must draw at pipeline
+      // speed and the tree arrives on `objectives.tree` when Sonnet has read the deck.
+      this.#ensureTree(input.fileId, view);
+      return view;
+    });
     handle<SplitInput>(IPC.segmentsSplit, (input) => this.#segments.split(input));
     handle<{ fileId: string; segmentIds: [string, string] }>(IPC.segmentsMerge, (input) =>
       this.#segments.merge(input),
@@ -845,6 +988,12 @@ export class AppService {
     handle<{ fileId: string; segmentId: string; label: string }>(IPC.segmentsRename, (input) =>
       this.#segments.rename(input),
     );
+
+    // ── The learning-objective tree (issue #38) ───────────────────────────
+    handle<{ fileId: string }>(IPC.objectivesTree, (input) => this.objectivesTree(input.fileId));
+    handle<{ fileId: string }>(IPC.objectivesStates, (input) => this.objectivesStates(input.fileId));
+    handle<{ fileId: string }>(IPC.objectivesRegenerate, (input) => this.objectivesRegenerate(input.fileId));
+    handle<{ fileId: string }>(IPC.objectivesReset, (input) => this.objectivesReset(input.fileId));
 
     handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
     handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope }>(IPC.flowAskHere, (input) =>

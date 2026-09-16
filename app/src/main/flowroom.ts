@@ -245,7 +245,7 @@ function conceptFor(
 }
 
 /** The deck's own first slide title if the pipeline found one; otherwise the file name. */
-function titleFor(fileName: string, segments: readonly SegmentView[]): string {
+export function titleFor(fileName: string, segments: readonly SegmentView[]): string {
   const first = segments.find((s) => s.label.trim().length > 0)?.label.trim();
   return first && first.length <= 80 ? first : fileName.replace(/\.pdf$/i, '');
 }

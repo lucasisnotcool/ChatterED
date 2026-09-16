@@ -2069,6 +2069,19 @@ export class RoomActor {
     }
   }
 
+  /**
+   * **The learner asked to start this deck again** (issue #38 §4's Reset).
+   *
+   * The taught set is what the Tester may quiz from, and it is derived from what has been taught
+   * *and evidenced*. A reset that cleared the record but left the taught set would have Max
+   * quizzing a learner about progress the app has just agreed to forget. The flow session itself
+   * is untouched: the sitting is still the same sitting.
+   */
+  resetTaught(): void {
+    this.#taught = [];
+    this.#pendingQuiz = null;
+  }
+
   #learnerLabel(elementId: string): string {
     const element = this.#d.pack.elements.find((e) => e.id === elementId);
     return element?.learner_label ?? element?.label ?? elementId;

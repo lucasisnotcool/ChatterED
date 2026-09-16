@@ -62,6 +62,20 @@ export function materialsRepo(db: SqlDatabase): MaterialsRepo {
           .prepare('SELECT * FROM materials WHERE file_id = @f AND file_sha256 = @s ORDER BY created_at DESC LIMIT 1')
           .get<MaterialRow>({ f: fileId, s: sha }),
       ),
+    /**
+     * The newest material for this file, **whatever its bytes** (issue #38).
+     *
+     * `forFile` is deliberately keyed on both halves because it decides whether to reopen a room
+     * or start one; this one answers a different question — "is there a room to tell about this
+     * file's tree?" — where the bytes are not the point: a tree is regenerated when the deck
+     * changes, and the room it has to reach is the room the learner is sitting in.
+     */
+    forFileId: (fileId) =>
+      plain(
+        db
+          .prepare('SELECT * FROM materials WHERE file_id = @f ORDER BY created_at DESC LIMIT 1')
+          .get<MaterialRow>({ f: fileId }),
+      ),
     confirmPack: (id, confirmedAt) => updateById(db, 'materials', id, { pack_confirmed_at: confirmedAt }),
     refreeze: (id, patch) => updateById(db, 'materials', id, patch as Record<string, unknown>),
   };

@@ -40,6 +40,7 @@ import type { ConceptPack, LedgerRow, MaterialRow } from '../room/records.js';
 import { stableJson } from '../room/prompts.js';
 import type { RolePairing } from '../shared/types.js';
 import type { LocalStore } from './db/store.js';
+import { packFromTree } from './objectives/pack.js';
 
 export interface PackDeps {
   store: LocalStore;
@@ -87,6 +88,35 @@ export async function ensurePack(deps: PackDeps, roomId: string): Promise<boolea
   const material = deps.store.materials.get(room.material_id);
   if (!material) return false;
   if (packBelongsToDeck(material)) return false;
+
+  /**
+   * **The tree is the pack** (issue #38; the argument is in `objectives/pack.ts`).
+   *
+   * A flow room whose file has a learning-objective tree runs on that tree: one element per
+   * objective, `element.id` = `objective.id`, so the ledger's rules are untouched and the states
+   * the panel draws are a mirror of ledger rows that already carry the right ids.
+   *
+   * And when the tree is only *coming*, this returns without drafting. `draftConcept` would
+   * spend a second minute of Sonnet on the same deck to produce five claims with different ids,
+   * which the tree would then replace — two ingests, one of them thrown away, and a rail that
+   * changed under the learner in between.
+   */
+  const tree = material.file_id ? deps.store.objectives.tree(material.file_id) : null;
+  if (tree?.status === 'ready' && tree.objectives.length > 0) {
+    const pack = packFromTree(tree, material.title);
+    swapIn(deps, { roomId, material, pack, topic: room.topic, now: now() });
+    log().info('pack.from_tree', {
+      room_id: roomId,
+      material_id: material.id,
+      file_id: material.file_id,
+      elements: pack.elements.length,
+    });
+    return true;
+  }
+  if (tree !== null && tree.status !== 'failed') {
+    if (material.pack_provenance === 'fixed') demoteToPending(deps, material, room.topic, now());
+    return false;
+  }
 
   /**
    * **A wrong `fixed` pack is demoted even when nothing can be drafted right now.** Otherwise a

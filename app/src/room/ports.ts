@@ -62,6 +62,8 @@ export interface MaterialsRepo {
   insert(row: MaterialRow): void;
   /** The newest material for these bytes of this file — the flow's "reopen, don't duplicate". */
   forFile(fileId: string, sha: string): MaterialRow | undefined;
+  /** The newest material for this file whatever its bytes — "which room is this deck open in?" */
+  forFileId(fileId: string): MaterialRow | undefined;
   confirmPack(id: string, confirmedAt: string): void;
   /**
    * Rewrite the frozen half of a material **and its prefix hash together** (issue #35).
