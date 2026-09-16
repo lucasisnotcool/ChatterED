@@ -1011,14 +1011,25 @@ export class RoomActor {
           ? `silence:${this.#silenceFires}`
           : `student:${this.#studentTurns}`;
 
-    // The orchestrator and the ledger run concurrently, inside the delay window. That is the
-    // strongest argument the latency mechanic has: the delay is the assessment window.
-    const [decision] = await Promise.all([
-      this.#decide(decisionInput, cue, turnLog, turnStart),
-      trigger === 'student_message' || trigger === 'promote'
-        ? this.#updateLedger(cue, turnStart)
-        : Promise.resolve(),
-    ]);
+    /**
+     * The ledger runs *inside* the delay window — that is the strongest argument the latency
+     * mechanic has, the delay being the assessment window — but **the turn does not wait for
+     * it** (progress-tracking.md §4.6: "the chat never blocks on the ledger. A progress display
+     * that can stall the conversation is worse than no progress display").
+     *
+     * It used to, through a `Promise.all`, and that was invisible only because the ledger call
+     * had no schema and failed in five seconds flat (see the commit that gave it one). With the
+     * ledger actually working, a measured live turn on the CLI backend went: orchestrator 4 ms,
+     * **ledger 24.1 s**, Ellie 4.7 s — 28.8 s to a reply the learner should have had in ~9. The
+     * rail is a side-channel and is now wired as one: it animates when it animates, and the code
+     * above it is the conversation.
+     */
+    if (trigger === 'student_message' || trigger === 'promote') {
+      // `#updateLedger` catches its own failures and surfaces them as a card, so nothing here
+      // can reject; the `catch` is belt and braces against a future edit that changes that.
+      void this.#updateLedger(cue, turnStart).catch(() => undefined);
+    }
+    const decision = await this.#decide(decisionInput, cue, turnLog, turnStart);
 
     this.#recordDecision(trigger, decision);
     /**

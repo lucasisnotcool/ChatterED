@@ -597,3 +597,34 @@ describe('the ledger call', () => {
     expect(directive).not.toContain('Reply with the message only');
   });
 });
+
+describe('the rail is a side-channel', () => {
+  it('never makes the learner wait for it (progress-tracking.md §4.6)', async () => {
+    /**
+     * A live turn measured on the CLI backend on 2026-09-16 went orchestrator 4 ms, ledger
+     * 24.1 s, Ellie 4.7 s — and took 28.8 s, because the turn awaited both. A slow ledger must
+     * cost the rail its animation, never the conversation its reply.
+     */
+    let releaseLedger: () => void = () => {};
+    const blocked = new Promise<void>((resolve) => (releaseLedger = resolve));
+    const inner = new ScriptedClient();
+    const slowLedger: LLMClient = {
+      kind: 'scripted',
+      async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+        if (request.meta.scope === 'ledger') await blocked;
+        return inner.complete(request, onDelta);
+      },
+    };
+    const h = build('scripted', undefined, slowLedger);
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+
+    // Ellie has spoken while the ledger call is still outstanding.
+    const last = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(last.participant_id).toBe(h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!.id);
+    expect(h.events.some((e) => e.type === 'ledger.updated')).toBe(false);
+
+    releaseLedger();
+    await settle(h.clock, Promise.resolve());
+    expect(h.events.some((e) => e.type === 'ledger.updated')).toBe(true);
+  });
+});
