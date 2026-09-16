@@ -21,14 +21,38 @@ import type {
   SettingsPatch,
   SettingsView,
   TopicCandidateView,
+  TurnReceivedView,
+  TurnTraceView,
   VaultTreeNode,
   VaultView,
   WhisperThreadView,
 } from '../../shared/types.js';
 import type { SegmentDocumentView } from '../../shared/segment/index.js';
+import type { ChatterEdApi } from '../../shared/ipc.js';
 import { bridge } from './bridge.js';
+import {
+  ackIndex,
+  announce,
+  appendDelta,
+  nextSendId,
+  wordCount,
+  type PendingSend,
+  type StreamState,
+} from './flowchat.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
+
+/**
+ * Is a `flow:*` turn-status call actually on the bridge?
+ *
+ * The turn-status surface (`flow:stop`, `flow:turnTrace`, `flow:markSeen`, `flow:cardState`)
+ * lands on the main-process track; this one builds against the documented shape and degrades to
+ * nothing until it does, rather than throwing an "unknown channel" into the notice banner. The
+ * check is on the preload object, so it is true exactly when the channel is reachable.
+ */
+function has(name: keyof ChatterEdApi): boolean {
+  return typeof (bridge() as unknown as Record<string, unknown>)[name] === 'function';
+}
 
 export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings';
 
@@ -149,6 +173,47 @@ class Store {
   /** Answer cards the learner dismissed with **✕ Remove**. Local: the transcript is not edited. */
   answersRemoved: Record<string, boolean> = $state({});
 
+  // ── Send feedback and turn status (cui-standards-audit.md §1–§3, issue #34) ─────────────
+  /**
+   * The learner's turns between the keystroke and the main process's echo (audit Fact 1).
+   *
+   * `flowSend` used to clear the composer synchronously and return `void`, so the learner's own
+   * words reached the screen only when `message.appended` came back — and if the IPC call
+   * rejected, the text was already gone and all that appeared was a dismissible app-level
+   * banner. iMessage, Slack and Claude.ai all append optimistically and mark state on the block.
+   */
+  pendingSends: PendingSend[] = $state([]);
+  /**
+   * The anchor the learner last sent to. `ThinkingView` carries no anchor of its own, so this is
+   * the fallback `thinkingAnchor()` uses between the send and the first `turn.received` — it is
+   * never allowed to override a turn's real anchor.
+   */
+  lastSendAnchor: string | null = $state(null);
+  /**
+   * The live turn, from `turn.received` — *the room has your message*, emitted before the
+   * floor-yield sleep and before any model call. It is what keeps §C3's deliberately
+   * agent-chrome-free window from being a blank screen.
+   */
+  turnReceived: TurnReceivedView | null = $state(null);
+  /** Local clock at the moment that event arrived, so the neutral line can time out. */
+  turnReceivedAt: number | null = $state(null);
+  /**
+   * The provisional body of the turn currently streaming (audit §2, P1). One at a time by
+   * construction — `pivot-spec.md` §B10 R2 allows one agent turn in flight document-wide.
+   */
+  stream: StreamState | null = $state(null);
+  /** Turn ids the learner stopped, so the finished card can say so. */
+  stoppedTurns: Record<string, boolean> = $state({});
+  /** The single sentence the flow's `aria-live` region is currently announcing (WCAG 4.1.3). */
+  liveMessage = $state('');
+  /** `lastSeenSeq` per thread, from `FlowRoomView.threads`; the unread dot reads it. */
+  threadSeen: Record<string, number> = $state({});
+  /** Threads the learner collapsed, persisted through `flow:cardState`. */
+  threadCollapsed: Record<string, boolean> = $state({});
+  /** The ⌥⌘D debug drawer (audit §10). Closed, and empty, until it is opened. */
+  debugOpen = $state(false);
+  turnTraces: TurnTraceView[] = $state([]);
+
   // ── The whisper popover on a segment (§3.5, issue #16) ─────────────────
   /**
    * The segment card that currently has focus. Two jobs, both of them about ⌘K:
@@ -267,14 +332,64 @@ class Store {
   apply(e: RoomEvent): void {
     const room = this.room;
     switch (e.type) {
-      case 'message.appended':
+      case 'message.appended': {
         if (room && !room.messages.some((m) => m.id === e.message.id)) room.messages.push(e.message);
+        /**
+         * The ack (audit §1). The optimistic block is dropped the moment its own echo arrives —
+         * matched on the learner's text under the same anchor, not on arrival order, because two
+         * sends can be in flight and greying the wrong bubble is worse than greying none.
+         */
+        const acked = ackIndex(this.pendingSends, e.message);
+        if (acked >= 0) this.pendingSends = this.pendingSends.filter((_, i) => i !== acked);
+        if (e.message.speaker.kind !== 'student') {
+          const name = e.message.speaker.kind === 'agent' ? e.message.speaker.displayName : 'The reference';
+          this.liveMessage = announce('replied', {
+            name,
+            label: this.#anchorLabel(e.message.anchorId),
+            words: wordCount(e.message.body),
+          });
+        }
         break;
+      }
       case 'agent.thinking':
         if (room) room.thinking = e.thinking;
         break;
       case 'agent.thinking.cleared':
         if (room) room.thinking = null;
+        break;
+      /**
+       * *The room has your message.* Neutral and un-attributed on screen: `product-design.md`
+       * §C3 keeps **agent** chrome out of the floor-yield window, and "the room received this"
+       * is not agent chrome — which is the reconciliation the audit proposes for §C3 against
+       * `design-brief.md` §D4.
+       */
+      case 'turn.received':
+        this.turnReceived = e.received;
+        this.turnReceivedAt = Date.now();
+        this.stream = null;
+        this.liveMessage = announce('received', { label: this.#anchorLabel(e.received.anchorId) });
+        break;
+      /**
+       * One chunk of a reply that is **already past the floor** — the main process buffers
+       * everything the model produced during the hold and flushes it as the first delta, so
+       * nothing here can make a turn visible earlier than the floor allows.
+       */
+      case 'turn.delta':
+        this.stream = appendDelta(this.stream, {
+          turnId: e.turnId,
+          anchorId: e.anchorId,
+          agentKey: e.participant.agentKey,
+          text: e.text,
+        });
+        break;
+      /** The provisional block for this turn is now a real message; drop it and keep the row. */
+      case 'turn.released':
+        if (e.stopped) this.stoppedTurns = { ...this.stoppedTurns, [e.turnId]: true };
+        if (this.stream?.turnId === e.turnId) this.stream = null;
+        if (this.turnReceived?.turnId === e.turnId) {
+          this.turnReceived = null;
+          this.turnReceivedAt = null;
+        }
         break;
       case 'ledger.updated':
         if (room) {
@@ -322,6 +437,15 @@ class Store {
        */
       case 'turn.failed':
         if (room && !room.failures.some((f) => f.id === e.failure.id)) room.failures.push(e.failure);
+        // A failed turn ends the exchange, so the neutral "the room has it" line must go with it.
+        this.turnReceived = null;
+        this.turnReceivedAt = null;
+        this.stream = null;
+        this.liveMessage = announce('failed', {
+          name: e.failure.displayName ?? 'A reply',
+          label: this.#anchorLabel(e.failure.anchorId),
+          reason: e.failure.reason,
+        });
         break;
       case 'turn.failed.cleared':
         if (room) room.failures = room.failures.filter((f) => f.id !== e.failureId);
@@ -607,9 +731,25 @@ class Store {
     this.composerAt = result.anchorId;
   }
 
-  /** **✕ Remove**: the card goes off this learner's screen. The transcript is never edited. */
-  removeAnswer(answerId: string): void {
+  /**
+   * **✕ Remove**: the card goes off this learner's screen. The transcript is never edited.
+   *
+   * Persisted through `flow:cardState` on the card's anchor (audit §7): reopening a deck used to
+   * bring back every card the learner had dismissed, which reads as the app overruling them.
+   */
+  removeAnswer(answerId: string, anchorId: string | null = null): void {
     this.answersRemoved = { ...this.answersRemoved, [answerId]: true };
+    const roomId = this.room?.roomId;
+    const anchor = anchorId ?? this.room?.messages.find((m) => m.id === answerId)?.anchorId ?? null;
+    if (roomId && anchor && has('flowCardState')) {
+      void run(this, () => bridge().flowCardState({ roomId, anchorId: anchor, removed: true }));
+    }
+  }
+
+  /** The label of the segment a turn landed under, for the live region's one sentence. */
+  #anchorLabel(anchorId: string | null): string {
+    if (!anchorId) return '';
+    return this.flow?.segments.find((seg) => seg.id === anchorId)?.label ?? '';
   }
 
   /**
@@ -618,11 +758,90 @@ class Store {
    * Deliberately not awaited, for the reason `showTheRoom()` gives: the call does not resolve
    * until the agent that answers has finished its latency floor, which is 9–12 s for the Tester.
    */
-  flowSend(segmentId: string, text: string): void {
+  flowSend(segmentId: string, text: string): string | null {
     const roomId = this.room?.roomId;
-    if (!roomId || !text.trim()) return;
+    const body = text.trim();
+    if (!roomId || !body) return null;
     this.lastTypedAt = 0;
-    void run(this, () => bridge().flowSend({ roomId, segmentId, text: text.trim() }));
+    this.lastSendAnchor = segmentId;
+    const id = nextSendId();
+    this.pendingSends = [
+      ...this.pendingSends,
+      { id, anchorId: segmentId, body, state: 'pending', at: Date.now(), error: null },
+    ];
+    /**
+     * Deliberately **not** funnelled through `run()`: a rejection here belongs on the block the
+     * learner is looking at, not in a global dismissible banner with no anchor and no retry
+     * (audit §3). By the time this promise settles the echo has long since acked and removed the
+     * pending entry, so a late rejection — a turn that failed after the message was accepted —
+     * finds nothing to fail and is left to the failure card, which is where it belongs.
+     */
+    void bridge()
+      .flowSend({ roomId, segmentId, text: body })
+      .catch((err: unknown) => this.failSend(id, message(err)));
+    return id;
+  }
+
+  /** Mark one optimistic block failed, in place, with the sentence that actually broke. */
+  failSend(id: string, reason: string): void {
+    this.pendingSends = this.pendingSends.map((p) =>
+      p.id === id ? { ...p, state: 'failed' as const, error: reason } : p,
+    );
+  }
+
+  /** **Retry** on a failed block: the stored body, re-sent, in the thread it was written in. */
+  retrySend(id: string): void {
+    const entry = this.pendingSends.find((p) => p.id === id);
+    if (!entry) return;
+    this.pendingSends = this.pendingSends.filter((p) => p.id !== id);
+    this.flowSend(entry.anchorId, entry.body);
+  }
+
+  /** **Discard** on a failed block. The text is gone only once the learner says so. */
+  dropSend(id: string): void {
+    this.pendingSends = this.pendingSends.filter((p) => p.id !== id);
+  }
+
+  /**
+   * **Stop** a generating turn (audit §2e, Lucas's 2026-09-16 decision).
+   *
+   * The button is only offered once the floor has elapsed, so a refusal here means the two
+   * clocks disagreed; it is reported as a refusal rather than swallowed, because a Stop that
+   * silently does nothing is the failure mode the button exists to avoid.
+   */
+  async stopTurn(): Promise<void> {
+    const roomId = this.room?.roomId;
+    const turnId = this.stream?.turnId ?? this.turnReceived?.turnId ?? null;
+    if (!roomId || !turnId || !has('flowStop')) return;
+    const result = await run(this, () => bridge().flowStop({ roomId, turnId }));
+    if (result && !result.stopped && result.refused === 'floor') {
+      this.notice = { level: 'info', text: 'The deliberate wait has not finished yet.' };
+    }
+  }
+
+  /** The ⌥⌘D drawer's rows (audit §10). No bodies are in them, by construction in the actor. */
+  async loadTurnTraces(): Promise<void> {
+    const roomId = this.room?.roomId;
+    if (!roomId || !has('flowTurnTrace')) return;
+    const rows = await run(this, () => bridge().flowTurnTrace({ roomId, turnId: null }));
+    if (rows) this.turnTraces = rows;
+  }
+
+  /** The learner has this thread on screen. Clears its unread dot, in main and here. */
+  markSeen(anchorId: string, seq: number): void {
+    const roomId = this.room?.roomId;
+    if (!roomId || seq <= (this.threadSeen[anchorId] ?? 0)) return;
+    this.threadSeen = { ...this.threadSeen, [anchorId]: seq };
+    if (has('flowMarkSeen')) void run(this, () => bridge().flowMarkSeen({ roomId, anchorId, seq }));
+  }
+
+  /** Thread collapse, persisted — a thread the learner folded away stays folded (audit §7). */
+  setThreadCollapsed(anchorId: string, collapsed: boolean): void {
+    this.threadCollapsed = { ...this.threadCollapsed, [anchorId]: collapsed };
+    const roomId = this.room?.roomId;
+    if (roomId && has('flowCardState')) {
+      void run(this, () => bridge().flowCardState({ roomId, anchorId, collapsed }));
+    }
   }
 
   /**
@@ -739,12 +958,48 @@ class Store {
    * subscription and without a second copy of the transcript to keep in step. The screen is not
    * changed: the flow is the screen.
    */
-  #takeFlowRoom(view: { room: RoomSnapshot; threads: { anchorId: string; lockedByAnswerId: string | null }[] }): void {
+  #takeFlowRoom(view: {
+    room: RoomSnapshot;
+    threads: {
+      anchorId: string;
+      lockedByAnswerId: string | null;
+      lastSeenSeq?: number;
+      collapsed?: boolean;
+      removed?: boolean;
+    }[];
+  }): void {
     this.room = view.room;
     this.timerReceivedAt = Date.now();
     const locks: Record<string, string> = {};
-    for (const t of view.threads) if (t.lockedByAnswerId) locks[t.anchorId] = t.lockedByAnswerId;
+    const seen: Record<string, number> = {};
+    const collapsed: Record<string, boolean> = {};
+    // Plain, not reactive: it is a local index built and consumed inside this one call.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    const removedAnchors = new Set<string>();
+    for (const t of view.threads) {
+      if (t.lockedByAnswerId) locks[t.anchorId] = t.lockedByAnswerId;
+      if (typeof t.lastSeenSeq === 'number') seen[t.anchorId] = t.lastSeenSeq;
+      if (t.collapsed) collapsed[t.anchorId] = true;
+      if (t.removed) removedAnchors.add(t.anchorId);
+    }
     this.flowLocks = locks;
+    this.threadSeen = seen;
+    this.threadCollapsed = collapsed;
+    /**
+     * `removed` is persisted per **anchor**, which is the grain `flow:cardState` offers; a
+     * thread holds at most one REFERENCE answer awaiting hand-back at a time, so re-applying it
+     * to the thread's reference cards restores exactly what the learner dismissed. Agent turns
+     * are never removable, so nothing the agents said can be hidden by this.
+     */
+    if (removedAnchors.size > 0) {
+      const removed: Record<string, boolean> = { ...this.answersRemoved };
+      for (const m of view.room.messages) {
+        if (m.speaker.kind === 'reference' && m.anchorId && removedAnchors.has(m.anchorId)) {
+          removed[m.id] = true;
+        }
+      }
+      this.answersRemoved = removed;
+    }
   }
 
   // ── Finding and searching ────────────────────────────────────────────────

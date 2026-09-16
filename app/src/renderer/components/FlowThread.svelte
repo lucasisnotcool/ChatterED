@@ -21,7 +21,14 @@
    *    than as lag.
    */
   import type { MessageView, RoomSnapshot } from '../../shared/types.js';
-  import { store } from '../lib/store.svelte.js';
+  import {
+    RECEIVED_LINE,
+    pendingFor,
+    receivedVisible,
+    stopAllowed,
+    thinkingAnchor,
+  } from '../lib/flowchat.js';
+  import { clock, store } from '../lib/store.svelte.js';
   import { clockTime } from '../lib/time.js';
   import AiSegment from './AiSegment.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
@@ -48,15 +55,86 @@
   let lastBeat = 0;
 
   const visible = $derived(messages.filter((m) => !store.answersRemoved[m.id]));
+  /** The learner's own turns that have not been echoed back yet (audit §1). */
+  const pending = $derived(pendingFor(store.pendingSends, anchorId));
+
   /**
-   * The wait belongs to *this* thread. The actor allows one agent turn in flight document-wide
-   * (`pivot-spec.md` §B10 R2), so the held turn is drawn under the segment the learner is in —
-   * the only place it can be, and the only place they are looking.
+   * The wait belongs to **the turn**, not to whichever composer happens to be open.
+   *
+   * This used to read `store.composerAt === anchorId` — a single global set by *Explain it back*
+   * or *Reply here* — so opening another segment's composer, reopening the document, or letting
+   * a nudge land on the last anchor rendered `room.thinking` **nowhere at all** (audit Fact 2).
+   * The actor allows one agent turn in flight document-wide (`pivot-spec.md` §B10 R2), so there
+   * is exactly one right answer and `thinkingAnchor()` is it.
    */
-  const holding = $derived(room.thinking && store.composerAt === anchorId ? room.thinking : null);
+  const heldAnchor = $derived(thinkingAnchor(room.thinking, store.lastSendAnchor, store.composerAt));
+  const holding = $derived(heldAnchor === anchorId ? room.thinking : null);
   const waiting = $derived(room.thinking !== null);
   /** Failed turns belong under the thread they failed in, where the learner is looking. */
   const failures = $derived(room.failures.filter((f) => f.anchorId === anchorId));
+
+  /**
+   * **The received state (audit §2a).** For the first 3–8 s after a send the app was completely
+   * silent by design: `product-design.md` §C3 asks for a floor-yield window with "nothing at
+   * all", and paid for it with two devices the flow does not have. §C3 governs *agent* chrome,
+   * and "the room has your message" is not agent chrome — so this line is neutral, carries no
+   * name, no avatar and no verb, and disappears the instant real agent chrome arrives.
+   */
+  const receivedAnchor = $derived(store.turnReceived?.anchorId ?? store.lastSendAnchor);
+  const received = $derived(
+    receivedAnchor === anchorId &&
+      receivedVisible(store.turnReceivedAt, room.thinking !== null, clock.ms),
+  );
+
+  /**
+   * The provisional block of a turn that is unrolling (audit §2, P1). Nothing here is visible
+   * earlier than the floor allows — the main process buffers every token until the floor passes
+   * and only then starts emitting — so this is purely the difference between a long turn that
+   * *unrolls* and one that thuds.
+   */
+  const streamHere = $derived(
+    store.stream && (store.stream.anchorId ?? store.lastSendAnchor) === anchorId ? store.stream : null,
+  );
+  const streamAgent = $derived(
+    streamHere ? (room.agents.find((a) => a.key === streamHere.agentKey) ?? null) : null,
+  );
+  /** A `MessageView` shape so the provisional card is drawn by the same component as the real one. */
+  const streamCard = $derived<MessageView | null>(
+    streamHere && streamAgent
+      ? {
+          id: `stream:${streamHere.turnId}`,
+          seq: Number.MAX_SAFE_INTEGER,
+          speaker: {
+            kind: 'agent',
+            key: streamAgent.key,
+            role: streamAgent.role,
+            displayName: streamAgent.displayName,
+            colour: streamAgent.colour,
+          },
+          body: streamHere.text,
+          createdAt: new Date(clock.ms).toISOString(),
+          latencyTargetMs: null,
+          ttftActualMs: null,
+          promotedFromWhisper: false,
+          disagreement: null,
+          divider: null,
+          reference: null,
+          anchorId,
+          byRule: null,
+        }
+      : null,
+  );
+
+  /**
+   * **Stop**, offered only once the floor has elapsed (Lucas, 2026-09-16). A learner who can
+   * cancel every Tester turn can opt out of the retrieval practice the app exists for; a learner
+   * behind a hung backend must always be able to get out. The same clock decides both.
+   */
+  const canStop = $derived(holding !== null && stopAllowed(room.thinking, clock.ms));
+
+  /** The highest seq on screen here, for `flow:markSeen` — the unread dot's other half. */
+  const topSeq = $derived(visible.reduce((n, m) => Math.max(n, m.seq), 0));
+  const collapsed = $derived(store.threadCollapsed[anchorId] === true);
   /**
    * The agent the silence timer would fire, for the wait-line's caption. Same rule as the room's
    * composer: stage 1 is the Teacher's, and naming her is the whole point of the affordance.
@@ -78,15 +156,63 @@
     store.typing(text.length);
   }
 
+  /**
+   * Send.
+   *
+   * The composer is cleared **after** the send has been handed to the bridge and an optimistic
+   * block exists to carry the text, never before: `flowSend` used to be fire-and-forget with
+   * `text = ''` on the next line, so a rejected send lost the learner's words entirely
+   * (audit §1). Focus is restored either way — a send that steals the keyboard is a send that
+   * makes the learner reach for the mouse to write the next sentence.
+   */
   function submit(): void {
     const body = text.trim();
     if (!body) return;
-    store.flowSend(anchorId, body);
+    const id = store.flowSend(anchorId, body);
+    if (id === null) return;
     text = '';
+    box?.focus();
+  }
+
+  /** `Esc` closes the composer and hands focus back to the card (audit §5). */
+  function closeComposer(): void {
+    store.composerAt = null;
+    const card = document.querySelector<HTMLElement>(`[data-segment="${anchorId}"]`);
+    card?.focus();
+  }
+
+  /**
+   * Seen. The dot on the card's label strip clears when the thread is actually on screen, not
+   * when the message arrives — which is the whole difference between an unread marker and a
+   * decoration (audit §7).
+   */
+  function watchSeen(node: HTMLElement) {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) store.markSeen(anchorId, topSeq);
+      },
+      { threshold: 0.2 },
+    );
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
   }
 </script>
 
-<section class="thread" aria-label="Conversation about this segment">
+<section class="thread" aria-label="Conversation about this segment" use:watchSeen data-thread={anchorId}>
+  {#if visible.length > 1}
+    <!-- Thread collapse, persisted (audit §7). A deck with forty threads in it is a deck the
+         learner scrolls past, not one they read. -->
+    <button
+      type="button"
+      class="fold"
+      aria-expanded={!collapsed}
+      onclick={() => store.setThreadCollapsed(anchorId, !collapsed)}
+    >
+      {collapsed ? `▸ ${visible.length} turns` : '▾ hide this thread'}
+    </button>
+  {/if}
+
+  {#if !collapsed}
   {#each visible as message (message.id)}
     {#if message.speaker.kind === 'student'}
       <!-- The learner's own writing, in the document, full width and indigo-tinted (§B2). -->
@@ -108,13 +234,58 @@
         callout={message.speaker.kind !== 'reference'}
         collapsed={store.answersCollapsed[message.id] === true}
         onexplain={message.id === lockedByAnswerId ? () => void store.explainBack(message.id) : undefined}
-        onremove={message.id === lockedByAnswerId ? () => store.removeAnswer(message.id) : undefined}
+        onremove={message.id === lockedByAnswerId ? () => store.removeAnswer(message.id, anchorId) : undefined}
+        stopped={(message as { stopped?: boolean }).stopped === true}
       />
     {/if}
   {/each}
 
-  {#if holding}
+  <!--
+    **The optimistic block (audit §1).** The learner's words are on screen from the keystroke,
+    greyed until the main process echoes them back, and if the send is rejected they are still
+    here with a Retry rather than gone into a dismissible banner. Every mature chat UI does this
+    and the flow did none of it.
+  -->
+  {#each pending as send (send.id)}
+    <article class="mine" class:sending={send.state === 'pending'} class:failed={send.state === 'failed'}>
+      <header class="mine-head">
+        <span class="label-caps">You</span>
+        <span class="gap"></span>
+        {#if send.state === 'pending'}
+          <span class="state" aria-hidden="true">Sending…</span>
+        {:else}
+          <span class="state bad">Didn't send</span>
+        {/if}
+      </header>
+      <p>{send.body}</p>
+      {#if send.state === 'failed'}
+        <div class="sendfoot">
+          <span class="why">{send.error ?? 'The app could not reach the room.'}</span>
+          <button type="button" class="ctrl" onclick={() => store.retrySend(send.id)}>Retry</button>
+          <button type="button" class="ctrl ghost" onclick={() => store.dropSend(send.id)}>Discard</button>
+        </div>
+      {/if}
+    </article>
+  {/each}
+
+  <!--
+    Room state, not agent state: no name, no avatar, no verb. It is what keeps the 3–8 s window
+    §C3 deliberately leaves free of agent chrome from being a blank screen (audit §2a).
+  -->
+  {#if received}
+    <p class="received" role="status">{RECEIVED_LINE}</p>
+  {/if}
+
+  {#if streamCard}
+    <AiSegment message={streamCard} callout streaming={streamCard.body} />
+  {:else if holding}
     <div class="slot"><ThinkingIndicator thinking={holding} /></div>
+  {/if}
+
+  {#if canStop}
+    <div class="stopwrap">
+      <button type="button" class="ctrl" onclick={() => void store.stopTurn()}>Stop</button>
+    </div>
   {/if}
 
   {#each failures as failure (failure.id)}
@@ -141,6 +312,12 @@
             e.preventDefault();
             submit();
           }
+          /* `AskHereLine` has always handled Esc; the thread composer did not, so it could not
+             be closed without the mouse (audit §5). */
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            closeComposer();
+          }
         }}
       ></textarea>
       <!--
@@ -161,17 +338,21 @@
       />
 
       <div class="foot">
-        <span class="hint">Enter sends · ⇧Enter newline</span>
+        <span class="hint">Enter sends · ⇧Enter newline · Esc closes</span>
         <span class="gap"></span>
         {#if waiting && !holding}
           <!-- The off-screen breadcrumb's local twin: a held turn somewhere else in the document
                (§B9 device 3). One at a time, guaranteed by R2. -->
           <span class="elsewhere">Someone is replying further up ↑</span>
         {/if}
+        <!-- A visible Send. Enter-only is a shortcut, not an affordance, and nothing was ever
+             disabled — so an empty composer looked exactly like a full one (audit §1). -->
+        <button type="button" class="send" disabled={text.trim().length === 0} onclick={submit}>Send</button>
       </div>
     </div>
   {:else if visible.length > 0}
     <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
+  {/if}
   {/if}
 </section>
 
@@ -207,6 +388,52 @@
 
   /* §B9 device 2: the reserved slot, at the note's final width, before it has content. */
   .slot { margin-left: 26px; }
+
+  /* The optimistic block, and its two states. Greyed rather than coloured: a message in flight
+     is not an error, and nothing here should read as one until it actually is. */
+  .mine.sending { opacity: 0.58; }
+  .mine.failed { border-right-color: #b4543a; background: var(--pane); }
+  .mine-head .gap { flex: 1; }
+  .state { font-size: 10px; color: var(--muted); }
+  .state.bad { color: #8a2708; }
+  .sendfoot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .why { flex: 1; font-size: 11px; color: var(--muted); }
+  .ctrl {
+    font-size: 11px;
+    color: var(--indigo);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 2px 8px;
+  }
+  .ctrl:hover { border-color: var(--indigo); }
+  .ctrl.ghost { color: var(--muted); }
+
+  .received {
+    margin: 10px 0 6px 26px;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.01em;
+  }
+
+  .stopwrap { margin: 6px 0 2px 26px; }
+
+  .fold {
+    display: block;
+    margin: 6px 0 0;
+    font-size: 10.5px;
+    color: var(--muted);
+    opacity: 0.75;
+  }
+  .fold:hover { opacity: 1; color: var(--indigo); }
+
+  .send {
+    font-size: 11px;
+    color: #fff;
+    background: var(--indigo);
+    border-radius: 5px;
+    padding: 3px 12px;
+  }
+  .send:disabled { background: var(--hairline); color: var(--muted); cursor: default; }
 
   .locked {
     margin: 8px 0 4px 26px;
