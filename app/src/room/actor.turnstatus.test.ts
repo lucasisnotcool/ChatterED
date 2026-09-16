@@ -350,3 +350,74 @@ describe('Stop (audit P1, Lucas 16 Sep: only after the floor)', () => {
     expect(h.actor.stopTurn('turn_nope')).toEqual({ stopped: false, refused: 'unknown' });
   });
 });
+
+describe('timings on the wire (audit §6 and §10)', () => {
+  it('puts the ETA on the hold, so the renderer can show it on hover and not advertise it', async () => {
+    const h = build();
+    const sending = h.actor.sendMessage(TURN, ANCHOR);
+    await settle(h.clock, sending);
+    const thinking = h.events.find((e) => e.type === 'agent.thinking');
+    expect(thinking).toBeDefined();
+    expect(thinking!.type === 'agent.thinking' && thinking!.thinking.etaMs).toBeGreaterThan(0);
+    // Plain dots for the Teacher, the climbing counter only for the Tester (§C3, Lucas 16 Sep).
+    expect(thinking!.type === 'agent.thinking' && thinking!.thinking.showCounter).toBe(false);
+  });
+
+  it('carries the provenance every card needs on the message itself', async () => {
+    const h = build(streamingClient(['Because the domain matters.']));
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const appended = h.events.filter((e) => e.type === 'message.appended');
+    const reply = appended.at(-1)!;
+    const view = reply.type === 'message.appended' ? reply.message : null;
+    expect(view?.model).toBe('claude-haiku-4-5');
+    expect(view?.backend).toBe('anthropic');
+    expect(view?.decidedBy).toBe('rule:teacher_answers');
+    expect(view?.ttftActualMs).toBeGreaterThan(0);
+    expect(view?.totalMs).toBeGreaterThanOrEqual(view!.ttftActualMs!);
+    expect(view?.stopped).toBe(false);
+  });
+
+  it('keeps a per-turn trace for the debug drawer, with no bodies in it', async () => {
+    const h = build(streamingClient(['One sentence only.']));
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const received = h.events.find((e) => e.type === 'turn.received')!;
+    const turnId = received.type === 'turn.received' ? received.received.turnId : '';
+
+    const [trace] = h.actor.turnTrace(turnId);
+    expect(trace).toBeDefined();
+    expect(trace!.anchorId).toBe(ANCHOR);
+    expect(trace!.trigger).toBe('student_message');
+    expect(trace!.decidedBy).toBe('rule:teacher_answers');
+    expect(trace!.role).toBe('peer');
+    expect(trace!.backend).toBe('anthropic');
+    expect(trace!.decisionMs).not.toBeNull();
+    expect(trace!.generationMs).not.toBeNull();
+    expect(trace!.latencyTargetMs).toBeGreaterThan(0);
+    expect(trace!.totalMs).toBeGreaterThanOrEqual(trace!.ttftActualMs!);
+    expect(trace!.failed).toBeNull();
+
+    // The whole rule, asserted the way actor.test.ts asserts it of the event stream: nothing in
+    // a trace may be, or contain, what anybody said.
+    const serialised = JSON.stringify(h.actor.turnTrace());
+    expect(serialised).not.toContain(TURN.slice(0, 20));
+    expect(serialised).not.toContain('One sentence only');
+
+    // And the whole ring comes back when no turn is named.
+    expect(h.actor.turnTrace()).toHaveLength(1);
+  });
+
+  it('records a failed turn in the trace instead of dropping it', async () => {
+    const broken: LLMClient = {
+      kind: 'claude-cli',
+      complete: (request: LlmRequest): Promise<LlmResult> =>
+        request.meta.scope === 'group'
+          ? Promise.reject(new Error('The Claude CLI exited 1: boom'))
+          : Promise.resolve({ text: '{}', model: 'x', usage: { ...EMPTY_USAGE }, ttftMs: 0 }),
+    };
+    const h = build(broken);
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const [trace] = h.actor.turnTrace();
+    expect(trace!.failed).toBe('the Claude CLI exited 1');
+    expect(trace!.totalMs).not.toBeNull();
+  });
+});

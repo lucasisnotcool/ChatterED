@@ -193,6 +193,10 @@ export interface MessageRow {
    * stopped row describe a turn nobody let finish.
    */
   stopped?: number;
+  /** Turn start → this row, in ms: what the learner actually waited (migration 012). */
+  total_ms?: number | null;
+  /** `rule:teacher_answers`, `rule:handoff`, `model:sonnet`, … (migration 012). */
+  decided_by?: string | null;
   created_at: string;
 }
 

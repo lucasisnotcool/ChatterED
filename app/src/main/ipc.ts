@@ -761,6 +761,9 @@ export class AppService {
     handle<{ roomId: string; turnId: string }>(IPC.flowStop, (input) =>
       this.#requireActor(input.roomId).stopTurn(input.turnId),
     );
+    handle<{ roomId: string; turnId?: string | null }>(IPC.flowTurnTrace, (input) =>
+      this.#requireActor(input.roomId).turnTrace(input.turnId ?? null),
+    );
     handle<{ roomId: string; segmentId: string | null }>(IPC.flowSelection, (input) => {
       // No room, no timer to extend: a document nobody has spoken to has no silence window.
       this.#actor?.noteSelection(input.segmentId);

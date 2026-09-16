@@ -87,6 +87,16 @@ export function messageView(
      * an unmarked partial is a turn that looks like it ended where the agent meant it to.
      */
     stopped: row.stopped === 1,
+    /**
+     * Provenance (audit §6). Shown on hover as `14:22 · 9.4s · haiku-4-5 · claude-cli`, with
+     * `scripted` shown **unconditionally** — the one case where not saying it is a claim.
+     * `model` here is the id the backend reported, which for a rule-written line is `rule:…`
+     * and for the nudge pool is `pool:content_free`; `byRule` above is the rendered form.
+     */
+    model: row.model,
+    backend: row.backend,
+    totalMs: row.total_ms ?? null,
+    decidedBy: row.decided_by ?? null,
     // The page text the agents were given is deliberately absent: the card says a document was
     // shown and which pages, not the pages themselves (issue #22 decision 4).
     reference: reference

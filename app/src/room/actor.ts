@@ -25,6 +25,7 @@ import type {
   ThinkingView,
   TurnFailureView,
   TurnParticipantView,
+  TurnTraceView,
   WhisperThreadView,
 } from '../shared/types.js';
 import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './agents.js';
@@ -295,6 +296,15 @@ export class RoomActor {
   #nudgesHeldForFailure = false;
   /** Same shape as the failure hold, different cause: the learner stopped the turn themselves. */
   #nudgesHeldForStop = false;
+  /**
+   * **The debug drawer's ring** (audit §10).
+   *
+   * `latency_target_ms`, `ttft_actual_ms`, usage and cost are all persisted and none of them are
+   * visible while running, so diagnosing "hung or thinking?" meant opening SQLite. This is the
+   * same numbers, in memory, for the open room — last 50 turns, newest last. **No bodies**: the
+   * same rule the log sink enforces by key name, enforced here by only ever writing scalars.
+   */
+  #traces: TurnTraceView[] = [];
   /**
    * Where the stage-1 pool is up to. A pool sampled independently each time repeats — the
    * learner on 2026-09-16 got the same "Take your time…" line twice in a row — so it is a
@@ -1070,6 +1080,7 @@ export class RoomActor {
      * Only the two triggers that actually have a yield window get it. An `open` or a `silence`
      * turn is not answering anything the learner just did, so there is nothing to acknowledge.
      */
+    this.#trace(pending.id, { anchorId, trigger, startedAt: this.#nowIso() });
     const receivesAck = trigger === 'student_message' || trigger === 'promote';
     if (receivesAck) {
       this.#received = pending.id;
@@ -1158,7 +1169,15 @@ export class RoomActor {
       // can reject; the `catch` is belt and braces against a future edit that changes that.
       void this.#updateLedger(cue, turnStart).catch(() => undefined);
     }
+    const decidedAt = this.#d.clock.now();
     const decision = await this.#decide(decisionInput, cue, turnLog, turnStart);
+    this.#trace(pending.id, {
+      decisionMs: this.#d.clock.now() - decidedAt,
+      decidedBy: decision.decidedBy,
+      role: decision.role,
+      moveType: decision.moveType,
+      failed: decision.failure?.reason ?? null,
+    });
 
     this.#recordDecision(trigger, decision);
     /**
@@ -1211,6 +1230,7 @@ export class RoomActor {
         responder: { agentKey: agent.key, role: agent.role, displayName: agent.displayName, colour: agent.colour },
       });
     }
+    this.#trace(pending.id, { latencyTargetMs: target });
     this.#event(decision.role, 'agent.turn.plan', {
       move: decision.moveType,
       probe_type: decision.probeType,
@@ -1279,6 +1299,7 @@ export class RoomActor {
         }),
       () => this.#d.clock.now(),
     );
+    const generatingFrom = this.#d.clock.now();
     const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta), pending.abort.signal).then(
       (value) => ({ ok: true as const, value }),
       (error: unknown) => ({ ok: false as const, error }),
@@ -1324,6 +1345,10 @@ export class RoomActor {
       stream.close();
       this.#clearThinking();
       this.#pending = null;
+      this.#trace(pending.id, {
+        failed: failureReason(settled.error),
+        totalMs: this.#d.clock.now() - turnStart,
+      });
       this.#releaseTurn(pending.id, null);
       this.#failTurn({
         kind: 'turn',
@@ -1344,6 +1369,12 @@ export class RoomActor {
       backend = result.backend ?? null;
       usage = result.usage as unknown as Record<string, number>;
     }
+    this.#trace(pending.id, {
+      generationMs: this.#d.clock.now() - generatingFrom,
+      model,
+      backend,
+      usage,
+    });
 
     await floor;
     if (pending.cancelled) {
@@ -1373,6 +1404,8 @@ export class RoomActor {
         usage: JSON.stringify(usage),
         latencyTargetMs: target,
         ttftActualMs: visibleTtft,
+        totalMs: this.#d.clock.now() - turnStart,
+        decidedBy: decision.decidedBy,
         dividerCause: trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent) : null,
         anchorId,
         // `disagreement` is never written any more: the S2 quota and the whole social-group
@@ -1408,6 +1441,10 @@ export class RoomActor {
         // The length of what was said, never what was said.
         reply_chars: text.length,
         usage,
+      });
+      this.#trace(pending.id, {
+        ttftActualMs: visibleTtft,
+        totalMs: this.#d.clock.now() - turnStart,
       });
       this.#releaseTurn(pending.id, row.id);
       this.#noteTurnForFlow(decision, row.id);
@@ -1481,6 +1518,8 @@ export class RoomActor {
           backend: this.#d.llm.kind,
           latencyTargetMs: target,
           ...(stream.firstVisibleAt === null ? {} : { ttftActualMs: stream.firstVisibleAt - turnStart }),
+          totalMs: this.#d.clock.now() - turnStart,
+          decidedBy: decision.decidedBy,
           anchorId,
           stopped: true,
         });
@@ -1506,6 +1545,13 @@ export class RoomActor {
       decided_by: decision.decidedBy,
       reply_chars: partial.length,
       total_ms: this.#d.clock.now() - turnStart,
+    });
+    this.#trace(pending.id, {
+      stopped: true,
+      model: agent.model,
+      backend: this.#d.llm.kind,
+      ttftActualMs: stream.firstVisibleAt !== null ? stream.firstVisibleAt - turnStart : null,
+      totalMs: this.#d.clock.now() - turnStart,
     });
     this.#releaseTurn(pending.id, messageId, true);
     this.#nudgesHeldForStop = true;
@@ -1769,6 +1815,44 @@ export class RoomActor {
     this.#cards.set(anchorId, next);
   }
 
+  /**
+   * One turn's timings, or the whole ring. Read by `flow:turnTrace` for the ⌥⌘D drawer, which is
+   * what makes every latency claim in the audit measurable rather than argued.
+   */
+  turnTrace(turnId?: string | null): TurnTraceView[] {
+    return turnId ? this.#traces.filter((t) => t.turnId === turnId) : [...this.#traces];
+  }
+
+  #trace(turnId: string, patch: Partial<TurnTraceView>): void {
+    const existing = this.#traces.find((t) => t.turnId === turnId);
+    if (existing) {
+      Object.assign(existing, patch);
+      return;
+    }
+    this.#traces.push({
+      turnId,
+      roomId: this.#d.roomId,
+      anchorId: null,
+      trigger: 'student_message',
+      startedAt: this.#nowIso(),
+      decidedBy: null,
+      role: null,
+      moveType: null,
+      model: null,
+      backend: null,
+      decisionMs: null,
+      generationMs: null,
+      ttftActualMs: null,
+      latencyTargetMs: null,
+      totalMs: null,
+      usage: {},
+      stopped: false,
+      failed: null,
+      ...patch,
+    });
+    if (this.#traces.length > 50) this.#traces.shift();
+  }
+
   seenSnapshot(): Record<string, number> {
     return Object.fromEntries(this.#seen);
   }
@@ -1917,6 +2001,9 @@ export class RoomActor {
     reference?: Omit<MessageRefRow, 'id' | 'message_id' | 'room_id' | 'created_at'>;
     /** The learner pressed Stop and this is the partial (migration 011). */
     stopped?: boolean;
+    /** Turn start → this row, and who chose the speaker (migration 012, audit §6). */
+    totalMs?: number;
+    decidedBy?: string | null;
   }): MessageRow {
     const seq = this.#d.store.messages.maxSeq(this.#d.roomId) + 1;
     const row: MessageRow = {
@@ -1937,6 +2024,8 @@ export class RoomActor {
       disagreement: input.disagreement ?? null,
       anchor_id: input.anchorId ?? null,
       stopped: input.stopped ? 1 : 0,
+      total_ms: input.totalMs ?? null,
+      decided_by: input.decidedBy ?? null,
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);
