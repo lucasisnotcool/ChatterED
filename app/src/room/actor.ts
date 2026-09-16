@@ -27,7 +27,7 @@ import type {
 import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './agents.js';
 import { buildGroupContext } from './context.group.js';
 import { buildWhisperContext } from './context.whisper.js';
-import { applyLedgerRules, type LedgerProposal } from './ledger.js';
+import { LEDGER_SCHEMA, applyLedgerRules, type LedgerProposal } from './ledger.js';
 import type { LLMClient, LlmBackend } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
@@ -58,11 +58,11 @@ import {
   type TaughtItem,
   type TesterMode,
 } from './flow.js';
-import { decideTurn, type TurnDecision, type TurnTrigger } from './orchestrator.js';
+import { decideTurn, extractJson as extractJsonObject, type TurnDecision, type TurnTrigger } from './orchestrator.js';
 import type { Clock, Store, Transport } from './ports.js';
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import { latestByElement } from './flow.js';
-import { taughtBlock } from './prompts.js';
+import { decisionDirective, ledgerDirective, taughtBlock } from './prompts.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
@@ -1190,6 +1190,7 @@ export class RoomActor {
       roster: this.#d.roster,
       pack: this.#d.pack,
       directive: { agentRole: 'peer', move: 'decide_next_turn' },
+      directiveText: decisionDirective(this.#d.roster),
       maxTokens: 400,
     });
     request.model = this.#models.orchestrator;
@@ -1241,17 +1242,27 @@ export class RoomActor {
       roster: this.#d.roster,
       pack: this.#d.pack,
       directive: { agentRole: 'peer', move: 'ledger_update' },
+      directiveText: ledgerDirective({
+        conceptId: this.#d.pack.concept_id,
+        messageId: trigger.id,
+        elementIds: this.#d.pack.elements.map((e) => e.id),
+      }),
       maxTokens: 900,
     });
     // The ledger is a structured-output call, not an agent turn: it runs on the orchestrator
     // model, which is the whole point of the two-dropdown split (#19).
     request.model = this.#models.orchestrator;
     request.meta = { ...request.meta, scope: 'ledger', scriptCue: cue };
+    // Structured output, for the same reason the decision uses it: the CLI enforces the schema
+    // and repairs one bad answer before the caller ever sees it (`claude-cli.ts`).
+    request.jsonSchema = LEDGER_SCHEMA;
 
     let proposal: LedgerProposal;
     try {
       const result = await this.#d.llm.complete(request);
-      proposal = JSON.parse(result.text) as LedgerProposal;
+      // Same unwrapper as the decision path: a model that wraps the object in prose under a
+      // schema is a known shape, and it is not a reason to throw the turn's progress away.
+      proposal = JSON.parse(extractJsonObject(result.text)) as LedgerProposal;
     } catch (err) {
       // The chat never blocks on the ledger (progress-tracking.md §4.6) — but a rail that
       // silently stopped moving is a lie about the learner's progress, so it says so. This is

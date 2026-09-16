@@ -247,3 +247,67 @@ export function turnDirective(d: TurnDirective): string {
   bits.push('Reply with the message only — no preamble, no name prefix, no stage directions.');
   return bits.join(' ');
 }
+
+/**
+ * **The orchestrator's own instructions.**
+ *
+ * There were none. `#decide` built the Teacher's ordinary group prompt and appended
+ * `[Your move this turn: decide_next_turn. Reply with the message only — no preamble…]`, which
+ * tells a model to *speak*, not to choose a speaker, and then handed it a JSON schema it had to
+ * reverse-engineer. The 2026-09-16 decision came back with a sound judgement and a `role` the
+ * code could not use; this is the half of that the prompt owed it.
+ *
+ * It is only ever used on the room-level stream now: an anchored learner turn is settled by
+ * `orchestrator.ruleDecision`'s `rule:teacher_answers` and never reaches a model.
+ */
+export function decisionDirective(roster: AgentProfile[]): string {
+  const teacher = roster.find((a) => a.role === 'peer')?.displayName ?? 'the teacher';
+  const tester = roster.find((a) => a.role === 'challenger')?.displayName ?? 'the tester';
+  return [
+    'You are not speaking this turn. You are deciding who speaks next, and you answer with the',
+    'JSON object alone — no prose, no code fence.',
+    '',
+    `"role" takes exactly one of two values: "peer" means ${teacher}, the teacher, who explains;`,
+    `"challenger" means ${tester}, the tester, who quizzes. Those two strings are the only legal`,
+    'answers — not the names, not "teacher", not "tester". If the learner has asked something,',
+    `the answer is almost always "peer": ${tester} is put on the floor by a rule elsewhere, and`,
+    'asking for him here is discarded.',
+    '',
+    '"speak" is false only when nobody should say anything at all. A learner who has just asked a',
+    'question is not one of those cases.',
+    '',
+    '"move_type" is a short snake_case verb phrase for what the turn does — explain, answer,',
+    'correct_misconception, extend, ask_back. "target_element_id" must be one of the element ids',
+    'listed above, or null. "rationale" is one sentence, for the log, that the learner never sees.',
+  ].join('\n');
+}
+
+/**
+ * **The ledger call's instructions**, likewise absent until 2026-09-16 — see `LEDGER_SCHEMA`.
+ *
+ * The one thing it must get right is `evidence`: `applyLedgerRules` rule 1 checks it verbatim
+ * against the learner's own messages and throws away anything that is not a literal substring of
+ * something they actually wrote. That check is not negotiable and is not in the prompt's gift,
+ * so the prompt's job is to stop the model wasting a turn losing to it.
+ */
+export function ledgerDirective(input: { conceptId: string; messageId: string; elementIds: string[] }): string {
+  return [
+    'You are not speaking this turn. You are updating the Explanation Ledger, and you answer with',
+    'the JSON object alone — no prose, no code fence.',
+    '',
+    `Set "schema" to "ledger.v1", "concept_id" to "${input.conceptId}" and "message_id" to`,
+    `"${input.messageId}" — the learner's most recent message, which is the only one you are`,
+    'judging.',
+    '',
+    `"elements" holds one entry per claim you have evidence about. Legal ids: ${input.elementIds.join(', ')}.`,
+    'Leave out anything the learner has not touched; an empty array is a correct answer.',
+    '',
+    '**"evidence" must be copied character for character out of something the learner themselves',
+    'wrote.** Not your paraphrase, not your words, not the slide\'s. A quote that is not literally',
+    'in one of their messages is discarded along with the level it was supporting, so an honest',
+    'null beats an approximation.',
+    '',
+    '"level" is the 0–4 scale above, as of this message. "confidence" is 0–1. Move a level down',
+    'only when the learner has contradicted themselves, and set "self_contradiction" when you do.',
+  ].join('\n');
+}

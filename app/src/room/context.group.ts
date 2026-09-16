@@ -26,6 +26,16 @@ export interface GroupContextInput {
   roster: AgentProfile[];
   pack: ConceptPack;
   directive: TurnDirective;
+  /**
+   * Replaces the generated turn directive wholesale, for the two calls that are **not** turns:
+   * the orchestrator decision and the ledger update (`prompts.decisionDirective`,
+   * `prompts.ledgerDirective`). `turnDirective` ends "Reply with the message only", which is
+   * precisely the wrong instruction for a call that must answer with a JSON object — and was
+   * the only instruction either of them had until 2026-09-16.
+   *
+   * It still goes in the same place: after every cache breakpoint, on the last user turn.
+   */
+  directiveText?: string;
   maxTokens?: number;
 }
 
@@ -73,7 +83,7 @@ export function buildGroupContext(store: GroupStore, input: GroupContextInput): 
 
   // The turn directive is the only volatile part, so it goes AFTER every breakpoint
   // (architecture-options.md §C.5 rule 2).
-  const directive = turnDirective(input.directive);
+  const directive = input.directiveText ?? turnDirective(input.directive);
   const last = turns[turns.length - 1];
   if (last && last.role === 'user') last.content = `${last.content}\n\n[${directive}]`;
   else turns.push({ role: 'user', content: `[${directive}]` });

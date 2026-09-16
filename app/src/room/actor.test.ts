@@ -13,6 +13,7 @@ import { CONTENT_FREE_NUDGES, RoomActor } from './actor.js';
 import { DEMO, openSession, type TaughtItem } from './flow.js';
 import { ScriptedClient } from './llm/scripted.js';
 import { buildGroupContext } from './context.group.js';
+import { LEDGER_SCHEMA } from './ledger.js';
 import type { RoomActorDeps } from './actor.js';
 import type { LLMClient, LlmRequest, LlmResult, LlmScope } from './llm/types.js';
 
@@ -557,5 +558,42 @@ describe('the stage-1 nudge pool', () => {
     expect(seen.length).toBeGreaterThanOrEqual(2);
     for (let i = 1; i < seen.length; i += 1) expect(seen[i]).not.toBe(seen[i - 1]);
     for (const line of seen) expect(CONTENT_FREE_NUDGES).toContain(line);
+  });
+});
+
+/**
+ * **The two calls that are not turns.**
+ *
+ * Both went out for months with the Teacher's ordinary group prompt and `[Your move this turn:
+ * ledger_update. Reply with the message only — no preamble…]`, which is the exact opposite of
+ * what a structured call needs, and the ledger went out with no schema at all. In a live room
+ * that produced `progress.update {"parse_ok":false}` on every single learner turn — 02:30:38 in
+ * room_6a9609d5c6fb — and a rail that had never once moved.
+ */
+class CapturingClient implements LLMClient {
+  readonly kind = 'scripted' as const;
+  readonly seen: LlmRequest[] = [];
+  #inner = new ScriptedClient();
+  async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+    this.seen.push(request);
+    return this.#inner.complete(request, onDelta);
+  }
+}
+
+describe('the ledger call', () => {
+  it('goes out with a schema and instructions that name the legal element ids', async () => {
+    const client = new CapturingClient();
+    const h = build('scripted', undefined, client);
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+
+    const ledger = client.seen.find((r) => r.meta.scope === 'ledger')!;
+    expect(ledger.jsonSchema).toBe(LEDGER_SCHEMA);
+    const directive = ledger.messages.at(-1)!.content;
+    expect(directive).toContain('ledger.v1');
+    expect(directive).toContain(PSD_HESSIAN_CONVEXITY_V1.elements[0]!.id);
+    // The one rule the prompt exists to stop the model losing to (`applyLedgerRules` rule 1).
+    expect(directive).toContain('character for character');
+    // And it must not still be told to reply with a message.
+    expect(directive).not.toContain('Reply with the message only');
   });
 });

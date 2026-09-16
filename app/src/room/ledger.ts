@@ -67,6 +67,56 @@ export interface ApplyResult {
   skipped: LedgerGate | null;
 }
 
+/**
+ * **The shape the ledger call must answer in.**
+ *
+ * Until 2026-09-16 the ledger call went out with no schema and no instructions — the Teacher's
+ * own role block, plus `[Your move this turn: ledger_update. Reply with the message only…]` —
+ * and then `JSON.parse(result.text)` on whatever prose came back. It failed every single turn:
+ * `progress.update {"parse_ok":false}` at 02:30:38 in room_6a9609d5c6fb is that, and the rail
+ * had simply never moved in a live room.
+ *
+ * `evidence` is the field that matters: rule 1 checks it verbatim against the learner's own
+ * messages and drops anything that is not there, so the schema asks for a quote and the prompt
+ * says why. The schema cannot enforce "is a substring" — `applyLedgerRules` does, and it is
+ * deliberately the code and not the prompt that decides (progress-tracking.md §4.4).
+ */
+export const LEDGER_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['schema', 'concept_id', 'message_id', 'elements'],
+  properties: {
+    schema: { type: 'string', enum: ['ledger.v1'] },
+    concept_id: { type: 'string' },
+    message_id: { type: 'string' },
+    elements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'level', 'evidence', 'confidence'],
+        properties: {
+          id: { type: 'string' },
+          level: { type: 'integer', minimum: 0, maximum: 4 },
+          evidence: { type: ['string', 'null'] },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+          rationale: { type: 'string' },
+          misconceptions_present: { type: 'array', items: { type: 'string' } },
+          misconceptions_resolved: { type: 'array', items: { type: 'string' } },
+          self_contradiction: { type: 'boolean' },
+        },
+      },
+    },
+    open_misconceptions: { type: 'array', items: { type: 'string' } },
+    suggested_target_element: { type: ['string', 'null'] },
+    suggested_probe_type: {
+      type: ['string', 'null'],
+      enum: ['clarification', 'assumptions', 'reasons_evidence', 'implications', 'alternatives', null],
+    },
+    notes_for_agents: { type: 'string' },
+  },
+};
+
 export const CONFIDENCE_FLOOR = 0.6;
 const MIN_CONTENT_WORDS = 8;
 

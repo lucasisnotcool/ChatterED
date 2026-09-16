@@ -414,7 +414,7 @@ export function nextProbeType(current: string): string {
 }
 
 /** Models occasionally wrap JSON in prose even under a schema; take the first object. */
-function extractJson(text: string): string {
+export function extractJson(text: string): string {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return trimmed;
   const start = trimmed.indexOf('{');
