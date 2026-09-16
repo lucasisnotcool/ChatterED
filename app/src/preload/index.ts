@@ -69,6 +69,13 @@ const api: ChatterEdApi = {
   flowTurnTrace: (input) => ipcRenderer.invoke(IPC.flowTurnTrace, input),
   flowMarkSeen: (input) => ipcRenderer.invoke(IPC.flowMarkSeen, input),
   flowCardState: (input) => ipcRenderer.invoke(IPC.flowCardState, input),
+  // The learning-objective tree (issue #38). Five channels, no events of their own: the two
+  // pushes ride `IPC.event` with everything else the room emits.
+  objectivesTree: (input) => ipcRenderer.invoke(IPC.objectivesTree, input),
+  objectivesStates: (input) => ipcRenderer.invoke(IPC.objectivesStates, input),
+  objectivesRegenerate: (input) => ipcRenderer.invoke(IPC.objectivesRegenerate, input),
+  objectivesReset: (input) => ipcRenderer.invoke(IPC.objectivesReset, input),
+  objectivesTeach: (input) => ipcRenderer.invoke(IPC.objectivesTeach, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

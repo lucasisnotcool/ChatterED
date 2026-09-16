@@ -26,6 +26,7 @@ import type {
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AskScope } from './scope.js';
+import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
   FlowAnswerView,
   FlowRelayView,
@@ -116,6 +117,13 @@ export const IPC = {
   flowMarkSeen: 'flow:markSeen',
   /** Per-card `collapsed` / `removed`, persisted so a dismissed card stays dismissed. */
   flowCardState: 'flow:cardState',
+
+  // The learning-objective tree (issue #38, `docs/research/learning-objectives.md` §6).
+  objectivesTree: 'objectives:tree',
+  objectivesStates: 'objectives:states',
+  objectivesRegenerate: 'objectives:regenerate',
+  objectivesReset: 'objectives:reset',
+  objectivesTeach: 'objectives:teach',
 } as const;
 
 export interface ChatterEdApi {
@@ -298,6 +306,13 @@ export interface ChatterEdApi {
      * records that it was one.
      */
     scope?: AskScope;
+    /**
+     * The objective this thread is about (issue #38 §5): set when the Ask was opened from a node
+     * in the objectives panel. The main process writes it on every message of the thread
+     * (`messages.objective_id`, migration 016) so an explanation given here is attributable to
+     * the node the learner clicked.
+     */
+    objectiveId?: string;
   }): Promise<FlowAnswerView>;
   /**
    * **"Ask about this deck"** — the line above the first card (issue #35;
@@ -409,6 +424,52 @@ export interface ChatterEdApi {
    * by scrolling is precisely the behaviour the silence timer must not punish.
    */
   flowSelection(input: { roomId: string; segmentId: string | null }): Promise<void>;
+
+
+  // ── The learning-objective tree (issue #38) ─────────────────────────────
+  /**
+   * The file's tree, or **null when no ingest has ever been asked for this file**.
+   *
+   * The deviation from spec §6 (`→ LearningTree`) is argued at the top of `shared/objectives.ts`:
+   * a deck the flow has never opened has no row, and a synthesised `pending` one would put
+   * "Ellie is reading the deck…" on screen for a deck nobody is reading. Every other state —
+   * including a failed ingest — comes back as a real tree carrying its `status`.
+   *
+   * Never blocks on the model: the ingest runs in the background from the first `segments:get`
+   * that succeeds on a PDF, and its progress arrives as `objectives.tree` events.
+   */
+  objectivesTree(input: { fileId: string }): Promise<LearningTree | null>;
+  /** The file's states, one per objective the learner has moved. Missing ⟹ level 0. */
+  objectivesStates(input: { fileId: string }): Promise<LearningObjectiveState[]>;
+  /**
+   * **Regenerate** in the panel header. Drops the cached tree and ingests again, keeping the
+   * states whose objective ids still match (§3) — an id is `sha1(content_sha + title)`, so a
+   * node whose title survives the re-read keeps the level the learner earned on it.
+   */
+  objectivesRegenerate(input: { fileId: string }): Promise<LearningTree | null>;
+  /**
+   * **Reset** (§4): every state to level 0, evidence cleared, `taughtAt` cleared. The tree
+   * stays. One confirm on the renderer side — the main process does not ask twice.
+   *
+   * Returns the reset states so the panel redraws from the answer rather than racing the
+   * per-node events.
+   */
+  objectivesReset(input: { fileId: string }): Promise<LearningObjectiveState[]>;
+  /**
+   * **Teach me this** on a prerequisite the deck assumes (§5, #36's contract).
+   *
+   * A Teacher turn anchored to the requiring objective's first ref — or to the deck anchor when
+   * nothing in the deck refers to it — explained from general knowledge rather than from a slide
+   * that does not mention it, and marking `taughtAt` so the Tester may later quiz it.
+   *
+   * Returns where the turn landed, so the flow can scroll to it; `null` when the objective is
+   * not in the file's tree.
+   */
+  objectivesTeach(input: { fileId: string; objectiveId: string }): Promise<{
+    roomId: string;
+    anchorId: string;
+    objectiveId: string;
+  } | null>;
 
   /**
    * Subscribe to application-menu commands.

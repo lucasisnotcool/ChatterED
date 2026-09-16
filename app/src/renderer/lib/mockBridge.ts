@@ -9,6 +9,7 @@
 import type { ChatterEdApi } from '../../shared/ipc.js';
 import { DECK_ANCHOR_ID, guessScope, scopeShownFor, type AskScope } from '../../shared/scope.js';
 import { refusalMessage, type SegmentDocumentView, type SegmentRefusal } from '../../shared/segment/index.js';
+import type { LearningObjective, LearningObjectiveState, LearningTree } from '../../shared/objectives.js';
 import type {
   AgentProfile,
   Bootstrap,
@@ -313,6 +314,86 @@ export function createMockBridge(): ChatterEdApi {
   let flowRoomOpen = false;
   let flowTurns = 0;
 
+  /**
+   * **The learning-objective tree, mocked** (issue #38, `learning-objectives.md` §2).
+   *
+   * Four objectives and one prerequisite the deck assumes, which is the smallest tree that
+   * exercises every branch the panel has: nesting, an `assumedByDeck` node under the objective
+   * that requires it, a node with refs and one without, and states at three different levels.
+   * The real fixture for the demo deck lives in the main process, where the ingest is; this is
+   * the `vite dev` stand-in, and like everything else in this file it is scaffolding.
+   */
+  const mockObjectives: LearningObjective[] = [
+    {
+      id: 'mock-btw-spec', fileId: '', title: 'State what /btw promises to do', kind: 'objective',
+      statement: 'Say what /btw is for: a question about the current work that does not enter the conversation history.',
+      criteria: ['names both halves — ask now, leave the history untouched', 'says the answer comes from the session already open'],
+      quizSeeds: ['What does /btw promise about the conversation history?'],
+      refs: [{ page: 2 }], parentId: null, requires: ['mock-context-window'], assumedByDeck: false, order: 1,
+    },
+    {
+      id: 'mock-context-window', fileId: '', title: 'What a context window is', kind: 'prerequisite',
+      statement: 'The bounded span of tokens a model can attend to in one call, and why it has to be spent on something.',
+      criteria: ['says it is bounded', 'says what competes for it'],
+      quizSeeds: ['Why does a side question cost the main one anything at all?'],
+      refs: [], parentId: null, requires: [], assumedByDeck: true, order: 1,
+    },
+    {
+      id: 'mock-btw-limits', fileId: '', title: 'Name what /btw cannot see', kind: 'objective',
+      statement: 'No tools, no memory between calls, and nothing outside the session it is asked in.',
+      criteria: ['names the missing tools', 'names the missing memory'],
+      quizSeeds: ['You ask /btw about a file it has not read. What happens?'],
+      refs: [{ page: 3 }], parentId: null, requires: [], assumedByDeck: false, order: 2,
+    },
+    {
+      id: 'mock-btw-cost', fileId: '', title: 'Explain what the side channel costs', kind: 'objective',
+      statement: 'The private exchange is paid for out of the same window the main work is using.',
+      criteria: ['says who pays', 'says what gets less'],
+      quizSeeds: ['Where does the cost of a private question land?'],
+      refs: [{ page: 5 }], parentId: 'mock-btw-limits', requires: [], assumedByDeck: false, order: 3,
+    },
+  ];
+  const mockStates = new Map<string, LearningObjectiveState>(
+    mockObjectives.map((o, i) => [
+      o.id,
+      {
+        objectiveId: o.id, fileId: '',
+        level: (i === 0 ? 2 : i === 1 ? 1 : 0) as LearningObjectiveState['level'],
+        evidenceMessageIds: [], lastMovedAt: i < 2 ? iso(-600_000) : null, taughtAt: i < 2 ? iso(-900_000) : null,
+      },
+    ]),
+  );
+
+  function mockTree(fileId: string): LearningTree {
+    return {
+      fileId, contentSha: 'mock-sha', generatedAt: iso(-1_800_000), model: 'mock-sonnet', version: 1,
+      status: 'ready',
+      objectives: mockObjectives.map((o) => ({ ...o, fileId })),
+    };
+  }
+
+  function mockStatesFor(fileId: string): LearningObjectiveState[] {
+    return [...mockStates.values()].map((s) => ({ ...s, fileId }));
+  }
+
+  /** One node moves per learner turn, so the panel's lighting animation is drivable offline. */
+  function moveMockObjective(messageId: string): void {
+    const next = mockObjectives.find((o) => (mockStates.get(o.id)?.level ?? 0) < 2);
+    if (!next) return;
+    const before = mockStates.get(next.id)!;
+    const state: LearningObjectiveState = {
+      ...before,
+      level: (before.level + 1) as LearningObjectiveState['level'],
+      evidenceMessageIds: [...before.evidenceMessageIds, messageId],
+      lastMovedAt: iso(),
+    };
+    mockStates.set(next.id, state);
+    emit({ type: 'objectives.state', roomId: ROOM, fileId: mockFileId, state: { ...state, fileId: mockFileId } });
+  }
+
+  /** Whichever file the panel last asked about — the mock has exactly one deck. */
+  let mockFileId = 'mock-file-1';
+
   const REFERENCE_ANSWER = [
     '`/btw` asks a question inside the session you already have open. It reads the conversation',
     'so far and nothing else: it has no tools of its own, no memory between calls, and the',
@@ -576,6 +657,9 @@ export function createMockBridge(): ChatterEdApi {
       const n = flowTurns;
       later(1200, () => {
         moveLedger([['R1', n === 1 ? 'stated' : 'justified', text.slice(0, 64), null]]);
+        // The objectives panel moves on the learner's own words, exactly as the ledger does —
+        // the same rule, the same turn, so the two surfaces cannot disagree offline either.
+        moveMockObjective(mine.id);
       });
       if (n < 2) {
         think(ellie, 4500, FLOW_TEACHER[Math.min(n - 1, FLOW_TEACHER.length - 1)]!, { anchorId: segmentId });
@@ -676,6 +760,49 @@ export function createMockBridge(): ChatterEdApi {
       if (collapsed !== undefined) next.collapsed = collapsed;
       if (removed !== undefined) next.removed = removed;
       cardState.set(anchorId, next);
+    },
+
+    // ── The learning-objective tree (issue #38) ──────────────────────────
+    async objectivesTree({ fileId }) {
+      mockFileId = fileId;
+      return mockTree(fileId);
+    },
+    async objectivesStates({ fileId }) {
+      mockFileId = fileId;
+      return mockStatesFor(fileId);
+    },
+    async objectivesRegenerate({ fileId }) {
+      mockFileId = fileId;
+      // Status first, then the answer: the real one takes half a minute of Sonnet and the panel
+      // has to show "Ellie is reading the deck…" in between.
+      emit({ type: 'objectives.tree', roomId: ROOM, fileId, tree: { ...mockTree(fileId), status: 'pending' } });
+      later(2000, () => emit({ type: 'objectives.tree', roomId: ROOM, fileId, tree: mockTree(fileId) }));
+      return { ...mockTree(fileId), status: 'pending' };
+    },
+    async objectivesReset({ fileId }) {
+      mockFileId = fileId;
+      for (const o of mockObjectives) {
+        mockStates.set(o.id, {
+          objectiveId: o.id, fileId, level: 0, evidenceMessageIds: [], lastMovedAt: null, taughtAt: null,
+        });
+      }
+      return mockStatesFor(fileId);
+    },
+    async objectivesTeach({ fileId, objectiveId }) {
+      mockFileId = fileId;
+      const objective = mockObjectives.find((o) => o.id === objectiveId);
+      if (!objective) return null;
+      const requirer = mockObjectives.find((o) => o.requires.includes(objectiveId));
+      const anchorId = String(objective.refs[0]?.segmentId ?? requirer?.refs[0]?.segmentId ?? DECK_ANCHOR_ID);
+      flowRoomOpen = true;
+      think(ellie, 3000, `Short version of ${objective.title.toLowerCase()}: ${objective.statement}`, { anchorId });
+      const state = mockStates.get(objectiveId);
+      if (state) {
+        const taught = { ...state, taughtAt: iso() };
+        mockStates.set(objectiveId, taught);
+        emit({ type: 'objectives.state', roomId: ROOM, fileId, state: { ...taught, fileId } });
+      }
+      return { roomId: ROOM, anchorId, objectiveId };
     },
 
     getSegments: async ({ fileId }) => emptyFlow(fileId),

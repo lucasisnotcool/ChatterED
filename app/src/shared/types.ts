@@ -5,6 +5,7 @@
  * structured cloning. No classes, no Dates, no functions. Timestamps are ISO-8601 strings,
  * which is also how they are stored in SQLite (architecture-mac.md §D.1).
  */
+import type { LearningObjectiveState, LearningTree } from './objectives.js';
 
 export type AgentRole = 'peer' | 'challenger' | 'tutee' | 'whisper';
 
@@ -689,7 +690,22 @@ export type RoomEvent =
    * already correct: **`ledger.updated` is emitted alongside this**, carrying the same rows. The
    * extra field here is `conceptTitle`, which is what the rail's heading and the round card say.
    */
-  | { type: 'pack.ready'; roomId: string; conceptTitle: string; elements: number; ledger: LedgerView };
+  | { type: 'pack.ready'; roomId: string; conceptTitle: string; elements: number; ledger: LedgerView }
+  /**
+   * **The file's learning-objective tree changed status** (issue #38, §6).
+   *
+   * Emitted on `pending` (the ingest has started, so the panel can say "Ellie is reading the
+   * deck…"), on `ready` and on `failed` — a status change, never a heartbeat. `roomId` is null
+   * until the deck has a room: the ingest starts on first open, which is before the first
+   * question, which is what creates one.
+   */
+  | { type: 'objectives.tree'; roomId: string | null; fileId: string; tree: LearningTree }
+  /**
+   * **One node moved** (§4). Carried per node rather than as a whole tree because the panel
+   * animates the node that just lit, and a wholesale redraw cannot say which one that was.
+   * `evidenceMessageIds` on the state are the **learner's own** messages that earned it.
+   */
+  | { type: 'objectives.state'; roomId: string | null; fileId: string; state: LearningObjectiveState };
 
 // ── The vault (issue #22) ──────────────────────────────────────────────────
 // Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner
