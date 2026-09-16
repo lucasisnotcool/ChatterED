@@ -16,7 +16,7 @@ import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js
 import { FLOOR_YIELD_MS, RoomActor, type RoomActorDeps } from './actor.js';
 import { DEMO } from './flow.js';
 import { ScriptedClient } from './llm/scripted.js';
-import { EMPTY_USAGE, type LLMClient, type LlmRequest, type LlmResult } from './llm/types.js';
+import { EMPTY_USAGE, LlmAbortedError, type LLMClient, type LlmRequest, type LlmResult } from './llm/types.js';
 
 const TURN = 'So the Hessian being PSD everywhere on the domain is what makes it convex, not just at the minimum.';
 const ANCHOR = 'seg_1';
@@ -242,5 +242,111 @@ describe('incremental streaming behind the floor (audit P1)', () => {
     // exactly one flush — which is the buffering rule working, not the chunking failing. The
     // chunking itself is asserted against the client in `scripted.stream.test.ts`.
     expect(deltas).toHaveLength(1);
+  });
+});
+
+describe('Stop (audit P1, Lucas 16 Sep: only after the floor)', () => {
+  /** A client that streams two sentences and then hangs, which is the case Stop exists for. */
+  function hangingClient(pieces: string[]): { client: LLMClient; delivered: () => number } {
+    let delivered = 0;
+    return {
+      delivered: () => delivered,
+      client: {
+        kind: 'claude-cli',
+        async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal) {
+          if (request.meta.scope !== 'group') {
+            return { text: '{}', model: 'sonnet', usage: { ...EMPTY_USAGE }, ttftMs: 0 };
+          }
+          for (const piece of pieces) {
+            onDelta?.(piece);
+            delivered += 1;
+          }
+          await new Promise<void>((_resolve, reject) => {
+            if (signal?.aborted) {
+              reject(new LlmAbortedError());
+              return;
+            }
+            signal?.addEventListener('abort', () => reject(new LlmAbortedError()), { once: true });
+          });
+          throw new Error('unreachable');
+        },
+      },
+    };
+  }
+
+  it('refuses a stop while the floor is still running', async () => {
+    const { client } = hangingClient(['One. ', 'Two. ']);
+    const h = build(client);
+    const sending = h.actor.sendMessage(TURN, ANCHOR);
+    await h.clock.run(1);
+    const turnId = h.events.find((e) => e.type === 'turn.received')!;
+    const id = turnId.type === 'turn.received' ? turnId.received.turnId : '';
+    // Inside the deliberate wait: the retrieval practice cannot be skipped.
+    expect(h.actor.stopTurn(id)).toEqual({ stopped: false, refused: 'floor' });
+    // And nothing is visible yet either, so the button has nothing to be next to.
+    expect(h.events.some((e) => e.type === 'turn.delta')).toBe(false);
+
+    await h.clock.run(12_000);
+    expect(h.actor.stopTurn(id)).toEqual({ stopped: true, turnId: id });
+    await settle(h.clock, sending);
+  });
+
+  it('keeps the partial as the message, flagged, and calls it neither a failure nor a reason to nudge', async () => {
+    const pieces = ['A heuristic is admissible ', 'when it never overestimates. '];
+    const { client } = hangingClient(pieces);
+    const h = build(client);
+    const sending = h.actor.sendMessage(TURN, ANCHOR);
+    await h.clock.run(12_000);
+    const received = h.events.find((e) => e.type === 'turn.received')!;
+    const id = received.type === 'turn.received' ? received.received.turnId : '';
+    expect(h.actor.stopTurn(id)).toEqual({ stopped: true, turnId: id });
+    await settle(h.clock, sending);
+
+    const reply = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(reply.body).toBe(pieces.join('').trim());
+    expect(reply.stopped).toBe(1);
+    // Not a failure: no card, nothing to retry.
+    expect(h.events.some((e) => e.type === 'turn.failed')).toBe(false);
+    // Released once, naming the partial, and saying it was stopped.
+    const released = h.events.filter((e) => e.type === 'turn.released');
+    expect(released).toHaveLength(1);
+    expect(released[0]!.type === 'turn.released' && released[0]!.stopped).toBe(true);
+    expect(released[0]!.type === 'turn.released' && released[0]!.messageId).toBe(reply.id);
+    // The floor is released — the room is open, with no turn pending against it.
+    const room = h.store.rooms.get(h.roomId)!;
+    expect(room.state).toBe('open');
+    expect(room.pending_turn_id).toBeNull();
+  });
+
+  it('does not nudge on top of a turn the learner stopped', async () => {
+    const { client } = hangingClient(['Half a thought. ']);
+    const h = build(client);
+    const sending = h.actor.sendMessage(TURN, ANCHOR);
+    await h.clock.run(12_000);
+    const received = h.events.find((e) => e.type === 'turn.received')!;
+    h.actor.stopTurn(received.type === 'turn.received' ? received.received.turnId : '');
+    await settle(h.clock, sending);
+
+    const before = h.store.messages.forRoom(h.roomId).length;
+    // Well past two silence windows: the room stays quiet until the learner acts.
+    await h.clock.run(150_000);
+    expect(h.store.messages.forRoom(h.roomId)).toHaveLength(before);
+  });
+
+  it('aborts the client call rather than letting it run on', async () => {
+    const { client } = hangingClient(['One. ']);
+    const h = build(client);
+    const sending = h.actor.sendMessage(TURN, ANCHOR);
+    await h.clock.run(12_000);
+    const received = h.events.find((e) => e.type === 'turn.received')!;
+    h.actor.stopTurn(received.type === 'turn.received' ? received.received.turnId : '');
+    // The call only ever settles because the signal fired; without the abort this never resolves.
+    await settle(h.clock, sending);
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.stopped).toBe(1);
+  });
+
+  it('refuses a stop for a turn that is not running', async () => {
+    const h = build();
+    expect(h.actor.stopTurn('turn_nope')).toEqual({ stopped: false, refused: 'unknown' });
   });
 });

@@ -187,6 +187,12 @@ export interface MessageRow {
    * to one (src/room/reference.ts).
    */
   anchor_id: string | null;
+  /**
+   * 1 when the learner pressed **Stop** and this body is the partial that had already arrived
+   * (migration 011). Not a failure, and never a considered turn: the latency columns on a
+   * stopped row describe a turn nobody let finish.
+   */
+  stopped?: number;
   created_at: string;
 }
 

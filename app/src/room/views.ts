@@ -82,6 +82,11 @@ export function messageView(
     // A quiz or feedback turn is decided by rule but still generated, so it is not tagged —
     // claiming otherwise would be the kind of overclaim the tag exists to rule out.
     byRule: row.model?.startsWith('rule:') ? row.model.slice('rule:'.length) : null,
+    /**
+     * The learner pressed Stop and this is the partial (migration 011). The card should say so:
+     * an unmarked partial is a turn that looks like it ended where the agent meant it to.
+     */
+    stopped: row.stopped === 1,
     // The page text the agents were given is deliberately absent: the card says a document was
     // shown and which pages, not the pages themselves (issue #22 decision 4).
     reference: reference

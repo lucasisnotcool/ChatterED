@@ -67,14 +67,29 @@ export interface LlmResult {
   costUsd?: number;
 }
 
+/**
+ * Thrown when `signal` fires. It is **not a failure**: the learner pressed Stop, the partial
+ * text they were already looking at becomes the message, and nothing anywhere puts up a card.
+ */
+export class LlmAbortedError extends Error {
+  constructor() {
+    super('The call was stopped.');
+    this.name = 'LlmAbortedError';
+  }
+}
+
 export interface LLMClient {
   readonly kind: LlmBackend;
   /**
    * Generates a reply. `onDelta` receives tokens as they arrive; the *caller* owns the
    * latency floor and the release pacing, because the hold is a product decision, not a
    * transport one (design-brief.md §D4).
+   *
+   * `signal` is **Stop**. Aborting must end the underlying work for real — the CLI path kills
+   * its child process — because a "stopped" turn whose model keeps generating is a bill and a
+   * race, not a stop. Whatever `onDelta` has already delivered is the caller's to keep.
    */
-  complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult>;
+  complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult>;
 }
 
 export const EMPTY_USAGE: LlmUsage = {

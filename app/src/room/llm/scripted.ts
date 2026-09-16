@@ -13,7 +13,7 @@
 import type { AgentProfile } from '../../shared/types.js';
 import { fillAgentNames, rosterFor } from '../agents.js';
 import type { LLMClient, LlmRequest, LlmResult } from './types.js';
-import { EMPTY_USAGE } from './types.js';
+import { EMPTY_USAGE, LlmAbortedError } from './types.js';
 import type { ScriptSource } from './script.psd-hessian.js';
 import { PSD_HESSIAN_SCRIPT, pickScript, scriptNameForRequest, SCRIPTS } from './scripts.js';
 
@@ -91,7 +91,7 @@ export class ScriptedClient implements LLMClient {
     return this.script.whisperBeatFor(`whisper:${turn}`)?.relayOffer ?? null;
   }
 
-  async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+  async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
     const cue = request.meta.scriptCue ?? 'open';
     // Names last, over whatever the beat produced: a decision or a ledger blob has no name in it
     // and is untouched, and a turn's prose gets the roster's spelling of it.
@@ -103,7 +103,7 @@ export class ScriptedClient implements LLMClient {
      */
     if (onDelta) {
       if (request.meta.scope === 'orchestrator' || request.meta.scope === 'ledger') onDelta(text);
-      else await this.#streamWords(text, onDelta);
+      else await this.#streamWords(text, onDelta, signal);
     }
     return {
       text,
@@ -115,9 +115,11 @@ export class ScriptedClient implements LLMClient {
   }
 
   /** ~4 words at a time, which is about what a real stream delivers per event. */
-  async #streamWords(text: string, onDelta: (text: string) => void): Promise<void> {
+  async #streamWords(text: string, onDelta: (text: string) => void, signal?: AbortSignal): Promise<void> {
     const parts = text.split(/(\s+)/);
     for (let i = 0; i < parts.length; i += 8) {
+      // Stop works in scripted mode too, or the control could not be demonstrated on the video.
+      if (signal?.aborted) throw new LlmAbortedError();
       const chunk = parts.slice(i, i + 8).join('');
       if (chunk.length === 0) continue;
       onDelta(chunk);

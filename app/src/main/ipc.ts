@@ -754,6 +754,13 @@ export class AppService {
       attribution: RelayAttribution;
       text: string;
     }>(IPC.flowWhisperRelay, (input) => this.flowWhisperRelay(input));
+    /**
+     * Stop. The refusal is the product decision, so it is decided in the actor — which is the
+     * only thing that knows whether this turn's floor has elapsed — and not here.
+     */
+    handle<{ roomId: string; turnId: string }>(IPC.flowStop, (input) =>
+      this.#requireActor(input.roomId).stopTurn(input.turnId),
+    );
     handle<{ roomId: string; segmentId: string | null }>(IPC.flowSelection, (input) => {
       // No room, no timer to extend: a document nobody has spoken to has no silence window.
       this.#actor?.noteSelection(input.segmentId);

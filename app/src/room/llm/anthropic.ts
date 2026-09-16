@@ -37,12 +37,13 @@ export class AnthropicClient implements LLMClient {
       });
   }
 
-  async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+  async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
     const startedAt = Date.now();
     let ttftMs = -1;
     let text = '';
 
-    const stream = this.#client.messages.stream({
+    const stream = this.#client.messages.stream(
+      {
       model: request.model,
       max_tokens: request.max_tokens,
       system: request.system.map((block) => ({
@@ -55,7 +56,11 @@ export class AnthropicClient implements LLMClient {
       ...(request.jsonSchema
         ? { output_config: { format: { type: 'json_schema' as const, schema: request.jsonSchema } } }
         : {}),
-    });
+      },
+      // Stop. The SDK aborts the HTTP request, the iterator throws, and the actor keeps the
+      // deltas it already handed out.
+      signal ? { signal } : undefined,
+    );
 
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {

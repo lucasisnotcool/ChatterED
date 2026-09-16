@@ -15,6 +15,7 @@
 import type {
   AgentProfile,
   ReplySpeed,
+  StopTurnResult,
   FlowWhisperView,
   MessageView,
   RecapView,
@@ -138,6 +139,12 @@ export interface RoomActorDeps {
 interface PendingTurn {
   id: string;
   cancelled: boolean;
+  /** True once the floor has elapsed — and only then may this turn be stopped. */
+  floorPassed: boolean;
+  /** Set by `stopTurn`. Not a failure: no card, no Retry, no nudge on top of it. */
+  stopped: boolean;
+  /** Aborts the client call. The CLI path kills its child process on it. */
+  abort: AbortController;
 }
 
 /**
@@ -286,6 +293,8 @@ export class RoomActor {
    * what room_6a9609d5c6fb did, twice.
    */
   #nudgesHeldForFailure = false;
+  /** Same shape as the failure hold, different cause: the learner stopped the turn themselves. */
+  #nudgesHeldForStop = false;
   /**
    * Where the stage-1 pool is up to. A pool sampled independently each time repeats — the
    * learner on 2026-09-16 got the same "Take your time…" line twice in a row — so it is a
@@ -1022,7 +1031,13 @@ export class RoomActor {
      */
     const anchorId = opts.anchorId ?? null;
     const turnStart = this.#d.clock.now();
-    const pending: PendingTurn = { id: this.#d.newId('turn'), cancelled: false };
+    const pending: PendingTurn = {
+      id: this.#d.newId('turn'),
+      cancelled: false,
+      floorPassed: false,
+      stopped: false,
+      abort: new AbortController(),
+    };
     this.#pending = pending;
     /**
      * **The correlation id.** Everything this turn does — the orchestrator decision, the ledger
@@ -1264,7 +1279,7 @@ export class RoomActor {
         }),
       () => this.#d.clock.now(),
     );
-    const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta)).then(
+    const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta), pending.abort.signal).then(
       (value) => ({ ok: true as const, value }),
       (error: unknown) => ({ ok: false as const, error }),
     );
@@ -1275,6 +1290,7 @@ export class RoomActor {
      * the same total timing it always had — the later of the two — with the deltas already out.
      */
     const floor = this.#holdUntil(turnStart, target).then(() => {
+      pending.floorPassed = true;
       if (!pending.cancelled) stream.openFloor();
     });
 
@@ -1296,6 +1312,10 @@ export class RoomActor {
     let backend: LlmBackend | null = null;
     let usage: Record<string, number> = {};
     const settled = await generation;
+    if (pending.stopped) {
+      await this.#dispatchStopped({ pending, agent, decision, stream, anchorId, target, turnStart, turnLog });
+      return;
+    }
     if (!settled.ok) {
       /**
        * This used to emit a transient banner that said "retrying" and then retried nothing. The
@@ -1401,6 +1421,97 @@ export class RoomActor {
     this.#armTimer();
   }
 
+  /**
+   * **Stop** (audit §2(e); Lucas's decision of 16 Sep 2026).
+   *
+   * *"Stop appears only after the floor has elapsed"* — while the floor is running the turn is
+   * inside the deliberate wait the app exists for, and a learner who can cancel every Tester turn
+   * can opt out of the retrieval practice. Once the floor has passed the turn is genuinely
+   * generating, and a hung backend must always be escapable. So a stop before the floor is
+   * refused here rather than queued, and the renderer should not have offered the button.
+   *
+   * A stop is **not a failure**: the partial text the learner was already looking at becomes the
+   * message, flagged `stopped`, with no card and no Retry.
+   */
+  stopTurn(turnId: string): StopTurnResult {
+    const pending = this.#pending;
+    if (!pending || pending.id !== turnId || pending.cancelled) return { stopped: false, refused: 'unknown' };
+    if (!pending.floorPassed) {
+      this.#turnLog.event('info', 'turn.stop.refused', { reason: 'floor' });
+      return { stopped: false, refused: 'floor' };
+    }
+    if (pending.stopped) return { stopped: true, turnId };
+    pending.stopped = true;
+    // The client's own abort path: the API request is cancelled, the CLI child is SIGKILLed.
+    pending.abort.abort();
+    return { stopped: true, turnId };
+  }
+
+  /**
+   * What a stopped turn leaves behind: whatever was on screen, as a message.
+   *
+   * Not a failure card, because nothing failed; not a silent drop, because the learner watched
+   * several sentences arrive and a thread that then contains none of them is the app deciding
+   * their reading did not happen. The silence timer is **held** afterwards for the same reason it
+   * is held after an outage — the learner has just told the room to stop talking, and nudging
+   * them 45 s later is the app arguing with them. Their next action clears the hold.
+   */
+  async #dispatchStopped(input: {
+    pending: PendingTurn;
+    agent: AgentProfile;
+    decision: TurnDecision;
+    stream: TurnStream;
+    anchorId: string | null;
+    target: number;
+    turnStart: number;
+    turnLog: TurnLog;
+  }): Promise<void> {
+    const { pending, agent, decision, stream, anchorId, target, turnStart, turnLog } = input;
+    stream.close();
+    const partial = stream.text.trim();
+    this.#clearThinking();
+    this.#pending = null;
+    let messageId: string | null = null;
+    if (partial.length > 0) {
+      await this.#mailbox.enqueue(() => {
+        const row = this.#insertMessage({
+          participantId: this.#d.store.participants.byAgentKey(this.#d.roomId, agent.key)!.id,
+          body: partial,
+          model: agent.model,
+          backend: this.#d.llm.kind,
+          latencyTargetMs: target,
+          ...(stream.firstVisibleAt === null ? {} : { ttftActualMs: stream.firstVisibleAt - turnStart }),
+          anchorId,
+          stopped: true,
+        });
+        messageId = row.id;
+        this.#d.store.rooms.update(this.#d.roomId, {
+          state: 'open',
+          pending_turn_id: null,
+          pending_turn_due_ts: null,
+          last_speaker_id: agent.key,
+        });
+      });
+    } else {
+      this.#d.store.rooms.update(this.#d.roomId, { state: 'open', pending_turn_id: null, pending_turn_due_ts: null });
+    }
+    this.#event(decision.role ?? 'system', 'agent.turn.stopped', {
+      turn_id: pending.id,
+      // The length of what was kept, never what it said.
+      reply_chars: partial.length,
+    });
+    turnLog.event('info', 'turn.stopped', {
+      role: decision.role,
+      agent_key: agent.key,
+      decided_by: decision.decidedBy,
+      reply_chars: partial.length,
+      total_ms: this.#d.clock.now() - turnStart,
+    });
+    this.#releaseTurn(pending.id, messageId, true);
+    this.#nudgesHeldForStop = true;
+    this.#armTimer();
+  }
+
   /** A held reply that the learner spoke over is dropped, logged, and never posted. */
   #cancelTurn(role: AgentProfile['role'] | null, pending: PendingTurn): void {
     this.#event(role ?? 'system', 'agent.turn.error', { cause: 'cancelled_by_student', turn_id: pending.id });
@@ -1467,7 +1578,13 @@ export class RoomActor {
     return decision;
   }
 
-  async #generate(agent: AgentProfile, decision: TurnDecision, cue: string, onDelta?: (text: string) => void) {
+  async #generate(
+    agent: AgentProfile,
+    decision: TurnDecision,
+    cue: string,
+    onDelta?: (text: string) => void,
+    signal?: AbortSignal,
+  ) {
     // Stage-1 fills are never generated against the concept (product-design.md §C5).
     if (decision.moveType === 'content_free_nudge') {
       const pool = CONTENT_FREE_NUDGES;
@@ -1500,7 +1617,7 @@ export class RoomActor {
     // `llm.complete` pair carried no correlation id and fell out of `jq 'select(.turn==…)'`,
     // which is the one query the log exists to answer.
     request.meta.turnId = this.#pending?.id;
-    return this.#d.llm.complete(request, onDelta);
+    return this.#d.llm.complete(request, onDelta, signal);
   }
 
   async #updateLedger(cue: string, turnStart: number): Promise<void> {
@@ -1798,6 +1915,8 @@ export class RoomActor {
     anchorId?: string | null;
     /** A document the learner is showing the room (issue #22 decision 4). */
     reference?: Omit<MessageRefRow, 'id' | 'message_id' | 'room_id' | 'created_at'>;
+    /** The learner pressed Stop and this is the partial (migration 011). */
+    stopped?: boolean;
   }): MessageRow {
     const seq = this.#d.store.messages.maxSeq(this.#d.roomId) + 1;
     const row: MessageRow = {
@@ -1817,6 +1936,7 @@ export class RoomActor {
       divider_cause: input.dividerCause ?? null,
       disagreement: input.disagreement ?? null,
       anchor_id: input.anchorId ?? null,
+      stopped: input.stopped ? 1 : 0,
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);
@@ -1949,6 +2069,7 @@ export class RoomActor {
   /** The learner did something: the outage is over as far as the timer is concerned. */
   #clearFailureHold(anchorId: string | null): void {
     this.#nudgesHeldForFailure = false;
+    this.#nudgesHeldForStop = false;
     const kept: FailureRecord[] = [];
     for (const f of this.#failures) {
       if (f.view.anchorId === anchorId) {
@@ -2052,9 +2173,9 @@ export class RoomActor {
    */
   #armTimer(): void {
     if (this.#room().state === 'closed') return;
-    if (this.#nudgesHeldForFailure) {
+    if (this.#nudgesHeldForFailure || this.#nudgesHeldForStop) {
       this.#timer.cancel();
-      this.#turnLog.event('warn', 'timer.held', { reason: 'turn_failed' });
+      this.#turnLog.event('warn', 'timer.held', { reason: this.#nudgesHeldForFailure ? 'turn_failed' : 'turn_stopped' });
       return;
     }
     this.#timer.arm();

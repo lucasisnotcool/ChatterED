@@ -40,7 +40,7 @@ import { accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import type { LLMClient, LlmMessage, LlmRequest, LlmResult, LlmUsage } from '../../room/llm/types.js';
-import { EMPTY_USAGE } from '../../room/llm/types.js';
+import { EMPTY_USAGE, LlmAbortedError } from '../../room/llm/types.js';
 
 /**
  * An Electron app launched from Finder inherits launchd's PATH, not the login shell's — so
@@ -160,8 +160,8 @@ export class ClaudeCliClient implements LLMClient {
     this.#now = opts.now ?? Date.now;
   }
 
-  async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
-    const run = await this.#run(request, systemTextFor(request), promptFor(request), onDelta);
+  async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
+    const run = await this.#run(request, systemTextFor(request), promptFor(request), onDelta, signal);
 
     let text = pickText(run);
 
@@ -220,11 +220,21 @@ export class ClaudeCliClient implements LLMClient {
     ];
   }
 
-  #run(request: LlmRequest, systemText: string, prompt: string, onDelta?: (text: string) => void): Promise<CliRun> {
+  #run(
+    request: LlmRequest,
+    systemText: string,
+    prompt: string,
+    onDelta?: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<CliRun> {
     const args = this.argsFor(request, systemText);
     const startedAt = this.#now();
 
     return new Promise<CliRun>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new LlmAbortedError());
+        return;
+      }
       let child;
       try {
         child = spawn(this.binary, args, {
@@ -257,8 +267,25 @@ export class ClaudeCliClient implements LLMClient {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (onAbort) signal?.removeEventListener('abort', onAbort);
         fn();
       };
+
+      /**
+       * **Stop, on the process.** Closing our end of the pipes would leave `claude` running: it
+       * would finish the generation, bill the subscription for it, and only then notice nobody
+       * was listening. SIGKILL is the only stop that is actually a stop. The partial text the
+       * actor already received through `onDelta` is what becomes the message.
+       */
+      const onAbort = signal
+        ? () => {
+            finish(() => {
+              child.kill('SIGKILL');
+              reject(new LlmAbortedError());
+            });
+          }
+        : null;
+      if (onAbort) signal?.addEventListener('abort', onAbort, { once: true });
 
       const timer = setTimeout(() => {
         finish(() => {
