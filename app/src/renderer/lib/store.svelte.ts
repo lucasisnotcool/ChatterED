@@ -39,6 +39,8 @@ import {
   type PendingSend,
   type StreamState,
 } from './flowchat.js';
+import { levelsById, newlyOnline, type LearningObjectiveState, type LearningTree } from './objectives.js';
+import { clearFixtureStates, fixtureTree, loadFixtureStates } from './objectivesFixture.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../../shared/scope.js';
@@ -66,6 +68,90 @@ function has(name: keyof ChatterEdApi): boolean {
  */
 function quiet<T>(fn: () => Promise<T>): Promise<T | null> {
   return fn().catch(() => null);
+}
+
+/**
+ * §6's channels, if the main process has landed them.
+ *
+ * Two spellings are accepted because only one of them will exist and this track must not guess
+ * wrong: a namespace (`bridge().objectives.tree`) or the flat preload naming every other channel
+ * here uses (`bridge().objectivesTree`, for `objectives:tree`). Whichever arrives, the store
+ * sees one adapter and the panel sees none of it. Null means the fixture path.
+ */
+interface ObjectivesChannels {
+  tree(input: { fileId: string }): Promise<LearningTree | null>;
+  states(input: { fileId: string }): Promise<LearningObjectiveState[]>;
+  regenerate?(input: { fileId: string }): Promise<LearningTree | null>;
+  reset?(input: { fileId: string }): Promise<LearningObjectiveState[] | null>;
+  teach?(input: { fileId: string; objectiveId: string }): Promise<unknown>;
+}
+
+type Fn = (...args: never[]) => unknown;
+
+function objectivesApi(): ObjectivesChannels | null {
+  const api = bridge() as unknown as Record<string, unknown>;
+  const ns = api.objectives as Record<string, unknown> | undefined;
+  if (ns && typeof ns.tree === 'function' && typeof ns.states === 'function') {
+    return ns as unknown as ObjectivesChannels;
+  }
+  if (typeof api.objectivesTree !== 'function' || typeof api.objectivesStates !== 'function') return null;
+  const call = <T>(name: string, input: unknown): Promise<T> =>
+    (api[name] as (arg: unknown) => Promise<T>)(input);
+  const channels: ObjectivesChannels = {
+    tree: (input) => call('objectivesTree', input),
+    states: (input) => call('objectivesStates', input),
+  };
+  if (typeof (api.objectivesRegenerate as Fn | undefined) === 'function') {
+    channels.regenerate = (input) => call('objectivesRegenerate', input);
+  }
+  if (typeof (api.objectivesReset as Fn | undefined) === 'function') {
+    channels.reset = (input) => call('objectivesReset', input);
+  }
+  if (typeof (api.objectivesTeach as Fn | undefined) === 'function') {
+    channels.teach = (input) => call('objectivesTeach', input);
+  }
+  return channels;
+}
+
+/**
+ * The panel's three local preferences, kept where the flow's zoom is kept and for the same
+ * reason (`FlowCanvas.loadZoom`): `SettingsView` is `src/shared`'s, with the main process's
+ * schema behind it, and these are pure view preferences nothing outside the panel reads. In an
+ * Electron renderer `localStorage` is a file in the same `userData` directory the settings
+ * database is in, so "per install, survives a relaunch" is the same promise either way.
+ */
+const PANEL_OPEN_KEY = 'chattered.objectives.open';
+const PANEL_WIDTH_KEY = 'chattered.objectives.width';
+const PANEL_AUTO_KEY = 'chattered.objectives.openWithFile';
+export const DEFAULT_PANEL_WIDTH = 300;
+export const MIN_PANEL_WIDTH = 220;
+export const MAX_PANEL_WIDTH = 520;
+
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? fallback : raw === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeFlag(key: string, value: boolean): void {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // A denied or full store is not worth failing a toggle over.
+  }
+}
+
+function readWidth(): number {
+  try {
+    const raw = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
+    if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PANEL_WIDTH;
+    return Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, raw)));
+  } catch {
+    return DEFAULT_PANEL_WIDTH;
+  }
 }
 
 export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings';
@@ -345,6 +431,16 @@ class Store {
 
   apply(e: RoomEvent): void {
     const room = this.room;
+    /**
+     * The two objectives events (§6). They are not in `RoomEvent` yet — the main side owns that
+     * union — so they are matched on the wire name and handed over loosely. Doing it here rather
+     * than in a `default:` keeps the exhaustive switch below exhaustive.
+     */
+    const wire: string = (e as { type: string }).type;
+    if (wire === 'objectives.tree' || wire === 'objectives.state') {
+      this.#applyObjectivesEvent(wire, e as unknown as Record<string, unknown>);
+      return;
+    }
     switch (e.type) {
       case 'message.appended': {
         if (room && !room.messages.some((m) => m.id === e.message.id)) room.messages.push(e.message);
@@ -416,6 +512,13 @@ class Store {
           this.turnReceived = null;
           this.turnReceivedAt = null;
         }
+        /**
+         * The ledger's evaluator runs on the learner's turn (`learning-objectives.md` §4), so
+         * the end of a turn is the one moment an objective's level can have moved. Until
+         * `objectives.state` exists this is how the panel hears about it; once it does, this is
+         * a re-read of states that have already been pushed, which is cheap and idempotent.
+         */
+        void this.refreshObjectiveStates();
         break;
       case 'ledger.updated':
         if (room) {
@@ -653,6 +756,9 @@ class Store {
     // The conversation this document already has, if any. Separate call, and it creates nothing:
     // most documents have never been asked a question, and opening one must cost no room.
     await this.loadFlowRoom(fileId);
+    // The objective tree is triggered by the **open**, not by the first Ask (§3), and its
+    // `pending` state has to be visible at once — so it is fetched here and not on a gesture.
+    await this.loadObjectives(fileId);
   }
 
   clearFlow(): void {
@@ -671,6 +777,13 @@ class Store {
     this.flowWhisperInserting = false;
     this.flowFocus = null;
     this.answersRemoved = {};
+    // The tree is the file's, so closing the file drops it. The panel's own open/width
+    // preferences are per install and deliberately survive.
+    this.objectivesTree = null;
+    this.objectivesStates = [];
+    this.objectivesFor = null;
+    this.objectivesAnnounce = '';
+    this.askObjective = null;
     // The room itself is *not* closed: the actor stays on it in the main process, and the
     // transcript is the document's. Only this renderer's view of it is dropped.
     if (this.screen !== 'room') this.room = null;
@@ -738,6 +851,8 @@ class Store {
 
   cancelAsk(): void {
     this.askingAt = null;
+    // The `about:` chip belongs to the prompt that was open; it does not outlive it.
+    this.askObjective = null;
   }
 
   /**
@@ -750,13 +865,29 @@ class Store {
     if (!fileId || question.trim().length === 0) return;
     this.askingAt = null;
     this.askBusy = segmentId;
+    /**
+     * `objectiveId` is §6's one addition to this channel: the objective the `about:` chip was
+     * showing, so the thread the question opens is tagged with what it is about. It is sent as
+     * an extra field rather than through a widened `ChatterEdApi` because `src/shared/ipc.ts` is
+     * the main side's to widen; a main process that does not read it yet simply ignores it, and
+     * the cast is the one line that has to change when the contract catches up.
+     */
+    const objectiveId = this.askObjective?.id ?? null;
+    const input = {
+      fileId,
+      segmentId,
+      question: question.trim(),
+      ...(scope ? { scope } : {}),
+      ...(objectiveId ? { objectiveId } : {}),
+    };
     const answer = await run(this, () =>
       // `scope` is what the chip was showing when Enter was pressed, always sent. The main
       // process still guesses when it is absent, and `overridden` in the log compares the two —
       // so sending the agreed guess costs nothing and guarantees the chip and the answer match.
-      bridge().flowAskHere({ fileId, segmentId, question: question.trim(), ...(scope ? { scope } : {}) }),
+      bridge().flowAskHere(input as Parameters<ChatterEdApi['flowAskHere']>[0]),
     );
     this.askBusy = null;
+    this.askObjective = null;
     if (!answer) return;
     this.#takeFlowRoom(answer.flow);
   }
@@ -927,6 +1058,213 @@ class Store {
     if (now - this.#lastSelectionSent < 3_000) return;
     this.#lastSelectionSent = now;
     void run(this, () => bridge().flowSelection({ roomId, segmentId }));
+  }
+
+  // ── The learning objectives panel (docs/research/learning-objectives.md) ─
+  /**
+   * The file's tree, its states, and the three local preferences the panel keeps.
+   *
+   * **Two sources, one shape.** `objectivesLive` is true exactly when the main process's §6
+   * channels are on the bridge; until they are, the tree comes from the committed fixture
+   * (`objectivesFixture.ts`) and nothing else about the panel differs. That is the whole of the
+   * seam: every other method here reads `objectivesTree` and `objectivesStates`.
+   */
+  objectivesTree: LearningTree | null = $state(null);
+  objectivesStates: LearningObjectiveState[] = $state([]);
+  objectivesFor: string | null = $state(null);
+  objectivesBusy = $state(false);
+  /**
+   * The nodes that have *just* crossed into online, and a token so the animation fires once per
+   * move rather than once per render — the same device `ledgerPulse` uses for the rail.
+   */
+  objectivesLit: { ids: string[]; token: number } = $state({ ids: [], token: 0 });
+  /** One sentence for the panel's own live region (§5, WCAG 4.1.3). Never the whole tree. */
+  objectivesAnnounce = $state('');
+  /**
+   * The objective the next "+ Ask here" is about — the removable `about: <title>` chip, and the
+   * `objectiveId` that rides along on `flow:askHere` so the thread is tagged with it (§6).
+   */
+  askObjective: { id: string; title: string } | null = $state(null);
+
+  /** Per install, like the flow's zoom: a pure view preference nothing outside the panel reads. */
+  objectivesOpen = $state(readFlag(PANEL_OPEN_KEY, true));
+  objectivesWidth = $state(readWidth());
+  /** Settings ▸ "Objectives panel opens with a file". Default on (§5: "open when a file is opened"). */
+  objectivesOpenWithFile = $state(readFlag(PANEL_AUTO_KEY, true));
+
+  /** True when §6's channels are actually reachable — the feature check the panel builds behind. */
+  get objectivesLive(): boolean {
+    return objectivesApi() !== null;
+  }
+
+  setObjectivesOpen(open: boolean): void {
+    this.objectivesOpen = open;
+    writeFlag(PANEL_OPEN_KEY, open);
+  }
+
+  setObjectivesWidth(px: number): void {
+    const clamped = Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, px)));
+    this.objectivesWidth = clamped;
+    try {
+      window.localStorage.setItem(PANEL_WIDTH_KEY, String(clamped));
+    } catch {
+      // A denied or full store is not worth failing a drag over.
+    }
+  }
+
+  setObjectivesOpenWithFile(on: boolean): void {
+    this.objectivesOpenWithFile = on;
+    writeFlag(PANEL_AUTO_KEY, on);
+  }
+
+  /**
+   * The tree for the file the flow just opened.
+   *
+   * `learning-objectives.md` §3: ingest is triggered by the **first open**, not the first Ask,
+   * and `pending` is visible at once — so this is called from the flow and never from a gesture.
+   */
+  async loadObjectives(fileId: string): Promise<void> {
+    if (this.objectivesFor === fileId && this.objectivesTree) return;
+    this.objectivesFor = fileId;
+    this.objectivesTree = null;
+    this.objectivesStates = [];
+    this.objectivesLit = { ids: [], token: this.objectivesLit.token };
+    this.objectivesAnnounce = '';
+    this.askObjective = null;
+    if (this.objectivesOpenWithFile) this.setObjectivesOpen(true);
+
+    const api = objectivesApi();
+    if (api) {
+      this.objectivesBusy = true;
+      const tree = await quiet(() => api.tree({ fileId }));
+      const states = await quiet(() => api.states({ fileId }));
+      this.objectivesBusy = false;
+      if (this.objectivesFor !== fileId) return;
+      this.objectivesTree = tree ?? null;
+      this.#takeObjectiveStates(states ?? [], false);
+      return;
+    }
+
+    const doc = this.openDoc;
+    const tree = fixtureTree({
+      fileId,
+      ...(doc?.name ? { name: doc.name } : {}),
+      ...(doc?.relPath ? { relPath: doc.relPath } : {}),
+    });
+    this.objectivesTree = tree;
+    this.#takeObjectiveStates(tree ? loadFixtureStates(fileId) : [], false);
+  }
+
+  /**
+   * Take a new set of states, and work out what just happened.
+   *
+   * `animate` is false on the first load: a deck reopened with four objectives already online
+   * must not fire four animations and four announcements at the learner, because nothing moved —
+   * they were already there.
+   */
+  #takeObjectiveStates(next: readonly LearningObjectiveState[], animate: boolean): void {
+    const before = levelsById(this.objectivesStates);
+    const after = levelsById(next);
+    this.objectivesStates = [...next];
+    if (!animate) return;
+    const lit = newlyOnline(before, after);
+    if (lit.length === 0) return;
+    this.objectivesLit = { ids: lit, token: this.objectivesLit.token + 1 };
+    const titles = lit.map((id) => this.objectivesTree?.objectives.find((o) => o.id === id)?.title ?? '');
+    const first = titles.find((t) => t.length > 0) ?? 'An objective';
+    this.objectivesAnnounce =
+      lit.length === 1
+        ? `${first} is online — you explained it in your own words.`
+        : `${first} and ${lit.length - 1} more are online.`;
+  }
+
+  /**
+   * Re-read the states.
+   *
+   * Called on `objectives.state` when that event exists, and after every `turn.released` until
+   * it does — the ledger moves a level as a side effect of a turn, so the end of a turn is the
+   * one moment the states can have changed. A no-op on the fixture path, where nothing but the
+   * learner's own Reset moves a level.
+   */
+  async refreshObjectiveStates(): Promise<void> {
+    const fileId = this.objectivesFor;
+    const api = objectivesApi();
+    if (!fileId || !api) return;
+    const states = await quiet(() => api.states({ fileId }));
+    if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, true);
+  }
+
+  /** **Regenerate** (§3): explicit, and it keeps the states whose ids still match. */
+  async regenerateObjectives(): Promise<void> {
+    const fileId = this.objectivesFor;
+    if (!fileId) return;
+    const api = objectivesApi();
+    this.objectivesBusy = true;
+    if (api?.regenerate) {
+      const tree = await quiet(() => api.regenerate!({ fileId }));
+      if (tree && this.objectivesFor === fileId) this.objectivesTree = tree;
+      const states = await quiet(() => api.states({ fileId }));
+      if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, false);
+    }
+    this.objectivesBusy = false;
+  }
+
+  /**
+   * **Reset** (§4): every state to level 0, evidence cleared, the tree itself untouched. One
+   * confirm, which the panel owns — this is the half that actually forgets.
+   */
+  async resetObjectives(): Promise<void> {
+    const fileId = this.objectivesFor;
+    if (!fileId) return;
+    const api = objectivesApi();
+    if (api?.reset) {
+      const states = await quiet(() => api.reset!({ fileId }));
+      if (this.objectivesFor === fileId) this.#takeObjectiveStates(states ?? [], false);
+      return;
+    }
+    clearFixtureStates(fileId);
+    this.#takeObjectiveStates([], false);
+  }
+
+  /**
+   * **Teach me this** on an assumed prerequisite (§5, the #36 contract).
+   *
+   * Returns false when `objectives:teach` is not on the bridge, and the panel then falls back to
+   * opening the Ask composer on the requiring objective's segment with the question pre-filled —
+   * which is the same turn asked for in the learner's own voice, and is therefore a fallback
+   * rather than a stub.
+   */
+  async teachObjective(objectiveId: string): Promise<boolean> {
+    const fileId = this.objectivesFor;
+    const api = objectivesApi();
+    if (!fileId || !api?.teach) return false;
+    await quiet(() => api.teach!({ fileId, objectiveId }));
+    void this.refreshObjectiveStates();
+    return true;
+  }
+
+  /** The `about:` chip on the composer. Set by a click in the panel, removable by the learner. */
+  setAskObjective(objective: { id: string; title: string } | null): void {
+    this.askObjective = objective;
+  }
+
+  /** `objectives.tree` / `objectives.state` (§6), handled loosely until the shapes land. */
+  #applyObjectivesEvent(kind: string, payload: Record<string, unknown>): void {
+    const fileId = typeof payload.fileId === 'string' ? payload.fileId : null;
+    if (fileId !== null && fileId !== this.objectivesFor) return;
+    if (kind === 'objectives.tree') {
+      const tree = payload.tree as LearningTree | undefined;
+      if (tree) this.objectivesTree = tree;
+      void this.refreshObjectiveStates();
+      return;
+    }
+    const state = payload.state as LearningObjectiveState | undefined;
+    if (!state) {
+      void this.refreshObjectiveStates();
+      return;
+    }
+    const rest = this.objectivesStates.filter((s) => s.objectiveId !== state.objectiveId);
+    this.#takeObjectiveStates([...rest, state], true);
   }
 
   // ── The whisper popover on a segment (§3.5, issue #16) ──────────────────
