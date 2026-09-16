@@ -27,7 +27,7 @@
 import type { CostBackend, CostScope } from '../../shared/cost.js';
 import type { LLMClient, LlmRequest, LlmResult, LlmScope } from '../../room/llm/types.js';
 import { log, type Logger } from '../log.js';
-import type { CostLedger, RecordInput } from './ledger.js';
+import type { RecordInput } from './ledger.js';
 
 /** What the decorator needs: somewhere to write, and somewhere to push the tick. */
 export interface CostSink {

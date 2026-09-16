@@ -5,6 +5,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
 import type { AppCommand, RoomEvent, VaultView, WindowState } from '../shared/types.js';
+import type { CostUpdate } from '../shared/cost.js';
 
 const api: ChatterEdApi = {
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
@@ -80,6 +81,16 @@ const api: ChatterEdApi = {
   objectivesRegenerate: (input) => ipcRenderer.invoke(IPC.objectivesRegenerate, input),
   objectivesReset: (input) => ipcRenderer.invoke(IPC.objectivesReset, input),
   objectivesTeach: (input) => ipcRenderer.invoke(IPC.objectivesTeach, input),
+  costSummary: (input) => ipcRenderer.invoke(IPC.costSummary, input),
+  costRecent: (input) => ipcRenderer.invoke(IPC.costRecent, input),
+  costExport: (input) => ipcRenderer.invoke(IPC.costExport, input),
+  onCostUpdated: (listener) => {
+    const handler = (_event: unknown, payload: CostUpdate) => listener(payload);
+    ipcRenderer.on(IPC.costUpdated, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC.costUpdated, handler);
+    };
+  },
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

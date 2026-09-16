@@ -27,6 +27,7 @@ import type {
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AskScope } from './scope.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
+import type { CostCallView, CostSummary, CostSummaryQuery, CostUpdate } from './cost.js';
 import type {
   FlowAnswerView,
   FlowSummaryView,
@@ -138,6 +139,13 @@ export const IPC = {
   objectivesRegenerate: 'objectives:regenerate',
   objectivesReset: 'objectives:reset',
   objectivesTeach: 'objectives:teach',
+
+  // What the app has spent (`src/shared/cost.ts`, `src/main/cost/`).
+  costSummary: 'cost:summary',
+  costRecent: 'cost:recent',
+  costExport: 'cost:export',
+  /** main → renderer: one call was just recorded, with the deltas, so a counter can tick. */
+  costUpdated: 'cost:updated',
 } as const;
 
 export interface ChatterEdApi {
@@ -507,6 +515,38 @@ export interface ChatterEdApi {
     anchorId: string;
     objectiveId: string;
   } | null>;
+
+  // ── What the app has spent (`src/shared/cost.ts`) ───────────────────────
+  /**
+   * Tokens, calls and a dollar **estimate** at one of the three levels.
+   *
+   * `level: 'app'` spans everything, including the background ingest and every call that belongs
+   * to no document. `'file'` needs a `fileId` and covers every room on that document plus its
+   * ingest and its objectives tree. `'thread'` needs an `anchorId` and covers one segment's
+   * conversation — its REFERENCE answers, its agent turns and the orchestrator and ledger calls
+   * those turns made. The three nest: **thread ≤ file ≤ app**.
+   *
+   * `since` is an ISO timestamp, the literal `SESSION_WINDOW` for "since this app launched", or
+   * omitted for all time. On the CLI path the answer also carries `cliWindow` — the rolling
+   * 5-hour burn, which on a subscription is the constraint that actually bites.
+   *
+   * **Every dollar figure on this channel is labelled by `mode`**, and a renderer must use
+   * `usdLabel()` rather than printing one bare: on the default backend nobody is being billed
+   * per token and "API-equivalent" is the only true thing to call it.
+   */
+  costSummary(input: CostSummaryQuery): Promise<CostSummary>;
+  /** The last `limit` calls, newest first, for the debug drawer. Sizes and ids, never bodies. */
+  costRecent(input?: { limit?: number }): Promise<CostCallView[]>;
+  /**
+   * Write `~/Documents/ChatterED/usage-<date>.csv` — one row per call, no message bodies — and
+   * return where it went. A second export on the same day replaces the first.
+   */
+  costExport(input?: { since?: string | null }): Promise<{ path: string; rows: number; bytes: number }>;
+  /**
+   * Subscribe to the per-call tick. Fires after every recorded call and carries the **delta**
+   * plus the running session totals, so three counters can be updated without re-asking.
+   */
+  onCostUpdated(listener: (update: CostUpdate) => void): () => void;
 
   /**
    * Subscribe to application-menu commands.

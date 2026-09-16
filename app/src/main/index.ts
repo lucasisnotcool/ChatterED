@@ -183,6 +183,9 @@ function boot(): void {
     getWindow: () => mainWindow,
   });
   service.register();
+  // What this install spent before there was a ledger. Once per launch, idempotent, swallowed
+  // on failure — see `AppService.backfillCost`.
+  service.backfillCost();
 
   mainWindow = createWindow();
   // Reload and DevTools are in this menu only while `app.isPackaged` is false.

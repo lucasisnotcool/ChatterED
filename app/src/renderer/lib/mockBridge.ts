@@ -838,6 +838,53 @@ export function createMockBridge(): ChatterEdApi {
     renameSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
     onVaultChanged() { return () => undefined; },
 
+    // The cost ledger, in `vite dev`: plausible numbers on the CLI path so the panel can be
+    // looked at, and a `cost.updated` tick that never fires because nothing here calls a model.
+    async costSummary(query) {
+      const tokens = { input: 58_400, output: 4_120, cacheWrite: 540, cacheRead: 6_140 };
+      const scale = query.level === 'app' ? 1 : query.level === 'file' ? 0.6 : 0.2;
+      const t = {
+        input: Math.round(tokens.input * scale),
+        output: Math.round(tokens.output * scale),
+        cacheWrite: Math.round(tokens.cacheWrite * scale),
+        cacheRead: Math.round(tokens.cacheRead * scale),
+      };
+      const estimatedUsd = Number(((t.input * 2 + t.output * 10 + t.cacheWrite * 2.5 + t.cacheRead * 0.2) / 1e6).toFixed(6));
+      const calls = Math.max(1, Math.round(24 * scale));
+      const slice = (key: string) => ({ key, calls, tokens: t, estimatedUsd, reportedUsd: null });
+      return {
+        level: query.level,
+        fileId: query.fileId ?? null,
+        anchorId: query.anchorId ?? null,
+        tokens: t,
+        calls,
+        estimatedUsd,
+        reportedUsd: null,
+        reportedCalls: 0,
+        byModel: [slice('claude-sonnet-5')],
+        byScope: [slice('group')],
+        byBackend: [slice('claude-cli')],
+        windowStart: null,
+        firstCallAt: iso(),
+        lastCallAt: iso(),
+        mode: 'subscription',
+        rateCardDate: '2026-06-24',
+        cliWindow: {
+          windowStart: iso(),
+          windowEnd: iso(),
+          hours: 5,
+          tokens: t,
+          calls,
+          estimatedUsd,
+          reportedUsd: null,
+        },
+        backfilledCalls: 0,
+      };
+    },
+    async costRecent() { return []; },
+    async costExport() { return { path: '~/Documents/ChatterED/usage-mock.csv', rows: 0, bytes: 0 }; },
+    onCostUpdated() { return () => undefined; },
+
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     // `vite dev` has no window to be fullscreen; the traffic lights are never drawn there.
     onAppCommand() { return () => undefined; },
