@@ -44,6 +44,7 @@ import { ensureTree, treeIsCurrent } from './objectives/ingest.js';
 import { mirrorLedger, taughtFromStates } from './objectives/states.js';
 import { join } from 'node:path';
 import { errorClass, log, tailLog, type Logger } from './log.js';
+import { RATE_CARD_DATE, RATE_CARD_SETTING, parseRateCardOverride } from './cost/rates.js';
 import { CostLedger } from './cost/ledger.js';
 import { backfillUsage } from './cost/backfill.js';
 import { writeCsv } from './cost/export.js';
@@ -186,6 +187,15 @@ export class AppService {
           sessionTotals: { tokens: this.#sessionTokens, calls: this.#sessionCalls, estimatedUsd: this.#sessionUsd },
         };
         this.#d.getWindow()?.webContents.send(IPC.costUpdated, update);
+        /**
+         * **And on the room stream**, because every other per-turn push in the app is there and a
+         * renderer holding one `onEvent` subscription should not need a second one to tick a
+         * counter. The live run that found this was falling back to `turn.released`, which fires
+         * on turns and misses the orchestrator, the ledger, both ingests and the summary calls.
+         *
+         * Same payload, pushed twice; the union's docstring says to subscribe to one of them.
+         */
+        this.emit({ type: 'cost.updated', roomId: input.roomId ?? null, update });
       },
     };
   }
@@ -258,6 +268,7 @@ export class AppService {
 
   settingsView(): SettingsView {
     const resolved = this.backend();
+    const raw = this.#d.store.settings.get(RATE_CARD_SETTING) ?? '';
     return {
       appVersion: this.#d.appVersion,
       backendChoice: resolved.choice,
@@ -273,6 +284,12 @@ export class AppService {
       flowProfile: this.flowProfile().name,
       pacingStripSeen: this.#d.store.settings.get(PACING_STRIP_SETTING) === '1',
       replySpeed: this.replySpeed(),
+      // The override as typed, and what `parseRateCardOverride` made of it. Both, because a
+      // malformed entry is ignored per entry rather than rejected, and the box has to show the
+      // learner which one so they can fix it (`src/main/cost/rates.ts`).
+      rateCardOverride: raw,
+      rateCardErrors: parseRateCardOverride(raw).errors,
+      rateCardDate: RATE_CARD_DATE,
     };
   }
 
@@ -324,6 +341,14 @@ export class AppService {
     if (patch.flowProfile !== undefined) set(FLOW_PROFILE_SETTING, patch.flowProfile);
     if (patch.pacingStripSeen !== undefined) set(PACING_STRIP_SETTING, patch.pacingStripSeen ? '1' : '');
     if (patch.replySpeed !== undefined) set(REPLY_SPEED_SETTING, patch.replySpeed);
+    /**
+     * **Stored as typed, even when it does not parse.** `parseRateCardOverride` already falls
+     * back entry by entry and reports what it could not read; rejecting the write here instead
+     * would leave the learner's box holding a value the app has thrown away, with no way to edit
+     * the one line that is wrong. The errors ride back on `SettingsView` and the panel shows
+     * them under the box. Whitespace clears it and returns to the built-in card.
+     */
+    if (patch.rateCardOverride !== undefined) set(RATE_CARD_SETTING, patch.rateCardOverride.trim());
     return { ok: true };
   }
 

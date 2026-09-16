@@ -6,6 +6,7 @@
  * which is also how they are stored in SQLite (architecture-mac.md §D.1).
  */
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
+import type { CostUpdate } from './cost.js';
 
 export type AgentRole = 'peer' | 'challenger' | 'tutee' | 'whisper';
 
@@ -425,6 +426,27 @@ export interface SettingsView {
   pacingStripSeen: boolean;
   /** See `ReplySpeed`. Takes effect on the next turn, in the open room, without a reopen. */
   replySpeed: ReplySpeed;
+  /**
+   * **A learner-supplied price table, merged over the built-in one** (`src/main/cost/rates.ts`).
+   *
+   * The JSON exactly as it is stored, or `''` when there is none — not a parsed object, because
+   * what Settings shows in the box has to be what the learner typed, including the typo that
+   * made one entry invalid. Shape:
+   * `{"claude-sonnet-5": {"input": 2, "output": 10}}`.
+   *
+   * It exists because these prices are cached rather than fetched and this app ships unsigned to
+   * a cohort for a semester: when a price changes, the right fix is a build and the right
+   * *fallback* is a settings row.
+   */
+  rateCardOverride: string;
+  /**
+   * What was wrong with it, entry by entry, from `parseRateCardOverride()`. Empty when the
+   * override parsed cleanly or there is none. Rendered under the box: a malformed entry is
+   * **ignored**, not fatal, and the learner has to be able to see which one.
+   */
+  rateCardErrors: string[];
+  /** The date the built-in card was priced on, for the line under the box. */
+  rateCardDate: string;
 }
 
 export interface SettingsPatch {
@@ -436,6 +458,13 @@ export interface SettingsPatch {
   /** Set false from Settings to show the pacing strip again; set true when it is dismissed. */
   pacingStripSeen?: boolean;
   replySpeed?: ReplySpeed;
+  /**
+   * The rate-card override, as typed. `''` (or whitespace) clears it and returns to the built-in
+   * card. **It is stored whether or not it parses**: the errors come back on `SettingsView` and
+   * the pricing falls back per entry, because a box that silently refuses to keep what was typed
+   * is a box nobody can correct a typo in.
+   */
+  rateCardOverride?: string;
 }
 
 export interface Bootstrap {
@@ -793,7 +822,25 @@ export type RoomEvent =
    * animates the node that just lit, and a wholesale redraw cannot say which one that was.
    * `evidenceMessageIds` on the state are the **learner's own** messages that earned it.
    */
-  | { type: 'objectives.state'; roomId: string | null; fileId: string; state: LearningObjectiveState };
+  | { type: 'objectives.state'; roomId: string | null; fileId: string; state: LearningObjectiveState }
+  /**
+   * **One call was counted** (`src/main/cost/`).
+   *
+   * The cost ledger already pushes this on its own channel, `IPC.costUpdated` / `onCostUpdated`,
+   * and that channel is unchanged. It is **also** on the room stream because every other
+   * per-turn push in the app is, and a renderer that already holds one `onEvent` subscription
+   * should not need a second one to make a header counter tick — the live run that found this
+   * was falling back to `turn.released`, which ticks on turns and misses the orchestrator, the
+   * ledger, the ingest and the summary calls entirely.
+   *
+   * **The same payload, pushed twice. Subscribe to one.** `onCostUpdated` is the typed,
+   * single-purpose channel; this is the same `CostUpdate` on the stream a room already listens
+   * to. Counting both would double every figure.
+   *
+   * `roomId` is null for a call that belongs to no room — the concept or objectives ingest,
+   * which runs on a file before a room exists.
+   */
+  | { type: 'cost.updated'; roomId: string | null; update: CostUpdate };
 
 // ── The vault (issue #22) ──────────────────────────────────────────────────
 // Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner

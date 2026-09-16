@@ -86,6 +86,10 @@ const mockSettings: SettingsView = {
   // The mock renderer shows the pacing strip, because the strip's first-open state is the one
   // worth being able to look at without Electron.
   pacingStripSeen: false,
+  // No override in the mock: the built-in card is the state Settings opens in.
+  rateCardOverride: '',
+  rateCardErrors: [],
+  rateCardDate: '2026-06-24',
 };
 
 const row = (id: string, label: string, learnerLabel: string): LedgerRowView => ({
