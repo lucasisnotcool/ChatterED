@@ -251,11 +251,26 @@
     }, 2200);
   }
 
+  /**
+   * A card's top in **scroller** coordinates.
+   *
+   * Not `offsetTop`: the whisper popover (§3.5) gave `.cardwrap` `position: relative` so the
+   * popover could be anchored to its card, and that quietly made the cardwrap the offset parent
+   * of `[data-segment]`. `offsetTop` then reads ~0 for every card in the document, every cut
+   * looks as if it is above the fold, and the anchor shifts the flow by one card's chrome under
+   * the eye on a cut that is plainly on screen — which is the one thing beat 6 must not do.
+   * A rect difference has no offset parent to be wrong about.
+   */
+  function topInScroller(el: HTMLElement): number {
+    if (!scroller) return Number.POSITIVE_INFINITY;
+    return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+  }
+
   /** Where the cut is, in scroller coordinates, so the anchor knows whether it is above the fold. */
   function cutTopOf(segmentId: string, cutOffset: number): number {
     const el = scroller?.querySelector<HTMLElement>(`[data-segment="${segmentId}"]`);
     if (!el || !scroller) return Number.POSITIVE_INFINITY;
-    return el.offsetTop + LABEL_STRIP + cutOffset;
+    return topInScroller(el) + LABEL_STRIP + cutOffset;
   }
 
   async function onsplit(
@@ -299,7 +314,8 @@
     const el = scroller;
     const keptTop = el?.scrollTop ?? 0;
     const heightBefore = el?.scrollHeight ?? 0;
-    const seamTop = el?.querySelector<HTMLElement>(`[data-segment="${b.segmentId}"]`)?.offsetTop ?? Number.POSITIVE_INFINITY;
+    const seamEl = el?.querySelector<HTMLElement>(`[data-segment="${b.segmentId}"]`) ?? null;
+    const seamTop = seamEl ? topInScroller(seamEl) : Number.POSITIVE_INFINITY;
     const ok = await store.mergeSegments([a.segmentId, b.segmentId]);
     busy = false;
     if (!ok) {
