@@ -6,7 +6,8 @@
    * first line of the pane is the resolved backend and, when the learner's choice could not be
    * honoured, why. A dropdown that silently does nothing is the failure mode this avoids.
    */
-  import type { BackendChoice } from '../../shared/types.js';
+  import type { BackendChoice, ReplySpeed } from '../../shared/types.js';
+  import { REPLY_SPEEDS, REPLY_SPEED_NOTE } from '../lib/flowchat.js';
   import { store } from '../lib/store.svelte.js';
   // The strip and these radios describe the same setting, so they read the same copy.
   import { PACING_PROFILES, pacingProfile } from '../lib/labels.js';
@@ -206,6 +207,44 @@
 
       {#if store.settingsError}<p class="warn">{store.settingsError}</p>{/if}
       <p class="quiet">A model change applies to the next room you open, not the one already running.</p>
+    </section>
+
+    <!--
+      **Reply speed (cui-standards-audit.md §9).** `design-brief.md` §D4 and
+      `product-design.md` §C3 both promise this control and neither shipped it, while
+      `latency_scale` sat plumbed all the way through `latencyTargetMs`. §C3's own closing
+      argument is that a paced system the learner cannot un-pace is a dark pattern — so this is
+      the setting that retires an ethics risk rather than adding a feature, and the disclosure
+      lives on the options themselves.
+    -->
+    <section>
+      <h2>Reply speed</h2>
+      <div class="choices">
+        {#each REPLY_SPEEDS as r (r.value)}
+          <label class="choice" class:on={settings.replySpeed === r.value}>
+            <input
+              type="radio"
+              name="reply-speed"
+              value={r.value}
+              checked={settings.replySpeed === r.value}
+              disabled={store.settingsBusy}
+              onchange={() => void store.saveSettings({ replySpeed: r.value as ReplySpeed })}
+            />
+            <span class="choice-text">
+              <span class="choice-label">{r.label}</span>
+              <span class="quiet">{r.hint}</span>
+            </span>
+          </label>
+        {/each}
+      </div>
+      {#if settings.replySpeed !== 'default'}
+        <p class="warn">{REPLY_SPEED_NOTE}</p>
+      {/if}
+      <p class="quiet">
+        The wait is a floor on how quickly a reply becomes <em>visible</em>, not on how long the
+        model takes; a shorter floor does not make a model faster. It applies to the next turn,
+        not to one already in flight.
+      </p>
     </section>
 
     <!-- The Tester's pacing, disclosed. `flow-build-plan.md` §4.2 asks for the demo profile to be

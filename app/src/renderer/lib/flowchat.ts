@@ -16,7 +16,7 @@
  *     (plain dots for the Teacher, elapsed counter for the Tester, the ETA only on hover).
  *   - **Fact 3** — a streamed turn is provisional until `turn.released`: `streamedBody`.
  */
-import type { MessageView, ThinkingView } from '../../shared/types.js';
+import type { MessageView, ReplySpeed, ThinkingView } from '../../shared/types.js';
 import { ts } from './time.js';
 
 /**
@@ -256,26 +256,32 @@ export function appendDelta(state: StreamState | null, delta: { turnId: string; 
   };
 }
 
-/** Reply speed (audit §9, `design-brief.md` §D4). `off` is honest about what it removes. */
-export const REPLY_SPEEDS = [
+/**
+ * Reply speed (audit §9, `design-brief.md` §D4, `product-design.md` §C3).
+ *
+ * §C3's own closing argument is that **a paced system the learner cannot un-pace is a dark
+ * pattern** — and the un-pacing control was the one thing in §C3 that was never built, while
+ * `latency_scale` sat plumbed through `latencyTargetMs` the whole time. The hint on each option
+ * is the disclosure: an un-paced system that does not say it is un-paced is worse than a paced
+ * one, so "not the studied pacing" is in the control itself, not in a footnote.
+ */
+export const REPLY_SPEEDS: { value: ReplySpeed; label: string; hint: string }[] = [
   {
-    value: 'default' as const,
+    value: 'default',
     label: 'Considered (default)',
     hint: 'The researched pacing: Ellie in 4–6 s, Max in 9–12 s.',
   },
   {
-    value: 'faster' as const,
+    value: 'faster',
     label: 'Faster',
     hint: 'Roughly half the wait. Useful when you are re-reading, not learning.',
   },
   {
-    value: 'off' as const,
+    value: 'off',
     label: 'No pacing',
     hint: 'Replies land as soon as they are generated. This is not the studied pacing.',
   },
 ];
-
-export type ReplySpeed = (typeof REPLY_SPEEDS)[number]['value'];
 
 /** The note that has to sit under any non-default choice, verbatim wherever it is shown. */
 export const REPLY_SPEED_NOTE = 'Anything but Considered is not the studied pacing.';
