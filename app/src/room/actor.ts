@@ -59,7 +59,7 @@ import {
   type TesterMode,
 } from './flow.js';
 import { decideTurn, extractJson as extractJsonObject, type TurnDecision, type TurnTrigger } from './orchestrator.js';
-import type { Clock, Store, Transport } from './ports.js';
+import { SILENT_LOG, type Clock, type Store, type Transport, type TurnLog } from './ports.js';
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import { latestByElement } from './flow.js';
 import { decisionDirective, ledgerDirective, taughtBlock } from './prompts.js';
@@ -126,6 +126,11 @@ export interface RoomActorDeps {
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
   random?: () => number;
+  /**
+   * Structured logging. Defaults to silent, so tests and any non-Electron host stay quiet; the
+   * main process passes `src/main/log.ts`. Sizes, ids, models and durations only — never a body.
+   */
+  log?: TurnLog;
 }
 
 interface PendingTurn {
@@ -214,8 +219,14 @@ export class RoomActor {
    */
   #nudgeCursor = -1;
 
+  #log: TurnLog;
+  /** The current turn's logger, so helpers off the main path (`#failTurn`) share its id. */
+  #turnLog: TurnLog;
+
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
+    this.#log = deps.log ?? SILENT_LOG;
+    this.#turnLog = this.#log;
     this.#openedAt = deps.clock.now();
     this.#flow = deps.flowState?.session ?? null;
     this.#taught = [...(deps.flowState?.taught ?? [])];
@@ -244,6 +255,12 @@ export class RoomActor {
             stage: fire.stage,
             late_by_ms: fire.lateByMs,
             cause: fire.cause,
+          });
+          this.#log.event('info', 'timer.fired', {
+            stage: fire.stage,
+            late_by_ms: fire.lateByMs,
+            cause: fire.cause,
+            epoch: fire.epoch,
           });
           if (fire.lateByMs > 2_000) {
             this.#event('system', 'timer.fired_late', { late_by_ms: fire.lateByMs, cause: fire.cause });
@@ -920,6 +937,22 @@ export class RoomActor {
     const turnStart = this.#d.clock.now();
     const pending: PendingTurn = { id: this.#d.newId('turn'), cancelled: false };
     this.#pending = pending;
+    /**
+     * **The correlation id.** Everything this turn does — the orchestrator decision, the ledger
+     * update, every LLM call underneath both, the dispatch and the timer — is logged with it, so
+     * one `jq 'select(.turn=="turn_7")'` reconstructs the whole chain with its timings. Reading
+     * the 2026-09-16 failure out of `events` and `turn_decisions` by timestamp is what this
+     * replaces.
+     */
+    const turnLog = this.#log.child(pending.id);
+    this.#turnLog = turnLog;
+    turnLog.event('info', 'turn.start', {
+      trigger,
+      anchor_id: anchorId,
+      silence_stage: opts.silenceStage ?? null,
+      consecutive_agent_turns: this.#room().consecutive_agent_turns,
+      backend: this.#d.llm.kind,
+    });
 
     const room = this.#room();
     // The flow verdict is computed here, on the room's clock, and handed to the rules. The
@@ -981,7 +1014,7 @@ export class RoomActor {
     // The orchestrator and the ledger run concurrently, inside the delay window. That is the
     // strongest argument the latency mechanic has: the delay is the assessment window.
     const [decision] = await Promise.all([
-      this.#decide(decisionInput, cue),
+      this.#decide(decisionInput, cue, turnLog, turnStart),
       trigger === 'student_message' || trigger === 'promote'
         ? this.#updateLedger(cue, turnStart)
         : Promise.resolve(),
@@ -1153,6 +1186,20 @@ export class RoomActor {
         ttft_actual_ms: ttft,
         usage,
       });
+      turnLog.event('info', 'turn.dispatched', {
+        role: decision.role,
+        agent_key: agent.key,
+        move_type: decision.moveType,
+        decided_by: decision.decidedBy,
+        model,
+        backend,
+        latency_target_ms: target,
+        ttft_actual_ms: ttft,
+        total_ms: this.#d.clock.now() - turnStart,
+        // The length of what was said, never what was said.
+        reply_chars: text.length,
+        usage,
+      });
       this.#noteTurnForFlow(decision, row.id);
       if (trigger === 'silence') this.#markFirstHelp();
     });
@@ -1182,7 +1229,12 @@ export class RoomActor {
     await this.#runAgentTurn('silence', { silenceStage: stage, anchorId: this.#lastAnchorId });
   }
 
-  async #decide(input: Parameters<typeof decideTurn>[0]['input'], cue: string): Promise<TurnDecision> {
+  async #decide(
+    input: Parameters<typeof decideTurn>[0]['input'],
+    cue: string,
+    turnLog: TurnLog,
+    turnStart: number,
+  ): Promise<TurnDecision> {
     const peer = agentByRole(this.#d.roster, 'peer');
     const request = buildGroupContext(this.#d.groupStore, {
       roomId: this.#d.roomId,
@@ -1194,8 +1246,34 @@ export class RoomActor {
       maxTokens: 400,
     });
     request.model = this.#models.orchestrator;
-    request.meta = { ...request.meta, scope: 'orchestrator', scriptCue: cue };
-    return decideTurn({ client: this.#d.llm, request, input });
+    request.meta = { ...request.meta, scope: 'orchestrator', scriptCue: cue, turnId: this.#pending?.id };
+    const startedAt = this.#d.clock.now();
+    turnLog.event('info', 'orchestrator.request', {
+      model: request.model,
+      backend: this.#d.llm.kind,
+      trigger: input.trigger,
+      anchored: input.anchoredThread === true,
+    });
+    const decision = await decideTurn({ client: this.#d.llm, request, input });
+    /**
+     * The line that would have made 2026-09-16 a five-minute diagnosis. `parsed_ok` and
+     * `chosen_role` together are the whole bug: a decision with a move, a rationale and no
+     * speaker. `ms` is the 20 s.
+     */
+    turnLog.event(decision.failure ? 'error' : 'info', 'orchestrator.response', {
+      model: request.model,
+      backend: this.#d.llm.kind,
+      ms: this.#d.clock.now() - startedAt,
+      since_turn_start_ms: this.#d.clock.now() - turnStart,
+      parsed_ok: decision.failure === null,
+      decided_by: decision.decidedBy,
+      speak: decision.speak,
+      chosen_role: decision.role,
+      move_type: decision.moveType,
+      target_element_id: decision.targetElementId,
+      failure: decision.failure?.reason ?? null,
+    });
+    return decision;
   }
 
   async #generate(agent: AgentProfile, decision: TurnDecision, cue: string) {
@@ -1227,6 +1305,7 @@ export class RoomActor {
   }
 
   async #updateLedger(cue: string, turnStart: number): Promise<void> {
+    const turnLog = this.#turnLog;
     const messages = this.#d.store.messages.forRoom(this.#d.roomId);
     const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
     const studentMessages = messages
@@ -1256,6 +1335,14 @@ export class RoomActor {
     // Structured output, for the same reason the decision uses it: the CLI enforces the schema
     // and repairs one bad answer before the caller ever sees it (`claude-cli.ts`).
     request.jsonSchema = LEDGER_SCHEMA;
+    request.meta.turnId = this.#pending?.id;
+    const ledgerStartedAt = this.#d.clock.now();
+    turnLog.event('info', 'ledger.request', {
+      model: request.model,
+      backend: this.#d.llm.kind,
+      elements: this.#d.pack.elements.length,
+      student_messages: studentMessages.length,
+    });
 
     let proposal: LedgerProposal;
     try {
@@ -1269,6 +1356,13 @@ export class RoomActor {
       // the `progress.update {"parse_ok":false}` of 2026-09-16 02:30:38, which until now was
       // visible only in the events table.
       this.#event('system', 'progress.update', { parse_ok: false, cause: (err as Error).message });
+      turnLog.event('error', 'ledger.error', {
+        model: request.model,
+        backend: this.#d.llm.kind,
+        ms: this.#d.clock.now() - ledgerStartedAt,
+        parse_ok: false,
+        cause: failureReason(err),
+      });
       this.#failTurn({
         kind: 'ledger',
         anchorId: this.#lastAnchorId,
@@ -1299,6 +1393,18 @@ export class RoomActor {
       changed: applied.changed,
       skipped: applied.skipped,
       gates: applied.history.map((h) => h.gate).filter(Boolean),
+      inside_hold_ms: this.#d.clock.now() - turnStart,
+    });
+    turnLog.event('info', 'ledger.applied', {
+      model: request.model,
+      backend: this.#d.llm.kind,
+      ms: this.#d.clock.now() - ledgerStartedAt,
+      parse_ok: true,
+      proposed: proposal.elements?.length ?? 0,
+      changed: applied.changed.length,
+      // Which of the four hard rules fired. The ids only — never the quote they tested.
+      gates: applied.history.map((h) => h.gate).filter(Boolean).join(','),
+      skipped: applied.skipped,
       inside_hold_ms: this.#d.clock.now() - turnStart,
     });
 
@@ -1593,6 +1699,13 @@ export class RoomActor {
       at: this.#nowIso(),
     };
     this.#failures.push({ view, replay: input.replay });
+    this.#turnLog.event('error', 'turn.failed', {
+      kind: input.kind,
+      failure_id: view.id,
+      anchor_id: input.anchorId,
+      reason: input.reason,
+      detail: input.detail ?? null,
+    });
     // A turn failure silences the nudge; a ledger failure does not — the reply did arrive, and
     // the learner has something to answer.
     if (input.kind === 'turn') this.#nudgesHeldForFailure = true;
@@ -1630,6 +1743,7 @@ export class RoomActor {
     this.#nudgesHeldForFailure = false;
     this.#d.transport.emit({ type: 'turn.failed.cleared', roomId: this.#d.roomId, failureId });
     this.#event('student', 'agent.turn.retry', { failure_id: failureId, kind: found.view.kind });
+    this.#log.event('info', 'turn.retry', { failure_id: failureId, kind: found.view.kind });
     if (found.view.kind === 'ledger') {
       await this.#updateLedger('retry', this.#d.clock.now());
       return;
@@ -1674,9 +1788,11 @@ export class RoomActor {
     if (this.#room().state === 'closed') return;
     if (this.#nudgesHeldForFailure) {
       this.#timer.cancel();
+      this.#turnLog.event('warn', 'timer.held', { reason: 'turn_failed' });
       return;
     }
     this.#timer.arm();
+    this.#turnLog.event('debug', 'timer.armed', { silence_ms: this.#d.config.silence_ms });
   }
 
   #emitTimer(): void {

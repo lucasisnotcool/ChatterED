@@ -1076,3 +1076,55 @@ Electron 44's ABI as part of `postinstall`, from a prebuilt, not from source) an
 `app/README.md`, and `grep` over `unzip -l` finds no `.git`, no `*.local.json`, no key file, no
 `node_modules` and no build output. **Not verified:** opening it on a *different* machine, which
 is what §3.6's gate actually asks for.
+
+## The log — added 16 Sep 2026, after the room_6a9609d5c6fb silence
+
+**Where.** `~/Library/Logs/ChatterED/main.log` (`app.getPath('logs')`). JSON lines, one object
+per event. Rotates at **4 MB**, keeping `main.1.log` … `main.4.log` — bounded at 16 MB forever.
+Level from `CHATTERED_LOG_LEVEL` (`debug|info|warn|error`, default `info`), so a debugging
+session is `CHATTERED_LOG_LEVEL=debug open -a ChatterED` with no rebuild. Settings ▸ Diagnostics
+has **Open log folder** and **Copy diagnostics** (version, build, backend, models, CLI path, and
+the last 50 lines).
+
+**Why not `electron-log`.** Three runtime dependencies is the whole bundle and the app is
+installed unsigned by a hand-rolled script, so each addition is another thing inside it nobody
+has read; `electron-log` formats through a template where what is wanted is a *record*, greppable
+with `jq`, with a correlation id on every line; and the one feature that would have justified it
+— rotation — is twenty lines. `src/main/log.ts`, ~200 lines, no dependency.
+
+**Every line.** `ts` (ISO), `level`, `event`, `turn` (the correlation id, when inside a turn),
+`v` (app version), `packaged`, `room_id`, then the event's own fields.
+
+| event | fields |
+|---|---|
+| `app.start` / `app.quit` | electron, node, platform, level |
+| `turn.start` | trigger, anchor_id, silence_stage, consecutive_agent_turns, backend |
+| `orchestrator.request` | model, backend, trigger, anchored |
+| `orchestrator.response` | model, backend, **ms**, since_turn_start_ms, **parsed_ok**, decided_by, speak, **chosen_role**, move_type, target_element_id, failure |
+| `llm.request` | scope, model, backend, agent_key, system_chars, prompt_chars, turns, **cache_breakpoints**, max_tokens, json_schema |
+| `llm.first_token` | scope, model, ms |
+| `llm.stream.chunk` | scope, chunks *(count only, `debug`)* |
+| `llm.complete` | scope, model, backend, ms, ttft_ms, chunks, reply_chars, usage, cost_usd |
+| `llm.error` | scope, model, backend, ms, **class**, cause *(stderr tail, capped 400)*, **exit_code** |
+| `ledger.request` / `ledger.applied` / `ledger.error` | model, backend, ms, **parse_ok**, proposed, changed, **gates**, skipped, inside_hold_ms |
+| `turn.dispatched` | role, agent_key, move_type, decided_by, model, backend, latency_target_ms, ttft_actual_ms, total_ms, reply_chars, usage |
+| `turn.failed` / `turn.retry` | kind, failure_id, anchor_id, reason, detail |
+| `timer.fired` / `timer.armed` / `timer.held` | stage, late_by_ms, cause, epoch, reason |
+| `ipc.error` | channel, class, cause |
+| `renderer.error` | kind, class, cause, source, line |
+| `process.uncaught` / `process.unhandled_rejection` | class, cause |
+
+**What is never in it.** No message body, no prompt, no system block, no page text, no API key.
+`redact()` drops ~30 forbidden keys by *name* (`body`, `text`, `prompt`, `evidence`, `rationale`,
+`apiKey`, …) and keeps only `<key>_chars`; every other string is capped at 300; any `sk-ant-…`
+token is scrubbed out of **every** string, not only out of a field called `key`. The one
+free-text field that ships is `cause`, which is the child process's own stderr tail, capped at
+400 — hence the blanket key scrub. `src/main/log.test.ts` asserts all of it, modelled on
+`actor.test.ts`'s "writes an event stream with no message bodies in it" (evaluation-plan.md §7.2).
+
+**Reading one turn back:**
+
+```sh
+jq -c 'select(.turn=="turn_7")' ~/Library/Logs/ChatterED/main.log
+jq -c 'select(.event=="orchestrator.response") | {ms, parsed_ok, chosen_role, decided_by}' …
+```

@@ -350,6 +350,15 @@ export function createMockBridge(): ChatterEdApi {
       else arm();
     },
 
+    async logRendererError(): Promise<void> {
+      /* The mock has no main process to forward to. */
+    },
+    async openLogFolder(): Promise<void> {
+      /* No Finder in the mock. */
+    },
+    async diagnostics(): Promise<string> {
+      return 'ChatterED (mock bridge)';
+    },
     async retryTurn(): Promise<void> {
       /* The mock never fails a turn, so there is never a card to retry. */
     },

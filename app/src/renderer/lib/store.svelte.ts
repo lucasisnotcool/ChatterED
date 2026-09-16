@@ -922,6 +922,30 @@ class Store {
     if (roomId) void run(this, () => bridge().holdTimer({ roomId }));
   }
 
+  /** Settings ▸ Diagnostics: transient "Copied" confirmation on the button. */
+  diagnosticsCopied = $state(false);
+
+  openLogFolder(): void {
+    void run(this, () => bridge().openLogFolder());
+  }
+
+  /**
+   * Version, build, backend, models and the last 50 log lines, on the clipboard. The main
+   * process assembles it — the renderer has no business reading a file — and the lines were
+   * redacted when they were written, so there is nothing here to review before pasting.
+   */
+  async copyDiagnostics(): Promise<void> {
+    const text = await run(this, () => bridge().diagnostics());
+    if (typeof text !== 'string') return;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.diagnosticsCopied = true;
+      setTimeout(() => (this.diagnosticsCopied = false), 1600);
+    } catch {
+      this.notice = { level: 'error', text: 'Could not reach the clipboard.' };
+    }
+  }
+
   /** The card's button. The main process owns what "the same turn" means; this only names it. */
   retryTurn(failureId: string): void {
     const roomId = this.room?.roomId;

@@ -15,6 +15,7 @@ import { createStore } from './db/store.js';
 import { AppService } from './ipc.js';
 import { installMenuFor } from './menu.js';
 import { IPC } from '../shared/ipc.js';
+import { defaultLogDir, fileSink, initLogger, log, type LogLevel } from './log.js';
 
 let mainWindow: BrowserWindow | null = null;
 let service: AppService | null = null;
@@ -113,6 +114,42 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
+/**
+ * The log is opened **first**, before the database, the window or anything that can fail — the
+ * whole point of it is to be there when something does. The level comes from the environment so
+ * a debugging session is `CHATTERED_LOG_LEVEL=debug open -a ChatterED` and needs no rebuild.
+ */
+function bootLog(): void {
+  const raw = (process.env.CHATTERED_LOG_LEVEL ?? '').toLowerCase();
+  const level: LogLevel = raw === 'debug' || raw === 'warn' || raw === 'error' ? raw : 'info';
+  initLogger({
+    sink: fileSink(logDir()),
+    level,
+    base: { v: app.getVersion(), packaged: app.isPackaged },
+  });
+  log().info('app.start', {
+    electron: process.versions.electron,
+    node: process.versions.node,
+    platform: `${process.platform} ${release()}`,
+    level,
+  });
+  process.on('uncaughtException', (err) => {
+    log().error('process.uncaught', { class: err.name, cause: err.message });
+  });
+  process.on('unhandledRejection', (reason) => {
+    log().error('process.unhandled_rejection', { cause: reason instanceof Error ? reason.message : String(reason) });
+  });
+}
+
+/** `app.getPath('logs')` is `~/Library/Logs/ChatterED` on macOS; the fallback is the same path. */
+export function logDir(): string {
+  try {
+    return app.getPath('logs');
+  } catch {
+    return defaultLogDir();
+  }
+}
+
 function boot(): void {
   const dir = dataDir();
   const db = openDatabase(join(dir, 'app.db'));
@@ -125,6 +162,7 @@ function boot(): void {
     appVersion: app.getVersion(),
     osVersion: `${process.platform} ${release()}`,
     userDataDir: dir,
+    logDir: logDir(),
     getWindow: () => mainWindow,
   });
   service.register();
@@ -153,6 +191,7 @@ function boot(): void {
 }
 
 void app.whenReady().then(() => {
+  bootLog();
   const icon = devIcon();
   if (icon && process.platform === 'darwin') app.dock?.setIcon(icon);
   boot();
@@ -166,6 +205,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  log().info('app.quit', {});
   service?.dispose();
   if (powerBlockerId !== null) powerSaveBlocker.stop(powerBlockerId);
 });

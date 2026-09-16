@@ -27,6 +27,8 @@ import {
 import type { AgentProfile, BackendChoice, BackendKind } from '../../shared/types.js';
 import type { SettingsRepo } from '../db/repos/core.js';
 import { ClaudeCliClient } from './claude-cli.js';
+import { log, type Logger } from '../log.js';
+import { loggedClient } from './logged.js';
 import { readCachedDetection, SETTINGS_KEYS, type CliDetection } from './detect.js';
 
 export type { BackendChoice, BackendKind };
@@ -120,9 +122,19 @@ export interface CreateClientInput extends ResolveInput {
   material?: { fileName?: string | null; contentSha?: string | null };
   /** The live roster, so a scripted beat names the agents the room is actually running (#32). */
   roster?: readonly AgentProfile[];
+  /** Injectable so a test can assert what was logged without touching the process-wide one. */
+  logger?: () => Logger;
 }
 
+/**
+ * Every backend comes back wrapped in `loggedClient`, so `llm.request`/`first_token`/`complete`/
+ * `error` are a property of *calling a model*, not of one implementation remembering to.
+ */
 export function createClient(input: CreateClientInput): LLMClient {
+  return loggedClient(rawClient(input), input.logger ?? log);
+}
+
+function rawClient(input: CreateClientInput): LLMClient {
   switch (input.resolved.kind) {
     case 'claude_cli': {
       const binary = input.resolved.detection?.path;

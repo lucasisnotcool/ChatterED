@@ -36,6 +36,8 @@ import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './ap
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
+import { errorClass, log, tailLog, type Logger } from './log.js';
+import type { TurnLog } from '../room/ports.js';
 /**
  * The flow's first-open pacing strip is shown once per install and is re-openable from Settings
  * (`flow-build-plan.md` §3.5) — one row, like `first_run_complete` next to it.
@@ -61,7 +63,23 @@ export interface IpcDeps {
   osVersion: string;
   /** `app.getPath('userData')`. The API key file lives directly inside it (#15). */
   userDataDir: string;
+  /** `~/Library/Logs/ChatterED`. Behind **Open log folder** and **Copy diagnostics**. */
+  logDir: string;
   getWindow(): BrowserWindow | null;
+}
+
+/**
+ * The `TurnLog` port, over the process-wide logger, stamped with the room id.
+ *
+ * `src/room` must not import `src/main`, so the actor takes the port and this is the adapter —
+ * the same shape as the `Clock` and `Transport` ports beside it.
+ */
+function roomLog(roomId: string): TurnLog {
+  const wrap = (logger: Logger): TurnLog => ({
+    event: (level, name, fields) => logger.event(level, name, { room_id: roomId, ...fields }),
+    child: (turnId) => wrap(logger.child(turnId)),
+  });
+  return wrap(log());
 }
 
 export class AppService {
@@ -295,6 +313,9 @@ export class AppService {
       flowState: loadFlowState(this.#d.store, roomId),
       flowProfile: this.flowProfile(),
       newId,
+      // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
+      // all stamped with the turn id the LLM calls underneath them carry too.
+      log: roomLog(roomId),
     });
     this.#actor.start();
     this.#actor.recover();
@@ -523,6 +544,29 @@ export class AppService {
     }
   }
 
+  /**
+   * The **Copy diagnostics** payload: what the app is, which backend and models are live, and
+   * the last 50 log lines. Assembled here rather than in the renderer because the renderer has
+   * no business reading a file, and because these are the four questions every bug report on
+   * this app has needed answering first.
+   */
+  diagnostics(limit = 50): string {
+    const resolved = this.backend();
+    const lines = tailLog(this.#d.logDir, limit);
+    return [
+      `ChatterED ${this.#d.appVersion}`,
+      `os: ${this.#d.osVersion}`,
+      `backend: ${resolved.kind}${resolved.fellBackBecause ? ` (fell back: ${resolved.fellBackBecause})` : ''}`,
+      `choice: ${resolved.choice}`,
+      `models: agent=${resolved.models.agent} orchestrator=${resolved.models.orchestrator}`,
+      `cli: ${resolved.detection?.path ?? 'not found'}${resolved.detection?.loggedIn ? ' (logged in)' : ''}`,
+      `log: ${this.#d.logDir}/main.log`,
+      '',
+      `last ${lines.length} log lines:`,
+      ...lines,
+    ].join('\n');
+  }
+
   #requireActor(roomId: string): RoomActor {
     if (!this.#actor) throw new Error('No open room');
     if (this.#actor.snapshot().roomId !== roomId) throw new Error('That room is not open');
@@ -530,8 +574,25 @@ export class AppService {
   }
 
   register(): void {
+    /**
+     * Every handler is wrapped: an IPC call that throws crosses the bridge as a rejected
+     * promise and the renderer turns it into a one-line banner, which loses the channel, the
+     * class and the stack. `ipc.error` keeps all three on this side. The error is still
+     * re-thrown — the renderer's banner is a separate promise to the learner.
+     */
     const handle = <T>(channel: string, fn: (payload: T) => unknown) => {
-      ipcMain.handle(channel, async (_event, payload: T) => fn(payload));
+      ipcMain.handle(channel, async (_event, payload: T) => {
+        try {
+          return await fn(payload);
+        } catch (err) {
+          log().error('ipc.error', {
+            channel,
+            class: errorClass(err),
+            cause: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
+      });
     };
 
     handle(IPC.bootstrap, () => this.bootstrap());
@@ -705,6 +766,37 @@ export class AppService {
     handle<{ roomId: string; failureId: string }>(IPC.retryTurn, (input) =>
       this.#requireActor(input.roomId).retryTurn(input.failureId),
     );
+
+    /**
+     * **Renderer failures, in the same file as everything else.** A `window.onerror` in the
+     * webview is invisible to the main process and disappears with the window; forwarded here it
+     * lands in `main.log` next to the turn it broke. The renderer sends a class, a message and a
+     * source location — never a DOM node and never page text.
+     */
+    handle<{ kind: 'error' | 'unhandledrejection'; name: string; message: string; source?: string; line?: number }>(
+      IPC.logRendererError,
+      (input) => {
+        log().error('renderer.error', {
+          kind: input.kind,
+          class: input.name,
+          cause: input.message,
+          source: input.source ?? null,
+          line: input.line ?? null,
+        });
+      },
+    );
+
+    /** Settings ▸ **Open log folder**. Reveals `~/Library/Logs/ChatterED` in Finder. */
+    handle(IPC.openLogFolder, () => {
+      shell.openPath(this.#d.logDir);
+    });
+
+    /**
+     * Settings ▸ **Copy diagnostics**: what a bug report needs and nothing a learner would mind
+     * pasting. The log lines were redacted on the way *in* (`log.redact`), so this cannot leak
+     * what the log does not already hold.
+     */
+    handle(IPC.diagnostics, () => this.diagnostics());
     handle<{ roomId: string; agentKey: string }>(IPC.acceptTeachback, (input) =>
       this.#requireActor(input.roomId).acceptTeachback(input.agentKey),
     );

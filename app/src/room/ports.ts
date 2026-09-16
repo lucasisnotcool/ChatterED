@@ -22,6 +22,27 @@ import type {
   WhisperRow,
 } from './records.js';
 
+/**
+ * **The log port.** `src/room` may not open a file, so it takes this and the main process hands
+ * it the JSON-lines logger in `src/main/log.ts`. Defaults to a no-op, so every test and every
+ * future host is silent unless it asks not to be.
+ *
+ * The contract is narrow on purpose: an event *name* from a closed vocabulary and a flat bag of
+ * scalars. **No message body, no prompt, no learner text ever goes through it** — the sink
+ * redacts by key name as a second line of defence, but the first line is that call sites here
+ * pass counts, ids, models and durations.
+ */
+export interface TurnLog {
+  event(level: 'debug' | 'info' | 'warn' | 'error', name: string, fields?: Record<string, unknown>): void;
+  /** A logger stamped with a correlation id, so one turn's lines can be read back together. */
+  child(turnId: string): TurnLog;
+}
+
+export const SILENT_LOG: TurnLog = {
+  event: () => {},
+  child: () => SILENT_LOG,
+};
+
 /** Injected so every timer test can run on a fake clock (architecture-mac.md §H.1). */
 export interface Clock {
   now(): number;

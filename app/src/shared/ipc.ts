@@ -45,6 +45,11 @@ export const IPC = {
   wrapUp: 'room:wrapUp',
   /** The **Retry** on a failed-turn card (`TurnFailureView`). */
   retryTurn: 'room:retryTurn',
+  /** renderer → main: a `window.onerror` or an unhandled rejection inside the webview. */
+  logRendererError: 'app:logRendererError',
+  /** Settings ▸ Open log folder / Copy diagnostics. */
+  openLogFolder: 'app:openLogFolder',
+  diagnostics: 'app:diagnostics',
   acceptTeachback: 'room:acceptTeachback',
   openWhisper: 'whisper:open',
   sendWhisper: 'whisper:send',
@@ -130,6 +135,25 @@ export interface ChatterEdApi {
    * ran with, and replays exactly those (`actor.retryTurn`).
    */
   retryTurn(input: { roomId: string; failureId: string }): Promise<void>;
+
+  /**
+   * Forward a renderer-side failure into `main.log`.
+   *
+   * A `window.onerror` in the webview is invisible to the main process and dies with the window;
+   * this is how a broken render lands in the same file, with the same timestamps, as the turn it
+   * broke. A class, a message and a source location — never a DOM node, never page text.
+   */
+  logRendererError(input: {
+    kind: 'error' | 'unhandledrejection';
+    name: string;
+    message: string;
+    source?: string;
+    line?: number;
+  }): Promise<void>;
+  /** Settings ▸ **Open log folder**: reveals `~/Library/Logs/ChatterED` in Finder. */
+  openLogFolder(): Promise<void>;
+  /** Settings ▸ **Copy diagnostics**: version, build, backend, models and the last 50 log lines. */
+  diagnostics(): Promise<string>;
   /**
    * "Yes, invite Theo" on the recap. Records the acceptance and says what happens next; Theo's
    * round itself is A2 and `available` is false until it exists.

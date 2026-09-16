@@ -304,6 +304,27 @@
         </div>
       {/if}
     </section>
+
+    <!--
+      Diagnostics. Not a debug affordance for me: this is the two things a learner can do when
+      the app misbehaves during a study session and there is nobody to ask. The log is JSON lines
+      at ~/Library/Logs/ChatterED/main.log, and it has been redacted on the way in — no message
+      bodies, no prompts, no key — so **Copy diagnostics** is safe to paste anywhere.
+    -->
+    <section>
+      <h2>Diagnostics</h2>
+      <p class="quiet">
+        ChatterED keeps a log of every turn — which model answered, how long it took, and what
+        failed — at ~/Library/Logs/ChatterED/main.log. It records sizes and timings, never what
+        you or the agents wrote.
+      </p>
+      <div class="acts">
+        <button type="button" class="btn" onclick={() => void store.openLogFolder()}>Open log folder</button>
+        <button type="button" class="btn" onclick={() => void store.copyDiagnostics()}>
+          {store.diagnosticsCopied ? 'Copied' : 'Copy diagnostics'}
+        </button>
+      </div>
+    </section>
   {/if}
 </main>
 

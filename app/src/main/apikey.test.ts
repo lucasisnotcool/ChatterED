@@ -171,6 +171,7 @@ describe('boot with no key', () => {
       appVersion: '0.0.0-test',
       osVersion: 'darwin test',
       userDataDir: join(dir, 'ChatterED'),
+      logDir: join(dir, 'logs'),
       getWindow: () => null,
     });
     service.register();
@@ -191,6 +192,7 @@ describe('boot with no key', () => {
       appVersion: '0.0.0-test',
       osVersion: 'darwin test',
       userDataDir: userData,
+      logDir: join(userData, 'logs'),
       getWindow: () => null,
     });
     service.apiKeyStore.set(KEY);
