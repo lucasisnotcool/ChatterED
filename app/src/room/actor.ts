@@ -933,6 +933,10 @@ export class RoomActor {
         : null,
       pendingQuiz: this.#pendingQuiz,
       referenceLocked: this.#referenceLocked(anchorId),
+      // In the flow every turn has an anchor, and a learner turn under a segment is the
+      // Teacher's to answer by rule — no model call, no 20 s, no null role (orchestrator.ts
+      // `rule:teacher_answers`). `null` is the pre-flow room-level stream.
+      anchoredThread: anchorId !== null,
     };
 
     const cue =
