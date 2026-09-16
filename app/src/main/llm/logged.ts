@@ -17,7 +17,14 @@ import { STDERR_TAIL, errorClass, type Logger } from '../log.js';
 export function loggedClient(inner: LLMClient, logger: () => Logger): LLMClient {
   return {
     kind: inner.kind,
-    async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+    /**
+     * `signal` **must** be forwarded. It was not, and the first live Stop looked like it worked —
+     * the IPC said `stopped: true`, the partial was kept, the card said so — while the scripted
+     * client streamed all twelve of its chunks to the end. On the CLI path the same omission
+     * leaves `claude` generating and billing after a stop that reported success. A decorator that
+     * silently drops an argument of the interface it decorates is worse than no decorator.
+     */
+    async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
       // The turn's correlation id when the caller set one; otherwise this call stands alone.
       const log = request.meta.turnId ? logger().child(request.meta.turnId) : logger();
       const startedAt = Date.now();
@@ -51,7 +58,7 @@ export function loggedClient(inner: LLMClient, logger: () => Logger): LLMClient 
       };
 
       try {
-        const result = await inner.complete(request, onDelta ? wrapped : undefined);
+        const result = await inner.complete(request, onDelta ? wrapped : undefined, signal);
         log.info('llm.complete', {
           scope: request.meta.scope,
           model: result.model,

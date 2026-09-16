@@ -8,6 +8,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readBackendChoice, readCliModels, resolveBackend } from './backend.js';
+import { loggedClient } from './logged.js';
+import { EMPTY_USAGE, type LlmRequest } from '../../room/llm/types.js';
+import { Logger } from '../log.js';
 import { SETTINGS_KEYS } from './detect.js';
 import { HAIKU_API, SONNET_API } from '../../room/llm/models.js';
 import type { SettingsRepo } from '../db/repos/core.js';
@@ -20,6 +23,9 @@ function settingsWith(values: Record<string, string> = {}): SettingsRepo {
     all: () => Object.fromEntries(map),
   };
 }
+
+/** A real logger over a sink that drops everything: this test is about the argument. */
+const SILENT_LOGGER = new Logger({ sink: { write: () => {} } });
 
 const LOGGED_IN = JSON.stringify({
   found: true,
@@ -105,5 +111,27 @@ describe('the per-role model plan', () => {
       [SETTINGS_KEYS.cliOrchestratorModel]: 'claude-fable-5',
     });
     expect(readCliModels(settings)).toEqual({ agent: 'sonnet', orchestrator: 'sonnet' });
+  });
+});
+
+describe('the logging decorator forwards the whole interface', () => {
+  it('passes the abort signal through, so Stop reaches the process', async () => {
+    let seen: AbortSignal | undefined;
+    const inner = {
+      kind: 'scripted' as const,
+      async complete(_r: LlmRequest, _d?: (t: string) => void, signal?: AbortSignal) {
+        seen = signal;
+        return { text: 'ok', model: 'm', usage: { ...EMPTY_USAGE }, ttftMs: 1 };
+      },
+    };
+    const controller = new AbortController();
+    const client = loggedClient(inner, () => SILENT_LOGGER);
+    await client.complete(
+      { model: 'm', max_tokens: 10, system: [], messages: [], meta: { scope: 'group' } },
+      undefined,
+      controller.signal,
+    );
+    // Dropping it made the first live Stop report success while the client streamed on.
+    expect(seen).toBe(controller.signal);
   });
 });

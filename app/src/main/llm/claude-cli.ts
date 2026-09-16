@@ -174,6 +174,10 @@ export class ClaudeCliClient implements LLMClient {
         request,
         systemTextFor(request),
         `${promptFor(request)}\n\n[Your previous answer was not valid JSON. Reply with the JSON object only — no prose, no code fence.]\n\nPrevious answer:\n${text}`,
+        undefined,
+        // The repair spawns a *second* child. Without the signal a stop during it would leave
+        // that one running, which is the whole failure mode SIGKILL is here to prevent.
+        signal,
       );
       const repairedText = pickText(repaired);
       if (parsesAsJson(repairedText)) return this.#result(repairedText, repaired, request);

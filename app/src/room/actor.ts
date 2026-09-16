@@ -2286,6 +2286,20 @@ export class RoomActor {
     return Math.round(base * this.#speedScale());
   }
 
+  /**
+   * The acknowledgement is **two-phase on purpose**, and the second phase is not a double emit.
+   *
+   * Phase 1 goes out the instant the turn is accepted, with no speaker and no ETA, because
+   * neither is known yet and the learner needs the acknowledgement *now*. Phase 2 goes out when a
+   * rule has fixed the speaker — on an anchored thread that is `rule:teacher_answers`, decided
+   * with no model call, so it usually lands in the same millisecond — and carries the responder
+   * and the floor target for §B9's reserved slot and the hover ETA.
+   *
+   * Identical payloads are dropped, so the renderer never sees the same state twice; a second
+   * event always means something changed. Key your render on `turnId` and treat it as a replace.
+   */
+  #lastReceived: string | null = null;
+
   #emitReceived(received: {
     turnId: string;
     messageId: string | null;
@@ -2294,6 +2308,9 @@ export class RoomActor {
     etaMs: number | null;
     responder: TurnParticipantView | null;
   }): void {
+    const fingerprint = JSON.stringify(received);
+    if (this.#lastReceived === fingerprint) return;
+    this.#lastReceived = fingerprint;
     this.#d.transport.emit({
       type: 'turn.received',
       roomId: this.#d.roomId,
@@ -2310,6 +2327,7 @@ export class RoomActor {
   #releaseTurn(turnId: string, messageId: string | null, stopped = false): void {
     if (this.#received !== turnId) return;
     this.#received = null;
+    this.#lastReceived = null;
     this.#d.transport.emit({ type: 'turn.released', roomId: this.#d.roomId, turnId, messageId, stopped });
   }
 
