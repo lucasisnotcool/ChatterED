@@ -82,22 +82,19 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
   /**
    * Text size, applied to this window's `webContents`.
    *
-   * `createWindow` sets `setZoomMode('disabled')` on purpose, and that stays: with it, every
-   * automatic zoom — a pinch, a ctrl-wheel, a same-origin zoom propagating in from somewhere
-   * else — is ignored, which is what lets a pinch fall through to the document instead of
-   * scaling the nav rail. But "disabled" also means "`setZoomFactor` is ignored", so an
-   * explicit, deliberate, menu-driven change has to move the mode to `'manual'` first.
+   * `createWindow` puts the window in zoom mode `'isolated'`, and that call carries the whole
+   * argument for why (main/index.ts): under `'disabled'` this line is accepted, reports back
+   * the factor you asked for, and moves nothing on screen. The mode is re-asserted here rather
+   * than assumed, so the menu keeps working whatever else has touched the window; it is
+   * idempotent and costs nothing.
    *
-   * `'manual'` is the right resting place for it and not a loosening: its own definition is
-   * "automatic zoom handling is disabled… the zoom level can be managed manually by the
-   * application", which is exactly the arrangement this app wants — the chrome scales when and
-   * only when someone chose this menu item. `setVisualZoomLevelLimits(1, 1)` still pins the
-   * pinch, and the ⌘+ accelerators are claimed above so Chromium never sees them either.
+   * "Isolated" is per-webContents, so nothing propagates in from another window of the same
+   * origin, and it leaves ctrl-wheel inert on the chrome — measured, not assumed.
    */
   const applyText = (next: number) => {
     const contents = deps.getWindow()?.webContents;
     if (!contents) return;
-    contents.setZoomMode('manual');
+    contents.setZoomMode('isolated');
     contents.setZoomFactor(next);
     deps.setTextScale?.(next);
   };
@@ -221,7 +218,7 @@ export function installMenuFor(getWindow: () => BrowserWindow | null): void {
   const apply = () => {
     const contents = getWindow()?.webContents;
     if (!contents || scale === DEFAULT_TEXT_SCALE) return;
-    contents.setZoomMode('manual');
+    contents.setZoomMode('isolated');
     contents.setZoomFactor(scale);
   };
   getWindow()?.webContents.on('did-finish-load', apply);

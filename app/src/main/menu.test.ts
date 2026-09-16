@@ -180,10 +180,12 @@ describe('the interface text size', () => {
     expect(view.filter((i) => i.label === 'Larger Text')[1]!.visible).toBe(false);
   });
 
-  it('moves the zoom mode off "disabled" first, or setZoomFactor would be ignored', () => {
+  it('re-asserts the isolated zoom mode, because under "disabled" setZoomFactor does nothing', () => {
     const { template, zoom } = harness(false);
     click(template, 'View', 'Larger Text');
-    expect(zoom.modes).toEqual(['manual']);
+    // Measured live (main/index.ts): 'disabled' accepts setZoomFactor, reports it back, and
+    // moves nothing; 'manual' waits for the next navigation; 'isolated' applies at once.
+    expect(zoom.modes).toEqual(['isolated']);
     expect(zoom.factors).toEqual([1.1]);
   });
 

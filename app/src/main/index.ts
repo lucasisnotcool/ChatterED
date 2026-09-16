@@ -70,15 +70,32 @@ function createWindow(): BrowserWindow {
   });
 
   /**
-   * Nothing is allowed to scale the UI chrome.
+   * **Nothing may scale the UI chrome by itself.** ⌘+/⌘−/⌘0 reach the document instead, through
+   * the application menu (main/menu.ts), and a pinch reaches the document for the same reason.
+   * That is still true, and it is still the point of this line.
    *
-   * `setZoomMode('disabled')` is stronger than pinning `zoomFactor`, which a later
-   * `setZoomLevel` could still move: with it "all zoom changes will be ignored"
-   * (electron.d.ts). Visual (pinch) zoom is already off by default in Electron, and the viewer
-   * calls `preventDefault()` on its own ctrl-wheel anyway; the limits call is belt and braces.
-   * ⌘+/⌘−/⌘0 now reach the PDF instead, through the application menu (main/menu.ts).
+   * `'isolated'` rather than `'disabled'`, because `'disabled'` also broke the *other* zoom —
+   * View ▸ Larger Text, the app's one accessibility control, which scales the whole interface
+   * for someone who cannot read it at 13 px. All three modes were measured live on Electron
+   * 44.3.0 / Chromium 152, driving the real menu item over the accessibility API:
+   *
+   *   - `'disabled'`: `setZoomFactor(1.5)` is **accepted** and reports back as 1.5 from
+   *     `getZoomFactor()`, and nothing on screen moves — `window.innerWidth` 1320 → 1320,
+   *     `devicePixelRatio` 2 → 2. Setting the mode to `'manual'` immediately before the call
+   *     does not rescue it.
+   *   - `'manual'`: applied at the *next navigation* only. A factor set before the first load
+   *     came up scaled; the same call from the menu afterwards changed nothing.
+   *   - `'isolated'`: applied immediately — 1320 → 880 and DPR 2 → 3 at 1.5× — and per
+   *     webContents, so no zoom propagates in from another window of the same origin.
+   *
+   * The thing `'disabled'` was guarding is unaffected: with `'isolated'`, twelve ctrl-wheel
+   * events over the nav rail, the flow header and the vault sidebar left `innerWidth` and
+   * `devicePixelRatio` untouched. Chromium's ctrl-wheel page zoom is a Chrome-browser feature
+   * that Electron does not implement; the risk ui-review-code.md §4 actually found was the
+   * *default menu's* zoom roles, and those are claimed in main/menu.ts. Pinch is pinned by the
+   * limits call below, and both viewers `preventDefault()` their own ctrl-wheel besides.
    */
-  win.webContents.setZoomMode('disabled');
+  win.webContents.setZoomMode('isolated');
   void win.webContents.setVisualZoomLevelLimits(1, 1);
 
   /**
