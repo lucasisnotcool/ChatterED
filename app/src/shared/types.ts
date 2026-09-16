@@ -563,15 +563,12 @@ export interface FlowAnswerView {
  *    Tan et al. §3.2.3), so `ttft_actual_ms` on the message is the first **visible** token.
  *    Render the accumulating text as a provisional block keyed on `turnId`.
  *
- * 3. **`turn.released`** — the provisional block for `turnId` is now a real message. It arrives
- *    immediately after the `message.appended` that carries the final body, so the renderer drops
- *    the provisional block and keeps the message. `stopped` is true when the body is the partial
- *    the learner stopped (`flow:stop`), which is not a failure and never nudges.
- *
- * A turn that produces no delta at all (a pool nudge, a rule-written hand-off line, the scripted
- * client's instant beats before this build) still ends in `message.appended`; `turn.released` is
- * emitted for every agent turn that had a `turn.received` or a delta, so a renderer can always
- * clear by `turnId`.
+ * 3. **`turn.released`** — the turn is over. Emitted **exactly once** for every turn that opened
+ *    a `turn.received`, whatever the ending: a message (`messageId` names it, and it arrives
+ *    immediately after that `message.appended`), a partial the learner stopped (`stopped: true`,
+ *    which is not a failure and never nudges), a failure card, or a decision to stay quiet —
+ *    the last two with `messageId: null`. Clear the provisional block and the "Sent…" line on
+ *    it and a thread can never be left acknowledging a turn that has moved on.
  */
 export interface TurnParticipantView {
   agentKey: string;
@@ -583,8 +580,12 @@ export interface TurnParticipantView {
 export interface TurnReceivedView {
   /** The correlation id every event, log line and `flow:turnTrace` row for this turn carries. */
   turnId: string;
-  /** The learner message that was accepted — already on `message.appended`. */
-  messageId: string;
+  /**
+   * The learner message that was accepted — already on `message.appended`, so the renderer can
+   * match its optimistic block to this acknowledgement. Null on a `promote`, which answers an
+   * approved whisper relay rather than a message the learner typed into the thread.
+   */
+  messageId: string | null;
   anchorId: string | null;
   receivedAt: string;
   /**
@@ -648,7 +649,7 @@ export type RoomEvent =
   | { type: 'turn.failed.cleared'; roomId: string; failureId: string }
   | { type: 'turn.received'; roomId: string; received: TurnReceivedView }
   | { type: 'turn.delta'; roomId: string; turnId: string; anchorId: string | null; participant: TurnParticipantView; text: string }
-  | { type: 'turn.released'; roomId: string; turnId: string; messageId: string; stopped: boolean };
+  | { type: 'turn.released'; roomId: string; turnId: string; messageId: string | null; stopped: boolean };
 
 // ── The vault (issue #22) ──────────────────────────────────────────────────
 // Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner

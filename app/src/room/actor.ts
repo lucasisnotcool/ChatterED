@@ -14,6 +14,7 @@
  */
 import type {
   AgentProfile,
+  ReplySpeed,
   FlowWhisperView,
   MessageView,
   RecapView,
@@ -22,6 +23,7 @@ import type {
   TeachbackResult,
   ThinkingView,
   TurnFailureView,
+  TurnParticipantView,
   WhisperThreadView,
 } from '../shared/types.js';
 import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './agents.js';
@@ -180,6 +182,10 @@ export class RoomActor {
   #answers: ReferenceAnswerState[] = [];
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
+  /** The turn whose `turn.received` is still on screen, so exactly one `turn.released` closes it. */
+  #received: string | null = null;
+  /** Settings ▸ Reply speed. Read per turn, so a change applies to the next turn, never this one. */
+  #replySpeed: ReplySpeed = 'default';
   /** anchorId → the highest `seq` the learner has seen there (audit §7). */
   #seen = new Map<string, number>();
   /** anchorId → the card's renderer state, which must survive a reopen (audit §7). */
@@ -325,6 +331,12 @@ export class RoomActor {
     const body = text.trim();
     if (body.length === 0) return;
 
+    /**
+     * The id of the row the learner just wrote, carried out of the mailbox so `turn.received`
+     * can name it. The renderer keys its optimistic block on it: a pending block and a received
+     * state that cannot be matched to each other are two acknowledgements of one message.
+     */
+    let studentMessageId: string | null = null;
     await this.#mailbox.enqueue(() => {
       // A held reply is cancelled, not queued. The floor belongs to the learner.
       if (this.#pending) {
@@ -353,11 +365,12 @@ export class RoomActor {
       // An answer to the Tester's outstanding question puts the room in feedback debt, which
       // `ruleDecision` then discharges before anything else can be decided.
       if (this.#pendingQuiz) this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id);
+      studentMessageId = row.id;
       this.#event('student', 'message.send', { seq: row.seq, chars: body.length, anchor_id: anchorId });
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
     });
 
-    await this.#runAgentTurn('student_message', { studentBody: body, anchorId });
+    await this.#runAgentTurn('student_message', { studentBody: body, anchorId, studentMessageId });
   }
 
   /**
@@ -930,7 +943,13 @@ export class RoomActor {
 
   async #runAgentTurn(
     trigger: TurnTrigger,
-    opts: { studentBody?: string; silenceStage?: 1 | 2; anchorId?: string | null } = {},
+    opts: {
+      studentBody?: string;
+      silenceStage?: 1 | 2;
+      anchorId?: string | null;
+      /** The learner row this turn is answering, so `turn.received` can name it. */
+      studentMessageId?: string | null;
+    } = {},
   ): Promise<void> {
     /**
      * The segment this turn belongs to. Every message the turn writes carries it — the hand-off
@@ -957,6 +976,33 @@ export class RoomActor {
       consecutive_agent_turns: this.#room().consecutive_agent_turns,
       backend: this.#d.llm.kind,
     });
+
+    /**
+     * **"The room has your message"** — the first half of the audit's P0 #3, and the reason the
+     * 3–8 s floor-yield window is no longer a blank screen.
+     *
+     * It is emitted *here*: before the orchestrator, before the ledger, before the sleep below,
+     * on the same mailbox tick the learner's row was written on. `design-brief.md` §D4 wants an
+     * indicator during the hold and `product-design.md` §C3 wants *nothing at all* for the first
+     * 8 s; both are right, about different things. §C3 governs **agent** chrome — a name, a
+     * verb, a typing animation — and "the room received it" is not agent chrome. So this goes
+     * out immediately and `#showThinking()` still does not, and neither brief moves.
+     *
+     * Only the two triggers that actually have a yield window get it. An `open` or a `silence`
+     * turn is not answering anything the learner just did, so there is nothing to acknowledge.
+     */
+    const receivesAck = trigger === 'student_message' || trigger === 'promote';
+    if (receivesAck) {
+      this.#received = pending.id;
+      this.#emitReceived({
+        turnId: pending.id,
+        messageId: opts.studentMessageId ?? null,
+        anchorId,
+        yieldMs: this.#yieldMs(),
+        etaMs: null,
+        responder: null,
+      });
+    }
 
     const room = this.#room();
     // The flow verdict is computed here, on the room's clock, and handed to the rules. The
@@ -1056,6 +1102,7 @@ export class RoomActor {
     }
     if (!decision.speak || decision.role === null) {
       this.#pending = null;
+      this.#releaseTurn(pending.id, null);
       this.#armTimer();
       return;
     }
@@ -1067,6 +1114,24 @@ export class RoomActor {
       pending_turn_id: pending.id,
       pending_turn_due_ts: new Date(turnStart + target).toISOString(),
     });
+    /**
+     * The speaker is known now, and for a rule decision it was known before any model ran. Refresh
+     * the acknowledgement with it and with the floor target, so the renderer can size and place
+     * the reserved slot (`pivot-spec.md` §B9 device 2) and put the ETA in a `title` on hover —
+     * Lucas's decision of 16 Sep: *ETA only on hover*, never advertised. A model decision is not
+     * re-emitted: it arrives mid-yield, and a name appearing at second 4 is exactly the agent
+     * chrome §C3 forbids there.
+     */
+    if (receivesAck && decision.decidedBy?.startsWith('rule:')) {
+      this.#emitReceived({
+        turnId: pending.id,
+        messageId: opts.studentMessageId ?? null,
+        anchorId,
+        yieldMs: this.#yieldMs(),
+        etaMs: target,
+        responder: { agentKey: agent.key, role: agent.role, displayName: agent.displayName, colour: agent.colour },
+      });
+    }
     this.#event(decision.role, 'agent.turn.plan', {
       move: decision.moveType,
       probe_type: decision.probeType,
@@ -1122,7 +1187,7 @@ export class RoomActor {
       (error: unknown) => ({ ok: false as const, error }),
     );
 
-    const yieldMs = this.#lastFillWasScaffold ? FLOOR_YIELD_AFTER_SCAFFOLD_MS : FLOOR_YIELD_MS;
+    const yieldMs = this.#yieldMs();
     if (trigger === 'student_message' || trigger === 'promote') {
       await this.#sleep(Math.max(0, Math.min(yieldMs, target - 1_000) - (this.#d.clock.now() - turnStart)));
     }
@@ -1145,6 +1210,7 @@ export class RoomActor {
        */
       this.#clearThinking();
       this.#pending = null;
+      this.#releaseTurn(pending.id, null);
       this.#failTurn({
         kind: 'turn',
         anchorId,
@@ -1215,6 +1281,7 @@ export class RoomActor {
         reply_chars: text.length,
         usage,
       });
+      this.#releaseTurn(pending.id, row.id);
       this.#noteTurnForFlow(decision, row.id);
       if (trigger === 'silence') this.#markFirstHelp();
     });
@@ -1230,6 +1297,7 @@ export class RoomActor {
   #cancelTurn(role: AgentProfile['role'] | null, pending: PendingTurn): void {
     this.#event(role ?? 'system', 'agent.turn.error', { cause: 'cancelled_by_student', turn_id: pending.id });
     this.#clearThinking();
+    this.#releaseTurn(pending.id, null);
     this.#d.store.rooms.update(this.#d.roomId, { pending_turn_id: null, pending_turn_due_ts: null, state: 'open' });
   }
 
@@ -1801,6 +1869,44 @@ export class RoomActor {
       anchorId: found.replay.anchorId,
       silenceStage: found.replay.silenceStage,
     });
+  }
+
+  /** 1 / 0.5 / 0. `'off'` collapses every floor, and the control that sets it must say so. */
+  #speedScale(): number {
+    return this.#replySpeed === 'off' ? 0 : this.#replySpeed === 'faster' ? 0.5 : 1;
+  }
+
+  /** The floor-yield window as it stands now — Settings ▸ Reply speed scales it (audit §9). */
+  #yieldMs(): number {
+    const base = this.#lastFillWasScaffold ? FLOOR_YIELD_AFTER_SCAFFOLD_MS : FLOOR_YIELD_MS;
+    return Math.round(base * this.#speedScale());
+  }
+
+  #emitReceived(received: {
+    turnId: string;
+    messageId: string | null;
+    anchorId: string | null;
+    yieldMs: number;
+    etaMs: number | null;
+    responder: TurnParticipantView | null;
+  }): void {
+    this.#d.transport.emit({
+      type: 'turn.received',
+      roomId: this.#d.roomId,
+      received: { ...received, receivedAt: this.#nowIso() },
+    });
+  }
+
+  /**
+   * Close the acknowledgement. Emitted **once** per turn that opened one, whatever the ending:
+   * a message, a partial the learner stopped, a failure card, or a decision to stay quiet
+   * (`messageId: null`). A renderer that clears on this can never be left with a "Sent…" line
+   * under a thread that has moved on.
+   */
+  #releaseTurn(turnId: string, messageId: string | null, stopped = false): void {
+    if (this.#received !== turnId) return;
+    this.#received = null;
+    this.#d.transport.emit({ type: 'turn.released', roomId: this.#d.roomId, turnId, messageId, stopped });
   }
 
   #showThinking(agent: AgentProfile, turnStart: number, etaMs: number): void {
