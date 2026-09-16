@@ -2022,3 +2022,105 @@ Screenshots in the session scratchpad under `refine/`.
 - **The offer chip** (`rule:offer_summary`) was never seen live — no thread in the run reached the
   rule's threshold. The chip is rendered from `byRule` and covered by a unit test only.
 - **The API path** and **a `mixed` summary** were not exercised; every call on this Mac is CLI.
+
+---
+
+## 2026-09-16 — #41: the Teacher answers the Ask, and a thread becomes an artefact
+
+Lucas's three MDP transcripts, his verdict *"prompt to satisfaction: 3"*, and his diagnosis:
+*"it seems like reference is getting in the way."* He was right, and the reason the reference was
+there had already been retired.
+
+**The step that produced all three failures.** `flow:askHere` → `RoomActor.askHere()` →
+`buildReferenceRequest` → a REFERENCE card, with the thread locked to Ellie and Max until *Explain
+it back*. The REFERENCE contract is to answer **from the passage** in the material's own register —
+*"State the definition… in the terms the material itself uses. Prefer the general statement to a
+worked example."* On the title slide the only contract-honouring answer is *"the passage contains
+no further content"*; on the classical-planning slide it is the abstract label read back, which is
+Lucas's sentence verbatim (*"you are justing reading the slides back to me"*); on the
+transition-model slide it is the slide's own formality, because nothing recorded that he had twice
+asked for less of it. Two of his three prompts per chain were spent getting past the card.
+
+`pivot-spec.md` §B1 argues that card from the Peer contract — *"Ellie may never supply a complete
+correct explanation"*. **#32 removed that contract and #36 replaced it with ANSWER FIRST, THEN
+TEACH.** The routing outlived its argument. Recorded as a brief-vs-code conflict per CLAUDE.md and
+resolved in the brief: `docs/research/conversation-refinement.md` §6 lists §B1's claims one by one
+and says which are superseded. What survives is the other half of §B1 — a typeset, capped,
+REFERENCE-register block in the document — reattached to the moment it was always about.
+
+### What landed
+
+| Commit | |
+|---|---|
+| `ae66120` | `docs/research/conversation-refinement.md` — the diagnosis and the five specifications |
+| `7de7b67` | `src/shared` first: `MessageKind`, `sourceThreadId`, `flow:summarise`, `flow:threadOf`, `FlowAnswerView` without an answer |
+| `583e290` | Teacher-first Ask; `whereBlock`; `explainBack` a no-op; the filmed take re-timed |
+| `a8f5bd6` | `learnerBlock()` + `src/room/pitch.ts` |
+| `20d6017` | the explanation shape, `prompts.v0.4` |
+| `f0f91ec` | the markdown subset, `prompts.v0.5` |
+| `5bc6e61` | `flow:summarise` / `flow:threadOf` / `rule:offer_summary`, migration **018** |
+| `470b69f` | migration **019**: the REFERENCE answers on disk become summary cards |
+| `0864767` | `lastSentenceEnd()` — the first live card was cut inside "(e.g." |
+
+**The page came back with her.** Only the REFERENCE call was ever given a segment, so when the
+Teacher took over a thread she answered a 58-page prefix with no idea which slide the learner was
+looking at. `whereBlock()` says where they are, after the cache breakpoint, with the sentence that
+stops it reading as a fence. `flow:send` resolves the same context, so the third turn in a thread
+is answered on the same slide as the first.
+
+**The learner model.** #38's tree knew which objectives are online and which prerequisites the deck
+assumes; the ledger held the learner's own words; none of it reached the prompt. It does now, on
+the Teacher's turn only, with a per-file `pitch` that remembers "simpler" across a quit and dies on
+Reset. The default with no evidence is **assume less**, not silence.
+
+### Live, on the CLI backend, the real deck
+
+`claude-sonnet-5`, `CS4246/Week 4/Lecture-mdp.pdf` (60 pages — "Markov Decision Process, CS3263
+Foundations of Artificial Intelligence, Version 5.0"), through the real `RoomActor` and the real
+`claude` binary. Lucas's three questions, on the pages he asked them on, **no follow-ups**:
+
+- p. 1 *"Can you give me some background on MDP"* — 8.3 s, 287 words. Names it, plain meaning,
+  warehouse robot, the formal tuple, and only in the last paragraph the slide.
+- p. 2 *"What are some examples of classical planning?"* — 11.8 s, 273 words, opening with the
+  8-puzzle, blocks world, route-finding and the Rubik's cube in the first clause.
+- p. 13 *"what is stochastic?"* — 12.4 s, 285 words, and the shape Lucas had to ask for is
+  unprompted: plain meaning, die vs light switch, the rigorous statement, then $T$ and
+  $\sum_{s'} T(s,a,s') = 1$.
+
+**Prompt to satisfaction: 1, three times out of three.** Then two turns on p. 13,
+`rule:offer_summary` firing once and inserting nothing, *Summarise into the document* → a 137-word
+card written from the conversation (including a wall-collision edge case that is nowhere on the
+slide), click → the thread expanded, a typed turn continued it, Regenerate rewrote the same row in
+place. Build 159 installed.
+
+### Two things running it found
+
+1. **The truncator treats "e.g." as a sentence end.** The first live card ended
+   `…a different action (e.g.` — `lastIndexOf('. ')` has been in `reference.ts` since §B1 and never
+   showed, because a 120-word answer about one slide rarely reaches an abbreviation. A summary of a
+   *conversation* in a maths module is full of `e.g.`, `Fig.`, `p. 13` and `the state S.`
+   `lastSentenceEnd()` walks back past a single letter or a short abbreviation list.
+2. **SQLite's `rtrim(X)` strips spaces and not newlines**, and the two characters migration 019
+   cuts are exactly a newline pair. The character set is given explicitly.
+
+### The filmed take moved with the product
+
+Beat 8 was a REFERENCE card and is a Teacher turn now, with the old card's content in her voice and
+answer-first. The Ask is a learner turn, so every `student:N` cue shifted by one, and
+`CRITIQUE1_TAKE` raises `turnsK` to 3 **by exactly the turn that was added** so the hand-off still
+lands on beat 10 rather than beat 9, in front of the ledger blocks. Settings ▸ Demo is untouched: a
+cold walkthrough has no Ask in front of it. `CRITIQUE1_REFERENCES` becomes the `summary:1` beat.
+
+### Not verified
+
+- **Nothing on screen.** The run was headless — the real actor, the real request builder, the real
+  CLI, not the Electron GUI. The renderer's half (the summary card's appearance, click-to-expand,
+  the composer that continues the thread, `aitext.ts`'s markdown subset) was being built on another
+  track while this ran.
+- **Length.** All three replies run 273–287 words against house rule 3's 250 ceiling. #36 already
+  recorded 265s; this is further over. A code-side cap would re-create the failure #36 was about,
+  so it is left, flagged, and Lucas's call.
+- **`flow:summarise` over IPC**, and a deck-anchored thread's summary: unit-tested, not driven
+  through the preload bridge.
+- **The `answer` kind after migration 019** is unreachable in a vault that has run it; the renderer
+  path for a row that escaped the migration is tested only in `messageView`.
