@@ -30,6 +30,7 @@
   } from '../lib/flowchat.js';
   import { clock, store } from '../lib/store.svelte.js';
   import { clockTime } from '../lib/time.js';
+  import { counterLine, counterTitle } from '../lib/cost.js';
   import { canSummarise, conversationFor, offersSummary, splitThread } from '../lib/summary.js';
   import AiSegment from './AiSegment.svelte';
   import SummaryCard from './SummaryCard.svelte';
@@ -77,6 +78,18 @@
     artefact ? conversationFor(anchorId, split.turns, store.threadOf[artefact.id] ?? null) : split.turns,
   );
   const busy = $derived(store.summarising === anchorId);
+
+  /**
+   * **What this thread has cost** (issue #41 item 4a).
+   *
+   * Asked for once, by the footer that shows it, and kept current by `cost.updated` after that —
+   * see `ensureThreadCost()` for why the counters are pulled rather than pushed. A thread with
+   * no conversation in it does not ask: there is nothing to have spent.
+   */
+  const spend = $derived(store.costThread[anchorId] ?? null);
+  $effect(() => {
+    if (convo.length > 0) store.ensureThreadCost(anchorId);
+  });
   /** Offer the action once something has actually been taught here (`canSummarise`'s docstring). */
   const offerAction = $derived(store.canSummarise && canSummarise(split.turns));
   /** The learner's own turns that have not been echoed back yet (audit §1). */
@@ -373,6 +386,15 @@
   {:else if convo.length > 0}
     <div class="threadfoot">
       <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
+      {#if spend && spend.calls > 0}
+        <!--
+          Tokens first, then the estimate with its hedge — and on the CLI path the words
+          *API-equivalent*, which are not optional: the default backend is the learner's own
+          subscription and an unlabelled dollar figure in a student-facing app is a claim that a
+          student owes money (`shared/cost.ts` note 2). `lib/cost.ts` words all three counters.
+        -->
+        <span class="spend" title={counterTitle(spend)}>{counterLine(spend)}</span>
+      {/if}
       {#if offerAction && !artefact}
         <!--
           **Lucas's item 2**, as a button on every thread rather than only on the Teacher's offer:
@@ -531,6 +553,15 @@
   .elsewhere { font-size: 10.5px; color: var(--text-2); }
 
   .threadfoot { display: flex; align-items: center; gap: 14px; margin: 4px 0 2px; }
+  /* Quieter than *Reply here* and tabular, because it is a number that changes under the eye and
+     a proportional one would jitter the row every turn. It is provenance, not an affordance. */
+  .spend {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
   .reopen {
     font-size: 11px;
     color: var(--muted);

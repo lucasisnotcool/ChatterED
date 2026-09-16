@@ -59,6 +59,7 @@
   import { registerViewer, type ViewerCommand } from '../lib/viewer.js';
   import { claimsForAnchor, threadFor } from '../../shared/flowthread.js';
   import { DECK_ANCHOR_ID } from '../../shared/scope.js';
+  import { counterLine, counterTitle } from '../lib/cost.js';
   import AskHereLine from './AskHereLine.svelte';
   import { pillLabel, scrollDecision, thinkingAnchor } from '../lib/flowchat.js';
   import {
@@ -353,6 +354,18 @@
   $effect(() => {
     const fileId = doc.fileId;
     untrack(() => void store.loadFlow(fileId));
+  });
+
+  /**
+   * **What this document has cost** (issue #41 item 4b), asked for once per document.
+   *
+   * `ensureFileCost()` is idempotent — a Svelte effect re-runs whenever anything it read moves,
+   * and this must not re-fetch every time the room does. After the first answer, `cost.updated`
+   * keeps the number current with no round trip at all.
+   */
+  $effect(() => {
+    void store.flowFor;
+    untrack(() => store.ensureFileCost());
   });
 
   $effect(() => {
@@ -701,7 +714,12 @@
     if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'd') {
       e.preventDefault();
       store.debugOpen = !store.debugOpen;
-      if (store.debugOpen) void store.loadTurnTraces();
+      if (store.debugOpen) {
+        void store.loadTurnTraces();
+        // The cost ledger's own rows (issue #41 item 5). Same gesture, same drawer, same rule
+        // about bodies — and the half of "hung, or thinking?" the turn log cannot answer.
+        void store.loadRecentCalls();
+      }
     }
   }
 
@@ -963,6 +981,11 @@
         {flow.segments.length} segment{flow.segments.length === 1 ? '' : 's'} · {flow.pageCount} pages
       {/if}
     </span>
+    {#if !store.objectivesOpen && store.costFile && store.costFile.calls > 0}
+      <!-- **What this document has cost** (issue #41 item 4b), in the flow header while the
+           objectives panel — where it otherwise lives — is shut. One number, never two. -->
+      <span class="spend" title={counterTitle(store.costFile)}>{counterLine(store.costFile)}</span>
+    {/if}
     <span class="gap"></span>
 
     <button type="button" class="mini" onclick={() => void undo()} disabled={undoStack.length === 0}>
@@ -1279,6 +1302,9 @@
   }
   .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* The file counter, when the objectives panel is shut. Same words, same units, one place
+     quieter — it is provenance in a header, not a control. */
+  .spend { font-size: 10px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .gap { flex: 1; }
   .mini { font-size: 11px; color: var(--text-2); white-space: nowrap; }
   .mini:hover:not(:disabled) { color: var(--indigo); }

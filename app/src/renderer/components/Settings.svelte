@@ -11,6 +11,17 @@
   import { store } from '../lib/store.svelte.js';
   // The strip and these radios describe the same setting, so they read the same copy.
   import { PACING_PROFILES, pacingProfile } from '../lib/labels.js';
+  import {
+    counterLine,
+    counterTitle,
+    csvFilename,
+    tokensLabel,
+    usdApprox,
+    usdSuffix,
+    validateRateCard,
+    windowLine,
+  } from '../lib/cost.js';
+  import { COST_SCOPE_LABEL, totalTokens, type CostScope, type CostSlice } from '../../shared/cost.js';
 
   const settings = $derived(store.settings);
 
@@ -45,6 +56,65 @@
 
   async function setBackend(value: string): Promise<void> {
     await store.saveSettings({ backendChoice: value as BackendChoice });
+  }
+
+  // ── Usage (issue #41 item 4c) ───────────────────────────────────────────
+  const allTime = $derived(store.costApp);
+  const session = $derived(store.costSession);
+  /** The window is only meaningful on the CLI path, and `cost:summary` only sends one there. */
+  const burn = $derived(windowLine(allTime?.cliWindow ?? null, allTime?.mode ?? 'none'));
+
+  /** A slice's own line. Same units and the same hedge as every other counter in the app. */
+  function sliceLine(slice: CostSlice, mode: typeof allTimeMode): string {
+    const tokens = `${tokensLabel(totalTokens(slice.tokens))} tokens`;
+    if (mode === 'none') return `${tokens} · ${slice.calls} calls`;
+    return `${tokens} · ${usdApprox(slice.estimatedUsd)}${usdSuffix(mode)} · ${slice.calls} calls`;
+  }
+  const allTimeMode = $derived(allTime?.mode ?? 'none');
+  function scopeWord(key: string): string {
+    return COST_SCOPE_LABEL[key as CostScope] ?? key;
+  }
+
+  let exporting = $state(false);
+  let exported = $state('');
+
+  /**
+   * **Export CSV.** Written through a Blob and an `<a download>` rather than a main-process save
+   * dialog, because the dialog belongs to `cost:export` and this path has to work without it.
+   * The object URL is revoked on the next tick — an un-revoked one pins the whole CSV in memory
+   * for the life of the window, which for an all-time export is not nothing.
+   */
+  async function exportCsv(): Promise<void> {
+    exporting = true;
+    const csv = await store.exportCost();
+    exporting = false;
+    if (csv === null) {
+      exported = 'Nothing to export yet.';
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = csvFilename();
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    exported = `Saved ${a.download}`;
+  }
+
+  let rateDraft = $state('');
+  let rateTouched = $state(false);
+  const rateCheck = $derived(validateRateCard(rateDraft));
+  /**
+   * The override travels as a settings row (`main/cost/rates.ts` `parseRateCardOverride`). The
+   * field is not on `SettingsPatch` yet — the cost ledger is on the main-process track — so it is
+   * sent as an extra key, the same way `objectiveId` rides on `flow:askHere`, and a main process
+   * that does not read it yet simply ignores it. The cast is the one line that changes when the
+   * contract catches up.
+   */
+  async function saveRateCard(): Promise<void> {
+    if (!rateCheck.ok) return;
+    await store.saveSettings({ rateCardOverride: rateDraft.trim() } as never);
+    rateTouched = false;
   }
 </script>
 
@@ -373,6 +443,101 @@
     </section>
 
     <!--
+      **Usage** (issue #41 item 4c).
+
+      The organising rule is `shared/cost.ts` note 2, and it is not cosmetic: on the default
+      backend — the learner's own Claude Code subscription — **nobody is billed per token at
+      all**, so every dollar figure here is arithmetic this app did against a cached rate card
+      and is labelled *API-equivalent*. An unlabelled `$0.41` in an app a cohort of students
+      installs is a claim that a student owes money. Tokens lead; the estimate follows, hedged.
+
+      The 5-hour window is on this panel for the same reason: on a subscription the constraint
+      that actually bites is the rolling usage window, not a bill, and that is the thing that
+      fails invisibly on the evening the A1 video is recorded.
+    -->
+    {#if store.costOn}
+      <section>
+        <h2>Usage</h2>
+        {#if !allTime || allTime.calls === 0}
+          <p class="quiet">
+            {store.costBusy ? 'Reading the ledger…' : 'No model calls recorded yet.'}
+          </p>
+        {:else}
+          <p class="status" title={counterTitle(allTime)}>{counterLine(allTime)}</p>
+          {#if session}
+            <p class="quiet">
+              this session · {tokensLabel(totalTokens(session.tokens))} tokens{session.mode === 'none'
+                ? ''
+                : ` · ${usdApprox(session.estimatedUsd)}${usdSuffix(session.mode)}`}
+            </p>
+          {/if}
+          {#if burn}
+            <!-- The rolling window, from now back five hours — not a fixed boundary, which would
+                 be a guess presented as a fact (`CliWindowBurn`'s docstring). -->
+            <p class="quiet">{burn}</p>
+          {/if}
+
+          <div class="tables">
+            {#each [{ title: 'By model', rows: allTime.byModel, word: (k: string) => k }, { title: 'By scope', rows: allTime.byScope, word: scopeWord }, { title: 'By backend', rows: allTime.byBackend, word: (k: string) => k }] as table (table.title)}
+              {#if table.rows.length > 0}
+                <div class="table">
+                  <h3>{table.title}</h3>
+                  {#each table.rows as row (row.key)}
+                    <div class="row">
+                      <span class="key">{table.word(row.key)}</span>
+                      <span class="val">{sliceLine(row, allTimeMode)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            {/each}
+          </div>
+
+          <p class="quiet">
+            Prices come from a rate card cached on {allTime.rateCardDate}. They are an estimate of
+            what these calls would have cost on the API, not a bill.
+          </p>
+        {/if}
+
+        <div class="acts">
+          <button type="button" class="btn" disabled={exporting || !store.canExportCost} onclick={() => void exportCsv()}>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+          {#if exported}<span class="quiet">{exported}</span>{/if}
+        </div>
+
+        <!--
+          The override. These prices are cached, not fetched, and this app ships unsigned to a
+          cohort for a semester: when a price changes, the correct fix is a new build and the
+          correct *fallback* is a settings row, so a wrong number is something the owner can
+          correct in an afternoon rather than a reason to distrust the panel.
+        -->
+        <label class="field">
+          Rate card override — dollars per million tokens
+          <textarea
+            rows="3"
+            spellcheck="false"
+            placeholder={'{"claude-sonnet-5": {"input": 2, "output": 10}}'}
+            bind:value={rateDraft}
+            oninput={() => (rateTouched = true)}
+          ></textarea>
+        </label>
+        {#if rateTouched && !rateCheck.ok}
+          <!-- Said before it is saved. The main side merges entry by entry and ignores the bad
+               ones, which is right there and wrong in a text box: a setting that is silently
+               dropped is a setting that comes to be believed and not applied. -->
+          <p class="warn">{rateCheck.errors.join(' · ')}</p>
+        {/if}
+        <div class="acts">
+          <button type="button" class="btn" disabled={!rateTouched || !rateCheck.ok} onclick={() => void saveRateCard()}>
+            Save rate card
+          </button>
+          <span class="quiet">cacheWrite and cacheRead are optional and derive from input.</span>
+        </div>
+      </section>
+    {/if}
+
+    <!--
       Diagnostics. Not a debug affordance for me: this is the two things a learner can do when
       the app misbehaves during a study session and there is nobody to ask. The log is JSON lines
       at ~/Library/Logs/ChatterED/main.log, and it has been redacted on the way in — no message
@@ -441,4 +606,30 @@
     background: var(--pane);
   }
   .acts { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* Usage. Three small tables rather than one wide one: they are three different questions —
+     which model, what for, over which backend — and a learner reads them one at a time. */
+  .tables { display: flex; flex-direction: column; gap: 14px; margin: 14px 0 12px; }
+  .table h3 { margin: 0 0 4px; font-size: 11px; font-weight: 600; color: var(--text-2); }
+  .row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 2px 0;
+    font-size: 12px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .key { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Tabular, because these tick while the panel is open and a proportional figure would jitter. */
+  .row .val { flex: none; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .field textarea {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    background: var(--pane);
+    resize: vertical;
+  }
 </style>

@@ -21,6 +21,7 @@
    * opening the Ask are the flow's, raised as events — this component has no idea where the
    * cards are, which is why the scroll cannot drift from the one the split anchor uses.
    */
+  import { counterLine, counterTitle } from '../lib/cost.js';
   import { SvelteSet } from 'svelte/reactivity';
   import { MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, store } from '../lib/store.svelte.js';
   import {
@@ -163,6 +164,15 @@
       <span class="count" aria-label={`${onlineLabel(count)}. Online means you have explained it in your own words.`}>
         {onlineLabel(count)}
       </span>
+      {#if store.costFile && store.costFile.calls > 0}
+        <!--
+          **What this document has cost** (issue #41 item 4b). The panel header is where it goes
+          while the panel is open, because this panel is already the per-file ledger of what the
+          deck has done — and `FlowCanvas` shows the same line in the flow header when it is shut,
+          so the number never disappears with the panel.
+        -->
+        <span class="spend" title={counterTitle(store.costFile)}>{counterLine(store.costFile)}</span>
+      {/if}
     </div>
     <button type="button" class="mini" title="Hide the objectives (⌥⌘L)" onclick={() => onclose?.()}>
       Hide <kbd>⌥⌘L</kbd>
@@ -305,6 +315,8 @@
     text-overflow: ellipsis;
   }
   .count { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  /* Quieter than the objective count, and tabular so it does not jitter as it ticks. */
+  .spend { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   .acts { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px 8px; }
   .confirm { font-size: 11px; color: var(--text-2); line-height: 1.35; }

@@ -44,6 +44,14 @@ import { FIXTURE_SHA, clearFixtureStates, fixtureTree, loadFixtureStates } from 
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../../shared/scope.js';
+import {
+  SESSION_WINDOW,
+  type CostCallView,
+  type CostSummary,
+  type CostSummaryQuery,
+  type CostUpdate,
+} from '../../shared/cost.js';
+import { applyDelta, updateBelongs } from './cost.js';
 
 /**
  * Is a `flow:*` turn-status call actually on the bridge?
@@ -68,6 +76,32 @@ function has(name: keyof ChatterEdApi): boolean {
  */
 function quiet<T>(fn: () => Promise<T>): Promise<T | null> {
   return fn().catch(() => null);
+}
+
+/**
+ * **The cost channels, before they are on `ChatterEdApi`.**
+ *
+ * `src/shared/cost.ts` landed with the shapes; `cost:summary`, `cost:recent` and `cost:export`
+ * are on the main-process track and are not on the preload interface yet. `has()` takes a
+ * `keyof ChatterEdApi` and therefore cannot be asked about them, so this is the same question in
+ * the same place — a lookup on the preload object — typed against the documented shapes rather
+ * than against an interface that has not caught up.
+ *
+ * It is a cast and it is the only one: when the contract lands, these three lines and `costApi()`
+ * go, and every call site below is already written against the real types.
+ */
+interface CostApi {
+  costSummary(input: CostSummaryQuery): Promise<CostSummary>;
+  costRecent(input: { limit?: number; fileId?: string | null }): Promise<CostCallView[]>;
+  costExport(input: { since?: string | null }): Promise<{ csv: string } | string | null>;
+}
+
+function costApi(): Partial<CostApi> {
+  return bridge() as unknown as Partial<CostApi>;
+}
+
+function hasCost(name: keyof CostApi): boolean {
+  return typeof costApi()[name] === 'function';
 }
 
 /**
@@ -301,6 +335,25 @@ class Store {
   debugOpen = $state(false);
   turnTraces: TurnTraceView[] = $state([]);
 
+  // ── What this has cost (issue #41 item 4) ───────────────────────────────
+  /**
+   * Three counters that nest — `thread ⊆ file ⊆ app` — held separately because they are shown in
+   * three places and a learner who can see all three at once must be able to add them up.
+   *
+   * Each is `cost:summary`'s own answer, ticked in place by `cost.updated` between round trips.
+   * Null means *not asked yet or not available*, which is not the same as zero and is why the
+   * counters render nothing at all rather than `0 tokens` on a build without the channel.
+   */
+  costThread: Record<string, CostSummary> = $state({});
+  costFile: CostSummary | null = $state(null);
+  /** All time, every call, including the ones that belong to no document. */
+  costApp: CostSummary | null = $state(null);
+  /** Since this launch. `SESSION_WINDOW` asks for it without the renderer knowing when that was. */
+  costSession: CostSummary | null = $state(null);
+  /** The last calls, for Settings ▸ Usage and the ⌥⌘D drawer. Sizes and counts; no bodies. */
+  costRecent: CostCallView[] = $state([]);
+  costBusy = $state(false);
+
   // ── The whisper popover on a segment (§3.5, issue #16) ─────────────────
   /**
    * The segment card that currently has focus. Two jobs, both of them about ⌘K:
@@ -418,6 +471,19 @@ class Store {
 
   apply(e: RoomEvent): void {
     const room = this.room;
+    /**
+     * **`cost.updated`, handled before the switch** (issue #41 item 4).
+     *
+     * It is not in `RoomEvent` yet — the cost ledger is on the main-process track — so it cannot
+     * be a `case` without breaking the build of everyone who pulls this first. Read structurally
+     * instead: an event with this type and an `update` on it is the one, and every other event
+     * falls through to the switch untouched. The `case` replaces this when the union lands.
+     */
+    const maybeCost = e as unknown as { type: string; update?: CostUpdate };
+    if (maybeCost.type === 'cost.updated') {
+      if (maybeCost.update) this.#takeCostUpdate(maybeCost.update);
+      return;
+    }
     switch (e.type) {
       case 'message.appended': {
         if (room && !room.messages.some((m) => m.id === e.message.id)) room.messages.push(e.message);
@@ -601,6 +667,9 @@ class Store {
   async openSettings(): Promise<void> {
     this.screen = 'settings';
     await this.loadSettings();
+    // Usage is a panel in Settings, so it is loaded with Settings. It is the one place that
+    // shows slices, and the one place that can afford the round trip.
+    void this.loadUsage();
   }
 
   async loadSettings(): Promise<void> {
@@ -784,6 +853,10 @@ class Store {
     this.answersCollapsed = {};
     this.summarising = null;
     this.threadOf = {};
+    // The file and thread counters are the document's. The app's is not, and survives.
+    this.costFile = null;
+    this.costThread = {};
+    this.#costAsked.clear();
     // Closing the document ends every private thread on it. The popover is not restored on
     // reopen, and `flow:messages` has nothing to restore it from — that is the point of §3.5.
     this.flowWhisper = null;
@@ -1125,6 +1198,138 @@ class Store {
     // answer in every case but one the main process does not produce.
     const view = await quiet(() => bridge().flowThreadOf({ summaryId }));
     if (view) this.threadOf = { ...this.threadOf, [summaryId]: view.messageIds };
+  }
+
+  // ── What this has cost (issue #41 item 4) ─────────────────────────────────
+
+  /** Is the cost ledger reachable? Every counter renders nothing at all when it is not. */
+  get costOn(): boolean {
+    return hasCost('costSummary');
+  }
+
+  get canExportCost(): boolean {
+    return hasCost('costRecent');
+  }
+
+  /**
+   * One counter, fetched.
+   *
+   * Level-addressed rather than one omnibus call, because the three counters have three
+   * different lifetimes: the thread's dies with the thread, the file's with the document, and
+   * the app's outlives both. Failures are swallowed — `quiet()`, not `run()` — for the reason
+   * the turn-status calls give: a learner who cannot be told what a thread cost has not lost
+   * anything they came here for, and a banner over the document would be the actual harm.
+   */
+  async loadCost(query: CostSummaryQuery): Promise<CostSummary | null> {
+    if (!this.costOn) return null;
+    const summary = await quiet(() => costApi().costSummary!(query));
+    if (!summary) return null;
+    switch (query.level) {
+      case 'thread':
+        if (summary.anchorId) this.costThread = { ...this.costThread, [summary.anchorId]: summary };
+        break;
+      case 'file':
+        this.costFile = summary;
+        break;
+      case 'app':
+        if (query.since === SESSION_WINDOW) this.costSession = summary;
+        else this.costApp = summary;
+        break;
+    }
+    return summary;
+  }
+
+  /**
+   * The counters are **pulled by the surfaces that show them**, once each, rather than pushed
+   * from here on every room change.
+   *
+   * A forty-slide deck has forty threads, and eagerly summarising all of them would put forty
+   * sqlite reads behind one IPC lane in front of the learner's first question. A thread footer
+   * that is on screen asks for its own number; after that `cost.updated` keeps it current and
+   * nothing round-trips again. `#costAsked` is what makes the ask idempotent — a Svelte effect
+   * re-runs whenever anything it read changes, and this must not re-fetch when it does.
+   */
+  #costAsked = new Set<string>();
+
+  ensureThreadCost(anchorId: string): void {
+    const fileId = this.flowFor;
+    if (!this.costOn || !fileId) return;
+    const key = `thread:${fileId}:${anchorId}`;
+    if (this.#costAsked.has(key)) return;
+    this.#costAsked.add(key);
+    void this.loadCost({ level: 'thread', fileId, anchorId });
+  }
+
+  ensureFileCost(): void {
+    const fileId = this.flowFor;
+    if (!this.costOn || !fileId) return;
+    const key = `file:${fileId}`;
+    if (this.#costAsked.has(key)) return;
+    this.#costAsked.add(key);
+    void this.loadCost({ level: 'file', fileId });
+  }
+
+  /** Settings ▸ Usage: all time, this session, and the calls behind them. */
+  async loadUsage(): Promise<void> {
+    if (!this.costOn) return;
+    this.costBusy = true;
+    await this.loadCost({ level: 'app' });
+    await this.loadCost({ level: 'app', since: SESSION_WINDOW });
+    await this.loadRecentCalls();
+    this.costBusy = false;
+  }
+
+  /** The last calls. `limit` is small on purpose: this is a drawer, not an audit log viewer. */
+  async loadRecentCalls(limit = 40): Promise<void> {
+    if (!hasCost('costRecent')) return;
+    const rows = await quiet(() => costApi().costRecent!({ limit }));
+    if (rows) this.costRecent = rows;
+  }
+
+  /**
+   * **Export CSV.**
+   *
+   * Prefers `cost:export` when the main side offers it — that one can write the whole ledger,
+   * and a save dialog belongs in the main process. Without it the renderer exports what it has
+   * (`cost:recent`), which is honest about being a page rather than the whole history, and hands
+   * it over as a Blob. Returns the CSV either way so the caller can say what happened.
+   */
+  async exportCost(): Promise<string | null> {
+    if (hasCost('costExport')) {
+      const result = await quiet(() => costApi().costExport!({}));
+      if (typeof result === 'string') return result;
+      if (result && typeof result.csv === 'string') return result.csv;
+    }
+    if (!hasCost('costRecent')) return null;
+    await this.loadRecentCalls(1000);
+    const { toCsv } = await import('./cost.js');
+    return toCsv(this.costRecent);
+  }
+
+  /**
+   * **A `cost.updated` delta, added to whichever counters it is inside** (`lib/cost.ts`).
+   *
+   * The event carries the call, not a new total, precisely so three counters can tick without
+   * three round trips — and the nesting rule (`thread ⊆ file ⊆ app`) is `updateBelongs()`'s, in
+   * one place, rather than restated in three components.
+   *
+   * The slices are not patched here; Settings ▸ Usage re-asks while it is open, because a
+   * by-model table grown from deltas is a table that can quietly disagree with the ledger.
+   */
+  #takeCostUpdate(update: CostUpdate): void {
+    const anchorId = update.call.anchorId;
+    if (anchorId) {
+      const held = this.costThread[anchorId];
+      if (held) this.costThread = { ...this.costThread, [anchorId]: applyDelta(held, update) };
+    }
+    if (this.costFile && updateBelongs(this.costFile, update)) {
+      this.costFile = applyDelta(this.costFile, update);
+    }
+    if (this.costApp) this.costApp = applyDelta(this.costApp, update);
+    if (this.costSession) this.costSession = applyDelta(this.costSession, update);
+    this.costRecent = [update.call, ...this.costRecent].slice(0, 40);
+    // The tables and the window burn are re-read, but only where they are actually on screen.
+    if (this.screen === 'settings') void this.loadUsage();
   }
 
   /** The ⌥⌘D drawer's rows (audit §10). No bodies are in them, by construction in the actor. */
