@@ -31,10 +31,14 @@
  *    Code system prompt that §1.4 measured, and that its `result.usage` may aggregate the
  *    auxiliary Haiku calls it makes alongside the request. Neither is checkable from here, so
  *    the ledger stores **both** numbers per row and never adds them.
- * 2. **No prompt caching on the CLI path.** `claude-cli.ts` drops cache breakpoints
- *    (§1.4 secondary finding), so `cacheWrite`/`cacheRead` are usually zero there and the
- *    estimate is nearly all input at full price. That is not a bug in the estimate — it is what
- *    that path actually does.
+ * 2. **The CLI path caches, and almost everything it spends is cache.** `claude-cli.ts` drops
+ *    *this app's* cache breakpoints (§1.4's secondary finding), which is true and was read here
+ *    as "no caching on that path" — the real database says otherwise. Over the 43 calls the
+ *    backfill recovered from the installed build: **86 plain input tokens, 166,555 cache
+ *    creation, 288,291 cache read.** Claude Code does its own caching around the prompt it
+ *    builds, so the 1.25× and 0.1× multipliers are not a rounding detail on this path, they are
+ *    substantially the whole bill — pricing cache tokens at the input rate would have
+ *    over-stated it by roughly 3×. Recorded here because §1.4 reads the other way.
  * 3. **An unknown model is priced at Sonnet 5 and says so.** A learner may type any id into the
  *    Settings free-text field. Refusing to price it would put a blank where a number belongs;
  *    pricing it silently at zero would understate the burn. `rateFor()` returns `exact: false`
