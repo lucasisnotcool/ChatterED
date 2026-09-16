@@ -12,7 +12,7 @@ import { loggedClient } from './logged.js';
 import { EMPTY_USAGE, type LlmRequest } from '../../room/llm/types.js';
 import { Logger } from '../log.js';
 import { SETTINGS_KEYS } from './detect.js';
-import { CLI_FAST_MODEL, HAIKU_API, SONNET_API } from '../../room/llm/models.js';
+import { HAIKU_API, SONNET_API } from '../../room/llm/models.js';
 import type { SettingsRepo } from '../db/repos/core.js';
 
 function settingsWith(values: Record<string, string> = {}): SettingsRepo {
@@ -46,7 +46,7 @@ describe('automatic backend order', () => {
   it('prefers the local CLI when it is installed and logged in, even with a key present', () => {
     const resolved = resolveBackend({ settings: settingsWith({ [SETTINGS_KEYS.detection]: LOGGED_IN }), hasApiKey: true });
     expect(resolved.kind).toBe('claude_cli');
-    expect(resolved.models).toEqual({ agent: 'sonnet', orchestrator: 'sonnet', fast: CLI_FAST_MODEL });
+    expect(resolved.models).toEqual({ agent: 'sonnet', orchestrator: 'sonnet', fast: 'sonnet' });
   });
 
   it('falls to the API key when the CLI is installed but not logged in', () => {
@@ -56,7 +56,7 @@ describe('automatic backend order', () => {
     });
     expect(resolved.kind).toBe('anthropic');
     // The API path keeps its existing defaults: Haiku 4.5 agents, Sonnet 5 orchestrator.
-    expect(resolved.models).toEqual({ agent: HAIKU_API, orchestrator: SONNET_API, fast: HAIKU_API });
+    expect(resolved.models).toEqual({ agent: HAIKU_API, orchestrator: SONNET_API, fast: SONNET_API });
   });
 
   it('falls all the way to scripted with no CLI and no key', () => {
@@ -89,7 +89,7 @@ describe('a forced backend', () => {
 
 describe('the per-role model plan', () => {
   it('defaults both roles to sonnet on the CLI path', () => {
-    expect(readCliModels(settingsWith())).toEqual({ agent: 'sonnet', orchestrator: 'sonnet', fast: CLI_FAST_MODEL });
+    expect(readCliModels(settingsWith())).toEqual({ agent: 'sonnet', orchestrator: 'sonnet', fast: 'sonnet' });
   });
 
   it('keeps the two roles independent', () => {
@@ -97,7 +97,7 @@ describe('the per-role model plan', () => {
       [SETTINGS_KEYS.cliAgentModel]: 'haiku',
       [SETTINGS_KEYS.cliOrchestratorModel]: 'opus',
     });
-    expect(readCliModels(settings)).toEqual({ agent: 'haiku', orchestrator: 'opus', fast: CLI_FAST_MODEL });
+    expect(readCliModels(settings)).toEqual({ agent: 'haiku', orchestrator: 'opus', fast: 'opus' });
   });
 
   it('accepts a full model id in place of an alias', () => {
@@ -110,7 +110,7 @@ describe('the per-role model plan', () => {
       [SETTINGS_KEYS.cliAgentModel]: 'fable',
       [SETTINGS_KEYS.cliOrchestratorModel]: 'claude-fable-5',
     });
-    expect(readCliModels(settings)).toEqual({ agent: 'sonnet', orchestrator: 'sonnet', fast: CLI_FAST_MODEL });
+    expect(readCliModels(settings)).toEqual({ agent: 'sonnet', orchestrator: 'sonnet', fast: 'sonnet' });
   });
 });
 

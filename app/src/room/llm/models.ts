@@ -40,30 +40,38 @@ export interface ModelPlan {
    * **The two calls nobody is waiting to read**: the concept ingest and the ledger update
    * (issue #35 item 5). Always Haiku, and deliberately **not** a Settings choice.
    *
-   * Measured on the CLI against `room_6a9609d5c6fb` (`app/docs/STATUS.md`): ingest 37.0 s for
-   * 4,053 output tokens, ledger 17.2 s for 1,523 and 9.8 s for 858. Both are dominated by
-   * reasoning tokens, not by the prompt — `whole-file-context.md` §2: *latency scales with
-   * output, not input*. Neither call produces a word the learner reads: ingest fills a rail
-   * that is empty for the first few seconds either way, and the ledger moves a glyph. Spending
-   * the room's best model on them buys nothing and costs the learner the wait.
+   * **It is the orchestrator model, and that is a measurement, not an oversight.**
    *
-   * The learner's two dropdowns still govern everything they actually hear — the agents' voice
-   * and the turn-taking decision. This is the third role they were never offered, because
-   * "which model writes the JSON nobody reads" is not a choice worth a row in Settings.
+   * This field was added to put both calls on Haiku, on the reasoning that neither produces a
+   * word the learner reads. Measured on the CLI, on the real CS4246 deck, it made them *worse*:
+   *
+   * | call   | model  | output tokens | wall |
+   * |--------|--------|---------------|------|
+   * | ingest | sonnet | 4,053         | 37.0 s |
+   * | ingest | haiku  | 7,399 / 6,412 | 70.6 s / 64.4 s |
+   * | ledger | sonnet | 1,523 / 858   | 17.2 s / 9.8 s |
+   * | ledger | haiku  | 2,839–6,886   | 27–65 s of generation |
+   *
+   * Latency here is output tokens (`whole-file-context.md` §2), and Haiku 4.5 on the CLI emits
+   * two to four times as many of them on a schema-bound call — it reasons its way to the object
+   * where Sonnet writes it. So the fast lane resolves to the orchestrator model on both paths.
+   *
+   * The seam stays, because it is the right seam: these two calls are not turns, they are not
+   * the agents' voice, and the day a model is actually faster at strict JSON this is the one
+   * line that changes. The learner's two dropdowns still govern everything they hear.
    */
   fast: string;
 }
 
-export const API_PLAN: ModelPlan = { agent: HAIKU_API, orchestrator: SONNET_API, fast: HAIKU_API };
-
-/** The CLI's alias for the fast lane. Fixed, for the reason `ModelPlan.fast` gives. */
-export const CLI_FAST_MODEL = 'haiku';
+export const API_PLAN: ModelPlan = { agent: HAIKU_API, orchestrator: SONNET_API, fast: SONNET_API };
 
 export function cliPlan(agent: string, orchestrator: string): ModelPlan {
+  const resolved = normaliseModelId(orchestrator) ?? DEFAULT_CLI_ORCHESTRATOR_MODEL;
   return {
     agent: normaliseModelId(agent) ?? DEFAULT_CLI_AGENT_MODEL,
-    orchestrator: normaliseModelId(orchestrator) ?? DEFAULT_CLI_ORCHESTRATOR_MODEL,
-    fast: CLI_FAST_MODEL,
+    orchestrator: resolved,
+    // See `ModelPlan.fast`: measured, Haiku is slower here, not faster.
+    fast: resolved,
   };
 }
 

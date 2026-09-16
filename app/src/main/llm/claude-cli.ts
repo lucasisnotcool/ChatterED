@@ -204,6 +204,19 @@ export const CLI_PREEMPTIBLE: ReadonlySet<string> = new Set(['ingest']);
  */
 export const CLI_LOW_PRIORITY_GRACE_MS = 1_200;
 
+/**
+ * **Which calls wait out that window.** Every call nobody is watching for, which is a wider set
+ * than the pre-emptible one.
+ *
+ * The ledger belongs here and not on `CLI_PREEMPTIBLE`: `#runAgentTurn` dispatches it *first*,
+ * milliseconds before the reply, so without a grace window it takes the lane every single turn
+ * and the learner waits behind it. Measured on five live turns before this line existed: the
+ * reply queued **23.2 s, 56.7 s, 17.8 s and 28.4 s** behind a ledger call on turns 2–5. That is
+ * the serialising fix turning into the very wait it was added to prevent. It still must not be
+ * *killed*, though — a rail movement the learner's own words earned is not disposable.
+ */
+export const CLI_DEFERRED: ReadonlySet<string> = new Set(['ingest', 'ledger']);
+
 /** Thrown when a background call was killed to let a learner-facing one through. Not a failure. */
 export class CliPreemptedError extends Error {
   constructor() {
@@ -327,7 +340,7 @@ export class ClaudeCliClient implements LLMClient {
     const preemptible = CLI_PREEMPTIBLE.has(request.meta.scope);
 
     // Let a click that is about to produce a learner-facing call get there first.
-    if (preemptible && CLI_LOW_PRIORITY_GRACE_MS > 0) {
+    if (CLI_DEFERRED.has(request.meta.scope) && CLI_LOW_PRIORITY_GRACE_MS > 0) {
       await new Promise((r) => setTimeout(r, CLI_LOW_PRIORITY_GRACE_MS));
       if (signal?.aborted) throw new LlmAbortedError();
     }

@@ -432,7 +432,9 @@ describe('one `claude` at a time (issue #35 item 5c)', () => {
     const c = client('slow');
     const [a, b] = await Promise.all([
       c.complete(request({ meta: { scope: 'group' } })),
-      c.complete(request({ meta: { scope: 'ledger' } })),
+      // Two learner-facing scopes, so neither waits out the `CLI_DEFERRED` grace window and the
+      // thing under test is the lane itself.
+      c.complete(request({ meta: { scope: 'whisper' } })),
     ]);
     expect([a.text, b.text]).toEqual(['slow', 'slow']);
     const waited = [a, b].filter((r) => (r.queuedMs ?? 0) > 0);
@@ -499,13 +501,16 @@ describe('the lane a learner can take back', () => {
     await expect(ingest).resolves.toMatchObject({ text: 'slow' });
   });
 
-  it('does not let the ledger be thrown off the lane', async () => {
+  it('lets the reply past a ledger call dispatched milliseconds earlier, without killing it', async () => {
+    // `#runAgentTurn` fires the ledger *first*. Measured live before `CLI_DEFERRED` existed:
+    // the reply queued 23.2 s, 56.7 s, 17.8 s and 28.4 s behind it on four consecutive turns.
     const c = client('slow');
     const ledger = c.complete(request({ meta: { scope: 'ledger' } }));
-    await new Promise((r) => setTimeout(r, 40));
+    await new Promise((r) => setTimeout(r, 5));
     const answer = await c.complete(request({ meta: { scope: 'group' } }));
     expect(answer.text).toBe('slow');
-    // Seconds, not a minute, and a rail movement the learner's words already earned.
+    expect(answer.queuedMs ?? 0).toBe(0);
+    // And it is not thrown away: a rail movement the learner's words earned is not disposable.
     await expect(ledger).resolves.toMatchObject({ text: 'slow' });
   });
 
