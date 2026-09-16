@@ -268,8 +268,11 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
   if ((input.trigger === 'student_message' || input.trigger === 'promote') && input.anchoredThread === true) {
     return {
       speak: true,
+      // `respond` until #36. A move named "respond" is satisfied by any reply, including the six
+      // that opened with a Socratic probe instead of an answer; `answer_then_teach` is the only
+      // thing this rule has ever meant, and `turnDirective` now spells it out in the directive.
+      moveType: 'answer_then_teach',
       role: 'peer',
-      moveType: 'respond',
       probeType: null,
       targetElementId: input.suggestedTargetElement ?? null,
       challenges: [],
@@ -356,7 +359,7 @@ export async function decideTurn(opts: DecideOptions): Promise<TurnDecision> {
       return {
         speak: true,
         role: 'peer',
-        moveType: 'respond',
+        moveType: 'answer_then_teach',
         probeType: null,
         targetElementId: null,
         challenges: [],

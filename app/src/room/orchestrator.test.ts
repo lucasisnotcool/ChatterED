@@ -266,7 +266,9 @@ describe('the Teacher answers a segment thread without a model call', () => {
     const d = ruleDecision(input({ anchoredThread: true, handOff: due({ due: false }) }))!;
     expect(d.speak).toBe(true);
     expect(d.role).toBe('peer');
-    expect(d.moveType).toBe('respond');
+    // `answer_then_teach`, not `respond`, since #36: a move called "respond" is satisfied by a
+    // Socratic probe, which is the turn this rule exists to produce the opposite of.
+    expect(d.moveType).toBe('answer_then_teach');
     expect(d.decidedBy).toBe('rule:teacher_answers');
   });
 

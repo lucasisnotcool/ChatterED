@@ -90,7 +90,9 @@ export function buildGroupContext(store: GroupStore, input: GroupContextInput): 
 
   return {
     model: input.speaker.model,
-    max_tokens: input.maxTokens ?? 400,
+    // 700, not 400, since #36. House rule 3 now allows a ~200-word structured explanation of a
+    // prerequisite, and 400 tokens is about 300 words before the list markers and the LaTeX.
+    max_tokens: input.maxTokens ?? 700,
     system,
     messages: turns,
     meta: { scope: 'group', roomId: input.roomId, agentKey: input.speaker.key },
