@@ -35,16 +35,7 @@ import { LEDGER_SCHEMA, applyLedgerRules, type LedgerProposal } from './ledger.j
 import type { LLMClient, LlmBackend } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
-import {
-  REFERENCE_DISPLAY_NAME,
-  anyAnchorLocked,
-  buildReferenceRequest,
-  composeReferenceBody,
-  explainBack,
-  findReferenceParticipant,
-  isAnchorLocked,
-  type ReferenceAnswerState,
-} from './reference.js';
+import { anyAnchorLocked, isAnchorLocked, type ReferenceAnswerState } from './reference.js';
 import {
   FLOW,
   answerQuiz,
@@ -74,7 +65,14 @@ import { SILENT_LOG, type Clock, type Store, type Transport, type TurnLog } from
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
 import type { ReferenceContext } from './reference.js';
 import { latestByElement } from './flow.js';
-import { decisionDirective, ledgerDirective, quizBlock, taughtBlock, teachObjectiveBlock } from './prompts.js';
+import {
+  decisionDirective,
+  ledgerDirective,
+  quizBlock,
+  taughtBlock,
+  teachObjectiveBlock,
+  whereBlock,
+} from './prompts.js';
 import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
@@ -307,9 +305,24 @@ export class RoomActor {
   #pendingQuiz: PendingQuiz | null = null;
   #testerMode: TesterMode = 'proactive';
   /** Every REFERENCE card inserted this session, and whether it has been explained back. */
+  /**
+   * The REFERENCE cards of `pivot-spec.md` §B1. **Nothing pushes to this since #41** — the Teacher
+   * answers the entry question — so it is always empty and `#referenceLocked()` is always false.
+   * The field and the lock helpers stay for one release so a stored flow state still parses and
+   * the rule that reads them keeps its test.
+   */
   #answers: ReferenceAnswerState[] = [];
+  /**
+   * **Where each thread is in the document** (issue #41): the scope and the passage the Teacher is
+   * answering that thread from, resolved once per question by `flowroom.referenceContext()`. In
+   * memory only — a reopened deck re-resolves on the next question, and a thread with no entry
+   * here simply gets no *where* line.
+   */
+  #askContext = new Map<string, ReferenceContext>();
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
+  /** The anchor the turn currently being generated belongs to. Turns are serialised by the mailbox. */
+  #turnAnchorId: string | null = null;
   /**
    * **What the last agent turn in the thread was** (#37) — the input that tells a silence after
    * an explanation apart from a silence after a question. Classified by the **move**, not the
@@ -325,7 +338,6 @@ export class RoomActor {
   #seen = new Map<string, number>();
   /** anchorId → the card's renderer state, which must survive a reopen (audit §7). */
   #cards = new Map<string, { collapsed?: boolean; removed?: boolean }>();
-  #asks = 0;
   /**
    * **The whisper's ephemerality, and the whole of it** (`flow-build-plan.md` §3.5,
    * `design-brief.md` §D5 "clears at the end of the round", Dennis et al.).
@@ -387,8 +399,12 @@ export class RoomActor {
     this.#flow = deps.flowState?.session ?? null;
     this.#taught = [...(deps.flowState?.taught ?? [])];
     this.#pendingQuiz = deps.flowState?.pendingQuiz ?? null;
-    this.#answers = [...(deps.flowState?.answers ?? [])];
-    this.#asks = this.#answers.length;
+    /**
+     * **Deliberately not restored** (issue #41). A stored `answers` array would re-lock a thread
+     * behind a REFERENCE card that no longer exists — migration 017 turned those rows into summary
+     * cards — and there is no *Explain it back* left to lift the lock with.
+     */
+    this.#answers = [];
     this.#replySpeed = deps.replySpeed ?? 'default';
     this.#seen = new Map(Object.entries(deps.flowState?.seen ?? {}));
     this.#cards = new Map(Object.entries(deps.flowState?.cards ?? {}));
@@ -477,9 +493,20 @@ export class RoomActor {
    * always been. Everything downstream (the cancel, the timer, the ledger, the 8 s floor-yield)
    * is unchanged: an anchored turn is an ordinary turn that knows where it is.
    */
-  async sendMessage(text: string, anchorId: string | null = null): Promise<void> {
+  async sendMessage(
+    text: string,
+    anchorId: string | null = null,
+    /**
+     * Where in the document this turn was written, resolved by `flowroom.referenceContext()`
+     * (issue #41). It used to be the REFERENCE call's private input; now that the Teacher answers
+     * the thread it is hers, and it is what lets her say *this page* rather than guess from a
+     * 58-page prefix. Optional: the pre-flow room-level composer has no segment.
+     */
+    context?: ReferenceContext,
+  ): Promise<void> {
     const body = text.trim();
     if (body.length === 0) return;
+    if (anchorId !== null && context) this.#askContext.set(anchorId, context);
 
     /**
      * The id of the row the learner just wrote, carried out of the mailbox so `turn.received`
@@ -604,172 +631,85 @@ export class RoomActor {
     this.#event('student', paused ? 'silence.timer.cancelled' : 'silence.timer.set', { reason: 'wait_for_me' });
   }
 
-  // ── "+ Ask here" — the REFERENCE path (pivot-spec.md §B1) ─────────────────
+  // ── "+ Ask here" — the Teacher answers it (issue #41) ─────────────────────
 
   /**
-   * The learner asks a factual question about one segment, and gets one neutral card back.
+   * **The learner asks on a segment, and the Teacher answers.**
    *
-   * **This is not an agent turn**, and the four properties that make that true are enforced
-   * here rather than asked for in a prompt (`flow-build-plan.md` §4.3):
+   * Until #41 this inserted a neutral REFERENCE card and locked Ellie and Max out of the thread
+   * until *Explain it back*. `pivot-spec.md` §B1 argued that from the Peer contract — *"Ellie may
+   * never supply a complete correct explanation"* — and #32 removed that contract, #36 replaced it
+   * with ANSWER FIRST, THEN TEACH. The routing outlived its argument, and all three of Lucas's
+   * #41 transcripts paid for it: on the MDP title slide the passage-faithful answer was *"the
+   * passage contains no further content on the topic"*, and it took two more prompts to reach
+   * Ellie, who was right on her first turn. Three prompts to satisfaction, two of them spent on
+   * the card.
    *
-   *  1. no floor — `consecutive_agent_turns` is untouched, and no `pending_turn_id` is written,
-   *     so a held reply elsewhere is neither cancelled nor displaced;
-   *  2. no timer — `this.#timer` is not called at all. The deadline, the epoch and
-   *     `nudge_fires_this_round` all come out the other side unchanged, which is the assertion
-   *     the test makes: reading an answer is not explaining, so it does not buy silence;
-   *  3. no ledger — `#updateLedger` is not called, and could not help the learner if it were,
-   *     since evidence must be a verbatim substring of a *learner* message;
-   *  4. the segment's thread is locked to Ellie and Max until `explainBack()`.
+   * So this is now an ordinary learner turn with an ordinary Teacher answer:
+   * `rule:teacher_answers` → `answer_then_teach`, the 3–8 s yield, the latency floor, the
+   * ledger inside the delay window, the flow session, the hand-off. What it keeps from the old
+   * path is the **scope** (issue #35): `context` says whether she was shown this page or the whole
+   * deck, `scopeShown` goes on her reply's row, and `#askContext` remembers it for the rest of the
+   * thread so a follow-up is answered on the same slide.
    *
-   * The learner's question *is* written as their own message, because it is theirs and the flow
-   * renders it; it simply does not schedule anybody.
+   * What is gone: the card, the 120-word cap, the per-anchor lock, and `explainBack`.
    */
   async askHere(input: {
     anchorId: string | null;
     question: string;
-    /**
-     * What the model is given: the page for a `'segment'` question, the whole document for a
-     * `'deck'` one (issue #35). Resolved by `flowroom.referenceContext()`, which also produces
-     * `scopeShown` — one resolver, so the answer and the footer cannot describe different reads.
-     */
+    /** What the Teacher is shown: this page, or the whole document (issue #35). */
     context: ReferenceContext;
     /**
      * The objective this Ask was opened from (issue #38 §5). Tags the whole thread, not just
      * this question — see `#objectiveByAnchor`.
      */
     objectiveId?: string | null;
-  }): Promise<{ questionId: string; answerId: string; body: string; truncated: boolean; scopeShown: string }> {
+  }): Promise<{ questionId: string; scopeShown: string }> {
     const question = input.question.trim();
     if (question.length === 0) throw new Error('An "Ask here" needs a question');
-    this.#asks += 1;
     if (input.anchorId !== null && input.objectiveId) {
       this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
     }
+    if (input.anchorId !== null) this.#askContext.set(input.anchorId, input.context);
 
-    const asked = await this.#mailbox.enqueue(() => {
-      this.#noteLearnerActivity('ask', input.anchorId);
-      const row = this.#insertMessage({
-        participantId: this.#studentParticipant().id,
-        body: question,
-        anchorId: input.anchorId,
-      });
-      this.#event('student', 'message.send', {
-        seq: row.seq,
-        chars: question.length,
-        scope: 'reference',
-        anchor_id: input.anchorId,
-      });
-      return row;
+    this.#event('student', 'flow.ask', {
+      anchor_id: input.anchorId,
+      ask_scope: input.context.scope,
+      scope_shown: input.context.scopeShown,
+      // The one line that says this is no longer the REFERENCE path.
+      answered_by: 'teacher',
     });
 
-    const material = this.#d.store.materials.get(this.#room().material_id)!;
-    const request = buildReferenceRequest({
-      model: this.#models.orchestrator,
-      roomId: this.#d.roomId,
-      deckTitle: material.title,
-      context: input.context,
-      question,
-      anchorId: input.anchorId,
-      scriptCue: `reference:${this.#asks}`,
-    });
+    /**
+     * Straight through `sendMessage`, which is the point: an Ask is a learner turn now, so it has
+     * to be *the same* learner turn — the cancel, the typing reset, the quiz bookkeeping, the
+     * `turn.received` acknowledgement and the ledger all come from one implementation rather than
+     * from a second one that drifts.
+     */
+    const before = this.#d.store.messages.maxSeq(this.#d.roomId);
+    await this.sendMessage(question, input.anchorId);
+    const asked = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .find((m) => m.seq === before + 1);
 
-    const started = this.#d.clock.now();
-    let raw: string;
-    let model = request.model;
-    let backend: LlmBackend | null = null;
-    let usage: Record<string, number> = {};
-    try {
-      const result = await this.#d.llm.complete(request);
-      raw = result.text;
-      model = result.model;
-      backend = result.backend ?? null;
-      usage = result.usage as unknown as Record<string, number>;
-    } catch (err) {
-      this.#event('system', 'agent.turn.error', { scope: 'reference', cause: (err as Error).message });
-      this.#notice('error', 'That lookup did not come back — try again.');
-      throw err;
-    }
-
-    // "Held 2–3 s: this is retrieval, not deliberation — it must not borrow the Challenger's
-    // considered pacing" (§B1). A short floor, and it is a floor on visible TTFT like every
-    // other one in this file.
-    await this.#holdUntil(started, this.#floor(Math.round((2_000 + this.#rand() * 1_000) * this.#d.config.latency_scale)));
-
-    // The 120-word cap is applied here, in code. A prompt that asks for 120 words is a prompt
-    // that produces 180 on the take you keep.
-    const { body, truncated } = composeReferenceBody(raw);
-
-    const answer = await this.#mailbox.enqueue(() => {
-      const row = this.#insertMessage({
-        participantId: this.#referenceParticipant().id,
-        body,
-        model,
-        backend,
-        usage: JSON.stringify(usage),
-        anchorId: input.anchorId,
-        scopeShown: input.context.scopeShown,
-      });
-      this.#answers.push({ answerId: row.id, anchorId: input.anchorId, explainedBackAt: null });
-      // A REFERENCE card is not an agent turn, and a silence after one is not a failed
-      // explanation (#37). While it is unanswered no agent may speak there at all
-      // (`rule:reference_locked`); once the learner presses *Explain it back* the thread is
-      // theirs to open, so the fill falls back to §C5's content-free line.
-      this.#lastAgentTurn = 'reference';
-      this.#event('system', 'agent.turn.dispatched', {
-        seq: row.seq,
-        scope: 'reference',
-        anchor_id: input.anchorId,
-        ask_scope: input.context.scope,
-        scope_shown: input.context.scopeShown,
-        words: body.split(/\s+/).length,
-        truncated,
-        // Neither of these moved, and the event log is where that is checkable.
-        took_floor: false,
-        reset_timer: false,
-      });
-      return row;
-    });
-
-    return { questionId: asked.id, answerId: answer.id, body, truncated, scopeShown: input.context.scopeShown };
+    return { questionId: asked?.id ?? '', scopeShown: input.context.scopeShown };
   }
 
   /**
-   * "Explain it back →". The answer card collapses, a composer opens on the same anchor, and
-   * **Ellie and Max become eligible on that anchor for the first time**.
+   * **"Explain it back →" — a no-op since #41**, kept for one release.
    *
-   * This is the hook: the learner has read the answer, and the only way to move the ledger from
-   * there is still to say it in their own words.
+   * There is no REFERENCE entry card to collapse and no lock to lift: the Teacher answered the
+   * question in the thread, and the thread was never closed to her. The call is logged and
+   * answers `unlocked: true` so an older renderer's button does nothing visible rather than
+   * throwing. Delete it, and `IPC.flowExplainBack`, in the release after.
    */
   explainBack(answerId: string): { unlocked: boolean; anchorId: string | null } {
-    const before = this.#answers.find((a) => a.answerId === answerId);
-    if (!before) return { unlocked: false, anchorId: null };
-    this.#answers = explainBack(this.#answers, answerId, this.#d.clock.now());
-    this.#event('student', 'reference.explain_back', { answer_id: answerId, anchor_id: before.anchorId });
-    this.#d.transport.emit({ type: 'room.state', roomId: this.#d.roomId, state: this.#room().state });
-    return { unlocked: true, anchorId: before.anchorId };
-  }
-
-  /**
-   * The reference participant, created with the room. Made on demand for a room that predates
-   * this build, so an old transcript can still be asked a question.
-   */
-  #referenceParticipant() {
-    const existing = findReferenceParticipant(this.#d.store.participants.forRoom(this.#d.roomId));
-    if (existing) return existing;
-    const row = {
-      id: this.#d.newId('p'),
-      room_id: this.#d.roomId,
-      kind: 'agent' as const,
-      user_id: null,
-      // Null on purpose: the REFERENCE voice is not an agent, has no row in `agents`, and can
-      // therefore never be found by `agentByRole` or selected by the orchestrator.
-      agent_key: null,
-      display_name: REFERENCE_DISPLAY_NAME,
-      joined_at: this.#nowIso(),
-      left_at: null,
-    };
-    this.#d.store.participants.insert(row);
-    return row;
+    this.#event('student', 'reference.explain_back', {
+      answer_id: answerId,
+      deprecated: true,
+      note: 'no-op since #41: the Teacher answers the Ask, so no thread is locked',
+    });
+    return { unlocked: true, anchorId: null };
   }
 
   /**
@@ -1179,6 +1119,7 @@ export class RoomActor {
      * a turn landed. `null` is the room-level stream, which is every pre-flow room.
      */
     const anchorId = opts.anchorId ?? null;
+    this.#turnAnchorId = anchorId;
     const turnStart = this.#d.clock.now();
     const pending: PendingTurn = {
       id: this.#d.newId('turn'),
@@ -1910,6 +1851,7 @@ export class RoomActor {
     // `llm.complete` pair carried no correlation id and fell out of `jq 'select(.turn==…)'`,
     // which is the one query the log exists to answer.
     request.meta.turnId = this.#pending?.id;
+    request.meta.anchorId = this.#pending?.anchorId ?? null;
     return this.#d.llm.complete(request, onDelta, signal);
   }
 
@@ -2240,9 +2182,6 @@ export class RoomActor {
    *    demonstration contains (#38 §4).
    */
   #turnNote(decision: TurnDecision): string | undefined {
-    if (decision.moveType === 'teach_objective' && this.#teachTarget) {
-      return teachObjectiveBlock(this.#teachTarget);
-    }
     if (decision.role === 'challenger' && decision.targetElementId) {
       const element = this.#d.pack.elements.find((e) => e.id === decision.targetElementId);
       if (!element) return undefined;
@@ -2253,7 +2192,33 @@ export class RoomActor {
         feedback: decision.moveType === 'quiz_feedback',
       });
     }
-    return this.#taughtNote(decision);
+    /**
+     * The Teacher's note is now **several blocks**, in the order she should read them: what this
+     * turn is about, where in the document the learner is (#41), and what she has already taught.
+     * One string still, because `turnDirective` has one slot; joined here rather than by four
+     * callers so the order is in one place.
+     */
+    const blocks: string[] = [];
+    if (decision.moveType === 'teach_objective' && this.#teachTarget) {
+      blocks.push(teachObjectiveBlock(this.#teachTarget));
+    }
+    const where = this.#whereNote();
+    if (where) blocks.push(where);
+    const taught = this.#taughtNote(decision);
+    if (taught) blocks.push(taught);
+    return blocks.length > 0 ? blocks.join('\n\n') : undefined;
+  }
+
+  /** Which slide this thread is on, for the Teacher (#41). Null when nothing resolved one. */
+  #whereNote(): string | undefined {
+    const context = this.#turnAnchorId === null ? undefined : this.#askContext.get(this.#turnAnchorId);
+    if (!context) return undefined;
+    return whereBlock({
+      scope: context.scope,
+      label: context.label ?? null,
+      page: context.page ?? null,
+      passageText: context.passageText,
+    });
   }
 
   /** The turn directive's taught-set line — data from `flow.ts`, not a memory feat asked of the model. */

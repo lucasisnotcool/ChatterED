@@ -32,7 +32,7 @@ import { fillAgentNames, rosterFor } from '../agents.js';
 import { buildGroupContext } from '../context.group.js';
 import { BTW_SIDE_CHANNEL_V1, CRITIQUE1_DECK_TEXT, CRITIQUE1_PAGE_TEXT } from '../concepts/btw-side-channel-v1.js';
 import { DEMO } from '../flow.js';
-import { segmentContext, HAND_BACK_LINE, REFERENCE_WORD_CAP } from '../reference.js';
+import { segmentContext, HAND_BACK_LINE } from '../reference.js';
 import { ScriptedClient } from './scripted.js';
 import {
   CRITIQUE1_HANDOFFS,
@@ -51,9 +51,13 @@ const FIXTURE_FILE = 'A0282987E_LohZhengLucas_Critique1_slides (1).pdf';
 /** The anchor the demo's "+ Ask here" lands on: page 3, below the tick at y 0.535. */
 const P3_LOWER = 'p3.lower';
 
-const L1 = learnerLine('student:1')!;
-const L2 = learnerLine('student:2')!;
-const L3 = learnerLine('student:3')!;
+/**
+ * The learner's three typed lines. **Shifted by one since #41**: the Ask is a learner turn now
+ * (the Teacher answers it), so it is `student:1` and everything after it moved up.
+ */
+const L1 = learnerLine('student:2')!;
+const L2 = learnerLine('student:3')!;
+const L3 = learnerLine('student:4')!;
 const ASK = learnerLine('ask:1')!;
 const WHISPER = learnerLine('whisper:1')!;
 
@@ -105,80 +109,83 @@ async function settle<T>(clock: FakeClock, promise: Promise<T>, ms = 30_000): Pr
 
 const segmentText = (page: number) => CRITIQUE1_PAGE_TEXT[page]!;
 
-/** Beats 7–9: ask, read, say it back. The state every later beat starts from. */
-async function throughExplainBack(h: ReturnType<typeof build>) {
+/** Beats 7–9: ask, hear the answer, say it back. The state every later beat starts from. */
+async function throughAsk(h: ReturnType<typeof build>) {
   const asked = await settle(
     h.clock,
     h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
-    6_000,
+    30_000,
   );
-  h.actor.explainBack(asked.answerId);
   await settle(h.clock, h.actor.sendMessage(L1));
   return asked;
 }
 
-describe('beat 7–8 — "+ Ask here" on the lower half of page 3', () => {
-  it('answers in the deck’s register, under the cap, and says nothing the deck does not', async () => {
+describe('beat 7\u20138 \u2014 "+ Ask here" on the lower half of page 3', () => {
+  /**
+   * **The Teacher answers it** (#41). This used to assert a REFERENCE card: system-voiced, 120
+   * words, no floor, no timer, and a lock on the thread until *Explain it back*. All three of
+   * Lucas's #41 transcripts opened on that card and spent two more prompts getting past it, so it
+   * is gone \u2014 with the persona-contract argument that put it there, which #32 and #36 retired.
+   */
+  it('is answered by Ellie, in the thread, with the answer in her first sentence', async () => {
     const h = build();
-    const out = await settle(
+    await settle(
       h.clock,
       h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
-      6_000,
+      30_000,
     );
 
-    const answer = h.store.messages.get(out.answerId)!;
-    expect(out.truncated).toBe(false);
-    const words = answer.body.replace(HAND_BACK_LINE, '').trim().split(/\s+/).length;
-    expect(words).toBeLessThanOrEqual(REFERENCE_WORD_CAP);
-    // The deck's own comparison, not a general answer about side channels.
+    const messages = h.store.messages.forRoom(h.roomId);
+    const question = messages.find((m) => m.body === ASK)!;
+    expect(question.anchor_id).toBe(P3_LOWER);
+
+    const teacher = h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!;
+    const answer = messages.at(-1)!;
+    expect(answer.participant_id).toBe(teacher.id);
+    expect(answer.anchor_id).toBe(P3_LOWER);
+    // Decided by rule, not by a 20-second model call (orchestrator.ts `rule:teacher_answers`).
+    expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).toBe('rule:teacher_answers');
+    // ANSWER FIRST (#36): the thing asked about is named in the opening sentence.
+    expect(answer.body.split('.')[0]).toContain('agent');
     expect(answer.body).toContain('read-only view of the session');
     expect(answer.body).toContain('this will expose data');
-    // Register, not disguise: no persona, no first person, no question of its own.
-    expect(answer.body).not.toMatch(/\bEllie\b|\bMax\b/);
-    expect(answer.body.replace(HAND_BACK_LINE, '')).not.toMatch(/\bI\b|\bI'm\b/);
-    expect(answer.body.replace(HAND_BACK_LINE, '')).not.toContain('?');
-    // Written by the voice that is not in the roster.
-    expect(h.store.participants.get(answer.participant_id)!.agent_key).toBeNull();
-    expect(answer.anchor_id).toBe(P3_LOWER);
+    // And no hand-back line: there is nothing to hand back from, because nobody read a card.
+    expect(answer.body).not.toContain(HAND_BACK_LINE);
   });
 
-  it('has no floor, no timer and no ledger effect — reading an answer is not explaining one', async () => {
+  it('takes the floor and the timer, because it is a turn now', async () => {
     const h = build();
     const room = () => h.store.rooms.get(h.roomId)!;
-    const before = {
-      floor: room().consecutive_agent_turns,
-      deadline: room().deadline_ts,
-      epoch: room().timer_epoch,
-      fires: room().nudge_fires_this_round,
-      ledger: h.store.ledger.forSession(h.sessionId).map((r) => r.level),
-    };
+    const before = room().timer_epoch;
 
     await settle(
       h.clock,
       h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
-      6_000,
+      30_000,
     );
 
-    expect(room().consecutive_agent_turns).toBe(before.floor);
+    // The three properties that used to be asserted the other way round. An Ask is an ordinary
+    // learner turn, so it schedules one agent turn and re-arms the silence timer behind it.
+    expect(room().consecutive_agent_turns).toBe(1);
     expect(room().pending_turn_id).toBeNull();
-    expect(room().deadline_ts).toBe(before.deadline);
-    expect(room().timer_epoch).toBe(before.epoch);
-    expect(room().nudge_fires_this_round).toBe(before.fires);
-    expect(h.store.ledger.forSession(h.sessionId).map((r) => r.level)).toEqual(before.ledger);
+    expect(room().timer_epoch).toBeGreaterThan(before);
+    // What has **not** changed: reading an answer still moves no ledger row. Rule 1 is why \u2014
+    // evidence must be a verbatim substring of a *learner* message \u2014 and it is unaffected.
+    expect(h.store.ledger.forSession(h.sessionId).map((r) => r.level)).toEqual([0, 0, 0]);
   });
 
-  it('locks Ellie and Max out of the segment until "Explain it back"', async () => {
+  it('no longer locks anyone out of the segment: explainBack is a no-op', async () => {
     const h = build();
-    const out = await settle(
+    await settle(
       h.clock,
       h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
-      6_000,
+      30_000,
     );
-    await settle(h.clock, h.actor.sendMessage(L1));
-    expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).toBe('rule:reference_locked');
+    expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).toBe('rule:teacher_answers');
 
-    h.actor.explainBack(out.answerId);
-    await settle(h.clock, h.actor.sendMessage(L2));
+    expect(h.actor.explainBack('whatever')).toEqual({ unlocked: true, anchorId: null });
+
+    await settle(h.clock, h.actor.sendMessage(L1));
     expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).not.toBe('rule:reference_locked');
   });
 });
@@ -186,7 +193,7 @@ describe('beat 7–8 — "+ Ask here" on the lower half of page 3', () => {
 describe('beat 9 — the Teacher’s thread', () => {
   it('opens with Ellie explaining from the slide, on the learner’s own words', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
 
     const teacher = h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!;
     const hers = h.store.messages.forRoom(h.roomId).filter((m) => m.participant_id === teacher.id);
@@ -212,7 +219,7 @@ describe('beat 9 — the Teacher’s thread', () => {
 describe('beats 10–11 — the hand-off, and one question', () => {
   it('fires by rule on the DEMO profile, and Max asks exactly one question about C1', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     await settle(h.clock, h.actor.sendMessage(L2));
 
     const messages = h.store.messages.forRoom(h.roomId);
@@ -247,7 +254,7 @@ describe('beats 10–11 — the hand-off, and one question', () => {
    */
   it('names the Tester in the hand-off and the Teacher in the quiz, off the live roster (#32)', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     await settle(h.clock, h.actor.sendMessage(L2));
 
     const messages = h.store.messages.forRoom(h.roomId);
@@ -271,7 +278,7 @@ describe('beats 10–11 — the hand-off, and one question', () => {
 
   it('will not quiz the thing that was just taught — C3 is minutes too young', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     await settle(h.clock, h.actor.sendMessage(L2));
     const decision = h.store.turnDecisions.forRoom(h.roomId).at(-1)!;
     expect(decision.target_element_id).not.toBe('C3');
@@ -293,8 +300,8 @@ describe('beat 12 — two rows move, on the learner’s own words', () => {
     const atRest = levels();
     expect(atRest).toEqual(['C1:0', 'C2:0', 'C3:0']);
 
-    // Beat 9 — "Explain it back", then the card said back and a question asked.
-    await throughExplainBack(h);
+    // Beat 9 \u2014 the Ask, Ellie's answer, and then the learner saying it back and asking.
+    await throughAsk(h);
     expect(levels()).toEqual(atRest);
 
     // Beat 10 — the turn the hand-off fires on. Still nothing.
@@ -313,7 +320,7 @@ describe('beat 12 — two rows move, on the learner’s own words', () => {
 
   it('moves C1 to defended and C3 to justified, quoting what was actually typed', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     await settle(h.clock, h.actor.sendMessage(L2));
     const before = new Map(h.store.ledger.forSession(h.sessionId).map((r) => [r.element_id, r.level]));
     // Both rows start the take at `not_yet`, so what the camera sees is ○ → ● and ○ → ◐.
@@ -343,7 +350,7 @@ describe('beat 12 — two rows move, on the learner’s own words', () => {
 describe('beat 12b — the feedback Max owes', () => {
   it('is decided by rule, not by the model, and names what was missing', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     await settle(h.clock, h.actor.sendMessage(L2));
     await settle(h.clock, h.actor.sendMessage(L3));
 
@@ -361,7 +368,7 @@ describe('beat 12b — the feedback Max owes', () => {
 describe('beat 13 — the whisper', () => {
   it('answers privately, offers the Critique 1 relay draft, and inserts it on approval', async () => {
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     const groupBefore = h.store.messages.forRoom(h.roomId).length;
 
     const thread = h.actor.openWhisper('peer.ellie');
@@ -398,7 +405,7 @@ describe('beat 13 — the whisper', () => {
   it('never reaches the Tester’s context — the canary, over this deck', async () => {
     const CANARY = 'ZZQX-CANARY-4412-critique1-whisper-only';
     const h = build();
-    await throughExplainBack(h);
+    await throughAsk(h);
     const thread = h.actor.openWhisper('peer.ellie');
     await settle(h.clock, h.actor.sendWhisper(thread.threadId, `${WHISPER} ${CANARY}`), 8_000);
 
@@ -509,31 +516,34 @@ describe('which script replays', () => {
 
   it('answers a learner cue the script has run out of, so beat 9 is never a silence nudge', async () => {
     // The same actor-lifetime argument as the hand-off cues: `student:N` counts the *process's*
-    // learner turns, so a second walkthrough reaches `student:6` and Ellie used to generate
-    // empty — the learner typed, nothing came back, and 45 s later the silence timer spoke.
+    // learner turns — the Ask included, since #41, which is why the numbers below start one
+    // higher than they did — so a second walkthrough runs off the end of the script and Ellie
+    // used to generate empty: the learner typed, nothing came back, and 45 s later the silence
+    // timer spoke.
     const client = new ScriptedClient({ script: CRITIQUE1_SCRIPT });
-    for (const cue of ['student:6', 'student:7', 'student:8', 'student:9']) {
+    for (const cue of ['student:7', 'student:8', 'student:9', 'student:10']) {
       const out = await client.complete({
         ...request(CRITIQUE1_DECK_TEXT),
         meta: { scope: 'group', scriptCue: cue },
       });
       expect(out.text.length).toBeGreaterThan(40);
     }
-    // It cycles rather than pinning one line: three teaching beats, so 6 and 9 differ.
+    // It cycles rather than pinning one line: four teaching beats now (the Ask's answer is one
+    // of them), so 7 and 8 differ and 7 comes round again at 11.
     const at = async (cue: string) =>
       (await client.complete({ ...request(CRITIQUE1_DECK_TEXT), meta: { scope: 'group', scriptCue: cue } })).text;
-    expect(await at('student:6')).not.toBe(await at('student:7'));
-    expect(await at('student:6')).toBe(await at('student:9'));
+    expect(await at('student:7')).not.toBe(await at('student:8'));
+    expect(await at('student:7')).toBe(await at('student:11'));
 
     // The safety property, structural rather than conventional: every beat the cycle can reach
     // proposes no ledger element, so a repeat can never move a row a second time.
-    for (const n of [6, 7, 8, 9, 10, 11]) {
+    for (const n of [7, 8, 9, 10, 11, 12]) {
       expect(beatFor(`student:${n}`)!.ledger?.elements ?? []).toHaveLength(0);
     }
     // And a ledger call on a recycled cue proposes nothing, through the client the app uses.
     const proposal = await client.complete({
       ...request(CRITIQUE1_DECK_TEXT),
-      meta: { scope: 'ledger', scriptCue: 'student:7' },
+      meta: { scope: 'ledger', scriptCue: 'student:8' },
     });
     expect(JSON.parse(proposal.text).elements).toEqual([]);
   });

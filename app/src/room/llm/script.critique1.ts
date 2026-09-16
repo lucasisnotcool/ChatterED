@@ -108,26 +108,26 @@ export interface Critique1LearnerLine {
 export const CRITIQUE1_LEARNER_LINES: Critique1LearnerLine[] = [
   {
     cue: 'ask:1',
-    beat: 'beat 7 — "+ Ask here" under the lower half of page 3',
+    beat: 'beat 7 \u2014 "+ Ask here" under the lower half of page 3; Ellie answers it (#41)',
     text: 'who is actually whispering in the bottom row here?',
   },
   {
-    cue: 'student:1',
-    beat: 'beat 9 — "Explain it back": the card said back, and the question it leaves open',
+    cue: 'student:2',
+    beat: 'beat 9 \u2014 the learner says it back in their own words, and the question it leaves open',
     text:
-      'Let me try saying it back. The card has the two rows with the same structure, and the only thing that changes ' +
+      'Let me try saying it back. Both rows have the same structure, and the only thing that changes ' +
       'underneath is that the whispering partner is the agent itself. Is that the whole of it, or does the bottom row ' +
       'buy something the top one does not?',
   },
   {
-    cue: 'student:2',
+    cue: 'student:3',
     beat: 'beat 10 — the turn the hand-off rule fires on; still a question, so still nothing claimed',
     text:
       'And where is any of that tested rather than asserted? Page 5 has a table of limit tests on it, and I have not ' +
       'worked out yet what the three of them add up to.',
   },
   {
-    cue: 'student:3',
+    cue: 'student:4',
     beat: 'beat 12 — the answer to Max, and the two rows that move on it',
     text:
       'The third one — it was asked to add a todo to memory, claimed it had, and nothing was written. ' +
@@ -141,13 +141,13 @@ export const CRITIQUE1_LEARNER_LINES: Critique1LearnerLine[] = [
       "ok slightly embarrassing but i have been saying context window this whole time — does asking in /btw actually cost context or not?",
   },
   {
-    cue: 'student:4',
+    cue: 'student:5',
     beat: 'spare — only if the take runs long; it draws a second hand-off, on C2',
     text:
       'So the relay on page 7 is really just the agent offering to write that steering prompt for me, and I get to approve it before it goes.',
   },
   {
-    cue: 'student:5',
+    cue: 'student:6',
     beat: 'spare — the answer to the second question',
     text:
       'Polychronic, I think. The agent kept coding the whole time I was asking, so the side conversation cost the main one nothing.',
@@ -179,12 +179,45 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
   },
   {
     /**
-     * Beat 9. The learner has read the REFERENCE card and said it back, so Ellie may speak on
-     * this thread for the first time. She **teaches from the slide** and moves the learner one
+     * **Beat 8 \u2014 the Ask itself, answered by the Teacher** (#41).
+     *
+     * This used to be `reference:1`, a system-voiced card that did not take the floor and that
+     * locked Ellie out of the thread until *Explain it back*. `pivot-spec.md` \u00a7B1 argued that
+     * from the Peer contract; #32 retired the contract and #36 replaced it with ANSWER FIRST,
+     * THEN TEACH, so the card was answering the question Ellie should have answered. It is an
+     * ordinary Teacher turn now \u2014 which is why the learner cues below all shifted by one.
+     *
+     * She answers in her first sentence, and only then does the comparison.
+     */
+    cue: 'student:1',
+    decision: peer(
+      'answer_then_teach',
+      'The learner asked in a segment thread; the thread is the Teacher\u2019s and she answers it.',
+      'C3',
+    ),
+    segment: 'p3.lower',
+    text:
+      'The agent itself \u2014 that is the whole difference between the two rows. In the upper row the whisper is ' +
+      'between two people: one of them notices the broken slide, says so at the side, and the speaker is told. In the ' +
+      'lower row the side channel runs to the agent, and it is the same shape: the same question \u2014 \u201cis this a safe ' +
+      'way to code\u201d \u2014 asked while the agent is still working, and the answer, \u201cthis will expose data\u201d, coming back ' +
+      'without entering the main conversation. What changes underneath is who the whispering partner is: the ' +
+      'agent\u2019s own read-only view of the session, rather than a second person.',
+    ledger: {
+      // A question, not a claim. Nothing of the learner's to quote, so nothing is proposed.
+      elements: [],
+      suggestedTargetElement: 'C3',
+      suggestedProbeType: 'clarification',
+      notesForAgents: 'Asked who is whispering in the lower row of page 3. A question, not a claim.',
+    },
+  },
+  {
+    /**
+     * Beat 9. The learner has heard Ellie's answer and said it back, so the thread continues. She **teaches from the slide** and moves the learner one
      * page on, which is what puts `C3` into the taught set — and `C3` is deliberately too young
      * to be quizzed, so the hand-off a turn later lands on something minutes old, not seconds.
      */
-    cue: 'student:1',
+    cue: 'student:2',
     decision: peer(
       'teach_from_slide',
       'The Teacher explains from the slide and carries the learner to the page that names the gap.',
@@ -197,13 +230,13 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
       "lands. It lands with *you*. The deck is blunt about it: “discussion and decisions in btw cannot be forwarded " +
       'to agent”, so whatever you settle in the whisper, you are the one who has to carry it back.',
     ledger: {
-      // Empty on purpose — see the file docstring. The learner has read the card back and asked a
+      // Empty on purpose \u2014 see the file docstring. The learner has said the answer back and asked a
       // question; there is no claim of theirs to quote, so nothing is proposed and no gate fires.
       elements: [],
       suggestedTargetElement: 'C2',
       suggestedProbeType: 'reasons_evidence',
       notesForAgents:
-        'Read the REFERENCE card back and asked what the lower row buys that the upper one does not. A question, not a claim.',
+        'Said the answer back and asked what the lower row buys that the upper one does not. A question, not a claim.',
     },
   },
   {
@@ -215,7 +248,7 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
      * the honest fallback for a take where the rule does *not* fire (the learner was still
      * typing, or the sitting is cold): Ellie carries on teaching and nobody quizzes anybody.
      */
-    cue: 'student:2',
+    cue: 'student:3',
     decision: peer('teach_from_slide', 'Fallback only: if the flow rule has not fired, the Teacher keeps teaching.', 'C1'),
     segment: 'p5',
     text:
@@ -250,7 +283,7 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
      * and nowhere else; `C3` was never probed, so `justified` is its ceiling and the gate would
      * hold it there even if this block asked for more. No `student:4` is needed after the probe.
      */
-    cue: 'student:3',
+    cue: 'student:4',
     decision: { role: null, move: 'yield', rationale: 'Fallback only: an answer to Max belongs to Max.' },
     ledger: {
       elements: [
@@ -266,7 +299,7 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
   {
     // Spare. If the take runs on, the flow rule is satisfied again and the second hand-off lands
     // on C2 — the least-demonstrated thing still quizzable. Nothing here is needed for §2.
-    cue: 'student:4',
+    cue: 'student:5',
     decision: peer('teach_from_slide', 'Fallback only.', 'C3'),
     segment: 'p6',
     text:
@@ -274,7 +307,7 @@ export const CRITIQUE1_BEATS: ScriptedBeat[] = [
       'you approve it. Note what it does not do: it never gives the side channel tools of its own.',
   },
   {
-    cue: 'student:5',
+    cue: 'student:6',
     decision: { role: null, move: 'yield', rationale: 'Fallback only: the learner has the last word.' },
     ledger: {
       elements: [{ id: 'C2', level: 3, confidence: 0.91, evidence: 'last_student' }],
@@ -361,21 +394,22 @@ export const CRITIQUE1_HANDOFFS: ScriptedBeat[] = [
 ];
 
 /**
- * Beat 8. **Not an agent turn** — no decision, no floor, no timer, no ledger. It is the deck's
- * own register over the segment the learner asked on, and it ends flat: the hand-back line is
- * appended by `reference.ts`, not written here, and the 120-word cap is applied there too, in
- * code, so this text cannot smuggle a longer answer onto camera.
+ * **The summary card** (#41): what *Summarise into the document* writes when the take reaches it.
+ *
+ * It replaces the REFERENCE entry card of `pivot-spec.md` \u00a7B1, which is retired \u2014 the Teacher
+ * answers the entry question now (beat 8 above). What \u00a7B1 was right about survives here: a
+ * typeset block in the deck's own register, capped in code rather than in this text, written from
+ * the **thread** rather than from the slide, and inserted only when the learner asks for it.
  */
 export const CRITIQUE1_REFERENCES: ScriptedReferenceBeat[] = [
   {
-    cue: 'reference:1',
+    cue: 'summary:1',
     segment: 'p3.lower',
     text:
-      'In the upper row the whisper is between two people: one notices the broken slide, says so at the side, and ' +
-      'the speaker is told. In the lower row the side channel runs to the agent itself. The same question — "is this ' +
-      'a safe way to code" — is asked while the agent is still working, and the answer, "this will expose data", ' +
-      'comes back without entering the main conversation. The structure of the two rows is identical. What changes ' +
-      "is that the whispering partner is the agent's own read-only view of the session rather than a second person.",
+      'Both rows of page 3 have the same structure: a question asked at the side, answered without entering the ' +
+      'main conversation. What changes in the lower row is the partner \u2014 the whispering partner is the agent\u2019s own ' +
+      'read-only view of the session rather than a second person. The side channel can therefore answer from the ' +
+      'main context without adding to it; what it cannot do, by page 6, is carry anything back.',
   },
 ];
 
@@ -434,7 +468,8 @@ export function beatFor(cue: string): ScriptedBeat | undefined {
    * **And the Teacher must not go quiet on a second walkthrough either.**
    *
    * The same actor-lifetime argument applies to the learner's cues: `student:N` counts the
-   * learner turns of the process, so a second pass through §2 reaches `student:6` and beyond,
+   * learner turns of the process \u2014 the Ask included, since #41 \u2014 so a second pass through \u00a72
+   * reaches `student:7` and beyond,
    * which nothing above answers. Until now that returned `undefined` and beat 9 generated empty
    * — the learner typed, Ellie said nothing, and forty-five seconds later the silence timer
    * nudged, which is the app's correct behaviour reached by the script's failure. `ccc5b9d`
@@ -443,7 +478,7 @@ export function beatFor(cue: string): ScriptedBeat | undefined {
    * So the learner cues **cycle** rather than stop, over the teaching beats only, and the filter
    * is the safety property rather than a convention: a beat is eligible only if it has text to
    * say and proposes **no ledger element**. That was the objection to a learner-cue fallback and
-   * it is now structural — `student:3` and `student:5` are the beats that score, they are the
+   * it is now structural \u2014 `student:4` and `student:6` are the beats that score, they are the
    * ones without text, and they can never be reached from here.
    */
   const learner = /^student:(\d+)$/.exec(cue);
@@ -501,7 +536,15 @@ export const CRITIQUE1_SCRIPT: ScriptSource = {
  * page 5, and beat 10's narration — *"minutes old, not seconds"* — would be false on camera.
  * So the sitting the take resumes into carries its own profile, and the storyboard is unchanged.
  */
-export const CRITIQUE1_TAKE: FlowProfile = { ...DEMO, minAgeMs: MIN_AGE_CAP_MS };
+/**
+ * **`turnsK` is 3 here, not the Demo profile's 2** (#41). The "+ Ask here" that opens beat 7 is a
+ * learner turn now \u2014 the Teacher answers it \u2014 so R1's window fills one turn sooner than it did,
+ * and at k = 2 the hand-off fired on beat 9 instead of beat 10, ahead of the ledger blocks that
+ * are keyed to the answer Max has not asked for yet. Raising k by exactly the turn that was added
+ * keeps the storyboard's beats where \u00a72 puts them. Settings \u25b8 Demo is untouched: a cold
+ * walkthrough has no Ask in front of it.
+ */
+export const CRITIQUE1_TAKE: FlowProfile = { ...DEMO, minAgeMs: MIN_AGE_CAP_MS, turnsK: 3 };
 
 export function critique1Sitting(now: number): { session: FlowSession; taught: TaughtItem[] } {
   const id = 'fs_critique1';

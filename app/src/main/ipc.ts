@@ -6,7 +6,7 @@
  * it never owns the silence deadline — it animates against a timestamp the main process wrote
  * to SQLite before arming anything.
  */
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type {
   Bootstrap,
   CreateSessionInput,
@@ -40,7 +40,12 @@ import { createSession, draftConcept, newId } from './sessions.js';
 import { ensurePack } from './pack.js';
 import { ensureTree, treeIsCurrent } from './objectives/ingest.js';
 import { mirrorLedger, taughtFromStates } from './objectives/states.js';
+import { join } from 'node:path';
 import { errorClass, log, tailLog, type Logger } from './log.js';
+import { CostLedger } from './cost/ledger.js';
+import { backfillUsage } from './cost/backfill.js';
+import { writeCsv } from './cost/export.js';
+import { emptyTokens, addTokens, type CostSummaryQuery, type CostTokens, type CostUpdate } from '../shared/cost.js';
 import type { TurnLog } from '../room/ports.js';
 /**
  * The flow's first-open pacing strip is shown once per install and is re-openable from Settings
@@ -63,6 +68,7 @@ import {
 import type { SegmentDocumentView } from '../shared/segment/types.js';
 import type { LearningObjectiveState, LearningTree } from '../shared/objectives.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../shared/scope.js';
+import type { ReferenceContext } from '../room/reference.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
 import { SegmentService, type SplitInput } from './vault/segments.js';
@@ -99,6 +105,11 @@ export class AppService {
   readonly #apiKey: ApiKeyStore;
   readonly #vault: VaultService;
   readonly #segments: SegmentService;
+  readonly #cost: CostLedger;
+  /** Running app-level totals since launch, so `cost.updated` needs no second query per call. */
+  #sessionTokens: CostTokens = emptyTokens();
+  #sessionCalls = 0;
+  #sessionUsd = 0;
   #actor: RoomActor | null = null;
 
   constructor(deps: IpcDeps) {
@@ -115,6 +126,66 @@ export class AppService {
       db: deps.db,
       sourcePath: (fileId) => this.#vault.sourcePath(fileId),
     });
+    /**
+     * **The cost ledger, constructed here and nowhere else.** It is handed to `createClient()`
+     * on every `llm()` call, which is the one place every backend is built, so a call cannot be
+     * made through a client that is not counted. `fileForRoom` is the `rooms → materials` hop
+     * the ledger needs to file a room's calls under its document; it is injected rather than
+     * queried inside the ledger so that module needs no repository of its own.
+     */
+    this.#cost = new CostLedger({
+      db: deps.db,
+      readSetting: (key) => deps.store.settings.get(key),
+      fileForRoom: (roomId) => {
+        const room = deps.store.rooms.get(roomId);
+        return room ? (deps.store.materials.get(room.material_id)?.file_id ?? null) : null;
+      },
+    });
+  }
+
+  get cost(): CostLedger {
+    return this.#cost;
+  }
+
+  /**
+   * Reconstruct what the install spent before the ledger existed. Runs once per launch: after
+   * the first it finds nothing and costs one indexed scan. Failure is logged and swallowed —
+   * an accounting reconstruction must never stop the app from opening.
+   */
+  backfillCost(): void {
+    try {
+      const result = backfillUsage(this.#d.db, this.#cost);
+      if (result.inserted > 0 || result.candidates > 0) {
+        log().info('cost.backfill', {
+          inserted: result.inserted,
+          candidates: result.candidates,
+          by_scope: result.byScope,
+          ms: result.ms,
+        });
+      }
+    } catch (err) {
+      log().warn('cost.backfill_failed', { class: errorClass(err), cause: (err as Error).message.slice(0, 300) });
+    }
+  }
+
+  /**
+   * The sink the client decorator writes through. It records, then pushes the delta, so a
+   * counter in the renderer ticks on the same turn rather than on the next poll.
+   */
+  #costSink(): { record: (input: Parameters<CostLedger['record']>[0]) => void } {
+    return {
+      record: (input) => {
+        const call = this.#cost.record(input);
+        this.#sessionTokens = addTokens(this.#sessionTokens, call.tokens);
+        this.#sessionCalls += 1;
+        this.#sessionUsd = Math.round((this.#sessionUsd + call.estimatedUsd) * 1e6) / 1e6;
+        const update: CostUpdate = {
+          call,
+          sessionTotals: { tokens: this.#sessionTokens, calls: this.#sessionCalls, estimatedUsd: this.#sessionUsd },
+        };
+        this.#d.getWindow()?.webContents.send(IPC.costUpdated, update);
+      },
+    };
   }
 
   get segments(): SegmentService {
@@ -174,6 +245,7 @@ export class AppService {
       resolved,
       apiKey: () => this.#apiKey.get(),
       roster: rosterFor(this.pairing(), resolved.models.agent),
+      cost: this.#costSink(),
       ...(material ? { material } : {}),
     });
   }
@@ -767,7 +839,7 @@ export class AppService {
         outline: material.outline,
       },
     );
-    const answer = await actor.askHere({ anchorId, question, context, objectiveId: objectiveId ?? null });
+    const asked = await actor.askHere({ anchorId, question, context, objectiveId: objectiveId ?? null });
     this.#persistFlow();
     // Now, and not before: a draft started ahead of the answer holds the CLI lane, and a draft
     // that was pre-empted by this very question has to be told to start again.
@@ -775,11 +847,12 @@ export class AppService {
     return {
       roomId,
       anchorId,
-      questionId: answer.questionId,
-      answerId: answer.answerId,
-      body: answer.body,
-      truncated: answer.truncated,
-      scopeShown: answer.scopeShown,
+      questionId: asked.questionId,
+      // Null since #41: the Teacher's reply is an ordinary turn and arrives on the event stream.
+      answerId: null,
+      body: null,
+      truncated: false,
+      scopeShown: asked.scopeShown,
       flow: flowRoomView(actor, actor.lockedAnchors()),
     };
   }
@@ -791,12 +864,46 @@ export class AppService {
     return result;
   }
 
+  /**
+   * A learner turn inside one segment's thread.
+   *
+   * **It resolves the same context an Ask does** (issue #41). Before, only the first question in a
+   * thread knew which slide it was on, because only the REFERENCE call was given one; the Teacher
+   * answered every follow-up from the whole-document prefix with no idea which page the learner
+   * was looking at. Same resolver, same `scopeShown`, so the third turn in a thread is answered on
+   * the same slide as the first.
+   */
   async flowSend(input: { roomId: string; segmentId: string; text: string }): Promise<void> {
     const actor = this.#requireActor(input.roomId);
+    const context = await this.#askContextFor(input.roomId, input.segmentId, input.text);
     try {
-      await actor.sendMessage(input.text, input.segmentId);
+      await actor.sendMessage(input.text, input.segmentId, context ?? undefined);
     } finally {
       this.#persistFlow();
+    }
+  }
+
+  /**
+   * The passage and the scope for one turn in one thread, or null when the room's file is gone.
+   * Failures are swallowed on purpose: a turn that cannot resolve its page is still a turn, and
+   * losing the *where* line is better than losing the answer.
+   */
+  async #askContextFor(roomId: string, segmentId: string, question: string): Promise<ReferenceContext | null> {
+    try {
+      const room = this.#d.store.rooms.get(roomId);
+      const material = room ? this.#d.store.materials.get(room.material_id) : null;
+      if (!material?.file_id) return null;
+      return await referenceContext(
+        { segments: this.#segments, vault: this.#vault },
+        {
+          fileId: material.file_id,
+          segmentId: segmentId === DECK_ANCHOR_ID ? null : segmentId,
+          question,
+          outline: material.outline,
+        },
+      );
+    } catch {
+      return null;
     }
   }
 
@@ -1110,6 +1217,19 @@ export class AppService {
     handle<{ fileId: string }>(IPC.objectivesRegenerate, (input) => this.objectivesRegenerate(input.fileId));
     handle<{ fileId: string }>(IPC.objectivesReset, (input) => this.objectivesReset(input.fileId));
     handle<{ fileId: string; objectiveId: string }>(IPC.objectivesTeach, (input) => this.objectivesTeach(input));
+
+    /**
+     * What the app has spent. Three read channels and no write ones: the ledger is written only
+     * by the client decorator, so nothing the renderer can say changes a number here.
+     */
+    handle<CostSummaryQuery>(IPC.costSummary, (input) => this.#cost.summary(input));
+    handle<{ limit?: number } | undefined>(IPC.costRecent, (input) => this.#cost.recent(input?.limit ?? 50));
+    handle<{ since?: string | null } | undefined>(IPC.costExport, (input) => {
+      const dir = join(app.getPath('documents'), 'ChatterED');
+      const result = writeCsv(dir, this.#cost.rows(input?.since ?? null));
+      log().info('cost.export', { rows: result.rows, bytes: result.bytes });
+      return result;
+    });
 
     handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
     handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope; objectiveId?: string }>(

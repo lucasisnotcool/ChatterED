@@ -329,7 +329,16 @@ export async function referenceContext(
 
   if (scope === 'segment' && input.segmentId !== null) {
     const { text, page } = await segmentText(deps, input.fileId, input.segmentId);
-    context = segmentContext({ text, page, outline });
+    // The learner's own label for the segment, so the Teacher can name where they are (#41).
+    // Best-effort: a document whose segment cache has moved on still answers, without the label.
+    let label: string | null = null;
+    try {
+      const view = await deps.segments.document(input.fileId);
+      label = view.segments.find((sg) => sg.id === input.segmentId)?.label ?? null;
+    } catch {
+      label = null;
+    }
+    context = segmentContext({ text, page, outline, label });
     strategy = 'page';
     pages = 1;
   } else {

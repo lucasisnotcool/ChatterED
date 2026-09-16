@@ -168,42 +168,47 @@ describe('anchored threads', () => {
   });
 });
 
-describe('an answer is not an agent turn', () => {
-  it('does not take the floor, reset the timer, or move the ledger', async () => {
+describe('an Ask is a Teacher turn (#41)', () => {
+  /**
+   * **The four properties of `pivot-spec.md` \u00a7B1, three of them now inverted on purpose.**
+   *
+   * The card did not take the floor, did not reset the timer, could not be evidence, and locked
+   * the thread. #41: the Teacher answers the entry question, so the first three are just what an
+   * ordinary turn does, and the fourth is gone with the card. **The one that does not move is the
+   * ledger**, because it never rested on the card \u2014 rule 1 requires evidence to be a verbatim
+   * substring of a *learner* message, which no agent turn can ever be.
+   */
+  it('takes the floor and the timer, and still moves no ledger row', async () => {
     const h = build();
     await settle(h.clock, h.actor.open());
 
     const room = () => h.store.rooms.get(h.roomId)!;
-    const timerBefore = { deadline: room().deadline_ts, epoch: room().timer_epoch, fires: room().nudge_fires_this_round };
-    const floorBefore = room().consecutive_agent_turns;
+    const epochBefore = room().timer_epoch;
     const ledgerBefore = h.store.ledger.forSession(h.sessionId).map((r) => r.level);
 
     const out = await settle(
       h.clock,
       h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', context: segmentContext({ text: SEGMENT_TEXT }) }),
-      6_000,
+      30_000,
     );
 
-    // (1) no floor.
-    expect(room().consecutive_agent_turns).toBe(floorBefore);
+    // It is a turn: one agent reply on the floor, the silence timer re-armed behind it.
+    expect(room().consecutive_agent_turns).toBe(1);
     expect(room().pending_turn_id).toBeNull();
-    // (2) no timer. The deadline, the fence and the nudge budget are all where they were.
-    expect(room().deadline_ts).toBe(timerBefore.deadline);
-    expect(room().timer_epoch).toBe(timerBefore.epoch);
-    expect(room().nudge_fires_this_round).toBe(timerBefore.fires);
-    // (3) no ledger.
+    expect(room().timer_epoch).toBeGreaterThan(epochBefore);
+    // And the ledger has not moved, which is the property that was never the card's.
     expect(h.store.ledger.forSession(h.sessionId).map((r) => r.level)).toEqual(ledgerBefore);
 
-    // The card itself is real, anchored, capped and signed by nobody.
-    const answer = h.store.messages.get(out.answerId)!;
+    // The answer is the Teacher's, anchored, with no hand-back line appended to it.
+    const answer = h.store.messages.forRoom(h.roomId).at(-1)!;
     expect(answer.anchor_id).toBe('seg_3');
-    expect(answer.body.endsWith(HAND_BACK_LINE)).toBe(true);
-    expect(answer.body.split(/\s+/).length).toBeLessThan(REFERENCE_WORD_CAP + 20);
+    expect(answer.body.endsWith(HAND_BACK_LINE)).toBe(false);
     const author = h.store.participants.get(answer.participant_id)!;
-    expect(author.agent_key).toBeNull();
-    expect(author.display_name).toBe('REFERENCE');
+    expect(author.agent_key).toBe('peer.ellie');
     // The learner's question is theirs, and is anchored to the same segment.
     expect(h.store.messages.get(out.questionId)!.anchor_id).toBe('seg_3');
+    // What it was answered from still rides on the row (issue #35's footer).
+    expect(answer.scope_shown).toBe(out.scopeShown);
   });
 
   it('is written by the voice the room was created with, which is not in the roster', async () => {
@@ -213,28 +218,23 @@ describe('an answer is not an agent turn', () => {
     expect(h.actor.snapshot().agents.map((a) => a.role)).toEqual(['peer', 'challenger']);
   });
 
-  it('(4) keeps Ellie and Max out of that thread until the learner presses Explain it back', async () => {
+  it('(4) no longer locks the thread, and explainBack is a logged no-op', async () => {
     const h = build();
     await settle(h.clock, h.actor.open());
-    const before = h.store.messages.forRoom(h.roomId).length;
-    const out = await settle(
+    await settle(
       h.clock,
       h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', context: segmentContext({ text: SEGMENT_TEXT }) }),
-      6_000,
+      30_000,
     );
 
-    // While it is locked, a learner turn schedules nobody: the rules refuse before the model is
-    // consulted at all, and the refusal is on the record.
-    await settle(h.clock, h.actor.sendMessage('ok but is that the same as all entries being ≥ 0?'));
+    // A follow-up in the same thread reaches the Teacher by rule \u2014 nothing refuses it.
+    await settle(h.clock, h.actor.sendMessage('ok but is that the same as all entries being \u2265 0?', 'seg_3'), 30_000);
     const decisions = h.store.turnDecisions.forRoom(h.roomId);
-    expect(decisions.at(-1)!.decided_by).toBe('rule:reference_locked');
-    // Two rows added by the Ask (question + card) and one by the learner. No agent turn.
-    expect(h.store.messages.forRoom(h.roomId).length).toBe(before + 3);
+    expect(decisions.at(-1)!.decided_by).toBe('rule:teacher_answers');
+    expect(decisions.every((d) => d.decided_by !== 'rule:reference_locked')).toBe(true);
 
-    // The press is what makes them eligible for the first time.
-    expect(h.actor.explainBack(out.answerId)).toEqual({ unlocked: true, anchorId: 'seg_3' });
-    await settle(h.clock, h.actor.sendMessage('it is about zᵀHz being ≥ 0 for every z, not the entries.'));
-    expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).not.toBe('rule:reference_locked');
+    // The old button still answers, does nothing, and says so in the log.
+    expect(h.actor.explainBack('m_whatever')).toEqual({ unlocked: true, anchorId: null });
     expect(
       h.store.events
         .forSession(h.sessionId)

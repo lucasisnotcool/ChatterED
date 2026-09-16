@@ -373,6 +373,52 @@ export function teachObjectiveBlock(input: {
   return lines.join('\n');
 }
 
+/**
+ * **Where in the document the learner is asking** (issue #41).
+ *
+ * The Teacher's prefix is the *whole* deck (`openOrCreateFlowRoom`: "the material the agents
+ * see"), which is right — it is what lets her answer "how does this relate to p. 12". What she
+ * never had is *which page the learner is looking at*: only the REFERENCE call was given a
+ * segment, and when the Teacher took over the thread the page went with it. On a 58-page deck
+ * that is the difference between an answer about the transition model and an answer about
+ * whatever the prefix's first paragraph was.
+ *
+ * So the page comes back, after the cache breakpoint because it changes per thread, with the one
+ * sentence that stops it being read as a fence: **this is where they are, not a limit on what you
+ * may use.** House rule 1 already says the slide is the arbiter of fidelity and not a fence, and
+ * #36 exists because that was ambiguous once.
+ */
+export function whereBlock(input: {
+  scope: 'segment' | 'deck';
+  /** The learner's label for the segment, when it has one. */
+  label?: string | null;
+  page?: number | null;
+  /** The segment's own text. Empty is fine — a title slide has almost none, which is the point. */
+  passageText: string;
+}): string {
+  if (input.scope === 'deck') {
+    return [
+      'WHERE THE LEARNER IS ASKING',
+      'They asked about the document as a whole, not about one page. You have the whole of it above.',
+    ].join('\n');
+  }
+  const where = input.page === null || input.page === undefined ? 'the part of the document' : `p. ${input.page}`;
+  const label = input.label?.trim() ? ` \u2014 \u201c${input.label.trim()}\u201d` : '';
+  const lines = [`WHERE THE LEARNER IS ASKING`, `They are on ${where}${label} of the document above.`];
+  const passage = input.passageText.trim();
+  if (passage.length > 0) {
+    lines.push('That page reads:', '"""', passage, '"""');
+  } else {
+    lines.push('That page has almost no text on it \u2014 a title or a section divider.');
+  }
+  lines.push(
+    'This says where they are. It is **not** a limit on what you may use: if the answer needs a',
+    'prerequisite this page takes for granted, or something from elsewhere in the deck, or your own',
+    'knowledge of the field, use it. Land the answer back on this page at the end, not at the start.',
+  );
+  return lines.join('\n');
+}
+
 export interface TurnDirective {
   agentRole: AgentRole;
   move: string;

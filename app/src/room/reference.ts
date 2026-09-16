@@ -102,13 +102,25 @@ export interface ReferenceContext {
   retrievedPages: number[];
   /** The rendered footer phrase, from `scopeShownFor()`. Stored on the message row. */
   scopeShown: string;
+  /**
+   * The page a `segment` context is on, and the learner's label for it (issue #41). Carried so
+   * the Teacher's `whereBlock` can say *p. 14 — "Problem Formulation"* rather than handing her a
+   * paragraph with no address. Absent on a deck context, which has no one page.
+   */
+  page?: number | null;
+  label?: string | null;
 }
 
 /**
  * A page-scoped context. The default shape of an "+ Ask here", and what the flow builds when the
  * scope rule says `segment`.
  */
-export function segmentContext(input: { text: string; page?: number | null; outline?: string }): ReferenceContext {
+export function segmentContext(input: {
+  text: string;
+  page?: number | null;
+  outline?: string;
+  label?: string | null;
+}): ReferenceContext {
   const outline = input.outline?.trim() ?? '';
   return {
     scope: 'segment',
@@ -116,6 +128,8 @@ export function segmentContext(input: { text: string; page?: number | null; outl
     outline,
     retrievedPages: [],
     scopeShown: scopeShownFor({ scope: 'segment', page: input.page ?? null, outline: outline.length > 0 }),
+    page: input.page ?? null,
+    label: input.label ?? null,
   };
 }
 
