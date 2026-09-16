@@ -18,6 +18,23 @@
     { value: 'scripted', label: 'Scripted demo', hint: 'Replays a fixed transcript. No network calls at all.' },
   ];
 
+  /**
+   * The two pacing profiles, in the learner's words rather than the constants'. `flow.ts` is the
+   * only place the numbers live; these are what they mean.
+   */
+  const PROFILES: { value: 'default' | 'demo'; label: string; hint: string }[] = [
+    {
+      value: 'default',
+      label: 'Study',
+      hint: 'What ships: Max is offered the floor after three turns in ten minutes, two concepts covered, and nothing quizzed inside three minutes of being taught.',
+    },
+    {
+      value: 'demo',
+      label: 'Demo — faster, for recording',
+      hint: 'Two turns in three minutes, and a concept can be quizzed twenty seconds after it is taught. For a filmed walkthrough; it quizzes sooner than the shipped app.',
+    },
+  ];
+
   const BACKEND_LABEL: Record<string, string> = {
     claude_cli: 'Claude Code on this Mac',
     anthropic: 'Anthropic API key',
@@ -143,7 +160,7 @@
 
       <div class="pair">
         <label class="field">
-          <span>Agent turns (Ellie, Max, Theo)</span>
+          <span>Agent turns (Ellie and Max)</span>
           <select
             disabled={store.settingsBusy}
             value={isChoice(settings.agentModel) ? settings.agentModel : '__custom'}
@@ -204,6 +221,39 @@
 
       {#if store.settingsError}<p class="warn">{store.settingsError}</p>{/if}
       <p class="quiet">A model change applies to the next room you open, not the one already running.</p>
+    </section>
+
+    <!-- The Tester's pacing, disclosed. `flow-build-plan.md` §4.2 asks for the demo profile to be
+         selectable; §3.5 asks for the pacing to be *disclosed*, which is why this section says
+         what each profile actually does instead of naming two modes and leaving it there. -->
+    <section>
+      <h2>Tester pacing</h2>
+      <p class="status">
+        Right now: <strong>{settings.flowProfile === 'demo' ? 'Demo' : 'Study'}</strong>
+      </p>
+      <div class="choices">
+        {#each PROFILES as p (p.value)}
+          <label class="choice" class:on={settings.flowProfile === p.value}>
+            <input
+              type="radio"
+              name="flow-profile"
+              value={p.value}
+              checked={settings.flowProfile === p.value}
+              disabled={store.settingsBusy}
+              onchange={() => void store.saveSettings({ flowProfile: p.value })}
+            />
+            <span class="choice-text">
+              <span class="choice-label">{p.label}</span>
+              <span class="quiet">{p.hint}</span>
+            </span>
+          </label>
+        {/each}
+      </div>
+      <p class="quiet">
+        Neither setting changes what Max asks or how long he holds a reply — replies are paced at
+        9–12 seconds on both. It changes only how much of a sitting has to happen before he is
+        offered the floor. A change applies to the next document you open.
+      </p>
     </section>
 
     <!-- §B7's "Sources" group, and the answer to "once a document is open there is no way in the

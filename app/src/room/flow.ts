@@ -122,15 +122,56 @@ export const FLOW: FlowProfile = {
   feedbackRequired: true,
 };
 
+/**
+ * The **disclosed** demo profile, selectable in Settings as *Tester pacing ▸ Demo*
+ * (`flow-build-plan.md` §4.2). Not a different mechanism: the same four rules, with the two
+ * engagement constants and the UI guard set to what a walkthrough can actually reach. The
+ * learner is told which profile is running — the flow's first-open pacing strip names it, and
+ * so does Settings — because a demo that quizzes four times sooner than the shipped app without
+ * saying so is exactly the overclaim that strip exists to rule out (§3.5).
+ */
 export const DEMO: FlowProfile = {
   ...FLOW,
   name: 'demo',
   turnsK: 2,
   windowMs: 3 * MINUTE,
-  // `minAgeMs` is NOT lowered for the demo: at 3 min it already fits inside a filmed sitting,
-  // and it is a UI guard whose whole justification (§3.2) is that it protects the learner from
-  // being quizzed on the sentence in front of them. Only k and m move.
+  /**
+   * **20 s — and lowering is the one direction the evidence allows.** `flow-session.md`
+   * §3.2/§8.3 argues `minAgeMs` in one direction only: never *raised*, because for prose
+   * Karpicke & Roediger 2007 (pp. 717–718) found an immediate free-recall test **beat** one
+   * delayed by 10 minutes. See `MIN_AGE_CAP_MS`. What the 3 minutes buys is a UI guard against
+   * quizzing the sentence still under the learner's eye, and 20 s still buys most of it: it is
+   * longer than it takes to read a Teacher turn.
+   *
+   * It has to move for a **cold** walkthrough. From an empty sitting the earliest possible
+   * hand-off is two Teacher turns plus the guard, so on the shipped profile nothing taught on
+   * camera is quizzable for three minutes — a live run on 16 Sep waited the floor out and the
+   * hand-off arrived on the fourth learner turn. §2's storyboard is at the hand-off about 35 s
+   * after the first Teacher turn.
+   *
+   * **This conflicts with the filmed take, and the conflict is resolved in one place, not by
+   * splitting the difference here.** §2 beat 10 says on camera *"minutes old, not seconds"*, and
+   * `script.critique1.ts` seeds a warm-up sitting so the Tester lands on a concept taught four
+   * minutes ago rather than on the one Ellie has just finished teaching. At 20 s the just-taught
+   * one becomes eligible and, being fresher and less demonstrated, wins `pickTarget`. So the
+   * take keeps the guard: `critique1Sitting()` pins its session to `CRITIQUE1_TAKE`, which is
+   * this profile with `minAgeMs` back at the cap. Settings ▸ Demo is for a cold walkthrough;
+   * the recorded take runs the warm-up. Flagged in the commit and in `docs/STATUS.md` — if
+   * filming ends up cold, beat 10's narration is the line that has to change.
+   */
+  minAgeMs: 20_000,
 };
+
+/** The settings row the learner's choice lives in. Written by `AppService.saveSettings`. */
+export const FLOW_PROFILE_SETTING = 'flow_profile';
+
+/**
+ * A stored profile name → the profile. Anything unrecognised — an empty row, a name from a
+ * later build — is the shipped one: an install never falls into a demo pace.
+ */
+export function flowProfileFor(name: string | null | undefined): FlowProfile {
+  return name === 'demo' ? DEMO : FLOW;
+}
 
 // ── the session ─────────────────────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import type {
 import { IPC } from '../shared/ipc.js';
 import { rosterFor, PINNED_PAIRING } from '../room/agents.js';
 import { RoomActor } from '../room/actor.js';
+import { FLOW_PROFILE_SETTING, flowProfileFor, type FlowProfile } from '../room/flow.js';
 import type { LLMClient } from '../room/llm/types.js';
 import { CLI_MODEL_CHOICES, isBlockedModelId, normaliseModelId } from '../room/llm/models.js';
 import type { ConceptPack, RoomConfig } from '../room/records.js';
@@ -35,6 +36,11 @@ import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './ap
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
+/**
+ * The flow's first-open pacing strip is shown once per install and is re-openable from Settings
+ * (`flow-build-plan.md` §3.5) — one row, like `first_run_complete` next to it.
+ */
+const PACING_STRIP_SETTING = 'pacing_strip_seen';
 import {
   flowRoomView,
   loadFlowState,
@@ -160,7 +166,18 @@ export class AppService {
       modelChoices: [...CLI_MODEL_CHOICES],
       hasApiKey: this.#apiKey.has(),
       vaultRoot: this.#vault.view().rootPath,
+      flowProfile: this.flowProfile().name,
+      pacingStripSeen: this.#d.store.settings.get(PACING_STRIP_SETTING) === '1',
     };
+  }
+
+  /**
+   * Tester pacing, as a setting (`flow-build-plan.md` §4.2: *"plus a demo profile … selectable
+   * in Settings"*). Default Study: an install never falls into the demo pace, and `flow.ts`
+   * treats any row it does not recognise as Study for the same reason.
+   */
+  flowProfile(): FlowProfile {
+    return flowProfileFor(this.#d.store.settings.get(FLOW_PROFILE_SETTING));
   }
 
   /**
@@ -187,6 +204,11 @@ export class AppService {
       set(SETTINGS_KEYS.cliOrchestratorModel, normaliseModelId(patch.orchestratorModel) ?? '');
     }
     if (patch.cliPathOverride !== undefined) set(SETTINGS_KEYS.cliPathOverride, (patch.cliPathOverride ?? '').trim());
+    // The pacing profile takes effect on the **next** room: the actor is handed its profile at
+    // construction, and swapping the rules under a sitting that has already counted turns
+    // against them would be the kind of silent change the pacing strip promises not to make.
+    if (patch.flowProfile !== undefined) set(FLOW_PROFILE_SETTING, patch.flowProfile);
+    if (patch.pacingStripSeen !== undefined) set(PACING_STRIP_SETTING, patch.pacingStripSeen ? '1' : '');
     return { ok: true };
   }
 
@@ -271,6 +293,7 @@ export class AppService {
       // absolute deadline, so it has to survive a quit the way the silence timer does; without
       // it, every relaunch would look to `handOffDue` like a learner who has just arrived.
       flowState: loadFlowState(this.#d.store, roomId),
+      flowProfile: this.flowProfile(),
       newId,
     });
     this.#actor.start();

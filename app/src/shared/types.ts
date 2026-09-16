@@ -302,6 +302,14 @@ export interface SettingsView {
   hasApiKey: boolean;
   /** The vault root, so Settings can offer "Change vault…" without opening the Library. */
   vaultRoot: string | null;
+  /**
+   * Tester pacing: `'default'` is the shipped profile, `'demo'` the disclosed filming one
+   * (`room/flow.ts`). Named here by the profile's own `name` so there is one spelling of it
+   * end to end — Settings, the pacing strip and the event log all say the same word.
+   */
+  flowProfile: 'default' | 'demo';
+  /** False until the learner has dismissed the flow's first-open pacing strip (§3.5). */
+  pacingStripSeen: boolean;
 }
 
 export interface SettingsPatch {
@@ -309,6 +317,9 @@ export interface SettingsPatch {
   cliPathOverride?: string | null;
   agentModel?: string;
   orchestratorModel?: string;
+  flowProfile?: 'default' | 'demo';
+  /** Set false from Settings to show the pacing strip again; set true when it is dismissed. */
+  pacingStripSeen?: boolean;
 }
 
 export interface Bootstrap {

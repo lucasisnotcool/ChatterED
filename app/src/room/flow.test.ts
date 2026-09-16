@@ -22,6 +22,7 @@ import {
   withThreshold,
   MIN_AGE_CAP_MS,
   handOffDue,
+  flowProfileFor,
   handOffLine,
   latestByElement,
   noteActivity,
@@ -31,8 +32,10 @@ import {
   resumeOrOpen,
   sessionExpired,
   tickSession,
+  type FlowProfile,
   type FlowSession,
   type HandOffInput,
+  type HandOffVerdict,
   type TaughtItem,
 } from './flow.js';
 import { rosterFor } from './agents.js';
@@ -70,11 +73,27 @@ describe('the constants', () => {
     expect(DEMO.minAgeMs).toBeLessThanOrEqual(MIN_AGE_CAP_MS);
   });
 
-  it('has a demo profile that moves k and m only', () => {
+  it('has a demo profile that moves k, m and the UI guard — downwards only', () => {
     expect(DEMO.turnsK).toBe(2);
     expect(DEMO.windowMs).toBe(3 * MINUTE);
-    expect(DEMO.minAgeMs).toBe(FLOW.minAgeMs);
     expect(DEMO.name).toBe('demo');
+    // §2's storyboard reaches the hand-off ~35 s after the first Teacher turn, so the 3-minute
+    // guard has to move for the take. §3.2 argues it in one direction only — never *raised* —
+    // and this is the assertion that keeps the demo on the allowed side of that.
+    expect(DEMO.minAgeMs).toBe(20_000);
+    expect(DEMO.minAgeMs).toBeLessThan(FLOW.minAgeMs);
+    // Everything else is the shipped profile. A demo is a pace, not a different mechanism.
+    expect(DEMO.minTaught).toBe(FLOW.minTaught);
+    expect(DEMO.feedbackRequired).toBe(FLOW.feedbackRequired);
+    expect(DEMO.horizonMs).toBe(FLOW.horizonMs);
+    expect(DEMO.composerIdleMs).toBe(FLOW.composerIdleMs);
+  });
+
+  it('falls back to the shipped profile for any stored name it does not know', () => {
+    expect(flowProfileFor('demo')).toBe(DEMO);
+    expect(flowProfileFor('study')).toBe(FLOW);
+    expect(flowProfileFor(null)).toBe(FLOW);
+    expect(flowProfileFor('something a later build wrote')).toBe(FLOW);
   });
 
   it('exposes Koala\u2019s actual control: a threshold, not a quiet/normal/eager slider', () => {
@@ -272,6 +291,56 @@ function ready(clock: FakeClock, overrides: Partial<HandOffInput> = {}): { input
     },
   };
 }
+
+describe('the pacing profile Settings offers', () => {
+  /**
+   * The demo profile's whole job, stated as a test: a filmed sitting reaches beat 10. §2's
+   * storyboard is at the hand-off ~35 s after the first Teacher turn, and on the shipped
+   * profile that cannot happen — a live run on 16 Sep waited out the 3-minute guard and the
+   * hand-off came minutes later, on the fourth learner turn. Both runs below are the same
+   * sitting on a fake clock; only the profile differs.
+   */
+  const sitting = (profile: FlowProfile): HandOffVerdict => {
+    const clock = new FakeClock();
+    const t0 = clock.now();
+    let session = openSession({ id: 'fs_1', documentId: 'doc_1', profile }, t0);
+    const items = [
+      taught('C1', t0, 'teacher', 'what /btw can and cannot do'),
+      taught('C2', t0 + 5_000, 'teacher', 'the forwarding gap'),
+    ];
+    clock.advance(20_000);
+    session = noteActivity(session, { kind: 'turn' }, clock.now());
+    clock.advance(12_000);
+    session = noteActivity(session, { kind: 'turn' }, clock.now());
+    clock.advance(23_000); // 55 s in, and the composer has been quiet for the last 23 s
+    return handOffDue(
+      {
+        session,
+        taught: items,
+        pendingTeacherQuestion: false,
+        silenceWindowOpen: false,
+        whisperOpen: false,
+        lastKeystrokeAt: clock.now() - 23_000,
+      },
+      clock.now(),
+    );
+  };
+
+  it('hands off inside a minute of two taught concepts on Demo', () => {
+    const v = sitting(DEMO);
+    expect(v.due).toBe(true);
+    expect(v.reasons).toEqual([]);
+    expect(v.target).not.toBeNull();
+  });
+
+  it('does not, on Study — and says which rules the minute failed', () => {
+    const v = sitting(FLOW);
+    expect(v.due).toBe(false);
+    // Two learner turns is under k = 3, and 55 s is inside the 3-minute UI guard.
+    expect(v.reasons).toContain('r1_engagement');
+    expect(v.reasons).toContain('r3_maturity');
+  });
+});
 
 describe('handOffDue', () => {
   let clock: FakeClock;

@@ -39,7 +39,7 @@
  * improvisation.
  */
 import type { AgentRole } from '../../shared/types.js';
-import { DEMO, openSession, type FlowSession, type TaughtItem } from '../flow.js';
+import { DEMO, MIN_AGE_CAP_MS, openSession, type FlowProfile, type FlowSession, type TaughtItem } from '../flow.js';
 import type {
   ScriptSource,
   ScriptedBeat,
@@ -408,11 +408,11 @@ export const CRITIQUE1_SCRIPT: ScriptSource = {
 /**
  * **The one thing the script cannot fake, and must not.**
  *
- * Beat 10 fires only when `handOffDue()` says so, and on the DEMO profile that still needs two
- * concepts **older than three minutes** (`MIN_AGE_CAP_MS`, which the demo profile deliberately
- * does *not* lower — only k and m move). Beats 7→10 take about ninety seconds of screen time, so
- * the hand-off is not reachable from a cold open inside one take: the sitting has to already
- * have taught something.
+ * Beat 10 fires only when `handOffDue()` says so, and the take needs two concepts **older than
+ * three minutes** — which is why `CRITIQUE1_TAKE` below keeps `minAgeMs` at `MIN_AGE_CAP_MS`
+ * where Settings ▸ Demo now lowers it to 20 s (`flow.ts`). Beats 7→10 take about ninety seconds
+ * of screen time, so the hand-off is not reachable from a cold open inside one take: the sitting
+ * has to already have taught something.
  *
  * That is not a problem to be scripted around. It is the feature: `actor.flowSnapshot()` is
  * persisted and restored, so **the presenter does a short warm-up on the same deck before the
@@ -423,14 +423,26 @@ export const CRITIQUE1_SCRIPT: ScriptSource = {
  *
  * Do not use it to fabricate a taught set for the recorded take. Run the warm-up.
  */
+/**
+ * The take's pacing: the Demo profile's k and m, and the **shipped** three-minute guard.
+ *
+ * Settings ▸ Demo lowers `minAgeMs` to 20 s so that a *cold* walkthrough can reach a hand-off
+ * (`flow.ts`). The take is not cold — it resumes into the warm-up below — and at 20 s the
+ * concept Ellie teaches at beat 9 would become eligible and would win `pickTarget` for being
+ * fresher and less demonstrated. Beat 11 would then quiz page 6 with a question written about
+ * page 5, and beat 10's narration — *"minutes old, not seconds"* — would be false on camera.
+ * So the sitting the take resumes into carries its own profile, and the storyboard is unchanged.
+ */
+export const CRITIQUE1_TAKE: FlowProfile = { ...DEMO, minAgeMs: MIN_AGE_CAP_MS };
+
 export function critique1Sitting(now: number): { session: FlowSession; taught: TaughtItem[] } {
   const id = 'fs_critique1';
   const session: FlowSession = {
-    ...openSession({ id, documentId: 'critique1', profile: DEMO }, now - 14 * 60_000),
+    ...openSession({ id, documentId: 'critique1', profile: CRITIQUE1_TAKE }, now - 14 * 60_000),
     lastActivityAt: now,
-    gapDeadlineTs: now + DEMO.sessionGapMs,
+    gapDeadlineTs: now + CRITIQUE1_TAKE.sessionGapMs,
     anchors: ['p3.lower'],
-    // Both outside the DEMO profile's 3-minute window, so the take's own two turns are what
+    // Both outside the take profile's 3-minute window, so the take's own two turns are what
     // satisfy R1 — the rule is seen to fire on camera rather than arriving pre-satisfied.
     learnerTurns: [now - 13 * 60_000, now - 12 * 60_000],
   };

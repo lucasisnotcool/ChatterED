@@ -77,6 +77,10 @@ const mockSettings: SettingsView = {
   modelChoices: ['haiku', 'sonnet', 'opus'],
   hasApiKey: false,
   vaultRoot: null,
+  flowProfile: 'default',
+  // The mock renderer shows the pacing strip, because the strip's first-open state is the one
+  // worth being able to look at without Electron.
+  pacingStripSeen: false,
 };
 
 const row = (id: string, label: string, learnerLabel: string): LedgerRowView => ({
