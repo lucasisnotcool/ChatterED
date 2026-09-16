@@ -38,6 +38,21 @@ export interface AgentProfile {
 
 export type DisagreementMarker = 'pushes back on' | "isn't sure about" | 'sides with you against';
 
+/**
+ * **What a card in the flow *is*** (issue #41).
+ *
+ * `'turn'` is a conversation turn — the learner's, Ellie's, Max's — and is the default for every
+ * row ever written. `'summary'` is the artefact: a typeset, capped, REFERENCE-register card
+ * written **from a thread** and inserted under the segment, produced by `flow:summarise` and
+ * never by a model deciding to write one (`conversation-refinement.md` §5).
+ *
+ * `'answer'` is the retired REFERENCE entry card of `pivot-spec.md` §B1. Nothing mints it any
+ * more — the Teacher answers the entry question now — and migration 017 rewrites the ones that
+ * exist into `'summary'`. It stays in the union so that a row which escaped the migration (an
+ * older vault opened on a newer build) still renders as what it was rather than as a turn.
+ */
+export type MessageKind = 'turn' | 'answer' | 'summary';
+
 export interface MessageView {
   id: string;
   seq: number;
@@ -117,8 +132,27 @@ export interface MessageView {
    * `by rule` tag, which is the whole point of writing that line in `flow.ts` instead of asking
    * a model for it (`flow-build-plan.md` §4.2: "a rule I can see and turn down"). A quiz turn is
    * *decided* by a rule but still generated, and is deliberately not tagged.
+   *
+   * **`'offer_summary'`** (issue #41) is the second value: a one-line Teacher turn offering to
+   * summarise this thread into the document. Render it with the **Summarise into the document**
+   * action on it; the offer is a sentence and the button is the whole of what it does. It is
+   * posted at most once per thread and never inserts anything by itself (R1).
    */
   byRule: string | null;
+  /**
+   * **What this card is** (issue #41). `'turn'` on everything the conversation produced;
+   * `'summary'` on the artefact a thread was summarised into; `'answer'` only on a legacy
+   * REFERENCE entry card. Render a `'summary'` as a typeset document artefact, visually distinct
+   * from the deck's own crops (`pdf-fidelity-segmentation.md` §C4) and from a chat turn.
+   */
+  kind?: MessageKind;
+  /**
+   * On a `'summary'` card: the thread it was written from — an `anchorId`, which is what a thread
+   * is identified by everywhere in the flow. Clicking the card expands that thread beneath it
+   * (`flow:threadOf` returns its message ids), and the card's composer continues **that** thread
+   * rather than opening a new one. `null` on everything else.
+   */
+  sourceThreadId?: string | null;
 }
 
 export interface MessageReferenceView {
@@ -504,9 +538,12 @@ export interface FlowThreadView {
   collapsed: boolean;
   removed: boolean;
   /**
-   * The REFERENCE answer still waiting for **Explain it back →**, if any. While it is set,
-   * neither Ellie nor Max may post into this thread — enforced in `reference.ts`, reported here
-   * so the renderer can show the two buttons rather than a composer.
+   * **Always `null` since issue #41**, and kept only so an older renderer still parses.
+   *
+   * It used to name the REFERENCE answer a thread was waiting on: while it was set, neither
+   * Ellie nor Max could post there until the learner pressed *Explain it back*. The Teacher now
+   * answers the entry question herself (`conversation-refinement.md` §2), so there is no entry
+   * card to be locked behind and nothing ever sets this. Render a composer, always.
    */
   lockedByAnswerId: string | null;
 }
@@ -551,22 +588,73 @@ export interface FlowRelayView {
   flow: FlowRoomView;
 }
 
-/** What `flow:askHere` gives back: the room (possibly just created) and the card that landed. */
+/**
+ * What `flow:askHere` and `flow:askDeck` give back: the room (possibly just created), the
+ * learner's own question as it was written, and the threads as they now stand.
+ *
+ * **It no longer carries an answer** (issue #41). The entry question used to be answered inline
+ * by the REFERENCE voice, in one round trip, which is why this shape had a body on it. The
+ * Teacher answers it now, so the reply arrives the way every other Teacher turn arrives — on the
+ * event stream, at its latency floor, after the 3–8 s yield — and the three fields below are
+ * `null` on every Ask made on this build. They are kept, rather than deleted, so a renderer that
+ * still reads them gets a defined value instead of a crash mid-render.
+ */
 export interface FlowAnswerView {
   roomId: string;
   anchorId: string;
   questionId: string;
-  answerId: string;
-  /** The capped answer, the rule and the hand-back line, exactly as `reference.ts` composed it. */
-  body: string;
+  /** Null since #41. Watch `message.appended` / `turn.delta` on `anchorId` for the reply. */
+  answerId: string | null;
+  /** Null since #41. */
+  body: string | null;
+  /** False since #41: nothing on this path is truncated any more. */
   truncated: boolean;
   /**
    * What the model was given, already phrased for the footer — `'p. 14'`, `'p. 14 + outline'`,
-   * `'whole deck'`, `'outline + pp. 3, 14, 40'` (issue #35, `shared/scope.ts`). Also on the
-   * answer's `MessageView`, so a card re-rendered from `flow:messages` says the same thing.
+   * `'whole deck'`, `'outline + pp. 3, 14, 40'` (issue #35, `shared/scope.ts`). Still resolved on
+   * every Ask, because the scope still decides what the Teacher is shown, and still carried on
+   * the reply's own `MessageView`.
    */
   scopeShown: string;
   flow: FlowRoomView;
+}
+
+/**
+ * **The artefact** (issue #41, `conversation-refinement.md` §5): what
+ * **Summarise into the document** produced.
+ *
+ * The card itself is an ordinary `MessageView` on `flow.room.messages`, with
+ * `kind: 'summary'` and `sourceThreadId` set — this is the handle to it, plus the room as it now
+ * stands, in the shape every other flow mutation returns.
+ */
+export interface FlowSummaryView {
+  roomId: string;
+  /** The segment the card was inserted under. */
+  anchorId: string;
+  messageId: string;
+  /** The thread it was written from. Equal to `anchorId` for a thread under its own segment. */
+  sourceThreadId: string;
+  /** The card's body: prose in the REFERENCE register, capped in code, maths in `$…$`. */
+  body: string;
+  /** True when the model ran over the cap and the body was cut. */
+  truncated: boolean;
+  /** True when this replaced an existing card for the same thread rather than adding one. */
+  regenerated: boolean;
+  flow: FlowRoomView;
+}
+
+/**
+ * **The conversation behind a summary card** (issue #41): what `flow:threadOf` returns, so a
+ * click on the card can expand its source thread beneath it.
+ *
+ * Ids, not messages, for the same reason `FlowThreadView` is: the bodies already travel on
+ * `flow.room.messages` and two copies could disagree. `null` when the id is not a summary card,
+ * or its thread no longer exists.
+ */
+export interface FlowThreadOfView {
+  summaryId: string;
+  threadId: string;
+  messageIds: string[];
 }
 
 // ── Turn status on the wire (cui-standards-audit.md §2, issue #34) ─────────────────────────

@@ -58,6 +58,10 @@ const api: ChatterEdApi = {
   flowAskHere: (input) => ipcRenderer.invoke(IPC.flowAskHere, input),
   flowAskDeck: (input) => ipcRenderer.invoke(IPC.flowAskDeck, input),
   flowExplainBack: (input) => ipcRenderer.invoke(IPC.flowExplainBack, input),
+  // The artefact (issue #41): a thread summarised into the document, and the way back to the
+  // conversation it was written from.
+  flowSummarise: (input) => ipcRenderer.invoke(IPC.flowSummarise, input),
+  flowThreadOf: (input) => ipcRenderer.invoke(IPC.flowThreadOf, input),
   flowSend: (input) => ipcRenderer.invoke(IPC.flowSend, input),
   flowMessages: (input) => ipcRenderer.invoke(IPC.flowMessages, input),
   flowWhisperOpen: (input) => ipcRenderer.invoke(IPC.flowWhisperOpen, input),

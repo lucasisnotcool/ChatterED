@@ -646,6 +646,32 @@ export function createMockBridge(): ChatterEdApi {
       }
       return { unlocked: false, anchorId: null };
     },
+    /**
+     * **Summarise into the document** (issue #41). Typed stub so the mock satisfies the API; the
+     * body it posts is written from the thread's own turns rather than invented, so the card in
+     * `vite dev` is at least the right *shape* — and it is inserted only on this call, never on
+     * its own. Wire the real copy here when the flow UI lands.
+     */
+    async flowSummarise({ threadId }) {
+      const said = messages.filter((m) => m.anchorId === threadId).map((m) => m.body).join(' ');
+      const body = said.trim().split(/\s+/).slice(0, 60).join(' ');
+      const card = post(body, null, { anchorId: threadId, kind: 'summary', sourceThreadId: threadId });
+      return {
+        roomId: ROOM, anchorId: threadId, messageId: card.id, sourceThreadId: threadId,
+        body, truncated: false, regenerated: false, flow: flowView(),
+      };
+    },
+    /** The conversation behind a summary card (issue #41). */
+    async flowThreadOf({ summaryId }) {
+      const card = messages.find((m) => m.id === summaryId);
+      if (!card || card.kind !== 'summary' || !card.sourceThreadId) return null;
+      const threadId = card.sourceThreadId;
+      return {
+        summaryId,
+        threadId,
+        messageIds: messages.filter((m) => m.anchorId === threadId && m.id !== summaryId).map((m) => m.id),
+      };
+    },
     async flowSend({ segmentId, text }) {
       const mine = post(text, null, { anchorId: segmentId });
       // "The room has your message", emitted before anything agent-shaped. Neutral, no name.

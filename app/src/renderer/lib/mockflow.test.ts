@@ -41,7 +41,7 @@ describe('flow:askHere', () => {
       expect(answer.anchorId).toBe(SEG);
       const posted = events.filter((e) => e.type === 'message.appended').map((e) => e.message);
       const question = posted.find((m) => m.id === answer.questionId)!;
-      const card = posted.find((m) => m.id === answer.answerId)!;
+      const card = posted.find((m) => m.id === answer.answerId!)!;
 
       expect(question.speaker.kind).toBe('student');
       expect(question.anchorId).toBe(SEG);
@@ -63,15 +63,15 @@ describe('flow:askHere', () => {
       const answer = await pending;
 
       const before = await bridge.flowMessages({ fileId: 'f1' });
-      expect(before!.threads.find((t) => t.anchorId === SEG)!.lockedByAnswerId).toBe(answer.answerId);
+      expect(before!.threads.find((t) => t.anchorId === SEG)!.lockedByAnswerId).toBe(answer.answerId!);
 
-      expect(await bridge.flowExplainBack({ answerId: answer.answerId })).toEqual({ unlocked: true, anchorId: SEG });
+      expect(await bridge.flowExplainBack({ answerId: answer.answerId! })).toEqual({ unlocked: true, anchorId: SEG });
 
       const after = await bridge.flowMessages({ fileId: 'f1' });
       expect(after!.threads.find((t) => t.anchorId === SEG)!.lockedByAnswerId).toBeNull();
 
       // Unlocking twice is not an error and does not unlock something else.
-      expect(await bridge.flowExplainBack({ answerId: answer.answerId })).toEqual({ unlocked: false, anchorId: null });
+      expect(await bridge.flowExplainBack({ answerId: answer.answerId! })).toEqual({ unlocked: false, anchorId: null });
     } finally {
       vi.useRealTimers();
     }
@@ -86,7 +86,7 @@ describe('the thread, end to end', () => {
       const asked = bridge.flowAskHere({ fileId: 'f1', segmentId: SEG, question: 'what does it see?' });
       await vi.advanceTimersByTimeAsync(3000);
       const answer = await asked;
-      await bridge.flowExplainBack({ answerId: answer.answerId });
+      await bridge.flowExplainBack({ answerId: answer.answerId! });
 
       await bridge.flowSend({ roomId: 'mock-room-1', segmentId: SEG, text: 'it reads the session and has no tools' });
       await vi.advanceTimersByTimeAsync(6000);

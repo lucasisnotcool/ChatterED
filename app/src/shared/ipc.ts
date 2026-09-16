@@ -29,6 +29,8 @@ import type { AskScope } from './scope.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
   FlowAnswerView,
+  FlowSummaryView,
+  FlowThreadOfView,
   FlowRelayView,
   FlowRoomView,
   FlowWhisperView,
@@ -97,7 +99,19 @@ export const IPC = {
   flowAskHere: 'flow:askHere',
   /** "Ask about this deck" — the line at the top of the flow (issue #35, `shared/scope.ts`). */
   flowAskDeck: 'flow:askDeck',
+  /**
+   * **A logged no-op since issue #41**, kept for one release.
+   *
+   * It unlocked a segment's thread after a REFERENCE entry card. The Teacher answers the entry
+   * question now, so there is no card and no lock; calling this logs a deprecation and returns
+   * `{ unlocked: true, anchorId: null }` so an older renderer's button does nothing visible
+   * rather than throwing. Remove it, and this line, in the release after.
+   */
   flowExplainBack: 'flow:explainBack',
+  /** **Summarise into the document** on a thread → one `summary` card (issue #41). */
+  flowSummarise: 'flow:summarise',
+  /** The source thread behind a summary card, so a click can expand it (issue #41). */
+  flowThreadOf: 'flow:threadOf',
   flowSend: 'flow:send',
   flowMessages: 'flow:messages',
 
@@ -286,14 +300,17 @@ export interface ChatterEdApi {
    * "+ Ask here" on one segment.
    *
    * **This call is what creates the document's room**, the first time it is made for a file
-   * (`flow-build-plan.md` §3.3): there is no setup screen any more. It resolves in ~2–3 s — the
-   * REFERENCE hold, which is deliberately shorter than any agent's, because retrieval is not
-   * deliberation (`pivot-spec.md` §B1) — and returns the card that landed plus the room it
-   * landed in, so the renderer never has to ask a second question to find out where it is.
+   * (`flow-build-plan.md` §3.3): there is no setup screen any more.
    *
-   * Four things it is *not*, all enforced in `actor.askHere()` rather than in a prompt: it does
-   * not take the turn floor, does not reset the silence timer, can never be ledger evidence, and
-   * it **locks Ellie and Max out of that segment's thread** until `explainBack`.
+   * **The Teacher answers it** (issue #41, `conversation-refinement.md` §2). It used to insert a
+   * neutral REFERENCE card and lock Ellie and Max out of the thread until *Explain it back*; all
+   * three of Lucas's #41 transcripts spent their first prompt on that card and their second
+   * getting past it. So this now opens the thread and runs an ordinary Teacher turn on it: it
+   * resolves as soon as the question is written, and the reply arrives on the event stream at its
+   * latency floor, exactly like `flowSend`. Render the reserved slot from `turn.received`.
+   *
+   * Unchanged: the 3–8 s floor-yield, the latency floor, the scope resolution and `scopeShown`,
+   * the flow session, the ledger's verbatim-evidence rule, and the `objectiveId` chip.
    */
   flowAskHere(input: {
     fileId: string;
@@ -319,15 +336,35 @@ export interface ChatterEdApi {
    * `whole-file-context.md` §3: a deck-level question had nowhere to go, so it was answered
    * from whichever slide happened to be nearest).
    *
-   * Same return as `flowAskHere`, same 120-word card, same hand-back. The answer is anchored to
-   * the synthetic `DECK_ANCHOR_ID`, and `FlowRoomView.threads` always lists that thread first.
+   * Same return as `flowAskHere`, and since #41 the same answerer: the Teacher, reading the whole
+   * deck instead of one page. The thread is anchored to the synthetic `DECK_ANCHOR_ID`, and
+   * `FlowRoomView.threads` always lists it first.
    */
   flowAskDeck(input: { fileId: string; question: string }): Promise<FlowAnswerView>;
   /**
-   * "Explain it back →". The card collapses to one line, the composer opens on the same anchor,
-   * and Ellie and Max become eligible on it for the first time.
+   * **Deprecated, a no-op since #41.** See `IPC.flowExplainBack`. Always resolves
+   * `{ unlocked: true, anchorId: null }`; drop the button rather than calling it.
    */
   flowExplainBack(input: { answerId: string }): Promise<{ unlocked: boolean; anchorId: string | null }>;
+  /**
+   * **"Summarise into the document"** on a thread (issue #41, `conversation-refinement.md` §5).
+   *
+   * Produces one `summary` card under the segment: the REFERENCE register, a cap applied in code,
+   * maths in `$…$`, and written **from the thread** rather than from the slide — the point is to
+   * carry what *this conversation* taught, so the learner can review without reading it again.
+   *
+   * `threadId` is an `anchorId`. Call it again on the same thread to regenerate: the existing
+   * card is replaced, not duplicated, and `regenerated` says so. The card is offered by
+   * `rule:offer_summary` (a Teacher turn with `byRule: 'offer_summary'`) and is **never inserted
+   * without this call**, which is R1.
+   */
+  flowSummarise(input: { roomId: string; threadId: string }): Promise<FlowSummaryView>;
+  /**
+   * The source thread behind a summary card, for the click that expands it (issue #41).
+   * `null` when `summaryId` is not a summary card. Its composer continues that same thread —
+   * `flowSend({ roomId, segmentId: threadId, text })`.
+   */
+  flowThreadOf(input: { summaryId: string }): Promise<FlowThreadOfView | null>;
   /**
    * A learner turn inside one segment's thread. Not awaited for the reply: like `sendMessage`,
    * the agent's answer arrives on the event stream at its latency floor.

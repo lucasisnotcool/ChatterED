@@ -7,6 +7,7 @@ import type {
   VaultFileKind,
   LedgerRowView,
   LedgerView,
+  MessageKind,
   MessageView,
   TimerView,
   WhisperTurnView,
@@ -100,6 +101,13 @@ export function messageView(
     // What this answer was built from, already phrased (migration 015). Null on everything that
     // is not a REFERENCE answer, which is most rows.
     scopeShown: row.scope_shown ?? null,
+    /**
+     * What this card *is* (issue #41, migration 017). A row written before that migration has a
+     * null column and is a conversation turn, which is what every row before #41 was except the
+     * REFERENCE entry cards — and those the migration rewrote, so the fallback is honest.
+     */
+    kind: (row.kind as MessageKind | null | undefined) ?? 'turn',
+    sourceThreadId: row.source_thread_id ?? null,
     // The page text the agents were given is deliberately absent: the card says a document was
     // shown and which pages, not the pages themselves (issue #22 decision 4).
     reference: reference

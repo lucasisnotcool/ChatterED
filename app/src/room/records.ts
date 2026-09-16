@@ -231,6 +231,18 @@ export interface MessageRow {
    * Null on every message that is not a REFERENCE answer.
    */
   scope_shown?: string | null;
+  /**
+   * **What this card is** (migration 017, issue #41): `'turn'`, `'summary'`, or the legacy
+   * `'answer'`. Null on every row written before the migration, which `messageView` reads as
+   * `'turn'`.
+   */
+  kind?: string | null;
+  /**
+   * On a `summary` card: the `anchor_id` of the thread it was written from (migration 017). A
+   * thread is identified by its anchor everywhere in the flow, so this is an anchor id and not a
+   * fourth kind of identifier.
+   */
+  source_thread_id?: string | null;
   created_at: string;
 }
 
