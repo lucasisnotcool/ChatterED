@@ -1312,6 +1312,10 @@ export class RoomActor {
       },
     });
     request.meta.scriptCue = cue;
+    // The agent's own generation belongs to the turn too: without this its `llm.request` /
+    // `llm.complete` pair carried no correlation id and fell out of `jq 'select(.turn==…)'`,
+    // which is the one query the log exists to answer.
+    request.meta.turnId = this.#pending?.id;
     return this.#d.llm.complete(request);
   }
 

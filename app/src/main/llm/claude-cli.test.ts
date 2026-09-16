@@ -18,6 +18,7 @@ import {
   ClaudeCliNotLoggedInError,
   flattenMessages,
   looksNotLoggedIn,
+  modelFromResultForTest,
   normaliseCliUsage,
   OWN_TURN_PREFIX,
   promptFor,
@@ -377,5 +378,22 @@ describe('usage normalisation', () => {
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
     });
+  });
+});
+
+describe('which model answered', () => {
+  it('picks the entry that wrote the answer, not the first key', () => {
+    // The CLI runs auxiliary Haiku calls alongside the request, so `modelUsage` has more than
+    // one entry; taking the first reported `claude-haiku-4-5` for a `--model sonnet` call, and
+    // that id went onto `messages.model`, i.e. into the research record.
+    expect(
+      modelFromResultForTest({
+        modelUsage: {
+          'claude-haiku-4-5-20251001': { outputTokens: 12 },
+          'claude-sonnet-5-20260401': { outputTokens: 2_095 },
+        },
+      }),
+    ).toBe('claude-sonnet-5-20260401');
+    expect(modelFromResultForTest({})).toBeNull();
   });
 });

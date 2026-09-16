@@ -430,13 +430,36 @@ export function extractJson(text: string): string | null {
   return null;
 }
 
+/**
+ * Which model actually answered.
+ *
+ * `result.modelUsage` is keyed by model id, and **it holds more than one entry**: the CLI runs
+ * its own auxiliary Haiku calls alongside the request, so taking `Object.keys(...)[0]` reported
+ * `claude-haiku-4-5` for a call made with `--model sonnet` — which then went onto the message
+ * row as `messages.model`, i.e. into the research record. The one with the most output tokens is
+ * the one that wrote the answer.
+ */
+export function modelFromResultForTest(event: Record<string, unknown>): string | null {
+  return modelFromResult(event);
+}
+
 function modelFromResult(event: Record<string, unknown>): string | null {
   const usage = event.modelUsage;
-  if (usage && typeof usage === 'object') {
-    const keys = Object.keys(usage as Record<string, unknown>);
-    if (keys.length > 0) return keys[0]!;
+  if (!usage || typeof usage !== 'object') return null;
+  let best: string | null = null;
+  let mostOutput = -1;
+  for (const [model, u] of Object.entries(usage as Record<string, unknown>)) {
+    const out = typeof (u as { outputTokens?: unknown })?.outputTokens === 'number'
+      ? ((u as { outputTokens: number }).outputTokens)
+      : typeof (u as { output_tokens?: unknown })?.output_tokens === 'number'
+        ? ((u as { output_tokens: number }).output_tokens)
+        : 0;
+    if (out > mostOutput) {
+      mostOutput = out;
+      best = model;
+    }
   }
-  return null;
+  return best;
 }
 
 /**
