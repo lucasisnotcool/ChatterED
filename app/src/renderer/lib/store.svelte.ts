@@ -355,6 +355,18 @@ class Store {
         const acked = ackIndex(this.pendingSends, e.message);
         if (acked >= 0) this.pendingSends = this.pendingSends.filter((_, i) => i !== acked);
         if (e.message.speaker.kind !== 'student') {
+          /**
+           * **A provisional card must never outlive the message it was provisional for.**
+           *
+           * `turn.released` is the designed way to drop it, and it is the one the main process
+           * promises. But one agent turn is in flight document-wide (`pivot-spec.md` §B10 R2),
+           * so an agent turn *landing* ends whatever was streaming — and if a `released` is ever
+           * missed, dropped or carries a turn id the deltas did not, the alternative is a
+           * blinking half-finished duplicate of the card directly above it, which is what a live
+           * run on 2026-09-16 actually showed. Cheap, and it cannot be wrong: nothing else can
+           * be streaming when an agent message arrives.
+           */
+          if (this.stream) this.stream = null;
           const name = e.message.speaker.kind === 'agent' ? e.message.speaker.displayName : 'The reference';
           this.liveMessage = announce('replied', {
             name,

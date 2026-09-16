@@ -166,6 +166,22 @@ export function announce(
   }
 }
 
+/**
+ * **An agent turn that arrived empty (live, 16 Sep 2026).**
+ *
+ * Two rows on the Critique 1 deck came back from `scripted:sonnet` with `length(body) = 0`, and
+ * the flow drew a card with a header, a rule and nothing in it — which reads exactly like the
+ * silence issue #34 is about, except now with an avatar on it. Whatever is wrong upstream, the
+ * renderer's job is the audit's own rule: *a turn always ends in something the learner can see*.
+ * A provisional card is exempt — an empty stream is a stream that has not started.
+ */
+export function emptyBody(body: string, streaming: boolean): boolean {
+  return !streaming && body.trim().length === 0;
+}
+
+/** What that card says instead. Names the state, blames nobody, and is not an error colour. */
+export const EMPTY_TURN_LINE = 'This reply arrived empty.';
+
 export function wordCount(body: string): number {
   const trimmed = body.trim();
   return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;

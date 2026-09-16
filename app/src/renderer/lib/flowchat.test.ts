@@ -5,6 +5,7 @@ import {
   ackIndex,
   announce,
   appendDelta,
+  emptyBody,
   elapsedMs,
   etaTitle,
   indicatorMode,
@@ -178,6 +179,14 @@ describe('the live region (WCAG 4.1.3)', () => {
     expect(announce('failed', { name: 'Max', reason: 'the backend timed out' })).toBe(
       'Max failed: the backend timed out.',
     );
+  });
+
+  it('names a turn that arrived empty rather than drawing a blank card', () => {
+    expect(emptyBody('', false)).toBe(true);
+    expect(emptyBody('   \n ', false)).toBe(true);
+    expect(emptyBody('a word', false)).toBe(false);
+    // A stream that has not produced a token yet is not an empty turn.
+    expect(emptyBody('', true)).toBe(false);
   });
 
   it('counts words the way a reader would', () => {

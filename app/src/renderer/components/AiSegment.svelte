@@ -24,7 +24,7 @@
    */
   import type { MessageView } from '../../shared/types.js';
   import { aiBody, collapsedLine } from '../lib/aitext.js';
-  import { metaAlwaysOn, metaParts } from '../lib/flowchat.js';
+  import { EMPTY_TURN_LINE, emptyBody, metaAlwaysOn, metaParts } from '../lib/flowchat.js';
   import { monogram, roleWord } from '../lib/labels.js';
   import { store } from '../lib/store.svelte.js';
   import { clockTime } from '../lib/time.js';
@@ -57,6 +57,8 @@
   const hue = $derived(agent ? agent.colour : 'var(--muted)');
   const isTester = $derived(agent?.role === 'challenger');
   const parsed = $derived(aiBody(streaming ?? message.body));
+  /** A turn that came back with no text at all still has to say so — see `emptyBody`. */
+  const empty = $derived(emptyBody(streaming ?? message.body, streaming !== null));
   /**
    * Provenance (audit §6). A turn that does not say which backend produced it is a claim about a
    * model that never ran — and this app can silently be answering from `ScriptedClient`. Hidden
@@ -115,8 +117,12 @@
   {#if collapsed}
     <p class="one-line">{collapsedLine(message.body)}</p>
   {:else}
-    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-    <div class="body">{@html parsed.html}</div>
+    {#if empty}
+      <p class="empty">{EMPTY_TURN_LINE}</p>
+    {:else}
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+      <div class="body">{@html parsed.html}</div>
+    {/if}
 
     {#if parsed.handBack}
       <hr class="rule" />
@@ -253,6 +259,9 @@
   .meta.loud { color: #8a5a08; }
 
   .stopped { margin: 7px 0 0; font-size: 11px; color: var(--muted); font-style: italic; }
+  /* Not an error colour: an empty turn is an outage, not the learner's mistake (TurnFailureCard
+     makes the same argument about the same kind of event). */
+  .empty { margin: 0; font-size: 12.5px; color: var(--muted); font-style: italic; }
 
   .caret {
     display: inline-block;
