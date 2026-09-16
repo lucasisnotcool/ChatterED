@@ -1302,14 +1302,6 @@ export class RoomActor {
     return `defended against ${challenger.displayName}'s probe${probe}`;
   }
 
-  #lastMessageIdByRole(role: AgentProfile['role']): string | null {
-    const key = agentByRole(this.#d.roster, role).key;
-    const participant = this.#d.store.participants.byAgentKey(this.#d.roomId, key);
-    if (!participant) return null;
-    const rows = this.#d.store.messages.forRoom(this.#d.roomId).filter((m) => m.participant_id === participant.id);
-    return rows.at(-1)?.id ?? null;
-  }
-
   #dividerFor(stage: 1 | 2, agent: AgentProfile): string {
     const seconds = Math.round(this.#d.config.silence_ms / 1000);
     return stage === 1

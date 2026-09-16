@@ -10,7 +10,6 @@
  * hand-owned work (architecture-mac.md §H.1) — this file is the structure they slot into.
  */
 import type { AgentProfile, AgentRole } from '../shared/types.js';
-import { ROLE_LABEL } from './agents.js';
 import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
 
 /**
