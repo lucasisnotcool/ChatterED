@@ -40,7 +40,20 @@ import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
  * The hash moves, which costs nothing: `prefix_sha256` is frozen per material at pack
  * confirmation and a new document opens a new room.
  */
-export const PROMPT_VERSION = 'prompts.v0.3';
+/**
+ * **v0.4 is the explanation shape (#41).** v0.3 made her answer first and let her teach what the
+ * slide assumes, and on #41's transcripts she did both — and then the learner had to write the
+ * *shape* of the explanation himself: *"too complicated, can you explain stochastic as a concept,
+ * what it means, then the rigourous version, mathematical properties etc."* That is the learner
+ * doing the teacher's job, and he got a good answer the moment he did it.
+ *
+ * So the shape is the Teacher's, and it is the one she reaches for by default when the question
+ * is *what is X*: name it, plain meaning, one concrete example or analogy, the rigorous version
+ * and its properties, then how the slide uses it. With the prohibition #41's first transcript
+ * needs beside it: **never open with a summary of the slide when the question is "what is X"** —
+ * the slide is where the answer lands, not where it starts.
+ */
+export const PROMPT_VERSION = 'prompts.v0.4';
 
 export interface SharedBlockInput {
   material: MaterialRow;
@@ -234,6 +247,22 @@ running unless they answered the first. If the learner says "no idea", "I don't 
 goes blank on a question of yours, your next turn ends with a full stop and contains NO question
 of any kind — not a real one, and not a soft check like "does that make sense?" or "does that
 help?". Give the plain explanation, ground it in a concrete analogy, and stop there.
+
+THE SHAPE OF AN EXPLANATION.
+When they ask what something *is* — "what is stochastic", "what is an MDP", "what does this
+notation mean" — teach it in this order, unless they ask for it another way:
+  1. Name it, and say what kind of thing it is, in one sentence.
+  2. What it means in plain language, with no notation at all.
+  3. One concrete example, or an everyday analogy. Always one. Never none.
+  4. The rigorous version — the formal statement, the conditions, the properties that matter.
+  5. Only then, how this slide uses it, and in that slide's own notation.
+Steps 2 and 3 are the ones that get dropped under pressure; they are the ones the learner
+notices missing. **Never open with a summary of the slide when the question is "what is X".** The
+slide is where the answer lands, not where it starts — a learner who wanted the slide read back
+to them would have read it. Ask for a shorter shape only if they asked for one.
+
+A question that is not "what is X" takes the shape it needs: "what are some examples of Y" opens
+with examples, not with what Y is; "why does Z hold" opens with the reason.
 
 REGISTER.
 Warm, plain, and not deferential to the slide in every sentence — you do not need to say "your
@@ -523,6 +552,16 @@ export function turnDirective(d: TurnDirective): string {
   // directive is the sentence nearest the generation.
   if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
     bits.push('Answer what they asked in your first sentence, then teach it. No opening question.');
+    /**
+     * **The shape, restated where the model reads last** (#41). Same argument as the answer-first
+     * line above it: the failure was six turns that each opened with a probe, and the failure this
+     * one fixes is three transcripts where the learner had to specify the shape himself.
+     */
+    bits.push(
+      'If they asked what something is, use the shape: name it, plain meaning with no notation, one',
+      'concrete example or analogy, then the rigorous version and its properties, and only then how',
+      'this slide uses it. Do not open with a summary of the slide.',
+    );
   }
   /**
    * **The silence moves** (#37). The learner went quiet for 45 s after you explained something.

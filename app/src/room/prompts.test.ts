@@ -184,9 +184,50 @@ describe('the safeguards that did not change, restated so the model reads them',
   });
 });
 
+/**
+ * **Issue #41.** v0.3 made her answer first; the learner then had to write the *shape* of the
+ * explanation himself — *"explain stochastic as a concept, what it means, then the rigourous
+ * version, mathematical properties etc."* — and got a good answer the moment he did. These pin the
+ * shape as hers, and the one prohibition #41's first transcript needs beside it.
+ */
+describe('the default explanation shape', () => {
+  it('gives the five steps, in order, in the Teacher block', () => {
+    const t = teacher();
+    expect(t).toContain('THE SHAPE OF AN EXPLANATION.');
+    const shape = t.slice(t.indexOf('THE SHAPE OF AN EXPLANATION.'), t.indexOf('REGISTER.'));
+    const order = ['Name it', 'plain language', 'concrete example', 'rigorous version', 'how this slide uses it'];
+    let at = -1;
+    for (const step of order) {
+      const next = shape.indexOf(step);
+      expect(next).toBeGreaterThan(at);
+      at = next;
+    }
+  });
+
+  it('forbids opening with a summary of the slide when the question is "what is X"', () => {
+    const t = teacher();
+    expect(t).toContain('**Never open with a summary of the slide when the question is "what is X".**');
+    expect(t).toContain('slide is where the answer lands, not where it starts');
+    // The example is never mandatory-in-name-only: "Always one. Never none."
+    expect(t).toContain('Always one. Never none.');
+  });
+
+  it('does not force the shape onto a question that is not "what is X"', () => {
+    expect(teacher()).toContain('"what are some examples of Y" opens with examples');
+  });
+
+  it('restates the shape in the answer_then_teach directive, and nowhere else', () => {
+    const d = flat(turnDirective({ agentRole: 'peer', move: 'answer_then_teach' }));
+    expect(d).toContain('name it, plain meaning with no notation, one concrete example or analogy');
+    expect(d).toContain('Do not open with a summary of the slide.');
+    expect(turnDirective({ agentRole: 'peer', move: 'reexplain_simpler' })).not.toContain('Do not open with a summary');
+    expect(turnDirective({ agentRole: 'challenger', move: 'quiz' })).not.toContain('Do not open with a summary');
+  });
+});
+
 describe('the version', () => {
   it('is bumped, because the prefix hash moves with the rules', () => {
-    expect(PROMPT_VERSION).toBe('prompts.v0.3');
+    expect(PROMPT_VERSION).toBe('prompts.v0.4');
   });
 });
 
