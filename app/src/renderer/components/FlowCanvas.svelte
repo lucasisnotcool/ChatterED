@@ -49,6 +49,7 @@
   import { claimsForAnchor, threadFor } from '../../shared/flowthread.js';
   import { store } from '../lib/store.svelte.js';
   import FlowThread from './FlowThread.svelte';
+  import PacingStrip from './PacingStrip.svelte';
   import SegmentCard from './SegmentCard.svelte';
   import WhisperPopover from './WhisperPopover.svelte';
 
@@ -477,6 +478,10 @@
     {:else if store.flowBusy && !flow}
       <p class="note">Reading the page geometry…</p>
     {:else if flow}
+      <!-- The pacing disclosure, once per install, above everything (§3.5). It shows itself or
+           not; the flow does not decide. -->
+      <PacingStrip />
+
       <!-- The genre router's own sentence, above the first card (issue #31, video beat 15).
            Being honest about what cannot be segmented is the point of it. -->
       {#if flow.notice}
