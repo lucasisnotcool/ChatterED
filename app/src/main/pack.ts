@@ -136,6 +136,16 @@ export async function ensurePack(deps: PackDeps, roomId: string): Promise<boolea
     });
     return true;
   } catch (err) {
+    /**
+     * **Pre-emption is not a failure.** The learner asked something while this draft was
+     * running and the CLI lane was taken back for them (`claude-cli.ts` `CLI_PREEMPTIBLE`). The
+     * row is still `pending`, which is where it started, so the next room open — or the call at
+     * the end of `#ask`, once the answer is on screen — starts it again.
+     */
+    if ((err as Error).name === 'CliPreemptedError') {
+      log().info('pack.draft.preempted', { room_id: roomId, ms: Date.now() - startedAt });
+      return false;
+    }
     // An ingest that fails is a rail that stays empty, not a room that breaks. The next open
     // tries again, because the row is still `pending`.
     log().error('pack.draft.failed', { room_id: roomId, ms: Date.now() - startedAt, cause: (err as Error).message });

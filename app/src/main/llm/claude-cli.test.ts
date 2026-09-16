@@ -23,6 +23,8 @@ import {
   OWN_TURN_PREFIX,
   promptFor,
   cliQueue,
+  CLI_LOW_PRIORITY_GRACE_MS,
+  CliPreemptedError,
   isEmptyExitOne,
   resolveClaudeBinary,
   systemTextFor,
@@ -462,6 +464,58 @@ describe('one `claude` at a time (issue #35 item 5c)', () => {
     await expect(holding).resolves.toMatchObject({ text: 'slow' });
     // The lane is free: a call after the abort runs rather than waiting forever.
     await expect(c.complete(request())).resolves.toMatchObject({ text: 'slow' });
+  });
+});
+
+describe('the lane a learner can take back', () => {
+  beforeEach(() => cliQueue.reset());
+
+  it('kills a running ingest for a learner-facing call, and says which it was', async () => {
+    // 07:45:23.313 ingest starts; 07:45:23.342 the learner's deck question arrives and waits
+    // **70,591 ms** behind it. Priority reorders what is waiting, not what is running.
+    const c = client('slow');
+    // Settled into a result either way, so the rejection is never unhandled while the learner's
+    // call is still in flight.
+    const ingest = c.complete(request({ meta: { scope: 'ingest' } })).catch((e: Error) => e);
+    // Past the grace window, so the ingest is genuinely on the lane.
+    await new Promise((r) => setTimeout(r, CLI_LOW_PRIORITY_GRACE_MS + 60));
+    const t0 = Date.now();
+    const answer = await c.complete(request({ meta: { scope: 'reference' } }));
+    expect(answer.text).toBe('slow');
+    // It did not wait for the 0.4 s ingest to finish on top of its own 0.4 s.
+    expect(Date.now() - t0).toBeLessThan(700);
+    expect(await ingest).toBeInstanceOf(CliPreemptedError);
+  });
+
+  it('waits out the grace window first, so the same click needs no kill at all', async () => {
+    const c = client('slow');
+    const ingest = c.complete(request({ meta: { scope: 'ingest' } }));
+    // The click that started the ingest is also the click that asks: 29 ms apart, live.
+    await new Promise((r) => setTimeout(r, 30));
+    const answer = await c.complete(request({ meta: { scope: 'reference' } }));
+    expect(answer.text).toBe('slow');
+    expect(answer.queuedMs ?? 0).toBe(0);
+    // Nothing was killed — the draft simply queued behind the answer.
+    await expect(ingest).resolves.toMatchObject({ text: 'slow' });
+  });
+
+  it('does not let the ledger be thrown off the lane', async () => {
+    const c = client('slow');
+    const ledger = c.complete(request({ meta: { scope: 'ledger' } }));
+    await new Promise((r) => setTimeout(r, 40));
+    const answer = await c.complete(request({ meta: { scope: 'group' } }));
+    expect(answer.text).toBe('slow');
+    // Seconds, not a minute, and a rail movement the learner's words already earned.
+    await expect(ledger).resolves.toMatchObject({ text: 'slow' });
+  });
+
+  it('reports the learner’s own Stop as a stop, not as a pre-emption', async () => {
+    const c = client('slow');
+    const controller = new AbortController();
+    const ingest = c.complete(request({ meta: { scope: 'ingest' } }), undefined, controller.signal).catch((e: Error) => e);
+    await new Promise((r) => setTimeout(r, CLI_LOW_PRIORITY_GRACE_MS + 60));
+    controller.abort();
+    expect(await ingest).toBeInstanceOf(LlmAbortedError);
   });
 });
 

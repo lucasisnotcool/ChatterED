@@ -518,6 +518,9 @@ export class AppService {
     );
     const answer = await actor.askHere({ anchorId, question, context });
     this.#persistFlow();
+    // Now, and not before: a draft started ahead of the answer holds the CLI lane, and a draft
+    // that was pre-empted by this very question has to be told to start again.
+    this.#ensurePack(roomId);
     return {
       roomId,
       anchorId,

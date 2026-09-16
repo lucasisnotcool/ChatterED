@@ -178,31 +178,81 @@ export const CLI_PRIORITY: Record<string, number> = {
 
 export const CLI_DEFAULT_PRIORITY = 1;
 
+/**
+ * **Which call may be thrown off the lane for a learner.**
+ *
+ * Serialising alone was not enough, and the live run proved it: at 07:45:23.313 the background
+ * ingest took the lane, at 07:45:23.342 — twenty-nine milliseconds later — the learner's own
+ * deck question arrived, and it waited **70,591 ms** (`llm.queued_ms`) for an ingest nobody was
+ * looking at. Priority reorders what is *waiting*; it cannot reorder what is already running.
+ *
+ * Only the concept ingest is on this list. It is the one call that is both long (70 s) and
+ * genuinely disposable: a killed draft leaves `pack_provenance = 'pending'`, which is exactly
+ * the state it started in, and the next room open or the next answer starts it again. The
+ * ledger is *not* here — it is seconds, not a minute, and killing it loses a rail movement that
+ * the learner's words have already earned.
+ */
+export const CLI_PREEMPTIBLE: ReadonlySet<string> = new Set(['ingest']);
+
+/**
+ * How long a pre-emptible call waits before it even joins the queue.
+ *
+ * The ingest is kicked off by the same click that asks the question, so this alone settles the
+ * common case without anything being killed: the learner's call claims the lane first and the
+ * draft queues behind it. Pre-emption is for the other case — a draft already a minute in when
+ * the learner asks their second question.
+ */
+export const CLI_LOW_PRIORITY_GRACE_MS = 1_200;
+
+/** Thrown when a background call was killed to let a learner-facing one through. Not a failure. */
+export class CliPreemptedError extends Error {
+  constructor() {
+    super('That background call was stopped so the learner\u2019s question could go first.');
+    this.name = 'CliPreemptedError';
+  }
+}
+
 interface Waiter {
   priority: number;
   seq: number;
+  preempt: (() => void) | null;
   start: () => void;
   fail: (err: Error) => void;
 }
 
 class CliQueue {
-  #running = false;
+  #running: { priority: number; preempt: (() => void) | null } | null = null;
   #waiting: Waiter[] = [];
   #seq = 0;
 
-  /** Resolves with the milliseconds spent waiting. The caller must call `release()`. */
-  acquire(priority: number, signal?: AbortSignal): Promise<number> {
+  /**
+   * Resolves with the milliseconds spent waiting. The caller must call `release()`.
+   *
+   * `preempt` is how this call says it may be killed for a learner: it is invoked on the
+   * **running** call when something learner-facing arrives, and the call it belongs to is
+   * expected to abort its child and reject. It is not a request to finish early — there is no
+   * such thing for a subprocess — it is a kill.
+   */
+  acquire(priority: number, signal?: AbortSignal, preempt: (() => void) | null = null): Promise<number> {
     const queuedAt = Date.now();
-    if (!this.#running) {
-      this.#running = true;
+    if (this.#running === null) {
+      this.#running = { priority, preempt };
       return Promise.resolve(0);
+    }
+    // A learner is waiting on this one, and what holds the lane can be thrown off it.
+    if (priority <= 0 && this.#running.preempt) {
+      const kill = this.#running.preempt;
+      this.#running.preempt = null;
+      kill();
     }
     return new Promise<number>((resolve, reject) => {
       const waiter: Waiter = {
         priority,
         seq: (this.#seq += 1),
+        preempt,
         start: () => {
           if (onAbort) signal?.removeEventListener('abort', onAbort);
+          this.#running = { priority, preempt };
           resolve(Date.now() - queuedAt);
         },
         fail: (err) => {
@@ -228,7 +278,7 @@ class CliQueue {
       null,
     );
     if (!next) {
-      this.#running = false;
+      this.#running = null;
       return;
     }
     this.#waiting = this.#waiting.filter((w) => w !== next);
@@ -237,7 +287,7 @@ class CliQueue {
 
   /** Tests only. The app has exactly one queue for its whole life. */
   reset(): void {
-    this.#running = false;
+    this.#running = null;
     this.#waiting = [];
     this.#seq = 0;
   }
@@ -274,10 +324,40 @@ export class ClaudeCliClient implements LLMClient {
 
   async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
     const priority = CLI_PRIORITY[request.meta.scope] ?? CLI_DEFAULT_PRIORITY;
-    const queuedMs = await cliQueue.acquire(priority, signal);
+    const preemptible = CLI_PREEMPTIBLE.has(request.meta.scope);
+
+    // Let a click that is about to produce a learner-facing call get there first.
+    if (preemptible && CLI_LOW_PRIORITY_GRACE_MS > 0) {
+      await new Promise((r) => setTimeout(r, CLI_LOW_PRIORITY_GRACE_MS));
+      if (signal?.aborted) throw new LlmAbortedError();
+    }
+
+    const killer = preemptible ? new AbortController() : null;
+    let preempted = false;
+    const combined = killer
+      ? signal
+        ? AbortSignal.any([signal, killer.signal])
+        : killer.signal
+      : signal;
+
+    const queuedMs = await cliQueue.acquire(
+      priority,
+      signal,
+      killer
+        ? () => {
+            preempted = true;
+            killer.abort();
+          }
+        : null,
+    );
     try {
-      const result = await this.#complete(request, onDelta, signal);
+      const result = await this.#complete(request, onDelta, combined);
       return queuedMs > 0 ? { ...result, queuedMs } : result;
+    } catch (err) {
+      // The learner's question took the lane. Distinguished from their Stop, because the caller
+      // does different things with the two: a pre-empted draft is retried, a stopped turn is not.
+      if (preempted && !signal?.aborted) throw new CliPreemptedError();
+      throw err;
     } finally {
       cliQueue.release();
     }
