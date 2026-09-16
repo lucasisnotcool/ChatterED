@@ -27,7 +27,7 @@ import { groupView } from '../../main/db/store.js';
 import { FakeClock } from '../../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG, seedRoom } from '../../test-support/db.js';
 import { RoomActor } from '../actor.js';
-import { rosterFor } from '../agents.js';
+import { fillAgentNames, rosterFor } from '../agents.js';
 import { buildGroupContext } from '../context.group.js';
 import { BTW_SIDE_CHANNEL_V1, CRITIQUE1_DECK_TEXT, CRITIQUE1_PAGE_TEXT } from '../concepts/btw-side-channel-v1.js';
 import { DEMO } from '../flow.js';
@@ -40,6 +40,7 @@ import {
   CRITIQUE1_SEGMENTS,
   CRITIQUE1_SPLIT,
   CRITIQUE1_WHISPERS,
+  beatFor,
   critique1Sitting,
   learnerLine,
 } from './script.critique1.js';
@@ -446,6 +447,31 @@ describe('which script replays', () => {
     });
     expect(out.text).toContain('Pick a card');
     expect(client.script.conceptId).toBe('btw-side-channel-v1');
+  });
+
+  it('answers a hand-off the script has run out of, so Max is never silent after the line', async () => {
+    // A flow actor lives for the life of the process, so a second walkthrough in one session
+    // cues `handoff:3`. Ellie's line comes from `flow.handOffLine()` and is posted either way;
+    // without a beat behind it the camera sees "Max, over to you" and then nothing.
+    const client = new ScriptedClient({ script: CRITIQUE1_SCRIPT });
+    const out = await client.complete({
+      ...request(CRITIQUE1_DECK_TEXT),
+      meta: { scope: 'group', scriptCue: 'handoff:3' },
+    });
+    expect(out.text.length).toBeGreaterThan(40);
+    expect(out.text).toBe(fillAgentNames(CRITIQUE1_HANDOFFS.find((b) => b.cue === 'handoff:2')!.text!, rosterFor()));
+
+    const fb = await client.complete({
+      ...request(CRITIQUE1_DECK_TEXT),
+      meta: { scope: 'group', scriptCue: 'feedback:7' },
+    });
+    expect(fb.text).toContain('ephemerality');
+
+    // Repeating a question is safe only because no hand-off beat carries a ledger block; a
+    // learner cue does, and must therefore not fall back.
+    for (const beat of CRITIQUE1_HANDOFFS) expect(beat.ledger).toBeUndefined();
+    expect(beatFor('student:9')).toBeUndefined();
+    expect(beatFor('silence:9')).toBeUndefined();
   });
 
   it('fills the agents\u2019 names from the roster it was given, never from the script', async () => {

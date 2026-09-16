@@ -384,7 +384,31 @@ export const CRITIQUE1_WHISPERS: ScriptedWhisperBeat[] = [
 ];
 
 export function beatFor(cue: string): ScriptedBeat | undefined {
-  return CRITIQUE1_BEATS.find((b) => b.cue === cue) ?? CRITIQUE1_HANDOFFS.find((b) => b.cue === cue);
+  const exact = CRITIQUE1_BEATS.find((b) => b.cue === cue) ?? CRITIQUE1_HANDOFFS.find((b) => b.cue === cue);
+  if (exact) return exact;
+
+  /**
+   * **A hand-off the rules fired must always have a question behind it.**
+   *
+   * `actor.ts` cues the Tester as `handoff:N` / `feedback:N`, where N counts the hand-offs of
+   * the *actor*, and a flow actor lives for the life of the process: reopening the document
+   * resumes the same sitting rather than starting a new one, which is the product behaviour and
+   * is right. So a second walkthrough in one session reaches `handoff:3`, which nothing here
+   * answers — and the camera then sees Ellie say *"Max, over to you"* with nothing after it.
+   * That is the one failure this file must not have: the line is written by `flow.handOffLine()`
+   * from the taught set, so the rule really has fired and the floor really has been passed.
+   *
+   * Falling back to the last scripted question of the same kind repeats a question rather than
+   * dropping a turn. It is safe to repeat: `CRITIQUE1_HANDOFFS` carries **no `ledger` block** —
+   * only `CRITIQUE1_BEATS`' learner cues do — so nothing here can move a row a second time.
+   * `student:N` deliberately does **not** fall back for exactly that reason, and running out of
+   * learner cues is what the rehearsal notes call one take per sitting.
+   *
+   * The same convention `referenceBeatFor` and `whisperBeatFor` already use, two lines below.
+   */
+  const repeat = /^(handoff|feedback):\d+$/.exec(cue);
+  if (!repeat) return undefined;
+  return [...CRITIQUE1_HANDOFFS].reverse().find((b) => b.cue.startsWith(`${repeat[1]}:`));
 }
 
 export function referenceBeatFor(cue: string): ScriptedReferenceBeat | undefined {
