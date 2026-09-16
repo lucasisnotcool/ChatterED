@@ -1711,3 +1711,75 @@ Five consecutive turns, `parse_ok: true` on every ledger call, **no `turn.failed
   either. Their packs are repaired on reopen, but their material cannot be re-extracted — the
   vault no longer knows the file under that id. Worth its own issue: either the file id should
   survive a rescan, or the room should key on the content sha alone.
+
+## The objectives panel — the renderer half of #38 (16 Sep, `learning-objectives.md` §5)
+
+**What the learner has to be able to say about this deck, and which of it they have said.** A
+right-side panel beside the flow, opening with the file, ⌥⌘L and a header control to hide it,
+width dragged from a focusable `separator` and remembered per install. The tree is §2's: deck
+order, sub-objectives nested, prerequisites under the objective that requires them with an
+"assumed by the deck" tag, and the ledger rail's ○◐● plus a dim mark for a node nobody has
+touched — one vocabulary across the rail, the cards and the panel.
+
+**The click is the feature.** A node is not a table-of-contents entry: clicking one scrolls the
+deck to the card its first ref names, rings that card for a second and a half, and opens that
+card's "+ Ask here" with a removable `about: <title>` chip, so the thread is tagged with the
+objective and `flow:askHere` carries its `objectiveId`. Enter is navigation alone, ⌘Enter is the
+question, Esc goes back to the deck — §5's own split, which the first build got wrong (Enter
+opened a composer on every node a learner arrowed past). **Teach me this** on an assumed
+prerequisite calls `objectives:teach` and otherwise opens the Ask on the requiring objective's
+segment with "Explain <title> to me" pre-filled — pre-filled and *not sent*.
+
+Where the code is: `renderer/lib/objectives.ts` (the tree build, the count, ref → card, the
+keyboard model — 23 tests), `components/ObjectivesPanel.svelte` + `ObjectiveNode.svelte`, the
+store's `objectives*` block, and the card's glyph strip, which now also carries the objectives
+that card teaches. The flow owns the scrolling, because only the flow knows where a card is.
+
+### Two sources, one shape
+
+`shared/objectives.ts` and the five `objectives:*` channels landed mid-build and the panel was
+swapped onto them the same hour; the local shapes it was written against are gone. Where the
+main process has no tree to give — a preload that carries the channels before their handlers
+exist, or the scripted backend — the committed **fixture** answers: the Critique 1 deck's real
+objectives against its real pages, with its states in `localStorage` so the panel's live half is
+reachable before the ingest is. A deck with neither says "needs a live backend" in one line
+rather than spinning on a `pending` that can never resolve.
+
+### Driven on screen, and what that found
+
+A dev build on its own port and profile (`--remote-debugging-port=9361 --user-data-dir=<fresh>`,
+vault `/Users/lohzh/ChatterED/Academia`, scripted, the 7-page Critique 1 deck), screenshots in
+the session scratchpad under `objectives/`. `Runtime.exceptionThrown` never fired and no
+`console.error` was logged across every run below.
+
+| What | Measured |
+|---|---|
+| opens with the file | 10 rows, 3 branches, "0 of 10 online", two prerequisites tagged |
+| click a node | `scrollTop` 0 → 2350, the p. 5 card ringed, its "+ Ask here" focused, chip `about: Report what the limit tests established` |
+| keyboard | ↓↑ walk the visible rows, ← closes (10 → 8 rows, `aria-expanded=false`) then goes to the parent, → reopens, Home/End, Enter scrolls **without** opening the Ask, ⌘Enter opens it with the chip, Esc lands focus on `[data-segment]` in the flow |
+| a real turn | Ellie's reply released → one node crossed to online → row animates once, 2 of 10 → 3 of 10, live region says one sentence |
+| Reset | inline confirm, 3 of 10 → 0 of 10, and the states are actually gone from disk |
+| width / collapse | drag → 380 px, persisted; ⌥⌘L hides it and `open=false` survives a reload (the panel reopens on a file only while the Settings toggle is on, which is its job) |
+| another deck | "Objectives for this deck need a live backend", Reset and Regenerate disabled, "No objectives for this deck yet." |
+
+**The bug that only existed on screen.** The hover card — statement, criteria, refs, and the one
+control a prerequisite has — was laid out, painted and **clipped away to nothing**: the tree
+scrolls, so `.list` is an `overflow-y: auto` box, and a scroll container clips on both axes
+whatever the other one is set to. `elementFromPoint` over **Teach me this** hit the flow behind
+it. It is positioned against the viewport now, from the row's rect, clamped to stay on screen.
+
+**One older bug this run surfaced** (`0077f2c`): `flow:messages` returns `null` for a document
+that has never been asked a question, and `loadFlowRoom` then kept the room it was holding — so
+opening a second deck printed the *first* deck's thread above the first card of a document it
+was never about. The room belongs to a file now and is dropped when the file changes.
+
+### Not verified
+
+- **Every live-IPC path**: on this build the five channels are on the preload and their handlers
+  are the parallel track's, still landing. `objectives:tree` / `states` / `regenerate` / `reset`
+  / `teach`, both `objectives.*` events and `objectiveId` reaching a stored message have been
+  exercised against the fixture and the contract, never against a real ingest.
+- **`prefers-reduced-motion`** on the just-lit row and the highlight ring: both animations are
+  behind the media query, neither was watched with it on.
+- **A tree deeper or wider than the fixture's** (10 nodes, 3 levels): the ingest may return 20,
+  and only `visibleRows` and the ellipsis rule say what that looks like.
