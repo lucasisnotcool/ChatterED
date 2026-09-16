@@ -901,3 +901,110 @@ bound to the *focused* card only; there is no "whisper about the whole document"
 by removing the group, and a private channel to the Tester is the one shape this must not have. The
 selection-change wiring is asserted by fake-clock tests rather than live: watching a 45-second window
 not fire is not something a CDP run can show in a screenshot.
+
+---
+
+## The fallback gate, run early — beats 4–15 twice, no restart (16 Sep, `flow-build-plan.md` §3.4, §3.6, issue #23)
+
+**Verdict: G1, G2 and G3 all pass. No fallback.** §3.8's F1 and F2 are not taken; `SPLIT_ENABLED`
+stays `true`. Two fixes were needed to get there and each is its own commit.
+
+**How it was driven.** The **installed app** (`~/Applications/ChatterED.app`, build 72, `ccc5b9d`),
+launched with `env -u ELECTRON_RUN_AS_NODE open -n ~/Applications/ChatterED.app --args
+--remote-debugging-port=9340 --user-data-dir=<fresh>` — the packaged binary honours both flags, so
+no `npm run dev` was needed. A **fresh profile**, so first run, the vault and the pacing strip are
+part of the run: onboarding → *Skip — use the scripted demo* → **Choose a folder…** (a native macOS
+open panel, driven over the accessibility API, because CDP cannot reach it) →
+`/Users/lohzh/ChatterED/Academia` → Settings ▸ **Scripted demo** + Tester pacing ▸ **Demo**. Deck:
+`A0282987E_LohZhengLucas_Critique1_slides (1).pdf`. `Runtime.consoleAPICalled` and
+`Runtime.exceptionThrown` captured for the whole session. Screenshots and `gate.log` in the session
+scratchpad under `gate/`, numbered by beat and run.
+
+### The three gate criteria
+
+| | Criterion | Evidence |
+|---|---|---|
+| **G1** | A tick click splits in place and ⌘Z restores it, twice in a row, no blank card, no re-render flash, surviving a relaunch | **4 cycles** (two per run): split **2–4 ms**, ⌘Z back **4–20 ms**, `scrollTop` **unchanged**, the page-3 card's viewport top **255 → 255 → 255** and **355 → 355 → 355** (max move **0 px**), **0 blank crops** sampled at each card's centre. Close and reopen restored 8 and then 9 segments. |
+| **G2** | A complete Teacher → learner → Tester → learner exchange of ≥ 6 turns in one segment's thread through the real actor, twice, no restart | **12 turn nodes** in run 1's thread and **23** by the end of run 2 — `You → REFERENCE → You → Ellie → You → Ellie → (nudge) → You → Ellie BY RULE → Max → You → Max`. Every turn anchored to the one segment; `flow:messages` still returns ids only. |
+| **G3** | *Ask here* inserts a REFERENCE card that provably cannot move a ledger row, and the whisper leak canary still passes over the flow renderer's import graph | REFERENCE **100 words** against the 120 cap, in `-apple-system`. Ledger across the card: `[]` → `[]` (run 1) and the identical triple (run 2) — **unchanged both times**. Whisper: **0** occurrences of the private question or of Ellie's private answer anywhere in `.scroll` with the popover subtree removed, in both runs and again after close-and-reopen. `npm test` **521 green**, canary included. |
+
+### Every beat, both runs
+
+| Beat | Run 1 | Run 2 | Measured |
+|---|---|---|---|
+| 4 open the deck from the vault | PASS | PASS | **2.6 s**, 7 cards, **18 ticks** `[4,2,3,0,2,3,4]` — unchanged from the SEGMENTS.md §7 table |
+| 4b the first-open pacing strip | PASS | n/a | four paragraphs, the **Demo** numbers, dismissed once per install as designed |
+| 5 ticks on page 3, hover | PASS | PASS | 3 ticks; the dashed guide at `top: 229px`, the 0.535 cut the script names |
+| 6 split in place, ⌘Z, twice | **PASS** | **PASS** | see G1. **One fix** — `8c049eb` |
+| 7 + Ask here | PASS | PASS | prompt opens **pre-focused**, 0.6 s |
+| 8 REFERENCE card | PASS | PASS | **2.4–3.1 s**, 100 words, 0 rows moved |
+| 9 Explain it back → Ellie | PASS | **FAIL** | **4.3 s** and the scripted teach turn in run 1. In run 2 the learner cues are exhausted, so Ellie has nothing scripted to say and the learner waits **50 s** for a silence nudge instead. Not fixed — see below. |
+| 10 the hand-off, by rule | PASS | PASS | **67 s** from the second learner line, and it needed **one spare learner turn plus a 22 s wait**. `BY RULE`, *"You've covered what /btw can and cannot do and the forwarding gap — Max, over to you."* |
+| 11 the Tester's question | PASS | **PASS** | **9.6 s** / **9.8 s**, inside Tan's band; the counter caught mid-hold at **`Max is thinking… 7s`**. **One fix** — `ccc5b9d` |
+| 12 the ledger moves | PASS | PASS | **10.2 s** / **10.6 s**. `C1 … defended`, `C3 … justified`, then `C2 … justified` in run 2 |
+| 13 ⌘K whisper → insert | PASS | PASS | private answer **1.6 s**, popover **below** the crop (`overlaps crop false`), **0** finder nodes, **0** `**` markers (`b395ad7` holds), 0 leaked strings, and a shared card headed `You · FROM A PRIVATE NOTE` |
+| 14 Original pages | PASS | PASS | **11–16 ms**, 8/9 cards → 7 whole pages, 0 ticks, and back |
+| 15a compare-on-hover | PASS | PASS | 1.8 s, *"Region of page 1 · nothing has been re-typeset"* |
+| 15b a non-slide PDF | PASS | PASS | the Koala paper, **31 whole pages**, 0 ticks, *"This document is not a slide deck — segments are whole pages."*, in **3.2–3.4 s** |
+| close and reopen | PASS | PASS | **4.0 s**; segments, thread and the inserted card with its provenance tag all back, glyphs intact, **0** popovers, **0** private strings |
+
+**Console errors and exceptions across every run: none.** `Runtime.exceptionThrown` never fired and
+no `console.error` was emitted.
+
+### The two fixes
+
+1. **`8c049eb` — beat 6's anchor measured from the wrong origin.** `cutTopOf()` and `onmerge()`'s
+   seam read `offsetTop` on `[data-segment]`, which was scroller-relative until Friday's whisper
+   popover gave `.cardwrap` `position: relative` so a popover could be anchored to its card. That
+   made the cardwrap the offset parent and `offsetTop` read ~0 for every card, so **every** cut
+   looked as if it were above the fold and the scroller shifted by a card's chrome. Measured before
+   the fix: a tick click moved the card under the eye from viewport y **355 to 267**. An 88 px jump
+   on the one beat whose claim is *"that was a number changing, not a re-render"*. A rect difference
+   has no offset parent to be wrong about. This is an **integration seam between the flow-renderer
+   track and the whisper track**, invisible to both suites.
+2. **`ccc5b9d` — beat 11 went silent on the second walkthrough.** `actor.ts` cues the Tester as
+   `handoff:N` where N counts the *actor's* hand-offs, and a flow actor lives for the life of the
+   process — reopening a document resumes the sitting, which is right. The second pass reached
+   `handoff:3`, which the script did not answer, so the camera saw Ellie's `BY RULE` line and then
+   **nothing at all**. `handoff:`/`feedback:` cues now fall back to the last scripted question of
+   the same kind, the convention `referenceBeatFor` and `whisperBeatFor` already use. Safe to repeat
+   *only* because no hand-off beat carries a `ledger` block; a test pins that, and pins that
+   `student:N` does **not** fall back.
+
+### What the presenter must know on filming day
+
+1. **Film a cold open, not a warm-up.** `script.critique1.ts`'s `critique1Sitting` docstring says
+   *"the presenter does a short warm-up on the same deck before the take"*. Measured here, that
+   makes beat 9 impossible: after a quit and relaunch onto a sitting that already has two taught
+   concepts, the **hand-off fires on the very first learner turn in 13 ms** — Ellie never teaches,
+   she goes straight to *"Max, over to you."* The shape §2 describes was only ever produced by
+   **run 1 on a fresh profile**. The brief and the code disagree and the brief is the one that is
+   wrong; `flow-build-plan.md` §4.4 and that docstring need Lucas's call before Sunday.
+2. **Beat 10 costs a spare turn and about 90 seconds.** From a cold open on Demo the hand-off needs
+   a *third* learner line and ~20 s of quiet after the second concept is taught (Demo's 20 s
+   `minAgeMs`). `CRITIQUE1_LEARNER_LINES`'s `student:4` spare is what the gate used.
+3. **A consequence of 2: the ledger moves one beat early.** By the time Max's question landed, `C1`
+   was already **defended** and `C3` **justified** — scored on the spare turn, because the ledger
+   blocks are keyed to the learner-turn ordinal. Beat 12's claim still holds (the evidence really is
+   verbatim from what was typed) but *"that moved because I wrote it"* has to point at the right
+   turn, or the rows should be shown moving rather than landing.
+4. **Pause for ~45 s and Ellie nudges.** *"Still turning it over? Happy to wait."* / *"Take your
+   time. If it helps, say the bit you're sure about first."* The silence timer is real and it will
+   speak over a slow take.
+5. **One take per sitting.** A second pass in the same session now completes (fix 2), but Ellie
+   stops teaching once the learner cues run out. Quit between takes — and re-read note 1 before
+   deciding what to open.
+6. **Copy drift, no code change.** The app says **`Max is thinking… 7s`**; §2 beat 11 and
+   `FlowThread.svelte`'s own docstring say *"Max is reading…"*. §4.2 freezes `VERB`, so the brief
+   and the docstring are the ones out of step. Left alone deliberately.
+7. **First-run step 1 still describes the group.** *"you explain … to a small group … they'll
+   disagree with each other … a ledger on the right"* — three claims #32 and the pivot removed. It
+   is the first screen on camera if the take starts from a fresh install.
+8. **The vault chooser is a native panel.** Not reachable from inside the app and not scriptable
+   over CDP; on camera it is ⌘⇧G and a path, or three clicks.
+
+**Not covered by this gate.** Beats 1–3 and 16 need no app. The free-cut drag, same-page merge and
+drag reorder were exercised by last night's run, not this one. `undo()` still applies no scroll
+anchor of its own — with fix 1 a cut on screen needs none, and a cut above the fold is not in the
+storyboard. The §3.6 requirement of **five** storyboard runs on Saturday is still outstanding; this
+was two, plus a third partial that established note 1.
