@@ -1740,6 +1740,22 @@ export class RoomActor {
       },
     });
     request.meta.scriptCue = cue;
+    /**
+     * **What the prefix carried, per call** (issue #35 item 4). The reply's prompt is the frozen
+     * room prefix, which since the whole-deck fix holds the entire document rather than the
+     * first 6,000 characters of it — and the one number that says whether that is true on a
+     * given turn is the size of `system[0]`. `llm.request` logs `system_chars` for every scope;
+     * this says what those characters *are*, in the same vocabulary the REFERENCE path uses,
+     * so `jq 'select(.event=="context.built")'` answers the question for both paths at once.
+     */
+    this.#log.event('info', 'context.built', {
+      scope: 'group',
+      chars: request.system.reduce((n, b) => n + b.text.length, 0),
+      material_chars: this.#d.store.materials.get(this.#room().material_id)?.extracted_text.length ?? 0,
+      pages: null,
+      strategy: 'prefix',
+      cache_breakpoints: request.system.filter((b) => b.cache_control).length,
+    });
     // The agent's own generation belongs to the turn too: without this its `llm.request` /
     // `llm.complete` pair carried no correlation id and fell out of `jq 'select(.turn==…)'`,
     // which is the one query the log exists to answer.
