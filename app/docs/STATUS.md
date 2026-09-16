@@ -1053,3 +1053,26 @@ drag reorder were exercised by last night's run, not this one. `undo()` still ap
 anchor of its own — with fix 1 a cut on screen needs none, and a cut above the fold is not in the
 storyboard. The §3.6 requirement of **five** storyboard runs on Saturday is still outstanding; this
 was two, plus a third partial that established note 1.
+
+## The submission ZIP — §3.6, verified 16 Sep 2026
+
+`tools/make-submission-zip.sh` (repo root, not `app/tools/`) builds
+`dist/ChatterED-A1-<short-sha>.zip` from the index at `HEAD` and refuses to run on a dirty tree.
+**Allowlist, not exclude list:** every path is named in the script and enumerated through
+`git ls-files`, so nothing untracked (`node_modules`, `dist`, `out`, `.vite`) and nothing
+git-ignored (`.env`, `*.key`, `*.pem`, `*.p12`, `*.local.*`, `.claude/settings.local.json`) can be
+swept in, and `.git` is never walked; a `find` over the staged tree then refuses anything secret-
+or build-shaped. `Academia/` contributes **one** folder — `Sources/btw interaction/`, Lucas's own
+Critique 1 deck, so the vault has something to open — and the script asserts nothing else from it
+arrived; the source papers are not ours to redistribute. `app/README.md` ships in place *and* at
+the archive root. §2's storyboard is extracted from the plan by the script itself, so
+`docs/report/video-storyboard.md` cannot drift from the brief that owns it.
+
+**Measured on this Mac**, from `7df8612`: **2.8 MB**, 235 entries, 205 tracked files plus the two
+generated ones. Unzipped into an empty directory on another path, `npm ci` took **4.0 s** (warm
+npm cache — a cold cache on a marker's machine will be slower; `better-sqlite3` rebuilt for
+Electron 44's ABI as part of `postinstall`, from a prebuilt, not from source) and `npm test` ran
+**526 tests in 36 files, all passing, in 1.30 s**. The archive's `README.md` is byte-identical to
+`app/README.md`, and `grep` over `unzip -l` finds no `.git`, no `*.local.json`, no key file, no
+`node_modules` and no build output. **Not verified:** opening it on a *different* machine, which
+is what §3.6's gate actually asks for.
