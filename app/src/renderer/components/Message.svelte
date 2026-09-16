@@ -26,7 +26,7 @@
 {#if message.divider}
   <!-- `don't do this` turns the nudge off for the rest of the round, with an undo
        in the wait-line. Settings is not in this build. -->
-  <Divider divider={message.divider} onComplain={() => store.pauseNudges(true)} />
+  <Divider divider={message.divider} paused={store.room?.nudgesPaused ?? false} onComplain={(next) => store.pauseNudges(next)} />
 {/if}
 
 <article

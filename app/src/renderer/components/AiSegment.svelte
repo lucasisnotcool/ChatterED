@@ -76,7 +76,7 @@
 -->
 {#if message.divider}
   <div class="dividerwrap">
-    <Divider divider={message.divider} onComplain={() => store.pauseNudges(true)} />
+    <Divider divider={message.divider} paused={store.room?.nudgesPaused ?? false} onComplain={(next) => store.pauseNudges(next)} />
   </div>
 {/if}
 
