@@ -132,7 +132,7 @@
           <span class="label-caps lbl">{whisper.agent.displayName}</span>
           <!-- The same escape-then-restore-two-things renderer every AI card uses, so a private
                answer is not the one place in the app where `**no**` shows its asterisks.
-               `aiBody` escapes first and puts back exactly two things, which is why this is safe
+               `aiBody` escapes first and puts back a closed subset, which is why this is safe
                here for the same reason it is safe in `AiSegment`. -->
           <!-- eslint-disable-next-line svelte/no-at-html-tags -->
           <div class="body">{@html aiBody(t.body).html}</div>
@@ -293,6 +293,12 @@
   .turn p { margin: 0; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; }
   .turn .body { font-size: 12.5px; line-height: 1.55; }
   .turn .body :global(p) { margin: 0 0 7px; }
+  /* The same markdown subset as the flow card (issue #41): a whisper is written by the same
+     agent under the same prompt, so it arrives with the same `**` in it. */
+  .turn .body :global(strong) { font-weight: 600; }
+  .turn .body :global(em) { font-style: italic; }
+  .turn .body :global(ul), .turn .body :global(ol) { margin: 0 0 7px; padding-left: 18px; }
+  .turn .body :global(li) { margin: 0 0 3px; }
   .turn .body :global(p:last-child) { margin-bottom: 0; }
   .lbl { color: var(--hue); display: block; margin-bottom: 3px; }
   .agent p,

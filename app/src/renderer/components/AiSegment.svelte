@@ -224,6 +224,22 @@
 
   .body :global(p) { margin: 0 0 8px; font-size: 13.5px; line-height: 1.6; }
   .body :global(p:last-child) { margin-bottom: 0; }
+  /* The markdown subset `aitext.ts` renders (issue #41). A list is set tight against the prose
+     above it, because in these turns it nearly always *is* the prose — "the lineage is:" and
+     then three numbered points — and a browser's default 16 px indent pushes it out past the
+     card's own text column. */
+  .body :global(strong) { font-weight: 600; }
+  .body :global(em) { font-style: italic; }
+  .body :global(ul), .body :global(ol) {
+    margin: 0 0 8px;
+    padding-left: 20px;
+    font-size: 13.5px;
+    line-height: 1.6;
+  }
+  .body :global(ul:last-child), .body :global(ol:last-child) { margin-bottom: 0; }
+  .body :global(li) { margin: 0 0 4px; }
+  .body :global(li:last-child) { margin-bottom: 0; }
+  .body :global(li)::marker { color: var(--muted); }
   /* Separation 1 again, and the one that matters most in a maths module: agent-written maths is
      set in the app's faces, never in the slide's (§C4). KaTeX ships Computer Modern; it is
      overridden here rather than loaded and ignored. */
