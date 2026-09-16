@@ -508,3 +508,16 @@ describe('unread marks and per-card state (audit §7)', () => {
     expect(snapshot.cards[ANCHOR]).toEqual({ removed: true, collapsed: true });
   });
 });
+
+describe('the trace measures generation, not the wait before we look at it', () => {
+  it('stamps generationMs when the call settles, not when it is awaited', async () => {
+    // The client answers in one tick. The await is on the far side of the floor-yield sleep, so
+    // a naive measurement reports the yield — the first live run showed gen=4996ms for a reply
+    // produced in milliseconds.
+    const h = build(streamingClient(['Instantly.']));
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    const [trace] = h.actor.turnTrace();
+    expect(trace!.generationMs).toBeLessThan(1_000);
+    expect(trace!.totalMs).toBeGreaterThan(2_000);
+  });
+});

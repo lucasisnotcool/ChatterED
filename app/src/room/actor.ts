@@ -1315,9 +1315,26 @@ export class RoomActor {
       () => this.#d.clock.now(),
     );
     const generatingFrom = this.#d.clock.now();
+    /**
+     * `generationMs` is stamped **when the promise settles**, not when it is awaited. The await
+     * below is on the far side of the floor-yield sleep, so measuring there reported the yield as
+     * generation time — the first live run showed `gen=4996ms` for a reply that was produced in
+     * milliseconds, which is exactly the kind of number the debug drawer exists to stop people
+     * believing.
+     */
+    let generationMs: number | null = null;
+    const stampGeneration = (): void => {
+      generationMs ??= this.#d.clock.now() - generatingFrom;
+    };
     const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta), pending.abort.signal).then(
-      (value) => ({ ok: true as const, value }),
-      (error: unknown) => ({ ok: false as const, error }),
+      (value) => {
+        stampGeneration();
+        return { ok: true as const, value };
+      },
+      (error: unknown) => {
+        stampGeneration();
+        return { ok: false as const, error };
+      },
     );
     /**
      * The floor runs **concurrently with the generation**, not after it. That is the whole change:
@@ -1349,7 +1366,7 @@ export class RoomActor {
     let usage: Record<string, number> = {};
     const settled = await generation;
     if (pending.stopped) {
-      await this.#dispatchStopped({ pending, agent, decision, stream, anchorId, target, turnStart, turnLog });
+      await this.#dispatchStopped({ pending, agent, decision, stream, anchorId, target, turnStart, turnLog, generationMs });
       return;
     }
     if (!settled.ok) {
@@ -1384,12 +1401,7 @@ export class RoomActor {
       backend = result.backend ?? null;
       usage = result.usage as unknown as Record<string, number>;
     }
-    this.#trace(pending.id, {
-      generationMs: this.#d.clock.now() - generatingFrom,
-      model,
-      backend,
-      usage,
-    });
+    this.#trace(pending.id, { generationMs, model, backend, usage });
 
     await floor;
     if (pending.cancelled) {
@@ -1517,6 +1529,7 @@ export class RoomActor {
     target: number;
     turnStart: number;
     turnLog: TurnLog;
+    generationMs?: number | null;
   }): Promise<void> {
     const { pending, agent, decision, stream, anchorId, target, turnStart, turnLog } = input;
     stream.close();
@@ -1563,6 +1576,7 @@ export class RoomActor {
     });
     this.#trace(pending.id, {
       stopped: true,
+      generationMs: input.generationMs ?? null,
       model: agent.model,
       backend: this.#d.llm.kind,
       ttftActualMs: stream.firstVisibleAt !== null ? stream.firstVisibleAt - turnStart : null,
