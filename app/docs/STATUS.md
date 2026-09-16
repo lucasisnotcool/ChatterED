@@ -1189,3 +1189,96 @@ now parses, but both live proposals were held by the confidence and evidence gat
 transition has been seen against a real deck yet. (d) Token *streaming* to the UI: there is none
 by design — the reply is buffered and released at the latency floor, and the thinking indicator is
 what fills the wait.
+
+---
+
+## The conversation layer, against mature chat UIs (16 Sep, `cui-standards-audit.md`, issue #34)
+
+**The renderer half of the audit's P0 + P1 + P2, in full.** The owner's complaint on a real
+58-page deck — *"quite difficult to gauge what is happening, lack of user feedback when a message
+is sent, and streaming is not working"* — was one root cause: the flow inherited the room's
+conversation **content** and none of its **status surfaces**. `Room.svelte` had six of them;
+`FlowCanvas` → `FlowThread` had one, conditioned on local state that was frequently wrong.
+
+Lucas's three decisions on #34 (16 Sep) are implemented as written: **plain animated dots for
+Ellie, the elapsed counter for Max, the ETA only in the indicator's `title`**; **Stop only once
+the floor has elapsed**; **the per-round Hold / Wait-for-me pause kept, with no global off
+switch**.
+
+| Audit | What landed | Where |
+|---|---|---|
+| §4 P0-1 | `Divider` above any message with a `dividerCause` — the line `actor.ts` has always written and the flow always dropped, so a content-free nudge stops being pixel-identical to a considered reply. `WaitLine` under the thread composer: the 45 s track, the *"Ellie may chime in"* caption, **Hold** and **Wait for me** | `AiSegment.svelte`, `FlowThread.svelte` |
+| §1 P0-2 | Optimistic append. A client-side pending queue; the block is on screen from the keystroke, greyed; the composer is cleared only after the send reaches the bridge; the echo acks it by text-under-anchor; a rejection leaves the words in place with **Retry** / **Discard**, never in a global banner. Visible **Send**, disabled on an empty box | `flowchat.ts` (`PendingSend`, `ackIndex`), `store.svelte.ts`, `FlowThread.svelte` |
+| §2a P0-3 | `turn.received` rendered as neutral, un-attributed room state — *Sent · the room has it*. No name, no avatar, no verb, so §C3's agent-chrome-free window and §D4's "an indicator runs during the hold" are both satisfied. Times out rather than outliving a turn that died | `flowchat.receivedVisible`, `FlowThread.svelte` |
+| §2b P0-4 | The wait follows **the turn's anchor**, not `store.composerAt`. The old condition meant a nudge landing anywhere else drew the indicator nowhere at all | `flowchat.thinkingAnchor` |
+| §3 P0-5 | Inline failure card + Retry kept and rendered per anchor; a persistent **backend strip** above the deck when the scripted client is answering or the CLI is installed and signed out. (The untrue *"retrying"* copy was corrected on the room track in `b7596ec`) | `FlowCanvas.svelte`, `TurnFailureCard.svelte` |
+| §5 P0-6 | `scrollDecision()`: into view when the learner is writing in that thread or within 220 px of it, otherwise a docked **↓ Ellie replied · p.6** pill that clears when the thread is reached. Esc closes the thread composer and restores focus to the card | `flowchat.ts`, `FlowCanvas.svelte`, `FlowThread.svelte` |
+| §8 P0-7 | One `aria-live="polite" aria-atomic="true"` region per flow, one sentence per event, never the body. `ThinkingIndicator` demoted to `role="status"` + `aria-live="off"` — it used to re-announce the Tester's wait once a second | `FlowCanvas.svelte`, `ThinkingIndicator.svelte` |
+| §2 P1 | `turn.delta` accumulates into a provisional card drawn by the same `AiSegment`, with a caret; `turn.released` finalises it. **Stop** wired to `flow:stop`, offered only when `stopAllowed()` | `flowchat.appendDelta/stopAllowed`, `FlowThread.svelte` |
+| §B9 P1 | Device 1: the anchor ring on the crop while a public turn is held — an outline **outside** the crop's bounds, because the never-rule holds for a ring as for an AI card. Device 3 generalised from the private popover to public turns, which is the case §B9 was written about | `SegmentCard.svelte`, `FlowCanvas.svelte` |
+| §6 P1 | Provenance foot on every AI card: `4.1s · scripted:sonnet · scripted`, hover-revealed — **except `scripted`, shown unconditionally**, because a card that does not say which backend produced it is a claim about a model that never ran | `flowchat.metaParts`, `AiSegment.svelte` |
+| §9 P1/P2 | Settings ▸ **Reply speed** (Considered / Faster / No pacing) with the disclosure on the options, not in a footnote. §C3 argues a paced system the learner cannot un-pace is a dark pattern; this was the one §C3 control never built. Settings ▸ Open log folder already landed in `7d440bb` | `Settings.svelte`, `flowchat.REPLY_SPEEDS` |
+| §10 §7 P2 | ⌥⌘D **turn log** over `flow:turnTrace` — trigger, `decidedBy`, decision and generation latency, TTFT, floor, total, backend, model, tokens. No bodies are in `TurnTraceView` and none are rendered. Unread dots per thread from `lastSeenSeq`, cleared by `flow:markSeen` when the thread is genuinely on screen. Thread collapse and dismissed cards persisted through `flow:cardState`. `prefers-reduced-motion` extended to the three dots and the ring | `DebugDrawer.svelte` (new), `SegmentCard.svelte`, `FlowThread.svelte` |
+
+`lib/flowchat.ts` holds every decision in that table as a pure function with **33 tests**: nothing
+in it reaches the bridge, holds a timer, or knows what a DOM node is.
+
+### Verified live over CDP
+
+Own port 9336, own `--user-data-dir`, vault = `/Users/lohzh/ChatterED/Academia`, backend
+`scripted`, Reply speed **Considered**, on `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`.
+
+| Check | Measured |
+|---|---|
+| The send is acknowledged | `Sent · the room has it` from the ack until **3.2 s**, when Ellie's dots replaced it |
+| The indicator is Lucas's | dots for Ellie, no counter; `title` = *"Ellie usually takes about 1s more"* — the ETA nowhere on screen |
+| The wait has a location | anchor ring on the crop (`.card.pending`) for the whole hold; breadcrumb **"Ellie is replying · p.1"** once the card scrolled away |
+| The reply | landed at **4.7 s**, foot `4.1s · scripted:sonnet · scripted`, shown unconditionally |
+| A nudge looks like a nudge | **"45 s quiet · Ellie stepped in · don't do this"** above the pool turn |
+| The quiet timer, in the document | `45s → 31s` counting down under the thread composer, with Hold / Wait for me |
+| Send button | disabled on an empty box, enabled on the first keystroke |
+| Esc | composer closed and focus returned to `data-segment="seg_mu3jyc9616a37"` |
+| The pill | scrolled six slides away mid-turn → **"↑ Ellie replied · p.1"** docked at the foot of the flow |
+| The live region | *"Your message was received under "/btw"."* → *"Ellie replied under "/btw", 77 words."* |
+| Backend strip | *"Scripted demo — these replies are a fixed transcript, not a model."* |
+| ⌥⌘D | one row: `student_message │ rule:teacher_answers │ peer │ decide 0.00s │ generate 3.81s │ ttft 4.81s │ floor 4.81s │ total 4.82s │ scripted:sonnet │ scripted │ ok` — note ttft **==** floor, which is what a floor on *visible* TTFT means |
+| Collapse and unread, persisted | `▾ hide this thread` ⇄ `▸ 13 turns`, and the sitting row holds `cards: {seg_…: {collapsed:false}}`, `seen: {seg_…: 13}` |
+| Reply speed | all three options render with their disclosure; `replySpeed` round-trips through `saveSettings` |
+
+Screenshots in the session scratchpad under `cui/`, `01`–`14`.
+
+### Two bugs the live run found, and fixed here
+
+1. **An agent turn can arrive empty.** Two rows came back from `scripted:sonnet` with
+   `length(body) = 0` (SQLite seq 8 and 13; `main.log` says `reply_chars: 0`), and the flow drew
+   a header, a rule and nothing else — the silence of #34 with an avatar on it. An empty turn now
+   says *"This reply arrived empty."* The upstream cause is the scripted client's, not the
+   renderer's.
+2. **A provisional card outlived its message** — a duplicate with the streaming caret still on it,
+   under the finished reply. `turn.released` is the designed drop; an agent message *landing* now
+   also clears the stream, which cannot be wrong under §B10 R2.
+
+### Not verified live
+
+- **Stop.** Impossible to exercise on the scripted backend *by construction*: generation always
+  finishes before the floor, so `stopAllowed()` is never true while the indicator is up; with
+  Reply speed **off** the floor is zero and a frame-accurate sampler caught **no** frame with an
+  indicator at all. `stopAllowed` has three tests and `flow:stop` is registered (its own
+  `That room is not open` came back from the real handler). It needs a backend whose generation
+  outlasts the floor.
+- **The incremental render.** Built and unit-tested; **no `turn.delta` was emitted** in any of the
+  eleven turns run (a tap on the event stream shows `turn.received → agent.thinking →
+  message.appended → turn.released`, no deltas), so it has not yet had a live stream to draw.
+- **The failed-send block** (`pending → failed` with Retry). The local IPC ack lands inside one
+  animation frame, so the greyed state is not observable here, and the API object is frozen by
+  `contextBridge`, so a slow link cannot be simulated from the page. Covered by `ackIndex`'s tests.
+- **The failed-*turn* card in the flow.** Same blocker the previous section already recorded: an
+  open room keeps the client it was constructed with, so pointing Settings at `/bin/false` did not
+  reach the actor. The card, its Retry and the store's `turn.failed` handler are unchanged from
+  `b7596ec`, which was verified live then.
+
+### Noted for the room track
+
+`turn.received` is emitted **twice** with the same `turnId` in the same millisecond. The renderer
+is idempotent on it, so it is harmless on screen — but the debug drawer counts turns, and a
+double-emit is usually a double-subscription.
