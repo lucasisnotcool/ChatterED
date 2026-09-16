@@ -17,7 +17,8 @@ vi.mock('electron', () => ({
   shell: { openExternal: () => Promise.resolve() },
 }));
 
-const { buildMenuTemplate } = await import('./menu.js');
+const { buildMenuTemplate, DEFAULT_TEXT_SCALE, TEXT_STEPS, largerText, readTextScale, smallerText } =
+  await import('./menu.js');
 
 interface Sent {
   command: string;
@@ -25,18 +26,26 @@ interface Sent {
 
 function harness(isPackaged: boolean) {
   const sent: string[] = [];
+  const zoom: { modes: string[]; factors: number[] } = { modes: [], factors: [] };
+  let stored = DEFAULT_TEXT_SCALE;
   const win = {
     webContents: {
       send: (_channel: string, command: string) => {
         sent.push(command);
       },
+      setZoomMode: (mode: string) => zoom.modes.push(mode),
+      setZoomFactor: (factor: number) => zoom.factors.push(factor),
     },
   };
   const template = buildMenuTemplate({
     getWindow: () => win as never,
     isPackaged,
+    getTextScale: () => stored,
+    setTextScale: (value: number) => {
+      stored = value;
+    },
   });
-  return { sent, template };
+  return { sent, template, zoom, scale: () => stored };
 }
 
 function submenu(template: MenuItemConstructorOptions[], label: string): MenuItemConstructorOptions[] {
@@ -135,6 +144,89 @@ describe('the application menu', () => {
     const template = buildMenuTemplate({ getWindow: () => null, isPackaged: true });
     const item = (template.find((m) => m.label === 'View')!.submenu as MenuItemConstructorOptions[]).find(
       (i) => i.label === 'Actual Size',
+    )!;
+    expect(() => (item.click as (...a: never[]) => void)()).not.toThrow();
+  });
+});
+
+/**
+ * **UI text size** — the accessibility control the app did not have.
+ *
+ * ⌘+ was taken away from Chromium on purpose (it belongs to the document), which left no way at
+ * all to make the *interface* larger. These items are the other zoom, and the two must stay
+ * distinguishable in the menu and unconfusable in the code: nothing here may send an
+ * `AppCommand`, and nothing above may touch `setZoomFactor`.
+ */
+describe('the interface text size', () => {
+  it('offers Larger, Smaller and Default under their own heading', () => {
+    const labels = items(harness(false).template, 'View');
+    expect(labels).toContain('Interface');
+    expect(labels).toContain('Larger Text');
+    expect(labels).toContain('Smaller Text');
+    expect(labels).toContain('Default Text');
+    // The heading is a label, never something you can click into.
+    const heading = submenu(harness(false).template, 'View').find((i) => i.label === 'Interface');
+    expect(heading?.enabled).toBe(false);
+    expect(heading?.click).toBeUndefined();
+  });
+
+  it('binds ⌥⌘+ / ⌥⌘− / ⌥⌘0, which are not the document zoom', () => {
+    const view = submenu(harness(false).template, 'View');
+    const accel = (label: string) => view.filter((i) => i.label === label).map((i) => i.accelerator);
+    expect(accel('Larger Text')).toEqual(['Alt+CommandOrControl+Plus', 'Alt+CommandOrControl+=']);
+    expect(accel('Smaller Text')).toEqual(['Alt+CommandOrControl+-']);
+    expect(accel('Default Text')).toEqual(['Alt+CommandOrControl+0']);
+    // The hidden ⌥⌘= twin, same reason as Zoom In's.
+    expect(view.filter((i) => i.label === 'Larger Text')[1]!.visible).toBe(false);
+  });
+
+  it('moves the zoom mode off "disabled" first, or setZoomFactor would be ignored', () => {
+    const { template, zoom } = harness(false);
+    click(template, 'View', 'Larger Text');
+    expect(zoom.modes).toEqual(['manual']);
+    expect(zoom.factors).toEqual([1.1]);
+  });
+
+  it('walks the ladder from wherever it is and persists each step', () => {
+    const { template, zoom, scale } = harness(false);
+    click(template, 'View', 'Larger Text');
+    click(template, 'View', 'Larger Text');
+    expect(scale()).toBe(1.25);
+    click(template, 'View', 'Smaller Text');
+    expect(scale()).toBe(1.1);
+    click(template, 'View', 'Default Text');
+    expect(scale()).toBe(1);
+    expect(zoom.factors).toEqual([1.1, 1.25, 1.1, 1]);
+  });
+
+  it('sends no AppCommand at all — the text size never reaches the renderer', () => {
+    const { template, sent } = harness(false);
+    click(template, 'View', 'Larger Text');
+    click(template, 'View', 'Smaller Text');
+    click(template, 'View', 'Default Text');
+    expect(sent).toEqual([]);
+  });
+
+  it('stops at both ends of the ladder', () => {
+    expect(largerText(2)).toBe(2);
+    expect(smallerText(0.8)).toBe(0.8);
+    expect(largerText(1)).toBe(1.1);
+    expect(smallerText(1)).toBe(0.9);
+    expect(TEXT_STEPS).toContain(DEFAULT_TEXT_SCALE);
+  });
+
+  it('survives a missing or corrupt stored factor', () => {
+    expect(readTextScale(1.25)).toBe(1.25);
+    expect(readTextScale(null)).toBe(DEFAULT_TEXT_SCALE);
+    expect(readTextScale('nonsense')).toBe(DEFAULT_TEXT_SCALE);
+    expect(readTextScale(9)).toBe(2);
+    expect(readTextScale(0.01)).toBe(0.8);
+  });
+
+  it('does nothing, and throws nothing, when there is no window', () => {
+    const template = buildMenuTemplate({ getWindow: () => null, isPackaged: true });
+    const item = (template.find((m) => m.label === 'View')!.submenu as MenuItemConstructorOptions[]).find(
+      (i) => i.label === 'Larger Text',
     )!;
     expect(() => (item.click as (...a: never[]) => void)()).not.toThrow();
   });
