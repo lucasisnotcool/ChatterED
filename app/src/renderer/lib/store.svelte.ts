@@ -11,6 +11,7 @@ import type {
   CreateSessionInput,
   DocumentView,
   FinderHitView,
+  FlowWhisperView,
   RecapView,
   RelayAttribution,
   RoomEvent,
@@ -148,6 +149,30 @@ class Store {
   /** Answer cards the learner dismissed with **✕ Remove**. Local: the transcript is not edited. */
   answersRemoved: Record<string, boolean> = $state({});
 
+  // ── The whisper popover on a segment (§3.5, issue #16) ─────────────────
+  /**
+   * The segment card that currently has focus. Two jobs, both of them about ⌘K:
+   *
+   *  1. it is what ⌘K acts on — `App.svelte` stands its finder binding down while it is set,
+   *     the same way it already stands down inside a room (product-design.md §C10);
+   *  2. it is the document's analogue of a keystroke (`pivot-spec.md` §B8), which is why
+   *     focusing a card calls `flow:noteSelection`.
+   */
+  flowFocus: string | null = $state(null);
+  /**
+   * The open private thread, or null. **The only place a private turn lives in the renderer**,
+   * and `WhisperPopover.svelte` is the only component that reads it — `context.test.ts`'s walk
+   * over the flow's component graph holds an allowlist of exactly that one file.
+   *
+   * It is not `this.whisper`: that is the shipped room's pane, keyed on the room, and the two
+   * must not be able to show each other's turns.
+   */
+  flowWhisper: FlowWhisperView | null = $state(null);
+  /** A private turn is in flight — Ellie's 1–2 s floor, drawn inside the popover. */
+  flowWhisperThinking = $state(false);
+  /** An approved **Insert into the document** is in flight. */
+  flowWhisperInserting = $state(false);
+
   /**
    * The document behind the room's source pane — the slide being explained, as a page rather
    * than as a paragraph of hyphenated pdf.js output (ui-review-ux.md M11).
@@ -271,9 +296,17 @@ class Store {
           && !this.whisper.turns.some((t) => t.id === e.turn.id)) {
           this.whisper.turns.push(e.turn);
         }
+        // The flow's popover. Guarded on the thread id, so the room's pane and the popover can
+        // never draw each other's turns even if both happen to be open.
+        if (this.flowWhisper && this.flowWhisper.threadId === e.threadId
+          && !this.flowWhisper.turns.some((t) => t.id === e.turn.id)) {
+          this.flowWhisper.turns.push(e.turn);
+          if (e.turn.sender === 'agent') this.flowWhisperThinking = false;
+        }
         break;
       case 'whisper.cleared':
         if (this.whisper && this.whisper.threadId === e.threadId) this.whisper.turns = [];
+        if (this.flowWhisper && this.flowWhisper.threadId === e.threadId) this.flowWhisper.turns = [];
         break;
       case 'session.recap':
         this.recap = e.recap;
@@ -456,6 +489,12 @@ class Store {
     this.composerAt = null;
     this.flowLocks = {};
     this.answersCollapsed = {};
+    // Closing the document ends every private thread on it. The popover is not restored on
+    // reopen, and `flow:messages` has nothing to restore it from — that is the point of §3.5.
+    this.flowWhisper = null;
+    this.flowWhisperThinking = false;
+    this.flowWhisperInserting = false;
+    this.flowFocus = null;
     this.answersRemoved = {};
     // The room itself is *not* closed: the actor stays on it in the main process, and the
     // transcript is the document's. Only this renderer's view of it is dropped.
@@ -572,6 +611,89 @@ class Store {
     if (!roomId || !text.trim()) return;
     this.lastTypedAt = 0;
     void run(this, () => bridge().flowSend({ roomId, segmentId, text: text.trim() }));
+  }
+
+  // ── The whisper popover on a segment (§3.5, issue #16) ──────────────────
+
+  /**
+   * ⌘K, or **Ask privately** in the card's label strip.
+   *
+   * Opening it on a second card closes the first, for the same reason two "+ Ask here" prompts
+   * cannot be open at once: two composers in a document are two places the next keystroke could
+   * go. The main process decides whether that is the same private thread or a fresh one — the
+   * key is the **segment sitting** (`actor.openSegmentWhisper`), and the renderer never guesses.
+   */
+  async openFlowWhisper(segmentId: string): Promise<void> {
+    const fileId = this.flowFor;
+    if (!fileId) return;
+    if (this.flowWhisper && this.flowWhisper.anchorId !== segmentId) this.closeFlowWhisper();
+    const opened = await run(this, () => bridge().flowWhisperOpen({ fileId, segmentId }));
+    if (!opened || this.flowFor !== fileId) return;
+    this.flowWhisper = opened.whisper;
+    // `flow:whisperOpen` creates the room on a document whose first act was a private question,
+    // so pick the transcript up the same way "+ Ask here" does.
+    if (!this.room || this.room.roomId !== opened.roomId) await this.loadFlowRoom(fileId);
+  }
+
+  /**
+   * A private turn. Not awaited for the reply: Ellie is held 1–2 s in the main process and her
+   * answer arrives on the `whisper.turn` stream, which is where every whisper turn has always
+   * arrived from.
+   */
+  sendFlowWhisper(text: string): void {
+    const fileId = this.flowFor;
+    const thread = this.flowWhisper;
+    const roomId = this.room?.roomId;
+    if (!fileId || !thread || !roomId || !text.trim()) return;
+    this.flowWhisperThinking = true;
+    void run(this, () =>
+      bridge().flowWhisperSend({
+        roomId,
+        fileId,
+        segmentId: thread.anchorId,
+        threadId: thread.threadId,
+        text: text.trim(),
+      }),
+    ).then((ok) => {
+      if (ok === null) this.flowWhisperThinking = false;
+    });
+  }
+
+  /**
+   * **Insert into the document.** The approved relay: a new *shared* card under the segment.
+   *
+   * The private thread is neither moved nor revealed — `actor.relay()` inserts a new row and
+   * `markPromoted` records the provenance for the export, and that is the whole of the crossing.
+   * The popover stays open, because the learner may well have another private question about the
+   * card they just wrote on.
+   */
+  async insertFlowWhisper(input: { whisperId: string; attribution: RelayAttribution; text: string }): Promise<void> {
+    const thread = this.flowWhisper;
+    const roomId = this.room?.roomId;
+    if (!thread || !roomId || input.text.trim().length === 0) return;
+    this.flowWhisperInserting = true;
+    const result = await run(this, () =>
+      bridge().flowWhisperRelay({
+        roomId,
+        segmentId: thread.anchorId,
+        threadId: thread.threadId,
+        whisperId: input.whisperId,
+        attribution: input.attribution,
+        text: input.text.trim(),
+      }),
+    );
+    this.flowWhisperInserting = false;
+    if (result) this.#takeFlowRoom(result.flow);
+  }
+
+  /** `Esc`, click-away, or leaving the card. Nothing is posted and nothing is kept. */
+  closeFlowWhisper(): void {
+    const thread = this.flowWhisper;
+    const roomId = this.room?.roomId;
+    this.flowWhisper = null;
+    this.flowWhisperThinking = false;
+    this.flowWhisperInserting = false;
+    if (roomId && thread) void run(this, () => bridge().flowWhisperClose({ roomId, threadId: thread.threadId }));
   }
 
   /** The document's room, if it has one. Called when a flow opens; creates nothing. */

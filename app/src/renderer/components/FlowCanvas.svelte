@@ -50,6 +50,7 @@
   import { store } from '../lib/store.svelte.js';
   import FlowThread from './FlowThread.svelte';
   import SegmentCard from './SegmentCard.svelte';
+  import WhisperPopover from './WhisperPopover.svelte';
 
   let { doc, onclose }: { doc: DocumentView; onclose: () => void } = $props();
 
@@ -357,7 +358,67 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       void undo();
+      return;
     }
+    /**
+     * ⌘K — **Ask privately**, on the card that has focus (`flow-build-plan.md` §3.5).
+     *
+     * `App.svelte` binds ⌘K to the vault finder and already stands that binding down inside a
+     * room (product-design.md §C10 L1004). A flow is the same claim one level down: while a
+     * segment card has focus, ⌘K belongs to that card. `store.flowFocus` is what the two
+     * handlers agree on, so the scopes still cannot overlap.
+     */
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const target = store.flowWhisper?.anchorId ?? store.flowFocus;
+      if (!target) return;
+      e.preventDefault();
+      if (store.flowWhisper) store.closeFlowWhisper();
+      else void store.openFlowWhisper(target);
+      return;
+    }
+    if (e.key === 'Escape' && store.flowWhisper) {
+      e.preventDefault();
+      store.closeFlowWhisper();
+    }
+  }
+
+  /**
+   * Click-away. A popover that survives a click on the document behind it is a panel, and the
+   * point of this one is that it is not a panel — it is a thing you lean over and say something
+   * into (`pivot-spec.md` §B5). The affordance itself is excluded, or the toggle would fight it.
+   */
+  function onpointerdown(e: PointerEvent): void {
+    if (!store.flowWhisper) return;
+    const el = e.target as HTMLElement | null;
+    if (el?.closest('[data-private-note]') || el?.closest('.ask-private')) return;
+    store.closeFlowWhisper();
+  }
+
+  /** The card the popover is on, for the breadcrumb chip. */
+  const privateCard = $derived(cards.find((c) => c.segmentId === store.flowWhisper?.anchorId) ?? null);
+  /** Is that card in the viewport? `pivot-spec.md` §B9 device 3 needs to know. */
+  let privateOnScreen = $state(true);
+
+  function watchPrivate(node: HTMLElement) {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        privateOnScreen = entry?.isIntersecting ?? true;
+      },
+      { root: scroller, threshold: 0 },
+    );
+    observer.observe(node);
+    return {
+      destroy: () => {
+        observer.disconnect();
+        privateOnScreen = true;
+      },
+    };
+  }
+
+  function scrollToPrivate(): void {
+    const id = store.flowWhisper?.anchorId;
+    if (!id) return;
+    scroller?.querySelector<HTMLElement>(`[data-segment="${id}"]`)?.scrollIntoView({ block: 'center' });
   }
 
   // ── Drag reorder ──────────────────────────────────────────────────────────
@@ -382,7 +443,7 @@
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onpointerdown} />
 
 <section class="flow" aria-label="The flow">
   <header class="head">
@@ -428,6 +489,7 @@
           ? mergeSeam({ ...card.rect, page: card.page }, { ...next.rect, page: next.page })
           : null}
         <div class="slot" use:watch={card.page}>
+          <div class="cardwrap">
           <SegmentCard
             {card}
             page={sizeOf(card.page)}
@@ -447,6 +509,12 @@
             onaskopen={() => store.openAsk(card.segmentId)}
             onaskcancel={() => store.cancelAsk()}
             onask={(question) => void store.askHere(card.segmentId, question)}
+            privateOpen={store.flowWhisper?.anchorId === card.segmentId}
+            onactivate={() => (store.flowFocus = card.segmentId)}
+            onaskprivately={() =>
+              store.flowWhisper?.anchorId === card.segmentId
+                ? store.closeFlowWhisper()
+                : void store.openFlowWhisper(card.segmentId)}
             ondragbegin={() => (dragId = card.segmentId)}
             ondragover={(before) => (dragId ? (dropAt = { key: card.key, before }) : undefined)}
             ondropon={() => void dropNow()}
@@ -455,6 +523,27 @@
               dropAt = null;
             }}
           />
+
+          <!--
+            The popover, anchored to this card and mounted **outside the crop's bounds** — the
+            never-rule of §4.1 holds for a popover exactly as it does for an AI card. It hangs
+            under the card rather than over it, which is also why the caret points up.
+          -->
+          {#if store.flowWhisper?.anchorId === card.segmentId && room}
+            <div class="popanchor" use:watchPrivate>
+              <WhisperPopover
+                whisper={store.flowWhisper}
+                otherName={room.agents.find((a) => a.role === 'challenger')?.displayName ?? 'the tester'}
+                thinking={store.flowWhisperThinking}
+                inserting={store.flowWhisperInserting}
+                page={card.page}
+                onsend={(text) => store.sendFlowWhisper(text)}
+                oninsert={(input) => void store.insertFlowWhisper(input)}
+                onclose={() => store.closeFlowWhisper()}
+              />
+            </div>
+          {/if}
+          </div>
           <!--
             The thread, under the crop it is about. `AiSegment` keeps every AI card outside the
             crop's bounds and in the app's font; this only decides that the conversation belongs
@@ -486,6 +575,17 @@
           </div>
         {/if}
       {/each}
+
+      <!--
+        §B9 device 3 — the off-screen breadcrumb. A private reply that lands nine seconds later
+        on a card that has scrolled away is indistinguishable from lag or from nothing. One chip
+        maximum, and clicking it brings the card back.
+      -->
+      {#if store.flowWhisperThinking && !privateOnScreen && privateCard}
+        <button type="button" class="crumb" onclick={scrollToPrivate}>
+          ↑ your private note · p.{privateCard.page}
+        </button>
+      {/if}
 
       {#if cards.length === 0 && !store.flowBusy}
         <p class="note">Nothing to show for this file yet.</p>
@@ -547,6 +647,37 @@
     border-radius: 4px;
   }
   .slot { display: block; }
+  /* The popover's positioning context. The card decides where the popover is, which is what
+     "anchored to the card" means: it moves and scrolls with it, and nothing else does. */
+  .cardwrap { position: relative; }
+  .popanchor {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(520px, 92%);
+    display: flex;
+    justify-content: center;
+  }
+
+  .crumb {
+    position: sticky;
+    bottom: 12px;
+    left: 0;
+    margin: 0 auto;
+    display: block;
+    font-size: 11px;
+    color: var(--text-2);
+    background: var(--pane);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--indigo);
+    border-radius: 999px;
+    padding: 4px 12px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+    z-index: 30;
+  }
+  .crumb:hover { color: var(--indigo); border-color: var(--indigo); }
 
   .seam { display: flex; justify-content: center; margin: -8px 0 8px; }
   .merge {

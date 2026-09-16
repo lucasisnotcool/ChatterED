@@ -84,6 +84,11 @@
       <article class="mine">
         <header class="mine-head">
           <span class="label-caps">You</span>
+          {#if message.promotedFromWhisper}
+            <!-- `pivot-spec.md` §B5's dual attribution: authored by the learner, *from a private
+                 note*. What was in that note is not here and never will be. -->
+            <span class="from-private" title="You approved this out of a private note">from a private note</span>
+          {/if}
           <span class="time" aria-hidden="true">{clockTime(message.createdAt)}</span>
         </header>
         <p>{message.body}</p>
@@ -158,6 +163,15 @@
   .mine-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .mine-head .label-caps { color: var(--indigo); }
   .mine p { margin: 0; font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; }
+  .from-private {
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px dashed var(--hairline);
+    border-radius: 3px;
+    padding: 0 4px;
+  }
   .time { font-size: 10px; color: var(--muted); opacity: 0; transition: opacity 120ms ease-out; }
   .mine:hover .time { opacity: 1; }
 

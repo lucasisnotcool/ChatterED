@@ -58,11 +58,14 @@
     /** This card's "+ Ask here" prompt is open / its question is in flight. */
     askOpen = false,
     askBusy = false,
+    /** The private popover is open on this card (§3.5). Only the affordance's state. */
+    privateOpen = false,
     onsplit,
     onrename,
     onask,
     onaskopen,
     onaskcancel,
+    onaskprivately,
     onactivate,
     ondragbegin,
     ondragover,
@@ -84,11 +87,14 @@
     claims?: AnchorClaim[];
     askOpen?: boolean;
     askBusy?: boolean;
+    privateOpen?: boolean;
     onsplit?: (input: { at: number; axis: 'horizontal' | 'vertical'; free: boolean; cutOffset: number }) => void;
     onrename?: (label: string) => void;
     onask?: (question: string) => void;
     onaskopen?: () => void;
     onaskcancel?: () => void;
+    /** "Ask privately" / ⌘K. The card raises it; `FlowCanvas` owns what opens (§3.5). */
+    onaskprivately?: () => void;
     onactivate?: () => void;
     ondragbegin?: () => void;
     ondragover?: (before: boolean) => void;
@@ -327,6 +333,28 @@
       </span>
     {/if}
 
+    <!--
+      **Ask privately** (`flow-build-plan.md` §3.5). The small affordance ⌘K duplicates, because
+      a gesture with no visible handle is a gesture only its author knows about — and the person
+      this feature is for (`design-brief.md` §D5: the one who will not ask in public) is the
+      least likely of anyone to have read a shortcut list. Faint until the card is hovered or
+      focused, so it is never competing with the slide.
+    -->
+    {#if onaskprivately}
+      <button
+        type="button"
+        class="chip ask-private"
+        class:on={privateOpen}
+        title="Ask about this segment privately — nothing said there reaches the document"
+        onclick={(e) => {
+          e.stopPropagation();
+          onaskprivately?.();
+        }}
+      >
+        <span aria-hidden="true">🔒</span> Ask privately <kbd>⌘K</kbd>
+      </button>
+    {/if}
+
     <span
       class="chip page"
       role="note"
@@ -505,6 +533,14 @@
   }
   .chip.page:hover { color: var(--text-2); border-color: var(--muted); cursor: help; }
   .chip.build { color: var(--text-2); }
+
+  /* Faint until the card is hovered or focused: present, never competing with the slide. */
+  .chip.ask-private { opacity: 0.35; transition: opacity 120ms ease-out, color 120ms ease-out; }
+  .card:hover .chip.ask-private,
+  .card:focus-within .chip.ask-private { opacity: 1; }
+  .chip.ask-private:hover { color: var(--indigo); border-color: var(--indigo); }
+  .chip.ask-private.on { opacity: 1; color: var(--indigo); border-color: var(--indigo); background: var(--indigo-tint); }
+  .chip.ask-private kbd { font: inherit; font-size: 9px; opacity: 0.7; }
 
   .refused {
     margin: 0 0 4px;
