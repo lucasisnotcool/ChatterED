@@ -97,6 +97,9 @@ export function messageView(
     backend: row.backend,
     totalMs: row.total_ms ?? null,
     decidedBy: row.decided_by ?? null,
+    // What this answer was built from, already phrased (migration 015). Null on everything that
+    // is not a REFERENCE answer, which is most rows.
+    scopeShown: row.scope_shown ?? null,
     // The page text the agents were given is deliberately absent: the card says a document was
     // shown and which pages, not the pages themselves (issue #22 decision 4).
     reference: reference

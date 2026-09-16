@@ -7,6 +7,7 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 import type { ChatterEdApi } from '../../shared/ipc.js';
+import { DECK_ANCHOR_ID, guessScope, scopeShownFor, type AskScope } from '../../shared/scope.js';
 import { refusalMessage, type SegmentDocumentView, type SegmentRefusal } from '../../shared/segment/index.js';
 import type {
   AgentProfile,
@@ -332,9 +333,13 @@ export function createMockBridge(): ChatterEdApi {
     'Is that the same property, or a different one? If it is different, name both.';
 
   function flowView() {
+    const anchors = [...new Set(messages.filter((m) => m.anchorId).map((m) => m.anchorId!))];
+    // The deck thread first, as `flowRoomView()` does in the main process: a deck-level question
+    // belongs above the flow, not under whichever slide happens to sit at that index.
+    anchors.sort((a, b) => (a === DECK_ANCHOR_ID ? -1 : b === DECK_ANCHOR_ID ? 1 : 0));
     return {
       room: snapshot(),
-      threads: [...new Set(messages.filter((m) => m.anchorId).map((m) => m.anchorId!))].map((anchorId) => ({
+      threads: anchors.map((anchorId) => ({
         anchorId,
         messageIds: messages.filter((m) => m.anchorId === anchorId).map((m) => m.id),
         lockedByAnswerId: locked.get(anchorId) ?? null,
@@ -342,6 +347,25 @@ export function createMockBridge(): ChatterEdApi {
         collapsed: cardState.get(anchorId)?.collapsed ?? false,
         removed: cardState.get(anchorId)?.removed ?? false,
       })),
+    };
+  }
+
+  /** One "+ Ask here" or "Ask about this deck", with the scope the card will show. */
+  async function mockAsk(anchorId: string, question: string, scope?: AskScope) {
+    flowRoomOpen = true;
+    const resolved = scope ?? guessScope({ question, anchorId }).scope;
+    const scopeShown = scopeShownFor({ scope: resolved, page: 3, outline: true });
+    const asked = post(question, null, { anchorId });
+    await new Promise((r) => setTimeout(r, 2400));
+    const answer = post(REFERENCE_ANSWER, null, {
+      anchorId,
+      speaker: { kind: 'reference', displayName: 'REFERENCE' },
+      scopeShown,
+    });
+    locked.set(anchorId, answer.id);
+    return {
+      roomId: ROOM, anchorId, questionId: asked.id, answerId: answer.id,
+      body: answer.body, truncated: false, scopeShown, flow: flowView(),
     };
   }
 
@@ -522,19 +546,16 @@ export function createMockBridge(): ChatterEdApi {
      * whichever segment id the caller names: REFERENCE card → (Explain it back) → learner →
      * Ellie → hand-off line → Max, with the ledger moving only on the learner's own words.
      */
-    async flowAskHere({ segmentId, question }) {
-      flowRoomOpen = true;
-      const asked = post(question, null, { anchorId: segmentId });
-      await new Promise((r) => setTimeout(r, 2400));
-      const answer = post(REFERENCE_ANSWER, null, {
-        anchorId: segmentId,
-        speaker: { kind: 'reference', displayName: 'REFERENCE' },
-      });
-      locked.set(segmentId, answer.id);
-      return {
-        roomId: ROOM, anchorId: segmentId, questionId: asked.id, answerId: answer.id,
-        body: answer.body, truncated: false, flow: flowView(),
-      };
+    async flowAskHere({ segmentId, question, scope }) {
+      return mockAsk(segmentId, question, scope);
+    },
+    /**
+     * "Ask about this deck" (issue #35). Anchored to the synthetic deck anchor, which is what
+     * puts the thread at the top of the flow; the mock says `whole deck` in the footer for the
+     * same reason the real one does — the card must be able to say what it was shown.
+     */
+    async flowAskDeck({ question }) {
+      return mockAsk(DECK_ANCHOR_ID, question, 'deck');
     },
     async flowExplainBack({ answerId }) {
       for (const [anchorId, id] of locked) {

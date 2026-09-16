@@ -18,6 +18,7 @@
  * asked to respect is a cap that is exceeded on camera. The same truncation runs on the scripted
  * path, so a script cannot smuggle a longer answer past it either.
  */
+import { scopeShownFor, type AskScope } from '../shared/scope.js';
 import { referenceSystemBlock } from './prompts.reference.js';
 import type { MessageRow, ParticipantRow } from './records.js';
 import type { CacheableBlock, LlmRequest } from './llm/types.js';
@@ -82,12 +83,48 @@ export function composeReferenceBody(raw: string): { body: string; truncated: bo
   return { body: `${text}\n\n${RULE_LINE}\n${HAND_BACK_LINE}`, truncated };
 }
 
+/**
+ * **What one question was answered from, and what the card says about it.**
+ *
+ * Built once per question by `main/flowroom.referenceContext()` and passed whole to
+ * `RoomActor.askHere()`. One object rather than four parameters because the failure it prevents
+ * is precisely a *disagreement*: an answer built from the whole deck whose footer says `p. 14`
+ * is worse than either, and the reason the old code could not say what it had read is that the
+ * page text and the label were resolved in two different places.
+ */
+export interface ReferenceContext {
+  scope: AskScope;
+  /** The page's text, or the whole document's, or the retrieved pages' — per `scope`. */
+  passageText: string;
+  /** The deck's table of contents, or `''`. Sent on both scopes; see `prompts.reference.ts`. */
+  outline: string;
+  /** Non-empty only on the retrieval fallback for a document over `DECK_TEXT_CAP`. */
+  retrievedPages: number[];
+  /** The rendered footer phrase, from `scopeShownFor()`. Stored on the message row. */
+  scopeShown: string;
+}
+
+/**
+ * A page-scoped context. The default shape of an "+ Ask here", and what the flow builds when the
+ * scope rule says `segment`.
+ */
+export function segmentContext(input: { text: string; page?: number | null; outline?: string }): ReferenceContext {
+  const outline = input.outline?.trim() ?? '';
+  return {
+    scope: 'segment',
+    passageText: input.text,
+    outline,
+    retrievedPages: [],
+    scopeShown: scopeShownFor({ scope: 'segment', page: input.page ?? null, outline: outline.length > 0 }),
+  };
+}
+
 export interface ReferenceRequestInput {
   model: string;
   roomId: string;
   deckTitle: string;
-  /** The extracted text of the segment the learner asked on. */
-  segmentText: string;
+  /** What this question was answered from, resolved once. See `ReferenceContext`. */
+  context: ReferenceContext;
   question: string;
   anchorId?: string | null;
   scriptCue?: string;
@@ -103,7 +140,13 @@ export function buildReferenceRequest(input: ReferenceRequestInput): LlmRequest 
   const system: CacheableBlock[] = [
     {
       type: 'text',
-      text: referenceSystemBlock({ deckTitle: input.deckTitle, segmentText: input.segmentText }),
+      text: referenceSystemBlock({
+        deckTitle: input.deckTitle,
+        scope: input.context.scope,
+        passageText: input.context.passageText,
+        ...(input.context.outline ? { outline: input.context.outline } : {}),
+        ...(input.context.retrievedPages.length > 0 ? { retrievedPages: input.context.retrievedPages } : {}),
+      }),
       cache_control: { type: 'ephemeral' },
     },
   ];

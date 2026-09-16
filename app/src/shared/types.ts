@@ -71,6 +71,14 @@ export interface MessageView {
   backend?: string | null;
   /** Turn start → the message row: what the learner actually waited. */
   totalMs?: number | null;
+  /**
+   * **What the model was allowed to see** (issue #35, migration 015). A ready-to-render phrase,
+   * not a code: `'p. 14'`, `'p. 14 + outline'`, `'whole deck'`, `'outline + pp. 3, 14, 40'`.
+   * The footer that shows `14:22 · 9.4s · haiku-4-5 · claude-cli` should show it too, so that an
+   * answer which is narrow because it was shown one slide does not read as an answer which is
+   * narrow because the model is weak. `null` on everything that is not a REFERENCE answer.
+   */
+  scopeShown?: string | null;
   /** `rule:teacher_answers`, `rule:handoff`, `model:sonnet`, … — who chose this speaker. */
   decidedBy?: string | null;
   /** True when this body is the partial the learner stopped (`flow:stop`). Not a failure. */
@@ -551,6 +559,12 @@ export interface FlowAnswerView {
   /** The capped answer, the rule and the hand-back line, exactly as `reference.ts` composed it. */
   body: string;
   truncated: boolean;
+  /**
+   * What the model was given, already phrased for the footer — `'p. 14'`, `'p. 14 + outline'`,
+   * `'whole deck'`, `'outline + pp. 3, 14, 40'` (issue #35, `shared/scope.ts`). Also on the
+   * answer's `MessageView`, so a card re-rendered from `flow:messages` says the same thing.
+   */
+  scopeShown: string;
   flow: FlowRoomView;
 }
 

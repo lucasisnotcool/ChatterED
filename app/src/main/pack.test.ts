@@ -74,7 +74,7 @@ function prefixFor(seeded: ReturnType<typeof seedRoom>, pack: ConceptPack): stri
     speaker: roster[0]!,
     roster,
     pack,
-    directive: { move: 'respond', target: null, probeType: null, agentKey: roster[0]!.key },
+    directive: { agentRole: 'peer', move: 'respond' },
   }).system.map((b) => b.text).join('\n');
 }
 

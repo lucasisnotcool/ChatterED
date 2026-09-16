@@ -12,7 +12,16 @@ import { PENDING_CONCEPT_ID } from '../room/concepts/pending.js';
 import { messagesForAnchor } from '../room/reference.js';
 import type { ConceptPack } from '../room/records.js';
 import { openTestStore, seedRoom } from '../test-support/db.js';
-import { loadFlowState, openOrCreateFlowRoom, saveFlowState, segmentText, type FlowRoomDeps } from './flowroom.js';
+import { DECK_ANCHOR_ID } from '../shared/scope.js';
+import {
+  flowRoomView,
+  loadFlowState,
+  openOrCreateFlowRoom,
+  referenceContext,
+  saveFlowState,
+  segmentText,
+  type FlowRoomDeps,
+} from './flowroom.js';
 import { API_PLAN } from '../room/llm/models.js';
 import { capText } from './vault/extract.js';
 import { REFERENCE_TEXT_CAP } from './vault/service.js';
@@ -155,6 +164,108 @@ describe("the flow room's material is the whole deck", () => {
     // Idempotent: the third open changes nothing.
     await openOrCreateFlowRoom(whole, 'f1');
     expect(store.materials.get(materialId)!.prefix_sha256).toBe(after.prefix_sha256);
+  });
+});
+
+describe('what one question is answered from', () => {
+  const deck = fiftyEightPages();
+  const OUTLINE = deck.segments.map((s) => `p. ${s.page} — ${s.label}`).join('\n');
+
+  function ctxDeps(overrides: Partial<{ deckText: unknown; topPages: unknown }> = {}) {
+    return {
+      segments: {
+        async document() {
+          return {
+            segments: [{ id: 'seg_14', page: 14, label: 'Lecture topic 14' }],
+          };
+        },
+      },
+      vault: {
+        textFor: async () => 'the text of page 14',
+        deckText: async () => ({ text: deck.text, pages: 58, truncated: false }),
+        topPages: () => [],
+        ...overrides,
+      },
+    } as unknown as FlowRoomDeps;
+  }
+
+  it('sends the page and the outline for a page question', async () => {
+    const ctx = await referenceContext(ctxDeps(), {
+      fileId: 'f1',
+      segmentId: 'seg_14',
+      question: 'what does admissible mean here',
+      outline: OUTLINE,
+    });
+    expect(ctx.scope).toBe('segment');
+    expect(ctx.passageText).toBe('the text of page 14');
+    expect(ctx.outline).toBe(OUTLINE);
+    expect(ctx.scopeShown).toBe('p. 14 + outline');
+  });
+
+  it('sends the whole deck for a deck-level verb, on the same anchor', async () => {
+    const ctx = await referenceContext(ctxDeps(), {
+      fileId: 'f1',
+      segmentId: 'seg_14',
+      question: 'Can you summarise what I will be learning',
+      outline: OUTLINE,
+    });
+    expect(ctx.scope).toBe('deck');
+    expect(ctx.passageText).toBe(deck.text);
+    expect(ctx.scopeShown).toBe('whole deck');
+    expect(ctx.guessed).toBe('deck');
+    expect(ctx.overridden).toBe(false);
+  });
+
+  it('honours the learner’s override and records that it was one', async () => {
+    const ctx = await referenceContext(ctxDeps(), {
+      fileId: 'f1',
+      segmentId: 'seg_14',
+      question: 'Can you summarise what I will be learning',
+      scope: 'segment',
+      outline: OUTLINE,
+    });
+    expect(ctx.scope).toBe('segment');
+    expect(ctx.guessed).toBe('deck');
+    expect(ctx.overridden).toBe(true);
+  });
+
+  it('falls back to the outline plus FTS5 pages when the document is too large to send whole', async () => {
+    const ctx = await referenceContext(
+      ctxDeps({
+        deckText: async () => ({ text: 'x'.repeat(100), pages: 900, truncated: true }),
+        topPages: () => [
+          { page: 3, body: 'page three body' },
+          { page: 40, body: 'page forty body' },
+        ],
+      }),
+      { fileId: 'f1', segmentId: null, question: 'what is the argument of chapter 4', outline: OUTLINE },
+    );
+    expect(ctx.scope).toBe('deck');
+    expect(ctx.retrievedPages).toEqual([3, 40]);
+    expect(ctx.passageText).toContain('[p. 3]');
+    expect(ctx.passageText).toContain('page forty body');
+    expect(ctx.scopeShown).toBe('outline + pp. 3, 40');
+  });
+});
+
+describe('where the deck thread renders', () => {
+  /** `flowRoomView` needs three reads off the actor and nothing else. */
+  function fakeActor(anchors: string[]) {
+    return {
+      snapshot: () => ({ messages: anchors.map((anchorId, i) => ({ id: `m${i}`, anchorId, seq: i + 1 })) }),
+      seenSnapshot: () => ({}),
+      cardStateSnapshot: () => ({}),
+    } as unknown as Parameters<typeof flowRoomView>[0];
+  }
+
+  it('puts the deck thread first even when it was asked last', () => {
+    const view = flowRoomView(fakeActor(['seg_1', 'seg_2', DECK_ANCHOR_ID]), new Map());
+    expect(view.threads.map((t) => t.anchorId)).toEqual([DECK_ANCHOR_ID, 'seg_1', 'seg_2']);
+  });
+
+  it('leaves a flow with no deck question exactly as it was', () => {
+    const view = flowRoomView(fakeActor(['seg_1', 'seg_2']), new Map());
+    expect(view.threads.map((t) => t.anchorId)).toEqual(['seg_1', 'seg_2']);
   });
 });
 

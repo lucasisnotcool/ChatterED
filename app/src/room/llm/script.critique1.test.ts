@@ -32,7 +32,7 @@ import { fillAgentNames, rosterFor } from '../agents.js';
 import { buildGroupContext } from '../context.group.js';
 import { BTW_SIDE_CHANNEL_V1, CRITIQUE1_DECK_TEXT, CRITIQUE1_PAGE_TEXT } from '../concepts/btw-side-channel-v1.js';
 import { DEMO } from '../flow.js';
-import { HAND_BACK_LINE, REFERENCE_WORD_CAP } from '../reference.js';
+import { segmentContext, HAND_BACK_LINE, REFERENCE_WORD_CAP } from '../reference.js';
 import { ScriptedClient } from './scripted.js';
 import {
   CRITIQUE1_HANDOFFS,
@@ -109,7 +109,7 @@ const segmentText = (page: number) => CRITIQUE1_PAGE_TEXT[page]!;
 async function throughExplainBack(h: ReturnType<typeof build>) {
   const asked = await settle(
     h.clock,
-    h.actor.askHere({ anchorId: P3_LOWER, question: ASK, segmentText: segmentText(3) }),
+    h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
     6_000,
   );
   h.actor.explainBack(asked.answerId);
@@ -122,7 +122,7 @@ describe('beat 7–8 — "+ Ask here" on the lower half of page 3', () => {
     const h = build();
     const out = await settle(
       h.clock,
-      h.actor.askHere({ anchorId: P3_LOWER, question: ASK, segmentText: segmentText(3) }),
+      h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
       6_000,
     );
 
@@ -155,7 +155,7 @@ describe('beat 7–8 — "+ Ask here" on the lower half of page 3', () => {
 
     await settle(
       h.clock,
-      h.actor.askHere({ anchorId: P3_LOWER, question: ASK, segmentText: segmentText(3) }),
+      h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
       6_000,
     );
 
@@ -171,7 +171,7 @@ describe('beat 7–8 — "+ Ask here" on the lower half of page 3', () => {
     const h = build();
     const out = await settle(
       h.clock,
-      h.actor.askHere({ anchorId: P3_LOWER, question: ASK, segmentText: segmentText(3) }),
+      h.actor.askHere({ anchorId: P3_LOWER, question: ASK, context: segmentContext({ text: segmentText(3) }) }),
       6_000,
     );
     await settle(h.clock, h.actor.sendMessage(L1));

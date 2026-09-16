@@ -56,6 +56,7 @@ const api: ChatterEdApi = {
   reorderSegments: (input) => ipcRenderer.invoke(IPC.segmentsReorder, input),
   renameSegment: (input) => ipcRenderer.invoke(IPC.segmentsRename, input),
   flowAskHere: (input) => ipcRenderer.invoke(IPC.flowAskHere, input),
+  flowAskDeck: (input) => ipcRenderer.invoke(IPC.flowAskDeck, input),
   flowExplainBack: (input) => ipcRenderer.invoke(IPC.flowExplainBack, input),
   flowSend: (input) => ipcRenderer.invoke(IPC.flowSend, input),
   flowMessages: (input) => ipcRenderer.invoke(IPC.flowMessages, input),

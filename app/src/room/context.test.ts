@@ -28,7 +28,7 @@ import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG, seedRoom } from '../test-support/db.js';
 import { RoomActor } from './actor.js';
 import { ScriptedClient } from './llm/scripted.js';
-import { buildReferenceRequest } from './reference.js';
+import { segmentContext, buildReferenceRequest } from './reference.js';
 
 const CANARY = 'ZZQX-CANARY-9137-whisper-only-string';
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -399,7 +399,7 @@ describe('the whisper invariant, through the flow', () => {
       model: 'claude-haiku-4-5',
       roomId: h.roomId,
       deckTitle: 'Critique 1',
-      segmentText: 'PAGE-THREE-SEGMENT-TEXT',
+      context: segmentContext({ text: 'PAGE-THREE-SEGMENT-TEXT' }),
       question: 'what is the side channel',
       anchorId: h.anchorId,
       scriptCue: 'reference:1',

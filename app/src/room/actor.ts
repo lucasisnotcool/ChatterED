@@ -65,6 +65,7 @@ import {
 import { decideTurn, extractJson as extractJsonObject, type TurnDecision, type TurnTrigger } from './orchestrator.js';
 import { SILENT_LOG, type Clock, type Store, type Transport, type TurnLog } from './ports.js';
 import type { ConceptPack, LedgerRow, MessageRefRow, MessageRow, RoomConfig } from './records.js';
+import type { ReferenceContext } from './reference.js';
 import { latestByElement } from './flow.js';
 import { decisionDirective, ledgerDirective, taughtBlock } from './prompts.js';
 import { limitsLine } from './prompts.whisper.js';
@@ -573,9 +574,13 @@ export class RoomActor {
   async askHere(input: {
     anchorId: string | null;
     question: string;
-    /** The extracted text of the segment being asked about. */
-    segmentText: string;
-  }): Promise<{ questionId: string; answerId: string; body: string; truncated: boolean }> {
+    /**
+     * What the model is given: the page for a `'segment'` question, the whole document for a
+     * `'deck'` one (issue #35). Resolved by `flowroom.referenceContext()`, which also produces
+     * `scopeShown` — one resolver, so the answer and the footer cannot describe different reads.
+     */
+    context: ReferenceContext;
+  }): Promise<{ questionId: string; answerId: string; body: string; truncated: boolean; scopeShown: string }> {
     const question = input.question.trim();
     if (question.length === 0) throw new Error('An "Ask here" needs a question');
     this.#asks += 1;
@@ -601,7 +606,7 @@ export class RoomActor {
       model: this.#models.orchestrator,
       roomId: this.#d.roomId,
       deckTitle: material.title,
-      segmentText: input.segmentText,
+      context: input.context,
       question,
       anchorId: input.anchorId,
       scriptCue: `reference:${this.#asks}`,
@@ -641,12 +646,15 @@ export class RoomActor {
         backend,
         usage: JSON.stringify(usage),
         anchorId: input.anchorId,
+        scopeShown: input.context.scopeShown,
       });
       this.#answers.push({ answerId: row.id, anchorId: input.anchorId, explainedBackAt: null });
       this.#event('system', 'agent.turn.dispatched', {
         seq: row.seq,
         scope: 'reference',
         anchor_id: input.anchorId,
+        ask_scope: input.context.scope,
+        scope_shown: input.context.scopeShown,
         words: body.split(/\s+/).length,
         truncated,
         // Neither of these moved, and the event log is where that is checkable.
@@ -656,7 +664,7 @@ export class RoomActor {
       return row;
     });
 
-    return { questionId: asked.id, answerId: answer.id, body, truncated };
+    return { questionId: asked.id, answerId: answer.id, body, truncated, scopeShown: input.context.scopeShown };
   }
 
   /**
@@ -2081,6 +2089,8 @@ export class RoomActor {
     /** Turn start → this row, and who chose the speaker (migration 012, audit §6). */
     totalMs?: number;
     decidedBy?: string | null;
+    /** What the REFERENCE call was allowed to see, already phrased (migration 015). */
+    scopeShown?: string | null;
   }): MessageRow {
     const seq = this.#d.store.messages.maxSeq(this.#d.roomId) + 1;
     const row: MessageRow = {
@@ -2103,6 +2113,7 @@ export class RoomActor {
       stopped: input.stopped ? 1 : 0,
       total_ms: input.totalMs ?? null,
       decided_by: input.decidedBy ?? null,
+      scope_shown: input.scopeShown ?? null,
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);

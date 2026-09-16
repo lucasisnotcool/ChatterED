@@ -36,6 +36,8 @@ import type { LLMClient } from '../room/llm/types.js';
 import type { ModelPlan } from '../room/llm/models.js';
 import type { LocalStore } from './db/store.js';
 import { log } from './log.js';
+import { guessScope, scopeShownFor, DECK_ANCHOR_ID, type AskScope } from '../shared/scope.js';
+import { segmentContext, type ReferenceContext } from '../room/reference.js';
 import { createSession, frozenPrefix } from './sessions.js';
 import type { SegmentService } from './vault/segments.js';
 import type { VaultService } from './vault/service.js';
@@ -279,6 +281,107 @@ export async function segmentText(
   return { text, page: segment.page };
 }
 
+// ── what one question is answered from ──────────────────────────────────────
+
+export interface ReferenceContextInput {
+  fileId: string;
+  /** The segment the learner asked on; null for the deck line at the top of the flow. */
+  segmentId: string | null;
+  question: string;
+  /** The learner's override, when the scope chip was used. Omitted ⟹ the rule decides. */
+  scope?: AskScope;
+  /** The deck's outline, frozen on the material (migration 013). */
+  outline: string;
+}
+
+export interface ResolvedReferenceContext extends ReferenceContext {
+  /** What the rule guessed, whether or not the learner overrode it. Logged, not rendered. */
+  guessed: AskScope;
+  overridden: boolean;
+}
+
+/**
+ * **The one resolver.** What the REFERENCE call is given, and what the card's footer says about
+ * it, decided together (`whole-file-context.md` §3 and §4 recommendations 3, 4 and 6).
+ *
+ * Three strategies, and the log says which ran every time:
+ *
+ *  - `page` — the segment's page text, **plus the outline**, so a page answer can still say
+ *    where the page sits without being handed the other fifty-seven;
+ *  - `whole` — the outline and the entire document, which for every deck in the local corpus is
+ *    7–20 K tokens and is simply affordable (`whole-file-context.md` §2);
+ *  - `retrieval` — for a document over `DECK_TEXT_CAP`, the outline plus the FTS5 top-k **whole
+ *    pages** for this question. The index already exists; §5 of the same note explains why this
+ *    is not vector retrieval.
+ */
+export async function referenceContext(
+  deps: Pick<FlowRoomDeps, 'segments' | 'vault'>,
+  input: ReferenceContextInput,
+): Promise<ResolvedReferenceContext> {
+  const guess = guessScope({ question: input.question, anchorId: input.segmentId });
+  const scope: AskScope = input.scope ?? guess.scope;
+  const overridden = input.scope !== undefined && input.scope !== guess.scope;
+  const outline = input.outline.trim();
+
+  let context: ReferenceContext;
+  let strategy: 'page' | 'whole' | 'retrieval';
+  let pages = 0;
+
+  if (scope === 'segment' && input.segmentId !== null) {
+    const { text, page } = await segmentText(deps, input.fileId, input.segmentId);
+    context = segmentContext({ text, page, outline });
+    strategy = 'page';
+    pages = 1;
+  } else {
+    const deck = await deps.vault.deckText(input.fileId);
+    if (deck.truncated) {
+      const hits = deps.vault.topPages(input.fileId, input.question);
+      const retrievedPages = hits.map((h) => h.page).filter((p): p is number => p !== null);
+      const body = hits.map((h) => (h.page === null ? h.body : `[p. ${h.page}]\n${h.body}`)).join('\n\n');
+      context = {
+        scope: 'deck',
+        // A document too large for the prefix falls back to its own index rather than to
+        // nothing — and never silently: `context.retrieval` is in the log beside the answer.
+        passageText: body || deck.text,
+        outline,
+        retrievedPages,
+        scopeShown: scopeShownFor({ scope: 'deck', retrievedPages }),
+      };
+      strategy = 'retrieval';
+      pages = hits.length;
+      log().info('context.retrieval', {
+        file_id: input.fileId,
+        deck_chars: deck.text.length,
+        deck_pages: deck.pages,
+        kept_pages: retrievedPages,
+        chars: body.length,
+      });
+    } else {
+      context = {
+        scope: 'deck',
+        passageText: deck.text,
+        outline,
+        retrievedPages: [],
+        scopeShown: scopeShownFor({ scope: 'deck' }),
+      };
+      strategy = 'whole';
+      pages = deck.pages;
+    }
+  }
+
+  log().info('context.built', {
+    scope: context.scope,
+    chars: context.passageText.length + outline.length,
+    pages,
+    strategy,
+    guessed: guess.scope,
+    guess_reason: guess.reason,
+    overridden,
+  });
+
+  return { ...context, guessed: guess.scope, overridden };
+}
+
 // ── the flow session across a quit ──────────────────────────────────────────
 
 export interface StoredFlowState {
@@ -338,6 +441,15 @@ export function flowRoomView(actor: RoomActor, lockedByAnchor: Map<string, strin
       threads.push(threadView(anchorId, []));
     }
   }
+  /**
+   * **The deck thread comes first** (issue #35). `flow:askDeck` anchors its answers to the
+   * synthetic `deck` anchor, and a deck-level question belongs above the flow rather than under
+   * whichever slide happens to sit at that index — that it had nowhere to go *is* the defect.
+   * `groupByAnchor` returns threads in first-message order, so without this a deck question
+   * asked after a page question would render below it.
+   */
+  const deckIndex = threads.findIndex((t) => t.anchorId === DECK_ANCHOR_ID);
+  if (deckIndex > 0) threads.unshift(...threads.splice(deckIndex, 1));
   return { room, threads };
 }
 

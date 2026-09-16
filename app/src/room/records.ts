@@ -208,6 +208,12 @@ export interface MessageRow {
   total_ms?: number | null;
   /** `rule:teacher_answers`, `rule:handoff`, `model:sonnet`, … (migration 012). */
   decided_by?: string | null;
+  /**
+   * What the model was allowed to see, already phrased for the card footer — `p. 14`,
+   * `p. 14 + outline`, `whole deck`, `outline + pp. 3, 14, 40` (migration 015, issue #35).
+   * Null on every message that is not a REFERENCE answer.
+   */
+  scope_shown?: string | null;
   created_at: string;
 }
 

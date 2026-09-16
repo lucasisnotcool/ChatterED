@@ -51,10 +51,12 @@ import {
   flowRoomView,
   loadFlowState,
   openOrCreateFlowRoom,
+  referenceContext,
   saveFlowState,
   segmentText,
   type FlowRoomDeps,
 } from './flowroom.js';
+import { DECK_ANCHOR_ID, type AskScope } from '../shared/scope.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
 import { SegmentService, type SplitInput } from './vault/segments.js';
@@ -476,26 +478,54 @@ export class AppService {
    * card on that segment. The room is opened through the same `openRoom` every other path uses,
    * so the actor, the timer and the event stream are the shipped ones.
    */
-  async flowAskHere(input: { fileId: string; segmentId: string; question: string }): Promise<FlowAnswerView> {
-    const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), input.fileId);
+  async flowAskHere(input: {
+    fileId: string;
+    segmentId: string;
+    question: string;
+    scope?: AskScope;
+  }): Promise<FlowAnswerView> {
+    return this.#ask(input.fileId, input.segmentId, input.question, input.scope);
+  }
+
+  /**
+   * **"Ask about this deck"** — the line above the first card (issue #35). The same card, the
+   * same cap, the same hand-back; what differs is the anchor and therefore the scope. Nothing
+   * is passed for `scope`: the synthetic deck anchor makes `guessScope()` return `'deck'` on its
+   * own, so there is one rule and not two.
+   */
+  async flowAskDeck(input: { fileId: string; question: string }): Promise<FlowAnswerView> {
+    return this.#ask(input.fileId, DECK_ANCHOR_ID, input.question);
+  }
+
+  async #ask(fileId: string, anchorId: string, question: string, scope?: AskScope): Promise<FlowAnswerView> {
+    const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), fileId);
     // `opener: false` — see `openRoom`. A flow room has no bottom of the page for an opener to
     // land at, and the learner has just asked a question, which is a better opening than any.
     this.openRoom(roomId, { opener: false });
     const actor = this.#requireActor(roomId);
-    const { text } = await segmentText({ segments: this.#segments, vault: this.#vault }, input.fileId, input.segmentId);
-    const answer = await actor.askHere({
-      anchorId: input.segmentId,
-      question: input.question,
-      segmentText: text,
-    });
+    const material = this.#d.store.materials.get(this.#d.store.rooms.get(roomId)!.material_id)!;
+    const context = await referenceContext(
+      { segments: this.#segments, vault: this.#vault },
+      {
+        fileId,
+        // The deck anchor is not a segment and has no page text; `referenceContext` reads that
+        // as "no segment" and takes the deck branch.
+        segmentId: anchorId === DECK_ANCHOR_ID ? null : anchorId,
+        question,
+        ...(scope ? { scope } : {}),
+        outline: material.outline,
+      },
+    );
+    const answer = await actor.askHere({ anchorId, question, context });
     this.#persistFlow();
     return {
       roomId,
-      anchorId: input.segmentId,
+      anchorId,
       questionId: answer.questionId,
       answerId: answer.answerId,
       body: answer.body,
       truncated: answer.truncated,
+      scopeShown: answer.scopeShown,
       flow: flowRoomView(actor, actor.lockedAnchors()),
     };
   }
@@ -814,9 +844,10 @@ export class AppService {
     );
 
     handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
-    handle<{ fileId: string; segmentId: string; question: string }>(IPC.flowAskHere, (input) =>
+    handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope }>(IPC.flowAskHere, (input) =>
       this.flowAskHere(input),
     );
+    handle<{ fileId: string; question: string }>(IPC.flowAskDeck, (input) => this.flowAskDeck(input));
     handle<{ answerId: string }>(IPC.flowExplainBack, (input) => this.flowExplainBack(input.answerId));
     handle<{ roomId: string; segmentId: string; text: string }>(IPC.flowSend, (input) => this.flowSend(input));
     handle<{ fileId: string; segmentId: string }>(IPC.flowWhisperOpen, (input) => this.flowWhisperOpen(input));

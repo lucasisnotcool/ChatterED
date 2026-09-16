@@ -27,6 +27,7 @@ import {
   messagesForAnchor,
   truncateToWords,
   type ReferenceAnswerState,
+  segmentContext,
 } from './reference.js';
 
 const SEGMENT_TEXT =
@@ -100,7 +101,7 @@ describe('the request', () => {
     model: 'claude-sonnet-5',
     roomId: 'room_test',
     deckTitle: 'Convexity and the Hessian',
-    segmentText: SEGMENT_TEXT,
+    context: segmentContext({ text: SEGMENT_TEXT }),
     question: 'what does positive semidefinite actually mean?',
   });
 
@@ -156,7 +157,7 @@ describe('anchored threads', () => {
     await settle(h.clock, h.actor.open());
     await settle(
       h.clock,
-      h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', segmentText: SEGMENT_TEXT }),
+      h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', context: segmentContext({ text: SEGMENT_TEXT }) }),
       6_000,
     );
     const thread = messagesForAnchor(h.store.messages.forRoom(h.roomId), 'seg_3');
@@ -179,7 +180,7 @@ describe('an answer is not an agent turn', () => {
 
     const out = await settle(
       h.clock,
-      h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', segmentText: SEGMENT_TEXT }),
+      h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', context: segmentContext({ text: SEGMENT_TEXT }) }),
       6_000,
     );
 
@@ -218,7 +219,7 @@ describe('an answer is not an agent turn', () => {
     const before = h.store.messages.forRoom(h.roomId).length;
     const out = await settle(
       h.clock,
-      h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', segmentText: SEGMENT_TEXT }),
+      h.actor.askHere({ anchorId: 'seg_3', question: 'what does PSD actually mean?', context: segmentContext({ text: SEGMENT_TEXT }) }),
       6_000,
     );
 
@@ -243,8 +244,66 @@ describe('an answer is not an agent turn', () => {
 
   it('refuses an empty question rather than inserting an empty card', async () => {
     const h = build();
-    await expect(h.actor.askHere({ anchorId: 'seg_3', question: '   ', segmentText: SEGMENT_TEXT })).rejects.toThrow(
+    await expect(h.actor.askHere({ anchorId: 'seg_3', question: '   ', context: segmentContext({ text: SEGMENT_TEXT }) })).rejects.toThrow(
       /needs a question/,
     );
+  });
+});
+
+describe('what each scope is shown (issue #35)', () => {
+  const OUTLINE = 'p. 1 — Uninformed search\np. 14 — A* search';
+
+  const deck = buildReferenceRequest({
+    model: 'claude-sonnet-5',
+    roomId: 'room_test',
+    deckTitle: 'Search and planning',
+    context: {
+      scope: 'deck',
+      passageText: 'THE-WHOLE-DECK',
+      outline: OUTLINE,
+      retrievedPages: [],
+      scopeShown: 'whole deck',
+    },
+    question: 'Can you summarise what I will be learning',
+  });
+  const page = buildReferenceRequest({
+    model: 'claude-sonnet-5',
+    roomId: 'room_test',
+    deckTitle: 'Search and planning',
+    context: segmentContext({ text: 'ONE-PAGE', page: 14, outline: OUTLINE }),
+    question: 'what does admissible mean',
+  });
+
+  it('gives a deck question the whole document, and says so', () => {
+    const system = deck.system.map((b) => b.text).join('\n');
+    expect(system).toContain('THE DOCUMENT, IN FULL:');
+    expect(system).toContain('THE-WHOLE-DECK');
+    expect(system).toContain('name the topics it actually covers');
+  });
+
+  it('gives a page question the page — and the outline, but only as a locator', () => {
+    const system = page.system.map((b) => b.text).join('\n');
+    expect(system).toContain('ONE-PAGE');
+    expect(system).toContain(OUTLINE);
+    expect(system).toContain('not for answering from');
+    expect(system).toContain('Answer from the passage.');
+    expect(system).not.toContain('THE DOCUMENT, IN FULL');
+  });
+
+  it('names the retrieved pages rather than implying it read the file', () => {
+    const retrieved = buildReferenceRequest({
+      model: 'claude-sonnet-5',
+      roomId: 'room_test',
+      deckTitle: 'A long reading',
+      context: {
+        scope: 'deck',
+        passageText: '[p. 3]\nthree',
+        outline: OUTLINE,
+        retrievedPages: [3, 40],
+        scopeShown: 'outline + pp. 3, 40',
+      },
+      question: 'what is the argument',
+    });
+    expect(retrieved.system.map((b) => b.text).join('\n')).toContain('pages 3, 40 of this document');
   });
 });

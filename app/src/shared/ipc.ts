@@ -25,6 +25,7 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
+import type { AskScope } from './scope.js';
 import type {
   FlowAnswerView,
   FlowRelayView,
@@ -93,6 +94,8 @@ export const IPC = {
 
   // The conversation inside the flow (issue #25, flow-build-plan.md §3.3 track B).
   flowAskHere: 'flow:askHere',
+  /** "Ask about this deck" — the line at the top of the flow (issue #35, `shared/scope.ts`). */
+  flowAskDeck: 'flow:askDeck',
   flowExplainBack: 'flow:explainBack',
   flowSend: 'flow:send',
   flowMessages: 'flow:messages',
@@ -284,7 +287,27 @@ export interface ChatterEdApi {
    * not take the turn floor, does not reset the silence timer, can never be ledger evidence, and
    * it **locks Ellie and Max out of that segment's thread** until `explainBack`.
    */
-  flowAskHere(input: { fileId: string; segmentId: string; question: string }): Promise<FlowAnswerView>;
+  flowAskHere(input: {
+    fileId: string;
+    segmentId: string;
+    question: string;
+    /**
+     * What the question is about (issue #35). Omit it and the main process guesses with
+     * `guessScope()` from `shared/scope.ts` — call the same function to render the chip, so the
+     * chip and the answer can never disagree. Passing it is the learner's override, and the log
+     * records that it was one.
+     */
+    scope?: AskScope;
+  }): Promise<FlowAnswerView>;
+  /**
+   * **"Ask about this deck"** — the line above the first card (issue #35;
+   * `whole-file-context.md` §3: a deck-level question had nowhere to go, so it was answered
+   * from whichever slide happened to be nearest).
+   *
+   * Same return as `flowAskHere`, same 120-word card, same hand-back. The answer is anchored to
+   * the synthetic `DECK_ANCHOR_ID`, and `FlowRoomView.threads` always lists that thread first.
+   */
+  flowAskDeck(input: { fileId: string; question: string }): Promise<FlowAnswerView>;
   /**
    * "Explain it back →". The card collapses to one line, the composer opens on the same anchor,
    * and Ellie and Max become eligible on it for the first time.
