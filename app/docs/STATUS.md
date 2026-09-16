@@ -1027,9 +1027,13 @@ no `console.error` was emitted.
    step. `VERB` is per role and the Tester's is now `reading`; Ellie still *types*, which §B9 is
    equally explicit about. `product-design.md` §C3's older `Max is thinking…` is superseded for
    the flow by §B9, which cites §C3 and extends it: what Max does first is read your region.
-7. **First-run step 1 still describes the group.** *"you explain … to a small group … they'll
-   disagree with each other … a ledger on the right"* — three claims #32 and the pivot removed. It
-   is the first screen on camera if the take starts from a fresh install.
+7. ~~**First-run step 1 still describes the group.**~~ **Fixed.** *"you explain … to a small
+   group … they'll disagree with each other … a ledger on the right"* — three claims #32 and the
+   pivot removed, on the first screen the camera sees if the take starts from a fresh install.
+   Card 1 is now the flow: the deck opens as crops of the rendered page, Ellie explains a card
+   when asked, she hands off to Max who asks one question and never answers it, nothing is
+   written where you did not ask, and only your own words move the ○ ◐ ● beside a card. Cards 2
+   (which backend) and 3 (open the vault) are untouched.
 8. **The vault chooser is a native panel.** Not reachable from inside the app and not scriptable
    over CDP; on camera it is ⌘⇧G and a path, or three clicks.
 

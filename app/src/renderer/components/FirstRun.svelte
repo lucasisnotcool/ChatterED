@@ -71,14 +71,19 @@
     {#if card === 1}
       <h1>What this is</h1>
       <p>
-        You explain a lecture concept out loud, in your own words, to a small group. They ask
-        questions. They won't answer for you, and they'll disagree with each other sometimes.
+        Your own lecture deck opens as a flow of cards — each one a crop of the rendered page, so
+        the figures and the maths stay the lecturer's pixels. Ask on a card and
+        <strong>Ellie</strong> explains it from the slide; once you have covered a couple of
+        things she hands off to <strong>Max</strong>, who asks you one question about one of them
+        and never answers it for you.
       </p>
       <p>
-        Replies here are deliberately paced so you get room to think first. You can speed this up
-        in Settings.
+        Nothing is written where you did not ask. Replies are held for a few seconds on purpose,
+        so the room to think is yours — you can speed that up in Settings.
       </p>
-      <p class="quiet">A ledger on the right fills with what you have established, in your words.</p>
+      <p class="quiet">
+        Only your own words move the ○ ◐ ● beside a card. Agreeing with Max never does.
+      </p>
       <div class="acts">
         <button type="button" class="btn-primary" onclick={() => toCard(2)}>Next</button>
       </div>
