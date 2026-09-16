@@ -36,6 +36,7 @@ owner's own framing:
 
 | What | Where |
 |---|---|
+| The macOS app — what it is, how to run it, what is real vs scripted | `app/README.md` |
 | Assignment brief, source papers, extracted text | `Academia/` |
 | Design briefs, research plans, evaluation plan | `docs/research/` |
 | Interview + observation protocol (Assignment 1 evidence) | `docs/research/interview-guide.md` |

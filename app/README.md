@@ -1,198 +1,129 @@
-# ChatterED — macOS app
+# ChatterED — the Assignment 1 prototype
 
-Electron (Node main process) + Svelte 5 renderer + TypeScript (strict) + SQLite.
-The architecture this implements is `docs/research/architecture-mac.md`; the interaction it
-has to deliver is `docs/research/product-design.md` §B–§D and `docs/research/design-brief.md` §G.
+**Method:** a working macOS app, run from source — Electron + Svelte 5 + TypeScript + SQLite. The
+geometry, rules, timer, latency floor, ledger gates and whisper scoping are real and tested; by
+default only the agents' *words* are replayed (§4).
 
-## Requirements
+## 1. What it is
 
-- Node ≥ 22.12 (developed on 22.14) and npm 10+
-- macOS with Xcode command-line tools (for the one native module, `better-sqlite3`)
+ChatterED opens a lecture deck as a **flow**. Each page is a **crop of the pdf.js-rendered page** —
+the lecturer's own pixels, never re-typeset — and faint **ticks** mark where the page's own geometry
+says a boundary could go (local; no model, no network); clicking one **splits the crop in place**.
+**+ Ask here** inserts a neutral **REFERENCE** card — 120 words, in the app's own font — which locks
+the agents out of that thread until **Explain it back →**. **Ellie, the Teacher**, then explains from
+the slide; when a rule on a clock says the learner has been in flow and two concepts are fresh, she
+**hands off to Max, the Tester**, who asks one question and never answers it. Only the learner's
+verbatim words move the **Explanation Ledger** ○ → ◐ → ●, and ● is unreachable without a Tester
+probe. **⌘K** opens a **whisper popover**: private with Ellie, ephemeral, with **Insert into the
+document** the only path from private to shared.
 
-## Commands
+## 2. Run it
 
-| Command | What it does |
-|---|---|
-| `npm install` | Installs, then rebuilds `better-sqlite3` against Electron's ABI (`postinstall`) |
-| `npm run dev` | Compiles main + preload, starts Vite on :5273, launches Electron against it |
-| `npm run build` | `tsc` for main/preload/room/shared → `dist/`, Vite for the renderer → `dist/renderer/` |
-| `npm test` | Vitest — room actor, silence timer, ledger gates, whisper leak canary, PDF viewer arithmetic, the application-menu template |
-| `npm run lint` | ESLint, including the whisper-import restriction and the `src/room` portability rule |
-| `npm run typecheck` | `tsc --noEmit` plus `svelte-check` |
-| `npm run dist:mac` | Unsigned DMG into `out/` (no signing, no notarisation — issue #17) |
-| `npm run install:local` | Builds this checkout into `~/Applications/ChatterED.app` and loads the auto-rebuild LaunchAgent (#20) |
-| `npm run uninstall:local` | Unloads and removes the LaunchAgent. Leaves the app |
+```sh
+cd app
+npm install     # also rebuilds better-sqlite3 for Electron's ABI (postinstall)
+npm run dev     # compiles main + preload, Vite on :5273, launches Electron
+```
 
-`npm run dev` picks a backend automatically — see below. With no Claude CLI and no API key it
-starts on the scripted transcript player (`ScriptedClient`) and makes no network calls at all.
+- **Node ≥ 22.12** (`package.json` → `engines`; built on 22.14), npm 10+, Xcode command-line tools.
+- **Settings ▸ Backend = Scripted** (no network calls at all); **Settings ▸ Tester pacing = Demo**
+  (the hand-off fires in a minute, not the study profile's ten).
+- **Open folder →** this ZIP's `Academia/`, promote **Sources**, open
+  `Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf`.
 
-## Backends
+First open shows the **pacing strip**: the reply hold is deliberate, which profile is live, and that
+the words are replayed while the timer, the rules and the ledger are not.
 
-The room actor takes an `LLMClient` and cannot tell which one it has (`src/room/llm/types.ts`).
-Three implement it, and with no forced choice in Settings they are tried in this order (#19):
+## 3. The twelve in-app beats
 
-| Backend | Where | When it is used |
+Video beats 4–15 of `docs/research/flow-build-plan.md` §2. Paths under `app/src/`.
+
+| # | Do this | Where |
 |---|---|---|
-| **Claude Code on this Mac** (`ClaudeCliClient`) | `src/main/llm/claude-cli.ts` | The `claude` binary is installed **and logged in**. The default: it uses the subscription the learner already has, needs no key, and costs nothing per message |
-| **Anthropic API key** (`AnthropicClient`) | `src/room/llm/anthropic.ts` | A key has been entered (#15) and the CLI cannot answer |
-| **Scripted** (`ScriptedClient`) | `src/room/llm/scripted.ts` | Neither of the above. Also the A1 video fallback, and what every test runs against |
+| 4 | Open the deck — 7 crop cards, a build-steps chip | `renderer/components/FlowCanvas.svelte` |
+| 5 | Page 3, hover a tick — a dashed guide | `shared/segment/cuts.ts` |
+| 6 | Click the tick at y 0.535 — splits in place, ⌘Z undoes | `shared/segment/ops.ts`, `renderer/lib/flowview.ts` |
+| 7 | **+ Ask here**: *who is actually whispering in the bottom row here?* | `components/AskHereLine.svelte`, `main/flowroom.ts` |
+| 8 | A REFERENCE card lands; the thread is locked | `room/reference.ts`, `components/AiSegment.svelte` |
+| 9 | **Explain it back →**, type `student:1`, then `student:2` | `components/FlowThread.svelte`, `room/actor.ts` |
+| 10 | The hand-off fires, tagged **BY RULE** | `room/flow.ts`, `room/orchestrator.ts` |
+| 11 | Max reads 9–12 s, counter climbing, one question | `room/agents.ts`, `room/actor.ts` |
+| 12 | Type `student:3` — two ledger rows move, ● ◐ | `room/ledger.ts`, `SegmentCard.svelte` |
+| 13 | ⌘K, ask `whisper:1` privately, **Insert into the document** | `components/WhisperPopover.svelte`, `room/context.whisper.ts` |
+| 14 | Toggle **Original pages** | `renderer/lib/flowview.ts` |
+| 15 | Hover a page chip; open the 31-page Koala paper | `shared/segment/genre.ts` |
 
-Any of the three can be forced in Settings. Forcing one that cannot run still falls back — the
-pane says which backend is live and why the choice was not honoured.
+**Type these verbatim** — the ledger quotes what is actually in the box, and a short line trips the
+agreement-is-not-evidence rule. They and `whisper:1` are `CRITIQUE1_LEARNER_LINES` in
+`room/llm/script.critique1.ts`.
 
-### Where the API key lives
+> **student:1** — The bottom row is the same catch as the top row, except the person I am whispering
+> to is the agent itself. I can ask while it is still working, so the warning about exposing data
+> reaches me without cutting into what it is doing.
+>
+> **student:2** — And it is not a second agent with its own tools. Page 5 says it answers from the
+> main session context only, with no tools and no memory of its own.
+>
+> **student:3** — The third one — it was asked to add a todo to memory, claimed it had, and nothing
+> was written. So it can read the session and reason about the tool calls, but it cannot act: memory
+> was protected, and the same wall is why nothing we settle in the side channel reaches the main
+> agent unless I re-type it as a steering prompt.
 
-`~/Library/Application Support/ChatterED/anthropic-api-key` — a plain file, mode `0600`, inside a
-`0700` directory, written by `src/main/apikey.ts` (#15, amended 2026-09-14). Nothing encrypts it,
-and nothing on the boot path reads it: the backend only asks whether the file is non-empty, and the
-plaintext is fetched lazily, at the moment an API call is actually made.
+## 4. Real, scripted, stubbed
 
-Electron `safeStorage` used to hold it as ciphertext in the settings table. That was dropped
-because its encryption key is an OS credential, so the boot-time availability check made macOS
-challenge every ad-hoc-signed rebuild — a permission modal on **every** launch, including the
-default Claude Code path that never wants a key. `apikey.ts` argues it in full. Migration 004
-deletes the stranded ciphertext, and `src/main/apikey.test.ts` fails the build if the dependency
-reappears.
+**Real:** segmentation — cuts, split, merge, reorder, undo, Original pages, compare-on-hover, the
+genre notice — **geometry only, no model in the path**; the actor's serialised mailbox; the silence
+timer, with quit and sleep recovery; the latency floor, a floor on visible time-to-first-token and
+not an added sleep; the orchestrator, where rules decide first and the model can never put the Tester
+on the floor; `handOffDue()`; the REFERENCE scope, truncated at 120 words *in code*; the ledger's
+four hard rules and the `defended` gate; whisper scoping with a leak canary; persistence — reopen the
+deck and the cards, messages, glyphs and sitting come back.
 
-The file is **outside the repo**, so no `.gitignore` rule covers it and none is needed — but it is
-a live billable credential: never copy it into the checkout, and never commit it.
+**Scripted:** the agents' turns, the REFERENCE answer, the whisper reply and its relay draft —
+replayed through the *same* code paths a live backend uses. Silence nudges come from a fixed pool in
+**both** modes: they are content-free by construction. **Not scripted even here:** the learner's
+typing, the split, the hand-off line (built by `flow.handOffLine()`), the ledger's evidence, the
+timings, every rule.
 
-### The command line
+**Not built:** the Firestore mirror (the `outbox` exists, the drain does not), export, history, the
+consent screen, the vision "suggest cuts" pass (#26), genres beyond the honest labeller (#27–#31) —
+anything that is not a deck opens as whole pages and says so — cross-page merge, reduced motion, full
+keyboard traversal, signing (#17). `docs/STATUS.md` has the measurement behind every claim here.
 
-```
-claude -p --model <model> --tools "" --output-format stream-json \
-       --include-partial-messages --verbose --no-session-persistence \
-       --strict-mcp-config --setting-sources "" --disable-slash-commands \
-       [--json-schema <schema>] --system-prompt <text>
-```
+## 5. Against a live model
 
-with the flattened group transcript on **stdin**. Four things about it are load-bearing, all
-verified against Claude Code 2.1.259:
+Two other backends, tried in order when Settings forces none: **the local Claude Code CLI**, when
+`claude` is installed *and logged in* — no key, no per-message cost, its command line argued atop
+`src/main/llm/claude-cli.ts`; or **an Anthropic API key**, entered in Settings and written to
+`~/Library/Application Support/ChatterED/anthropic-api-key`, mode 0600, outside the repo
+(`src/main/apikey.ts`). Models are per role: turns on Haiku 4.5, orchestration and the ledger on
+Sonnet 5. What changes is that the words are generated, and opening a deck makes a real ingest call,
+so it takes a few seconds.
 
-- `--verbose` is **required**: `-p` with `--output-format stream-json` exits 1 without it.
-- `--bare` must **not** be passed. It makes auth strictly `ANTHROPIC_API_KEY`/apiKeyHelper and
-  never reads the OAuth login, so the subscription this backend exists to use returns
-  "Not logged in".
-- `--strict-mcp-config --setting-sources "" --disable-slash-commands` keep the learner's own
-  Claude Code configuration out of the room. Without them the call loads their MCP servers and
-  hands the model those tools — measured at 6,319 extra cached prompt tokens on one turn.
-- the prompt goes on stdin, never in argv: a transcript plus a lecture slide is past the limit.
-
-The binary is resolved as `~/.local/bin/claude` → the built PATH → a Settings override. The PATH
-is built explicitly (`/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:/usr/bin:/bin`) because an
-Electron app launched from Finder inherits launchd's PATH, not the login shell's.
-
-### Models, per role
-
-Two Settings dropdowns, because these are the two kinds of call the app makes:
-
-| Role | Calls | CLI default | API-key default |
-|---|---|---|---|
-| **Agent turns** (Ellie, Max, Theo) | group turns, whisper replies | `sonnet` | `claude-haiku-4-5` |
-| **Orchestrator + ledger** | the turn decision, the ledger update, concept ingestion | `sonnet` | `claude-sonnet-5` |
-
-`haiku` / `sonnet` / `opus`, or a full model id in the free-text field. Fable is not offered and
-is rejected if typed (CLAUDE.md hard invariant). Every message row stores the backend and the
-resolved model id; every session row stores the plan it was opened with.
-
-## Install on your Mac
+## 6. Tests
 
 ```sh
-npm run install:local
+npm test           # vitest — 520 tests, 36 files, no network
+npm run lint       # incl. the whisper-import and src/room portability rules
+npm run typecheck  # tsc --noEmit + svelte-check
 ```
 
-Builds this checkout and installs it as `~/Applications/ChatterED.app`, then loads a LaunchAgent
-(`com.chattered.updater`) that repeats the build **at login and every six hours**, after a
-`git pull --ff-only origin main` (issue #20). So the app on the Dock tracks `main` without anyone
-remembering to rebuild it.
+`src/room/context.test.ts` is the one to read: a whisper-only string never reaches a group prompt, a
+shared card, a snapshot or an export — asserted at runtime *and* over the static import graph.
 
-What the script guarantees, and why:
-
-- **A failed build never removes the working app.** It packages into a scratch directory and only
-  then does `rm -rf ~/Applications/ChatterED.app && cp -R`. An unattended job that runs every six
-  hours will eventually run during a broken commit; the cost of that has to be "yesterday's app
-  and a line in the log". Same shape as `/Applications/scribe/ScribeBar/build.sh`.
-- **A dirty working tree is never pulled over.** It warns, skips the pull, and builds the tree as
-  it stands.
-- **`npm ci` runs only when `package-lock.json` actually changed** (a hash under
-  `~/Library/Caches/chattered-install`), because it is slow and wipes `node_modules`.
-- **One build at a time**, via a lock that goes stale after an hour so a killed run cannot block
-  the updater for ever.
-- The bundle's `CFBundleShortVersionString` comes from `package.json`, `CFBundleVersion` is the
-  commit count (monotonic, which is what macOS expects), and `ChatterEDGitCommit` records the
-  short hash.
-
-Unsigned, by decision #17: no Developer ID, no notarisation. The bundle is **ad-hoc** signed
-(`codesign --force --deep -s -`) only so macOS sees a coherent signature rather than a broken one
-after the Info.plist edits — that is not distribution security and is not offered as any.
-
-Logs: `~/Library/Logs/chattered-install.log` (the script) and `~/Library/Logs/chattered-updater.log`
-(launchd's capture of it).
-
-```sh
-launchctl list | grep com.chattered      # is the agent loaded?
-bash tools/install-local.sh update --force   # rebuild now, even if HEAD has not moved
-```
-
-### Uninstall
-
-```sh
-npm run uninstall:local     # unloads and removes the LaunchAgent; leaves the app
-```
-
-Then drag `~/Applications/ChatterED.app` to the Trash if you want the app gone too. Its data lives
-in `~/Library/Application Support/ChatterED/`.
-
-The distribution path is unchanged: `npm run dist:mac` still produces an **unsigned** DMG in
-`out/`, and nothing here signs or notarises it.
-
-## The document viewer, the menu and the trackpad
-
-Everything the PDF viewer computes lives in `src/renderer/lib/pdfview.ts` as plain functions with
-their own tests — the fit scale, which page the counter reads, whether a marked range is usable,
-which canvases may be released, where a pinch leaves the scroll position. `PdfViewer.svelte` does
-layout and pdf.js; that module does the sums.
-
-| Gesture / key | What happens |
-|---|---|
-| Pinch | `wheel` + `ctrlKey`, zoom about the cursor. During the gesture one CSS transform on the page wrapper; pdf.js is asked for new bitmaps 150 ms after the fingers stop |
-| Two-finger horizontal flick | One page turn per flick — momentum is latched, so thirty trailing events do not turn thirty pages. Suppressed while the page is wider than the pane, where horizontal scrolling pans it |
-| Double-click | Fit ⇄ 100 %, about the point clicked |
-| ⌘+ / ⌘− / ⌘0 | **ChatterED's**, not Chromium's. They scale the PDF; `webContents.setZoomMode('disabled')` means nothing can scale the UI chrome |
-| ⌘1 / ⌘2 | Fit width / Fit page |
-| ⌘↓ / ⌘↑, ⌥-swipe, PageUp/PageDown, Home/End, ←/→ | Page and scroll navigation. The scroll area is focusable, so none of it needs a click inside the PDF first |
-
-The application menu is `src/main/menu.ts`: App / File / Edit / View / Window / Help. **Reload,
-Force Reload and Toggle Developer Tools are present only while `app.isPackaged` is false** — ⌘R in
-a live study session used to reload the renderer mid-round. Menu items never reach into the view;
-each sends one `AppCommand` string over `app:command` and the renderer decides what it means.
-
-Canvases outside ±3 pages of the one on screen are released (`canvas.width = 0`), which is what
-keeps a long deck from costing ~15 MB per page for the life of the document.
-
-## Layout
+## 7. Repo map
 
 ```
 src/
-  main/        Electron main process: window, IPC, SQLite store, API key file, room host
-  preload/     contextBridge surface (the only thing the renderer can call)
-  renderer/    Svelte 5 SPA — 48 px icon rail, vault sidebar, document pane, room, ledger rail,
-               whisper pane. lib/pdfview.ts holds the viewer's arithmetic; lib/viewer.ts routes
-               application-menu commands to whichever viewer is open
-  room/        PORTABLE. The room actor, orchestrator, silence timer, context builder,
-               ledger gates and the two LLM clients. Imports no Electron, no SQLite driver,
-               no Firebase — it takes Clock / Store / Transport / LLMClient interfaces.
-  shared/      IPC contract types shared by main, preload and renderer
+  room/      PORTABLE. Actor, orchestrator, timer, flow session, REFERENCE, ledger, whisper,
+             prompts, the LLM clients. No Electron, no SQLite, no DOM. ESLint enforces it.
+  main/      Window, menu, IPC, SQLite, the vault (scan, FTS5, pdf.js geometry, segment cache).
+  renderer/  Svelte 5 SPA: the flow, the vault and viewers, Settings. lib/flowview.ts and
+             lib/pdfview.ts hold every number as a pure function.
+  shared/    The segment pipeline (pure), the IPC contract, thread grouping.
 ```
 
-`src/room` staying free of platform imports is what makes a Windows build (or a Tauri port, or a
-server rehost) packaging work rather than a rewrite. ESLint enforces it.
-
-## Tests and the whisper invariant
-
-`src/room/context.test.ts` is the canary from `architecture-mac.md` §D.4: a whisper-only string
-must never appear in a group-scope prompt or in a group-scope mirror document. It is asserted two
-ways — at runtime, and by walking the static import graph so that no module reachable from
-`buildGroupContext()` can even see the whispers repository.
-
-No test makes a network call. The Anthropic client is exercised through a fake transport.
+**Design decisions** live in `docs/research/` — `flow-build-plan.md`, `pivot-spec.md`,
+`flow-session.md`, `segmentation-lazy-split.md`, `product-design.md` — and the code is a bug if it
+contradicts one; they were argued on issues **#23**, **#25**, **#32** and **#33**. `docs/SEGMENTS.md`
+is the segment contract.
