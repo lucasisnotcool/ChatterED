@@ -161,6 +161,8 @@ export function buildReferenceRequest(input: ReferenceRequestInput): LlmRequest 
       scope: 'reference',
       roomId: input.roomId,
       scriptCue: input.scriptCue,
+      // An "+ Ask here" answer is billed to the thread it lands in (`src/main/cost/`).
+      anchorId: input.anchorId,
     },
   };
 }

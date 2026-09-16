@@ -148,6 +148,7 @@ export async function ensurePack(deps: PackDeps, roomId: string): Promise<boolea
         title: fresh.title,
         text: fresh.extracted_text,
         outline: fresh.outline,
+        fileId: fresh.file_id,
       },
       deps.models,
     );

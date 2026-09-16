@@ -342,7 +342,10 @@ async function ask(deps: IngestDeps, input: IngestInput): Promise<RawObjective[]
       },
     ],
     jsonSchema: TREE_SCHEMA,
-    meta: { scope: 'ingest' },
+    // `costScope: 'objectives'` rather than `'ingest'`: it shares the ingest lane but it is a
+    // separate per-file cost — on the CLI this is the single biggest call the app makes — and a
+    // learner asking what a deck cost them has to be able to see it on its own line.
+    meta: { scope: 'ingest', costScope: 'objectives', fileId: input.fileId },
   });
   const parsed = JSON.parse(extractJsonObject(result.text)) as { objectives?: unknown };
   return Array.isArray(parsed.objectives) ? (parsed.objectives as RawObjective[]) : [];

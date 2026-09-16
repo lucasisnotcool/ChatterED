@@ -30,7 +30,9 @@
   } from '../lib/flowchat.js';
   import { clock, store } from '../lib/store.svelte.js';
   import { clockTime } from '../lib/time.js';
+  import { canSummarise, conversationFor, offersSummary, splitThread } from '../lib/summary.js';
   import AiSegment from './AiSegment.svelte';
+  import SummaryCard from './SummaryCard.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
   import TurnFailureCard from './TurnFailureCard.svelte';
   import WaitLine from './WaitLine.svelte';
@@ -55,6 +57,28 @@
   let lastBeat = 0;
 
   const visible = $derived(messages.filter((m) => !store.answersRemoved[m.id]));
+
+  /**
+   * **The artefact, lifted out of the conversation** (issue #41, `lib/summary.ts`).
+   *
+   * A summarised thread is shown *as its summary*, with the conversation behind a disclosure on
+   * the card — because the artefact exists precisely so the learner does not have to read the
+   * thread again to recall what it taught. The turns are not hidden, they are one click away and
+   * the click is on the card that replaced them.
+   */
+  const split = $derived(splitThread(anchorId, visible));
+  const artefact = $derived(split.artefact);
+  /**
+   * The conversation, in `flow:threadOf`'s order when it has answered and in the local grouping
+   * until then. Identical in every case the main process actually produces; the call is made
+   * because the side that wrote the card is the authority on what is behind it.
+   */
+  const convo = $derived(
+    artefact ? conversationFor(anchorId, split.turns, store.threadOf[artefact.id] ?? null) : split.turns,
+  );
+  const busy = $derived(store.summarising === anchorId);
+  /** Offer the action once something has actually been taught here (`canSummarise`'s docstring). */
+  const offerAction = $derived(store.canSummarise && canSummarise(split.turns));
   /** The learner's own turns that have not been echoed back yet (audit §1). */
   const pending = $derived(pendingFor(store.pendingSends, anchorId));
 
@@ -198,22 +222,14 @@
   }
 </script>
 
-<section class="thread" aria-label="Conversation about this segment" use:watchSeen data-thread={anchorId}>
-  {#if visible.length > 1}
-    <!-- Thread collapse, persisted (audit §7). A deck with forty threads in it is a deck the
-         learner scrolls past, not one they read. -->
-    <button
-      type="button"
-      class="fold"
-      aria-expanded={!collapsed}
-      onclick={() => store.setThreadCollapsed(anchorId, !collapsed)}
-    >
-      {collapsed ? `▸ ${visible.length} turns` : '▾ hide this thread'}
-    </button>
-  {/if}
-
-  {#if !collapsed}
-  {#each visible as message (message.id)}
+<!--
+  The conversation itself, as a snippet, because since #41 it has **two** places it can be drawn:
+  standalone under the segment, or inside the summary card's *Show the conversation* disclosure.
+  One definition, so the composer, the wait chrome and the optimistic block are identical in both
+  — a second copy of this markup would drift within a week.
+-->
+{#snippet conversation()}
+  {#each convo as message (message.id)}
     {#if message.speaker.kind === 'student'}
       <!-- The learner's own writing, in the document, full width and indigo-tinted (§B2). -->
       <article class="mine">
@@ -236,6 +252,10 @@
         onexplain={message.id === lockedByAnswerId ? () => void store.explainBack(message.id) : undefined}
         onremove={message.id === lockedByAnswerId ? () => store.removeAnswer(message.id, anchorId) : undefined}
         stopped={(message as { stopped?: boolean }).stopped === true}
+        onsummarise={offersSummary(message) && store.canSummarise
+          ? () => void store.summarise(anchorId)
+          : undefined}
+        summarising={busy}
       />
     {/if}
   {/each}
@@ -350,9 +370,58 @@
         <button type="button" class="send" disabled={text.trim().length === 0} onclick={submit}>Send</button>
       </div>
     </div>
-  {:else if visible.length > 0}
-    <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
+  {:else if convo.length > 0}
+    <div class="threadfoot">
+      <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
+      {#if offerAction && !artefact}
+        <!--
+          **Lucas's item 2**, as a button on every thread rather than only on the Teacher's offer:
+          *"for artefact creation and generation, this should be provided as a button, which will
+          create a slide / segment that basically summarises what was taught in that conversational
+          chain."* `rule:offer_summary` is the app volunteering; this is the learner not having to
+          wait for it.
+        -->
+        <button type="button" class="summarise" disabled={busy} onclick={() => void store.summarise(anchorId)}>
+          {busy ? 'Writing the summary…' : '❖ Summarise into the document'}
+        </button>
+      {/if}
+    </div>
   {/if}
+{/snippet}
+
+<section class="thread" aria-label="Conversation about this segment" use:watchSeen data-thread={anchorId}>
+  {#if artefact}
+    <!--
+      A summarised thread. The card is the face of it and the conversation is what the card opens
+      onto — Lucas's item 3: *"the conversation summarised to create that artefact should be
+      retrievable, continuable by the user."* Retrievable is the disclosure; continuable is the
+      composer inside it, which posts into this same thread and never opens a new one.
+    -->
+    <SummaryCard
+      message={artefact}
+      turns={convo.length}
+      open={!collapsed}
+      {busy}
+      onregenerate={() => void store.summarise(anchorId)}
+      ontoggle={(open) => void store.showConversation(artefact.id, anchorId, open)}
+      {conversation}
+    />
+  {:else}
+    {#if visible.length > 1}
+      <!-- Thread collapse, persisted (audit §7). A deck with forty threads in it is a deck the
+           learner scrolls past, not one they read. -->
+      <button
+        type="button"
+        class="fold"
+        aria-expanded={!collapsed}
+        onclick={() => store.setThreadCollapsed(anchorId, !collapsed)}
+      >
+        {collapsed ? `▸ ${visible.length} turns` : '▾ hide this thread'}
+      </button>
+    {/if}
+    {#if !collapsed}
+      {@render conversation()}
+    {/if}
   {/if}
 </section>
 
@@ -461,11 +530,21 @@
   .hint { font-size: 10.5px; color: var(--muted); }
   .elsewhere { font-size: 10.5px; color: var(--text-2); }
 
+  .threadfoot { display: flex; align-items: center; gap: 14px; margin: 4px 0 2px; }
   .reopen {
-    margin: 4px 0 2px;
     font-size: 11px;
     color: var(--muted);
     opacity: 0.7;
   }
   .reopen:hover { opacity: 1; color: var(--indigo); }
+
+  /* Quiet, like *Reply here*: an artefact is a thing the learner may make, not a thing the app
+     is pushing. `rule:offer_summary` is where the app does the pushing, once per thread. */
+  .summarise {
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.7;
+  }
+  .summarise:hover:not(:disabled) { opacity: 1; color: var(--indigo); }
+  .summarise:disabled { opacity: 0.55; cursor: default; }
 </style>

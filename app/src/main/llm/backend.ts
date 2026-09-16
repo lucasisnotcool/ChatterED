@@ -29,6 +29,7 @@ import type { SettingsRepo } from '../db/repos/core.js';
 import { ClaudeCliClient } from './claude-cli.js';
 import { log, type Logger } from '../log.js';
 import { loggedClient } from './logged.js';
+import { costedClient, type CostSink } from '../cost/client.js';
 import { readCachedDetection, SETTINGS_KEYS, type CliDetection } from './detect.js';
 
 export type { BackendChoice, BackendKind };
@@ -124,6 +125,11 @@ export interface CreateClientInput extends ResolveInput {
   roster?: readonly AgentProfile[];
   /** Injectable so a test can assert what was logged without touching the process-wide one. */
   logger?: () => Logger;
+  /**
+   * The cost ledger, when there is one. Omit it and nothing is counted — which is what every
+   * existing test does, so instrumenting the port costs them nothing.
+   */
+  cost?: CostSink | null;
 }
 
 /**
@@ -137,8 +143,12 @@ export interface CreateClientInput extends ResolveInput {
  */
 const SCRIPTED_CHUNK_MS = 35;
 
+/**
+ * `loggedClient` **outside** `costedClient`: the usage row is written before `llm.complete` is
+ * logged, so the log line and the ledger row cannot disagree about whether the call happened.
+ */
 export function createClient(input: CreateClientInput): LLMClient {
-  return loggedClient(rawClient(input), input.logger ?? log);
+  return loggedClient(costedClient(rawClient(input), input.cost ?? null, input.logger ?? log), input.logger ?? log);
 }
 
 function rawClient(input: CreateClientInput): LLMClient {

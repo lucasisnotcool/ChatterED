@@ -411,7 +411,8 @@ const INGEST_SYSTEM =
 
 export async function draftConcept(
   llm: LLMClient | null,
-  input: { moduleCode: string; title: string; text: string; outline?: string },
+  /** `fileId` is attribution only (`src/main/cost/`): it bills the ingest to the document. */
+  input: { moduleCode: string; title: string; text: string; outline?: string; fileId?: string | null },
   models: ModelPlan = API_PLAN,
 ): Promise<ConceptDraft> {
   if (!llm || llm.kind === 'scripted') return fixedDraft();
@@ -434,7 +435,7 @@ export async function draftConcept(
       system: [{ type: 'text', text: INGEST_SYSTEM }],
       messages: [{ role: 'user', content: correction ? `${material}\n\n${correction}` : material }],
       jsonSchema: DRAFT_SCHEMA,
-      meta: { scope: 'ingest' },
+      meta: { scope: 'ingest', fileId: input.fileId ?? null },
     });
     return JSON.parse(result.text) as RawDraft;
   };

@@ -281,6 +281,22 @@ class Store {
   threadSeen: Record<string, number> = $state({});
   /** Threads the learner collapsed, persisted through `flow:cardState`. */
   threadCollapsed: Record<string, boolean> = $state({});
+
+  // ── The artefact (issue #41, `conversation-refinement.md` §5) ───────────
+  /**
+   * The thread whose **Summarise into the document** is in flight. One at a time and named, so
+   * the button that was pressed is the button that shows it is working — a global boolean would
+   * spin every thread in a forty-slide deck.
+   */
+  summarising: string | null = $state(null);
+  /**
+   * `flow:threadOf`'s answer, per summary card id: the ids of the conversation behind it.
+   *
+   * Cached rather than re-fetched on every toggle, and *not* the messages themselves — the
+   * bodies live on `room.messages` and two copies could disagree, which is the same argument
+   * `FlowThreadOfView` makes for carrying ids on the wire.
+   */
+  threadOf: Record<string, string[]> = $state({});
   /** The ⌥⌘D debug drawer (audit §10). Closed, and empty, until it is opened. */
   debugOpen = $state(false);
   turnTraces: TurnTraceView[] = $state([]);
@@ -766,6 +782,8 @@ class Store {
     this.composerAt = null;
     this.flowLocks = {};
     this.answersCollapsed = {};
+    this.summarising = null;
+    this.threadOf = {};
     // Closing the document ends every private thread on it. The popover is not restored on
     // reopen, and `flow:messages` has nothing to restore it from — that is the point of §3.5.
     this.flowWhisper = null;
@@ -1045,6 +1063,68 @@ class Store {
     if (result && !result.stopped && result.refused === 'floor') {
       this.notice = { level: 'info', text: 'The deliberate wait has not finished yet.' };
     }
+  }
+
+  // ── The artefact (issue #41, `conversation-refinement.md` §5) ─────────────
+
+  /** Is `flow:summarise` on this build? The action is simply not offered when it is not. */
+  get canSummarise(): boolean {
+    return has('flowSummarise');
+  }
+
+  /**
+   * **Summarise into the document.**
+   *
+   * Lucas's item 2, verbatim: *"for artefact creation and generation, this should be provided as
+   * a button, which will create a slide / segment that basically summarises what was taught in
+   * that conversational chain."* Pressed again on the same thread it regenerates — `flow:summarise`
+   * replaces rather than appends, so there is never a stale artefact under a fresh one.
+   *
+   * The conversation is collapsed on success, which is the point of the whole feature: the
+   * artefact is now the face of this thread, and *"these artifacts help the user to review and
+   * recall, without having to go through the conversation again"*. It is one click back —
+   * **Show the conversation** on the card — and the collapse is persisted, so it is the learner's
+   * state rather than a thing the app redecides on every open.
+   *
+   * Routed through `run()` rather than `quiet()`, unlike the bookkeeping calls: this one is a
+   * gesture with a visible result, and a summarise that silently does nothing is exactly the
+   * "the button lies" failure the action is supposed to avoid.
+   */
+  async summarise(threadId: string): Promise<void> {
+    const roomId = this.room?.roomId;
+    if (!roomId || !this.canSummarise || this.summarising !== null) return;
+    this.summarising = threadId;
+    const result = await run(this, () => bridge().flowSummarise({ roomId, threadId }));
+    this.summarising = null;
+    if (!result) return;
+    this.#takeFlowRoom(result.flow);
+    // A regenerated card's conversation is the same conversation; its cached ids are not stale,
+    // but the card's id may have changed, so the entry is re-fetched on the next disclosure.
+    this.setThreadCollapsed(threadId, true);
+    this.liveMessage = result.regenerated
+      ? 'The summary was rewritten from this conversation.'
+      : 'A summary of this conversation is now in the document.';
+  }
+
+  /**
+   * **Show / hide the conversation** behind an artefact.
+   *
+   * Lucas's item 3: *"the conversation summarised to create that artefact should be retrievable,
+   * continuable by the user."* Retrievable is this; continuable is the composer the disclosure
+   * renders, which posts into that same thread and not into a new one.
+   *
+   * The open/closed state **is** `threadCollapsed`, deliberately, rather than a second piece of
+   * state beside it: there is one conversation under this segment and one truth about whether it
+   * is on screen, and `flow:cardState` already persists that one.
+   */
+  async showConversation(summaryId: string, threadId: string, show: boolean): Promise<void> {
+    this.setThreadCollapsed(threadId, !show);
+    if (!show || this.threadOf[summaryId] || !has('flowThreadOf')) return;
+    // Authoritative order, from the side that wrote the card. The fallback while this is in
+    // flight — or on a build without the channel — is the local grouping, which is the same
+    // answer in every case but one the main process does not produce.
+    const view = await quiet(() => bridge().flowThreadOf({ summaryId }));
+    if (view) this.threadOf = { ...this.threadOf, [summaryId]: view.messageIds };
   }
 
   /** The ⌥⌘D drawer's rows (audit §10). No bodies are in them, by construction in the actor. */

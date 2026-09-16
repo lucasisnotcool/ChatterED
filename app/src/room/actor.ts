@@ -178,6 +178,12 @@ interface PendingTurn {
   stopped: boolean;
   /** Aborts the client call. The CLI path kills its child process on it. */
   abort: AbortController;
+  /**
+   * The segment this turn belongs to, carried so that the three model calls it makes — the
+   * orchestrator decision, the agent's reply and the ledger update — are billed to the thread
+   * the learner is actually in (`src/main/cost/`). Read by nothing else.
+   */
+  anchorId: string | null;
 }
 
 /**
@@ -1180,6 +1186,7 @@ export class RoomActor {
       floorPassed: false,
       stopped: false,
       abort: new AbortController(),
+      anchorId,
     };
     this.#pending = pending;
     /**
@@ -1569,6 +1576,16 @@ export class RoomActor {
         dividerCause:
           trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent, decision.moveType) : null,
         anchorId,
+        /**
+         * **What the Teacher was shown** (issue #35's footer, issue #41's answerer). It used to
+         * ride only on a REFERENCE card; the Teacher answers the thread now, so the card that
+         * says `p. 14 + outline` is hers. Only the Teacher's: the Tester's question is not
+         * answered from a passage, and claiming a scope for it would be an overclaim.
+         */
+        scopeShown:
+          decision.role === 'peer' && anchorId !== null
+            ? (this.#askContext.get(anchorId)?.scopeShown ?? null)
+            : null,
         // `disagreement` is never written any more: the S2 quota and the whole social-group
         // framing went with #32. The column and the view field stay so that a room recorded
         // before this build still renders its markers (masg-drop-assessment.md §D2 Option 2).
@@ -1802,7 +1819,13 @@ export class RoomActor {
       maxTokens: 400,
     });
     request.model = this.#models.orchestrator;
-    request.meta = { ...request.meta, scope: 'orchestrator', scriptCue: cue, turnId: this.#pending?.id };
+    request.meta = {
+      ...request.meta,
+      scope: 'orchestrator',
+      scriptCue: cue,
+      turnId: this.#pending?.id,
+      anchorId: this.#pending?.anchorId ?? null,
+    };
     const startedAt = this.#d.clock.now();
     turnLog.event('info', 'orchestrator.request', {
       model: request.model,
@@ -1928,7 +1951,7 @@ export class RoomActor {
      */
     request.system = [{ type: 'text', text: ledgerSystemBlock(this.#d.pack), cache_control: { type: 'ephemeral' } }];
     request.model = this.#models.fast;
-    request.meta = { ...request.meta, scope: 'ledger', scriptCue: cue };
+    request.meta = { ...request.meta, scope: 'ledger', scriptCue: cue, anchorId: this.#pending?.anchorId ?? null };
     // Structured output, for the same reason the decision uses it: the CLI enforces the schema
     // and repairs one bad answer before the caller ever sees it (`claude-cli.ts`).
     request.jsonSchema = LEDGER_SCHEMA;

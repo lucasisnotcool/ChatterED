@@ -8,6 +8,8 @@
  * The Room actor must not be able to tell which one it has (issue #19).
  */
 
+import type { CostScope } from '../../shared/cost.js';
+
 export interface CacheableBlock {
   type: 'text';
   text: string;
@@ -43,6 +45,19 @@ export interface LlmRequest {
     turnId?: string;
     /** Scripted replay only: which script beat this request corresponds to. */
     scriptCue?: string;
+    /**
+     * **Cost attribution** (`src/main/cost/`, `src/shared/cost.ts`). All three are optional and
+     * nothing in `src/room` reads them — they exist so that the one decorator every call passes
+     * through can file the call under the right document and the right thread without the room
+     * having to know a ledger exists.
+     *
+     * `costScope` overrides `scope` where the port's vocabulary is too coarse to bill against:
+     * the learning-objective ingest travels as `'ingest'` because it shares that lane, but it is
+     * a separate per-file cost and a learner must be able to see it as one.
+     */
+    fileId?: string | null;
+    anchorId?: string | null;
+    costScope?: CostScope;
   };
 }
 

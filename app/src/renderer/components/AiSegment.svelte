@@ -41,6 +41,13 @@
     /** A provisional body streamed in ahead of `turn.released` (audit §2, P1). */
     streaming = null,
     stopped = false,
+    /**
+     * Set on the Teacher's `rule:offer_summary` line (issue #41): the offer is a sentence, and
+     * this is the one click that is the whole of what it does. R1 is why it is a button here and
+     * not an insertion there — *"nothing enters the learner's document without the learner"*.
+     */
+    onsummarise,
+    summarising = false,
   }: {
     message: MessageView;
     callout?: boolean;
@@ -49,6 +56,8 @@
     onremove?: () => void;
     streaming?: string | null;
     stopped?: boolean;
+    onsummarise?: () => void;
+    summarising?: boolean;
   } = $props();
 
   const agent = $derived(message.speaker.kind === 'agent' ? message.speaker : null);
@@ -141,6 +150,16 @@
 
     {#if meta.length > 0}
       <p class="meta" class:loud>{meta.join(' · ')}</p>
+    {/if}
+
+    {#if onsummarise}
+      <!-- The offer, made actionable. The Teacher wrote the sentence; the chip is the app's, and
+           pressing it is the only thing that puts an artefact in the document (R1). -->
+      <div class="actions">
+        <button type="button" class="chip" disabled={summarising} onclick={onsummarise}>
+          {summarising ? 'Writing the summary…' : 'Summarise into the document'}
+        </button>
+      </div>
     {/if}
 
     {#if isReference && (onexplain || onremove)}
@@ -294,6 +313,17 @@
   }
 
   .actions { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+  /* The offer's chip. Indigo-tinted like every other affordance the learner owns, and sized as
+     a chip rather than a button: it is one of two ways forward, not the way forward. */
+  .chip {
+    font-size: 11.5px;
+    color: var(--indigo);
+    background: var(--indigo-tint);
+    border: 1px solid var(--indigo);
+    border-radius: 999px;
+    padding: 3px 12px;
+  }
+  .chip:disabled { color: var(--muted); background: transparent; border-color: var(--hairline); cursor: default; }
   .btn { font-size: 12px; padding: 5px 12px; }
   .ghost { font-size: 11px; color: var(--text-2); border-bottom: 1px solid transparent; }
   .ghost:hover { color: #8a2708; border-bottom-color: #8a2708; }
