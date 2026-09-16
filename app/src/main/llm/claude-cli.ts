@@ -339,6 +339,57 @@ export const CLI_TIMEOUT_MS: Record<string, number> = {
   ingest: 300_000,
 };
 
+/**
+ * **The app spawns `claude`, so the app decides how `claude` runs — not whatever launched the
+ * app.**
+ *
+ * Found on the installed build, 16 Sep. The learning-objective ingest went out and produced
+ * *nothing at all* in 300 s, twice; the stream showed why — the child opened a `thinking` block
+ * and stayed in it, `system/thinking_tokens` climbing past 2,800 estimated tokens with no answer
+ * begun. ChatterED had been started from a terminal that was itself inside Claude Code, and the
+ * child inherited that session's environment: `CLAUDE_EFFORT`, `CLAUDECODE`,
+ * `CLAUDE_CODE_SESSION_ID`, `MAX_THINKING_TOKENS=31999`. The same prompt with those removed and
+ * thinking pinned off answered in **49.7 s / 6,205 output tokens**.
+ *
+ * Two consequences, and the second is the one that matters beyond this bug:
+ *
+ *  - **An app whose behaviour depends on how it was launched is not testable.** A build started
+ *    from Finder, from launchd and from a developer's shell must make the same call, so every
+ *    variable that describes *another* Claude Code session is dropped here. It is a denylist and
+ *    not a `CLAUDE_*` sweep on purpose: `CLAUDE_CONFIG_DIR` is where the learner's login lives,
+ *    and taking that away would log the app out of the subscription it runs on.
+ *  - **Thinking buys nothing on a schema-bound call.** `ModelPlan.fast` already records the
+ *    measurement from the other side — Haiku "reasons its way to the object where Sonnet writes
+ *    it", two to four times the output tokens for the same JSON. These calls fill in a schema;
+ *    there is nothing to deliberate about, and `MAX_THINKING_TOKENS=0` is what says so.
+ */
+export const CLI_DROPPED_ENV: readonly string[] = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_SUBAGENT_MODEL',
+  'CLAUDE_CODE_ENABLE_TASKS',
+  'CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING',
+  'CLAUDE_AGENT_SDK_VERSION',
+  'CLAUDE_EFFORT',
+  'CLAUDE_PID',
+  'MAX_THINKING_TOKENS',
+];
+
+/** The environment one `claude` child is given: the app's, minus the ambient session, plus PATH. */
+export function cliEnv(base: NodeJS.ProcessEnv, request: LlmRequest): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, PATH: buildPath(base) };
+  for (const key of CLI_DROPPED_ENV) delete env[key];
+  // A call that must fill in a schema has nothing to deliberate about.
+  if (request.jsonSchema) env.MAX_THINKING_TOKENS = '0';
+  return env;
+}
+
 export class ClaudeCliClient implements LLMClient {
   readonly kind = 'claude-cli' as const;
   readonly binary: string;
@@ -503,7 +554,7 @@ export class ClaudeCliClient implements LLMClient {
       try {
         child = spawn(this.binary, args, {
           cwd: this.#cwd,
-          env: { ...this.#env, PATH: buildPath(this.#env) },
+          env: cliEnv(this.#env, request),
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch (err) {

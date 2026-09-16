@@ -22,8 +22,10 @@ import {
   normaliseCliUsage,
   OWN_TURN_PREFIX,
   promptFor,
+  cliEnv,
   cliQueue,
   CLI_DEFERRED,
+  CLI_DROPPED_ENV,
   CLI_LOW_PRIORITY_GRACE_MS,
   CLI_PREEMPTIBLE,
   CLI_TIMEOUT_MS,
@@ -573,5 +575,41 @@ describe('the per-scope timeout', () => {
       expect(CLI_DEFERRED.has(scope)).toBe(true);
       expect(CLI_PREEMPTIBLE.has(scope)).toBe(true);
     }
+  });
+});
+
+/**
+ * The 16 Sep live finding: ChatterED started from a terminal that was itself inside Claude Code
+ * handed its `claude` children that session's environment, and the ingest then sat in a
+ * `thinking` block for 300 s and answered nothing. The same prompt with the session dropped and
+ * thinking pinned off answered in 49.7 s.
+ */
+describe('the environment one child is given', () => {
+  const request = (over: Partial<LlmRequest> = {}): LlmRequest => ({
+    model: 'sonnet',
+    max_tokens: 100,
+    system: [{ type: 'text', text: 'you are a test' }],
+    messages: [{ role: 'user', content: 'hello' }],
+    meta: { scope: 'group' },
+    ...over,
+  });
+
+  it('drops every variable that describes another Claude Code session', () => {
+    const base: NodeJS.ProcessEnv = { HOME: '/Users/x', CLAUDECODE: '1', CLAUDE_EFFORT: 'high', MAX_THINKING_TOKENS: '31999' };
+    const env = cliEnv(base, request());
+    for (const key of CLI_DROPPED_ENV) expect(env[key]).toBeUndefined();
+    expect(env.HOME).toBe('/Users/x');
+    expect(env.PATH).toContain('/Users/x/.local/bin');
+  });
+
+  /** The login lives in `CLAUDE_CONFIG_DIR`; taking it away logs the app out of its subscription. */
+  it('keeps the variables the login needs', () => {
+    const env = cliEnv({ HOME: '/Users/x', CLAUDE_CONFIG_DIR: '/Users/x/.claude-alt' }, request());
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/x/.claude-alt');
+  });
+
+  it('pins thinking off for a schema-bound call and leaves a turn alone', () => {
+    expect(cliEnv({ HOME: '/h' }, request({ jsonSchema: { type: 'object' } })).MAX_THINKING_TOKENS).toBe('0');
+    expect(cliEnv({ HOME: '/h' }, request()).MAX_THINKING_TOKENS).toBeUndefined();
   });
 });
