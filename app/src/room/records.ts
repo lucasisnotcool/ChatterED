@@ -45,6 +45,12 @@ export interface MaterialRow {
    * cached prefix from this row on every turn and it must be byte-identical each time (§E.2).
    */
   topic_context: string;
+  /**
+   * The deck's own table of contents: the segmentation's labels with their page numbers, one
+   * per line (migration 013). `''` for pasted text and for every material created before the
+   * column existed. Frozen at creation next to `topic_context`, for the same reason.
+   */
+  outline: string;
   /** json — progress-tracking.md §3 Concept Pack */
   concept_pack: string;
   pack_provenance: 'fixed' | 'elicited';

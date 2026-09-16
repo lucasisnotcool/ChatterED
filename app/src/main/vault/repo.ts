@@ -110,6 +110,14 @@ export interface VaultRepo {
     /** Extracted text for one PDF page range, joined. Empty string when nothing was indexed. */
     pages(fileId: string, from: number | null, to: number | null): TextChunk[];
     search(vaultId: string, query: string, limit: number): FtsHit[];
+    /**
+     * The best-matching **whole pages** of one file, in page order (issue #35 / whole-file
+     * context §4). `search()` answers "which file", ranked across the vault and returning a
+     * 14-token snippet; this answers "which pages of *this* deck bear on this question", and
+     * returns the page bodies, because the fallback for a document too large to put in the
+     * prefix whole is the outline plus those pages in full.
+     */
+    searchInFile(fileId: string, query: string, limit: number): TextChunk[];
   };
 }
 
@@ -331,6 +339,22 @@ export function createVaultRepo(db: SqlDatabase): VaultRepo {
               LIMIT @n`,
           )
           .all<FtsHit>({ q: match, v: vaultId, n: limit, open: SNIPPET_OPEN, close: SNIPPET_CLOSE });
+      },
+      searchInFile(fileId, query, limit) {
+        const match = toMatchQuery(query);
+        if (match.length === 0) return [];
+        const rows = db
+          .prepare(
+            `SELECT t.page AS page, t.body AS body
+               FROM file_text t
+              WHERE file_text MATCH @q AND t.file_id = @f
+              ORDER BY bm25(file_text, 1.0, 4.0, 0.0, 0.0)
+              LIMIT @n`,
+          )
+          .all<{ page: number | null; body: string }>({ q: match, f: fileId, n: limit });
+        // Ranked by relevance for the cut, then re-ordered by page: a model reading three
+        // scattered pages out of order reads them as a contradiction.
+        return rows.map((r) => ({ page: r.page, body: r.body })).sort((a, b) => (a.page ?? 0) - (b.page ?? 0));
       },
     },
   };

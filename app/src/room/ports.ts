@@ -63,6 +63,24 @@ export interface MaterialsRepo {
   /** The newest material for these bytes of this file — the flow's "reopen, don't duplicate". */
   forFile(fileId: string, sha: string): MaterialRow | undefined;
   confirmPack(id: string, confirmedAt: string): void;
+  /**
+   * Rewrite the frozen half of a material **and its prefix hash together** (issue #35).
+   *
+   * Two callers, both of which change what the model is given and must therefore change
+   * `prefix_sha256`: the whole-deck re-extraction of a material that was truncated by
+   * `REFERENCE_TEXT_CAP`, and the swap-in of a concept pack that was drafted in the background.
+   * There is deliberately no setter for `extracted_text` alone: a material whose text moved and
+   * whose hash did not is a cache key that lies.
+   */
+  refreeze(
+    id: string,
+    patch: Partial<
+      Pick<
+        MaterialRow,
+        'title' | 'extracted_text' | 'outline' | 'concept_pack' | 'pack_provenance' | 'pack_confirmed_at'
+      >
+    > & { token_count: number; cache_eligible: number; prefix_sha256: string },
+  ): void;
 }
 
 export interface MessagesRepo {

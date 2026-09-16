@@ -15,7 +15,7 @@ import { openTestDatabase, hasFts5 } from '../db/driver.js';
 import { runMigrations } from '../db/migrations.js';
 import { settingsRepo } from '../db/repos/core.js';
 import { TOPIC_COLOURS } from './palette.js';
-import { VaultService } from './service.js';
+import { REFERENCE_TEXT_CAP, VaultService } from './service.js';
 import { splitSnippet } from '../../shared/snippet.js';
 import { toMatchQuery } from './repo.js';
 
@@ -254,6 +254,48 @@ describe('text for a reference', () => {
     service.open(root);
     const fileId = service.tree(null).find((n) => n.name === 'notes.md')!.file!.id;
     expect(await service.textFor({ fileId, pageFrom: null, pageTo: null })).toContain('readable');
+  });
+});
+
+describe('the whole document, for a deck-scope question', () => {
+  /** ~28 K characters, the size of the 58-page CS4246 deck this was found on. */
+  const LONG = Array.from({ length: 700 }, (_, i) => `line ${i} of the lecture, with words in it.`).join('\n');
+
+  it('is uncapped, where a selection is capped', async () => {
+    expect(LONG.length).toBeGreaterThan(REFERENCE_TEXT_CAP * 4);
+    write('deck.md', LONG);
+    service.open(root);
+    await service.indexAll();
+    const fileId = service.tree(null).find((n) => n.name === 'deck.md')!.file!.id;
+
+    const selection = await service.textFor({ fileId, pageFrom: null, pageTo: null });
+    expect(selection.length).toBeLessThanOrEqual(REFERENCE_TEXT_CAP);
+
+    const deck = await service.deckText(fileId);
+    expect(deck.text).toBe(LONG);
+    expect(deck.truncated).toBe(false);
+  });
+
+  it('ranks whole pages of one file for the retrieval fallback', async () => {
+    write('slides.pdf', TWO_PAGE_PDF, true);
+    service.open(root);
+    await service.indexAll();
+    const fileId = service.tree(null).find((n) => n.name === 'slides.pdf')!.file!.id;
+
+    const hits = service.topPages(fileId, 'Hessian', 4);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.page).toBe(2);
+    expect(hits[0]!.body).toContain('Hessian');
+  });
+
+  it("falls back to each page's first line when a document has no segmentation", async () => {
+    write('slides.pdf', TWO_PAGE_PDF, true);
+    service.open(root);
+    await service.indexAll();
+    const fileId = service.tree(null).find((n) => n.name === 'slides.pdf')!.file!.id;
+
+    const heads = await service.pageHeads(fileId);
+    expect(heads.map((h) => h.head)).toEqual(['Challenger', 'Hessian']);
   });
 });
 

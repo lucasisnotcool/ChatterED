@@ -1,0 +1,23 @@
+-- 013 — the deck's outline, frozen on the material next to its text.
+--
+-- `docs/research/whole-file-context.md` §1: the flow room's material for pages 1–N was passed
+-- through `vault.textFor()`, which applies `REFERENCE_TEXT_CAP` — the per-*selection* cap from
+-- issue #22 decision 4, a UI promise about pasted ranges. On the 58-page CS4246 deck that left
+-- **5,724 of 27,948 characters** in `extracted_text`, i.e. the agents and the concept ingest
+-- saw the first fifth of the deck and the learner was told nothing. Whole-deck context was
+-- never truncated by design; it was truncated by reuse of the wrong helper.
+--
+-- With the whole text in the prefix the missing half is still **where each part sits**: the
+-- text layer of a slide deck is a wall of fragments with no headings. `outline` is the
+-- segmentation's own labels with their page numbers ("p. 14 — A* search"), or the first line of
+-- each page when a document has no segments yet. It is what makes "what will I learn" answerable
+-- and what lets a page-scoped answer say where the page sits.
+--
+-- Frozen like `topic_context` (§E.2): it is built once at creation, sits before the last cache
+-- breakpoint, and is therefore byte-identical on every turn. `''` for pasted text, which keeps
+-- every existing material's `prefix_sha256` valid — `sharedBlock()` emits the block only when it
+-- is non-empty.
+--
+-- Forward-only; 001–012 are not touched.
+
+ALTER TABLE materials ADD COLUMN outline TEXT NOT NULL DEFAULT '';

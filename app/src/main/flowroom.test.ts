@@ -13,6 +13,8 @@ import type { ConceptPack } from '../room/records.js';
 import { openTestStore, seedRoom } from '../test-support/db.js';
 import { loadFlowState, openOrCreateFlowRoom, saveFlowState, segmentText, type FlowRoomDeps } from './flowroom.js';
 import { API_PLAN } from '../room/llm/models.js';
+import { capText } from './vault/extract.js';
+import { REFERENCE_TEXT_CAP } from './vault/service.js';
 
 const CRITIQUE1_SHA = 'ac803b62d7b4d76926eaa1f5c80341a17729ea687a064278a8051a925005ea33';
 
@@ -37,13 +39,15 @@ function fakeSegments(sha: string, label = '/btw as a whisper') {
   };
 }
 
-function fakeVault(pageText = 'the whole deck, extracted') {
+function fakeVault(pageText = 'the whole deck, extracted', deck = 'the whole deck, extracted') {
   return {
     fileRow: () => ({ id: 'f1', name: 'A0282987E_LohZhengLucas_Critique1_slides (1).pdf', topic_id: 't1' }),
     moduleCodeFor: () => 'CS3249',
     topicContext: () => null,
     textFor: async ({ pageFrom }: { pageFrom: number | null }) =>
-      pageFrom === null ? 'the whole deck, extracted' : `${pageText} · p.${pageFrom}`,
+      pageFrom === null ? capText(deck, REFERENCE_TEXT_CAP) : `${pageText} · p.${pageFrom}`,
+    deckText: async () => ({ text: deck, pages: 58, truncated: false }),
+    pageHeads: async () => [],
   };
 }
 
@@ -61,6 +65,97 @@ function deps(sha = CRITIQUE1_SHA, store = openTestStore()): FlowRoomDeps & { st
     llm: null,
   };
 }
+
+/** A stand-in for the 58-page CS4246 deck: 58 pages, ~28 K characters, well past the cap. */
+function fiftyEightPages(): { text: string; segments: { page: number; label: string }[] } {
+  const pages: string[] = [];
+  const segments: { page: number; label: string }[] = [];
+  for (let page = 1; page <= 58; page += 1) {
+    const label = `Lecture topic ${page}`;
+    segments.push({ page, label });
+    pages.push(`${label}\n${`body line for page ${page}. `.repeat(18)}`);
+  }
+  return { text: pages.join('\n\n'), segments };
+}
+
+describe("the flow room's material is the whole deck", () => {
+  it("equals the deck's indexed text, uncapped, on a 58-page fixture", async () => {
+    const deck = fiftyEightPages();
+    expect(deck.text.length).toBeGreaterThan(REFERENCE_TEXT_CAP * 4);
+
+    const store = openTestStore();
+    const d = {
+      ...deps('b'.repeat(64), store),
+      vault: fakeVault('page', deck.text) as unknown as FlowRoomDeps['vault'],
+      segments: {
+        async document() {
+          return {
+            fileId: 'f1',
+            contentSha: 'b'.repeat(64),
+            genre: 'slides' as const,
+            notice: null,
+            pageCount: 58,
+            pageSizes: [],
+            builds: [],
+            segments: deck.segments.map((s, i) => ({
+              id: `seg_${i}`,
+              page: s.page,
+              x0: 0,
+              y0: 0,
+              x1: 1,
+              y1: 1,
+              label: s.label,
+              source: 'geometry' as const,
+              order: i,
+              buildSteps: [],
+              candidates: [],
+            })),
+            refused: null,
+          };
+        },
+      } as unknown as FlowRoomDeps['segments'],
+    };
+
+    const { roomId } = await openOrCreateFlowRoom(d, 'f1');
+    const room = store.rooms.get(roomId)!;
+    const material = store.materials.get(room.material_id)!;
+
+    // The defect this test exists for: `textFor()` would have returned 6,000 characters.
+    expect(material.extracted_text).toBe(deck.text);
+    expect(material.extracted_text.length).toBeGreaterThan(REFERENCE_TEXT_CAP);
+    // And the outline is the deck's own labels, with page numbers, one per slide.
+    expect(material.outline.split('\n')).toHaveLength(58);
+    expect(material.outline.split('\n')[13]).toBe('p. 14 — Lecture topic 14');
+  });
+
+  it('re-extracts and re-freezes a room whose material was truncated, once', async () => {
+    const deck = fiftyEightPages();
+    const store = openTestStore();
+    const truncating = {
+      ...deps('c'.repeat(64), store),
+      vault: fakeVault('page', capText(deck.text, REFERENCE_TEXT_CAP)) as unknown as FlowRoomDeps['vault'],
+    };
+    const { roomId } = await openOrCreateFlowRoom(truncating, 'f1');
+    const materialId = store.rooms.get(roomId)!.material_id;
+    const before = store.materials.get(materialId)!;
+    expect(before.extracted_text.length).toBeLessThanOrEqual(REFERENCE_TEXT_CAP);
+
+    // The same deck, reopened on a build that reads it whole.
+    const whole = { ...truncating, vault: fakeVault('page', deck.text) as unknown as FlowRoomDeps['vault'] };
+    const again = await openOrCreateFlowRoom(whole, 'f1');
+    expect(again.roomId).toBe(roomId);
+
+    const after = store.materials.get(materialId)!;
+    expect(after.extracted_text).toBe(deck.text);
+    // A new prefix hash, because the model is now given a different prefix.
+    expect(after.prefix_sha256).not.toBe(before.prefix_sha256);
+    expect(after.token_count).toBeGreaterThan(before.token_count);
+
+    // Idempotent: the third open changes nothing.
+    await openOrCreateFlowRoom(whole, 'f1');
+    expect(store.materials.get(materialId)!.prefix_sha256).toBe(after.prefix_sha256);
+  });
+});
 
 describe('the room behind a document', () => {
   it('creates one on the first ask and reopens the same one on the second', async () => {

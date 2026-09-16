@@ -63,6 +63,7 @@ export function materialsRepo(db: SqlDatabase): MaterialsRepo {
           .get<MaterialRow>({ f: fileId, s: sha }),
       ),
     confirmPack: (id, confirmedAt) => updateById(db, 'materials', id, { pack_confirmed_at: confirmedAt }),
+    refreeze: (id, patch) => updateById(db, 'materials', id, patch as Record<string, unknown>),
   };
 }
 

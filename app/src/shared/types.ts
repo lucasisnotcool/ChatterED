@@ -440,6 +440,13 @@ export interface CreateSessionInput {
    * so the agents know which module they are in (issue #22 decision 5).
    */
   topic?: { name: string; fileNames: string[] };
+  /**
+   * The deck's table of contents — segment labels with their page numbers, one per line
+   * (migration 013). Frozen on the material and emitted into the prefix, so the agents can say
+   * *where* a thing sits and a whole-deck question has headings to answer from. Omitted for
+   * pasted text, which has no pages to outline.
+   */
+  outline?: string;
 }
 
 export interface ConceptDraft {

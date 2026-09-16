@@ -20,18 +20,22 @@
  *    elapsed while the app was shut, which is why it has to be restored rather than reset.
  */
 import { createHash } from 'node:crypto';
+import { rosterFor } from '../room/agents.js';
+import type { ConceptPack } from '../room/records.js';
 import type { CreateSessionInput, FlowRoomView, FlowThreadView, RolePairing } from '../shared/types.js';
 import { groupByAnchor } from '../shared/flowthread.js';
 import type { SegmentView } from '../shared/segment/index.js';
 import type { RoomActor } from '../room/actor.js';
 import type { FlowSession, PendingQuiz, TaughtItem } from '../room/flow.js';
+import type { MaterialRow } from '../room/records.js';
 import type { ReferenceAnswerState } from '../room/reference.js';
 import { BTW_SIDE_CHANNEL_V1 } from '../room/concepts/btw-side-channel-v1.js';
 import { pickScriptName } from '../room/llm/scripts.js';
 import type { LLMClient } from '../room/llm/types.js';
 import type { ModelPlan } from '../room/llm/models.js';
 import type { LocalStore } from './db/store.js';
-import { createSession, draftConcept } from './sessions.js';
+import { log } from './log.js';
+import { createSession, draftConcept, frozenPrefix } from './sessions.js';
 import type { SegmentService } from './vault/segments.js';
 import type { VaultService } from './vault/service.js';
 
@@ -68,14 +72,20 @@ export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): 
   const existing = deps.store.materials.forFile(fileId, sha);
   if (existing) {
     const room = deps.store.rooms.get(roomIdForMaterial(deps.store, existing.id) ?? '');
-    if (room) return { roomId: room.id, created: false };
+    if (room) {
+      await reextractIfTruncated(deps, fileId, existing, room.topic);
+      return { roomId: room.id, created: false };
+    }
   }
 
   const file = deps.vault.fileRow(fileId);
   if (!file) throw new Error('That file is not in the vault any more.');
-  // The whole document's text. It is the material the agents see; the *segment* text is what a
-  // REFERENCE call sees, and that is resolved per question in `segmentText()`.
-  const text = await deps.vault.textFor({ fileId, pageFrom: null, pageTo: null });
+  // The whole document's text, **uncapped**, plus its outline. It is the material the agents
+  // see; the *segment* text is what a page-scoped REFERENCE call sees, resolved per question in
+  // `segmentText()`. `deckText()` rather than `textFor()` is the whole of issue #35's first
+  // defect: `textFor` applies `REFERENCE_TEXT_CAP`, the per-selection cap, and on the 58-page
+  // CS4246 deck that left 5,724 of 27,948 characters here.
+  const { text, outline } = await deckMaterial(deps, fileId);
 
   const input: CreateSessionInput = {
     moduleCode: deps.vault.moduleCodeFor(file.topic_id) ?? '',
@@ -89,6 +99,7 @@ export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): 
     // range to mark any more, and 001_init.sql's CHECK on `pdf_pages` requires a `page_from`.
     pageFrom: 1,
     pageTo: Math.max(1, view.pageCount),
+    ...(outline ? { outline } : {}),
     ...(deps.vault.topicContext(file.topic_id) ? { topic: deps.vault.topicContext(file.topic_id)! } : {}),
     ...conceptFor(deps, { fileName: file.name, contentSha: sha }),
   };
@@ -121,6 +132,97 @@ export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): 
     input,
   );
   return { roomId: created.roomId, created: true };
+}
+
+// ── the deck, whole ─────────────────────────────────────────────────────────
+
+/**
+ * The material a flow room is made of: **the document's whole text and its outline**.
+ *
+ * The outline is the segmentation's own labels with their page numbers, which on a slide deck
+ * are the slide titles the pipeline lifted from the title band. When a document has no
+ * segmentation yet (the first question can arrive before the pipeline has run) it falls back to
+ * the first line of each indexed page, which is the same sentence read from the other end.
+ * Nothing here is generated: an outline is what the document says about itself.
+ */
+export async function deckMaterial(
+  deps: Pick<FlowRoomDeps, 'segments' | 'vault'>,
+  fileId: string,
+): Promise<{ text: string; outline: string; pages: number }> {
+  const [{ text, pages }, view] = await Promise.all([deps.vault.deckText(fileId), deps.segments.document(fileId)]);
+  let outline = outlineFromSegments(view.segments);
+  if (outline.length === 0) {
+    outline = (await deps.vault.pageHeads(fileId)).map((h) => outlineLine(h.page, h.head)).join('\n');
+  }
+  return { text, outline, pages };
+}
+
+/** `p. 14 — A* search`, one per segment, consecutive repeats collapsed. */
+export function outlineFromSegments(segments: readonly SegmentView[]): string {
+  const lines: string[] = [];
+  let last = '';
+  for (const s of segments) {
+    const label = s.label.trim();
+    if (label.length === 0) continue;
+    const line = outlineLine(s.page, label);
+    // A slide split into three crops keeps one line: the outline is a table of contents, not a
+    // second copy of the flow.
+    if (line === last) continue;
+    lines.push(line);
+    last = line;
+  }
+  return lines.join('\n');
+}
+
+function outlineLine(page: number | null, label: string): string {
+  return page === null ? label : `p. ${page} — ${label}`;
+}
+
+/**
+ * **The migration for rooms that already exist**, run on every reopen and a no-op after the
+ * first: a flow room created before issue #35 holds a material truncated at
+ * `REFERENCE_TEXT_CAP` and no outline. Re-extract the deck, re-freeze the prefix, and write a
+ * **new `prefix_sha256`**.
+ *
+ * Re-creating the room instead was the alternative, and it is the wrong one: the room *is* the
+ * learner's transcript, their ledger, their cards and their sitting, and none of that is about
+ * the bug. What a re-freeze costs is the cached prefix — and for a flow room on the CLI backend
+ * it costs nothing at all, because `--system-prompt` takes one string and the CLI drops cache
+ * breakpoints (`segmentation-cost.md` §1.4), so these prefixes were never cache-eligible on the
+ * path they actually run on. On the API path it is one full-price turn. That is the whole bill.
+ */
+async function reextractIfTruncated(
+  deps: FlowRoomDeps,
+  fileId: string,
+  material: MaterialRow,
+  topic: string,
+): Promise<void> {
+  // Only a whole-document material is re-extracted. A room opened on a page range asked for
+  // those pages and must keep them.
+  if (material.source_kind !== 'pdf_pages' || material.page_from !== 1) return;
+  const fresh = await deckMaterial(deps, fileId);
+  if (fresh.text.length === 0) return;
+  if (fresh.text === material.extracted_text && fresh.outline === material.outline) return;
+
+  const before = material.extracted_text.length;
+  const patched: MaterialRow = { ...material, extracted_text: fresh.text, outline: fresh.outline };
+  const pack = JSON.parse(material.concept_pack) as ConceptPack;
+  const roster = rosterFor(deps.pairing, deps.models.agent);
+  const frozen = frozenPrefix(patched, pack, roster, topic);
+  deps.store.materials.refreeze(material.id, {
+    extracted_text: fresh.text,
+    outline: fresh.outline,
+    ...frozen,
+  });
+  log().info('material.reextracted', {
+    material_id: material.id,
+    file_id: fileId,
+    chars_before: before,
+    chars_after: fresh.text.length,
+    outline_lines: fresh.outline ? fresh.outline.split('\n').length : 0,
+    pages: fresh.pages,
+    prefix_sha256: frozen.prefix_sha256.slice(0, 12),
+  });
 }
 
 /**

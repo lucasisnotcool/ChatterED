@@ -102,6 +102,12 @@ export function sharedBlock(input: SharedBlockInput): string {
     'WHAT THE LEARNER IS WORKING THROUGH (their own claims, confirmed by them)',
     elements,
     '',
+    // The deck's own headings, before its text: a 58-page slide deck's text layer is a wall of
+    // fragments with no structure, and the outline is the only thing in the prefix that says
+    // what sits where (`whole-file-context.md` §4). Emitted only when there is one, so every
+    // material created before migration 013 — and every pasted one — keeps its frozen
+    // `prefix_sha256` exactly as it was.
+    input.material.outline ? `THE OUTLINE OF THIS DOCUMENT\n${input.material.outline}\n` : '',
     'THE SLIDE, AS SELECTED BY THE LEARNER',
     input.material.extracted_text,
     // The module folder this session came out of (issue #22 decision 5). Frozen on the material

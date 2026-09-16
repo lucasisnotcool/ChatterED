@@ -36,6 +36,32 @@ export function estimateTokens(text: string): number {
   return Math.round(words * 1.3);
 }
 
+/**
+ * **The frozen half of a material, hashed.** Extracted from `createSession` because two paths
+ * now legitimately re-freeze an existing room's prefix rather than only minting a new one
+ * (issue #35): a flow material that was truncated by `REFERENCE_TEXT_CAP` and is re-extracted
+ * whole, and a concept pack that was drafted in the background and swapped in at the next turn.
+ *
+ * Re-freezing changes `prefix_sha256`, which on the API path means the room pays full price for
+ * the first turn after it and 10 % thereafter. On the **CLI path it costs nothing at all**:
+ * `segmentation-cost.md` §1.4 — `--system-prompt` takes one string and the CLI drops cache
+ * breakpoints, so a flow room's prefix was never cache-eligible there in the first place.
+ */
+export function frozenPrefix(
+  material: MaterialRow,
+  pack: ConceptPack,
+  roster: ReturnType<typeof rosterFor>,
+  topic: string,
+): { token_count: number; cache_eligible: number; prefix_sha256: string } {
+  const prefix = sharedBlock({ material, pack, topic, roster });
+  const token_count = estimateTokens(prefix);
+  return {
+    token_count,
+    cache_eligible: token_count >= CACHE_FLOOR_TOKENS ? 1 : 0,
+    prefix_sha256: createHash('sha256').update(prefix).digest('hex'),
+  };
+}
+
 export interface CreatedSession {
   roomId: string;
   sessionId: string;
@@ -99,6 +125,9 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
     padding_text: '',
     // Frozen here, before the prefix is hashed, and never recomputed (issue #22 decision 5).
     topic_context: topicContextBlock(input.topic ?? null),
+    // Frozen here for the same reason and in the same breath as `topic_context` above: it is
+    // read back by `sharedBlock()` on every turn and must be byte-identical each time.
+    outline: input.outline ?? '',
     concept_pack: stableJson(pack),
     pack_provenance: input.conceptId ? 'fixed' : 'elicited',
     pack_confirmed_at: now(),
@@ -109,10 +138,7 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
   };
 
   // Freeze and hash the prefix here, once, exactly as §E.3 prescribes.
-  const prefix = sharedBlock({ material, pack, topic: material.title, roster });
-  material.token_count = estimateTokens(prefix);
-  material.cache_eligible = material.token_count >= CACHE_FLOOR_TOKENS ? 1 : 0;
-  material.prefix_sha256 = createHash('sha256').update(prefix).digest('hex');
+  Object.assign(material, frozenPrefix(material, pack, roster, material.title));
 
   deps.store.transaction(() => {
     for (const a of roster) {

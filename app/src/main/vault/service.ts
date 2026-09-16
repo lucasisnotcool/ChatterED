@@ -32,8 +32,26 @@ import type { SettingsRepo } from '../db/repos/core.js';
 
 /** The selection cap from issue #22 decision 4. Characters, not tokens: it is a UI promise. */
 export const SELECTION_CAP = 1_500;
-/** How much extracted page text a reference may attach. ~2 slide pages of prose. */
+/**
+ * How much extracted page text a **selection** may attach. ~2 slide pages of prose.
+ *
+ * It is a cap on what the learner *chose to show the room*, not on what the room knows about
+ * the document it lives in. `docs/research/whole-file-context.md` §1: applying it to the flow
+ * room's whole-deck material left 5,724 of 27,948 characters of a 58-page deck in the prefix,
+ * which is why "summarise what I will be learning" could not be answered. `deckText()` below is
+ * the uncapped path; this one stays exactly as it was for pasted ranges and page questions.
+ */
 export const REFERENCE_TEXT_CAP = 6_000;
+/**
+ * The ceiling on a **whole document** in a frozen prefix: ~40 K tokens at the ~4 chars/token
+ * this corpus measures (`whole-file-context.md` §4). Every deck in the local corpus is far
+ * under it — the CS4246 deck is 27,948 characters, the largest is under 80 K — so in practice
+ * this is the line at which a *reading* stops being pasted into the prefix whole and becomes
+ * the outline plus FTS5 top-k pages instead. It is not a UI promise and nothing shows it.
+ */
+export const DECK_TEXT_CAP = 160_000;
+/** How many whole pages the retrieval fallback attaches for one question. */
+export const RETRIEVAL_PAGE_CAP = 8;
 /** The topic file list in the room's system context. Names only, and not many of them (§E.2). */
 export const TOPIC_FILE_LIST_CAP = 40;
 
@@ -364,6 +382,61 @@ export class VaultService {
       return capText(wanted.map((c) => c.body).join('\n\n'), REFERENCE_TEXT_CAP);
     } catch {
       return '';
+    }
+  }
+
+  /**
+   * **The whole document, uncapped.** What a flow room's material is, and what the deck scope
+   * of a question sends.
+   *
+   * Deliberately a second method rather than an option on `textFor()`: the two have different
+   * promises. `textFor` answers "the pages the learner pointed at, capped because the UI said
+   * it would be"; this answers "this document", and the only cap on it is the prefix ceiling
+   * above. One helper with a flag is how the cap ended up on the whole deck in the first place.
+   */
+  async deckText(fileId: string): Promise<{ text: string; pages: number; truncated: boolean }> {
+    const chunks = await this.#chunks(fileId);
+    const text = chunks.map((c) => c.body).join('\n\n');
+    const capped = capText(text, DECK_TEXT_CAP);
+    return { text: capped, pages: chunks.length, truncated: capped.length < text.length };
+  }
+
+  /**
+   * The outline fallback for a document with no segmentation: the first non-empty line of each
+   * page, which on a slide deck is its title. Never invented — a page whose text layer opens
+   * with body prose contributes that prose, truncated, and a page with no text contributes
+   * nothing.
+   */
+  async pageHeads(fileId: string): Promise<{ page: number | null; head: string }[]> {
+    const chunks = await this.#chunks(fileId);
+    const out: { page: number | null; head: string }[] = [];
+    for (const c of chunks) {
+      const head = c.body.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0);
+      if (head) out.push({ page: c.page, head: head.length > 80 ? `${head.slice(0, 79)}…` : head });
+    }
+    return out;
+  }
+
+  /**
+   * The retrieval fallback (`whole-file-context.md` §4): the pages of *this* file that best
+   * match the question, whole, in page order. Only reached for a document over `DECK_TEXT_CAP`;
+   * the caller logs `context.retrieval` when it is.
+   */
+  topPages(fileId: string, query: string, limit = RETRIEVAL_PAGE_CAP): { page: number | null; body: string }[] {
+    return this.#repo.text.searchInFile(fileId, query, limit).map((c) => ({ page: c.page, body: c.body }));
+  }
+
+  /** Indexed chunks if the file has been indexed; a live extraction if it has not. */
+  async #chunks(fileId: string): Promise<{ page: number | null; body: string }[]> {
+    const file = this.#repo.files.get(fileId);
+    if (!file) return [];
+    const indexed = this.#repo.text.pages(fileId, null, null);
+    if (indexed.length > 0) return indexed.map((c) => ({ page: c.page, body: c.body }));
+    try {
+      const extracted = await extractFile(this.#absPath(file), file.kind);
+      return extracted.chunks.map((c) => ({ page: c.page, body: c.body }));
+    } catch {
+      return [];
     }
   }
 
