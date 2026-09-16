@@ -1532,3 +1532,73 @@ twice, on the installed app's own `app.db` and on a copy of it, and the reason t
 driven on a seeded empty profile rather than a copy of the live one. It migrated an *empty*
 database fine, which is why the suite stayed green; `043dc8d` fixes it. 715 tests, eslint and
 svelte-check clean.
+
+## What a silence means — the #37 pass, 16 Sep 2026
+
+**The bug.** Ellie finished an ELI5 of the MDP tuple, the learner went quiet, and 45 s later she
+posted `CONTENT_FREE_NUDGES[2]`: *"Take your time. If it helps, say the bit you're sure about
+first."* Lucas: *"don't do this"*. A human teacher reads silence after an explanation as *I did
+not follow that*, and says it again differently.
+
+### A brief-vs-code conflict, resolved in favour of #32
+
+`product-design.md` §C5 requires stage 1 to be content-free **unconditionally**, and gives the
+reason: *"a nudge that supplies subject matter converts a persistence problem into a comprehension
+shortcut, which is the failure mode the whole app exists to treat."* That reason is right for the
+room §C5 was written for — the learner's job was to explain, and a silence was them not starting.
+**#32 changed the room.** The Teacher explains now, so the commonest silence in the flow is a
+learner who did not follow an explanation, and a content-free line into *that* silence is not
+neutral: it is a non-answer, which is what #37 reports. Per CLAUDE.md, the conflict is named here
+and resolved in favour of #32, and §C5 is **narrowed, not overruled** — kept whole for the one
+case its argument is actually about (the Tester is waiting, and the silence is retrieval practice).
+
+A second, smaller narrowing: `design-brief.md` §D3's *"Max never fires the timer"* now has one
+exception — stage 2 of a quiet that followed **his own** question is a hint from him. A hint from
+Ellie there would be answering Max's quiz, which is precisely what the ledger's `defended` state
+exists to prevent. §D3 was written when every silence was the learner not starting to explain.
+
+### The policy, as `silenceDecision()` in `orchestrator.ts`
+
+| Last agent turn in the thread | Stage 1 (45 s) | Stage 2 (90 s) |
+|---|---|---|
+| Teacher explanation | `reexplain_simpler` — same point one level simpler, everyday analogy or worked example, assumes less, **no question** (`rule:silence_reexplain`) | `offer_step_back` — the prerequisite, or which part lost them; one question |
+| Tester question | `content_free_nudge` — §C5 unchanged (`rule:silence_peer`) | `quiz_hint` from **Max**, narrowing the question without answering it (`rule:silence_hint`) |
+| REFERENCE card, or nothing yet | unchanged | unchanged |
+
+Stage 1 after an explanation is a **real generated turn** — `#generate` only short-circuits
+`content_free_nudge` to the pool. `classifyAgentTurn()` keys on the **move**, never the role:
+`decideTurn` demotes `challenger` to `peer` whenever the hand-off is not due (#33), so a
+dispatched probe arrives as `'peer'`. `yield`, the opener and the five fills never reclassify a
+thread. Divider copy names which fill happened, per §C5's "the divider names the cause":
+`45s quiet · Ellie tried again`, `90s quiet · Ellie offered to step back`,
+`90s quiet · Max offered a hint`; the two originals survive for the original cases.
+
+### Two bugs found on the way — stage 2 had never once run in the app
+
+1. **The dog-pile cap outranked the silence rule.** An explanation (1) plus a stage-1 fill (2)
+   sits at `MAX_CONSECUTIVE_AGENT_TURNS`, so the 90 s fire always returned silence and
+   `incomplete_scaffold` was dead code. MASG §5.4.4's cap is about agents talking over a learner
+   who is trying to speak; a fill is by construction 90 s in which they did not. The silence check
+   moved above it. §C5's own two-fires-per-round, enforced on the clock in `timer.ts`, is the
+   governing limit and is tested.
+2. **`timer.tick()` overwrote `cumulativeIdleMs`** with `now - windowStartTs`, and `arm()` runs
+   after every agent turn including a fill — so "cumulative" was only ever the current window and
+   the 90 s threshold could not be crossed, contradicting the module header's own promise. Added a
+   carried base: a fill re-arms with `keepCumulativeIdle`, because an agent speaking into a silence
+   does not end the silence. Every other caller still resets.
+
+### Verified live on the CLI backend (`claude-sonnet-5`, the same MDP slide)
+
+"Can you explain what's going on here" → "Please ELI5" → quiet. **Stage 1** came back: *"Let me try
+that a different way. Picture you're brought into a house you've never been in before, blindfolded,
+and told to find the kitchen…"* — 197 words, notation dropped entirely, an everyday analogy, and it
+ends on a full stop. **Stage 2**: *"Would it help to back up to the very start — what a 'state' even
+is — or is it the not-knowing-the-rules part (T and R being hidden) that's the sticking point?"* —
+32 words, one question, two concrete options. Before, both were the fixed pool line.
+
+**Not verified / noted.** The run went through `buildGroupContext` + `ClaudeCliClient` headless, not
+the Electron GUI (another track was reinstalling the app); the timer, the rules and the divider copy
+are covered by four fake-clock actor tests instead. The stage-1 reply contains two *quoted*
+rhetorical question marks inside the analogy ("how good is it if I stick to always turning left?")
+— it asks the learner nothing and ends on a full stop, but a naive `?` count reads 2. 729 tests,
+typecheck and lint clean.
