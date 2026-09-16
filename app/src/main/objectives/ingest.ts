@@ -45,7 +45,7 @@ import { repairTree, type RawObjective } from './repair.js';
  * Half the cache key, alongside `content_sha` — a cached tree from an older prompt is
  * regenerated on next open rather than silently kept.
  */
-export const OBJECTIVES_PROMPT_VERSION = 1;
+export const OBJECTIVES_PROMPT_VERSION = 2;
 
 /** §3's note for a deck the scripted backend has no fixture for. */
 export const NEEDS_LIVE_BACKEND = 'needs a live backend';
@@ -112,6 +112,13 @@ const TREE_SCHEMA: Record<string, unknown> = {
             items: { type: 'string' },
             description: 'Keys of the prerequisites this objective needs. Must not form a cycle.',
           },
+          required_by_keys: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'ON A PREREQUISITE ONLY, and required there: the keys of the objectives that cannot be ' +
+              'demonstrated without it. At least one; a prerequisite nothing needs is not a prerequisite.',
+          },
         },
       },
     },
@@ -130,9 +137,12 @@ const INGEST_SYSTEM = [
   '  Never invent a page, and never point at a page that does not exist.',
   '- **Prerequisites are the interesting part.** Name the knowledge this deck *assumes without',
   '  teaching* — the thing it uses on a slide as though the reader already has it. Give those',
-  '  `kind: "prerequisite"`, an EMPTY `refs`, and attach them with `requires_keys` to the',
-  '  objectives that need them. A student who cannot state the prerequisite cannot demonstrate',
-  '  the objective, and this is the part of the tree the deck itself will not tell them.',
+  '  `kind: "prerequisite"` and an EMPTY `refs`.',
+  '- **Every prerequisite must say what needs it**, in its own `required_by_keys`: the keys of the',
+  '  objectives that cannot be demonstrated without it. A prerequisite nothing needs is not a',
+  '  prerequisite, and one that names nothing is shown to the student in a list of its own with no',
+  '  explanation of why it is there. This is the part of the tree the deck itself will not tell',
+  '  them, so it is the part worth getting right.',
   '- `requires_keys` must be acyclic and `parent_key` at most three levels deep.',
   '- `quiz_seeds` are stems a tester would actually say out loud. Never a yes/no question, never',
   '  one that contains its own answer.',
@@ -276,6 +286,7 @@ export async function ensureTree(deps: IngestDeps, input: IngestInput, opts: { f
         cycles_cut: notes.cyclesCut,
         depth_clamped: notes.depthClamped,
         seeded_quiz: notes.seededQuiz,
+        orphan_prerequisites: notes.orphanPrerequisites,
       },
     });
     if (notes.kept < MIN_OBJECTIVES) {

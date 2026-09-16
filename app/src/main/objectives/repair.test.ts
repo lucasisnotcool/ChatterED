@@ -178,3 +178,50 @@ describe('the quiz seeds', () => {
     expect(objectives[0]!.quizSeeds).toEqual(['1', '2', '3']);
   });
 });
+
+/**
+ * The 16 Sep live run on the 58-page CS4246 deck: five prerequisites, every one correctly marked
+ * `assumedByDeck`, and **not one of them attached** — `requires_keys` was empty on all twenty
+ * objectives, so §5's "prerequisites shown under the objective that requires them" had nothing to
+ * hang them on. Asking for the edge on the prerequisite itself is the fix; accepting both
+ * directions is what makes it a fix rather than a swap.
+ */
+describe('required_by, the edge written from the other end', () => {
+  it('folds a prerequisite\u2019s `required_by_keys` into the requirer\u2019s `requires`', () => {
+    const { objectives } = repair([
+      node({ key: 'obj', title: 'The objective', refs: [{ page: 4 }] }),
+      node({ key: 'pre', title: 'The assumption', kind: 'prerequisite', refs: [], required_by_keys: ['obj'] }),
+    ]);
+    const objective = objectives.find((o) => o.title === 'The objective')!;
+    const prereq = objectives.find((o) => o.title === 'The assumption')!;
+    expect(objective.requires).toEqual([prereq.id]);
+    // And it therefore sorts in front of what needs it, rather than to the end of the deck.
+    expect(prereq.order).toBeLessThan(objective.order);
+  });
+
+  it('does not duplicate an edge the model wrote in both directions', () => {
+    const { objectives } = repair([
+      node({ key: 'obj', title: 'The objective', requires_keys: ['pre'] }),
+      node({ key: 'pre', title: 'The assumption', kind: 'prerequisite', refs: [], required_by_keys: ['obj'] }),
+    ]);
+    expect(objectives.find((o) => o.title === 'The objective')!.requires).toHaveLength(1);
+  });
+
+  it('counts a prerequisite nothing requires rather than inventing a home for it', () => {
+    const { notes } = repair([
+      node({ key: 'obj', title: 'The objective' }),
+      node({ key: 'pre', title: 'The assumption', kind: 'prerequisite', refs: [] }),
+    ]);
+    expect(notes.orphanPrerequisites).toBe(1);
+    expect(notes.assumed).toBe(1);
+  });
+
+  it('drops a `required_by` that names nothing', () => {
+    const { objectives, notes } = repair([
+      node({ key: 'pre', title: 'The assumption', kind: 'prerequisite', refs: [], required_by_keys: ['ghost'] }),
+      node({ key: 'obj', title: 'The objective' }),
+    ]);
+    expect(notes.danglingRequires).toBe(1);
+    expect(objectives.every((o) => o.requires.length === 0)).toBe(true);
+  });
+});

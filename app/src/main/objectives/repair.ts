@@ -46,6 +46,18 @@ export interface RawObjective {
   refs?: unknown;
   parent_key?: unknown;
   requires_keys?: unknown;
+  /**
+   * The other direction of the same edge, asked of a **prerequisite**: which objectives need it.
+   *
+   * Both directions are accepted because the live run showed the model uses one and not the
+   * other. On the 58-page CS4246 deck it returned five prerequisites, every one correctly marked
+   * `assumedByDeck`, and attached **none** of them — `requires_keys` was empty on every
+   * objective, so §5's "prerequisites shown under the objective that requires them" had nothing
+   * to hang them on and all five sorted to the bottom of the deck as roots. Asking for the edge
+   * where the model is already thinking about it — on the node it is inventing — is the fix that
+   * does not depend on it remembering to go back and edit an objective it wrote twenty nodes ago.
+   */
+  required_by_keys?: unknown;
 }
 
 export interface RepairNotes {
@@ -62,6 +74,8 @@ export interface RepairNotes {
   cyclesCut: number;
   depthClamped: number;
   seededQuiz: number;
+  /** Prerequisites no objective requires — they render as roots, which §5 does not want. */
+  orphanPrerequisites: number;
 }
 
 export interface RepairResult {
@@ -144,6 +158,7 @@ export function repairTree(input: {
     cyclesCut: 0,
     depthClamped: 0,
     seededQuiz: 0,
+    orphanPrerequisites: 0,
   };
 
   // ── pass 1: the nodes themselves, and the key → id map the edges are resolved through ──
@@ -151,6 +166,7 @@ export function repairTree(input: {
     key: string;
     parentKey: string | null;
     requiresKeys: string[];
+    requiredByKeys: string[];
   }
   const drafts: Draft[] = [];
   const idByKey = new Map<string, string>();
@@ -197,6 +213,7 @@ export function repairTree(input: {
       key,
       parentKey: text(raw.parent_key) || null,
       requiresKeys: strings(raw.requires_keys, 8),
+      requiredByKeys: strings(raw.required_by_keys, 8),
     });
   }
 
@@ -228,6 +245,20 @@ export function repairTree(input: {
         continue;
       }
       if (!draft.requires.includes(id)) draft.requires.push(id);
+    }
+  }
+
+  // `required_by` is the same edge written from the other end: fold it into the requirer's
+  // `requires`, which is the only direction §2 stores.
+  for (const draft of drafts) {
+    for (const key of draft.requiredByKeys) {
+      const requirerId = idByKey.get(key);
+      const requirer = requirerId === undefined ? undefined : byId.get(requirerId);
+      if (!requirer || requirer.id === draft.id) {
+        notes.danglingRequires += 1;
+        continue;
+      }
+      if (!requirer.requires.includes(draft.id)) requirer.requires.push(draft.id);
     }
   }
 
@@ -266,10 +297,16 @@ export function repairTree(input: {
     draft.order = i + 1;
   });
 
-  const objectives: LearningObjective[] = ordered.map(({ key: _k, parentKey: _p, requiresKeys: _r, ...rest }) => rest);
+  const objectives: LearningObjective[] = ordered.map(
+    ({ key: _k, parentKey: _p, requiresKeys: _r, requiredByKeys: _b, ...rest }) => rest,
+  );
   notes.kept = objectives.length;
   notes.prerequisites = objectives.filter((o) => o.kind === 'prerequisite').length;
   notes.assumed = objectives.filter((o) => o.assumedByDeck).length;
+  // A prerequisite nothing requires is a root with an "assumed by the deck" tag and no home.
+  // Counted rather than repaired: which objective needs it is not something this file can know.
+  const required = new Set(objectives.flatMap((o) => o.requires));
+  notes.orphanPrerequisites = objectives.filter((o) => o.kind === 'prerequisite' && !required.has(o.id)).length;
   return { objectives, notes };
 }
 
