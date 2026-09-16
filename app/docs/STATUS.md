@@ -1783,3 +1783,108 @@ was never about. The room belongs to a file now and is dropped when the file cha
   behind the media query, neither was watched with it on.
 - **A tree deeper or wider than the fixture's** (10 nodes, 3 levels): the ingest may return 20,
   and only `visibleRows` and the ellipsis rule say what that looks like.
+
+## The learning-objective tree — the main-process half of #38 (16 Sep, `learning-objectives.md`)
+
+**One tree per file, ingested once by Sonnet, and it *is* the concept pack.** Migration 016 adds
+`learning_trees` (the objectives as json beside the cache key — `content_sha` +
+`OBJECTIVES_PROMPT_VERSION` — the status, the model) and `learning_objective_states` (level 0–3,
+the learner's own message ids as evidence, `last_moved_at`, `taught_at`), plus
+`messages.objective_id` for §5's click path. Progress is keyed **per file**, not per session:
+the learner who explained something on Tuesday has explained it on Thursday too, so the ledger
+stays session-scoped and authoritative about evidence and these tables are its file-scoped
+projection.
+
+### How the pack and the tree were reconciled
+
+**The tree is the pack** (`src/main/objectives/pack.ts`). One element per objective,
+`element.id` = `objective.id`, and then nothing else changes: `applyLedgerRules` runs unmodified,
+`sharedBlock` carries the objectives where the claims used to be, the rail renders, the Tester's
+target selection works, and the states are a mirror of ledger rows that already carry the right
+ids. The objective's own `criteria` land at **level 2** — the rung the panel calls *online* —
+because that is the rung §2 says the two were always the same idea about. `ensurePack` therefore
+stops drafting for any deck whose tree is merely *coming*; a second Sonnet call producing five
+claims with different ids would only be thrown away.
+
+The limitation, stated rather than hidden: **a deck with a committed fixture pack keeps it**, so
+in scripted mode on the Critique 1 deck the panel renders the committed fixture *tree* (6
+objectives, 2 assumed prerequisites, real pages) while the ledger scores the 3-claim fixture
+*pack*, and the two do not move each other. Rewriting the demo's pack to match would break
+`script.critique1.ts`'s filmed take six days before A1 is due.
+
+### Driven live on the installed build (builds 137–139, CLI backend, CDP :9411 on a copied profile)
+
+`Lecture-complex v4.0.pdf`, 58 pages, 28,550 characters, `content_sha 2b02e77cee07`.
+
+| What | Measured |
+|---|---|
+| `segments:get` → `pending` on the row | immediate; the ingest is fired and never awaited |
+| tree ready | **166.5 s**, 20 objectives, 5 prerequisites, all 5 `assumedByDeck`, **zero repairs** (no cycles, no dangling edges, no depth clamp, no seeded quiz stem) |
+| Ask from a node | 4.3 s, `p. 13 + outline`, and every message in that thread carries `objective_id` — the question, the REFERENCE answer, the learner's explanation and Ellie's reply |
+| the node goes online | the learner's own explanation → `objectives.state` level **2** with one evidence message id, ~15 s after Ellie's reply; another node's level-3 proposal was stopped by the ledger's own `defended_requires_challenge` gate |
+| `pack.ready` | 20 elements, "Real World Planning and Acting" — the tree, swapped in as the pack |
+| **Teach me this** | 10.1 s, anchored to the deck (the prerequisite has no requirer with a ref), and Ellie opened with *"This isn't covered in the deck itself — the slide assumes you already know it"*; `taught_at` written and pushed as `objectives.state` |
+| the Tester | the hand-off fired by rule on the fourth learner turn; Max asked *"Take the Unload action… walk me through exactly which fluents change"* — which is quizSeed 2 of that objective, *"Explain how add and delete lists change a state when an action executes"*, instantiated on the deck's own example |
+| Reset | 3 ms, 3 states cleared, 20 ledger rows zeroed, taught set dropped, **tree intact** (20 objectives, still `ready`), one `objectives.reset` line |
+
+The titles it produced, in deck order: *Encode a planning domain and problem in PDDL/STRIPS ·
+Summarize the major classical planning solution paradigms · Explain how heuristics differ between
+search-based and inference-based planning · Derive admissible heuristics by relaxing preconditions
+or delete effects · Describe domain-independent pruning techniques · Apply state abstraction ·
+Estimate plan cost via goal decomposition using max and sum heuristics · Explain high-level actions
+and their recursive refinement · Compare non-hierarchical and HTN planner complexity · Define
+reachable sets of HLAs and the downward refinement property · Interpret possibly-add/delete
+notation · Use optimistic and pessimistic reachable sets · Explain LLM-guided generation of PDDL ·
+Explain hybrid LLM subgoal decomposition with MCTS · Describe LLM-based heuristic synthesis*, and
+five prerequisites the deck never teaches: *A\* and greedy best-first search · STRIPS-style state
+representation · SAT and CSP · Monte Carlo Tree Search · large language models and
+chain-of-thought prompting*.
+
+### Two things only running it could have found
+
+1. **The child was inheriting a Claude Code session.** Two ingests produced *nothing at all* —
+   121 s under the old ceiling, 301 s under a raised one, with no `llm.first_token` either time.
+   The stream said why: the child opened a `thinking` block and stayed in it, past 2,800 estimated
+   thinking tokens with the answer never begun. ChatterED had been started from a terminal that
+   was itself inside Claude Code, so `spawn` handed `claude` that session's `CLAUDE_EFFORT`,
+   `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID` and `MAX_THINKING_TOKENS=31999`. The same prompt with
+   those dropped and thinking pinned off: **49.7 s, 6,205 output tokens**. `cliEnv()` now drops
+   the variables that describe another session before every child — a denylist, not a `CLAUDE_*`
+   sweep, because `CLAUDE_CONFIG_DIR` is where the login lives — and sets `MAX_THINKING_TOKENS=0`
+   on schema-bound calls only. **An app whose behaviour depends on how it was launched is not
+   testable**, and that is the part of this worth keeping.
+2. **The model would not attach a prerequisite.** The first tree was right about almost
+   everything — 20 objectives in deck order, 5 prerequisites, every one correctly marked as
+   assumed, zero repairs — and **not one prerequisite was attached to anything**, so all five
+   sorted to the bottom of the panel as roots with no answer to *assumed by which slide, for
+   what*. `requires_keys` lives on the objective, so honouring it means inventing a prerequisite
+   at node 17 and going back to edit node 4; it came back empty twenty times out of twenty.
+   `required_by_keys` asks for the same edge on the node the model is writing at the time — *what
+   cannot be demonstrated without this?* — and `repairTree` folds it into the requirer's
+   `requires`. `OBJECTIVES_PROMPT_VERSION` → 2, which is half the cache key, so the deck re-read
+   itself on the next open.
+
+   **Re-run under version 2, on the same deck: 139.6 s, 19 objectives, 5 prerequisites, 12
+   `requires` edges, `orphan_prerequisites: 0`, and still zero repairs.** The prerequisites now
+   sit at orders 1, 3, 6, 14 and 16 — in front of what needs them — and say what that is:
+   *STRIPS-style precondition/effect representation* under PDDL modelling and the two HLA
+   objectives, *A\* and greedy best-first* under the admissible-heuristics and pruning
+   objectives, *SAT/CNF and CSP* under the two "solution approaches" objectives, *what an LLM is*
+   under the four LLM-planning objectives, and *Monte Carlo Tree Search* under the hybrid
+   LLM + MCTS one.
+
+Also raised: `CLI_TIMEOUT_MS` per scope (`ingest` 300 s). The 120 s ceiling was written for a
+turn, where the longest measured reply is ~11 s; latency here is output tokens, and only calls
+that are both deferred and pre-emptible are allowed a longer one.
+
+### Not verified
+
+- **Settings ▸ Tester pacing does not reach an open room.** `rebindActor()` pushes backend,
+  models, roster, mode and reply speed, but not `flowProfile`, so switching to Demo mid-sitting
+  did nothing and the hand-off above was reached on the **shipped** profile instead (four learner
+  turns, two concepts taught more than three minutes earlier). Pre-existing, not #38's, and worth
+  its own issue.
+- **Regenerate** (`objectives:regenerate`) and the `failed` → retry path are unit-tested only;
+  live, only the automatic re-ingest after a failure was exercised.
+- **A deck over `DECK_TEXT_CAP`**, and the scripted fixture tree on screen — the fixture path is
+  tested and was not opened in this run.
