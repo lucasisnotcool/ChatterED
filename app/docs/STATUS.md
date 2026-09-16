@@ -1602,3 +1602,112 @@ are covered by four fake-clock actor tests instead. The stage-1 reply contains t
 rhetorical question marks inside the analogy ("how good is it if I stick to always turning left?")
 — it asks the learner nothing and ends on a full stop, but a naive `?` count reads 2. 729 tests,
 typecheck and lint clean.
+
+---
+
+## Whole-file context: the deck reaches the model, and a question has a scope (16 Sep, issue #35)
+
+`docs/research/whole-file-context.md` analysed the owner's report — *"does not have context from
+whole file"* on build 102, the 58-page CS4246 `Lecture-complex v4.0.pdf`. Six recommendations;
+this is the main-process half of all six, verified on installed **build 126** (`3801b7b`), CLI
+backend, the real vault and the real profile, driven over CDP.
+
+### What was wrong, confirmed against the live database
+
+A copy of the 149 MB profile says it plainly. Every one of the five rooms:
+
+| room | deck | `pack_provenance` | material | pack mentions Hessian |
+|---|---|---|---|---|
+| `room_6a9609d5c6fb` | Lecture-complex v4.0 | fixed | **5,724** chars | **yes** |
+| `room_a9491ae51f13` | Lecture-complex v4.0 | fixed | 5,724 | yes |
+| `room_a0e04f3f36cd` | Lecture-mdp | fixed | 5,424 | yes |
+| `room_6c3fb56dfc20` | Lecture-rl-modelfree | fixed | 5,517 | yes |
+| `room_ca5d49d1cec1` | 3772318.3790298 | fixed | 5,675 | yes |
+
+The deck is **27,948** characters. `REFERENCE_TEXT_CAP` — the per-*selection* cap — was being
+applied to the whole-deck material, so the agents, the frozen prefix and the concept ingest saw
+the first fifth. And `packFor()`'s base was `PSD_HESSIAN_CONVEXITY_V1` whatever the deck was, so
+every pack carried Hessian criteria, misconceptions and probe seeds under this deck's labels.
+
+### What it does now
+
+- **The material is the deck.** `VaultService.deckText()`, uncapped; `textFor()` unchanged for
+  selections. Migration 013 adds `materials.outline` — the segmentation's labels with page
+  numbers. A room whose material was truncated is **re-extracted and re-frozen on reopen**
+  (`material.reextracted`, a new `prefix_sha256`), not re-created: the room is the learner's
+  transcript and ledger, and on the CLI path the prefix was never cache-eligible anyway
+  (`segmentation-cost.md` §1.4), so the re-freeze costs nothing there.
+- **`pack_provenance = 'pending'`** (migration 014). A non-fixture deck opens with no pack, the
+  rail empty; `src/main/pack.ts` drafts in the background and swaps it in at the next turn, with
+  the ledger rows replaced and `rooms.topic` moved with the title.
+- **Scope** (`src/shared/scope.ts`): `guessScope()`, `DECK_ANCHOR_ID`, `scopeShownFor()`,
+  `flow:askDeck`, `MessageView.scopeShown` (migration 015). Deck scope sends the outline and the
+  whole document; segment scope sends the page and the outline as a *locator*. Over
+  `DECK_TEXT_CAP` it falls back to the outline plus FTS5 top-k pages, logged as
+  `context.retrieval`. `context.built {scope, chars, pages, strategy}` on both paths.
+- **One `claude` at a time** (`cliQueue`), priority by scope, `llm.queued_ms`, one retry on the
+  empty `exited 1`, pre-emption of the concept draft for a learner-facing call.
+
+### Verified live, build 126
+
+**(i) The deck question.** `flow:askDeck("Can you summarise what I will be learning")` →
+`anchorId: "deck"`, first thread in `flow.threads`, `scopeShown: "whole deck"`. The answer names,
+from across all 58 pages: *STRIPS/PDDL*, the *air-cargo transport domain*, *forward and backward
+search*, *SAT-based planning*, *planning graphs*, *situation calculus*, *CSP formulation*,
+*partial-order planning*, *admissible, domain-independent and domain-specific heuristics*,
+*ignoring preconditions*, *ignoring delete effects*, the *8-puzzle*, the *Fast Forward heuristic*
+and *domain-independent pruning*. `context.built {scope: deck, chars: 30736, pages: 58, strategy:
+whole}`.
+
+**(ii) The material row.** `mat_5810aa69b513`, `Lecture-complex v4.0.pdf`: **28,062 characters**,
+59 outline lines, `pack_provenance = elicited`. Was 5,724.
+
+**(iii) The existing room.** Opening `room_6a9609d5c6fb` logged `pack.demoted` (was
+`elicited-0cdc3ac4` under `provenance = fixed`) then `pack.draft.start` → `pack.ready` in
+**32.9 s**, four elements, `elicited-65d564ef`: *Domain and problem in PDDL · Planning is
+state-space search · Heuristics estimate cost to goal · Relaxation yields admissible heuristics*.
+`grep -i hessian` over its pack: **0**. `room_a0e04f3f36cd` repaired the same way in passing.
+
+**(iv) Latency, measured.**
+
+| | before | after |
+|---|---|---|
+| first Ask on a new deck | **40.0 s** (37.0 s ingest + 3.0 s reference, 16 Sep 07:08:27→07:09:07) | **3.7 s** (`Lecture-csp.pdf`, 56 pages, `scopeShown: "p. 8 + outline"`) |
+| ledger, generation | 17.2 s / 9.8 s, 1,523 / 858 output tokens, 15,090 system chars | **5.3–6.5 s**, 193–302 output tokens, ~3.5 K system chars |
+| reply, queue wait | n/a (both calls raced, and both died) | **0, 1, 0, 0, 0 ms** |
+| turn total, 5 consecutive | 5.7 / 30.4 / 73.4 / 27.0 / 49.6 s | **7.9 / 7.5 / 10.8 / 9.3 / 10.0 s** |
+
+Five consecutive turns, `parse_ok: true` on every ledger call, **no `turn.failed`, and no
+`exited 1: no output`** — the 05:10:48 failure shape did not recur.
+
+### Three things the live runs found that reasoning had not
+
+1. **Migration 014 could not run on a populated database.** `DROP TABLE materials` with
+   `rooms.material_id REFERENCES materials(id)` and enforcement on. No test could have caught it:
+   a test database is migrated before it has a row. `runMigrations` now brackets each file with
+   `PRAGMA foreign_keys = OFF` and checks `foreign_key_check` before committing.
+2. **Serialising alone made the learner wait.** The background draft took the lane 29 ms before
+   the learner's own question and held it 70.6 s; the ledger, dispatched first every turn, cost
+   the reply 23.2 / 56.7 / 17.8 / 28.4 s. Fixed with a 1.2 s grace window for every call nobody
+   is watching for, plus pre-emption of the draft alone.
+3. **Haiku 4.5 is slower at these two calls, not faster.** Ingest 70.6 s / 7,399 output tokens
+   against Sonnet's 37.0 s / 4,053; ledger 27–65 s of generation against 9.8–17.2 s. It reasons
+   its way to a schema-bound object where Sonnet writes it. `ModelPlan.fast` stays as the seam
+   and resolves to the orchestrator model.
+
+### Not verified, and one thing seen in passing
+
+- **The renderer half** — the "Ask about this deck" line, the scope chip and the footer — is the
+  parallel track's (`5b67ac6`); the contract it was built against is the block at the top of
+  `src/shared/scope.ts`.
+- **`flow:askDeck` on a document with no segmentation** falls back to `pageHeads()` for the
+  outline; only the segmented path was exercised live.
+- **The retrieval fallback** over `DECK_TEXT_CAP` is unit-tested only. Nothing in the local corpus
+  is large enough to trigger it.
+- **A vault rescan orphans a room.** `materials.forFile(fileId, sha)` keys on the vault file id
+  *and* the content sha, and a rescan re-mints file ids: `room_6a9609d5c6fb` and
+  `room_a9491ae51f13` both hold `file_id = f_24e96dfdd153` for bytes the vault now calls
+  `f_31d6e6512453`, so asking a question on that deck made a **third** room rather than reopening
+  either. Their packs are repaired on reopen, but their material cannot be re-extracted — the
+  vault no longer knows the file under that id. Worth its own issue: either the file id should
+  survive a rescan, or the room should key on the content sha alone.
