@@ -1888,3 +1888,81 @@ that are both deferred and pre-emptible are allowed a longer one.
   live, only the automatic re-ingest after a failure was exercised.
 - **A deck over `DECK_TEXT_CAP`**, and the scripted fixture tree on screen — the fixture path is
   tested and was not opened in this run.
+
+---
+
+## The cost counter — app, file and thread, 16 Sep 2026
+
+**Real.** `llm_usage` (migration 017) holds one row per model call: turn, room, file, anchor,
+scope, model, backend, the four token counts, both money columns, duration, and whether the row
+was recorded live or reconstructed. Written from `src/main/cost/client.ts`, a decorator applied
+in `backend.createClient()` next to `loggedClient`, so a call site cannot forget to be counted —
+including the two that produce no message at all (the orchestrator decision that chooses silence,
+and the ledger update) and the two that run before a room exists (the concept ingest and the
+objectives tree).
+
+| Piece | Where | Notes |
+|---|---|---|
+| The wire shape | `src/shared/cost.ts` | `CostTokens`, `CostSummary`, `CostCallView`, `CostUpdate`, `CliWindowBurn`, and `usdLabel()` |
+| Rate card | `src/main/cost/rates.ts` | `claude-api` skill table, **cached 2026-06-24**; cache write 1.25× input, cache read 0.1×; JSON override in settings (`cost_rate_card`) |
+| The ledger and the three levels | `src/main/cost/ledger.ts` | One query at three widths — app, `+ file_id`, `+ anchor_id` |
+| Backfill | `src/main/cost/backfill.ts` | `messages.usage`, `turn_decisions.usage`, `whispers.usage`; deterministic ids, so it is idempotent and runs at every launch |
+| CSV export | `src/main/cost/export.ts` | `~/Documents/ChatterED/usage-<date>.csv`, every field quoted, no bodies |
+| IPC | `cost:summary`, `cost:recent`, `cost:export`, `cost:updated` | Three reads and a push; the ledger is written only by the decorator |
+
+**Tokens are the fact; dollars are a model.** On the default backend the learner is on their own
+Claude Code subscription and is **not billed per token**, so `CostMode` rides the wire and
+`usdLabel()` returns **"API-equivalent"** there and "estimated" only on the API path. The CLI's
+own `total_cost_usd` is stored beside the estimate as **"CLI-reported"** and the two are never
+added.
+
+**The 5-hour window, because that is what actually bites.** `cliWindow` rolls from *now* rather
+than from a fixed boundary: Claude Code's reset schedule is not visible from here, and a guess
+presented as a fact is worse than a narrower true statement. It counts CLI calls only and is
+absent on an API-only or scripted install.
+
+### Verified on the installed build's own database, 16 Sep 2026
+
+`~/Library/Application Support/ChatterED/app.db` (151 MB) copied to a scratchpad, then opened by
+a **real Electron main process** built from `6cb06ed` with `--user-data-dir` pointed at the copy.
+
+| Check | Result |
+|---|---|
+| Migration 017 on a populated database | `pragma user_version` 16 → **17**, no dangling references |
+| Backfill, first run | **43 rows** — 30 `group`, 13 `reference` — 468,924 tokens, **$0.59 API-equivalent**, in 5 ms |
+| Backfill, second run | **0 inserted**, 43 candidates — idempotent |
+| One live "+ Ask here" on `CS4246/Week 4/Lecture-mdp.pdf`, p. 10 | one new row; `cost.updated` fired **once** per registered listener, carrying the delta and `sessionTotals` |
+| `cost:summary` at the three levels | app 43→44, file 10→11, thread 2→3 — **+1 each**, and `thread ≤ file ≤ app` on calls, tokens and dollars |
+| `cost:export` | `~/Documents/ChatterED/usage-2026-09-16.csv`, 44 rows, 9,432 bytes, **0 matches** for any word from the transcript |
+
+**Two findings the live run produced, both against what the research said.**
+
+1. **The CLI path caches, and cache is almost the whole of it.** `segmentation-cost.md` §1.4
+   records that `claude-cli.ts` drops this app's cache breakpoints, which is true and was read as
+   "no caching there". Across the 43 backfilled calls: **86 plain input tokens, 166,555 cache
+   creation, 288,291 cache read.** Claude Code caches around the prompt it builds regardless. The
+   1.25×/0.1× multipliers are therefore load-bearing — pricing those tokens at the input rate
+   would over-state the estimate by roughly 3×.
+2. **§UNVERIFIED 6's ~1.7× is systematic, not a one-off.** That entry has the CLI's own figure at
+   $0.0057 against $0.0033 from the rate card for one Haiku image call. Two fresh calls on
+   different models and prompt sizes: a Haiku call reported $0.002303 against $0.001322
+   (**1.74×**), and a live Sonnet agent turn reported $0.107941 against $0.066662 (**1.62×**). The
+   ratio still has no explanation from this side — the likeliest candidates are the ~6,680-token
+   Claude Code system prompt and the auxiliary Haiku calls it makes alongside a request — which is
+   exactly why both numbers are stored and neither is presented as the truth.
+
+### Not verified, and one real gap
+
+- **A call that throws is not recorded at all.** The CLI kills its child before a `result`
+  message and the API stream never reaches `finalMessage()`, so tokens spent on a failed turn are
+  invisible here. **Every summary is a floor, not a total.**
+- **What the backfill cannot reach.** The ledger call, the concept ingest and the objectives
+  ingest have never written their usage anywhere, so history for those three is gone — and on the
+  CLI they are among the largest calls the app makes. `CostSummary.backfilledCalls` is on the wire
+  so a panel can say how much of its own history it is inferring. `main.log` is deliberately not a
+  source: it rotates, so its coverage would depend on how chatty the last fortnight was.
+- **`summary` scope** is in `CostScope` and reserved; nothing writes it yet.
+- **The rate-card settings override** is parsed and unit-tested; no UI writes that row.
+- **The API path** (`anthropic`) has not been exercised live — every call on this Mac goes
+  through the CLI. The usage shape it persists is the same four fields, and `AnthropicClient`
+  needed no change.
