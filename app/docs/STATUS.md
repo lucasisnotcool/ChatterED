@@ -1966,3 +1966,59 @@ a **real Electron main process** built from `6cb06ed` with `--user-data-dir` poi
 - **The API path** (`anthropic`) has not been exercised live — every call on this Mac goes
   through the CLI. The usage shape it persists is the same four fields, and `AnthropicClient`
   needed no change.
+
+---
+
+## The renderer for #41: Teacher-first Ask, the artefact, the markdown subset, the counters
+
+Issue #41, renderer half (`docs/research/conversation-refinement.md` is the brief; the main-process
+half is the other two tracks). Lucas's diagnosis was *"it seems like reference is getting in the
+way"*, and his suggested workflow was three steps: live conversation first, an **artefact on a
+button** that summarises what the thread taught, and that artefact's conversation **retrievable and
+continuable**.
+
+| What | Where |
+|---|---|
+| **The markdown subset** | `renderer/lib/aitext.ts` + `.test.ts` (24 tests). A closed set — paragraphs, `**bold**`, `*italics*`, numbered lists (keeping the number they start at), bulleted lists, and the inline/display maths that predates it. Everything else stays literal escaped text: headings, links, quotes, code fences, tables, raw HTML. Emphasis is applied **after** escaping and only to the non-maths spans, so the only angle brackets in the output are the seven tags the file writes plus KaTeX's own; a test asserts exactly that against hostile input, and another asserts the `*` in `$a * b$` never reaches the emphasis pass. `plainText()` de-markers the collapsed one-liner. |
+| **Teacher-first Ask** | `store.askHere/askDeck` set `lastSendAnchor`, which is what `thinkingAnchor()` reads — an Ask is now followed by a held turn, so the thread that asked is the thread that shows *Ellie is typing…*. `AskHereLine` says *"Asking Ellie…"* (named off `room.agents`) instead of *"Looking it up…"*, which described the passage lookup #41 removed. `explainBack` and the lock plumbing stay, marked vestigial, so a legacy REFERENCE card that escaped migration 019 collapses rather than throws. |
+| **The artefact** | `renderer/lib/summary.ts` + `.test.ts` (14 tests) and `components/SummaryCard.svelte`. A summarised thread renders **as its summary**, with the conversation behind *Show the conversation* — not the artefact appended under forty turns, which is the thing the learner was trying not to scroll through. `FlowThread` defines the conversation once as a snippet because it now has two homes, standalone or inside the card's disclosure with its composer. Open/closed **is** `threadCollapsed`, reusing the persistence `flow:cardState` already has rather than inventing a second truth. `rule:offer_summary`'s line renders as a one-click chip; a quiet footer action offers the same on any thread with a taught turn, so the learner need not wait for the app to volunteer. |
+| **The counters** | `renderer/lib/cost.ts` + `.test.ts` (31 tests). Thread footer, objectives-panel header (flow header when the panel is shut), and Settings ▸ Usage with by-model/scope/backend, the 5-hour window, Export CSV and a rate-card override validated before it is saved. |
+| **The drawer** | `components/DebugDrawer.svelte` — `cost:recent` as a Last-calls table above the turn log. A turn is not a call, and the row that says "9.4s, sonnet, claude-cli" cannot say what the turn cost. |
+
+**The rule the cost code exists to hold** is `shared/cost.ts` note 2, and it is not cosmetic: the
+default backend is the learner's own Claude Code subscription, nobody is billed per token, and an
+unlabelled `$0.41` in an app a cohort installs is a claim that a student owes money. Every dollar
+figure carries `≈` and, on that path, the words **API-equivalent**; the CLI's own `total_cost_usd`
+goes in the tooltip, named as its own, and is never added to the estimate. A `$0.00` gets no label
+at all — zero is zero in every billing reality, and the scripted video path is exactly that case.
+
+**Verified live over CDP** (own port 9337, own `--user-data-dir`, vault = `/Users/lohzh/ChatterED/Academia`)
+on `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`, scripted first and then `claude_cli`:
+
+| Check | Measured |
+|---|---|
+| "+ Ask here" on p. 3 | **Ellie answered directly in 4.0 s.** No REFERENCE card, no lock line, no *Explain it back* |
+| **Summarise into the document** | a `kind: 'summary'` card with `sourceThreadId`, REFERENCE-register header *"Summary · written by ChatterED from this conversation"*, in the app's UI font, under the segment, conversation collapsed |
+| **Show the conversation · 4 turns** | `flow:threadOf` returned 4 ids; the thread expanded **beneath** the card with its composer |
+| Continuing from the artefact | a reply sent from inside the disclosure landed in that same thread and Ellie answered it |
+| A live Sonnet turn asked for bold and a list | `**The file test**` rendered **bold** (weight 600) inside a real `<ol>`, italics italic, **no `**` anywhere on screen** |
+| Maths in an AI card | KaTeX in `-apple-system…`, never Computer Modern (§C4) |
+| The three counters | thread **8.3k · ≈ $0.011 API-equivalent** ≤ file **22k · ≈ $0.055** ≤ app **26k · ≈ $0.064**; all three ticked after the turn |
+| Settings ▸ Usage | all time, session, `last 5 h`, by model/scope/backend, rate card `2026-06-24`, **10-row CSV** with the full header |
+| ⌥⌘D | Last calls table: `Ledger · claude-sonnet-5 · 4.0k · ≈ $0.015 · 14739 ms` and seven more |
+
+Screenshots in the session scratchpad under `refine/`.
+
+### Not verified
+
+- **`cost.updated` has never fired.** The query side is live and the push side is not, so the
+  live tick shown above is `#recountAfterTurn`'s fallback re-ask on `turn.released`, not the
+  delta path. `applyDelta` / `updateBelongs` are unit-tested and unexercised in the app.
+- **The rate-card override does not round-trip.** The textarea validates and saves, but
+  `rateCardOverride` is not on `SettingsPatch`, so it rides as an extra key that the main process
+  ignores until that contract lands. Nothing on screen reflects a saved override yet.
+- **`cost:export`** is on the preload; whether the export above came from it or from the
+  renderer's `cost:recent` fallback was not distinguished. Both produce the same columns.
+- **The offer chip** (`rule:offer_summary`) was never seen live — no thread in the run reached the
+  rule's threshold. The chip is rendered from `byRule` and covered by a unit test only.
+- **The API path** and **a `mixed` summary** were not exercised; every call on this Mac is CLI.
