@@ -21,6 +21,19 @@ export interface WhisperContextInput {
   roster: AgentProfile[];
   pack: ConceptPack;
   maxTokens?: number;
+  /**
+   * The segment the popover is anchored to (`flow-build-plan.md` §3.5).
+   *
+   * **The same anchored context the REFERENCE call gets**, and for the same reason: a private
+   * question about the lower half of slide 3 is answerable only by something that has read
+   * slide 3. `flowroom.segmentText()` resolves it in the main process — the page's text, not
+   * the rectangle's, which is the approximation `SEGMENTS.md` §2 forces and STATUS.md records.
+   *
+   * It goes in `messages`, never in `system`: system[0] is byte-identical across agents and
+   * frozen at pack confirmation (architecture-mac.md §E.3), and a per-segment block there would
+   * invalidate every cached prefix in the room on every ⌘K.
+   */
+  segment?: { label: string; page: number | null; text: string } | null;
 }
 
 export function buildWhisperContext(store: WhisperStore, input: WhisperContextInput): LlmRequest {
@@ -54,6 +67,17 @@ export function buildWhisperContext(store: WhisperStore, input: WhisperContextIn
       content: `THE GROUP CONVERSATION SO FAR (read-only, up to the moment this aside began)\n\n${groupPrefix}`,
     },
   ];
+
+  if (input.segment && input.segment.text.trim().length > 0) {
+    const where = input.segment.page === null ? input.segment.label : `${input.segment.label} · page ${input.segment.page}`;
+    turns.push({
+      role: 'user',
+      content:
+        `THE PART OF THE DOCUMENT THIS ASIDE IS ABOUT (${where})\n\n` +
+        `${input.segment.text.trim()}\n\n` +
+        'Answer about this, and say so if the answer is not on it.',
+    });
+  }
 
   for (const w of store.whispers.forThread(input.threadId)) {
     const role_: LlmMessage['role'] = w.sender === 'student' ? 'user' : 'assistant';

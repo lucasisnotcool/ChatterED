@@ -44,8 +44,17 @@ export interface MessageView {
   createdAt: string;
   latencyTargetMs: number | null;
   ttftActualMs: number | null;
-  /** True when this message was relayed out of a whisper. The UI must NOT render a badge
-   *  for it (product-design.md §B4 / §G2 state 9) — it exists for the research export only. */
+  /**
+   * True when this message was relayed out of a whisper.
+   *
+   * **The chat and the flow render this differently, on purpose.** In `Thread.svelte` there is
+   * no badge (product-design.md §B4 / §G2 state 9): the room is an ephemeral stream, and a
+   * marker there would out the learner who would not ask in public. In the flow the card is a
+   * *durable artefact in the document* — the thing §B5 says the learner would show a tutor — so
+   * `FlowThread` prints `pivot-spec.md` §B5's dual attribution, **from a private note**, under
+   * the author's name. It says that a private aside happened; it never says what was in it, and
+   * nothing about it reaches any agent's prompt, which reads `body` and nothing else.
+   */
   promotedFromWhisper: boolean;
   /** Rendered as the connector + marker in product-design.md §C6. Never drawn for agreement. */
   disagreement: { marker: DisagreementMarker; targetAgentKey: string; targetMessageId: string | null } | null;
@@ -396,6 +405,33 @@ export interface FlowThreadView {
 export interface FlowRoomView {
   room: RoomSnapshot;
   threads: FlowThreadView[];
+}
+
+/**
+ * The private thread behind one segment's whisper popover (`flow-build-plan.md` §3.5,
+ * `pivot-spec.md` §B5).
+ *
+ * It is a `WhisperThreadView` that knows where it is. `anchorId` is the whole of the
+ * ephemerality rule on the renderer's side: the popover shows this thread and only this thread,
+ * and a thread belongs to one **segment sitting** — see `actor.openSegmentWhisper()`.
+ */
+export interface FlowWhisperView {
+  anchorId: string;
+  threadId: string;
+  agent: AgentProfile;
+  turns: WhisperTurnView[];
+  limitsLine: string;
+}
+
+/**
+ * What an approved *Insert into the document* produced: the new **shared** card, and the room as
+ * it now stands. The private thread is not in it, and never is.
+ */
+export interface FlowRelayView {
+  messageId: string;
+  anchorId: string;
+  attribution: RelayAttribution;
+  flow: FlowRoomView;
 }
 
 /** What `flow:askHere` gives back: the room (possibly just created) and the card that landed. */

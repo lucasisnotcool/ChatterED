@@ -25,7 +25,7 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
-import type { FlowAnswerView, FlowRoomView } from './types.js';
+import type { FlowAnswerView, FlowRelayView, FlowRoomView, FlowWhisperView } from './types.js';
 
 export const IPC = {
   bootstrap: 'app:bootstrap',
@@ -82,6 +82,12 @@ export const IPC = {
   flowExplainBack: 'flow:explainBack',
   flowSend: 'flow:send',
   flowMessages: 'flow:messages',
+
+  // The whisper popover on a segment (issue #16 + flow-build-plan.md §3.5).
+  flowWhisperOpen: 'flow:whisperOpen',
+  flowWhisperSend: 'flow:whisperSend',
+  flowWhisperRelay: 'flow:whisperRelay',
+  flowWhisperClose: 'flow:whisperClose',
 } as const;
 
 export interface ChatterEdApi {
@@ -242,6 +248,53 @@ export interface ChatterEdApi {
    * been asked a question — which is the common case, and is why nothing is created here.
    */
   flowMessages(input: { fileId: string }): Promise<FlowRoomView | null>;
+
+  // ── The whisper popover on a segment (§3.5) ─────────────────────────────
+  /**
+   * `⌘K` on a focused segment card, or *Ask privately* in its label strip.
+   *
+   * Like `flowAskHere` it **creates the document's room if there isn't one**: a private question
+   * is a learner-authored action on the document, and refusing to open one until a public
+   * question had been asked would make the private channel the second-class one — which is the
+   * opposite of what `design-brief.md` §D5 is for.
+   *
+   * The addressee is not a parameter. Ellie is resolved in `actor.openSegmentWhisper()`, so the
+   * renderer cannot ask for a private channel to the Tester (#32).
+   */
+  flowWhisperOpen(input: { fileId: string; segmentId: string }): Promise<{ roomId: string; whisper: FlowWhisperView }>;
+  /**
+   * A private turn. Not awaited for the reply: Ellie's answer arrives on the `whisper.turn`
+   * event stream at her 1–2 s floor, exactly as in the shipped pane.
+   *
+   * `fileId` + `segmentId` are here so the **main process** resolves the anchored page text —
+   * the same text the REFERENCE call sees. The renderer has no authority to decide what any
+   * agent is told, private or not.
+   */
+  flowWhisperSend(input: {
+    roomId: string;
+    fileId: string;
+    segmentId: string;
+    threadId: string;
+    text: string;
+  }): Promise<void>;
+  /**
+   * **Insert into the document.** The approved relay: a *new shared card* under the segment,
+   * authored as the learner or as Ellie, carrying the text the learner edited and approved.
+   *
+   * It never moves, reveals or links the private turn (`pivot-spec.md` §B5's T4), and it cannot
+   * advance the ledger — `actor.relay()` does not call the ledger, and `flow:whisperRelay` is
+   * the only path from the popover to the document.
+   */
+  flowWhisperRelay(input: {
+    roomId: string;
+    segmentId: string;
+    threadId: string;
+    whisperId: string;
+    attribution: RelayAttribution;
+    text: string;
+  }): Promise<FlowRelayView>;
+  /** `Esc` or click-away. Closes the popover in the main process's model; writes nothing. */
+  flowWhisperClose(input: { roomId: string; threadId: string }): Promise<void>;
 
   /**
    * Subscribe to application-menu commands.

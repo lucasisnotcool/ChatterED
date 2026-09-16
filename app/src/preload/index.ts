@@ -55,6 +55,10 @@ const api: ChatterEdApi = {
   flowExplainBack: (input) => ipcRenderer.invoke(IPC.flowExplainBack, input),
   flowSend: (input) => ipcRenderer.invoke(IPC.flowSend, input),
   flowMessages: (input) => ipcRenderer.invoke(IPC.flowMessages, input),
+  flowWhisperOpen: (input) => ipcRenderer.invoke(IPC.flowWhisperOpen, input),
+  flowWhisperSend: (input) => ipcRenderer.invoke(IPC.flowWhisperSend, input),
+  flowWhisperRelay: (input) => ipcRenderer.invoke(IPC.flowWhisperRelay, input),
+  flowWhisperClose: (input) => ipcRenderer.invoke(IPC.flowWhisperClose, input),
   onVaultChanged: (listener) => {
     const handler = (_event: unknown, payload: VaultView) => listener(payload);
     ipcRenderer.on(IPC.vaultChanged, handler);

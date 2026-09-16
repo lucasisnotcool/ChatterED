@@ -236,6 +236,8 @@ export function createMockBridge(): ChatterEdApi {
   }
 
   const whisperTurns: WhisperTurnView[] = [];
+  /** segment id → its sitting's private thread id. The real actor keys the same way (§3.5). */
+  const flowWhispers = new Map<string, string>();
 
   // ── the flow's thread (issue #25) ────────────────────────────────────────
   const locked = new Map<string, string>();
@@ -481,6 +483,60 @@ export function createMockBridge(): ChatterEdApi {
     async flowMessages() {
       return flowRoomOpen ? flowView() : null;
     },
+
+    /**
+     * The whisper popover (§3.5), mocked to the same shape the real one has: one thread per
+     * **segment sitting**, so ⌘K on a second card opens an empty one, and the turns live here
+     * and nowhere the flow can draw them.
+     */
+    async flowWhisperOpen({ segmentId }) {
+      flowRoomOpen = true;
+      const existing = flowWhispers.get(segmentId);
+      const threadId = existing ?? `wf_${flowWhispers.size + 1}`;
+      if (!existing) {
+        flowWhispers.set(segmentId, threadId);
+        whisperTurns.length = 0;
+      }
+      return {
+        roomId: ROOM,
+        whisper: {
+          anchorId: segmentId,
+          threadId,
+          agent: ellie,
+          turns: whisperTurns.filter((t) => t.threadId === threadId),
+          limitsLine: `I can see the document and this thread, and I can explain background bits. I can't answer this for you, and nothing here reaches ${max.displayName} unless you send it over.`,
+        },
+      };
+    },
+    async flowWhisperSend({ threadId, text }) {
+      const mine: WhisperTurnView = { id: `wf${whisperTurns.length + 1}`, threadId, seq: whisperTurns.length, sender: 'student', body: text, createdAt: iso(), relayOffer: null };
+      whisperTurns.push(mine);
+      emit({ type: 'whisper.turn', roomId: ROOM, threadId, turn: mine });
+      later(1600, () => {
+        const reply: WhisperTurnView = {
+          id: `wf${whisperTurns.length + 1}`, threadId, seq: whisperTurns.length, sender: 'agent', createdAt: iso(),
+          body:
+            "Not embarrassing, and it's the question page 6 is about. Two things first: I can see the flow and I can " +
+            "explain background, but I won't answer " + max.displayName + "'s question for you, and nothing here reaches him unless you send it.\n\n" +
+            'Short answer: no, not to the main thread. Steering mid-task puts your question and the reply into the main context; the side question is answered from that context without being added to it.',
+          relayOffer: {
+            defaultAttribution: 'as_me',
+            draftText:
+              'Can we put the page 6 claim on the record before we go further? If the side question is answered from main context but never added to it, the cost has moved rather than disappeared.',
+          },
+        };
+        whisperTurns.push(reply);
+        emit({ type: 'whisper.turn', roomId: ROOM, threadId, turn: reply });
+      });
+    },
+    async flowWhisperRelay({ segmentId, attribution, text }) {
+      const row = post(text, attribution === 'as_agent' ? ellie : null, {
+        anchorId: segmentId,
+        promotedFromWhisper: true,
+      });
+      return { messageId: row.id, anchorId: segmentId, attribution, flow: flowView() };
+    },
+    async flowWhisperClose({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
 
     getSegments: async ({ fileId }) => emptyFlow(fileId),
     splitSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),

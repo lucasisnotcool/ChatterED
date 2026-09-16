@@ -14,6 +14,7 @@
  */
 import type {
   AgentProfile,
+  FlowWhisperView,
   MessageView,
   RecapView,
   RelayAttribution,
@@ -161,6 +162,25 @@ export class RoomActor {
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
   #asks = 0;
+  /**
+   * **The whisper's ephemerality, and the whole of it** (`flow-build-plan.md` §3.5,
+   * `design-brief.md` §D5 "clears at the end of the round", Dennis et al.).
+   *
+   * In the chat a whisper cleared at the end of a *round*. A flow has no rounds, so the unit is
+   * the **segment sitting**: the key is `${flow session id}|${anchorId}`, and a key that is not
+   * in this map mints a **fresh thread id**. Three consequences, all of them the point:
+   *
+   *  - ⌘K on a *different* card is a different sitting, and opens an empty thread;
+   *  - a sitting that closed while the app was shut (`flow.tickSession`'s 20-minute gap) takes
+   *    its private threads with it, because the new sitting has a new id;
+   *  - **this map is in memory and is deliberately not in `flowSnapshot()`**, so quitting the
+   *    app or closing the document ends every private thread. The rows stay in `whispers` for
+   *    the research export, unreachable from any thread the popover can ask for — which is the
+   *    same "never deleted, never rendered" shape the chat's `whisper.cleared` already had.
+   */
+  #segmentWhispers = new Map<string, string>();
+  /** The segment whose popover is open, or null. Read by the hand-off rule, never by a prompt. */
+  #whisperAnchor: string | null = null;
 
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
@@ -539,7 +559,12 @@ export class RoomActor {
    * (architecture-mac.md §C.4, progress-tracking.md §4.5). Whispering is not explaining to the
    * group, and if it advanced the ledger the private channel would become the efficient path.
    */
-  async sendWhisper(threadId: string, text: string): Promise<void> {
+  async sendWhisper(
+    threadId: string,
+    text: string,
+    /** The anchored segment, when the whisper came from the flow's popover (§3.5). */
+    segment?: { label: string; page: number | null; text: string },
+  ): Promise<void> {
     const body = text.trim();
     if (body.length === 0) return;
     const thread = this.#d.store.whispers.forThread(threadId);
@@ -586,6 +611,7 @@ export class RoomActor {
       speaker: agent,
       roster: this.#d.roster,
       pack: this.#d.pack,
+      segment: segment ?? null,
     });
     request.meta.scriptCue = `whisper:${this.#whisperTurns}`;
 
@@ -630,24 +656,106 @@ export class RoomActor {
    * "promoted from whisper" badge in the UI — the person this feature is for is the one who
    * will not ask in public (product-design.md §B4).
    */
-  async relay(input: { threadId: string; whisperId: string; attribution: RelayAttribution; text: string }): Promise<void> {
+  async relay(input: {
+    threadId: string;
+    whisperId: string;
+    attribution: RelayAttribution;
+    text: string;
+    /** The segment the new shared card is inserted under. Null is the pre-flow room stream. */
+    anchorId?: string | null;
+  }): Promise<{ messageId: string }> {
     const whisper = this.#d.store.whispers.get(input.whisperId);
     const agentParticipantId = whisper?.agent_participant_id ?? null;
     const asAgent = input.attribution === 'as_agent' && agentParticipantId !== null;
+    const anchorId = input.anchorId ?? null;
 
-    await this.#mailbox.enqueue(() => {
+    const inserted = await this.#mailbox.enqueue(() => {
       this.#timer.cancel();
       const row = this.#insertMessage({
         participantId: asAgent ? agentParticipantId : this.#studentParticipant().id,
         body: input.text,
         promotedFromWhisper: input.whisperId,
+        anchorId,
       });
       this.#d.store.whispers.markPromoted(input.whisperId, row.id);
-      this.#event('student', 'whisper.relay', { attribution: input.attribution, seq: row.seq });
+      this.#event('student', 'whisper.relay', {
+        attribution: input.attribution,
+        seq: row.seq,
+        anchor_id: anchorId,
+        // R5, in the event log where it is checkable: the relayed text is a learner message and
+        // the flow renders it, but `#updateLedger` is not called on this path and never has
+        // been. Nothing said privately can move a row, relayed or not.
+        ledger_touched: false,
+      });
+      return row;
     });
 
-    // A relayed question is treated as an ordinary group turn from here on.
-    await this.#runAgentTurn('promote');
+    // A relayed question is treated as an ordinary group turn from here on — on the segment it
+    // was inserted under, so the reply lands in that thread rather than at the room level.
+    await this.#runAgentTurn('promote', { anchorId });
+    return { messageId: inserted.id };
+  }
+
+  // ── the whisper popover, on a segment (flow-build-plan.md §3.5) ───────────
+
+  /**
+   * ⌘K on a focused card. Ellie only, anchored, and **ephemeral by construction**.
+   *
+   * *Ellie only* is not a UI choice: `pivot-spec.md` §B5's addressee control was a two-option
+   * segmented header, and #32 removed the second option by removing the group — Max is the
+   * Tester, and a private channel to the person quizzing you is the one shape this feature must
+   * not have. `rosterFor()`'s peer is resolved here rather than passed in, so the renderer
+   * cannot name an addressee at all.
+   *
+   * The thread id comes from `#segmentWhispers` — see the field's docstring for what a "round"
+   * became. Reopening ⌘K on the same card in the same sitting returns the same turns; on any
+   * other card, or after the sitting closed, it returns none.
+   */
+  openSegmentWhisper(anchorId: string): FlowWhisperView {
+    const agent = agentByRole(this.#d.roster, 'peer');
+    const participant = this.#d.store.participants.byAgentKey(this.#d.roomId, agent.key);
+    if (!participant) throw new Error(`No participant for ${agent.key}`);
+    // Opening the popover is learner activity: it pushes the sitting's gap clock, which is what
+    // mints `#flow` on a document whose first act is a private question.
+    this.#noteLearnerActivity('whisper', anchorId);
+    const key = `${this.#flow?.id ?? 'no-session'}|${anchorId}`;
+    let threadId = this.#segmentWhispers.get(key);
+    if (!threadId) {
+      threadId = this.#d.newId('wthread');
+      this.#segmentWhispers.set(key, threadId);
+    }
+    this.#whisperAnchor = anchorId;
+    const other = otherStandingAgent(this.#d.roster, agent);
+    this.#event('student', 'whisper.open', { agent_key: agent.key, anchor_id: anchorId });
+    return {
+      anchorId,
+      threadId,
+      agent,
+      turns: this.#d.store.whispers.forThread(threadId).map(whisperTurnView),
+      limitsLine: limitsLine(agent, other?.displayName ?? 'the challenger'),
+    };
+  }
+
+  /** `Esc` / click-away. The popover is closed; nothing is written and nothing is posted. */
+  closeSegmentWhisper(): void {
+    this.#whisperAnchor = null;
+  }
+
+  /**
+   * A private turn in a segment's popover.
+   *
+   * `sendWhisper()` unchanged, plus the segment's own text — the same page text the REFERENCE
+   * card is built from (`flowroom.segmentText()`). Everything `sendWhisper` does *not* do is
+   * still not done here: no floor, no timer reset, no ledger, and nothing that reaches Max.
+   */
+  async sendSegmentWhisper(input: {
+    threadId: string;
+    anchorId: string;
+    text: string;
+    segment: { label: string; page: number | null; text: string };
+  }): Promise<void> {
+    this.#whisperAnchor = input.anchorId;
+    await this.sendWhisper(input.threadId, input.text, { ...input.segment });
   }
 
   // ── wrap up ───────────────────────────────────────────────────────────────
@@ -755,7 +863,10 @@ export class RoomActor {
         taught: this.#taught,
         pendingTeacherQuestion: this.#room().expects_reply === 1 && trigger !== 'student_message',
         silenceWindowOpen: trigger === 'silence',
-        whisperOpen: false,
+        // Wired for the first time by the popover (§3.5). It was hard-coded `false` while ⌘K was
+        // unbound; the rule it feeds has always been "do not spring a quiz on someone who is
+        // mid-aside", and there was no aside to be mid-of until now.
+        whisperOpen: this.#whisperAnchor !== null,
         referenceLocked: this.#referenceLocked(anchorId),
         lastKeystrokeAt: this.#typingUntil > 0 ? this.#typingUntil - 3_500 : null,
         ledgerLevels: Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level])),
