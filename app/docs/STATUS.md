@@ -1425,3 +1425,109 @@ was being reinstalled by another track. The actor path between them is covered b
 came back at 259–306 words and slipped one soft *"does that make it more concrete?"* into the turn
 after the first "no idea"; both are why house rule 3 has a ceiling and why the no-question rule
 names the soft check explicitly. 699 tests, typecheck and lint clean.
+
+---
+
+## "Cannot zoom in on main UI" — the flow gets a zoom, and the app gets a text size (16 Sep, issues #35, #37)
+
+**The bug, in one sentence: the flow never registered with `lib/viewer.ts`.** View ▸ Zoom In sent
+`zoom.in` into a registry with nothing in it, and a pinch reached nothing either — `main/index.ts`
+turns the chrome's own zoom off precisely so a pinch can fall through to the document, and on the
+app's main surface it then fell through to nothing at all. The page viewer had the whole gesture
+set; the surface a learner spends the session on had none of it.
+
+### 1. The flow's zoom (`297dfe4`)
+
+The flow's zoom is its **content width**: `CONTENT_WIDTH` (760 px) is 100 %, on a 60 %–200 % ladder.
+That is the honest unit, because 760 px is the only number the flow is laid out from. One CSS `zoom`
+on one wrapper scales the cards, the crops, the threads **and the AI text in them** together —
+`zoom` and not a transform, because a transform paints at the new size and lays out at the old one,
+so the scroller's height and every rect the flow measures would lie.
+
+Two levels, not one, and the difference is the whole design. `zoom` is live and moves on every pinch
+frame (a relayout, affordable). `renderZoom` commits 150 ms after the fingers stop and is the only
+thing deciding how hard a page is rasterised and how large a crop's backing store is — re-rendering
+a 20 MB page canvas at 60 fps is not possible. `render()` re-rasterises a page only when the zoom
+asks for **more** pixels than the cached canvas has, and swaps the canvas in only once the new one
+has painted, so a zoom never blanks a card (risk 3) and zooming back out is free.
+
+`drawPlan`'s backing-store ratio ceiling went 3 → 6 (a 3× DPR at 200 %); at 3 it silently capped a
+Retina crop at 150 %, which made "zoom in" mean "the same pixels, bigger". `MAX_RENDER_SCALE` is
+deliberately left at 4: only a half-width column at the top of the ladder is clipped by it, and
+raising it would double every page canvas in the LRU to ~50 MB.
+
+Two coordinate seams the zoom opens, both closed. `SegmentCard.trackAt` reads `clientY` and a client
+rect — **visual** pixels — against `box`, which is layout pixels; the ratio is now measured off the
+track element itself rather than taken from a prop, so it cannot drift from what is on screen.
+`cutTopOf` multiplies the card's own offsets by the zoom, without which every cut in a zoomed flow
+lands on the wrong side of the fold.
+
+The level persists per install in `localStorage`, **not** a settings row: `SettingsView`/`SettingsPatch`
+live in `src/shared/types.ts` with the main process's schema behind them, this is a pure view
+preference nothing else reads, and in an Electron renderer `localStorage` is a file in the same
+`userData` directory the settings database is in.
+
+### 2. UI text size, and the zoom mode that was silently swallowing it (`a326322`, `1e1b3f9`)
+
+⌘+ was claimed from Chromium so it could reach the PDF (ui-review-code.md §4). That was right, and
+it left the app with **no way at all to make the interface larger**. View ▸ Larger Text / Smaller
+Text / Default Text on ⌥⌘+ / ⌥⌘− / ⌥⌘0 drive `webContents.setZoomFactor` down an eight-rung 80 %–200 %
+ladder, under an **Interface** heading that is a real (disabled) menu item rather than a comment in
+the source — everything above it scales the document, everything below it scales the app. Persisted
+as one number in `userData/ui-text-scale.json` and re-applied on every `did-finish-load`.
+
+**The second bug, found by driving the real menu item over the accessibility API.** The main process
+asked for `setZoomFactor(1.5)`, `getZoomFactor()` came back 1.5, and the renderer did not move. All
+three zoom modes were then measured on Electron 44.3.0 / Chromium 152:
+
+| Mode | `setZoomFactor(1.5)` from the menu |
+|---|---|
+| `'disabled'` (what shipped) | accepted, reports back 1.5, **nothing moves** — `innerWidth` 1320 → 1320, DPR 2 → 2. Setting `'manual'` immediately before the call does not rescue it. |
+| `'manual'` | applied at the **next navigation** only: a factor set before the first load came up scaled, the same call from the menu afterwards changed nothing. |
+| `'isolated'` | applied at once — 1320 → 880, DPR 2 → 3 — and per-webContents, so nothing propagates in from another window of the same origin. |
+
+`createWindow` now uses `'isolated'`. What `'disabled'` was guarding is unaffected: twelve ctrl-wheel
+events over the nav rail, the flow header and the vault sidebar left `innerWidth` and DPR untouched.
+Chromium's ctrl-wheel page zoom is a Chrome-browser feature Electron does not implement; the risk
+§4 actually found was the *default menu's* zoom roles, and those are claimed in `main/menu.ts`.
+
+### 3. The deck scope, wired (`5b67ac6`) and the nudge control relabelled (`c9e084d`)
+
+Issue #35's four renderer surfaces, against the contract in `shared/scope.ts`: an **"Ask about this
+deck"** line above the first card on the synthetic `DECK_ANCHOR_ID`; a **scope chip** on the Ask
+composer calling the same `guessScope()` the main process calls, re-guessing on every keystroke
+until the learner touches it and then leaving it alone; the **scope in the AI card's footer**
+between the timings and the model, printed verbatim; and **"no concepts yet"** in the ledger rail
+while a pack is pending, redrawn from `pack.ready`. Issue #37: `don't do this` becomes "Stop
+nudging this round" with a title that says how long it lasts and a visible undo.
+
+### How it was driven, and what was measured
+
+A **dev build** on its own port and profile (`--remote-debugging-port=9351 --user-data-dir=<fresh>`,
+vault `/Users/lohzh/ChatterED/Academia`, scripted backend, the Critique 1 deck), with
+`Runtime.consoleAPICalled` and `Runtime.exceptionThrown` captured throughout. Screenshots in the
+session scratchpad under `zoom/`.
+
+| What | Measured |
+|---|---|
+| ⌘+ twice, from the real View menu | 100 % → 130 %; card 760 → 988 px; crop backing store **1520 → 1976** (= 760 × dpr 2 × 1.3) — re-rendered, not upscaled; label strip 28 → 36 px, so the text scaled too; `scrollHeight` 3600 → 4655; `localStorage` `"1.3"` |
+| the 150 ms idle window | three pinch events → CSS zoom **1.094** live with the backing store still **1520** (the deliberate soft frame); 400 ms later the backing store is **1663** and the level is persisted |
+| pinch about a card | 150 % → 200 % (ladder cap); the segment under the cursor is `seg_mu3s5mu123qpa` **before and after**; `scrollTop` tracked 900 → 1313 |
+| ⌘0 | back to 100 %, card 760, backing 1520 |
+| double-click on a crop | 100 % ↔ **126 %** = (pane 1012 − 56 gutter) / 760; back to 100 % on the second |
+| the split gesture at 115 % | guide lands at `top: 218px` where the visual midpoint of the track is layout 214 (the 4 px is the snap to a real candidate) — it would have been **246** without the layout/visual conversion; tick click 7 → 8 cards, ⌘Z 8 → 7, `scrollTop` unchanged |
+| text size | 1 → 1.1 → 1.25 → 1.5 → 1.25 → 1 over the real menu; `innerWidth` 1320 / 1200 / 1056 / 880; persisted each step |
+| ctrl-wheel on the chrome | `innerWidth` and DPR **unchanged** over the nav rail, the flow header and the vault sidebar |
+| reload | text scale 1.25 and flow zoom 115 % both come back; the reopened deck is 874 px wide with a 2185 px backing store |
+| deck scope | the deck thread's top is **above** the first card's top, anchored `deck`; footer `whole deck · scripted:sonnet · scripted`; the chip reads "this segment" for *"what does this symbol mean"* and "whole deck" for *"summarise what I will be learning"*, and stays put after one click. Same on the 31-page Koala paper. |
+| console | `Runtime.exceptionThrown` never fired; no `console.error` |
+
+**Not verified.** The ledger rail's "no concepts yet" branch: the rail is a room-screen surface with
+no route to it from the flow, and a scripted sitting on the fixture deck never goes pending. The
+relabelled nudge control: it only appears above a silence-fill message, and the scripted sitting did
+not reach a 45 s quiet nudge inside the CDP window. Both are unit-covered and typecheck clean, and
+neither has been seen on screen. **One bug found in someone else's track and not fixed here:**
+`014_pack_pending.sql` fails with `FOREIGN KEY constraint failed` on a real database — reproduced
+twice, on the installed app's own `app.db` and on a copy of it — so its claim that "no other table
+carries a declared FK to `materials`" does not hold. It migrates an empty database fine, which is
+why the suite is green. 715 tests, eslint and svelte-check clean.
