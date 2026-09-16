@@ -510,7 +510,7 @@
             onaskcancel={() => store.cancelAsk()}
             onask={(question) => void store.askHere(card.segmentId, question)}
             privateOpen={store.flowWhisper?.anchorId === card.segmentId}
-            onactivate={() => (store.flowFocus = card.segmentId)}
+            onactivate={() => store.noteFlowSelection(card.segmentId)}
             onaskprivately={() =>
               store.flowWhisper?.anchorId === card.segmentId
                 ? store.closeFlowWhisper()

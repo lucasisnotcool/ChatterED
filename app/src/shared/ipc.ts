@@ -88,6 +88,7 @@ export const IPC = {
   flowWhisperSend: 'flow:whisperSend',
   flowWhisperRelay: 'flow:whisperRelay',
   flowWhisperClose: 'flow:whisperClose',
+  flowSelection: 'flow:selection',
 } as const;
 
 export interface ChatterEdApi {
@@ -295,6 +296,14 @@ export interface ChatterEdApi {
   }): Promise<FlowRelayView>;
   /** `Esc` or click-away. Closes the popover in the main process's model; writes nothing. */
   flowWhisperClose(input: { roomId: string; threadId: string }): Promise<void>;
+  /**
+   * A **selection change**: the learner focused a segment card (`pivot-spec.md` §B8).
+   *
+   * The document's analogue of the typing heartbeat, and rate-limited by the renderer the same
+   * way. Scroll, zoom and page navigation are deliberately *not* reported — re-reading a slide
+   * by scrolling is precisely the behaviour the silence timer must not punish.
+   */
+  flowSelection(input: { roomId: string; segmentId: string | null }): Promise<void>;
 
   /**
    * Subscribe to application-menu commands.

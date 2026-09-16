@@ -679,6 +679,11 @@ export class AppService {
       attribution: RelayAttribution;
       text: string;
     }>(IPC.flowWhisperRelay, (input) => this.flowWhisperRelay(input));
+    handle<{ roomId: string; segmentId: string | null }>(IPC.flowSelection, (input) => {
+      // No room, no timer to extend: a document nobody has spoken to has no silence window.
+      this.#actor?.noteSelection(input.segmentId);
+      void input;
+    });
     handle<{ roomId: string; threadId: string }>(IPC.flowWhisperClose, (input) => {
       // The popover's turns are dropped by the renderer on this event, exactly as the shipped
       // pane's "clears at the end of the round" always did. Nothing is deleted: the rows stay

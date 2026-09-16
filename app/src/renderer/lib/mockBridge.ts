@@ -541,6 +541,7 @@ export function createMockBridge(): ChatterEdApi {
       return { messageId: row.id, anchorId: segmentId, attribution, flow: flowView() };
     },
     async flowWhisperClose({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
+    async flowSelection() { /* §B8's selection change: the mock has no silence timer to extend. */ },
 
     getSegments: async ({ fileId }) => emptyFlow(fileId),
     splitSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),

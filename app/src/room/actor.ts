@@ -742,6 +742,21 @@ export class RoomActor {
   }
 
   /**
+   * **A selection change** — the learner focused a segment card (`pivot-spec.md` §B8).
+   *
+   * It is the document's analogue of a keystroke, and it is handled exactly like one: the
+   * silence window is extended under the same 120 s cap, and the sitting's gap clock is pushed
+   * if there already is a sitting. It does **not** open one — `flow-session.md` §8.1 is explicit
+   * that a reader who looks at a card and leaves has not started a session, and the same guard
+   * `typing()` uses applies here for the same reason.
+   */
+  noteSelection(anchorId: string | null): void {
+    this.#timer.onSelectionChange();
+    if (this.#flow) this.#noteLearnerActivity('scroll', anchorId);
+    if (anchorId !== null) this.#lastAnchorId = anchorId;
+  }
+
+  /**
    * A private turn in a segment's popover.
    *
    * `sendWhisper()` unchanged, plus the segment's own text — the same page text the REFERENCE
@@ -1204,7 +1219,7 @@ export class RoomActor {
    * clocks must agree about what "still here" means or one of them will close on a learner who
    * is mid-sentence.
    */
-  #noteLearnerActivity(kind: 'turn' | 'keystroke' | 'ask' | 'whisper', anchorId?: string | null): void {
+  #noteLearnerActivity(kind: 'turn' | 'keystroke' | 'ask' | 'whisper' | 'scroll', anchorId?: string | null): void {
     const now = this.#d.clock.now();
     if (this.#flow) this.#flow = tickSession(this.#flow, now);
     if (!this.#flow || this.#flow.closedAt !== null) {

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG } from '../test-support/db.js';
-import { LATE_FIRE_CUTOFF_MS, SilenceTimer, type TimerFire } from './timer.js';
+import { LATE_FIRE_CUTOFF_MS, SilenceTimer, isIdle, lastActivityTs, type TimerFire } from './timer.js';
 
 function makeTimer(overrides: Partial<typeof DEFAULT_ROOM_CONFIG> = {}) {
   const clock = new FakeClock();
@@ -149,5 +149,90 @@ describe('the silence timer', () => {
     h.clock.advance(10_000);
     h.timer.typing(); // moves it by 10 s — worth a write
     expect(h.persisted.length).toBeGreaterThan(writesAfterArm);
+  });
+});
+
+/**
+ * §B8's idle predicate, and the selection change that feeds it.
+ *
+ * The machine is not re-tested here — it is the same machine, and the tests above are its
+ * tests. What is asserted is exactly the substitution: **selection change is the document's
+ * analogue of a keystroke**, it lives under the same cap, and scroll is not in the predicate at
+ * all, which is why there is no way to pass one in.
+ */
+describe('the idle predicate for a document (pivot-spec.md §B8)', () => {
+  it('is idle when nothing has ever happened', () => {
+    expect(isIdle({ lastKeystrokeTs: null, lastSelectionTs: null }, 10_000, 45_000)).toBe(true);
+    expect(lastActivityTs({ lastKeystrokeTs: null, lastSelectionTs: null })).toBeNull();
+  });
+
+  it('takes the most recent of the two, whichever it is', () => {
+    expect(lastActivityTs({ lastKeystrokeTs: 100, lastSelectionTs: 900 })).toBe(900);
+    expect(lastActivityTs({ lastKeystrokeTs: 900, lastSelectionTs: 100 })).toBe(900);
+    // A selection at 40 s keeps a 45 s window alive even though the last keystroke was at 1 s.
+    expect(isIdle({ lastKeystrokeTs: 1_000, lastSelectionTs: 40_000 }, 60_000, 45_000)).toBe(false);
+    expect(isIdle({ lastKeystrokeTs: 1_000, lastSelectionTs: 40_000 }, 90_000, 45_000)).toBe(true);
+  });
+
+  it('pushes the silence deadline exactly as a keystroke does', () => {
+    const h = makeTimer();
+    h.timer.arm();
+    h.clock.advance(40_000);
+    h.timer.onSelectionChange(); // the learner focused another card — still working the deck
+    h.clock.advance(40_000); // 80 s since arming, 40 s since the selection
+    expect(h.fires).toHaveLength(0);
+    h.clock.advance(6_000);
+    expect(h.fires).toHaveLength(1);
+  });
+
+  it('is capped by the same 120 s window extension, and is not a way around it', () => {
+    const h = makeTimer();
+    h.timer.arm();
+    // Five selections 30 s apart would buy 150 s if the cap did not bind.
+    for (let i = 0; i < 5; i += 1) {
+      h.clock.advance(30_000);
+      h.timer.onSelectionChange();
+    }
+    expect(h.timer.snapshot.windowExtensionMs).toBe(DEFAULT_ROOM_CONFIG.window_extension_cap_ms);
+    // The window can be stretched to 45 s + the 120 s cap and not one second further, however
+    // many cards are focused: at 166 s it has fired.
+    expect(h.fires).toHaveLength(0);
+    h.clock.advance(20_000);
+    h.timer.onSelectionChange();
+    expect(h.fires).toHaveLength(1);
+  });
+
+  it('does not touch cumulativeIdleMs, so stage 2 still arrives on schedule', () => {
+    const h = makeTimer();
+    h.timer.arm();
+    h.clock.advance(30_000);
+    h.timer.onSelectionChange();
+    h.clock.advance(30_000);
+    h.timer.onSelectionChange();
+    // 60 s of wall clock since arming, and the timer agrees it has been quiet that long.
+    expect(h.timer.snapshot.cumulativeIdleMs).toBeGreaterThanOrEqual(59_000);
+  });
+
+  it('reports idle off its own clocks, and a selection clears it', () => {
+    const h = makeTimer();
+    h.timer.arm();
+    h.clock.advance(50_000);
+    expect(h.timer.isIdle()).toBe(true);
+    h.timer.onSelectionChange();
+    expect(h.timer.isIdle()).toBe(false);
+    h.clock.advance(46_000);
+    expect(h.timer.isIdle()).toBe(true);
+    // And a keystroke in any composer — including the whisper's — does the same.
+    h.timer.typing();
+    expect(h.timer.isIdle()).toBe(false);
+  });
+
+  it('leaves the epoch fence alone: a selection is not a new window', () => {
+    const h = makeTimer();
+    h.timer.arm();
+    const epoch = h.timer.snapshot.epoch;
+    h.clock.advance(10_000);
+    h.timer.onSelectionChange();
+    expect(h.timer.snapshot.epoch).toBe(epoch);
   });
 });

@@ -172,6 +172,8 @@ class Store {
   flowWhisperThinking = $state(false);
   /** An approved **Insert into the document** is in flight. */
   flowWhisperInserting = $state(false);
+  /** Rate limiter for `flow:selection`. Plain, not `$state`: nothing renders off it. */
+  #lastSelectionSent = 0;
 
   /**
    * The document behind the room's source pane — the slide being explained, as a page rather
@@ -611,6 +613,21 @@ class Store {
     if (!roomId || !text.trim()) return;
     this.lastTypedAt = 0;
     void run(this, () => bridge().flowSend({ roomId, segmentId, text: text.trim() }));
+  }
+
+  /**
+   * A segment card took focus. `pivot-spec.md` §B8's selection change, reported to the silence
+   * timer, and rate-limited to one call per 3 s exactly as the typing heartbeat is — tabbing
+   * through eight cards is one gesture, not eight.
+   */
+  noteFlowSelection(segmentId: string): void {
+    this.flowFocus = segmentId;
+    const roomId = this.room?.roomId;
+    if (!roomId) return;
+    const now = Date.now();
+    if (now - this.#lastSelectionSent < 3_000) return;
+    this.#lastSelectionSent = now;
+    void run(this, () => bridge().flowSelection({ roomId, segmentId }));
   }
 
   // ── The whisper popover on a segment (§3.5, issue #16) ──────────────────

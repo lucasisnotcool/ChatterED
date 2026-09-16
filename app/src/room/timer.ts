@@ -11,7 +11,8 @@
  * throttling, quit and relaunch, none of which a `setTimeout` survives (§C.3).
  *
  * Semantics (design-brief.md §D3, product-design.md §C4/§C5 — these are the hand-owned parts):
- * - stage 1 at 45 s with no keystrokes in any composer; stage 2 at 90 s *cumulative* idle;
+ * - stage 1 at 45 s **idle**, where idle is `pivot-spec.md` §B8's predicate — no keystroke in
+ *   any composer *and* no selection change; stage 2 at 90 s *cumulative* idle;
  * - typing pauses the timer, and nothing else does. Whispering does not (§C.4): whispering is
  *   not explaining to the group;
  * - `cumulativeIdleMs` is NOT reset by typing — it is what drives stage 2 on schedule;
@@ -61,6 +62,48 @@ export interface TimerHooks {
   resumeCard?(lateByMs: number): void;
 }
 
+/**
+ * **The idle predicate, redefined for a document** (`pivot-spec.md` §B8).
+ *
+ * In a chat, *idle* meant "no keystroke in the composer" — the property that distinguishes
+ * thinking from disengaging (`design-brief.md` §D3). A document has no single composer, so §B8
+ * substitutes one gesture for it:
+ *
+ *   > **idle** = (no keystroke in *any* open composer, including the whisper composer)
+ *   > **AND** (no selection change — no anchor focused, no thread activated) for 45 s.
+ *
+ * **Scroll is deliberately excluded**, and so are zoom and page navigation: re-reading a slide
+ * by scrolling is exactly the behaviour the timer must not punish, and including it would make
+ * the timer un-fireable on a long page and trigger-happy on a short one. The enforcement is that
+ * there is no field for them here — a future caller cannot pass a scroll in by mistake.
+ *
+ * The whisper composer counts as a keystroke and the whisper *turn* does not reset anything:
+ * both halves of that are §C.4's rule, which says whispering is not explaining to the group.
+ * Typing is evidence the learner is present; a whisper reply is not evidence they have explained.
+ *
+ * **The machine and its constants are untouched.** This is the predicate only — the deadline,
+ * the epoch fence, the 120 s extension cap, stage 2 at 90 s cumulative and two fires per round
+ * are all exactly as they shipped.
+ */
+export interface IdleInput {
+  /** Last keystroke in any composer — thread, "+ Ask here", or the whisper popover. */
+  lastKeystrokeTs: number | null;
+  /** Last selection change: a segment card focused, a thread activated. §B8's substitution. */
+  lastSelectionTs: number | null;
+}
+
+/** The most recent thing that counts, or null when nothing ever has. */
+export function lastActivityTs(input: IdleInput): number | null {
+  const seen = [input.lastKeystrokeTs, input.lastSelectionTs].filter((t): t is number => t !== null);
+  return seen.length === 0 ? null : Math.max(...seen);
+}
+
+/** §B8, to implement literally. Never seen is idle: nothing has said "I am still working this". */
+export function isIdle(input: IdleInput, now: number, idleMs: number): boolean {
+  const last = lastActivityTs(input);
+  return last === null || now - last >= idleMs;
+}
+
 export const HOLD_MS = 60_000;
 /** Beyond two minutes the *social* premise of the nudge has expired (architecture-mac.md §B.4). */
 export const LATE_FIRE_CUTOFF_MS = 120_000;
@@ -76,6 +119,9 @@ export class SilenceTimer {
   #stopTick: (() => void) | null = null;
   /** The deadline as last written to the store, for write coalescing. */
   #persistedDeadline: number | null;
+  /** §B8's two activity clocks. In memory: they only ever decide the *current* window. */
+  #lastKeystrokeTs: number | null = null;
+  #lastSelectionTs: number | null = null;
 
   constructor(opts: { clock: Clock; config: RoomConfig; hooks: TimerHooks; initial?: Partial<TimerSnapshot> }) {
     this.#clock = opts.clock;
@@ -145,6 +191,38 @@ export class SilenceTimer {
    * never touches `cumulativeIdleMs` — stage 2 still arrives on schedule.
    */
   typing(): void {
+    this.#lastKeystrokeTs = this.#clock.now();
+    this.#extendWindow();
+  }
+
+  /**
+   * **A selection change** — a segment card focused, a thread activated (`pivot-spec.md` §B8).
+   *
+   * It does exactly what a keystroke does, which is the whole of the substitution: selection
+   * change is the document's analogue of typing, the gesture that says *I am still working this
+   * passage*. Same 120 s cap, same untouched `cumulativeIdleMs`, same epoch — this method adds
+   * a caller to the existing machine and changes nothing inside it.
+   */
+  onSelectionChange(): void {
+    this.#lastSelectionTs = this.#clock.now();
+    this.#extendWindow();
+  }
+
+  /** §B8's predicate over this timer's own clocks, for callers that need the answer directly. */
+  isIdle(now = this.#clock.now()): boolean {
+    return isIdle(
+      { lastKeystrokeTs: this.#lastKeystrokeTs, lastSelectionTs: this.#lastSelectionTs },
+      now,
+      this.#config.silence_ms,
+    );
+  }
+
+  /**
+   * Push the deadline out, but never past the 120 s extension cap for this window, and never
+   * touching `cumulativeIdleMs` — stage 2 still arrives on schedule. Verbatim what `typing()`
+   * was before §B8 gave it a second caller.
+   */
+  #extendWindow(): void {
     const now = this.#clock.now();
     if (this.#state.deadlineTs === null) return;
     const proposed = now + this.#config.silence_ms;
