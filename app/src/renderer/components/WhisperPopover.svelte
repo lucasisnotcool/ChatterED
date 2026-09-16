@@ -22,6 +22,7 @@
    * document you *insert into the document*, you do not *raise it in the group*.
    */
   import type { FlowWhisperView, RelayAttribution } from '../../shared/types.js';
+  import { aiBody } from '../lib/aitext.js';
   import { monogram } from '../lib/labels.js';
 
   let {
@@ -127,8 +128,17 @@
         class:mine={t.sender === 'student'}
         style="--hue: {whisper.agent.colour}"
       >
-        {#if t.sender === 'agent'}<span class="label-caps lbl">{whisper.agent.displayName}</span>{/if}
-        <p>{t.body}</p>
+        {#if t.sender === 'agent'}
+          <span class="label-caps lbl">{whisper.agent.displayName}</span>
+          <!-- The same escape-then-restore-two-things renderer every AI card uses, so a private
+               answer is not the one place in the app where `**no**` shows its asterisks.
+               `aiBody` escapes first and puts back exactly two things, which is why this is safe
+               here for the same reason it is safe in `AiSegment`. -->
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+          <div class="body">{@html aiBody(t.body).html}</div>
+        {:else}
+          <p>{t.body}</p>
+        {/if}
       </div>
     {/each}
 
@@ -229,7 +239,10 @@
     <p class="foot">
       Enter sends · Esc closes · nothing here reaches {otherName}{page === null ? '' : ` · p.${page}`}
     </p>
-    <p class="foot dim">Clears when you leave this card.</p>
+    <!-- Accurate, and the accuracy is the point: it clears with the **sitting**, which is what a
+         "round" became in a document (`actor.openSegmentWhisper`). Reopening ⌘K on this card in
+         this sitting shows these turns again; another card, or a new sitting, shows none. -->
+    <p class="foot dim">Clears with this sitting · never part of the document.</p>
   </div>
 </section>
 
@@ -278,13 +291,18 @@
   .turns { max-height: 320px; overflow-y: auto; padding: 11px 12px 2px; }
   .turn { margin-bottom: 10px; }
   .turn p { margin: 0; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; }
+  .turn .body { font-size: 12.5px; line-height: 1.55; }
+  .turn .body :global(p) { margin: 0 0 7px; }
+  .turn .body :global(p:last-child) { margin-bottom: 0; }
   .lbl { color: var(--hue); display: block; margin-bottom: 3px; }
-  .agent p {
+  .agent p,
+  .agent .body {
     background: var(--ground);
     border-left: 2px solid var(--hue);
     border-radius: 5px;
     padding: 7px 9px;
   }
+  .agent .limits { background: none; border-left: 2px solid var(--hue); }
   .limits { font-style: italic; color: var(--text-2); }
   .mine p {
     background: var(--indigo-tint);

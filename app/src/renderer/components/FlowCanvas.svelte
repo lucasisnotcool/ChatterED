@@ -370,10 +370,13 @@
      * handlers agree on, so the scopes still cannot overlap.
      */
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-      const target = store.flowWhisper?.anchorId ?? store.flowFocus;
+      const open = store.flowWhisper?.anchorId ?? null;
+      const target = store.flowFocus ?? open;
       if (!target) return;
       e.preventDefault();
-      if (store.flowWhisper) store.closeFlowWhisper();
+      // ⌘K on the card the popover is already on closes it; ⌘K on a *different* focused card
+      // moves it there. Toggling shut instead would make the second press feel like a miss.
+      if (open === target) store.closeFlowWhisper();
       else void store.openFlowWhisper(target);
       return;
     }
@@ -581,26 +584,28 @@
         {/if}
       {/each}
 
-      <!--
-        §B9 device 3 — the off-screen breadcrumb. A private reply that lands nine seconds later
-        on a card that has scrolled away is indistinguishable from lag or from nothing. One chip
-        maximum, and clicking it brings the card back.
-      -->
-      {#if store.flowWhisperThinking && !privateOnScreen && privateCard}
-        <button type="button" class="crumb" onclick={scrollToPrivate}>
-          ↑ your private note · p.{privateCard.page}
-        </button>
-      {/if}
-
       {#if cards.length === 0 && !store.flowBusy}
         <p class="note">Nothing to show for this file yet.</p>
       {/if}
     {/if}
   </div>
+
+  <!--
+    §B9 device 3 — the off-screen breadcrumb. A private reply that lands a few seconds later on a
+    card that has scrolled away is indistinguishable from lag or from nothing. It lives outside
+    the scroller on purpose, so it is docked to the pane rather than carried by the content. One
+    chip maximum, guaranteed by R2, and clicking it brings the card back.
+  -->
+  {#if store.flowWhisperThinking && !privateOnScreen && privateCard}
+    <button type="button" class="crumb" onclick={scrollToPrivate}>
+      ↑ your private note · p.{privateCard.page}
+    </button>
+  {/if}
 </section>
 
 <style>
   .flow {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -667,10 +672,13 @@
   }
 
   .crumb {
-    position: sticky;
-    bottom: 12px;
-    left: 0;
-    margin: 0 auto;
+    /* Fixed, not sticky: a sticky chip is only visible once the scroller has reached the end of
+       its content, which is precisely the moment the learner does *not* need to be told where
+       the held reply is. Docked to the viewport is what §B9 device 3 describes. */
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
     display: block;
     font-size: 11px;
     color: var(--text-2);

@@ -536,6 +536,25 @@ export class RoomActor {
     return row;
   }
 
+  /**
+   * **The room's Teacher, not the setting's.**
+   *
+   * A room keeps its participants for life (`agents.ts`: stored role strings are never renamed
+   * and the pairing is decided once, at `createSession`). Resolving the whisper's counterpart by
+   * roster key alone therefore throws on any room opened after the pairing was last changed —
+   * which is every room in a vault that has been used across a settings change, and is exactly
+   * what the first live run of the popover hit. Prefer the key, fall back to the role.
+   */
+  #peerParticipant() {
+    const participants = this.#d.store.participants.forRoom(this.#d.roomId);
+    const preferred = agentByRole(this.#d.roster, 'peer');
+    const row =
+      participants.find((p) => p.agent_key === preferred.key) ??
+      participants.find((p) => p.agent_key?.startsWith('peer.'));
+    if (!row) throw new Error('This room has no Teacher to ask privately.');
+    return row;
+  }
+
   // ── whisper ───────────────────────────────────────────────────────────────
 
   openWhisper(agentKey: string): WhisperThreadView {
@@ -568,8 +587,7 @@ export class RoomActor {
     const body = text.trim();
     if (body.length === 0) return;
     const thread = this.#d.store.whispers.forThread(threadId);
-    const agentParticipantId =
-      thread[0]?.agent_participant_id ?? this.#d.store.participants.byAgentKey(this.#d.roomId, agentByRole(this.#d.roster, 'peer').key)!.id;
+    const agentParticipantId = thread[0]?.agent_participant_id ?? this.#peerParticipant().id;
     const agentKey = this.#d.store.participants.get(agentParticipantId)?.agent_key ?? '';
     const agent = agentByKey(this.#d.roster, agentKey) ?? agentByRole(this.#d.roster, 'peer');
     const snapshot = this.#room().turn_seq;
@@ -712,9 +730,12 @@ export class RoomActor {
    * other card, or after the sitting closed, it returns none.
    */
   openSegmentWhisper(anchorId: string): FlowWhisperView {
-    const agent = agentByRole(this.#d.roster, 'peer');
-    const participant = this.#d.store.participants.byAgentKey(this.#d.roomId, agent.key);
-    if (!participant) throw new Error(`No participant for ${agent.key}`);
+    // **The room's Teacher, not the setting's.** A room created under one pairing keeps its
+    // participants for life (`agents.ts`: stored role strings are never renamed), so resolving
+    // by key alone would throw on any deck opened before the pairing was last changed — which
+    // is every deck in a vault that has been used. Fall back to the row whose role is peer.
+    const participant = this.#peerParticipant();
+    const agent = agentByKey(this.#d.roster, participant.agent_key ?? '') ?? agentByRole(this.#d.roster, 'peer');
     // Opening the popover is learner activity: it pushes the sitting's gap clock, which is what
     // mints `#flow` on a document whose first act is a private question.
     this.#noteLearnerActivity('whisper', anchorId);
