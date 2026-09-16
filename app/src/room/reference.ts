@@ -72,9 +72,39 @@ export function truncateToWords(text: string, cap = REFERENCE_WORD_CAP): Truncat
 
   const cut = words.slice(0, cap).join(' ');
   // Prefer the last sentence end inside the cut, but never throw away more than a fifth of it.
-  const lastStop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'));
+  const lastStop = lastSentenceEnd(cut);
   const keep = lastStop > cut.length * 0.8 ? cut.slice(0, lastStop + 1) : `${cut.replace(/[,;:\s]+$/, '')}…`;
   return { text: keep, words: keep.split(/\s+/).length, truncated: true };
+}
+
+/**
+ * **A full stop is not always the end of a sentence**, and the first live #41 summary card is the
+ * proof: it ran over the cap, the cut landed inside *"a different action (e.g. Up)"*, and the card
+ * in the learner's document ended `…not a special property of that action — a different action
+ * (e.g.` The abbreviation is exactly the kind of period that is common in a maths module and never
+ * ends a sentence.
+ *
+ * So a candidate stop is rejected when the word in front of it is an abbreviation or a single
+ * letter — `p.`, `Fig.`, `e.g.`, `S.` — and the search walks back to the previous one. Deliberately
+ * a short list rather than a sentence tokeniser: the failure mode of getting it wrong is one word
+ * of a card, and the failure mode of a tokeniser is a dependency in `src/room`.
+ */
+const NOT_A_SENTENCE_END = new Set([
+  'e.g', 'i.e', 'etc', 'vs', 'cf', 'al', 'approx', 'resp', 'fig', 'eq', 'no', 'ch', 'sec',
+  'p', 'pp', 'mr', 'ms', 'dr', 'prof', 'st', 'ie', 'eg',
+]);
+
+export function lastSentenceEnd(text: string): number {
+  for (let at = text.length - 1; at >= 0; at -= 1) {
+    if (text[at] !== '.') continue;
+    const after = text[at + 1];
+    if (after !== undefined && after !== ' ' && after !== '\n') continue;
+    // The letters immediately before the stop, lower-cased: `e.g` for "(e.g.", `S` for "state S.".
+    const before = /([A-Za-z.]{1,6})$/.exec(text.slice(0, at))?.[1]?.toLowerCase() ?? '';
+    if (before.length === 1 || NOT_A_SENTENCE_END.has(before)) continue;
+    return at;
+  }
+  return -1;
 }
 
 /** The card's body, as one string: the capped answer, the rule, the hand-back. */

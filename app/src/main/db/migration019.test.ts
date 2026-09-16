@@ -81,7 +81,8 @@ function seedPre019() {
   insert('m_turn', 4, seeded.peerParticipantId, `It is about the quadratic form. ${RULE_LINE} not a card.`, 'seg_3');
   // Rewind to the pre-018 state: the column exists, the rows predate it.
   db.exec("UPDATE messages SET kind = NULL WHERE id IN ('m_q','m_card','m_roomlevel','m_turn')");
-  return { db, store, ...seeded };
+  // `seeded` carries the same store; spread it first so the explicit one is not shadowed.
+  return { ...seeded, db, store };
 }
 
 describe('019 — the REFERENCE answers become summary cards', () => {

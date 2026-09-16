@@ -16,6 +16,7 @@ import { ScriptedClient } from './llm/scripted.js';
 import type { RoomEvent } from '../shared/types.js';
 import {
   HAND_BACK_LINE,
+  lastSentenceEnd,
   REFERENCE_WORD_CAP,
   RULE_LINE,
   anyAnchorLocked,
@@ -305,5 +306,34 @@ describe('what each scope is shown (issue #35)', () => {
       question: 'what is the argument',
     });
     expect(retrieved.system.map((b) => b.text).join('\n')).toContain('pages 3, 40 of this document');
+  });
+});
+
+/**
+ * **The first live #41 summary card ended `…a different action (e.g.`** — 137 words of a 150-word
+ * cap, cut at the abbreviation's own full stop. A card that ends mid-clause reads as a bug, which
+ * is this function's own docstring; a maths deck is full of `e.g.`, `Fig.` and `p.`
+ */
+describe('truncation does not mistake an abbreviation for a sentence end', () => {
+  it('walks back past e.g., Fig. and a single-letter symbol', () => {
+    // The only later candidate is the abbreviation's own stop, so the answer is the earlier one.
+    const text = 'One sentence ends here. Then a different action (e.g. Up) follows on';
+    expect(lastSentenceEnd(text)).toBe(text.indexOf('here.') + 'here'.length);
+
+    // Nothing but abbreviations and a decimal point: no sentence end at all.
+    expect(lastSentenceEnd('See Fig. 17.1 for the grid')).toBe(-1);
+    expect(lastSentenceEnd('Take the state S. It is the whole board')).toBe(-1);
+    expect(lastSentenceEnd('no sentence end at all')).toBe(-1);
+    // And a real one is still found, including at the very end of the string.
+    expect(lastSentenceEnd('It sums to one.')).toBe('It sums to one'.length);
+  });
+
+  it('cuts the over-long card on a real sentence boundary', () => {
+    const body =
+      `${'word '.repeat(120)}The numbers sum to 1. That holds for a different action (e.g. Up) as well, ` +
+      `${'tail '.repeat(60)}`;
+    const { text, truncated } = truncateToWords(body, 150);
+    expect(truncated).toBe(true);
+    expect(text.endsWith('(e.g.')).toBe(false);
   });
 });
