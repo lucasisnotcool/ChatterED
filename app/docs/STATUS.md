@@ -1526,8 +1526,9 @@ session scratchpad under `zoom/`.
 no route to it from the flow, and a scripted sitting on the fixture deck never goes pending. The
 relabelled nudge control: it only appears above a silence-fill message, and the scripted sitting did
 not reach a 45 s quiet nudge inside the CDP window. Both are unit-covered and typecheck clean, and
-neither has been seen on screen. **One bug found in someone else's track and not fixed here:**
-`014_pack_pending.sql` fails with `FOREIGN KEY constraint failed` on a real database — reproduced
-twice, on the installed app's own `app.db` and on a copy of it — so its claim that "no other table
-carries a declared FK to `materials`" does not hold. It migrates an empty database fine, which is
-why the suite is green. 715 tests, eslint and svelte-check clean.
+neither has been seen on screen. **One bug this run surfaced in another track, since fixed there:**
+`014_pack_pending.sql` failed with `FOREIGN KEY constraint failed` on a real database — reproduced
+twice, on the installed app's own `app.db` and on a copy of it, and the reason this run had to be
+driven on a seeded empty profile rather than a copy of the live one. It migrated an *empty*
+database fine, which is why the suite stayed green; `043dc8d` fixes it. 715 tests, eslint and
+svelte-check clean.
