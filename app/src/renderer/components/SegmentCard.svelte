@@ -60,6 +60,10 @@
     askBusy = false,
     /** The private popover is open on this card (§3.5). Only the affordance's state. */
     privateOpen = false,
+    /** A public turn is held on this card — `pivot-spec.md` §B9 device 1 draws the anchor ring. */
+    pending = false,
+    /** This thread has turns above its `lastSeenSeq` (audit §7). A dot on the label strip. */
+    unread = false,
     onsplit,
     onrename,
     onask,
@@ -88,6 +92,8 @@
     askOpen?: boolean;
     askBusy?: boolean;
     privateOpen?: boolean;
+    pending?: boolean;
+    unread?: boolean;
     onsplit?: (input: { at: number; axis: 'horizontal' | 'vertical'; free: boolean; cutOffset: number }) => void;
     onrename?: (label: string) => void;
     onask?: (question: string) => void;
@@ -257,6 +263,7 @@
   class:active
   class:dragging
   class:drophere={dropHere}
+  class:pending
   data-segment={card.segmentId}
   data-page={card.page}
   tabindex="0"
@@ -353,6 +360,12 @@
       >
         <span aria-hidden="true">🔒</span> Ask privately <kbd>⌘K</kbd>
       </button>
+    {/if}
+
+    {#if unread}
+      <!-- The reply that landed eight slides up, made findable at a glance (audit §7). It
+           clears when the thread is actually scrolled onto the screen, not when it arrives. -->
+      <span class="dot" role="note" aria-label="Unread replies in this thread" title="Unread replies"></span>
     {/if}
 
     <span
@@ -563,6 +576,40 @@
     overflow: hidden;
   }
   .crop { display: block; }
+
+  /**
+   * `pivot-spec.md` §B9 device 1 — **the anchor ring**. While a public turn is held on this
+   * card, the crop wears a ring *outside its own bounds*: the never-rule holds for the ring
+   * exactly as it does for an AI card, so it is an outline offset off the edge and never a
+   * pixel drawn on the slide. It is what makes a held reply read as *belonging here* rather
+   * than as the app having stopped.
+   */
+  .card.pending .cropwrap {
+    outline: 2px solid color-mix(in srgb, var(--indigo) 55%, transparent);
+    outline-offset: 4px;
+    animation: anchorpulse 2.2s ease-in-out infinite;
+  }
+  @keyframes anchorpulse {
+    0%, 100% { outline-color: color-mix(in srgb, var(--indigo) 22%, transparent); }
+    50% { outline-color: color-mix(in srgb, var(--indigo) 62%, transparent); }
+  }
+
+  /* The unread dot (audit §7). */
+  .dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--indigo);
+  }
+
+  /**
+   * `styles/app.css` honours `prefers-reduced-motion` once, for transitions; neither the
+   * three-dot pulse nor this ring was covered by it (audit §8). Both are now.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .card.pending .cropwrap { animation: none; }
+  }
 
   .guide {
     position: absolute;

@@ -47,7 +47,9 @@
     type PagePt,
   } from '../lib/flowview.js';
   import { claimsForAnchor, threadFor } from '../../shared/flowthread.js';
+  import { pillLabel, scrollDecision, thinkingAnchor } from '../lib/flowchat.js';
   import { store } from '../lib/store.svelte.js';
+  import DebugDrawer from './DebugDrawer.svelte';
   import FlowThread from './FlowThread.svelte';
   import PacingStrip from './PacingStrip.svelte';
   import SegmentCard from './SegmentCard.svelte';
@@ -83,6 +85,34 @@
    */
   const room = $derived(store.room);
   const messages = $derived(room?.messages ?? []);
+
+  /**
+   * Where a held public turn is (`pivot-spec.md` §B9). One at a time, guaranteed by R2, and the
+   * same answer the thread uses — `thinkingAnchor()` is the single implementation, so the ring
+   * on the crop and the indicator under it can never point at different cards.
+   */
+  const heldAnchor = $derived(thinkingAnchor(room?.thinking ?? null, store.lastSendAnchor, store.composerAt));
+  const heldCard = $derived(cards.find((c) => c.segmentId === heldAnchor) ?? null);
+  const heldName = $derived(room?.thinking?.displayName ?? 'Someone');
+  /** Is that card in the viewport? §B9 device 3 needs to know, for public turns as well now. */
+  let heldOnScreen = $state(true);
+
+  /**
+   * **The backend-down strip (audit §3).** The CLI can be logged out and the only symptom is
+   * turns that never arrive; the scripted client can be answering and the only symptom is that
+   * the answers are suspiciously fast. Neither should require opening Settings to discover.
+   */
+  const backendWarning = $derived.by(() => {
+    const boot = store.boot;
+    if (!boot) return null;
+    if (boot.backend === 'scripted') {
+      return 'Scripted demo — these replies are a fixed transcript, not a model.';
+    }
+    if (boot.backend === 'claude_cli' && boot.cli.found && !boot.cli.loggedIn) {
+      return 'Claude Code on this Mac is not signed in — replies will not arrive.';
+    }
+    return null;
+  });
 
   /**
    * The page canvases. Not reactive state on purpose (the same reasoning as `PdfViewer.drawn`):
@@ -399,6 +429,18 @@
     if (e.key === 'Escape' && store.flowWhisper) {
       e.preventDefault();
       store.closeFlowWhisper();
+      return;
+    }
+    /**
+     * ⌥⌘D — the debug drawer (audit §10). `latency_target_ms`, `ttft_actual_ms`, usage and cost
+     * are all persisted and none of it is visible while running, so diagnosing "hung or
+     * thinking?" has meant opening SQLite. Deliberately a hidden gesture: it is for the
+     * researcher, not the learner.
+     */
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      store.debugOpen = !store.debugOpen;
+      if (store.debugOpen) void store.loadTurnTraces();
     }
   }
 
@@ -412,6 +454,73 @@
     const el = e.target as HTMLElement | null;
     if (el?.closest('[data-private-note]') || el?.closest('.ask-private')) return;
     store.closeFlowWhisper();
+  }
+
+  // ── New messages: follow the tail, or dock a pill (audit §5) ──────────────
+  /**
+   * `FlowCanvas`'s scroller managed scroll only for splits and merges: **an arriving message
+   * scrolled nothing**, so a reply to a question asked eight slides ago was never seen.
+   * `Thread.svelte` has had the right rule since the room shipped; this is that rule plus the
+   * case the room does not have — a reply can land anywhere in a 58-page document, so when it
+   * lands out of reach the app says where instead of silently moving the deck.
+   */
+  let seenCount = 0;
+  let pill = $state<{ anchorId: string; label: string } | null>(null);
+
+  function routeArrival(anchorId: string | null, name: string): void {
+    const root = scroller;
+    if (!root) return;
+    const el = anchorId ? root.querySelector<HTMLElement>(`[data-thread="${anchorId}"]`) : null;
+    const offset = el ? el.getBoundingClientRect().top - root.getBoundingClientRect().top : null;
+    const decision = scrollDecision({
+      anchorOffset: offset,
+      viewportHeight: root.clientHeight,
+      atAnchor: anchorId !== null && store.composerAt === anchorId,
+    });
+    if (decision === 'into-view') {
+      el?.scrollIntoView({ block: 'nearest' });
+      pill = null;
+      return;
+    }
+    if (!anchorId) return;
+    const card = cards.find((c) => c.segmentId === anchorId) ?? null;
+    pill = {
+      anchorId,
+      label: pillLabel({ name, page: card?.page ?? null, below: (offset ?? 1) > 0 }),
+    };
+  }
+
+  $effect(() => {
+    const list = messages;
+    if (list.length === seenCount) return;
+    const added = list.slice(seenCount);
+    seenCount = list.length;
+    untrack(() => {
+      // The last *arriving* turn wins: two landing together is one scroll, not a fight.
+      const latest = added.filter((m) => m.speaker.kind !== 'student').at(-1);
+      if (!latest) return;
+      const name =
+        latest.speaker.kind === 'agent' ? latest.speaker.displayName : 'The reference';
+      queueMicrotask(() => routeArrival(latest.anchorId, name));
+    });
+  });
+
+  function goToPill(): void {
+    const id = pill?.anchorId;
+    pill = null;
+    if (!id) return;
+    scroller?.querySelector<HTMLElement>(`[data-thread="${id}"]`)?.scrollIntoView({ block: 'center' });
+  }
+
+  /** The pill is answered by scrolling to it, however the learner got there. */
+  function onscroll(): void {
+    const id = pill?.anchorId;
+    const root = scroller;
+    if (!id || !root) return;
+    const el = root.querySelector<HTMLElement>(`[data-thread="${id}"]`);
+    if (!el) return;
+    const top = el.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    if (top > -40 && top < root.clientHeight) pill = null;
   }
 
   /** The card the popover is on, for the breadcrumb chip. */
@@ -439,6 +548,32 @@
     const id = store.flowWhisper?.anchorId;
     if (!id) return;
     scroller?.querySelector<HTMLElement>(`[data-segment="${id}"]`)?.scrollIntoView({ block: 'center' });
+  }
+
+  /**
+   * §B9 device 3, generalised to **public** turns — which is the case §B9 was actually written
+   * about. It shipped for the private popover only, so a held Ellie or Max turn on a card that
+   * had scrolled away was indistinguishable from lag or from nothing at all.
+   */
+  function watchHeld(node: HTMLElement) {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        heldOnScreen = entry?.isIntersecting ?? true;
+      },
+      { root: scroller, threshold: 0 },
+    );
+    observer.observe(node);
+    return {
+      destroy: () => {
+        observer.disconnect();
+        heldOnScreen = true;
+      },
+    };
+  }
+
+  function scrollToHeld(): void {
+    if (!heldAnchor) return;
+    scroller?.querySelector<HTMLElement>(`[data-segment="${heldAnchor}"]`)?.scrollIntoView({ block: 'center' });
   }
 
   // ── Drag reorder ──────────────────────────────────────────────────────────
@@ -491,7 +626,22 @@
     <button type="button" class="mini" onclick={onclose} aria-label="Close">Close</button>
   </header>
 
-  <div class="scroll" bind:this={scroller}>
+  <!--
+    Persistent, not dismissible, and above the deck: the learner should never have to open
+    Settings to learn that nothing is going to reply (audit §3).
+  -->
+  {#if backendWarning}
+    <p class="backend" role="status">{backendWarning}</p>
+  {/if}
+
+  <!--
+    **One live region per flow (WCAG 4.1.3, audit §8).** The product's main surface announced
+    nothing at all. One sentence per event, never the body — a screen reader reading a 200-word
+    turn over the learner's own typing is worse than no announcement.
+  -->
+  <p class="sr-only" aria-live="polite" aria-atomic="true">{store.liveMessage}</p>
+
+  <div class="scroll" bind:this={scroller} {onscroll}>
     {#if error}
       <p class="note error">This PDF wouldn't open: {error}</p>
     {:else if store.flowBusy && !flow}
@@ -513,6 +663,11 @@
           ? mergeSeam({ ...card.rect, page: card.page }, { ...next.rect, page: next.page })
           : null}
         <div class="slot" use:watch={card.page}>
+          {#if heldAnchor === card.segmentId}
+            <!-- One zero-height probe on the held card, mounted only while the turn is held, so
+                 the observer's whole lifetime is the turn's. §B9 device 3 reads it. -->
+            <span class="probe" use:watchHeld aria-hidden="true"></span>
+          {/if}
           <div class="cardwrap">
           <SegmentCard
             {card}
@@ -528,6 +683,10 @@
             onsplit={(input) => void onsplit(card.segmentId, input)}
             onrename={(label) => void onrename(card.segmentId, label)}
             claims={claimsForAnchor(card.segmentId, messages, room?.ledger ?? null)}
+            pending={heldAnchor === card.segmentId}
+            unread={threadFor(messages, card.segmentId).some(
+              (m) => m.speaker.kind !== 'student' && m.seq > (store.threadSeen[card.segmentId] ?? 0),
+            )}
             askOpen={store.askingAt === card.segmentId}
             askBusy={store.askBusy === card.segmentId}
             onaskopen={() => store.openAsk(card.segmentId)}
@@ -616,6 +775,19 @@
     <button type="button" class="crumb" onclick={scrollToPrivate}>
       ↑ your private note · p.{privateCard.page}
     </button>
+  {:else if heldCard && !heldOnScreen}
+    <!-- §B9 device 3 for a held **public** turn: the case the spec was written about. -->
+    <button type="button" class="crumb" onclick={scrollToHeld}>
+      {heldName} is replying · p.{heldCard.page}
+    </button>
+  {:else if pill}
+    <!-- The jump-to-latest pill. Only when the reply landed out of reach — a reply the learner
+         can already see is scrolled to, not advertised. -->
+    <button type="button" class="crumb new" onclick={goToPill}>{pill.label}</button>
+  {/if}
+
+  {#if store.debugOpen}
+    <DebugDrawer />
   {/if}
 </section>
 
@@ -707,6 +879,19 @@
     z-index: 30;
   }
   .crumb:hover { color: var(--indigo); border-color: var(--indigo); }
+  .crumb.new { border-left-color: var(--indigo); font-weight: 500; color: var(--text); }
+
+  .backend {
+    flex: none;
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 11.5px;
+    color: #7a4a06;
+    background: #fdf6e7;
+    border-bottom: 1px solid #f0e2c2;
+  }
+
+  .probe { display: block; height: 1px; }
 
   .seam { display: flex; justify-content: center; margin: -8px 0 8px; }
   .merge {

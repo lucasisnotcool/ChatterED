@@ -54,6 +54,19 @@ function has(name: keyof ChatterEdApi): boolean {
   return typeof (bridge() as unknown as Record<string, unknown>)[name] === 'function';
 }
 
+/**
+ * Fire a turn-status call and swallow whatever comes back.
+ *
+ * `has()` proves the *channel* is on the preload object; it does not prove the main process has
+ * registered a handler for it yet. Until the actor side lands, an unhandled channel rejects with
+ * `No handler registered for …`, and routing that through `run()` would put a banner on screen
+ * every time a thread scrolls into view. None of these four calls has anything to report to the
+ * learner: they are bookkeeping, and bookkeeping that is not yet possible is not an error.
+ */
+function quiet<T>(fn: () => Promise<T>): Promise<T | null> {
+  return fn().catch(() => null);
+}
+
 export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings';
 
 /** One shared 200 ms tick. The wait-line transitions across it, so it reads as continuous. */
@@ -742,7 +755,7 @@ class Store {
     const roomId = this.room?.roomId;
     const anchor = anchorId ?? this.room?.messages.find((m) => m.id === answerId)?.anchorId ?? null;
     if (roomId && anchor && has('flowCardState')) {
-      void run(this, () => bridge().flowCardState({ roomId, anchorId: anchor, removed: true }));
+      void quiet(() => bridge().flowCardState({ roomId, anchorId: anchor, removed: true }));
     }
   }
 
@@ -813,7 +826,7 @@ class Store {
     const roomId = this.room?.roomId;
     const turnId = this.stream?.turnId ?? this.turnReceived?.turnId ?? null;
     if (!roomId || !turnId || !has('flowStop')) return;
-    const result = await run(this, () => bridge().flowStop({ roomId, turnId }));
+    const result = await quiet(() => bridge().flowStop({ roomId, turnId }));
     if (result && !result.stopped && result.refused === 'floor') {
       this.notice = { level: 'info', text: 'The deliberate wait has not finished yet.' };
     }
@@ -823,7 +836,7 @@ class Store {
   async loadTurnTraces(): Promise<void> {
     const roomId = this.room?.roomId;
     if (!roomId || !has('flowTurnTrace')) return;
-    const rows = await run(this, () => bridge().flowTurnTrace({ roomId, turnId: null }));
+    const rows = await quiet(() => bridge().flowTurnTrace({ roomId, turnId: null }));
     if (rows) this.turnTraces = rows;
   }
 
@@ -832,7 +845,7 @@ class Store {
     const roomId = this.room?.roomId;
     if (!roomId || seq <= (this.threadSeen[anchorId] ?? 0)) return;
     this.threadSeen = { ...this.threadSeen, [anchorId]: seq };
-    if (has('flowMarkSeen')) void run(this, () => bridge().flowMarkSeen({ roomId, anchorId, seq }));
+    if (has('flowMarkSeen')) void quiet(() => bridge().flowMarkSeen({ roomId, anchorId, seq }));
   }
 
   /** Thread collapse, persisted — a thread the learner folded away stays folded (audit §7). */
@@ -840,7 +853,7 @@ class Store {
     this.threadCollapsed = { ...this.threadCollapsed, [anchorId]: collapsed };
     const roomId = this.room?.roomId;
     if (roomId && has('flowCardState')) {
-      void run(this, () => bridge().flowCardState({ roomId, anchorId, collapsed }));
+      void quiet(() => bridge().flowCardState({ roomId, anchorId, collapsed }));
     }
   }
 

@@ -1,18 +1,31 @@
 <script lang="ts">
   /** Named indicator in the agent's own slot (product-design.md §C3). */
   import type { ThinkingView } from '../../shared/types.js';
+  import { elapsedMs, etaTitle, indicatorMode } from '../lib/flowchat.js';
   import { monogram, roleWord } from '../lib/labels.js';
   import { clock } from '../lib/store.svelte.js';
-  import { ts } from '../lib/time.js';
 
   let { thinking }: { thinking: ThinkingView } = $props();
 
-  const seconds = $derived(Math.floor((clock.ms - ts(thinking.startedAt)) / 1000));
-  /** The climbing counter is the anti-broken-system device — Challenger only, from 3 s. */
-  const showCount = $derived(thinking.showCounter && seconds >= 3);
+  const seconds = $derived(Math.floor(elapsedMs(thinking, clock.ms) / 1000));
+  /**
+   * Lucas's decision of 2026-09-16 (#34): **plain animated dots for Ellie, the elapsed counter
+   * for Max, and the ETA only on hover**. A visible countdown is the strongest
+   * anti-broken-system device there is, but it advertises the delay as *scheduled*, which is
+   * closer to the performative-deliberation line Tan et al. §5.5 warns about than a plain
+   * indicator. The pacing is already disclosed once, properly, by `PacingStrip`.
+   */
+  const showCount = $derived(indicatorMode(thinking, clock.ms) === 'counter');
+  /** `etaMs` has been computed and shipped over IPC since the first build and never read. */
+  const eta = $derived(etaTitle(thinking, clock.ms));
 </script>
 
-<div class="ind" style="--hue: {thinking.colour}" aria-live="polite">
+<!--
+  `role="status"` with `aria-live="off"`: this container used to be `aria-live="polite"` around
+  text that changes **every second** for the Tester, so a screen reader announced the wait once a
+  second for twelve seconds (audit §8). The flow's single live region does the announcing now.
+-->
+<div class="ind" style="--hue: {thinking.colour}" role="status" aria-live="off" title={eta}>
   <div class="head">
     <span class="avatar" class:ringed={thinking.role === 'challenger'} aria-hidden="true"
       >{monogram(thinking.displayName)}</span
@@ -22,7 +35,7 @@
   <div class="block" class:fast={thinking.role === 'tutee'}>
     <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
     <span class="verb">{thinking.displayName} is {thinking.verb}…</span>
-    {#if showCount}<span class="count">{seconds}s</span>{/if}
+    {#if showCount}<span class="count" aria-hidden="true">{seconds}s</span>{/if}
   </div>
 </div>
 
@@ -57,5 +70,10 @@
   @keyframes pulse {
     0%, 60%, 100% { opacity: 0.28; }
     30% { opacity: 1; }
+  }
+  /* `styles/app.css`'s reduced-motion block covers transitions, not keyframes; the three dots
+     were the one animation that ran regardless (audit §8). */
+  @media (prefers-reduced-motion: reduce) {
+    .dots i { animation: none; opacity: 0.6; }
   }
 </style>
