@@ -22,6 +22,8 @@ import {
   withThreshold,
   MIN_AGE_CAP_MS,
   handOffDue,
+  noteHandOff,
+  requiresTurnsSinceHandOff,
   flowProfileFor,
   handOffLine,
   latestByElement,
@@ -476,6 +478,87 @@ describe('handOffDue', () => {
     const shipped = handOffDue({ ...input, session: { ...session, profile: FLOW } }, clock.now());
     expect(shipped.due).toBe(false);
     expect(shipped.reasons).toContain('r1_engagement');
+  });
+
+  /**
+   * **R1b, and the measurement that bought it** (`app/docs/STATUS.md`, storyboard gate note 1).
+   * A warm sitting — a second walkthrough without quitting, or a relaunch that resumes the
+   * session, which is the product behaviour — handed off again on the **very next learner turn,
+   * in 13 ms**, because the previous run's taught set and its turn timestamps were both still
+   * inside the Demo profile's three-minute window. Ellie never taught; she went straight to
+   * *"Max, over to you."*
+   */
+  it('will not hand off twice in a row on Demo: k turns must pass since the last one', () => {
+    const t0 = clock.now();
+    let session = openSession({ id: 'fs_warm', documentId: 'doc_1', profile: DEMO }, t0);
+    const items = [taught('R1', t0), taught('R2', t0 + 10_000)];
+    clock.advance(4 * MINUTE);
+    for (let i = 0; i < 2; i += 1) {
+      session = noteActivity(session, { kind: 'turn' }, clock.now());
+      clock.advance(30_000);
+    }
+    clock.advance(10_000);
+    const input = (): HandOffInput => ({
+      session,
+      taught: items,
+      pendingTeacherQuestion: false,
+      silenceWindowOpen: false,
+      whisperOpen: false,
+      lastKeystrokeAt: clock.now() - 10_000,
+    });
+
+    // Run 1 of the walkthrough: the hand-off fires, exactly as the test above.
+    const first = handOffDue(input(), clock.now());
+    expect(first.due).toBe(true);
+    expect(first.learnerTurnsSinceHandOff).toBe(2);
+    session = noteHandOff(session, clock.now());
+
+    // Max holds 9–12 s and asks; the learner answers. One turn since the hand-off — not two, so
+    // R1b holds the floor even though k-in-m is still satisfied by the turns that produced it.
+    clock.advance(30_000);
+    session = noteActivity(session, { kind: 'turn' }, clock.now());
+    clock.advance(10_000);
+    const answered = handOffDue(input(), clock.now());
+    expect(answered.due).toBe(false);
+    expect(answered.reasons).toEqual(['r1_since_handoff']);
+    expect(answered.learnerTurnsInWindow).toBeGreaterThanOrEqual(DEMO.turnsK);
+    expect(answered.learnerTurnsSinceHandOff).toBe(1);
+
+    // Ellie teaches, the learner replies again: two turns since, and the Tester may be offered
+    // the floor a second time. The walkthrough teaches before it quizzes, which is the point.
+    clock.advance(20_000);
+    session = noteActivity(session, { kind: 'turn' }, clock.now());
+    clock.advance(10_000);
+    const second = handOffDue(input(), clock.now());
+    expect(second.due).toBe(true);
+    expect(second.learnerTurnsSinceHandOff).toBe(2);
+  });
+
+  it('leaves the study profile alone — R1b is a Demo clause only', () => {
+    expect(requiresTurnsSinceHandOff(DEMO)).toBe(true);
+    expect(requiresTurnsSinceHandOff(FLOW)).toBe(false);
+
+    const { input, now } = ready(clock);
+    // The same warm state that stops a Demo sitting: three turns in the window, all of them
+    // before the last hand-off. On `FLOW` the verdict is unchanged, and the raw count is still
+    // logged so §11 can recompute the clause offline before deciding to promote it.
+    const warm = { ...input, session: { ...input.session!, lastHandOffAt: now - 1_000 } };
+    const v = handOffDue(warm, now);
+    expect(v.due).toBe(true);
+    expect(v.reasons).toEqual([]);
+    expect(v.learnerTurnsSinceHandOff).toBe(0);
+    expect(handOffDue({ ...warm, session: { ...warm.session, profile: DEMO } }, now).reasons).toContain(
+      'r1_since_handoff',
+    );
+  });
+
+  it('is vacuous until there has been a hand-off, so a cold sitting is untouched', () => {
+    const { input, now } = ready(clock);
+    const demo = { ...input, session: { ...input.session!, profile: DEMO } };
+    expect(demo.session.lastHandOffAt).toBeNull();
+    const v = handOffDue(demo, now);
+    expect(v.due).toBe(true);
+    expect(v.learnerTurnsSinceHandOff).toBe(v.learnerTurnsInWindow);
   });
 });
 

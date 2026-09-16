@@ -162,6 +162,33 @@ export const DEMO: FlowProfile = {
   minAgeMs: 20_000,
 };
 
+/**
+ * **R1b — the Demo profile also needs `k` learner turns since its *last* hand-off.**
+ *
+ * Measured on the 16 Sep storyboard gate (`app/docs/STATUS.md`, note 1): on a **warm** sitting —
+ * a second walkthrough without quitting, or a relaunch that resumes the sitting, which is the
+ * product behaviour — the next learner turn handed off in **13 ms**. Nothing was wrong with R1:
+ * the previous run's taught set and its turn timestamps were both still inside the three-minute
+ * Demo window, so k-in-m was satisfied before the learner had said anything this time round, and
+ * Ellie went straight to *"Max, over to you."* without teaching a word.
+ *
+ * k-in-m is a **rate** and a rate is the right shape; what it cannot express is *"and not again
+ * immediately"*. So the Demo profile adds one clause: turns counted from the last hand-off, not
+ * only from the last `m` minutes. A second run in the same sitting therefore teaches again before
+ * it quizzes, which is what the storyboard shows and what a walkthrough is for.
+ *
+ * **The shipped profile does not get this**, deliberately. Its window is 10 minutes against a
+ * 20-minute gap, so the same pile-up needs `FLOW.turnsK` = 3 turns to survive a whole window and
+ * still be in it — and it has `minAgeMs` at the 3-minute cap in front of it. Adding a rule to the
+ * study profile to fix a *demo* pacing artefact would change what `flow.state.changed` logs mean
+ * for A2 (`flow-session.md` §11), and the artefact is not reachable there. If §11's data later
+ * shows back-to-back hand-offs on the shipped profile, this is the clause to promote — it is
+ * written once, here, and gated on the profile name rather than duplicated.
+ */
+export function requiresTurnsSinceHandOff(profile: FlowProfile): boolean {
+  return profile.name === 'demo';
+}
+
 /** The settings row the learner's choice lives in. Written by `AppService.saveSettings`. */
 export const FLOW_PROFILE_SETTING = 'flow_profile';
 
@@ -197,6 +224,11 @@ export interface FlowSession {
   anchors: string[];
   /** Learner-turn timestamps, for the rolling k-in-m count. Raw times, never a derived bool. */
   learnerTurns: number[];
+  /**
+   * When the Tester was last handed the floor in this session, or null if he never has. Read by
+   * R1b on the Demo profile (see `requiresTurnsSinceHandOff`); recorded by `noteHandOff`.
+   */
+  lastHandOffAt: number | null;
   /** How many hand-offs the learner has declined this session (§8.2). */
   declines: number;
   /** A decline costs one full `m` window before R1 can hold again. */
@@ -228,6 +260,7 @@ export function openSession(
     closeReason: null,
     anchors: input.anchorId ? [input.anchorId] : [],
     learnerTurns: [],
+    lastHandOffAt: null,
     declines: 0,
     cooldownUntil: null,
     profile,
@@ -510,6 +543,8 @@ export type HandOffReason =
   | 'cooldown'
   | 'declines_exhausted'
   | 'r1_engagement'
+  /** Demo only: k turns have passed in the window, but not since the last hand-off. */
+  | 'r1_since_handoff'
   | 'r2_coverage'
   | 'r3_maturity'
   | 'r4_floor_not_clear';
@@ -523,6 +558,8 @@ export interface HandOffVerdict {
   target: QuizzableItem | null;
   /** Raw inputs, logged so A2 can recompute any (k, m) pair offline (§11 rule 1). */
   learnerTurnsInWindow: number;
+  /** Turns since the last hand-off, or since the session opened if there has not been one. */
+  learnerTurnsSinceHandOff: number;
   youngestQuizzableAgeMs: number | null;
 }
 
@@ -530,7 +567,8 @@ export interface HandOffVerdict {
  * **Ready to be quizzed** — a conjunction of four conditions, all evaluated on each learner
  * turn (`flow-session.md` §8.2), plus the learner's rate control (§7).
  *
- *   R1 engagement — ≥ k learner turns in the last m minutes.
+ *   R1 engagement — ≥ k learner turns in the last m minutes, and — **on the Demo profile only**
+ *                   (R1b, `requiresTurnsSinceHandOff`) — ≥ k of them since the last hand-off.
  *   R2 coverage   — ≥ 2 elements quizzable, so the Tester can ask the learner to *relate*
  *                   things, which is what the ledger's levels 2–4 score.
  *   R3 maturity   — the youngest quizzable element is older than MIN_AGE.
@@ -552,14 +590,19 @@ export function handOffDue(input: HandOffInput, now: number): HandOffVerdict {
     input.horizon ?? { currentSessionId: session?.id ?? null, previousSession: null },
   );
   const youngest = candidates.length > 0 ? Math.min(...candidates.map((c) => c.ageMs)) : null;
-  const turnsInWindow = session ? session.learnerTurns.filter((t) => t > now - profile.windowMs).length : 0;
+  const turnsInWindow = session ? session.learnerTurns.filter((t) => t > now - profile.windowMs) : [];
+  // Strictly after: the hand-off fires *on* a learner turn, and that turn is already recorded by
+  // the time the verdict is taken, so counting it would give the next one a free ride.
+  const since = session?.lastHandOffAt ?? null;
+  const turnsSinceHandOff = since === null ? turnsInWindow.length : turnsInWindow.filter((t) => t > since).length;
 
   const verdict = (due: boolean): HandOffVerdict => ({
     due,
     reasons,
     candidates,
     target: due ? pickTarget(candidates, input.ledgerLevels) : null,
-    learnerTurnsInWindow: turnsInWindow,
+    learnerTurnsInWindow: turnsInWindow.length,
+    learnerTurnsSinceHandOff: turnsSinceHandOff,
     youngestQuizzableAgeMs: youngest,
   });
 
@@ -578,7 +621,12 @@ export function handOffDue(input: HandOffInput, now: number): HandOffVerdict {
   if (session.declines >= profile.declineLimit) reasons.push('declines_exhausted');
   if (session.cooldownUntil !== null && now < session.cooldownUntil) reasons.push('cooldown');
 
-  if (turnsInWindow < profile.turnsK) reasons.push('r1_engagement');
+  if (turnsInWindow.length < profile.turnsK) reasons.push('r1_engagement');
+  // R1b. Separate reason, never folded into r1_engagement: §11 rule 1 is that the log must say
+  // *which* condition was binding, and this one is the difference between a cold and a warm run.
+  if (requiresTurnsSinceHandOff(profile) && turnsSinceHandOff < profile.turnsK) {
+    reasons.push('r1_since_handoff');
+  }
   if (candidates.length < profile.minTaught) reasons.push('r2_coverage');
   // R3 is implied by `quizzable`'s own minAge filter; it is checked separately so the log can
   // say *which* condition was binding rather than collapsing two failures into one.
@@ -599,6 +647,14 @@ export function handOffDue(input: HandOffInput, now: number): HandOffVerdict {
   }
 
   return verdict(reasons.length === 0);
+}
+
+/**
+ * Records that the Tester has just been handed the floor. Called by the actor at the moment it
+ * posts the Teacher's `handOffLine()`, so R1b counts from the line the learner actually saw.
+ */
+export function noteHandOff(session: FlowSession, now: number): FlowSession {
+  return { ...session, lastHandOffAt: now };
 }
 
 /**

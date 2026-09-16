@@ -47,6 +47,7 @@ import {
   handOffLine,
   markFeedbackGiven,
   noteActivity,
+  noteHandOff,
   openQuiz,
   openSession,
   tickSession,
@@ -916,6 +917,7 @@ export class RoomActor {
       reasons: verdict.reasons,
       taught_count: verdict.candidates.length,
       learner_turns_in_window: verdict.learnerTurnsInWindow,
+      learner_turns_since_handoff: verdict.learnerTurnsSinceHandOff,
       youngest_quizzable_age_ms: verdict.youngestQuizzableAgeMs,
       profile: (this.#flow?.profile ?? FLOW).name,
     });
@@ -979,6 +981,9 @@ export class RoomActor {
      */
     if (decision.decidedBy === 'rule:handoff' && decision.handOffLine) {
       this.#handOffs += 1;
+      // R1b (`flow.requiresTurnsSinceHandOff`): the Demo profile counts learner turns from here,
+      // so a second walkthrough in the same sitting teaches again before it quizzes again.
+      if (this.#flow) this.#flow = noteHandOff(this.#flow, this.#d.clock.now());
       const teacher = agentByRole(this.#d.roster, 'peer');
       await this.#mailbox.enqueue(() => {
         this.#insertMessage({

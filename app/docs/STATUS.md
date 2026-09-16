@@ -996,13 +996,24 @@ no `console.error` was emitted.
 
 ### What the presenter must know on filming day
 
-1. **Film a cold open, not a warm-up.** `script.critique1.ts`'s `critique1Sitting` docstring says
-   *"the presenter does a short warm-up on the same deck before the take"*. Measured here, that
-   makes beat 9 impossible: after a quit and relaunch onto a sitting that already has two taught
-   concepts, the **hand-off fires on the very first learner turn in 13 ms** — Ellie never teaches,
-   she goes straight to *"Max, over to you."* The shape §2 describes was only ever produced by
-   **run 1 on a fresh profile**. The brief and the code disagree and the brief is the one that is
-   wrong; `flow-build-plan.md` §4.4 and that docstring need Lucas's call before Sunday.
+1. **Film a cold open, not a warm-up** — *and the 13 ms half of this is now fixed.*
+   `script.critique1.ts`'s `critique1Sitting` docstring says *"the presenter does a short warm-up
+   on the same deck before the take"*. Measured here, that made beat 9 impossible: after a quit
+   and relaunch onto a sitting that already has two taught concepts, the **hand-off fired on the
+   very first learner turn in 13 ms** — Ellie never taught, she went straight to *"Max, over to
+   you."* The cause was not R1 misbehaving: the previous run's taught set **and** its turn
+   timestamps were both still inside the Demo profile's three-minute window, so k-in-m was
+   satisfied before the learner had said anything this time round. k-in-m is a rate, and a rate
+   cannot express *"and not again immediately"*. **R1b** (`flow.requiresTurnsSinceHandOff`) adds
+   the missing clause on the **Demo profile only**: ≥ k learner turns *since the last hand-off*,
+   counted strictly after it, with `r1_since_handoff` as its own `reasons[]` entry and
+   `learner_turns_since_handoff` logged raw on `flow.state.changed`. A second walkthrough in one
+   sitting therefore teaches again before it quizzes. The **study profile is unchanged** — its
+   10-minute window against a 20-minute gap does not reach the pile-up, and adding a rule there
+   to fix a demo pacing artefact would change what §11's logs mean for A2; the raw count is
+   logged on both profiles so §11 can decide later whether to promote it. What still needs
+   Lucas's call is only the *narration*: `flow-build-plan.md` §4.4 and that docstring still say
+   warm-up, and beat 10's *"minutes old, not seconds"* is a cold-open line now.
 2. **Beat 10 costs a spare turn and about 90 seconds.** From a cold open on Demo the hand-off needs
    a *third* learner line and ~20 s of quiet after the second concept is taught (Demo's 20 s
    `minAgeMs`). `CRITIQUE1_LEARNER_LINES`'s `student:4` spare is what the gate used.

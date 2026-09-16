@@ -23,6 +23,7 @@ function due(overrides: Partial<HandOffVerdict> = {}): HandOffVerdict {
     candidates,
     target: candidates[0]!,
     learnerTurnsInWindow: 3,
+    learnerTurnsSinceHandOff: 3,
     youngestQuizzableAgeMs: 600_000,
     ...overrides,
   };
