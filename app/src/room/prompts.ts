@@ -53,7 +53,20 @@ import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
  * needs beside it: **never open with a summary of the slide when the question is "what is X"** —
  * the slide is where the answer lands, not where it starts.
  */
-export const PROMPT_VERSION = 'prompts.v0.4';
+/**
+ * **v0.5 names the markdown subset (#41).** Lucas's third transcript shows the raw characters on
+ * screen: *"Mathematical notation was correctly rendered, but the bold raw markdown characters
+ * were shown (`**`)."* House rule 8 asked for typesettable maths and said nothing about anything
+ * else, so the agents wrote the markdown they were trained to write and the renderer printed it.
+ *
+ * Two ways out: forbid markdown in the prompt, or render a closed subset. **Render it.** The lists
+ * and the emphasis are load-bearing in every good reply in #36, #37 and #41 — a numbered list of
+ * four MDP components is the answer, not decoration — and a prompt-side ban would be a fifth rule
+ * competing with four that ask for structure, which is the kind of rule a model drops first. So
+ * the renderer implements the subset (`renderer/lib/aitext.ts`) and this rule names it, so the two
+ * halves agree about what is allowed rather than about what is likely.
+ */
+export const PROMPT_VERSION = 'prompts.v0.5';
 
 export interface SharedBlockInput {
   material: MaterialRow;
@@ -81,7 +94,11 @@ const HOUSE_RULES = `HOUSE RULES
 7. Nothing you write ever counts as the learner's own evidence of understanding, and nothing you
    write is ever drawn inside one of the slide's crops. Both are enforced in code, not by you;
    they are stated here so you know that explaining something fully costs the learner nothing.
-8. Write maths so it typesets: $…$ inline, $$…$$ on its own line.`
+8. Write maths so it typesets: $…$ inline, $$…$$ on its own line.
+9. Formatting is a closed set, because the app renders exactly this and prints anything else as
+   the literal characters you typed: **bold**, *italics*, numbered lists, bulleted lists with -,
+   blank lines between paragraphs, and the maths above. No headings, no tables, no links, no
+   images, no code fences, no backtick code, no block quotes, no HTML.`
 
 const SAFEGUARDS = `SAFEGUARDS
 S1 No pile-on: if the other one has just pressed the learner, ease off.

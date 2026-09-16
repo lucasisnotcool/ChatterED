@@ -162,6 +162,23 @@ describe('length fits the job', () => {
   it('asks for typesettable maths', () => {
     expect(shared()).toContain('$…$ inline');
   });
+
+  /**
+   * #41: `**Non-negativity**` reached the screen as those characters. The renderer now renders a
+   * closed subset (`renderer/lib/aitext.ts`); this is the prompt half, and the two lists have to
+   * name the same things or the agreement is a coincidence.
+   */
+  it('names the formatting subset the renderer implements, and what it is not', () => {
+    const s = shared();
+    for (const allowed of ['**bold**', '*italics*', 'numbered lists', 'bulleted lists']) {
+      expect(s).toContain(allowed);
+    }
+    for (const banned of ['No headings', 'no tables', 'no links', 'no code fences', 'no HTML']) {
+      expect(s).toContain(banned);
+    }
+    // And it says *why* the list is closed, which is the half a model acts on.
+    expect(s).toContain('prints anything else as the literal characters you typed');
+  });
 });
 
 describe('the safeguards that did not change, restated so the model reads them', () => {
@@ -227,7 +244,7 @@ describe('the default explanation shape', () => {
 
 describe('the version', () => {
   it('is bumped, because the prefix hash moves with the rules', () => {
-    expect(PROMPT_VERSION).toBe('prompts.v0.4');
+    expect(PROMPT_VERSION).toBe('prompts.v0.5');
   });
 });
 
