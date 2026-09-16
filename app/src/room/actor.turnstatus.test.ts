@@ -484,3 +484,27 @@ describe('Reply speed, and a backend that changes under an open room', () => {
     expect(h.actor.turnTrace().at(-1)!.backend).toBe('claude-cli');
   });
 });
+
+describe('unread marks and per-card state (audit §7)', () => {
+  it('reports a thread as unread until the learner says otherwise, and survives a reopen', async () => {
+    const h = build(streamingClient(['Read me.']));
+    await settle(h.clock, h.actor.sendMessage(TURN, ANCHOR));
+    // Nothing marked: every message in the thread is above `lastSeenSeq` 0, which is what the
+    // dot on the card's label strip is drawn from.
+    expect(h.actor.seenSnapshot()[ANCHOR]).toBeUndefined();
+
+    const top = h.store.messages.forRoom(h.roomId).at(-1)!.seq;
+    h.actor.markSeen(ANCHOR, top);
+    expect(h.actor.seenSnapshot()[ANCHOR]).toBe(top);
+    // Monotonic: scrolling back up does not un-read what was read.
+    h.actor.markSeen(ANCHOR, top - 1);
+    expect(h.actor.seenSnapshot()[ANCHOR]).toBe(top);
+
+    h.actor.setCardState(ANCHOR, { removed: true });
+    h.actor.setCardState(ANCHOR, { collapsed: true });
+    const snapshot = h.actor.flowSnapshot();
+    expect(snapshot.seen[ANCHOR]).toBe(top);
+    // A patch of one field leaves the other alone — dismissing a card is not un-collapsing it.
+    expect(snapshot.cards[ANCHOR]).toEqual({ removed: true, collapsed: true });
+  });
+});

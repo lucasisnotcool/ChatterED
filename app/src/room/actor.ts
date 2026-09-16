@@ -128,6 +128,14 @@ export interface RoomActorDeps {
      * a promise about the *card*, and the card is still on screen after a relaunch.
      */
     answers?: ReferenceAnswerState[];
+    /**
+     * The unread marks and the per-card `collapsed` / `removed` (audit §7). Restored with the
+     * rest because both are answers to "what did I already deal with?", and a deck that reopens
+     * with a dismissed card back and a reply the learner never read silently marked as read is
+     * the app forgetting on their behalf.
+     */
+    seen?: Record<string, number>;
+    cards?: Record<string, { collapsed?: boolean; removed?: boolean }>;
   };
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
@@ -329,6 +337,8 @@ export class RoomActor {
     this.#answers = [...(deps.flowState?.answers ?? [])];
     this.#asks = this.#answers.length;
     this.#replySpeed = deps.replySpeed ?? 'default';
+    this.#seen = new Map(Object.entries(deps.flowState?.seen ?? {}));
+    this.#cards = new Map(Object.entries(deps.flowState?.cards ?? {}));
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -1907,12 +1917,16 @@ export class RoomActor {
     taught: TaughtItem[];
     pendingQuiz: PendingQuiz | null;
     answers: ReferenceAnswerState[];
+    seen: Record<string, number>;
+    cards: Record<string, { collapsed?: boolean; removed?: boolean }>;
   } {
     return {
       session: this.#flow,
       taught: [...this.#taught],
       pendingQuiz: this.#pendingQuiz,
       answers: [...this.#answers],
+      seen: this.seenSnapshot(),
+      cards: this.cardStateSnapshot(),
     };
   }
 

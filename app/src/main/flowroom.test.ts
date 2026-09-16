@@ -140,9 +140,25 @@ describe('the sitting across a quit', () => {
       taught: [{ elementId: 'C1', taughtAt: 1, by: 'teacher' as const }],
       pendingQuiz: null,
       answers: [{ answerId: 'm7', anchorId: 'seg_2', explainedBackAt: null }],
+      // The learner's own reading, which must come back with the rest (audit §7): a reopened
+      // deck that restores a card they dismissed is the app forgetting on their behalf.
+      seen: { seg_2: 11 },
+      cards: { seg_2: { collapsed: true, removed: false } },
     };
     saveFlowState(store, 'room_1', state);
     expect(loadFlowState(store, 'room_1')).toEqual(state);
+  });
+
+  it('still loads a row written before unread marks existed', () => {
+    const store = openTestStore();
+    store.settings.set(
+      'flow_state:room_1',
+      JSON.stringify({ session: null, taught: [], pendingQuiz: null, answers: [] }),
+      new Date().toISOString(),
+    );
+    const loaded = loadFlowState(store, 'room_1');
+    expect(loaded?.seen).toBeUndefined();
+    expect(loaded?.cards).toBeUndefined();
   });
 
   it('treats a corrupt row as a sitting that did not survive, not a room that cannot open', () => {

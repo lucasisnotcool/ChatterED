@@ -795,6 +795,25 @@ export class AppService {
     handle<{ roomId: string; turnId?: string | null }>(IPC.flowTurnTrace, (input) =>
       this.#requireActor(input.roomId).turnTrace(input.turnId ?? null),
     );
+    /**
+     * The unread dot and the per-card state. Both are written straight through to the sitting's
+     * settings row — they are cheap, they are the learner's own reading, and a sitting that loses
+     * them because the app was force-quit between two writes is a card that comes back.
+     */
+    handle<{ roomId: string; anchorId: string; seq: number }>(IPC.flowMarkSeen, (input) => {
+      this.#requireActor(input.roomId).markSeen(input.anchorId, input.seq);
+      this.#persistFlow();
+    });
+    handle<{ roomId: string; anchorId: string; collapsed?: boolean; removed?: boolean }>(
+      IPC.flowCardState,
+      (input) => {
+        const patch: { collapsed?: boolean; removed?: boolean } = {};
+        if (input.collapsed !== undefined) patch.collapsed = input.collapsed;
+        if (input.removed !== undefined) patch.removed = input.removed;
+        this.#requireActor(input.roomId).setCardState(input.anchorId, patch);
+        this.#persistFlow();
+      },
+    );
     handle<{ roomId: string; segmentId: string | null }>(IPC.flowSelection, (input) => {
       // No room, no timer to extend: a document nobody has spoken to has no silence window.
       this.#actor?.noteSelection(input.segmentId);

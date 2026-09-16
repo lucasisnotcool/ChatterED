@@ -180,6 +180,10 @@ export interface StoredFlowState {
   taught: TaughtItem[];
   pendingQuiz: PendingQuiz | null;
   answers: ReferenceAnswerState[];
+  /** anchorId → the highest `seq` the learner has seen there (audit §7). Absent in old rows. */
+  seen?: Record<string, number>;
+  /** anchorId → the card's `collapsed` / `removed`, so a dismissed card stays dismissed. */
+  cards?: Record<string, { collapsed?: boolean; removed?: boolean }>;
 }
 
 /** One settings row per room. Small by construction — see the header. */
