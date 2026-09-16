@@ -225,7 +225,7 @@ export function createMockBridge(): ChatterEdApi {
     messages: messages.map((m) => ({ ...m })),
     ledger: { ...ledger, rows: ledger.rows.map((r) => ({ ...r })) },
     timer,
-    thinking: null, nudgesPaused: false, mode: 'scripted',
+    thinking: null, nudgesPaused: false, mode: 'scripted', failures: [],
     material: {
       id: 'mat1', moduleCode: 'MA3236', title: 'Second-order condition for convexity',
       sourceKind: 'pdf_pages', fileName: 'Slides_L06_Convexity.pdf', fileId: null, pageFrom: 30, pageTo: 31,
@@ -350,6 +350,9 @@ export function createMockBridge(): ChatterEdApi {
       else arm();
     },
 
+    async retryTurn(): Promise<void> {
+      /* The mock never fails a turn, so there is never a card to retry. */
+    },
     async wrapUp(): Promise<RecapView> {
       const before = ledger.rows.map((r) => ({ ...r, state: 'not_yet' as LedgerState, level: 0 as const }));
       const recap: RecapView = {

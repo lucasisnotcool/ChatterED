@@ -21,6 +21,7 @@ import type {
   RoomSnapshot,
   TeachbackResult,
   ThinkingView,
+  TurnFailureView,
   WhisperThreadView,
 } from '../shared/types.js';
 import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './agents.js';
@@ -132,6 +133,18 @@ interface PendingTurn {
   cancelled: boolean;
 }
 
+/** What `Retry` needs to replay the *same* turn rather than schedule a new one. */
+interface TurnReplay {
+  trigger: TurnTrigger;
+  anchorId: string | null;
+  silenceStage?: 1 | 2;
+}
+
+interface FailureRecord {
+  view: TurnFailureView;
+  replay: TurnReplay | null;
+}
+
 export class RoomActor {
   readonly #d: RoomActorDeps;
   readonly #mailbox = new Mailbox();
@@ -182,6 +195,24 @@ export class RoomActor {
   #segmentWhispers = new Map<string, string>();
   /** The segment whose popover is open, or null. Read by the hand-off rule, never by a prompt. */
   #whisperAnchor: string | null = null;
+  /**
+   * Turns that failed and are still on screen, newest last. Replayable: each carries the trigger
+   * and the anchor it needs, so `retryTurn()` runs the *same* turn rather than inventing one.
+   */
+  #failures: FailureRecord[] = [];
+  /**
+   * **A failed turn does not get nudged at.** Set the moment a turn fails and cleared only by
+   * the learner doing something; while it is set `#armTimer()` leaves the window closed, so the
+   * room cannot follow "nothing happened" with "you have been quiet for 45 s" — which is exactly
+   * what room_6a9609d5c6fb did, twice.
+   */
+  #nudgesHeldForFailure = false;
+  /**
+   * Where the stage-1 pool is up to. A pool sampled independently each time repeats — the
+   * learner on 2026-09-16 got the same "Take your time…" line twice in a row — so it is a
+   * rotation with a random *start*, not a random *draw*.
+   */
+  #nudgeCursor = -1;
 
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
@@ -870,6 +901,7 @@ export class RoomActor {
       // script's card in every real session, so a room about pedagogical agent roles opened
       // with "Your slide: convexity and the Hessian" (ui-review-ux.md B4).
       roundCard: roundCardFor({ pack: this.#d.pack, roster: this.#d.roster, mode: this.#d.config.mode }),
+      failures: this.#failures.map((f) => f.view),
     };
   }
 
@@ -956,6 +988,24 @@ export class RoomActor {
     ]);
 
     this.#recordDecision(trigger, decision);
+    /**
+     * **A decision that failed is never allowed to look like a decision to say nothing.**
+     *
+     * `decideTurn` now answers a learner turn with the Teacher even when the call threw, so a
+     * failure here usually still dispatches — the card goes up *alongside* the reply, saying the
+     * judgement step was skipped. When it did not dispatch, the card is the only thing the
+     * learner gets, and it is still infinitely better than the empty thread of 2026-09-16.
+     */
+    if (decision.failure) {
+      this.#failTurn({
+        kind: 'turn',
+        anchorId,
+        displayName: agentByRole(this.#d.roster, decision.role ?? 'peer').displayName,
+        reason: decision.failure.reason,
+        detail: decision.failure.detail,
+        replay: { trigger, anchorId, silenceStage: opts.silenceStage },
+      });
+    }
     if (!decision.speak || decision.role === null) {
       this.#pending = null;
       this.#armTimer();
@@ -1009,8 +1059,20 @@ export class RoomActor {
           ? `feedback:${this.#handOffs}`
           : cue;
 
-    // Generate now; hold the tokens until the floor. The buffer is the product decision.
-    const generation = this.#generate(agent, decision, turnCue);
+    /**
+     * Generate now; hold the tokens until the floor. The buffer is the product decision.
+     *
+     * The result is settled into a value **immediately**, before the floor-yield sleep below.
+     * The promise is created here and not awaited for up to 8 s, and on a cancelled turn it is
+     * never awaited at all — so a rejection in that gap had no handler on it, which Node reports
+     * as an unhandled rejection and Electron turns into a main-process crash dialog. The reject
+     * path is exactly the path this commit exists to make visible; it must not take the app down
+     * on the way to the card.
+     */
+    const generation = this.#generate(agent, decision, turnCue).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
 
     const yieldMs = this.#lastFillWasScaffold ? FLOOR_YIELD_AFTER_SCAFFOLD_MS : FLOOR_YIELD_MS;
     if (trigger === 'student_message' || trigger === 'promote') {
@@ -1027,20 +1089,32 @@ export class RoomActor {
     let model = agent.model;
     let backend: LlmBackend | null = null;
     let usage: Record<string, number> = {};
-    try {
-      const result = await generation;
+    const settled = await generation;
+    if (!settled.ok) {
+      /**
+       * This used to emit a transient banner that said "retrying" and then retried nothing. The
+       * card stays in the thread, names what broke, and the button actually replays the turn.
+       */
+      this.#clearThinking();
+      this.#pending = null;
+      this.#failTurn({
+        kind: 'turn',
+        anchorId,
+        displayName: agent.displayName,
+        reason: failureReason(settled.error),
+        detail: settled.error instanceof Error ? settled.error.message : String(settled.error),
+        replay: { trigger, anchorId, silenceStage: opts.silenceStage },
+      });
+      this.#armTimer();
+      return;
+    }
+    {
+      const result = settled.value;
       text = result.text;
       ttft = result.ttftMs;
       model = result.model;
       backend = result.backend ?? null;
       usage = result.usage as unknown as Record<string, number>;
-    } catch (err) {
-      this.#event(decision.role, 'agent.turn.error', { cause: (err as Error).message });
-      this.#clearThinking();
-      this.#pending = null;
-      this.#notice('error', `${agent.displayName}'s connection dropped — retrying`);
-      this.#armTimer();
-      return;
     }
 
     await this.#holdUntil(turnStart, target);
@@ -1127,7 +1201,11 @@ export class RoomActor {
     // Stage-1 fills are never generated against the concept (product-design.md §C5).
     if (decision.moveType === 'content_free_nudge') {
       const pool = CONTENT_FREE_NUDGES;
-      const line = pool[Math.floor(this.#rand() * pool.length)] ?? pool[0]!;
+      // A random *draw* repeats; on 2026-09-16 the learner got "Take your time…" twice running,
+      // which reads as a stuck app rather than as a patient one. Random start, then rotate.
+      if (this.#nudgeCursor < 0) this.#nudgeCursor = Math.floor(this.#rand() * pool.length);
+      else this.#nudgeCursor = (this.#nudgeCursor + 1) % pool.length;
+      const line = pool[this.#nudgeCursor] ?? pool[0]!;
       return { text: line, model: 'pool:content_free', usage: {}, ttftMs: 0, backend: undefined };
     }
     const request = buildGroupContext(this.#d.groupStore, {
@@ -1174,9 +1252,20 @@ export class RoomActor {
     try {
       const result = await this.#d.llm.complete(request);
       proposal = JSON.parse(result.text) as LedgerProposal;
-    } catch {
-      // The chat never blocks on the ledger (progress-tracking.md §4.6).
-      this.#event('system', 'progress.update', { parse_ok: false });
+    } catch (err) {
+      // The chat never blocks on the ledger (progress-tracking.md §4.6) — but a rail that
+      // silently stopped moving is a lie about the learner's progress, so it says so. This is
+      // the `progress.update {"parse_ok":false}` of 2026-09-16 02:30:38, which until now was
+      // visible only in the events table.
+      this.#event('system', 'progress.update', { parse_ok: false, cause: (err as Error).message });
+      this.#failTurn({
+        kind: 'ledger',
+        anchorId: this.#lastAnchorId,
+        displayName: null,
+        reason: failureReason(err),
+        detail: (err as Error).message,
+        replay: null,
+      });
       return;
     }
 
@@ -1250,6 +1339,9 @@ export class RoomActor {
    * is mid-sentence.
    */
   #noteLearnerActivity(kind: 'turn' | 'keystroke' | 'ask' | 'whisper' | 'scroll', anchorId?: string | null): void {
+    // Any learner act ends the outage hold; the cards in *this* thread go with it, because the
+    // learner has moved past the turn that failed and a stale Retry is worse than none.
+    if (kind === 'turn' || kind === 'ask') this.#clearFailureHold(anchorId ?? null);
     const now = this.#d.clock.now();
     if (this.#flow) this.#flow = tickSession(this.#flow, now);
     if (!this.#flow || this.#flow.closedAt !== null) {
@@ -1465,6 +1557,79 @@ export class RoomActor {
       : `${Math.round(this.#d.config.stage_two_ms / 1000)}s quiet · ${agent.displayName} offered a starting point`;
   }
 
+  /**
+   * Put a failed turn on screen and stop the clock.
+   *
+   * Every failure inside a turn lands here — the orchestrator decision, the agent generation,
+   * the ledger update — because the property the 2026-09-16 bug broke is not about any one of
+   * them: it is that **a turn must always end in something the learner can see**. A dispatch, or
+   * this card.
+   */
+  #failTurn(input: {
+    kind: 'turn' | 'ledger';
+    anchorId: string | null;
+    displayName: string | null;
+    reason: string;
+    detail?: string;
+    replay: TurnReplay | null;
+  }): void {
+    const view: TurnFailureView = {
+      id: this.#d.newId('fail'),
+      anchorId: input.anchorId,
+      kind: input.kind,
+      displayName: input.displayName,
+      reason: input.reason,
+      at: this.#nowIso(),
+    };
+    this.#failures.push({ view, replay: input.replay });
+    // A turn failure silences the nudge; a ledger failure does not — the reply did arrive, and
+    // the learner has something to answer.
+    if (input.kind === 'turn') this.#nudgesHeldForFailure = true;
+    this.#event('system', 'agent.turn.error', {
+      kind: input.kind,
+      failure_id: view.id,
+      anchor_id: input.anchorId,
+      cause: input.detail ?? input.reason,
+    });
+    this.#d.transport.emit({ type: 'turn.failed', roomId: this.#d.roomId, failure: view });
+  }
+
+  /** The learner did something: the outage is over as far as the timer is concerned. */
+  #clearFailureHold(anchorId: string | null): void {
+    this.#nudgesHeldForFailure = false;
+    const kept: FailureRecord[] = [];
+    for (const f of this.#failures) {
+      if (f.view.anchorId === anchorId) {
+        this.#d.transport.emit({ type: 'turn.failed.cleared', roomId: this.#d.roomId, failureId: f.view.id });
+      } else {
+        kept.push(f);
+      }
+    }
+    this.#failures = kept;
+  }
+
+  /**
+   * The card's **Retry** button. Replays the same turn — same trigger, same anchor — rather than
+   * scheduling a new one, so a retry cannot turn a failed silence fill into a fresh learner turn.
+   */
+  async retryTurn(failureId: string): Promise<void> {
+    const found = this.#failures.find((f) => f.view.id === failureId);
+    if (!found) return;
+    this.#failures = this.#failures.filter((f) => f.view.id !== failureId);
+    this.#nudgesHeldForFailure = false;
+    this.#d.transport.emit({ type: 'turn.failed.cleared', roomId: this.#d.roomId, failureId });
+    this.#event('student', 'agent.turn.retry', { failure_id: failureId, kind: found.view.kind });
+    if (found.view.kind === 'ledger') {
+      await this.#updateLedger('retry', this.#d.clock.now());
+      return;
+    }
+    if (!found.replay) return;
+    await this.#runAgentTurn(found.replay.trigger, {
+      anchorId: found.replay.anchorId,
+      silenceStage: found.replay.silenceStage,
+    });
+  }
+
   #showThinking(agent: AgentProfile, turnStart: number, etaMs: number): void {
     this.#thinking = {
       agentKey: agent.key,
@@ -1486,8 +1651,20 @@ export class RoomActor {
     this.#d.transport.emit({ type: 'agent.thinking.cleared', roomId: this.#d.roomId });
   }
 
+  /**
+   * Arm the silence window — unless a turn has just failed.
+   *
+   * A dispatched turn and a failed turn both end the agent's half of the exchange, so both must
+   * stop the clock; the difference is that a failed turn leaves the learner with nothing to
+   * respond *to*. Nudging into that is the app blaming the learner for its own outage, so the
+   * window stays shut until they act (`#clearFailureHold`).
+   */
   #armTimer(): void {
     if (this.#room().state === 'closed') return;
+    if (this.#nudgesHeldForFailure) {
+      this.#timer.cancel();
+      return;
+    }
     this.#timer.arm();
   }
 
@@ -1634,6 +1811,23 @@ export class RoomActor {
     if (ms <= 0) return Promise.resolve();
     return new Promise((resolve) => this.#d.clock.setTimeout(resolve, ms));
   }
+}
+
+/**
+ * One short, true sentence for the card. It must never carry a prompt, a message body or a
+ * key — `failureReason` deliberately answers from the error's *class*, not from its text, and
+ * only the CLI's own exit line is ever quoted, capped.
+ */
+export function failureReason(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/not logged in|log in/i.test(message)) return 'Claude Code is not logged in';
+  if (/did not answer within/i.test(message)) return 'the model did not answer in time';
+  if (/was not found|ENOENT/i.test(message)) return 'the Claude CLI was not found';
+  if (/exited (\d+)/i.test(message)) return `the Claude CLI exited ${/exited (\d+)/i.exec(message)![1]}`;
+  if (/no JSON object|JSON|parse/i.test(message)) return 'the reply could not be read';
+  if (/rate|429|overloaded|529/i.test(message)) return 'the model was overloaded';
+  if (/network|ECONN|fetch|socket/i.test(message)) return 'the connection dropped';
+  return 'the call failed';
 }
 
 function scriptRelayOffer(turn: number): { draftText: string; defaultAttribution: RelayAttribution } | null {

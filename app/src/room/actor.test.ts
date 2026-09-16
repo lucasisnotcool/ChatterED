@@ -9,11 +9,12 @@ import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG, seedRoom } from '../test-support/db.js';
 import { rosterFor } from './agents.js';
 import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js';
-import { RoomActor } from './actor.js';
+import { CONTENT_FREE_NUDGES, RoomActor } from './actor.js';
 import { DEMO, openSession, type TaughtItem } from './flow.js';
 import { ScriptedClient } from './llm/scripted.js';
 import { buildGroupContext } from './context.group.js';
 import type { RoomActorDeps } from './actor.js';
+import type { LLMClient, LlmRequest, LlmResult, LlmScope } from './llm/types.js';
 
 /**
  * A sitting that satisfies flow-session.md §8.2: two concepts taught comfortably past the 3 min
@@ -48,7 +49,7 @@ const TURN_7 =
  * **only** when `handOffDue()` says the sitting is ready, so a room with an empty taught set can
  * never put Max on the floor, whatever the orchestrator's model asks for.
  */
-function build(mode: 'scripted' = 'scripted', flowState?: RoomActorDeps['flowState']) {
+function build(mode: 'scripted' = 'scripted', flowState?: RoomActorDeps['flowState'], llm?: RoomActorDeps['llm']) {
   const seeded = seedRoom();
   const clock = new FakeClock();
   const events: RoomEvent[] = [];
@@ -58,7 +59,7 @@ function build(mode: 'scripted' = 'scripted', flowState?: RoomActorDeps['flowSta
     groupStore: groupView(seeded.store),
     clock,
     transport: { emit: (e) => events.push(e) },
-    llm: new ScriptedClient(),
+    llm: llm ?? new ScriptedClient(),
     roomId: seeded.roomId,
     sessionId: seeded.sessionId,
     roster: rosterFor('ellie_peer'),
@@ -449,5 +450,112 @@ describe('"Show the room" (issue #22 decision 4)', () => {
       directive: { agentRole: 'peer', move: 'ask' },
     });
     expect(JSON.stringify(request.messages)).toContain('the whole file');
+  });
+});
+
+/**
+ * **A turn always ends in something the learner can see.**
+ *
+ * The regression these guard is room_6a9609d5c6fb, 2026-09-16 02:30:33–02:32:33: a learner
+ * message, a 20 s orchestrator call, a decision with a move and no speaker, no dispatch, no card,
+ * no notice — and then the silence timer nudging the learner twice, with the same line, for
+ * being quiet about a question the app had failed to answer.
+ */
+class FailingClient implements LLMClient {
+  readonly kind = 'scripted' as const;
+  #inner = new ScriptedClient();
+  constructor(private readonly failScopes: LlmScope[]) {}
+  async complete(request: LlmRequest, onDelta?: (text: string) => void): Promise<LlmResult> {
+    if (this.failScopes.includes(request.meta.scope)) throw new Error('The Claude CLI exited 1: boom');
+    return this.#inner.complete(request, onDelta);
+  }
+}
+
+describe('a failed turn', () => {
+  it('puts a card in the thread instead of nothing, and names what broke', async () => {
+    const h = build('scripted', undefined, new FailingClient(['group']));
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+
+    const failed = h.events.filter((e) => e.type === 'turn.failed');
+    expect(failed).toHaveLength(1);
+    const view = (failed[0] as Extract<RoomEvent, { type: 'turn.failed' }>).failure;
+    expect(view.kind).toBe('turn');
+    expect(view.anchorId).toBe('seg_1');
+    expect(view.displayName).toBe('Ellie');
+    // The class of the error, not its text: no prompt, no body, no key ever reaches the card.
+    expect(view.reason).toBe('the Claude CLI exited 1');
+    expect(h.actor.snapshot().failures).toHaveLength(1);
+  });
+
+  it('does not nudge on top of itself — the timer is held until the learner acts', async () => {
+    const h = build('scripted', undefined, new FailingClient(['group']));
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    // Well past stage 1 (45 s) and stage 2 (90 s). Before this fix, two nudges landed here.
+    await h.clock.run(200_000);
+    expect(h.events.some((e) => e.type === 'message.appended')).toBe(true);
+    expect(h.store.rooms.get(h.roomId)!.deadline_ts).toBeNull();
+    const agentTurns = h.store.messages
+      .forRoom(h.roomId)
+      .filter((m) => m.model === 'pool:content_free');
+    expect(agentTurns).toHaveLength(0);
+  });
+
+  it('re-arms the timer once the learner speaks again', async () => {
+    const h = build('scripted', undefined, new FailingClient(['group']));
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    expect(h.store.rooms.get(h.roomId)!.deadline_ts).toBeNull();
+    h.events.length = 0;
+    await settle(h.clock, h.actor.sendMessage(TURN_4, 'seg_1'));
+    // The card for that thread is withdrawn: the learner has moved past the turn that failed.
+    expect(h.events.some((e) => e.type === 'turn.failed.cleared')).toBe(true);
+  });
+
+  it('replays the same turn on Retry, and the card goes away', async () => {
+    const client = new FailingClient(['group']);
+    const h = build('scripted', undefined, client);
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    const view = (h.events.find((e) => e.type === 'turn.failed') as Extract<RoomEvent, { type: 'turn.failed' }>).failure;
+
+    // The backend comes back.
+    (client as unknown as { failScopes: LlmScope[] }).failScopes = [];
+    h.events.length = 0;
+    await settle(h.clock, h.actor.retryTurn(view.id));
+
+    expect(h.events.some((e) => e.type === 'turn.failed.cleared')).toBe(true);
+    expect(h.actor.snapshot().failures).toHaveLength(0);
+    // A real agent message landed this time, in the same thread.
+    const last = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(last.anchor_id).toBe('seg_1');
+    expect(last.participant_id).toBe(h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!.id);
+  });
+
+  it('surfaces a ledger failure without pretending nobody replied', async () => {
+    const h = build('scripted', undefined, new FailingClient(['ledger']));
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    const view = (h.events.find((e) => e.type === 'turn.failed') as Extract<RoomEvent, { type: 'turn.failed' }>).failure;
+    expect(view.kind).toBe('ledger');
+    expect(view.displayName).toBeNull();
+    // Ellie still spoke, and the timer is still running: the reply arrived, only the rail did not.
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.model).not.toBe('pool:content_free');
+    expect(h.store.rooms.get(h.roomId)!.deadline_ts).not.toBeNull();
+  });
+});
+
+describe('the stage-1 nudge pool', () => {
+  it('rotates, so the same line never lands twice running', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      await h.clock.run(50_000);
+      const nudges = h.store.messages.forRoom(h.roomId).filter((m) => m.model === 'pool:content_free');
+      const last = nudges.at(-1);
+      if (last && seen.at(-1) !== last.body) seen.push(last.body);
+      // A new round so the two-fires-per-round budget does not run out mid-test.
+      await settle(h.clock, h.actor.sendMessage(TURN_4, 'seg_1'));
+    }
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < seen.length; i += 1) expect(seen[i]).not.toBe(seen[i - 1]);
+    for (const line of seen) expect(CONTENT_FREE_NUDGES).toContain(line);
   });
 });

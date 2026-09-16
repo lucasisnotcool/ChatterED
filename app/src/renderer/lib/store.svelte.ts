@@ -316,6 +316,16 @@ class Store {
       case 'notice':
         this.notice = { level: e.level, text: e.text };
         break;
+      /**
+       * A turn that failed. It lands in the thread it failed in, as a card with a Retry — the
+       * one state the app used to render as an empty thread followed by a nudge.
+       */
+      case 'turn.failed':
+        if (room && !room.failures.some((f) => f.id === e.failure.id)) room.failures.push(e.failure);
+        break;
+      case 'turn.failed.cleared':
+        if (room) room.failures = room.failures.filter((f) => f.id !== e.failureId);
+        break;
     }
   }
 
@@ -910,6 +920,12 @@ class Store {
   hold(): void {
     const roomId = this.room?.roomId;
     if (roomId) void run(this, () => bridge().holdTimer({ roomId }));
+  }
+
+  /** The card's button. The main process owns what "the same turn" means; this only names it. */
+  retryTurn(failureId: string): void {
+    const roomId = this.room?.roomId;
+    if (roomId) void run(this, () => bridge().retryTurn({ roomId, failureId }));
   }
 
   pauseNudges(paused: boolean): void {

@@ -200,6 +200,34 @@ export interface RoomSnapshot {
   /** 'scripted' replays design-brief.md §G; 'live' calls the Anthropic API. */
   mode: 'scripted' | 'live';
   roundCard: { title: string; body: string };
+  /** Turns that failed and have not been retried or superseded. Rendered as system cards. */
+  failures: TurnFailureView[];
+}
+
+/**
+ * **A turn that failed, on screen, with a way out.**
+ *
+ * The 2026-09-16 bug was not only that a turn evaporated — it was that *nothing said so*. A
+ * failed LLM call, a failed orchestrator decision and a deliberate silence were one state
+ * downstream, so the learner saw an empty thread and then a nudge asking why they were quiet.
+ * This is the difference: the thread says what broke and offers the retry, and `actor.#armTimer`
+ * refuses to nudge while one of these is outstanding.
+ */
+export interface TurnFailureView {
+  /** The retry token. `api.retryTurn({ roomId, failureId })` replays exactly this turn. */
+  id: string;
+  /** The segment thread the card belongs under; `null` is the room-level stream. */
+  anchorId: string | null;
+  /**
+   * `turn` — nobody replied. `ledger` — the reply arrived but the progress rail did not move.
+   * They are different sentences on screen because they are different losses to the learner.
+   */
+  kind: 'turn' | 'ledger';
+  /** Whose turn it was, for the card's first clause. Null for a ledger failure. */
+  displayName: string | null;
+  /** One short sentence: "the Claude CLI exited 1". Never a stack, never a message body. */
+  reason: string;
+  at: string;
 }
 
 export interface WhisperTurnView {
@@ -479,7 +507,9 @@ export type RoomEvent =
   | { type: 'whisper.turn'; roomId: string; threadId: string; turn: WhisperTurnView }
   | { type: 'whisper.cleared'; roomId: string; threadId: string }
   | { type: 'session.recap'; roomId: string; recap: RecapView }
-  | { type: 'notice'; roomId: string | null; level: 'info' | 'error'; text: string };
+  | { type: 'notice'; roomId: string | null; level: 'info' | 'error'; text: string }
+  | { type: 'turn.failed'; roomId: string; failure: TurnFailureView }
+  | { type: 'turn.failed.cleared'; roomId: string; failureId: string };
 
 // ── The vault (issue #22) ──────────────────────────────────────────────────
 // Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner

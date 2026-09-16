@@ -4,6 +4,7 @@
   import Message from './Message.svelte';
   import RoundCard from './RoundCard.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
+  import TurnFailureCard from './TurnFailureCard.svelte';
 
   let { room }: { room: RoomSnapshot } = $props();
 
@@ -54,6 +55,11 @@
     {#if room.thinking}
       <ThinkingIndicator thinking={room.thinking} />
     {/if}
+    <!-- The room-level stream's half of the failed-turn card. Same rule: a turn always ends in
+         something the learner can see. -->
+    {#each room.failures as failure (failure.id)}
+      <TurnFailureCard {failure} />
+    {/each}
   </div>
 </div>
 

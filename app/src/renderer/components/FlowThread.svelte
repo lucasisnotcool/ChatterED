@@ -25,6 +25,7 @@
   import { clockTime } from '../lib/time.js';
   import AiSegment from './AiSegment.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
+  import TurnFailureCard from './TurnFailureCard.svelte';
 
   let {
     anchorId,
@@ -53,6 +54,8 @@
    */
   const holding = $derived(room.thinking && store.composerAt === anchorId ? room.thinking : null);
   const waiting = $derived(room.thinking !== null);
+  /** Failed turns belong under the thread they failed in, where the learner is looking. */
+  const failures = $derived(room.failures.filter((f) => f.anchorId === anchorId));
 
   $effect(() => {
     if (composerOpen && box) box.focus();
@@ -107,6 +110,10 @@
   {#if holding}
     <div class="slot"><ThinkingIndicator thinking={holding} /></div>
   {/if}
+
+  {#each failures as failure (failure.id)}
+    <TurnFailureCard {failure} />
+  {/each}
 
   {#if lockedByAnswerId}
     <!-- No composer while the card is unanswered. Saying so beats an input that does nothing. -->

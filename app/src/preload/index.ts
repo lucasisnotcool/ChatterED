@@ -22,6 +22,7 @@ const api: ChatterEdApi = {
   holdTimer: (input) => ipcRenderer.invoke(IPC.holdTimer, input),
   pauseNudges: (input) => ipcRenderer.invoke(IPC.pauseNudges, input),
   wrapUp: (input) => ipcRenderer.invoke(IPC.wrapUp, input),
+  retryTurn: (input) => ipcRenderer.invoke(IPC.retryTurn, input),
   acceptTeachback: (input) => ipcRenderer.invoke(IPC.acceptTeachback, input),
   openWhisper: (input) => ipcRenderer.invoke(IPC.openWhisper, input),
   sendWhisper: (input) => ipcRenderer.invoke(IPC.sendWhisper, input),

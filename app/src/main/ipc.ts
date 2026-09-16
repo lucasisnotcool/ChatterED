@@ -702,6 +702,9 @@ export class AppService {
       this.#requireActor(input.roomId).pauseNudges(input.paused),
     );
     handle<{ roomId: string }>(IPC.wrapUp, (input) => this.#requireActor(input.roomId).wrapUp());
+    handle<{ roomId: string; failureId: string }>(IPC.retryTurn, (input) =>
+      this.#requireActor(input.roomId).retryTurn(input.failureId),
+    );
     handle<{ roomId: string; agentKey: string }>(IPC.acceptTeachback, (input) =>
       this.#requireActor(input.roomId).acceptTeachback(input.agentKey),
     );

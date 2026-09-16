@@ -43,6 +43,8 @@ export const IPC = {
   holdTimer: 'room:hold',
   pauseNudges: 'room:pauseNudges',
   wrapUp: 'room:wrapUp',
+  /** The **Retry** on a failed-turn card (`TurnFailureView`). */
+  retryTurn: 'room:retryTurn',
   acceptTeachback: 'room:acceptTeachback',
   openWhisper: 'whisper:open',
   sendWhisper: 'whisper:send',
@@ -120,6 +122,14 @@ export interface ChatterEdApi {
   /** `Wait for me`: pauses nudges for this round, with an undo. */
   pauseNudges(input: { roomId: string; paused: boolean }): Promise<void>;
   wrapUp(input: { roomId: string }): Promise<RecapView>;
+  /**
+   * Replay the turn a `turn.failed` card is about.
+   *
+   * It takes the **failure id**, not a message or a trigger, so the renderer cannot ask for a
+   * turn that never happened: the main process holds the trigger and the anchor the failed turn
+   * ran with, and replays exactly those (`actor.retryTurn`).
+   */
+  retryTurn(input: { roomId: string; failureId: string }): Promise<void>;
   /**
    * "Yes, invite Theo" on the recap. Records the acceptance and says what happens next; Theo's
    * round itself is A2 and `available` is false until it exists.
