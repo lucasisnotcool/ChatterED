@@ -23,7 +23,10 @@ import {
   OWN_TURN_PREFIX,
   promptFor,
   cliQueue,
+  CLI_DEFERRED,
   CLI_LOW_PRIORITY_GRACE_MS,
+  CLI_PREEMPTIBLE,
+  CLI_TIMEOUT_MS,
   CliPreemptedError,
   isEmptyExitOne,
   resolveClaudeBinary,
@@ -547,5 +550,28 @@ describe('the empty `exited 1`', () => {
     expect(isEmptyExitOne('The Claude CLI exited 1: no output')).toBe(true);
     expect(isEmptyExitOne('The Claude CLI exited 1: Invalid model name')).toBe(false);
     expect(isEmptyExitOne('The Claude CLI exited 3: no output')).toBe(false);
+  });
+});
+
+/**
+ * Issue #38: the learning-objective ingest exceeded the single 120 s ceiling on the real 58-page
+ * CS4246 deck (`llm.error TimeoutError` at 121,211 ms, 16 Sep) — a minute of Sonnet spent and a
+ * `failed` row at the end of it. Latency is output tokens, so the ceiling has to scale with what
+ * is being asked for, and only for the calls nobody is waiting on.
+ */
+describe('the per-scope timeout', () => {
+  it('gives the ingest longer than a turn, and leaves every other scope alone', () => {
+    expect(CLI_TIMEOUT_MS.ingest).toBe(300_000);
+    expect(CLI_TIMEOUT_MS.group).toBeUndefined();
+    expect(CLI_TIMEOUT_MS.reference).toBeUndefined();
+    expect(CLI_TIMEOUT_MS.ledger).toBeUndefined();
+  });
+
+  /** Only a call that can be pre-empted for a learner may hold a lane for five minutes. */
+  it('only lengthens a call that is both deferred and pre-emptible', () => {
+    for (const scope of Object.keys(CLI_TIMEOUT_MS)) {
+      expect(CLI_DEFERRED.has(scope)).toBe(true);
+      expect(CLI_PREEMPTIBLE.has(scope)).toBe(true);
+    }
   });
 });

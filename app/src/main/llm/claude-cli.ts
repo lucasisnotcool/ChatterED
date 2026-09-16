@@ -319,6 +319,26 @@ export function isEmptyExitOne(message: string): boolean {
 
 export const CLI_RETRY_DELAY_MS = 500;
 
+/**
+ * **A call nobody is waiting for may take longer than one a learner is waiting on.**
+ *
+ * The single 120 s timeout was written for a turn, and for a turn it is generous: the longest
+ * measured reply on this backend is ~11 s and a 40 s cold start is already a bug. The
+ * learning-objective ingest (issue #38) is a different animal — 30 K characters of deck in, a
+ * forced schema, and up to twenty nodes each with a statement, four criteria and three question
+ * stems out. Measured on the 58-page CS4246 deck it **exceeded 120 s and was killed mid-answer**
+ * (`llm.error TimeoutError` at 121,211 ms, 16 Sep), which is the worst of both: a minute of
+ * Sonnet spent and a `failed` row at the end of it.
+ *
+ * Latency here is output tokens (`whole-file-context.md` §2), so the ceiling has to scale with
+ * what is being asked for. Nothing on this list is on any path — both are background calls that
+ * can be pre-empted for a learner at any moment — so a long ceiling costs nobody a wait; it only
+ * decides when a stuck child is declared stuck.
+ */
+export const CLI_TIMEOUT_MS: Record<string, number> = {
+  ingest: 300_000,
+};
+
 export class ClaudeCliClient implements LLMClient {
   readonly kind = 'claude-cli' as const;
   readonly binary: string;
@@ -531,12 +551,13 @@ export class ClaudeCliClient implements LLMClient {
         : null;
       if (onAbort) signal?.addEventListener('abort', onAbort, { once: true });
 
+      const timeoutMs = CLI_TIMEOUT_MS[request.meta.scope] ?? this.#timeoutMs;
       const timer = setTimeout(() => {
         finish(() => {
           child.kill('SIGKILL');
-          reject(new Error(`The Claude CLI did not answer within ${Math.round(this.#timeoutMs / 1000)}s.`));
+          reject(new Error(`The Claude CLI did not answer within ${Math.round(timeoutMs / 1000)}s.`));
         });
-      }, this.#timeoutMs);
+      }, timeoutMs);
 
       const consume = (line: string): void => {
         const trimmed = line.trim();
