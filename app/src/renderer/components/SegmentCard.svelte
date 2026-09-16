@@ -21,7 +21,9 @@
    */
   import {
     CONTENT_WIDTH,
+    DEFAULT_ZOOM,
     PLACEHOLDER,
+    backingRatio,
     buildChipLabel,
     cardSize,
     compareCaption,
@@ -46,6 +48,13 @@
     rev = 0,
     background = PLACEHOLDER,
     contentWidth = CONTENT_WIDTH,
+    /**
+     * The flow's **committed** zoom (`FlowCanvas`). The card is still laid out in unzoomed CSS
+     * pixels — the flow scales it with one CSS `zoom` on a wrapper — so the only thing this
+     * changes is the crop's backing store: at 200 % the same box is painted over twice as many
+     * device pixels, and without it zooming in would be an upscale of the pixels already there.
+     */
+    zoom = DEFAULT_ZOOM,
     index,
     total,
     /** The sentence `segments:*` refused with, shown inline under the label for ~2 s. */
@@ -82,6 +91,7 @@
     rev?: number;
     background?: string;
     contentWidth?: number;
+    zoom?: number;
     index: number;
     total: number;
     refusal?: string | null;
@@ -130,8 +140,8 @@
     void rev;
     void background;
     if (!target) return;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    const plan = drawPlan(rect, page, { width: source?.width ?? 0, height: source?.height ?? 0 }, size.w, dpr);
+    const ratio = backingRatio(window.devicePixelRatio || 1, zoom);
+    const plan = drawPlan(rect, page, { width: source?.width ?? 0, height: source?.height ?? 0 }, size.w, ratio);
     // One integer decides the backing store and the CSS box, so the crop can never overhang its
     // own card by a pixel (the same rule PdfViewer.draw() follows).
     target.width = plan.backing.w;
@@ -179,7 +189,15 @@
     const lo = axis === 'horizontal' ? card.rect.y0 : card.rect.x0;
     const hi = axis === 'horizontal' ? card.rect.y1 : card.rect.x1;
     const span = axis === 'horizontal' ? box.h : box.w;
-    const offset = axis === 'horizontal' ? e.clientY - rect.top : e.clientX - rect.left;
+    /**
+     * `clientY` and `getBoundingClientRect()` are in the flow's **visual** pixels; `box` is the
+     * card's own layout pixels, inside the zoomed wrapper. The ratio is measured off the track
+     * element itself rather than taken from a prop — one number, read from the thing the
+     * learner is actually pointing at, so it cannot drift from what is on screen.
+     */
+    const drawn = axis === 'horizontal' ? rect.height : rect.width;
+    const k = drawn > 0 && span > 0 ? span / drawn : 1;
+    const offset = (axis === 'horizontal' ? e.clientY - rect.top : e.clientX - rect.left) * k;
     const free = e.altKey;
     const raw = normFromOffset(offset, span, lo, hi);
     return { at: snapPreview(raw, axis, card.candidates, page, { free }).at, free };
@@ -229,7 +247,7 @@
     const rect = card.rect;
     void rev;
     if (!target) return;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const dpr = backingRatio(window.devicePixelRatio || 1, zoom);
     const h = Math.max(1, Math.round((COMPARE_W * page.height) / page.width));
     target.width = Math.round(COMPARE_W * dpr);
     target.height = Math.round(h * dpr);
@@ -413,7 +431,8 @@
     </div>
 
     <div class="cropwrap" style={`width: ${box.w}px; height: ${box.h}px; background: ${background}`}>
-      <canvas class="crop" bind:this={crop}></canvas>
+      <!-- `data-crop` is the flow's double-click target: 100 % ↔ fit-width, like Preview. -->
+      <canvas class="crop" data-crop bind:this={crop}></canvas>
       <!-- The only thing ever drawn over slide pixels. -->
       {#if guide}
         <span

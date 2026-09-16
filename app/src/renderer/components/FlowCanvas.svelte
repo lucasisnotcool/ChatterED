@@ -28,24 +28,35 @@
   import type { DocumentView } from '../../shared/types.js';
   import {
     CONTENT_WIDTH,
+    DEFAULT_ZOOM,
     LABEL_STRIP,
     PAGE_CACHE,
     PLACEHOLDER,
     PageLru,
     SPLIT_ADDED_HEIGHT,
+    backingRatio,
     colourFromPixel,
+    fitWidthZoom,
     flowCards,
     invert,
     mergeSeam,
     minWidthFraction,
     newSegmentIds,
+    nextZoom,
     pageRenderScale,
+    pinchZoom,
+    prevZoom,
+    readZoom,
     scrollAfterMerge,
     scrollAfterSplit,
+    toggleZoom,
+    zoomAnchorScroll,
+    zoomChipLabel,
     type FlowMode,
     type FlowOp,
     type PagePt,
   } from '../lib/flowview.js';
+  import { registerViewer, type ViewerCommand } from '../lib/viewer.js';
   import { claimsForAnchor, threadFor } from '../../shared/flowthread.js';
   import { pillLabel, scrollDecision, thinkingAnchor } from '../lib/flowchat.js';
   import { store } from '../lib/store.svelte.js';
@@ -65,6 +76,203 @@
   let mode = $state<FlowMode>('segments');
   let undoStack = $state<FlowOp[]>([]);
   let busy = $state(false);
+
+  // ── Zoom ──────────────────────────────────────────────────────────────────
+  /**
+   * **The flow could not be zoomed at all** (Lucas, 2026-09-16: "cannot zoom in on main UI").
+   *
+   * The flow never registered with `lib/viewer.ts`, so View ▸ Zoom In sent `zoom.in` into a
+   * registry with nothing in it and a pinch reached nothing either — `main/index.ts` turns the
+   * chrome's own zoom off precisely so a pinch can reach the document, and on the app's main
+   * surface it then reached nothing at all. The page viewer had the whole gesture set; the
+   * surface the learner actually spends the session on had none of it.
+   *
+   * Two levels, not one, and the difference is the point:
+   *
+   *   - `zoom` is live. It is a CSS `zoom` on one wrapper around the whole flow, so the cards,
+   *     the crops, the threads *and the AI text in them* all scale together and the layout
+   *     reflows — which is what "zoom in on the main UI" has to mean if the conversation is to
+   *     become readable. It moves on every pinch frame; a CSS zoom is a relayout, not a
+   *     re-rasterisation, so that is affordable.
+   *   - `renderZoom` is committed, 150 ms after the fingers stop (the same idle window
+   *     `PdfViewer` settles on). It is the only thing that decides how hard a page is
+   *     rasterised and how big a crop's backing store is. Moving it per frame would mean
+   *     re-rendering a 20 MB page canvas at 60 fps.
+   *
+   * So a pinch is instant and very slightly soft, and lands sharp a sixth of a second later. A
+   * keystroke commits both at once, because there is nothing to wait for.
+   */
+  const ZOOM_KEY = 'chattered.flow.zoom';
+  const ZOOM_IDLE_MS = 150;
+
+  /**
+   * Per install, and deliberately `localStorage` rather than a `settings` row: `SettingsView`
+   * and `SettingsPatch` live in `src/shared/types.ts` with the main process's schema behind
+   * them, and this is a pure view preference that nothing outside this component reads. In an
+   * Electron renderer `localStorage` is a file in the same `userData` directory the settings
+   * database is in, so "per install, survives a relaunch" is the same promise either way.
+   */
+  function loadZoom(): number {
+    try {
+      return readZoom(window.localStorage.getItem(ZOOM_KEY));
+    } catch {
+      return DEFAULT_ZOOM;
+    }
+  }
+
+  function saveZoom(value: number): void {
+    try {
+      window.localStorage.setItem(ZOOM_KEY, String(value));
+    } catch {
+      // A denied or full store is not worth failing a zoom over.
+    }
+  }
+
+  let zoom = $state(loadZoom());
+  let renderZoom = $state(loadZoom());
+  let zoomSettle: ReturnType<typeof setTimeout> | null = null;
+
+  /** The transient "120 %" chip, the way Preview announces a zoom and then gets out of the way. */
+  let chip = $state<string | null>(null);
+  let chipTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function showChip(value: number): void {
+    chip = zoomChipLabel(value);
+    if (chipTimer) clearTimeout(chipTimer);
+    chipTimer = setTimeout(() => (chip = null), 900);
+  }
+
+  /**
+   * Commit the zoom: persist it, and let the crops re-render at the new scale.
+   *
+   * Nothing is thrown away here. `render()` re-rasterises a page only when the new zoom asks
+   * for *more* pixels than the cached canvas has, and it swaps the canvas in only once the new
+   * one has painted — so a zoom never blanks a card (risk 3), and zooming back out is free.
+   */
+  function commitZoom(): void {
+    if (zoomSettle) clearTimeout(zoomSettle);
+    zoomSettle = null;
+    if (renderZoom === zoom) return;
+    renderZoom = zoom;
+    saveZoom(zoom);
+    pump();
+  }
+
+  function scheduleCommit(): void {
+    if (zoomSettle) clearTimeout(zoomSettle);
+    zoomSettle = setTimeout(commitZoom, ZOOM_IDLE_MS);
+  }
+
+  /**
+   * Move the zoom, keeping the point under `pointerY` where it is.
+   *
+   * The whole flow scales, so the scroller's coordinates scale with it — one multiplication,
+   * the same `anchorScroll` arithmetic the page viewer uses, applied after the browser has laid
+   * the new size out.
+   */
+  function applyZoom(next: number, pointer: { x: number; y: number } | null, commit: boolean): void {
+    const el = scroller;
+    const from = zoom;
+    if (next === from) {
+      showChip(next);
+      return;
+    }
+    const box = el?.getBoundingClientRect();
+    const px = pointer && box ? pointer.x - box.left : (el?.clientWidth ?? 0) / 2;
+    const py = pointer && box ? pointer.y - box.top : (el?.clientHeight ?? 0) / 2;
+    const left = el?.scrollLeft ?? 0;
+    const top = el?.scrollTop ?? 0;
+    zoom = next;
+    showChip(next);
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollLeft = zoomAnchorScroll(left, px, from, next);
+        el.scrollTop = zoomAnchorScroll(top, py, from, next);
+      });
+    }
+    if (commit) commitZoom();
+    else scheduleCommit();
+  }
+
+  /** What "fit width" means for a column: the card filling the pane, tick track included. */
+  function fitZoom(): number {
+    return fitWidthZoom(scroller?.clientWidth ?? 0);
+  }
+
+  /**
+   * A macOS pinch is a `wheel` event with `ctrlKey` set — the same shape `PdfViewer.onwheel`
+   * documents (Electron 44.3.0 / Chromium 152, ~31 events per gesture, continuous `deltaY`).
+   * The chrome's own zoom is off (`main/index.ts`), so without this the gesture did nothing.
+   */
+  function onwheel(e: WheelEvent): void {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    applyZoom(pinchZoom(zoom, e.deltaY), { x: e.clientX, y: e.clientY }, false);
+  }
+
+  /** Double-click on a crop is macOS smart zoom: 100 % ↔ fit-width, about the point clicked. */
+  function ondblclick(e: MouseEvent): void {
+    const target = e.target as HTMLElement | null;
+    if (!target?.closest('[data-crop]')) return;
+    e.preventDefault();
+    applyZoom(toggleZoom(zoom, fitZoom()), { x: e.clientX, y: e.clientY }, true);
+  }
+
+  /** The application menu's View items, once the flow has claimed the registry. */
+  function command(c: ViewerCommand): void {
+    switch (c) {
+      case 'zoom.in':
+        applyZoom(nextZoom(zoom), null, true);
+        break;
+      case 'zoom.out':
+        applyZoom(prevZoom(zoom), null, true);
+        break;
+      case 'zoom.reset':
+        applyZoom(DEFAULT_ZOOM, null, true);
+        break;
+      // A flow is one column with a width; it has no page to fit, so both fits are the width.
+      case 'fit.width':
+      case 'fit.page':
+        applyZoom(fitZoom(), null, true);
+        break;
+      case 'page.next':
+        stepCard(1);
+        break;
+      case 'page.prev':
+        stepCard(-1);
+        break;
+    }
+  }
+
+  /**
+   * ⌘↓ / ⌘↑ and the three-finger swipe. In a flow the unit is the **card**, not the PDF page —
+   * the menu item says "Next Page" because the page viewer is the other thing it drives, and a
+   * flow whose cards are page-sized (an untouched deck, or Original pages) answers it with
+   * exactly the page turn the name promises.
+   */
+  function stepCard(delta: number): void {
+    const el = scroller;
+    if (!el) return;
+    const tops = cards
+      .map((c) => el.querySelector<HTMLElement>(`[data-segment="${c.segmentId}"]`))
+      .filter((n): n is HTMLElement => n !== null)
+      .map((n) => topInScroller(n) - 12);
+    if (tops.length === 0) return;
+    const at = el.scrollTop;
+    const to =
+      delta > 0
+        ? (tops.find((t) => t > at + 4) ?? tops[tops.length - 1]!)
+        : ([...tops].reverse().find((t) => t < at - 4) ?? 0);
+    el.scrollTo({ top: Math.max(0, to) });
+  }
+
+  // The flow is the whole document pane while it is open, so it is the viewer the menu means.
+  $effect(() => registerViewer(command));
+
+  $effect(() => () => {
+    if (zoomSettle) clearTimeout(zoomSettle);
+    if (chipTimer) clearTimeout(chipTimer);
+  });
 
   /** Bumped per page when its canvas has been painted, so the cards redraw. */
   let rev = $state<Record<number, number>>({});
@@ -159,6 +367,7 @@
     return () => {
       cancelled = true;
       canvases.clear();
+      renderedAt.clear();
       rendering.clear();
       onScreen.clear();
       rev = {};
@@ -186,21 +395,38 @@
     return hit ? { width: hit.width, height: hit.height } : { width: 960, height: 540 };
   }
 
-  /** How hard this page has to be rasterised: enough that its narrowest crop is 1:1 on screen. */
+  /**
+   * How hard this page has to be rasterised: enough that its narrowest crop is 1:1 on screen —
+   * at the **committed** zoom. `backingRatio` folds the zoom into the device pixel ratio, which
+   * is the whole of what the zoom changes about the render path: the flow is still laid out
+   * from `CONTENT_WIDTH`, and the CSS zoom on the wrapper does the scaling.
+   */
   function scaleFor(page: number): number {
     const onPage = (flow?.segments ?? []).filter((s) => s.page === page);
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
-    return pageRenderScale(sizeOf(page), minWidthFraction(onPage), CONTENT_WIDTH, dpr);
+    const ratio = backingRatio(window.devicePixelRatio || 1, renderZoom);
+    return pageRenderScale(sizeOf(page), minWidthFraction(onPage), CONTENT_WIDTH, ratio);
   }
+
+  /**
+   * The scale each cached page canvas was actually rasterised at, so a zoom can tell which
+   * pages no longer have enough pixels. Not reactive, for the same reason `canvases` is not.
+   */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const renderedAt = new Map<number, number>();
 
   async function render(page: number): Promise<void> {
     const d = pdf;
-    if (!d || rendering.has(page) || canvases.has(page)) return;
+    if (!d || rendering.has(page)) return;
+    const want = scaleFor(page);
+    // Re-rasterise only when the zoom asks for **more** pixels than the cached canvas has.
+    // Zooming back out keeps the bigger canvas: downscaling a bitmap is sharp, and re-rendering
+    // to make it smaller would be a blank-card risk taken for nothing.
+    if (canvases.has(page) && (renderedAt.get(page) ?? 0) >= want - 0.001) return;
     rendering.add(page);
     try {
       const proxy = await d.getPage(page);
       if (pdf !== d) return;
-      const viewport = proxy.getViewport({ scale: scaleFor(page) });
+      const viewport = proxy.getViewport({ scale: want });
       const canvas = document.createElement('canvas');
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
@@ -208,7 +434,10 @@
       if (!ctx) return;
       await proxy.render({ canvasContext: ctx, viewport, canvas }).promise;
       if (pdf !== d) return;
+      // The old canvas is only swapped out once the new one has painted, so a card is never
+      // drawing off a released bitmap and a zoom never flashes a placeholder.
       canvases.set(page, canvas);
+      renderedAt.set(page, want);
       // The page's own background, for the placeholder every other card paints while it waits.
       try {
         bg = { ...bg, [page]: colourFromPixel(ctx.getImageData(1, 1, 1, 1).data) };
@@ -296,11 +525,18 @@
     return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
   }
 
-  /** Where the cut is, in scroller coordinates, so the anchor knows whether it is above the fold. */
+  /**
+   * Where the cut is, in scroller coordinates, so the anchor knows whether it is above the fold.
+   *
+   * `topInScroller` is a rect difference and therefore in the scroller's own **visual** pixels;
+   * `LABEL_STRIP` and the card's `cutOffset` are the card's own layout pixels, inside the
+   * zoomed wrapper. One multiplication reconciles them, and forgetting it would put every cut
+   * in a zoomed flow on the wrong side of the fold.
+   */
   function cutTopOf(segmentId: string, cutOffset: number): number {
     const el = scroller?.querySelector<HTMLElement>(`[data-segment="${segmentId}"]`);
     if (!el || !scroller) return Number.POSITIVE_INFINITY;
-    return topInScroller(el) + LABEL_STRIP + cutOffset;
+    return topInScroller(el) + (LABEL_STRIP + cutOffset) * zoom;
   }
 
   async function onsplit(
@@ -333,7 +569,7 @@
     if (el) {
       requestAnimationFrame(() => {
         const added = el.scrollHeight - heightBefore;
-        el.scrollTop = scrollAfterSplit(keptTop, cutTop, added > 0 ? added : SPLIT_ADDED_HEIGHT);
+        el.scrollTop = scrollAfterSplit(keptTop, cutTop, added > 0 ? added : SPLIT_ADDED_HEIGHT * zoom);
       });
     }
   }
@@ -356,7 +592,7 @@
     if (el) {
       requestAnimationFrame(() => {
         const removed = heightBefore - el.scrollHeight;
-        el.scrollTop = scrollAfterMerge(keptTop, seamTop, removed > 0 ? removed : SPLIT_ADDED_HEIGHT);
+        el.scrollTop = scrollAfterMerge(keptTop, seamTop, removed > 0 ? removed : SPLIT_ADDED_HEIGHT * zoom);
       });
     }
   }
@@ -614,6 +850,18 @@
       Undo <kbd>⌘Z</kbd>
     </button>
 
+    <!--
+      The zoom, with a handle. A gesture with no visible control is a gesture only its author
+      knows about, and "cannot zoom in on main UI" is what happens when the only paths are a
+      menu item that reached nothing and a pinch nothing answered. Same three controls the page
+      viewer's toolbar has, in the same order.
+    -->
+    <span class="zoomer" role="group" aria-label="Zoom">
+      <button type="button" class="step" aria-label="Zoom out" onclick={() => applyZoom(prevZoom(zoom), null, true)}>⊟</button>
+      <button type="button" class="pct" title="Actual size" onclick={() => applyZoom(DEFAULT_ZOOM, null, true)}>{zoomChipLabel(zoom)}</button>
+      <button type="button" class="step" aria-label="Zoom in" onclick={() => applyZoom(nextZoom(zoom), null, true)}>⊞</button>
+    </span>
+
     <!-- One click away, and visibly instant — because the toggle only changes which rectangle
          each card draws (§C3). -->
     <span class="toggle" role="group" aria-label="How the document is shown">
@@ -641,12 +889,21 @@
   -->
   <p class="sr-only" aria-live="polite" aria-atomic="true">{store.liveMessage}</p>
 
-  <div class="scroll" bind:this={scroller} {onscroll}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="scroll" bind:this={scroller} {onscroll} {onwheel} {ondblclick}>
     {#if error}
       <p class="note error">This PDF wouldn't open: {error}</p>
     {:else if store.flowBusy && !flow}
       <p class="note">Reading the page geometry…</p>
     {:else if flow}
+      <!--
+        **The zoom** (Lucas: "cannot zoom in on main UI"). One CSS `zoom` on one wrapper, rather
+        than a width threaded through every child: it scales the cards, the crops, the threads
+        and the AI text in them together, and — unlike a `transform` — it reflows, so the
+        scroller's own height and every rect the flow measures stay true. The crops stay sharp
+        because `scaleFor` and `SegmentCard` fold the same zoom into the backing store.
+      -->
+      <div class="zoomwrap" style={`zoom: ${zoom}`}>
       <!-- The pacing disclosure, once per install, above everything (§3.5). It shows itself or
            not; the flow does not decide. -->
       <PacingStrip />
@@ -674,6 +931,7 @@
             page={sizeOf(card.page)}
             canvas={canvasFor(card.page, rev[card.page] ?? 0)}
             rev={rev[card.page] ?? 0}
+            zoom={renderZoom}
             background={bg[card.page] ?? PLACEHOLDER}
             index={i}
             total={cards.length}
@@ -762,8 +1020,17 @@
       {#if cards.length === 0 && !store.flowBusy}
         <p class="note">Nothing to show for this file yet.</p>
       {/if}
+      </div>
     {/if}
   </div>
+
+  <!--
+    The level, announced and then out of the way — what Preview does, and the only thing that
+    tells a learner whether ⌘+ did anything when the deck is already wider than the pane.
+  -->
+  {#if chip}
+    <span class="zoomchip" role="status">{chip}</span>
+  {/if}
 
   <!--
     §B9 device 3 — the off-screen breadcrumb. A private reply that lands a few seconds later on a
@@ -819,6 +1086,18 @@
   .mini:disabled { color: var(--muted); cursor: default; }
   .mini kbd { font: inherit; font-size: 10px; opacity: 0.7; }
 
+  .zoomer { display: inline-flex; align-items: center; gap: 2px; }
+  .zoomer .step { font-size: 12px; color: var(--text-2); padding: 0 3px; line-height: 1; }
+  .zoomer .step:hover { color: var(--indigo); }
+  .zoomer .pct {
+    font-size: 11px;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+    min-width: 46px;
+    text-align: center;
+  }
+  .zoomer .pct:hover { color: var(--indigo); }
+
   .toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: var(--radius); overflow: hidden; }
   .seg { font-size: 11px; padding: 3px 9px; color: var(--text-2); }
   .seg.on { background: var(--indigo-tint); color: var(--text); }
@@ -826,6 +1105,9 @@
   .scroll {
     flex: 1;
     overflow-y: auto;
+    /* A zoomed flow can be wider than the pane; panning it is how you read the right-hand half
+       of a slide at 200 %, the same way the page viewer pans a zoomed page. */
+    overflow-x: auto;
     min-height: 0;
     padding: 18px 0 64px;
     background: var(--ground);
@@ -844,6 +1126,36 @@
     border-left: 3px solid var(--muted);
     border-radius: 4px;
   }
+  /* The zoom's only footprint in CSS. `zoom` rather than `transform: scale()` on purpose: a
+     transform paints at the new size but lays out at the old one, so the scroller would keep
+     the unzoomed height and every rect the flow measures would lie. */
+  .zoomwrap { display: block; }
+
+  .zoomchip {
+    position: absolute;
+    top: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 45;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    background: var(--pane);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    padding: 4px 13px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 14%);
+    pointer-events: none;
+    animation: chipin 120ms ease-out;
+  }
+  @keyframes chipin {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .zoomchip { animation: none; }
+  }
+
   .slot { display: block; }
   /* The popover's positioning context. The card decides where the popover is, which is what
      "anchored to the card" means: it moves and scrolls with it, and nothing else does. */

@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import {
   CARD_GAP,
   CONTENT_WIDTH,
+  DEFAULT_ZOOM,
+  MAX_BACKING_RATIO,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  ZOOM_GUTTER,
+  ZOOM_STEPS,
+  backingRatio,
+  clampZoom,
+  fitWidthZoom,
+  nextZoom,
+  pinchZoom,
+  prevZoom,
+  readZoom,
+  toggleZoom,
+  zoomAnchorScroll,
+  zoomChipLabel,
+  zoomedWidth,
   PAGE_CACHE,
   PLACEHOLDER,
   PageLru,
@@ -452,5 +469,149 @@ describe('labels', () => {
 
   it('says what the compare panel is claiming', () => {
     expect(compareCaption(3)).toBe('Region of page 3 · nothing has been re-typeset');
+  });
+});
+
+/**
+ * The flow's zoom (Lucas: "cannot zoom in on main UI").
+ *
+ * The numbers that matter are the ones the component cannot check for itself: that 100 % is
+ * still exactly today's 760 px, that the ladder has no gap a keystroke can fall through, that
+ * the backing store actually grows with the zoom (or "zoom in" is a blurry upscale), and that
+ * the cursor anchor is the same arithmetic the page viewer uses.
+ */
+describe('the flow zoom ladder', () => {
+  it('keeps 100 % at exactly the 760 px the flow has always been laid out from', () => {
+    expect(DEFAULT_ZOOM).toBe(1);
+    expect(zoomedWidth(1)).toBe(CONTENT_WIDTH);
+    expect(ZOOM_STEPS).toContain(1);
+    expect(MIN_ZOOM).toBe(0.6);
+    expect(MAX_ZOOM).toBe(2);
+  });
+
+  it('is a sorted ladder from 60 % to 200 % with 100 % on a rung', () => {
+    expect([...ZOOM_STEPS]).toEqual([...ZOOM_STEPS].sort((a, b) => a - b));
+    expect(ZOOM_STEPS[0]).toBe(MIN_ZOOM);
+    expect(ZOOM_STEPS[ZOOM_STEPS.length - 1]).toBe(MAX_ZOOM);
+  });
+
+  it('steps up and down the rungs and stops at both ends', () => {
+    expect(nextZoom(1)).toBe(1.15);
+    expect(prevZoom(1)).toBe(0.9);
+    expect(nextZoom(MAX_ZOOM)).toBe(MAX_ZOOM);
+    expect(prevZoom(MIN_ZOOM)).toBe(MIN_ZOOM);
+  });
+
+  it('lands a hand-set zoom on the next rung rather than nudging it by a hair', () => {
+    // A pinch leaves 1.07; ⌘+ must go to 1.15, not to 1.0999…
+    expect(nextZoom(1.07)).toBe(1.15);
+    expect(prevZoom(1.07)).toBe(1);
+  });
+
+  it('clamps anything off the ladder, and a nonsense zoom is 100 %', () => {
+    expect(clampZoom(9)).toBe(MAX_ZOOM);
+    expect(clampZoom(0.1)).toBe(MIN_ZOOM);
+    expect(clampZoom(Number.NaN)).toBe(DEFAULT_ZOOM);
+  });
+
+  it('scales the content width, which is the only thing the flow is laid out from', () => {
+    expect(zoomedWidth(1.5)).toBe(1140);
+    expect(zoomedWidth(0.6)).toBe(456);
+    // Past the ladder it is the ladder's end, never the raw multiplier.
+    expect(zoomedWidth(4)).toBe(zoomedWidth(MAX_ZOOM));
+  });
+});
+
+describe('the pinch', () => {
+  it('zooms in on a negative delta and out on a positive one, the way macOS sends it', () => {
+    expect(pinchZoom(1, -10)).toBeGreaterThan(1);
+    expect(pinchZoom(1, 10)).toBeLessThan(1);
+  });
+
+  it('never moves more than one step per event, however violent the delta', () => {
+    expect(pinchZoom(1, -1000)).toBeCloseTo(1.1, 5);
+    expect(pinchZoom(1, 1000)).toBeCloseTo(1 / 1.1, 5);
+  });
+
+  it('cannot leave the flow ladder — 600 % is the page viewer, not the flow', () => {
+    let z = 1;
+    for (let i = 0; i < 60; i += 1) z = pinchZoom(z, -50);
+    expect(z).toBe(MAX_ZOOM);
+    for (let i = 0; i < 60; i += 1) z = pinchZoom(z, 50);
+    expect(z).toBe(MIN_ZOOM);
+  });
+});
+
+describe('fit width and the double-click', () => {
+  it('fits the card to the pane, leaving the tick track room to hang off its edge', () => {
+    expect(fitWidthZoom(760 + ZOOM_GUTTER)).toBeCloseTo(1, 5);
+    expect(fitWidthZoom(1216)).toBeCloseTo((1216 - ZOOM_GUTTER) / CONTENT_WIDTH, 5);
+  });
+
+  it('refuses to leave the ladder for a very wide or a very narrow window', () => {
+    expect(fitWidthZoom(4000)).toBe(MAX_ZOOM);
+    expect(fitWidthZoom(300)).toBe(MIN_ZOOM);
+    expect(fitWidthZoom(0)).toBe(DEFAULT_ZOOM);
+  });
+
+  it('toggles 100 % ↔ fit-width, and always changes something', () => {
+    expect(toggleZoom(1, 1.4)).toBe(1.4);
+    expect(toggleZoom(1.4, 1.4)).toBe(1);
+    // Already at 100 % *and* fit is 100 %: the gesture must still be answered, not a no-op loop.
+    expect(toggleZoom(1.5, 1)).toBe(1);
+  });
+});
+
+describe('the backing store and the anchor', () => {
+  it('grows the crop bitmap with the zoom, or zooming in is an upscale of what was there', () => {
+    expect(backingRatio(2, 1)).toBe(2);
+    expect(backingRatio(2, 2)).toBe(4);
+    expect(backingRatio(1, 1.5)).toBe(1.5);
+  });
+
+  it('caps at 6 — a 3× DPR at 200 %, which is the worst case the flow can ask for', () => {
+    expect(backingRatio(3, 2)).toBe(MAX_BACKING_RATIO);
+    expect(backingRatio(8, 2)).toBe(MAX_BACKING_RATIO);
+    expect(backingRatio(Number.NaN, 2)).toBe(2);
+  });
+
+  it('lets a zoomed crop actually reach that backing store — the ceiling used to be 3', () => {
+    const plan = drawPlan(PAGE_BOX, SLIDE, { width: 4000, height: 2250 }, CONTENT_WIDTH, 4);
+    expect(plan.backing.w).toBe(CONTENT_WIDTH * 4);
+    // And the CSS box is untouched by it, which is §4.1's rule: no DPR in a segment rectangle.
+    expect(plan.css.w).toBe(CONTENT_WIDTH);
+  });
+
+  it('rasterises the page harder at a higher zoom, so the crop has pixels to draw', () => {
+    const at100 = pageRenderScale(SLIDE, 1, CONTENT_WIDTH, backingRatio(2, 1));
+    const at200 = pageRenderScale(SLIDE, 1, CONTENT_WIDTH, backingRatio(2, 2));
+    expect(at200).toBeCloseTo(at100 * 2, 5);
+  });
+
+  it('keeps the point under the cursor under the cursor', () => {
+    // Doubling the zoom about a point 300 px down a scroller that is 100 px scrolled: the
+    // content under the cursor was at 400, is now at 800, so the scroller must be at 500.
+    expect(zoomAnchorScroll(100, 300, 1, 2)).toBe(500);
+    // Zooming out about the very top of the pane cannot push the scroller negative.
+    expect(zoomAnchorScroll(10, 0, 2, 1)).toBe(5);
+    expect(zoomAnchorScroll(0, 0, 2, 1)).toBe(0);
+    expect(zoomAnchorScroll(100, 300, 0, 2)).toBe(100);
+  });
+});
+
+describe('the zoom chip and the persisted level', () => {
+  it('writes the percentage the way Preview does', () => {
+    expect(zoomChipLabel(1)).toBe('100 %');
+    expect(zoomChipLabel(1.15)).toBe('115 %');
+    expect(zoomChipLabel(0.6)).toBe('60 %');
+  });
+
+  it('survives a missing, corrupt or out-of-range stored value', () => {
+    expect(readZoom(1.3)).toBe(1.3);
+    expect(readZoom('1.3')).toBe(1.3);
+    expect(readZoom(null)).toBe(DEFAULT_ZOOM);
+    expect(readZoom('nonsense')).toBe(DEFAULT_ZOOM);
+    expect(readZoom(-4)).toBe(DEFAULT_ZOOM);
+    expect(readZoom(99)).toBe(MAX_ZOOM);
   });
 });

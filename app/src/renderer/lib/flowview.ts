@@ -67,6 +67,11 @@ export const SPLIT_ADDED_HEIGHT = CARD_CHROME + CARD_GAP;
  * Ceiling on the page render scale. A 16:9 slide at 760 px content width and a 0.48-wide
  * vertical segment wants 2.1×, doubled again by a Retina DPR — 4 is that case with headroom,
  * and it caps one page canvas at ~22 MB on the fixture deck.
+ *
+ * Deliberately **not** raised for the zoom. A whole-page crop at 200 % on a Retina display asks
+ * for 3.2×, which is under the cap; only a half-width column at the very top of the ladder is
+ * clipped by it, and softening that one case is worth far more than doubling every page canvas
+ * in the LRU to ~50 MB.
  */
 export const MAX_RENDER_SCALE = 4;
 
@@ -162,7 +167,9 @@ export function drawPlan(
   dpr = 1,
 ): DrawPlan {
   const css = cardSize(rect, page, contentWidth);
-  const ratio = clamp(dpr, 1, 3);
+  // Ceiling 6, not 3: at 200 % zoom on a Retina display the crop legitimately wants a 6× backing
+  // store, and clamping it at 3 made "zoom in" past 150 % an upscale of pixels already drawn.
+  const ratio = clamp(dpr, 1, MAX_BACKING_RATIO);
   return {
     css,
     backing: { w: Math.max(1, Math.round(css.w * ratio)), h: Math.max(1, Math.round(css.h * ratio)) },
@@ -202,7 +209,7 @@ export function pageRenderScale(
 ): number {
   if (page.width <= 0) return 0;
   const base = contentWidth / page.width;
-  const ratio = clamp(dpr, 1, 3);
+  const ratio = clamp(dpr, 1, MAX_BACKING_RATIO);
   return clamp((base / clamp(narrowest, 0.05, 1)) * ratio, 0.05, max);
 }
 
@@ -556,4 +563,129 @@ export function buildChipLabel(steps: readonly number[]): string | null {
 /** The compare-on-hover caption. One sentence, and it is a claim about fidelity (§C3). */
 export function compareCaption(page: number): string {
   return `Region of page ${page} · nothing has been re-typeset`;
+}
+
+// ── Zoom ──────────────────────────────────────────────────────────────────────
+/**
+ * **The flow's zoom** (Lucas, 2026-09-16: "cannot zoom in on main UI").
+ *
+ * The flow registered nothing with `lib/viewer.ts`, so View ▸ Zoom and a trackpad pinch both
+ * did nothing on the app's main surface — the one surface a learner spends the session on. The
+ * page viewer had all of it and the flow had none.
+ *
+ * The flow's zoom is **the content width**: `CONTENT_WIDTH` (760 px) is 100 %, and a zoom level
+ * is a multiplier on it. That is the honest unit here, because 760 px is the only number the
+ * whole flow is laid out from — a card's box, its crop, its ticks, the thread under it and the
+ * AI cards in that thread are all derived from it, so multiplying it moves all of them together
+ * and *nothing* is re-typeset by moving it (§C3's rule survives a zoom unchanged).
+ *
+ * Three deliberate differences from `pdfview.ts`'s zoom:
+ *
+ *   1. **The ladder is narrower** — 60 % to 200 %, not 50 % to 600 %. A flow at 600 % is a
+ *      column of slides nobody can read a thread in; the page viewer is where you go to inspect
+ *      a figure, and it is one click away.
+ *   2. **Text scales with it.** "Zoom in on the main UI" has to make *the conversation*
+ *      readable, not only the slide. The component gets that by CSS-zooming the whole flow
+ *      content and asking for a proportionally larger backing store, which is why
+ *      `backingRatio` exists and why `drawPlan`'s ratio ceiling is 6 rather than 3.
+ *   3. **There is no fit-page.** A flow has no page to fit; it has one column with a width.
+ */
+export const ZOOM_STEPS = [0.6, 0.75, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2] as const;
+export const MIN_ZOOM = ZOOM_STEPS[0];
+export const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
+export const DEFAULT_ZOOM = 1;
+
+/**
+ * Ceiling on the crop's backing-store ratio: a 3× DPR at 200 % zoom is 6, and that is the
+ * worst case the flow can ask for. It was 3, which silently capped a Retina crop at 150 % zoom
+ * and made "zoom in" mean "the same pixels, bigger" past that point.
+ */
+export const MAX_BACKING_RATIO = 6;
+
+/**
+ * How much of the pane fit-width leaves alone: the scroller's own breathing room either side,
+ * plus the 22 px tick track that hangs off each card's right edge and must not be clipped.
+ */
+export const ZOOM_GUTTER = 56;
+
+export function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return DEFAULT_ZOOM;
+  return clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+}
+
+/** The next rung up, or the top of the ladder. A hand-set (pinched) zoom lands on the rung above it. */
+export function nextZoom(current: number): number {
+  return ZOOM_STEPS.find((z) => z > current + 0.001) ?? MAX_ZOOM;
+}
+
+export function prevZoom(current: number): number {
+  return [...ZOOM_STEPS].reverse().find((z) => z < current - 0.001) ?? MIN_ZOOM;
+}
+
+/**
+ * One pinch step. Same curve as `pdfview.pinchScale` — a macOS pinch arrives as `wheel` with
+ * `ctrlKey`, continuous sub-pixel `deltaY`, ~31 events per gesture — clamped to the flow's own
+ * ladder ends rather than the viewer's.
+ */
+export function pinchZoom(current: number, deltaY: number, maxStep = 1.1): number {
+  const factor = clamp(Math.exp(-deltaY / 100), 1 / maxStep, maxStep);
+  return clampZoom(current * factor);
+}
+
+/** The content width a zoom level asks for, in CSS px. */
+export function zoomedWidth(zoom: number, contentWidth = CONTENT_WIDTH): number {
+  return Math.max(1, Math.round(contentWidth * clampZoom(zoom)));
+}
+
+/**
+ * The zoom at which a card fills the pane. Clamped to the ladder's ends, so a very wide window
+ * does not blow the flow past 200 % and a very narrow one does not crush it below 60 %.
+ */
+export function fitWidthZoom(paneWidth: number, contentWidth = CONTENT_WIDTH, gutter = ZOOM_GUTTER): number {
+  if (!(paneWidth > 0) || contentWidth <= 0) return DEFAULT_ZOOM;
+  return clampZoom(Math.max(0, paneWidth - gutter) / contentWidth);
+}
+
+/**
+ * Double-click on a crop, which on macOS is smart zoom: 100 % ↔ fit-width, the same gesture
+ * `PdfViewer.ondblclick` answers. Being *at* fit already (within half a percent) is what sends
+ * it back to 100 %, so the gesture always changes something.
+ */
+export function toggleZoom(current: number, fit: number): number {
+  return Math.abs(current - fit) < 0.005 ? DEFAULT_ZOOM : fit;
+}
+
+/** The transient chip, the way Preview writes it. */
+export function zoomChipLabel(zoom: number): string {
+  return `${Math.round(clampZoom(zoom) * 100)} %`;
+}
+
+/**
+ * The backing store a crop needs at this zoom: the device pixel ratio times the zoom, because
+ * the flow's zoom is a CSS zoom over a canvas whose bitmap does not scale itself. Without the
+ * zoom in here, zooming in is a blurry upscale of the pixels that were already there — which is
+ * exactly the "no blur beyond the idle window" the brief asks for.
+ */
+export function backingRatio(dpr: number, zoom: number): number {
+  const ratio = Number.isFinite(dpr) ? clamp(dpr, 1, 3) : 1;
+  return clamp(ratio * clampZoom(zoom), 1, MAX_BACKING_RATIO);
+}
+
+/**
+ * Where the scroller has to be so the point under the cursor stays under the cursor.
+ *
+ * The same arithmetic as `pdfview.anchorScroll`, restated here because the flow's `from`/`to`
+ * are zoom levels rather than render scales and because `flowview.ts` is where the flow's
+ * numbers are tested. `pointer` is the cursor's offset inside the scroller's own box.
+ */
+export function zoomAnchorScroll(offset: number, pointer: number, from: number, to: number): number {
+  if (!(from > 0)) return offset;
+  return Math.max(0, (offset + pointer) * (to / from) - pointer);
+}
+
+/** The persisted level, read defensively: a missing, corrupt or out-of-range row is 100 %. */
+export function readZoom(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_ZOOM;
+  return clampZoom(n);
 }
