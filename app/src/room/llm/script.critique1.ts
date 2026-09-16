@@ -363,7 +363,7 @@ export const CRITIQUE1_WHISPERS: ScriptedWhisperBeat[] = [
       "Not embarrassing, and it's the question page 6 is about. Two things first: I can see the flow and I can " +
       "explain background, but I won't answer {tester}'s question for you, and nothing here reaches him unless you send " +
       'it.\n\n' +
-      'Short answer: **no**, not to the main thread. Steering mid-task puts your question *and* the reply into the ' +
+      'Short answer: no, not to the main thread. Steering mid-task puts your question and the reply into the ' +
       'main context — page 6’s left-hand column, where "why can’t we.." ends in "Nevermind." and the clutter ' +
       'stays. The side question is answered from that context without being added to it. What it costs you instead ' +
       'is on the right: whatever you decide in there does not come back out on its own.',
