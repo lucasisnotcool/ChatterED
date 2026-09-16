@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { BTW_SIDE_CHANNEL_V1 } from '../room/concepts/btw-side-channel-v1.js';
 import { PSD_HESSIAN_CONVEXITY_V1 } from '../room/concepts/psd-hessian-convexity-v1.js';
+import { PENDING_CONCEPT_ID } from '../room/concepts/pending.js';
 import { messagesForAnchor } from '../room/reference.js';
 import type { ConceptPack } from '../room/records.js';
 import { openTestStore, seedRoom } from '../test-support/db.js';
@@ -193,14 +194,32 @@ describe('the room behind a document', () => {
     expect(pack.concept_id).toBe(BTW_SIDE_CHANNEL_V1.concept_id);
   });
 
-  it('falls back to the default pack for a deck the script does not recognise', async () => {
+  it('gives a deck the script does not recognise NO pack, not the fixture’s', async () => {
     const store = openTestStore();
     const d = deps('b'.repeat(64), store);
     d.vault = { ...fakeVault(), fileRow: () => ({ id: 'f1', name: 'Lecture 6.pdf', topic_id: 't1' }) } as unknown as FlowRoomDeps['vault'];
     const { roomId } = await openOrCreateFlowRoom(d, 'f1');
     const room = store.rooms.get(roomId)!;
-    const pack = JSON.parse(store.materials.get(room.material_id)!.concept_pack) as ConceptPack;
-    expect(pack.concept_id).toBe(PSD_HESSIAN_CONVEXITY_V1.concept_id);
+    const material = store.materials.get(room.material_id)!;
+    const pack = JSON.parse(material.concept_pack) as ConceptPack;
+
+    // The defect: this used to be `PSD_HESSIAN_CONVEXITY_V1`, so `room_6a9609d5c6fb` — a CS4246
+    // deck about search heuristics — was scored against claims about Hessians for two days.
+    expect(pack.concept_id).not.toBe(PSD_HESSIAN_CONVEXITY_V1.concept_id);
+    expect(pack.concept_id).toBe(PENDING_CONCEPT_ID);
+    expect(pack.elements).toHaveLength(0);
+    expect(material.pack_provenance).toBe('pending');
+    // And the rail is empty rather than five rows about somebody else's concept.
+    expect(store.ledger.forSession(store.sessions.forRoom(roomId)!.id)).toHaveLength(0);
+  });
+
+  it('opens a live deck pending rather than waiting on a 37-second ingest', async () => {
+    const store = openTestStore();
+    const d = { ...deps('d'.repeat(64), store), mode: 'live' as const, backend: 'claude_cli' };
+    d.vault = { ...fakeVault(), fileRow: () => ({ id: 'f1', name: 'Lecture 6.pdf', topic_id: 't1' }) } as unknown as FlowRoomDeps['vault'];
+    const { roomId } = await openOrCreateFlowRoom(d, 'f1');
+    const material = store.materials.get(store.rooms.get(roomId)!.material_id)!;
+    expect(material.pack_provenance).toBe('pending');
   });
 
   it('creates the room with a student, two agents and the REFERENCE voice', async () => {

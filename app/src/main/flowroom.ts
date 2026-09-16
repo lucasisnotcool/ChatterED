@@ -30,12 +30,13 @@ import type { FlowSession, PendingQuiz, TaughtItem } from '../room/flow.js';
 import type { MaterialRow } from '../room/records.js';
 import type { ReferenceAnswerState } from '../room/reference.js';
 import { BTW_SIDE_CHANNEL_V1 } from '../room/concepts/btw-side-channel-v1.js';
-import { pickScriptName } from '../room/llm/scripts.js';
+import { matchFixtureDeck } from '../room/llm/scripts.js';
+import { PSD_HESSIAN_CONVEXITY_V1 } from '../room/concepts/psd-hessian-convexity-v1.js';
 import type { LLMClient } from '../room/llm/types.js';
 import type { ModelPlan } from '../room/llm/models.js';
 import type { LocalStore } from './db/store.js';
 import { log } from './log.js';
-import { createSession, draftConcept, frozenPrefix } from './sessions.js';
+import { createSession, frozenPrefix } from './sessions.js';
 import type { SegmentService } from './vault/segments.js';
 import type { VaultService } from './vault/service.js';
 
@@ -104,20 +105,10 @@ export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): 
     ...conceptFor(deps, { fileName: file.name, contentSha: sha }),
   };
 
-  // The claims. Live: the ingest path that has always drafted them, now with nothing to confirm —
-  // the flow has no screen on which to confirm anything, and the learner edits a claim by
-  // explaining it, not by editing a row. Scripted: the committed fixed pack, which is what the
-  // video is filmed on and what makes a fresh install replay with nothing hand-made.
-  if (deps.llm && deps.mode === 'live') {
-    const draft = await draftConcept(deps.llm, { moduleCode: input.moduleCode, title: input.title, text }, deps.models);
-    input.conceptId = draft.conceptId;
-    input.title = draft.title || input.title;
-    input.claims = draft.claims.map((c) => ({
-      id: c.id,
-      label: c.label,
-      learnerLabel: c.learnerLabel,
-    }));
-  }
+  // **The claims are not drafted here any more** (issue #35). `draftConcept` is a 37-second
+  // Sonnet call and it was awaited inside the first "+ Ask here" — a REFERENCE answer needs no
+  // pack whatsoever, and was queued behind one. The room opens on `pendingPack()` and
+  // `src/main/pack.ts` drafts the real one in the background, swapping it in at the next turn.
 
   const created = createSession(
     {
@@ -226,16 +217,29 @@ async function reextractIfTruncated(
 }
 
 /**
- * Which fixed pack a scripted session opens on.
+ * Which pack a session opens on: **a fixture's, or none**.
  *
- * Reuses `pickScriptName()` rather than inventing a second way to recognise the fixture: if the
- * deck is the one the script replays, its claims must be the ones the script's turns are about,
- * or the ledger would score Max's questions about `/btw` against claims about Hessians. One
- * recogniser, two consumers.
+ * `pickScriptName()` was the recogniser here, and it has a *default* — a deck it does not
+ * recognise comes back `'psd-hessian'`, which is the right answer to "which script does the
+ * scripted client replay" and the wrong answer to "whose claims are these". The old code only
+ * checked for `'critique1'`, so every other deck fell through to `{}` and `packFor()`'s own
+ * base, which is the PSD/Hessian fixture. That is how a 58-page CS4246 planning deck came to be
+ * scored against claims about positive semidefinite Hessians (`whole-file-context.md` §1).
+ *
+ * `matchFixtureDeck()` has no default. A deck that is not a fixture gets `pending`: an empty
+ * rail that says "no concepts yet", and a background ingest that fills it from this deck's own
+ * text. A fixture's claims are bound to the fixture's bytes, in scripted mode only — that is
+ * what makes a fresh install replay the A1 video with nothing hand-made.
  */
-function conceptFor(deps: FlowRoomDeps, input: { fileName: string; contentSha: string }): { conceptId?: string } {
-  if (deps.mode !== 'scripted') return {};
-  return pickScriptName(input) === 'critique1' ? { conceptId: BTW_SIDE_CHANNEL_V1.concept_id } : {};
+function conceptFor(
+  deps: FlowRoomDeps,
+  input: { fileName: string; contentSha: string },
+): { conceptId?: string; pending?: boolean } {
+  if (deps.mode !== 'scripted') return { pending: true };
+  const fixture = matchFixtureDeck(input);
+  if (fixture === 'critique1') return { conceptId: BTW_SIDE_CHANNEL_V1.concept_id };
+  if (fixture === 'psd-hessian') return { conceptId: PSD_HESSIAN_CONVEXITY_V1.concept_id };
+  return { pending: true };
 }
 
 /** The deck's own first slide title if the pipeline found one; otherwise the file name. */

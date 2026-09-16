@@ -53,7 +53,12 @@ export interface MaterialRow {
   outline: string;
   /** json — progress-tracking.md §3 Concept Pack */
   concept_pack: string;
-  pack_provenance: 'fixed' | 'elicited';
+  /**
+   * `'pending'` (migration 014) is a room that exists before its pack does: the flow opens a
+   * deck immediately and drafts the claims in the background. It is not an error state and it
+   * is not "ingest failed" — it is the normal first few seconds of every non-fixture deck.
+   */
+  pack_provenance: 'fixed' | 'elicited' | 'pending';
   pack_confirmed_at: string | null;
   token_count: number;
   cache_eligible: number;

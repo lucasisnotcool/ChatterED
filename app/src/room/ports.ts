@@ -150,6 +150,17 @@ export interface LedgerRepo {
   upsert(row: LedgerRow): void;
   appendHistory(row: LedgerHistoryRow): void;
   historyForSession(sessionId: string): LedgerHistoryRow[];
+  /**
+   * Swap a session's rows for a different concept pack's, in one transaction (issue #35).
+   *
+   * The only caller is the background ingest swapping a real pack in for the `pending` one a
+   * flow room opens with. It **deletes** rather than upserting because the rows being replaced
+   * are about other claims entirely — a room that was given the PSD fixture's five elements and
+   * then drafted its own would otherwise carry both, and `ledgerView` would render the orphans
+   * as bare element ids in the rail. `ledger_history` is deliberately untouched: it is the audit
+   * trail, and a row deleted from a live rail still happened.
+   */
+  replaceForSession(sessionId: string, rows: LedgerRow[]): void;
 }
 
 export interface EventsRepo {

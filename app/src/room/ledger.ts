@@ -258,6 +258,10 @@ function clampLevel(n: number): LedgerLevel {
 
 /** Layer 2 of the rail: one line at the *lowest* element's rung (product-design.md §D1). */
 export function bloomRung(rows: LedgerRow[]): 'remember' | 'understand' | 'apply' | 'analyse' {
+  // No rows is a `pending` pack, not a mastered one. Without this the reduce's seed of 4 made
+  // an empty rail report `analyse` — the top rung — for a deck nobody had explained anything
+  // about yet (issue #35).
+  if (rows.length === 0) return 'remember';
   const lowest = rows.reduce((min, r) => Math.min(min, r.level), 4);
   switch (lowest) {
     case 4:

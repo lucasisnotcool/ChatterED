@@ -52,6 +52,21 @@ export const CRITIQUE1_FIXTURE = {
   textMarkers: ['/btw', 'Silent Whispering', 'whispering with your agent'],
 };
 
+/**
+ * How the **other** fixture deck is recognised. `pickScriptName()` returns `'psd-hessian'` as
+ * its *default*, which is the right answer for "which script does the scripted client replay"
+ * and the wrong one for "is this deck the fixture" — the question `matchFixtureDeck()` answers.
+ * Conflating the two is how a 58-page CS4246 deck came to hold the PSD/Hessian concept pack
+ * (`whole-file-context.md` §1 defect 2).
+ *
+ * There is no committed PDF for this one — `design-brief.md` §G is a pasted slide — so there is
+ * no content hash to pin. A name match is all there is, and it is deliberately narrow.
+ */
+export const PSD_HESSIAN_FIXTURE = {
+  fileNamePattern: /(psd[_\s-]*hessian)|(hessian[_\s-]*convex)|(convexity[_\s-]*and[_\s-]*the[_\s-]*hessian)/i,
+  contentShas: new Set<string>(),
+};
+
 export interface PickScriptInput {
   /** `materials.file_path` — the deck's file name, if the session came from a file. */
   fileName?: string | null;
@@ -67,6 +82,24 @@ export function pickScriptName(input: PickScriptInput): ScriptName {
   if (input.contentSha && CRITIQUE1_FIXTURE.contentShas.has(input.contentSha)) return 'critique1';
   if (input.fileName && CRITIQUE1_FIXTURE.fileNamePattern.test(input.fileName)) return 'critique1';
   return 'psd-hessian';
+}
+
+/**
+ * **Which fixture deck this actually is, or none.**
+ *
+ * Unlike `pickScriptName()` this has no default: a deck that matches nothing returns `null`,
+ * and the caller must then say "no pack yet" rather than reaching for a fixture's claims. The
+ * two functions share their recognisers so a deck can never be the fixture for the script and
+ * not for the pack, or the other way round.
+ */
+export function matchFixtureDeck(input: PickScriptInput): ScriptName | null {
+  const override = input.override;
+  if (override === 'critique1' || override === 'psd-hessian') return override;
+  if (input.contentSha && CRITIQUE1_FIXTURE.contentShas.has(input.contentSha)) return 'critique1';
+  if (input.fileName && CRITIQUE1_FIXTURE.fileNamePattern.test(input.fileName)) return 'critique1';
+  if (input.contentSha && PSD_HESSIAN_FIXTURE.contentShas.has(input.contentSha)) return 'psd-hessian';
+  if (input.fileName && PSD_HESSIAN_FIXTURE.fileNamePattern.test(input.fileName)) return 'psd-hessian';
+  return null;
 }
 
 export function pickScript(input: PickScriptInput): ScriptSource {

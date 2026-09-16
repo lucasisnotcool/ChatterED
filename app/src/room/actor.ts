@@ -1607,7 +1607,16 @@ export class RoomActor {
     roster?: AgentProfile[];
     mode?: RoomConfig['mode'];
     replySpeed?: ReplySpeed;
+    /**
+     * The concept pack, when the background ingest has just drafted one (issue #35). A flow
+     * room opens on a `pending` pack so the first Ask is not held behind a 37 s ingest; when
+     * the draft lands the material row is rewritten and the actor is rebound onto it, which is
+     * what "swapped in at the next turn" means. Every read of the pack in this class goes
+     * through `this.#d.pack`, so one assignment is the whole swap.
+     */
+    pack?: ConceptPack;
   }): void {
+    if (next.pack) this.#d.pack = next.pack;
     if (next.llm) this.#d.llm = next.llm;
     if (next.models) this.#d.models = next.models;
     if (next.roster) this.#d.roster = next.roster;

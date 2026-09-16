@@ -198,6 +198,10 @@ export function ledgerRepo(db: SqlDatabase): LedgerRepo {
         insert(db, 'ledger', row as unknown as Record<string, unknown>);
       }
     },
+    replaceForSession(sessionId, rows) {
+      db.prepare('DELETE FROM ledger WHERE session_id = @s').run({ s: sessionId });
+      for (const row of rows) insert(db, 'ledger', row as unknown as Record<string, unknown>);
+    },
     appendHistory: (row) => insert(db, 'ledger_history', row as unknown as Record<string, unknown>),
     historyForSession: (sessionId) =>
       plainAll(

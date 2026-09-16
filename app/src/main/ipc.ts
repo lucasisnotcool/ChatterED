@@ -37,6 +37,7 @@ import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './ap
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
+import { ensurePack } from './pack.js';
 import { errorClass, log, tailLog, type Logger } from './log.js';
 import type { TurnLog } from '../room/ports.js';
 /**
@@ -301,6 +302,7 @@ export class AppService {
       // constructed with was the client it kept for the rest of the sitting. Settings changes
       // reached SQLite and never reached the actor. Re-bind before handing it back.
       this.rebindActor();
+      this.#ensurePack(roomId);
       return this.#actor.snapshot();
     }
     this.#actor?.stop();
@@ -341,6 +343,9 @@ export class AppService {
     this.#actor.start();
     this.#actor.recover();
     if (opts.opener !== false) void this.#actor.open();
+    // A room opened on a pack that is not this deck's — `pending`, or a fixture's on a deck that
+    // is not the fixture — re-drafts here, in the background, and swaps in at the next turn.
+    this.#ensurePack(roomId);
     return this.#actor.snapshot();
   }
 
@@ -363,6 +368,9 @@ export class AppService {
       mode: modeFor(resolved.kind),
       replySpeed: this.replySpeed(),
     });
+    // Switching to a live backend on an open room is the moment a `pending` pack becomes
+    // draftable — and the moment a wrong `fixed` one can finally be replaced.
+    this.#ensurePack(actor.snapshot().roomId);
   }
 
   /** Runs on launch and on every `powerMonitor` resume. Idempotent by timerEpoch. */
@@ -378,6 +386,45 @@ export class AppService {
   }
 
   // ── The conversation inside the flow (issue #25, §3.3 track B) ───────────
+
+  /**
+   * **The background concept-ingest, fired and not awaited** (issue #35, `src/main/pack.ts`).
+   *
+   * Called from the three places a room's pack can become wrong or become draftable: the room
+   * opening, the first "+ Ask here" creating it, and a Settings change that puts a live backend
+   * under a room that was opened on the scripted one. `ensurePack` is a no-op for a room whose
+   * pack is already its own and is single-flight per material, so calling it on every one of
+   * those is cheaper than working out which of them mattered.
+   */
+  #ensurePack(roomId: string): void {
+    const resolved = this.backend();
+    void ensurePack(
+      {
+        store: this.#d.store,
+        pairing: this.pairing(),
+        models: resolved.models,
+        mode: modeFor(resolved.kind),
+        llm: resolved.kind === 'scripted' ? null : this.llm(resolved),
+        onReady: ({ pack }) => {
+          const actor = this.#actor;
+          if (!actor || actor.snapshot().roomId !== roomId) return;
+          // The swap itself. Every read of the pack in the actor goes through `#d.pack`, so the
+          // next turn's prompt, the next ledger call and the rail all move together.
+          actor.rebind({ pack });
+          const snapshot = actor.snapshot();
+          this.emit({ type: 'ledger.updated', roomId, ledger: snapshot.ledger, changed: [] });
+          this.emit({
+            type: 'pack.ready',
+            roomId,
+            conceptTitle: pack.title,
+            elements: pack.elements.length,
+            ledger: snapshot.ledger,
+          });
+        },
+      },
+      roomId,
+    ).catch(() => undefined);
+  }
 
   #flowDeps(): FlowRoomDeps {
     const resolved = this.backend();

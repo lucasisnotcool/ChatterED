@@ -9,6 +9,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { ConceptDraft, CreateSessionInput, RolePairing } from '../shared/types.js';
 import { rosterFor } from '../room/agents.js';
+import { pendingPack } from '../room/concepts/pending.js';
 import { FIXED_PACKS, PSD_HESSIAN_CONVEXITY_V1 } from '../room/concepts/psd-hessian-convexity-v1.js';
 import type { LLMClient } from '../room/llm/types.js';
 import { PROMPT_VERSION, sharedBlock, stableJson, topicContextBlock } from '../room/prompts.js';
@@ -129,7 +130,7 @@ export function createSession(deps: CreateSessionDeps, input: CreateSessionInput
     // read back by `sharedBlock()` on every turn and must be byte-identical each time.
     outline: input.outline ?? '',
     concept_pack: stableJson(pack),
-    pack_provenance: input.conceptId ? 'fixed' : 'elicited',
+    pack_provenance: input.pending ? 'pending' : input.conceptId ? 'fixed' : 'elicited',
     pack_confirmed_at: now(),
     token_count: 0,
     cache_eligible: 0,
@@ -314,6 +315,13 @@ export function shortLabel(label: string): string {
 }
 
 function packFor(input: CreateSessionInput): ConceptPack {
+  /**
+   * **No pack is a legal answer** (issue #35, migration 014). Until now the base was
+   * `PSD_HESSIAN_CONVEXITY_V1` whatever the material was, so a deck with no fixture and no
+   * elicited claims silently opened on the demo concept's five claims about Hessians — which is
+   * exactly what happened to `room_6a9609d5c6fb`, a CS4246 deck about search heuristics.
+   */
+  if (input.pending) return pendingPack(input.title);
   const fixed = input.conceptId ? FIXED_PACKS[input.conceptId] : undefined;
   const base = fixed ?? PSD_HESSIAN_CONVEXITY_V1;
   if (!input.claims || input.claims.length === 0) return base;
@@ -394,16 +402,19 @@ const INGEST_SYSTEM =
 
 export async function draftConcept(
   llm: LLMClient | null,
-  input: { moduleCode: string; title: string; text: string },
+  input: { moduleCode: string; title: string; text: string; outline?: string },
   models: ModelPlan = API_PLAN,
 ): Promise<ConceptDraft> {
   if (!llm || llm.kind === 'scripted') return fixedDraft();
   const ask = async (correction?: string): Promise<RawDraft> => {
     // No module line when there is no module. The old code always emitted `MODULE ` followed by
     // whatever the hard-coded default happened to be.
+    // The outline first, then the text: a 58-page deck's text layer is a wall of fragments, and
+    // the claims worth defending are the ones its headings are about (`whole-file-context.md` §1).
+    const outline = input.outline?.trim() ? `OUTLINE OF THE DOCUMENT\n${input.outline.trim()}\n\n` : '';
     const material = input.moduleCode.trim()
-      ? `MODULE ${input.moduleCode.trim()}\n\nMATERIAL\n${input.text}`
-      : `MATERIAL\n${input.text}`;
+      ? `MODULE ${input.moduleCode.trim()}\n\n${outline}MATERIAL\n${input.text}`
+      : `${outline}MATERIAL\n${input.text}`;
     const result = await llm.complete({
       model: models.orchestrator,
       max_tokens: 1500,

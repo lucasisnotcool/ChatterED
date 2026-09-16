@@ -447,6 +447,13 @@ export interface CreateSessionInput {
    * pasted text, which has no pages to outline.
    */
   outline?: string;
+  /**
+   * **Open this room with no concept pack** (issue #35, migration 014). Set by the flow for any
+   * deck that is not a committed fixture: the pack is drafted in the background and swapped in
+   * at the next turn, so the first "+ Ask here" is not held behind a 37-second ingest and no
+   * deck is ever scored against another deck's claims. Mutually exclusive with `conceptId`.
+   */
+  pending?: boolean;
 }
 
 export interface ConceptDraft {
@@ -656,7 +663,19 @@ export type RoomEvent =
   | { type: 'turn.failed.cleared'; roomId: string; failureId: string }
   | { type: 'turn.received'; roomId: string; received: TurnReceivedView }
   | { type: 'turn.delta'; roomId: string; turnId: string; anchorId: string | null; participant: TurnParticipantView; text: string }
-  | { type: 'turn.released'; roomId: string; turnId: string; messageId: string | null; stopped: boolean };
+  | { type: 'turn.released'; roomId: string; turnId: string; messageId: string | null; stopped: boolean }
+  /**
+   * **The concept pack this deck was waiting for has arrived** (issue #35).
+   *
+   * A flow room opens on a `pending` pack — no elements, an empty rail — so that the first
+   * "+ Ask here" is not held behind a 37-second ingest and no deck is ever given another deck's
+   * claims. When the background draft lands, the material row is rewritten and this is emitted.
+   *
+   * `ledger` is the rail as it now stands, so a renderer that only handles `ledger.updated` is
+   * already correct: **`ledger.updated` is emitted alongside this**, carrying the same rows. The
+   * extra field here is `conceptTitle`, which is what the rail's heading and the round card say.
+   */
+  | { type: 'pack.ready'; roomId: string; conceptTitle: string; elements: number; ledger: LedgerView };
 
 // ── The vault (issue #22) ──────────────────────────────────────────────────
 // Everything below crosses IPC, so it is plain data. Paths are absolute only where the learner
