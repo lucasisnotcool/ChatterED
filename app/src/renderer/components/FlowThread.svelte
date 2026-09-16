@@ -26,6 +26,7 @@
   import AiSegment from './AiSegment.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
   import TurnFailureCard from './TurnFailureCard.svelte';
+  import WaitLine from './WaitLine.svelte';
 
   let {
     anchorId,
@@ -56,6 +57,11 @@
   const waiting = $derived(room.thinking !== null);
   /** Failed turns belong under the thread they failed in, where the learner is looking. */
   const failures = $derived(room.failures.filter((f) => f.anchorId === anchorId));
+  /**
+   * The agent the silence timer would fire, for the wait-line's caption. Same rule as the room's
+   * composer: stage 1 is the Teacher's, and naming her is the whole point of the affordance.
+   */
+  const firingAgent = $derived(room.agents.find((a) => a.role === 'peer') ?? null);
 
   $effect(() => {
     if (composerOpen && box) box.focus();
@@ -137,6 +143,23 @@
           }
         }}
       ></textarea>
+      <!--
+        **The silence timer, in the flow (audit §4).** The 45 s countdown, the *"Ellie may chime
+        in"* caption and the **Hold** / **Wait for me** controls existed only under the room's
+        composer; in the document the timer was completely invisible and uncontrollable, so a
+        nudge arrived out of nowhere and there was no way to say "give me a minute".
+
+        The per-round pause is the researched behaviour and stays a per-round pause: Lucas's
+        2026-09-16 decision is that there is deliberately **no global off switch**, because that
+        would remove the mechanism from the study without removing it from the build.
+      -->
+      <WaitLine
+        timer={room.timer}
+        {firingAgent}
+        onhold={() => store.hold()}
+        onwait={() => store.pauseNudges(!room.nudgesPaused)}
+      />
+
       <div class="foot">
         <span class="hint">Enter sends · ⇧Enter newline</span>
         <span class="gap"></span>

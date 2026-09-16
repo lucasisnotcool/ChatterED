@@ -24,8 +24,11 @@
    */
   import type { MessageView } from '../../shared/types.js';
   import { aiBody, collapsedLine } from '../lib/aitext.js';
+  import { metaAlwaysOn, metaParts } from '../lib/flowchat.js';
   import { monogram, roleWord } from '../lib/labels.js';
+  import { store } from '../lib/store.svelte.js';
   import { clockTime } from '../lib/time.js';
+  import Divider from './Divider.svelte';
 
   let {
     message,
@@ -35,12 +38,17 @@
     /** REFERENCE only: the two buttons `pivot-spec.md` §B1 draws under the hand-back line. */
     onexplain,
     onremove,
+    /** A provisional body streamed in ahead of `turn.released` (audit §2, P1). */
+    streaming = null,
+    stopped = false,
   }: {
     message: MessageView;
     callout?: boolean;
     collapsed?: boolean;
     onexplain?: () => void;
     onremove?: () => void;
+    streaming?: string | null;
+    stopped?: boolean;
   } = $props();
 
   const agent = $derived(message.speaker.kind === 'agent' ? message.speaker : null);
@@ -48,8 +56,27 @@
   /** Neutral grey for the reference voice — deliberately not one of the three personas. */
   const hue = $derived(agent ? agent.colour : 'var(--muted)');
   const isTester = $derived(agent?.role === 'challenger');
-  const parsed = $derived(aiBody(message.body));
+  const parsed = $derived(aiBody(streaming ?? message.body));
+  /**
+   * Provenance (audit §6). A turn that does not say which backend produced it is a claim about a
+   * model that never ran — and this app can silently be answering from `ScriptedClient`. Hidden
+   * until the card is hovered, except `scripted`, which is shown unconditionally for that reason.
+   */
+  const meta = $derived(metaParts(message));
+  const loud = $derived(metaAlwaysOn((message as { backend?: string | null }).backend));
 </script>
+
+<!--
+  **The nudge's divider (audit §4).** `actor.ts` has written `dividerCause` on every silence turn
+  since the timer shipped and `views.ts` has carried it on the `MessageView`; the flow dropped it
+  on the floor, so a content-free pool nudge was pixel-identical to a considered reply. That is
+  most of the confusion in the 2026-09-16 screenshot, and this is the markup that was missing.
+-->
+{#if message.divider}
+  <div class="dividerwrap">
+    <Divider divider={message.divider} onComplain={() => store.pauseNudges(true)} />
+  </div>
+{/if}
 
 <article
   class="ai"
@@ -94,6 +121,20 @@
     {#if parsed.handBack}
       <hr class="rule" />
       <p class="handback">{parsed.handBack}</p>
+    {/if}
+
+    {#if streaming !== null}
+      <!-- Provisional. The floor already elapsed in the main process; this only unrolls what it
+           released, and the caret says the turn is not finished yet. -->
+      <span class="caret" aria-hidden="true"></span>
+    {/if}
+
+    {#if stopped}
+      <p class="stopped">You stopped this reply.</p>
+    {/if}
+
+    {#if meta.length > 0}
+      <p class="meta" class:loud>{meta.join(' · ')}</p>
     {/if}
 
     {#if isReference && (onexplain || onremove)}
@@ -193,6 +234,38 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* The divider is a room-level rule, so it spans the thread rather than the inset card. */
+  .dividerwrap { margin-left: 26px; }
+
+  /* Hover-revealed, tiny, muted: provenance the researcher needs and the learner never reads —
+     except `scripted`, which is the one case the learner must not miss. */
+  .meta {
+    margin: 7px 0 0;
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+  .ai:hover .meta, .meta.loud { opacity: 1; }
+  .meta.loud { color: #8a5a08; }
+
+  .stopped { margin: 7px 0 0; font-size: 11px; color: var(--muted); font-style: italic; }
+
+  .caret {
+    display: inline-block;
+    width: 6px;
+    height: 13px;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: var(--hue);
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.9; } }
+  @media (prefers-reduced-motion: reduce) {
+    .caret { animation: none; opacity: 0.5; }
   }
 
   .actions { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
