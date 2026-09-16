@@ -40,7 +40,7 @@ import {
   type StreamState,
 } from './flowchat.js';
 import { levelsById, newlyOnline, type LearningObjectiveState, type LearningTree } from './objectives.js';
-import { clearFixtureStates, fixtureTree, loadFixtureStates } from './objectivesFixture.js';
+import { FIXTURE_SHA, clearFixtureStates, fixtureTree, loadFixtureStates } from './objectivesFixture.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../../shared/scope.js';
@@ -215,6 +215,8 @@ class Store {
   flow: SegmentDocumentView | null = $state(null);
   flowBusy = $state(false);
   flowFor: string | null = $state(null);
+  /** Which file the room currently on screen belongs to. `RoomSnapshot` does not carry one. */
+  flowRoomFor: string | null = $state(null);
   /**
    * The last refusal, addressed to the card that caused it. `FlowCanvas` shows it inline for
    * ~2 s and clears it; the sentence is `refusalMessage()`'s, verbatim (SEGMENTS.md §3).
@@ -724,6 +726,22 @@ class Store {
     if (this.flowFor === fileId && this.flow) return;
     this.flowFor = fileId;
     this.flow = null;
+    /**
+     * **The previous document's conversation must not appear under this one.**
+     *
+     * `flow:messages` returns `null` for a document that has never been asked a question — the
+     * common case — and `loadFlowRoom` then has nothing to take, so the room it was holding
+     * stayed. Opening a second deck from the finder printed the first deck's deck-level thread
+     * above the first card of a document it was never about. Seen on screen while driving the
+     * objectives panel; it is not the room screen's room, which is why the guard is on `screen`.
+     */
+    if (this.flowRoomFor !== fileId && this.screen !== 'room') {
+      this.room = null;
+      this.flowRoomFor = null;
+      this.flowLocks = {};
+      this.threadSeen = {};
+      this.composerAt = null;
+    }
     this.flowBusy = true;
     const view = await run(this, () => bridge().getSegments({ fileId }));
     this.flowBusy = false;
@@ -741,6 +759,7 @@ class Store {
   clearFlow(): void {
     this.flow = null;
     this.flowFor = null;
+    this.flowRoomFor = null;
     this.flowRefusal = null;
     this.askingAt = null;
     this.askBusy = null;
@@ -1069,6 +1088,11 @@ class Store {
   /** Settings ▸ "Objectives panel opens with a file". Default on (§5: "open when a file is opened"). */
   objectivesOpenWithFile = $state(readFlag(PANEL_AUTO_KEY, true));
 
+  /** True while the tree on screen is the committed fixture rather than a real ingest. */
+  get objectivesFromFixture(): boolean {
+    return this.objectivesTree?.contentSha === FIXTURE_SHA;
+  }
+
   /** True when §6's channels are actually reachable — the feature check the panel builds behind. */
   get objectivesLive(): boolean {
     return objectivesLanded();
@@ -1116,11 +1140,18 @@ class Store {
       const states = await quiet(() => bridge().objectivesStates({ fileId }));
       this.objectivesBusy = false;
       if (this.objectivesFor !== fileId) return;
-      // `null` means no ingest has ever been asked for this file — not a pending one. The panel
-      // says nothing rather than claiming Ellie is reading a deck nobody opened.
-      this.objectivesTree = tree ?? null;
-      this.#takeObjectiveStates(states ?? [], false);
-      return;
+      if (tree) {
+        this.objectivesTree = tree;
+        this.#takeObjectiveStates(states ?? [], false);
+        return;
+      }
+      /**
+       * `null` means **no ingest was ever asked for this file** (`shared/objectives.ts`,
+       * deviation 1) — and it is also what a channel whose handler has not landed yet comes back
+       * as, because `quiet()` swallows the rejection. Either way there is nothing live to draw,
+       * so the fixture answers if this is the deck it is about, and the panel stays empty if it
+       * is not. Once the ingest is really there it returns a tree and this branch is never taken.
+       */
     }
 
     const doc = this.openDoc;
@@ -1166,7 +1197,15 @@ class Store {
    */
   async refreshObjectiveStates(): Promise<void> {
     const fileId = this.objectivesFor;
-    if (!fileId || !objectivesLanded()) return;
+    if (!fileId) return;
+    if (!objectivesLanded() || !this.objectivesTree || this.objectivesTree.contentSha === FIXTURE_SHA) {
+      // The fixture path has its states in `localStorage` and no events; a turn is still the
+      // moment they can have changed, so it is re-read here too — with `animate`, so the panel's
+      // live half (the node that lights, the count, the announcement) is reachable on the
+      // scripted demo rather than only after the ingest lands.
+      if (this.objectivesTree) this.#takeObjectiveStates(loadFixtureStates(fileId), true);
+      return;
+    }
     const states = await quiet(() => bridge().objectivesStates({ fileId }));
     if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, true);
   }
@@ -1191,15 +1230,18 @@ class Store {
   async resetObjectives(): Promise<void> {
     const fileId = this.objectivesFor;
     if (!fileId) return;
-    if (has('objectivesReset')) {
-      // It answers with the reset states, so the panel redraws from the answer rather than
-      // racing the per-node events (`shared/objectives.ts`, deviation 2).
-      const states = await quiet(() => bridge().objectivesReset({ fileId }));
-      if (this.objectivesFor === fileId) this.#takeObjectiveStates(states ?? [], false);
+    // Which tree is on screen decides, not which channel exists: a fixture tree's states live in
+    // `localStorage`, and a Reset that called the real channel would empty the panel while
+    // leaving them on disk to come back on the next open.
+    if (this.objectivesFromFixture || !has('objectivesReset')) {
+      clearFixtureStates(fileId);
+      this.#takeObjectiveStates([], false);
       return;
     }
-    clearFixtureStates(fileId);
-    this.#takeObjectiveStates([], false);
+    // It answers with the reset states, so the panel redraws from the answer rather than racing
+    // the per-node events (`shared/objectives.ts`, deviation 2).
+    const states = await quiet(() => bridge().objectivesReset({ fileId }));
+    if (this.objectivesFor === fileId) this.#takeObjectiveStates(states ?? [], false);
   }
 
   /**
@@ -1335,6 +1377,7 @@ class Store {
       removed?: boolean;
     }[];
   }): void {
+    this.flowRoomFor = this.flowFor;
     this.room = view.room;
     this.timerReceivedAt = Date.now();
     const locks: Record<string, string> = {};

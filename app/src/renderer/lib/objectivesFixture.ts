@@ -150,6 +150,9 @@ const CRITIQUE1: Omit<LearningObjective, 'fileId'>[] = [
   }),
 ];
 
+/** What a fixture tree carries instead of a content hash — the one way to tell it apart. */
+export const FIXTURE_SHA = 'fixture';
+
 /**
  * The fixture tree for a file, or null when this deck is not the one it is about.
  *
@@ -159,7 +162,7 @@ export function fixtureTree(input: { fileId: string; name?: string; relPath?: st
   if (!isFixtureDeck(input)) return null;
   return {
     fileId: input.fileId,
-    contentSha: 'fixture',
+    contentSha: FIXTURE_SHA,
     generatedAt: '2026-09-16T00:00:00.000Z',
     model: 'fixture',
     version: 1,

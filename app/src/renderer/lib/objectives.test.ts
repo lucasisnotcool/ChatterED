@@ -276,11 +276,13 @@ describe('the header', () => {
     expect(panelStatus(null).text).toBeNull();
   });
 
-  it('says a scripted deck with no fixture needs a live backend, and says nothing otherwise', () => {
-    expect(backendNote({ backend: 'scripted', hasFixture: false, live: false })).toMatch(/live backend/);
-    expect(backendNote({ backend: 'scripted', hasFixture: true, live: false })).toBeNull();
-    expect(backendNote({ backend: 'claude_cli', hasFixture: false, live: false })).toBeNull();
-    // Once the real IPC is there, the main process owns the status and the note goes away.
-    expect(backendNote({ backend: 'scripted', hasFixture: false, live: true })).toBeNull();
+  it('says a scripted deck with nothing to show needs a live backend, and says nothing otherwise', () => {
+    expect(backendNote({ backend: 'scripted', status: null, fromFixture: false })).toMatch(/live backend/);
+    // A tree left pending on the scripted backend is a spinner that can never resolve.
+    expect(backendNote({ backend: 'scripted', status: 'pending', fromFixture: false })).toMatch(/live backend/);
+    expect(backendNote({ backend: 'scripted', status: 'ready', fromFixture: true })).toBeNull();
+    expect(backendNote({ backend: 'scripted', status: 'ready', fromFixture: false })).toBeNull();
+    // On a live backend the tree's own status says everything there is to say.
+    expect(backendNote({ backend: 'claude_cli', status: null, fromFixture: false })).toBeNull();
   });
 });

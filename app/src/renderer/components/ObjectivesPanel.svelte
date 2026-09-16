@@ -63,8 +63,8 @@
   const note = $derived(
     backendNote({
       backend: store.boot?.backend ?? null,
-      hasFixture: tree !== null,
-      live: store.objectivesLive,
+      status: tree?.status ?? null,
+      fromFixture: store.objectivesFromFixture,
     }),
   );
 
@@ -193,10 +193,10 @@
       <button
         type="button"
         class="mini"
-        disabled={store.objectivesBusy || !store.objectivesLive}
-        title={store.objectivesLive
+        disabled={store.objectivesBusy || !store.objectivesLive || store.objectivesFromFixture}
+        title={store.objectivesLive && !store.objectivesFromFixture
           ? 'Read the deck again. Objectives you have already shown keep their state.'
-          : 'Regenerating needs a live backend.'}
+          : 'This deck is showing the committed example tree. Regenerating needs a live backend.'}
         onclick={() => void store.regenerateObjectives()}
       >Regenerate</button>
     {/if}

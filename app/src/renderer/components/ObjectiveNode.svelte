@@ -52,6 +52,42 @@
   const objective = $derived(row.node.objective);
   const level = $derived(row.node.level);
   const refs = $derived(refLabel(objective.refs));
+
+  /**
+   * **The hover card has to be `fixed`, and this is why.**
+   *
+   * The tree scrolls, so `.list` is an `overflow-y: auto` box — and a scroll container clips on
+   * *both* axes, whatever the other one is set to. An absolutely-positioned card opening
+   * leftwards out of the panel was therefore laid out, painted, and clipped away to nothing: on
+   * screen it was invisible, and `elementFromPoint` over its **Teach me this** button hit the
+   * flow behind it. Found by driving the real pointer at it over CDP, not by reading the CSS.
+   *
+   * So it is positioned against the viewport instead, from the row's own rect, and clamped so a
+   * node near the bottom of a long tree opens a card that is still on the screen.
+   */
+  let el = $state<HTMLDivElement | null>(null);
+  let cardEl = $state<HTMLDivElement | null>(null);
+  let pos = $state<{ top: number; right: number } | null>(null);
+
+  function place(): void {
+    const r = el?.getBoundingClientRect();
+    if (!r) return;
+    const height = cardEl?.offsetHeight ?? 200;
+    pos = {
+      top: Math.max(8, Math.min(r.top, window.innerHeight - height - 8)),
+      right: Math.max(8, window.innerWidth - r.left + 8),
+    };
+    // The first placement is made before the card has been laid out, so its height is a guess;
+    // re-place once it is real, which is one frame and no flicker.
+    requestAnimationFrame(() => {
+      const h = cardEl?.offsetHeight ?? height;
+      if (h === height || !r) return;
+      pos = {
+        top: Math.max(8, Math.min(r.top, window.innerHeight - h - 8)),
+        right: Math.max(8, window.innerWidth - r.left + 8),
+      };
+    });
+  }
 </script>
 
 <!--
@@ -60,6 +96,7 @@
   rather than a recursion to walk.
 -->
 <div
+  bind:this={el}
   class="node"
   class:lit
   class:selected
@@ -74,6 +111,8 @@
   style={`padding-left: ${(row.depth - 1) * 14}px`}
   onclick={() => onactivate?.(true)}
   onfocus={() => onfocusrow?.()}
+  onmouseenter={place}
+  onfocusin={place}
   onkeydown={(e) => {
     // Enter scrolls, ⌘Enter opens the Ask (§5). The panel owns every other key.
     if (e.key !== 'Enter') return;
@@ -111,7 +150,12 @@
     inside the row and opens leftwards, over the flow, which has nothing under it that the
     learner is reading at the moment they are pointing at a node.
   -->
-  <div class="card" role="note">
+  <div
+    class="card"
+    role="note"
+    bind:this={cardEl}
+    style={pos ? `top: ${pos.top}px; right: ${pos.right}px` : ''}
+  >
     <p class="statement">{objective.statement}</p>
     {#if objective.criteria.length > 0}
       <p class="crit-head">A good answer says:</p>
@@ -208,10 +252,11 @@
 
   .card {
     display: none;
-    position: absolute;
+    /* Fixed, not absolute: the tree scrolls, and a scroll container clips both axes. */
+    position: fixed;
     z-index: 50;
     top: 0;
-    right: calc(100% + 8px);
+    right: 0;
     width: 280px;
     padding: 10px 12px;
     background: var(--pane);

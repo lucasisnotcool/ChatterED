@@ -446,11 +446,17 @@ export function panelStatus(tree: LearningTree | null, teacherName = 'Ellie'): P
  * other decks get `pending` with a 'needs a live backend' note").
  *
  * A pending spinner that will never resolve is the worst of both: it says work is happening when
- * none is. So on a scripted backend, a deck with no fixture says so in one line instead.
+ * none can. So on the scripted backend, a deck with no tree — or one left pending, which on this
+ * backend means the same thing — says so in one line instead, and the fixture deck says nothing
+ * because it has a real tree to show.
  */
-export function backendNote(input: { backend: string | null; hasFixture: boolean; live: boolean }): string | null {
-  if (input.live) return null;
+export function backendNote(input: {
+  backend: string | null;
+  status: LearningTree['status'] | null;
+  fromFixture: boolean;
+}): string | null {
   if (input.backend !== 'scripted') return null;
-  if (input.hasFixture) return null;
+  if (input.fromFixture) return null;
+  if (input.status !== null && input.status !== 'pending') return null;
   return 'Objectives for this deck need a live backend — the scripted demo ships one worked example.';
 }
