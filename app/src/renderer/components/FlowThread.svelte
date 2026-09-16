@@ -383,9 +383,20 @@
         <button type="button" class="send" disabled={text.trim().length === 0} onclick={submit}>Send</button>
       </div>
     </div>
-  {:else if convo.length > 0}
+  {/if}
+
+  <!--
+    **The thread's own footer**, outside the composer branch on purpose.
+    It used to live in the `{:else}` of it, which meant that the moment the learner opened the
+    composer the thread's spend and its **Summarise** action both vanished — exactly while they
+    were writing the turn that would change the first and produce the second. *Reply here* is the
+    only part that is genuinely an alternative to an open composer.
+  -->
+  {#if convo.length > 0}
     <div class="threadfoot">
-      <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
+      {#if !composerOpen && !lockedByAnswerId}
+        <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
+      {/if}
       {#if spend && spend.calls > 0}
         <!--
           Tokens first, then the estimate with its hedge — and on the CLI path the words

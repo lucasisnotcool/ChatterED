@@ -562,6 +562,8 @@ class Store {
          * a re-read of states that have already been pushed, which is cheap and idempotent.
          */
         void this.refreshObjectiveStates();
+        // The counters, while the push side is not live yet — see `#costLive`.
+        this.#recountAfterTurn();
         break;
       /**
        * A status change on the file's tree (§6): `pending` → `ready` / `failed`, and a
@@ -1250,6 +1252,17 @@ class Store {
    * re-runs whenever anything it read changes, and this must not re-fetch when it does.
    */
   #costAsked = new Set<string>();
+  /**
+   * Has a `cost.updated` ever arrived?
+   *
+   * The push side lands after the query side — on the live build of 2026-09-16 `cost:summary`
+   * answered and no event ever came — and a file counter that was read before the first call and
+   * never ticked shows `this file · 0 tokens` **under** a thread showing two. A visible violation
+   * of the one invariant the three counters exist to let a learner check (`thread ≤ file ≤ app`)
+   * is worse than a query per turn, so until the first event proves the push side is live, the
+   * end of a turn re-asks. After it, this never runs again.
+   */
+  #costLive = false;
 
   ensureThreadCost(anchorId: string): void {
     const fileId = this.flowFor;
@@ -1258,6 +1271,21 @@ class Store {
     if (this.#costAsked.has(key)) return;
     this.#costAsked.add(key);
     void this.loadCost({ level: 'thread', fileId, anchorId });
+  }
+
+  /**
+   * Re-ask for the counters that are on screen, at the end of a turn, **only** while no
+   * `cost.updated` has ever arrived. One query for the file and one for the thread the turn
+   * landed in; nothing for the other thirty-nine threads of a deck, which are not on screen and
+   * will ask for themselves when they are.
+   */
+  #recountAfterTurn(): void {
+    if (this.#costLive || !this.costOn) return;
+    const fileId = this.flowFor;
+    if (!fileId) return;
+    void this.loadCost({ level: 'file', fileId });
+    const anchorId = this.lastSendAnchor;
+    if (anchorId && this.costThread[anchorId]) void this.loadCost({ level: 'thread', fileId, anchorId });
   }
 
   ensureFileCost(): void {
@@ -1317,6 +1345,7 @@ class Store {
    * by-model table grown from deltas is a table that can quietly disagree with the ledger.
    */
   #takeCostUpdate(update: CostUpdate): void {
+    this.#costLive = true;
     const anchorId = update.call.anchorId;
     if (anchorId) {
       const held = this.costThread[anchorId];

@@ -81,6 +81,20 @@ export function usdSuffix(mode: CostMode): string {
 }
 
 /**
+ * The dollar figure and its label together, and **nothing at all when there is no money in it**.
+ *
+ * A zero is the case worth naming: the scripted backend records rows with zero tokens on purpose
+ * (*"the video path spent nothing"* is a fact worth being able to show), and rendering that as
+ * `$0.00 API-equivalent` puts the most careful hedge in the app on the one number that needs no
+ * hedging at all. Zero is zero in every billing reality.
+ */
+export function usdWithLabel(usd: number, mode: CostMode): string {
+  if (mode === 'none') return '';
+  const figure = usdApprox(usd);
+  return figure === '$0.00' ? figure : `${figure}${usdSuffix(mode)}`;
+}
+
+/**
  * One counter, whole: `this thread · 4.2k tokens · ≈ $0.03`, or
  * `this file · 61k tokens · ≈ $0.41 API-equivalent` on the CLI path.
  *
@@ -91,8 +105,8 @@ export function usdSuffix(mode: CostMode): string {
 export function counterLine(summary: Pick<CostSummary, 'level' | 'tokens' | 'estimatedUsd' | 'mode'>): string {
   const tokens = `${tokensLabel(totalTokens(summary.tokens))} tokens`;
   const head = `${LEVEL_WORD[summary.level]} · ${tokens}`;
-  if (summary.mode === 'none') return head;
-  return `${head} · ${usdApprox(summary.estimatedUsd)}${usdSuffix(summary.mode)}`;
+  const money = usdWithLabel(summary.estimatedUsd, summary.mode);
+  return money.length === 0 ? head : `${head} · ${money}`;
 }
 
 /**
@@ -119,7 +133,8 @@ export function counterTitle(summary: CostSummary): string {
 export function windowLine(burn: CliWindowBurn | null, mode: CostMode): string | null {
   if (!burn) return null;
   const tokens = `${tokensLabel(totalTokens(burn.tokens))} tokens`;
-  return `last ${burn.hours || CLI_WINDOW_HOURS} h · ${tokens} · ${usdApprox(burn.estimatedUsd)}${usdSuffix(mode)}`;
+  const money = usdWithLabel(burn.estimatedUsd, mode);
+  return money.length === 0 ? `last ${burn.hours || CLI_WINDOW_HOURS} h · ${tokens}` : `last ${burn.hours || CLI_WINDOW_HOURS} h · ${tokens} · ${money}`;
 }
 
 /**

@@ -16,8 +16,7 @@
     counterTitle,
     csvFilename,
     tokensLabel,
-    usdApprox,
-    usdSuffix,
+    usdWithLabel,
     validateRateCard,
     windowLine,
   } from '../lib/cost.js';
@@ -67,8 +66,9 @@
   /** A slice's own line. Same units and the same hedge as every other counter in the app. */
   function sliceLine(slice: CostSlice, mode: typeof allTimeMode): string {
     const tokens = `${tokensLabel(totalTokens(slice.tokens))} tokens`;
-    if (mode === 'none') return `${tokens} · ${slice.calls} calls`;
-    return `${tokens} · ${usdApprox(slice.estimatedUsd)}${usdSuffix(mode)} · ${slice.calls} calls`;
+    const calls = `${slice.calls} call${slice.calls === 1 ? '' : 's'}`;
+    const money = usdWithLabel(slice.estimatedUsd, mode);
+    return money.length === 0 ? `${tokens} · ${calls}` : `${tokens} · ${money} · ${calls}`;
   }
   const allTimeMode = $derived(allTime?.mode ?? 'none');
   function scopeWord(key: string): string {
@@ -466,9 +466,12 @@
           <p class="status" title={counterTitle(allTime)}>{counterLine(allTime)}</p>
           {#if session}
             <p class="quiet">
-              this session · {tokensLabel(totalTokens(session.tokens))} tokens{session.mode === 'none'
+              this session · {tokensLabel(totalTokens(session.tokens))} tokens{usdWithLabel(
+                session.estimatedUsd,
+                session.mode,
+              ).length === 0
                 ? ''
-                : ` · ${usdApprox(session.estimatedUsd)}${usdSuffix(session.mode)}`}
+                : ` · ${usdWithLabel(session.estimatedUsd, session.mode)}`}
             </p>
           {/if}
           {#if burn}

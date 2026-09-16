@@ -11,6 +11,7 @@ import {
   updateBelongs,
   usdApprox,
   usdSuffix,
+  usdWithLabel,
   validateRateCard,
   windowLine,
 } from './cost.js';
@@ -262,5 +263,24 @@ describe('the rate-card override, checked before it is saved', () => {
     expect(validateRateCard('{"m": {"input": -1, "output": 2}}').errors[0]).toContain('input is required');
     expect(validateRateCard('{"m": 4}').errors[0]).toContain('expected an object');
     expect(validateRateCard('{"m": {"input": 1, "output": 2, "cacheRead": "free"}}').errors[0]).toContain('cacheRead');
+  });
+});
+
+describe('a zero needs no hedge', () => {
+  it('drops the label on $0.00, in every mode that has one', () => {
+    expect(usdWithLabel(0, 'subscription')).toBe('$0.00');
+    expect(usdWithLabel(0, 'mixed')).toBe('$0.00');
+    expect(usdWithLabel(0, 'api')).toBe('$0.00');
+    expect(usdWithLabel(0, 'none')).toBe('');
+  });
+
+  it('keeps it on anything that is actually money', () => {
+    expect(usdWithLabel(0.03, 'subscription')).toBe('≈ $0.03 API-equivalent');
+    expect(usdWithLabel(0.002, 'subscription')).toBe('<$0.01 API-equivalent');
+    expect(usdWithLabel(0.03, 'api')).toBe('≈ $0.03');
+  });
+
+  it('is what the scripted video path shows — tokens, and nothing about money', () => {
+    expect(counterLine(summary({ mode: 'none', estimatedUsd: 0 }))).toBe('this thread · 4.2k tokens');
   });
 });
