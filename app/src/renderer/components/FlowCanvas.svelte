@@ -58,6 +58,8 @@
   } from '../lib/flowview.js';
   import { registerViewer, type ViewerCommand } from '../lib/viewer.js';
   import { claimsForAnchor, threadFor } from '../../shared/flowthread.js';
+  import { DECK_ANCHOR_ID } from '../../shared/scope.js';
+  import AskHereLine from './AskHereLine.svelte';
   import { pillLabel, scrollDecision, thinkingAnchor } from '../lib/flowchat.js';
   import { store } from '../lib/store.svelte.js';
   import DebugDrawer from './DebugDrawer.svelte';
@@ -908,6 +910,42 @@
            not; the flow does not decide. -->
       <PacingStrip />
 
+      <!--
+        **"Ask about this deck"** (issue #35, `whole-file-context.md` §3).
+        *"Summarise what I will be learning"* had nowhere to go: every question in the flow is
+        anchored to a segment, so the learner asked it under whichever card was nearest and the
+        REFERENCE path answered from that one slide. This line is the place it belongs — above
+        the first card, because a question about the whole deck is not about any slide — and its
+        thread hangs off the synthetic deck anchor, which `flow:messages` always lists first.
+      -->
+      {#if store.canAskDeck}
+        <div class="deckask">
+          <AskHereLine
+            open={store.askingAt === DECK_ANCHOR_ID}
+            busy={store.askBusy === DECK_ANCHOR_ID}
+            anchorId={DECK_ANCHOR_ID}
+            scopeChip={false}
+            label="+ Ask about this deck"
+            placeholder="Ask about the whole document…"
+            onopen={() => store.openAsk(DECK_ANCHOR_ID)}
+            oncancel={() => store.cancelAsk()}
+            onask={(question) => void store.askDeck(question)}
+          />
+        </div>
+        {#if room}
+          {@const deckThread = threadFor(messages, DECK_ANCHOR_ID)}
+          {#if deckThread.length > 0 || store.composerAt === DECK_ANCHOR_ID}
+            <FlowThread
+              anchorId={DECK_ANCHOR_ID}
+              messages={deckThread}
+              {room}
+              lockedByAnswerId={store.flowLocks[DECK_ANCHOR_ID] ?? null}
+              composerOpen={store.composerAt === DECK_ANCHOR_ID}
+            />
+          {/if}
+        {/if}
+      {/if}
+
       <!-- The genre router's own sentence, above the first card (issue #31, video beat 15).
            Being honest about what cannot be segmented is the point of it. -->
       {#if flow.notice}
@@ -949,7 +987,7 @@
             askBusy={store.askBusy === card.segmentId}
             onaskopen={() => store.openAsk(card.segmentId)}
             onaskcancel={() => store.cancelAsk()}
-            onask={(question) => void store.askHere(card.segmentId, question)}
+            onask={(question, scope) => void store.askHere(card.segmentId, question, scope)}
             privateOpen={store.flowWhisper?.anchorId === card.segmentId}
             onactivate={() => store.noteFlowSelection(card.segmentId)}
             onaskprivately={() =>
@@ -1154,6 +1192,14 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .zoomchip { animation: none; }
+  }
+
+  /* The deck line sits on the cards' own column, so it reads as belonging to the document
+     rather than to the toolbar. */
+  .deckask {
+    max-width: 760px;
+    margin: 0 auto 10px;
+    padding: 0 2px;
   }
 
   .slot { display: block; }

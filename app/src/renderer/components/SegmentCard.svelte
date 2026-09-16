@@ -39,6 +39,7 @@
   import type { AnchorClaim } from '../../shared/flowthread.js';
   import { LEDGER_GLYPH, LEDGER_WORD } from '../lib/labels.js';
   import AskHereLine from './AskHereLine.svelte';
+  import type { AskScope } from '../../shared/scope.js';
 
   let {
     card,
@@ -106,7 +107,7 @@
     unread?: boolean;
     onsplit?: (input: { at: number; axis: 'horizontal' | 'vertical'; free: boolean; cutOffset: number }) => void;
     onrename?: (label: string) => void;
-    onask?: (question: string) => void;
+    onask?: (question: string, scope: AskScope) => void;
     onaskopen?: () => void;
     onaskcancel?: () => void;
     /** "Ask privately" / ⌘K. The card raises it; `FlowCanvas` owns what opens (§3.5). */
@@ -479,9 +480,10 @@
     <AskHereLine
       open={askOpen}
       busy={askBusy}
+      anchorId={card.segmentId}
       onopen={() => onaskopen?.()}
       oncancel={() => onaskcancel?.()}
-      onask={(question) => onask?.(question)}
+      onask={(question, scope) => onask?.(question, scope)}
     />
   </div>
 

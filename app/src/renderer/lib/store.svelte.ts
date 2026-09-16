@@ -41,6 +41,7 @@ import {
 } from './flowchat.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
+import { DECK_ANCHOR_ID, type AskScope } from '../../shared/scope.js';
 
 /**
  * Is a `flow:*` turn-status call actually on the bridge?
@@ -475,6 +476,19 @@ class Store {
       case 'turn.failed.cleared':
         if (room) room.failures = room.failures.filter((f) => f.id !== e.failureId);
         break;
+      /**
+       * **The concept pack finished ingesting** (issue #35, `main/pack.ts`).
+       *
+       * A room can exist before its pack does: the first Ask creates the room immediately and
+       * the deck's concepts are drafted in the background, so until this arrives the ledger is
+       * genuinely empty and the rail says so rather than showing a blank list. `pack.ready`
+       * carries the rebuilt ledger, so the rail is redrawn from the event itself and never has
+       * to ask for it.
+       */
+      case 'pack.ready':
+        if (room) room.ledger = e.ledger;
+        this.liveMessage = `Ready: ${e.elements} concept${e.elements === 1 ? '' : 's'} for ${e.conceptTitle}.`;
+        break;
     }
   }
 
@@ -731,12 +745,43 @@ class Store {
    * screen. The answer is held 2–3 s in the main process, so the card appears with the question
    * still on screen and the learner has not been asked to wait for anything.
    */
-  async askHere(segmentId: string, question: string): Promise<void> {
+  async askHere(segmentId: string, question: string, scope?: AskScope): Promise<void> {
     const fileId = this.flowFor;
     if (!fileId || question.trim().length === 0) return;
     this.askingAt = null;
     this.askBusy = segmentId;
-    const answer = await run(this, () => bridge().flowAskHere({ fileId, segmentId, question: question.trim() }));
+    const answer = await run(this, () =>
+      // `scope` is what the chip was showing when Enter was pressed, always sent. The main
+      // process still guesses when it is absent, and `overridden` in the log compares the two —
+      // so sending the agreed guess costs nothing and guarantees the chip and the answer match.
+      bridge().flowAskHere({ fileId, segmentId, question: question.trim(), ...(scope ? { scope } : {}) }),
+    );
+    this.askBusy = null;
+    if (!answer) return;
+    this.#takeFlowRoom(answer.flow);
+  }
+
+  /**
+   * **"Ask about this deck"** — the line above the first card (issue #35).
+   *
+   * `whole-file-context.md` §3: a deck-level question had nowhere to go, so it was answered from
+   * whichever slide happened to be nearest, which is the whole of "does not have context from
+   * whole file". Its answer is anchored to the synthetic `DECK_ANCHOR_ID` and `flow:messages`
+   * always lists that thread first, so it renders above the deck rather than under a slide.
+   *
+   * Guarded by `has()` like the other late-landing channels: the line is simply not offered on a
+   * build whose preload does not carry it.
+   */
+  get canAskDeck(): boolean {
+    return has('flowAskDeck');
+  }
+
+  async askDeck(question: string): Promise<void> {
+    const fileId = this.flowFor;
+    if (!fileId || question.trim().length === 0 || !has('flowAskDeck')) return;
+    this.askingAt = null;
+    this.askBusy = DECK_ANCHOR_ID;
+    const answer = await run(this, () => bridge().flowAskDeck({ fileId, question: question.trim() }));
     this.askBusy = null;
     if (!answer) return;
     this.#takeFlowRoom(answer.flow);

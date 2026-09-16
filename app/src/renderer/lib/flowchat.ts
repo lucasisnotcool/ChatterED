@@ -188,19 +188,33 @@ export function wordCount(body: string): number {
 }
 
 /**
- * The card's provenance foot: `14:22 · 9.4s · haiku-4-5 · claude-cli`.
+ * The card's provenance foot: `14:22 · 9.4s · whole deck · haiku-4-5 · claude-cli`.
  *
  * `PacingStrip`'s own docstring argues that a paced system has to disclose its pacing; a turn
  * that does not say which backend produced it is a claim about a model that never ran. In a
  * research prototype that can silently be answering from `ScriptedClient` this is not a nicety.
  * The pieces that are absent are simply left out — no `null ·` gaps.
+ *
+ * **`scopeShown` sits between the timings and the model** (issue #35, `shared/scope.ts`), and it
+ * is the sentence rather than a code — `'p. 14'`, `'p. 14 + outline'`, `'whole deck'`,
+ * `'outline + pp. 3, 14, 40'` — printed verbatim. It belongs on this line because it answers the
+ * question the rest of the line already asks: an answer that is narrow because the model was
+ * shown one slide should not read as an answer that is narrow because the model is weak.
  */
-export function metaParts(message: MessageView & { model?: string | null; backend?: string | null; totalMs?: number | null }): string[] {
+export function metaParts(
+  message: MessageView & {
+    model?: string | null;
+    backend?: string | null;
+    totalMs?: number | null;
+    scopeShown?: string | null;
+  },
+): string[] {
   const parts: string[] = [];
   const ttft = message.ttftActualMs;
   if (typeof ttft === 'number' && ttft > 0) parts.push(`${(ttft / 1000).toFixed(1)}s`);
   const total = message.totalMs;
   if (typeof total === 'number' && total > 0 && total !== ttft) parts.push(`${(total / 1000).toFixed(1)}s total`);
+  if (message.scopeShown) parts.push(message.scopeShown);
   if (message.model) parts.push(message.model);
   if (message.backend) parts.push(message.backend);
   return parts;

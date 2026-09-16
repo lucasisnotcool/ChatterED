@@ -212,6 +212,26 @@ describe('the provenance foot (audit §6)', () => {
     expect(metaParts(differs)).toEqual(['4.0s', '11.5s total']);
   });
 
+  /**
+   * Issue #35. The complaint the scope answers is "build 102 does not have context from whole
+   * file": an answer drawn from one slide of a 58-page deck is not wrong, it is *scoped*, and
+   * the footer is where the difference becomes visible instead of being read as a weak model.
+   */
+  it('says what the model was shown, between the timings and the model', () => {
+    const m = { ...student(), ttftActualMs: 9_400, scopeShown: 'whole deck', model: 'haiku-4-5', backend: 'claude_cli' };
+    expect(metaParts(m)).toEqual(['9.4s', 'whole deck', 'haiku-4-5', 'claude_cli']);
+  });
+
+  it('prints the scope phrase verbatim — it is a sentence, not a code to map', () => {
+    expect(metaParts({ ...student(), scopeShown: 'outline + pp. 3, 14, 40' })).toEqual(['outline + pp. 3, 14, 40']);
+    expect(metaParts({ ...student(), scopeShown: 'p. 14 + outline' })).toEqual(['p. 14 + outline']);
+  });
+
+  it('leaves the foot exactly as it was on every turn that has no scope', () => {
+    const m = { ...student(), ttftActualMs: 9_400, scopeShown: null, model: 'haiku-4-5' };
+    expect(metaParts(m)).toEqual(['9.4s', 'haiku-4-5']);
+  });
+
   it('shows the scripted backend unconditionally, because it is a claim about a model that never ran', () => {
     expect(metaAlwaysOn('scripted')).toBe(true);
     expect(metaAlwaysOn('claude_cli')).toBe(false);

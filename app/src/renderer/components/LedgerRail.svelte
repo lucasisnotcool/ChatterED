@@ -8,6 +8,18 @@
 
   let { ledger, compact = false }: { ledger: LedgerView; compact?: boolean } = $props();
 
+  /**
+   * **A room can exist before its concept pack does** (issue #35, `main/pack.ts`).
+   *
+   * The first Ask creates the room straight away and the deck's concepts are drafted in the
+   * background, so for the first few seconds there is genuinely nothing to list. The rail used
+   * to render that as `0 of 0` over an empty box, which reads as "this deck has no concepts" —
+   * a claim about the document — rather than "we have not read it yet". `pack.ready` carries
+   * the rebuilt ledger and `store.apply` puts it straight on the room, so this state clears
+   * itself the moment the pack lands; nothing here polls and nothing has to be told twice.
+   */
+  const pending = $derived(ledger.total === 0 && ledger.rows.length === 0);
+
   let expandedId = $state<string | null>(null);
   let animating = $state<string[]>([]);
   let lastToken = 0;
@@ -55,19 +67,28 @@
   <aside class="rail" aria-label="Your explanation so far">
     <header>
       <h2>Your explanation so far</h2>
-      <span class="count">{ledger.covered} of {ledger.total}</span>
+      {#if !pending}
+        <span class="count">{ledger.covered} of {ledger.total}</span>
+      {/if}
     </header>
     <hr class="hairline" />
 
     <div class="rows">
-      {#each ledger.rows as row (row.elementId)}
-        <LedgerRow
-          {row}
-          animating={animating.includes(row.elementId)}
-          expanded={expandedId === row.elementId}
-          ontoggle={() => (expandedId = expandedId === row.elementId ? null : row.elementId)}
-        />
-      {/each}
+      {#if pending}
+        <p class="empty" role="status">
+          No concepts yet — still reading this document. They appear here as soon as it has been
+          read, and only your own words ever move one.
+        </p>
+      {:else}
+        {#each ledger.rows as row (row.elementId)}
+          <LedgerRow
+            {row}
+            animating={animating.includes(row.elementId)}
+            expanded={expandedId === row.elementId}
+            ontoggle={() => (expandedId = expandedId === row.elementId ? null : row.elementId)}
+          />
+        {/each}
+      {/if}
     </div>
 
     <hr class="hairline" />
@@ -101,6 +122,7 @@
   .count { font-size: 11px; color: var(--text-2); white-space: nowrap; }
   .hairline { margin: 10px 0; }
   .rows { flex: 1; }
+  .empty { margin: 2px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--muted); }
 
   .bloom { margin: 4px 0 0; font-size: 11px; color: var(--muted); line-height: 1.6; }
   .bloom .now { color: var(--text); font-weight: 600; }
