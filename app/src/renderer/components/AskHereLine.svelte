@@ -28,8 +28,18 @@
 
   let {
     open = false,
-    /** Set while this segment's question is in flight — the 2–3 s retrieval hold. */
+    /**
+     * Set while the question is being handed to the room. Since #41 that is a handover, not an
+     * answer: the Teacher replies on the event stream at her own latency floor, so this state
+     * lasts as long as the IPC round trip and the thread's own wait chrome takes it from there.
+     */
     busy = false,
+    /**
+     * What the busy line says. It used to say *"Looking it up…"*, which described the REFERENCE
+     * lookup that answered the entry question — the step #41 removed. The Teacher answers now,
+     * so the caller names her.
+     */
+    busyLabel = 'Asking…',
     /** The anchor this line sits on, so the guess can tell a deck line from a segment card. */
     anchorId = DECK_ANCHOR_ID,
     /** False on the deck line: a deck question is a deck question, and there is no other scope. */
@@ -55,6 +65,7 @@
   }: {
     open?: boolean;
     busy?: boolean;
+    busyLabel?: string;
     anchorId?: string;
     scopeChip?: boolean;
     placeholder?: string;
@@ -115,7 +126,7 @@
 </script>
 
 {#if busy}
-  <p class="busy" aria-live="polite">Looking it up…</p>
+  <p class="busy" aria-live="polite">{busyLabel}</p>
 {:else if open}
   <div class="prompt">
     <input

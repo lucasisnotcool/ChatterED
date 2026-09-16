@@ -853,8 +853,21 @@ class Store {
 
   /**
    * Ask. **This is what creates the document's room**, the first time (§3.3) — there is no setup
-   * screen. The answer is held 2–3 s in the main process, so the card appears with the question
-   * still on screen and the learner has not been asked to wait for anything.
+   * screen.
+   *
+   * **Teacher-first since #41** (`conversation-refinement.md` §2). This used to resolve with a
+   * REFERENCE card in hand, because the entry question was answered inline from the passage; all
+   * three of Lucas's transcripts show what that cost — a title slide answered with *"the passage
+   * contains no further content"*, and two turns spent getting past it to Ellie. The call now
+   * returns as soon as the room has the question, and the Teacher's answer arrives the way every
+   * other Teacher turn arrives: on the event stream, after the yield and her latency floor.
+   *
+   * Which makes `lastSendAnchor` load-bearing rather than incidental. It is what
+   * `thinkingAnchor()` reads to decide *where* the held reply is drawn, and an Ask is now a send
+   * in every respect that matters to the wait chrome — so the thread that was just asked in is
+   * the thread that shows *Ellie is typing…*, the neutral received line, and the stream. Without
+   * this line the answer to a question would appear with no warning under a card the learner was
+   * not looking at.
    */
   async askHere(segmentId: string, question: string, scope?: AskScope): Promise<void> {
     const fileId = this.flowFor;
@@ -886,6 +899,8 @@ class Store {
     this.askObjective = null;
     if (!answer) return;
     this.#takeFlowRoom(answer.flow);
+    // The wait belongs to this thread: the Teacher is about to answer in it (#41).
+    this.lastSendAnchor = segmentId;
   }
 
   /**
@@ -912,12 +927,28 @@ class Store {
     this.askBusy = null;
     if (!answer) return;
     this.#takeFlowRoom(answer.flow);
+    this.lastSendAnchor = DECK_ANCHOR_ID;
   }
 
   /**
-   * "Explain it back →": the card collapses to one line, the composer opens on the same anchor,
-   * and Ellie and Max become eligible on it for the first time. The order matters — the lock is
-   * released by the main process, and the composer only opens if it said so.
+   * The Teacher, by name — for the Ask line's *"Asking Ellie…"* and the summary card's chrome.
+   *
+   * `'peer'` is the Teacher's role key; the rename in #32 changed the word on screen and not the
+   * enum. Falls back to the persona's shipped name rather than to "the teacher", because a build
+   * with no room open yet still has to put something in a label.
+   */
+  get teacherName(): string {
+    return this.room?.agents.find((a) => a.role === 'peer')?.displayName ?? 'Ellie';
+  }
+
+  /**
+   * **Vestigial since #41** (`conversation-refinement.md` §2, table row 3).
+   *
+   * There is no entry card to be locked behind any more — the Teacher answers the question — so
+   * `lockedByAnswerId` is always null, `flowLocks` is always empty, and nothing in the flow calls
+   * this. It stays for one release because `flow:explainBack` stays for one release: a vault
+   * opened on this build may still hold a legacy REFERENCE card from before the migration, and
+   * an app that throws on one is worse than an app that collapses it.
    */
   async explainBack(answerId: string): Promise<void> {
     const result = await run(this, () => bridge().flowExplainBack({ answerId }));

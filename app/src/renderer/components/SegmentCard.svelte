@@ -69,6 +69,8 @@
     /** This card's "+ Ask here" prompt is open / its question is in flight. */
     askOpen = false,
     askBusy = false,
+    /** What the busy line says while the question is handed over — the Teacher's name (#41). */
+    askBusyLabel = 'Asking…',
     /** The objective the open question is about — the removable `about:` chip (§5). */
     askAbout = null,
     /** A question the app has proposed and the learner has not yet sent (**Teach me this**). */
@@ -116,6 +118,7 @@
     claims?: AnchorClaim[];
     askOpen?: boolean;
     askBusy?: boolean;
+    askBusyLabel?: string;
     askAbout?: { id: string; title: string } | null;
     askPrefill?: string;
     objectives?: SegmentObjective[];
@@ -521,6 +524,7 @@
     <AskHereLine
       open={askOpen}
       busy={askBusy}
+      busyLabel={askBusyLabel}
       anchorId={card.segmentId}
       about={askAbout}
       prefill={askPrefill}

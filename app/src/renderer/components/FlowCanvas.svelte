@@ -1058,6 +1058,7 @@
           <AskHereLine
             open={store.askingAt === DECK_ANCHOR_ID}
             busy={store.askBusy === DECK_ANCHOR_ID}
+            busyLabel={`Asking ${store.teacherName}…`}
             anchorId={DECK_ANCHOR_ID}
             scopeChip={false}
             label="+ Ask about this deck"
@@ -1120,6 +1121,7 @@
             )}
             askOpen={store.askingAt === card.segmentId}
             askBusy={store.askBusy === card.segmentId}
+            askBusyLabel={`Asking ${store.teacherName}…`}
             askAbout={store.askingAt === card.segmentId ? store.askObjective : null}
             askPrefill={askPrefill?.segmentId === card.segmentId ? askPrefill.text : ''}
             onaskabout={() => store.setAskObjective(null)}
