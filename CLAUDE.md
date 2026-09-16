@@ -1,8 +1,11 @@
 # CLAUDE.md
 
-**ChatterED** — a group-chat multi-agent learning CUI. The student explains a lecture
-concept to AI peers plus a challenger, with a private whisper side-channel and deliberate
-response latency. NUS CS3249 research prototype, headed for real student use.
+**ChatterED** — a learning CUI that lives inside the lecture deck. A PDF opens as a *flow*
+of crops of the rendered pages (never re-typeset); the learner splits them at proposed cuts,
+asks at any point (a neutral REFERENCE answer), is taught by Ellie (Teacher) and quizzed by
+Max (Tester) by a visible rule, with an Explanation Ledger that only the learner's own words
+move, and a private whisper popover with an "insert into the document" path. NUS CS3249
+research prototype, headed for real student use.
 Orientation and the repo map: `README.md`. **Assignment 1 is due 22 Sep 2026.**
 
 ## Start every session here
@@ -81,13 +84,22 @@ text first; open the PDF only for figures and layout.
 
 ## Working decisions (recorded as `product` issues, argue there)
 
-- Learning task: explaining lecture concepts to the group.
-- Hero mechanic: group chat with Peer + Challenger agents. Whisper and latency are
-  supporting, not the headline.
-- Platform: standalone web app; possible later embed in NUSSync.
-- LLM: Claude API — **Haiku 4.5** for agent turns (cheap, many turns), **Sonnet 5** for
-  orchestration and summaries. Load the `claude-api` skill before writing API code; do
-  not answer model/pricing questions from memory.
+- **The flow (#23, #25):** a document is a vertical flow of crop segments of the pdf.js-rendered
+  page; boundaries come from geometry only (no model), shown as ticks and split on click; slides
+  only in A1, other genres open as whole pages with a notice (#27–#31). Vision "suggest cuts" is A2 (#26).
+- **Roster (#32):** Ellie = Teacher (explains from the slide), Max = Tester (one quiz question when
+  the hand-off rule in `src/room/flow.ts` fires). No group framing, no disagreement quota, no Theo.
+  On-page AI summaries are the neutral REFERENCE voice; the Q&A thread is the Teacher's.
+- **Flow session (#33):** the unit between a snippet and a file — inactivity gap, taught set,
+  freshness as a ranking weight, mandatory feedback after a quiz answer; constants in `flow.ts`,
+  argued in `docs/research/flow-session.md`. Study vs Demo pacing profile is a Settings choice.
+- Whisper: a popover on a segment, ephemeral, Ellie-only for now, with "insert into the document"
+  producing a new shared card (#16 and its 2026-09-16 comment).
+- Platform (#11, #14, #17, #20): macOS Electron app, unsigned, installed by `app/tools/install-local.sh`.
+- LLM (#19): the local Claude CLI by default (per-role haiku/sonnet/opus, default sonnet), an API
+  key file as fallback, `scripted` for the video. Load the `claude-api` skill before writing API
+  code; do not answer model/pricing questions from memory.
+- Demo deck and fixture: the Critique 1 slides in `Academia/Sources/btw interaction/` (#32).
 
 ## Environment traps
 
