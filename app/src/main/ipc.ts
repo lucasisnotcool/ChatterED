@@ -423,6 +423,13 @@ export class AppService {
       // the room is on, and writes them there.
       onLedgerApplied: ({ rows, changed }) => this.#mirrorObjectives(roomId, rows, changed),
       onTaught: ({ elementId, at }) => this.#noteObjectiveTaught(roomId, elementId, at),
+      /**
+       * **Issue #41.** The tree already knows which objectives are online and which prerequisites
+       * the deck assumes; until now none of it reached the Teacher's prompt, which is why she
+       * pitched at the slide. Read per Teacher turn, straight off the repository, so a node that
+       * went online two turns ago is known on this one.
+       */
+      learnerObjectives: () => this.#learnerObjectives(material.file_id),
     });
     this.#actor.start();
     this.#actor.recover();
@@ -682,6 +689,27 @@ export class AppService {
     }
     log().info('objectives.reset', { file_id: fileId, states: cleared, ledger_rows: ledgerRows, room_id: roomId });
     return this.#d.store.objectives.states(fileId);
+  }
+
+  /**
+   * The file's objectives and their levels, for `prompts.learnerBlock()` (#41).
+   *
+   * Deck order, so the list the Teacher reads is the order the learner meets them in. An empty
+   * array is a correct answer — no tree yet, or a tree still ingesting — and the block turns that
+   * into *assume less* rather than into silence.
+   */
+  #learnerObjectives(fileId: string | null): { title: string; level: 0 | 1 | 2 | 3; assumedByDeck: boolean }[] {
+    if (!fileId) return [];
+    const tree = this.#d.store.objectives.tree(fileId);
+    if (!tree || tree.status !== 'ready') return [];
+    const states = new Map(this.#d.store.objectives.states(fileId).map((st) => [st.objectiveId, st]));
+    return [...tree.objectives]
+      .sort((a, b) => a.order - b.order)
+      .map((o) => ({
+        title: o.title,
+        level: (states.get(o.id)?.level ?? 0) as 0 | 1 | 2 | 3,
+        assumedByDeck: o.assumedByDeck,
+      }));
   }
 
   /**

@@ -67,12 +67,14 @@ import type { ReferenceContext } from './reference.js';
 import { latestByElement } from './flow.js';
 import {
   decisionDirective,
+  learnerBlock,
   ledgerDirective,
   quizBlock,
   taughtBlock,
   teachObjectiveBlock,
   whereBlock,
 } from './prompts.js';
+import { DEFAULT_PITCH, notePitch, pitchLine, type PitchState } from './pitch.js';
 import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
@@ -145,6 +147,8 @@ export interface RoomActorDeps {
     cards?: Record<string, { collapsed?: boolean; removed?: boolean }>;
     /** anchorId → the objective a thread was opened about (issue #38 §5). */
     objectives?: Record<string, string>;
+    /** The per-file pitch (#41, `pitch.ts`). Absent on a state written before that build. */
+    pitch?: PitchState;
   };
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
@@ -165,6 +169,19 @@ export interface RoomActorDeps {
   onLedgerApplied?: (input: { rows: LedgerRow[]; changed: string[] }) => void;
   /** The Teacher taught this element, just now. Feeds `taughtAt` on the file's state (§4). */
   onTaught?: (input: { elementId: string; at: string }) => void;
+  /**
+   * **What this learner has shown, on this file** (issue #41), for `prompts.learnerBlock()`.
+   *
+   * A callback for the same reason `onLedgerApplied` is one: the objective tree is keyed per
+   * *file*, and this module knows about rooms. It is read once per Teacher turn and may return
+   * an empty array — which is not a failure, it is the *assume less* default, and the block says
+   * so in as many words.
+   */
+  learnerObjectives?: () => readonly {
+    title: string;
+    level: 0 | 1 | 2 | 3;
+    assumedByDeck: boolean;
+  }[];
 }
 
 interface PendingTurn {
@@ -319,6 +336,12 @@ export class RoomActor {
    * here simply gets no *where* line.
    */
   #askContext = new Map<string, ReferenceContext>();
+  /**
+   * **The pitch this learner has asked for on this file** (issue #41, `pitch.ts`). Persisted with
+   * the flow state, so "simpler" said once is still true after a quit, and cleared by
+   * `objectives:reset` along with everything else the app has claimed to know about them.
+   */
+  #pitch: PitchState = DEFAULT_PITCH;
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
   /** The anchor the turn currently being generated belongs to. Turns are serialised by the mailbox. */
@@ -409,6 +432,7 @@ export class RoomActor {
     this.#seen = new Map(Object.entries(deps.flowState?.seen ?? {}));
     this.#cards = new Map(Object.entries(deps.flowState?.cards ?? {}));
     this.#objectiveByAnchor = new Map(Object.entries(deps.flowState?.objectives ?? {}));
+    this.#pitch = deps.flowState?.pitch ?? DEFAULT_PITCH;
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -533,6 +557,17 @@ export class RoomActor {
        * sent message is the end of the sentence).
        */
       this.#typingUntil = 0;
+      /**
+       * **"Simpler" is data, not a mood** (#41). Every learner turn is read for a pitch signal
+       * before anything is decided, so the correction the learner makes on turn 2 is in the
+       * prompt on turn 3 — and on every turn after that, on this file. `notePitch` returns the
+       * same object when nothing fired, so an ordinary turn costs a regex sweep and no write.
+       */
+      const pitched = notePitch(this.#pitch, body, this.#d.clock.now());
+      if (pitched !== this.#pitch) {
+        this.#pitch = pitched;
+        this.#event('student', 'flow.pitch', { level: pitched.level, signal: pitched.signals[0] ?? null });
+      }
       this.#noteLearnerActivity('turn', anchorId);
       const row = this.#insertMessage({
         participantId: this.#studentParticipant().id,
@@ -2073,6 +2108,7 @@ export class RoomActor {
     seen: Record<string, number>;
     cards: Record<string, { collapsed?: boolean; removed?: boolean }>;
     objectives: Record<string, string>;
+    pitch: PitchState;
   } {
     return {
       session: this.#flow,
@@ -2084,6 +2120,8 @@ export class RoomActor {
       // A thread opened from a node keeps its tag across a quit: the next message the learner
       // writes in it is about the same objective the deck was reopened on.
       objectives: Object.fromEntries(this.#objectiveByAnchor),
+      // "Simpler", said once, on this file (#41). It outlives the sitting because the learner does.
+      pitch: this.#pitch,
     };
   }
 
@@ -2159,6 +2197,12 @@ export class RoomActor {
   resetTaught(): void {
     this.#taught = [];
     this.#pendingQuiz = null;
+    /**
+     * **The pitch goes with it** (#41). Reset is the learner saying *forget what you think you
+     * know about me on this file*; a remembered "explain it simpler" is exactly that, so keeping
+     * it would be the app agreeing to forget the evidence and keeping the inference drawn from it.
+     */
+    this.#pitch = DEFAULT_PITCH;
   }
 
   #learnerLabel(elementId: string): string {
@@ -2204,9 +2248,24 @@ export class RoomActor {
     }
     const where = this.#whereNote();
     if (where) blocks.push(where);
+    if (decision.role === 'peer') blocks.push(this.#learnerNote());
     const taught = this.#taughtNote(decision);
     if (taught) blocks.push(taught);
     return blocks.length > 0 ? blocks.join('\n\n') : undefined;
+  }
+
+  /**
+   * **What the Teacher is told about the learner** (#41): the file's objective states, the
+   * learner's own words out of the ledger, and the pitch. Assembled here because this is where
+   * all three are reachable; the block itself decides what to say about them, including what to
+   * say when they are all empty.
+   */
+  #learnerNote(): string {
+    const objectives = this.#d.learnerObjectives?.() ?? [];
+    const evidence = this.#ledgerRows()
+      .filter((r) => r.evidence_text !== null && r.evidence_text.trim().length > 0)
+      .map((r) => ({ label: this.#learnerLabel(r.element_id), quote: r.evidence_text! }));
+    return learnerBlock({ objectives, evidence, pitchLine: pitchLine(this.#pitch) });
   }
 
   /** Which slide this thread is on, for the Teacher (#41). Null when nothing resolved one. */

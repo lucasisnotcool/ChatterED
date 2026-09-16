@@ -299,6 +299,90 @@ export function taughtBlock(items: readonly { label: string; minutesAgo: number 
 }
 
 /**
+ * **What the Teacher knows about this learner, before she opens her mouth** (issue #41,
+ * `conversation-refinement.md` §3).
+ *
+ * Emitted after the last cache breakpoint, beside `taughtBlock`, because it changes every turn.
+ *
+ * #41's third transcript is the argument: *"In this example, the original reference was
+ * essentially useless, by pitching content at the same level of expected understanding without
+ * establishing what a student grasps."* The app **has** that evidence — the objective tree knows
+ * which nodes are online, the ledger holds the learner's own words that put them there, and
+ * `pitch.ts` remembers what they have asked for on this file — and none of it reached the prompt.
+ *
+ * The default is the important half. With no evidence at all, which is the state every deck starts
+ * in and the state all three #41 transcripts were in, the instruction is **assume less**: not
+ * "unknown, proceed as usual", which is what silence means to a model reading a slide written for
+ * a third-year.
+ */
+export function learnerBlock(input: {
+  /** The file's objectives, as the tree and the states have them. Empty before the ingest lands. */
+  objectives: readonly {
+    title: string;
+    /** 0 untouched · 1 stated · 2 online (explained in their own words) · 3 defended. */
+    level: 0 | 1 | 2 | 3;
+    /** A prerequisite the deck assumes and never teaches (§2's `assumedByDeck`). */
+    assumedByDeck: boolean;
+  }[];
+  /** The learner's own words, out of the ledger. Verbatim; rule 1 already checked that. */
+  evidence: readonly { label: string; quote: string }[];
+  /** `pitch.ts`, already rendered to its one line. */
+  pitchLine: string;
+}): string {
+  const online = input.objectives.filter((o) => o.level >= 2);
+  const stated = input.objectives.filter((o) => o.level === 1);
+  const untouched = input.objectives.filter((o) => o.level === 0 && !o.assumedByDeck);
+  const assumed = input.objectives.filter((o) => o.level === 0 && o.assumedByDeck);
+  const quotes = input.evidence.filter((e) => e.quote.trim().length > 0).slice(0, 6);
+
+  const lines: string[] = ['WHAT THIS LEARNER HAS SHOWN YOU, ON THIS FILE'];
+  const list = (items: readonly { title: string }[], cap = 8): string[] =>
+    items.slice(0, cap).map((o) => `- ${o.title}`);
+
+  if (online.length > 0) {
+    lines.push('They have explained these in their own words \u2014 treat them as known, and build on them:');
+    lines.push(...list(online));
+  }
+  if (stated.length > 0) {
+    lines.push('They have **said** these correctly but not explained them \u2014 do not assume the mechanism:');
+    lines.push(...list(stated));
+  }
+  if (assumed.length > 0) {
+    lines.push(
+      'This deck **assumes** these and never teaches them, and the learner has not touched one of them.',
+      'Assume they have not met them, and teach whichever the answer needs, in a sentence or two, before',
+      'the thing they actually asked about:',
+    );
+    lines.push(...list(assumed));
+  }
+  if (untouched.length > 0 && online.length + stated.length > 0) {
+    lines.push(`Not yet touched: ${untouched.slice(0, 8).map((o) => o.title).join('; ')}.`);
+  }
+  if (quotes.length > 0) {
+    lines.push('In their own words:');
+    lines.push(...quotes.map((e) => `- \u201c${e.quote.trim()}\u201d \u2014 on ${e.label}`));
+  }
+
+  /**
+   * **The default, and it is a floor rather than an absence.** Everything above can be empty: a
+   * deck opened for the first time, an ingest that has not landed, a learner who has not yet said
+   * anything the ledger could quote.
+   */
+  if (online.length === 0 && stated.length === 0 && quotes.length === 0) {
+    lines.push(
+      'Nothing yet. You have **no evidence** about what this learner already understands.',
+      'So **assume less**: assume they have not met the prerequisites this slide takes for granted,',
+      'define your terms as you use them, and carry the explanation on something concrete. Do not',
+      'assume the previous slides were understood, and do not open by asking what they already know',
+      '\u2014 that is a turn spent, and #36 is about not spending it.',
+    );
+  }
+
+  lines.push('', input.pitchLine);
+  return lines.join('\n');
+}
+
+/**
  * **The Tester's question, from the objective's own stems** (issue #38 §4: "The Tester quizzes
  * from `quizSeeds` of objectives that are taught and not yet defended").
  *
