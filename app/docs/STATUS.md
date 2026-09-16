@@ -1282,3 +1282,102 @@ Screenshots in the session scratchpad under `cui/`, `01`–`14`.
 `turn.received` is emitted **twice** with the same `turnId` in the same millisecond. The renderer
 is idempotent on it, so it is harmless on screen — but the debug drawer counts turns, and a
 double-emit is usually a double-subscription.
+
+## The conversation layer says what it is doing — the main-process half (16 Sep, audit §2/§6/§7/§9/§10, #34)
+
+The audit's verdict was that the flow inherited the conversation's *content* from the chat room
+and none of its **status surfaces**, and that streaming was not broken but absent. This is that
+half of the fix: the events, the IPC, the actor. The flow-side rendering is the parallel track.
+
+**Eight commits**, `31a8c30` → `b4ca1c9`.
+
+### The wire
+
+| Event | Shape | When |
+|---|---|---|
+| `turn.received` | `{turnId, messageId, anchorId, receivedAt, yieldMs, etaMs, responder}` | the instant the actor accepts a learner turn — **before** the floor-yield sleep and any model call |
+| `turn.delta` | `{turnId, anchorId, participant, text}` | only ever **after** the floor has elapsed |
+| `turn.released` | `{turnId, messageId \| null, stopped}` | once per turn, whatever the ending |
+
+| IPC | Shape |
+|---|---|
+| `flow:stop` | `{roomId, turnId}` → `{stopped:true, turnId}` \| `{stopped:false, refused:'floor'\|'unknown'}` |
+| `flow:turnTrace` | `{roomId, turnId?}` → `TurnTraceView[]` (in-memory ring, last 50, **no bodies**) |
+| `flow:markSeen` | `{roomId, anchorId, seq}` |
+| `flow:cardState` | `{roomId, anchorId, collapsed?, removed?}` |
+
+`MessageView` gained `model`, `backend`, `totalMs`, `decidedBy`, `stopped` (migrations 011, 012);
+`FlowThreadView` gained `lastSeenSeq`, `collapsed`, `removed`; `SettingsView` gained `replySpeed`.
+
+**The acknowledgement is two-phase, and that is not a double emit.** Phase 1 goes out with no
+speaker and no ETA, because neither is known and the learner needs it *now*. Phase 2 goes out when
+a **rule** fixes the speaker — on an anchored thread `rule:teacher_answers`, no model call, so the
+two usually land in the same millisecond — carrying the responder and the floor target for §B9's
+reserved slot and the hover ETA. A model decision is never re-emitted: it lands mid-yield, and a
+name appearing at second 4 is the agent chrome §C3 forbids. Identical payloads are dropped, so a
+second event always means something changed. Key the render on `turnId`, treat it as a replace.
+
+**The floor is untouched.** `TurnStream` buffers every delta produced during the hold, flushes the
+buffer as one delta the moment the floor elapses, and streams the rest live. Nothing is visible one
+millisecond earlier than before. `ttft_actual_ms` is now the first **visible** token; the model's
+own TTFT is in the log as `ttft_model_ms`. The hold runs concurrently with the generation instead
+of after it, which is what makes the tail live rather than a second buffer.
+
+### Verified live over CDP — installed build 102 (`b4ca1c9`), own port 9351, own `--user-data-dir`
+
+Scripted backend, `room_6a9609d5c6fb` / `seg_mu3he86g65558u` — the 16 Sep silence room:
+
+```
+2ms timer.updated | 3ms message.appended | 4ms turn.received | 8ms ledger.updated |
+9ms turn.received | 4637ms agent.thinking | 5639ms turn.delta | 5639ms agent.thinking.cleared |
+5641ms message.appended | 5642ms turn.released
+```
+
+ack at **4 ms** carrying the learner's own `messageId`, `yieldMs 8000`; the second at **9 ms** with
+`eta 5632` and `responder Ellie`; **no agent chrome until 4637 ms**; one flush delta at **5639 ms**
+against a floor target of **5632**; `concat(deltas) === body` (268 chars); `model=scripted:sonnet
+backend=scripted ttft=5634 total=5635 decidedBy=rule:teacher_answers`. Stop at 250 ms and at 1.8 s
+both `{stopped:false, refused:'floor'}`.
+
+With floors off, the same turn streamed **12 deltas** at 7, 44, 81 … 411 ms — the 35 ms word-chunk
+rate `llm/backend.ts` asks ScriptedClient for — and a Stop fired from inside the page returned
+`{stopped:true}`, kept the partial with `stopped: true`, `released.stopped=true`, `turn.failed=0`.
+
+**CLI backend, the real deck's room** (`claude-sonnet-5`, `/Users/lohzh/.local/bin/claude`): ack at
+4 ms, second at 11 ms (`eta 4737`, Ellie), thinking at 3742 ms, one flush delta at **4744 ms**
+(floor 4737), 483 chars, `concat === body`, `backend=claude-cli ttft=4740 total=4741`, trace
+`generationMs 4245`, `cache_creation_input_tokens 9893`. Stop during the floor refused. A second
+CLI turn with floors off streamed live and was **stopped mid-stream**: 4 deltas, `{stopped:true}`,
+33 chars kept and flagged, `turn.failed=0`, and the turn's `claude` child gone from `pgrep`.
+
+### Two bugs the live runs found, both fixed here
+
+1. **`loggedClient` dropped the abort signal.** It decorates `LLMClient` and silently omitted the
+   third argument, so `signal` reached no client in the app. The first live Stop returned
+   `{stopped:true}` while the scripted client streamed all twelve chunks to the end; on the CLI
+   path that leaves `claude` generating and billing after a stop that reported success. Fixed,
+   including the JSON-repair retry's second child, with a test that fails on the old wrapper.
+2. **`generationMs` measured the wait, not the call.** It was stamped where the promise is
+   *awaited*, which is on the far side of the yield sleep, so a reply produced in milliseconds
+   read as `gen=4996ms`. Now stamped in the settle handlers.
+
+### The backend-rebinding bug from the last report — fixed
+
+`openRoom` returns the already-open actor and the client was bound at construction, so a Settings
+change reached SQLite and never reached the actor. `RoomActor.rebind()` swaps client, models,
+roster, mode and reply speed; it is called from `openRoom`'s reuse path and after a successful
+`saveSettings`, between turns only. That is also why the earlier attempt to force a live failure by
+pointing Settings at a broken binary never reached the actor.
+
+### Not verified, and one thing seen in passing
+
+- The **live tail on the CLI path at the studied pacing** was never observed: the CLI answered in
+  4.2 s against a 4.7 s floor, so everything buffered into one flush, which is correct. The tail
+  was proved with the floors halved and off, and by unit test with a gated client.
+- A turn that **fails** does not record `generationMs` in the trace — only `failed` and `totalMs`.
+- **A scripted turn can arrive empty.** Past the end of a script `beatFor(cue)` returns nothing and
+  the reply is `''`, so there are no deltas and nothing to stop. The flow-track agent's "eleven
+  scripted turns with no `turn.delta`" is this, not a missing stream. Worth its own issue.
+- **`vault:find` returned ids that `segments:get` rejects** with *"That file is not in the vault any
+  more"*, for every PDF tried, in a profile whose `app.db` was copied and then rescanned. Seen
+  once, cause not chased, not this track's.
