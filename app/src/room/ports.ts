@@ -95,6 +95,15 @@ export interface MessagesRepo {
   bodyAtSeq(roomId: string, seq: number): string | undefined;
   get(id: string): MessageRow | undefined;
   maxSeq(roomId: string): number;
+  /**
+   * Rewrite one row's body in place (issue #41's Regenerate).
+   *
+   * The only mutation on a message there has ever been, and it is deliberately the narrowest one
+   * that does the job: a regenerated summary card must keep its `seq`, so it stays where the
+   * learner put it in their document rather than jumping to the bottom of the thread. A turn is
+   * still never edited — this is called for `kind = 'summary'` and nothing else.
+   */
+  updateBody(id: string, body: string, at: string): void;
 }
 
 /**

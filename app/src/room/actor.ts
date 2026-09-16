@@ -35,7 +35,21 @@ import { LEDGER_SCHEMA, applyLedgerRules, type LedgerProposal } from './ledger.j
 import type { LLMClient, LlmBackend } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
-import { anyAnchorLocked, isAnchorLocked, type ReferenceAnswerState } from './reference.js';
+import {
+  REFERENCE_DISPLAY_NAME,
+  anyAnchorLocked,
+  findReferenceParticipant,
+  isAnchorLocked,
+  type ReferenceAnswerState,
+} from './reference.js';
+import {
+  SUMMARY_OFFER_LINE,
+  buildSummaryRequest,
+  composeSummaryBody,
+  renderThread,
+  shouldOfferSummary,
+  summaryInThread,
+} from './summary.js';
 import {
   FLOW,
   answerQuiz,
@@ -149,6 +163,8 @@ export interface RoomActorDeps {
     objectives?: Record<string, string>;
     /** The per-file pitch (#41, `pitch.ts`). Absent on a state written before that build. */
     pitch?: PitchState;
+    /** Threads already offered a summary card (#41). "At most once" outlives a relaunch. */
+    offeredSummary?: string[];
   };
   newId: (prefix: string) => string;
   /** Injectable for deterministic tests. */
@@ -342,6 +358,12 @@ export class RoomActor {
    * `objectives:reset` along with everything else the app has claimed to know about them.
    */
   #pitch: PitchState = DEFAULT_PITCH;
+  /**
+   * Threads the Teacher has already offered to summarise (issue #41). At most once per thread:
+   * an offer the learner did not take is an answer, and repeating it is the app arguing.
+   */
+  #offeredSummary = new Set<string>();
+  #summaries = 0;
   /** The segment the learner last acted in. Where an unanchored fill (a nudge) goes. */
   #lastAnchorId: string | null = null;
   /** The anchor the turn currently being generated belongs to. Turns are serialised by the mailbox. */
@@ -433,6 +455,7 @@ export class RoomActor {
     this.#cards = new Map(Object.entries(deps.flowState?.cards ?? {}));
     this.#objectiveByAnchor = new Map(Object.entries(deps.flowState?.objectives ?? {}));
     this.#pitch = deps.flowState?.pitch ?? DEFAULT_PITCH;
+    this.#offeredSummary = new Set(deps.flowState?.offeredSummary ?? []);
     const room = this.#room();
     this.#timer = new SilenceTimer({
       clock: deps.clock,
@@ -745,6 +768,198 @@ export class RoomActor {
       note: 'no-op since #41: the Teacher answers the Ask, so no thread is locked',
     });
     return { unlocked: true, anchorId: null };
+  }
+
+  // ── "Summarise into the document" — the artefact (issue #41) ──────────────
+
+  /**
+   * **One thread, summarised into the learner's document.**
+   *
+   * `conversation-refinement.md` §5, and Lucas's own workflow in #41: *"this should be provided as
+   * a button, which will create a slide / segment that basically summarises what was taught in
+   * that conversational chain"*. The card is written from the **thread** — the deck's text is not
+   * in the request at all, which is the only way to stop a model summarising the easier document —
+   * capped in code at 150 words, and inserted under the segment the thread hangs off.
+   *
+   * Called again on the same thread it **replaces** the card in place rather than appending a
+   * second one: two records of one conversation, disagreeing, in the learner's own file.
+   */
+  async summarise(threadId: string): Promise<{
+    messageId: string;
+    anchorId: string;
+    sourceThreadId: string;
+    body: string;
+    truncated: boolean;
+    regenerated: boolean;
+  }> {
+    const all = this.#d.store.messages.forRoom(this.#d.roomId);
+    const thread = all.filter((m) => m.anchor_id === threadId).sort((a, b) => a.seq - b.seq);
+    if (thread.length === 0) throw new Error('There is no conversation there to summarise yet.');
+
+    const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
+    const transcript = renderThread(thread, participants);
+    if (transcript.trim().length === 0) throw new Error('There is no conversation there to summarise yet.');
+
+    const material = this.#d.store.materials.get(this.#room().material_id)!;
+    const context = this.#askContext.get(threadId);
+    this.#summaries += 1;
+    const request = buildSummaryRequest({
+      model: this.#models.orchestrator,
+      roomId: this.#d.roomId,
+      deckTitle: material.title,
+      segmentLabel: context?.label ?? null,
+      page: context?.page ?? null,
+      transcript,
+      anchorId: threadId,
+      scriptCue: `summary:${this.#summaries}`,
+    });
+
+    let raw: string;
+    let model = request.model;
+    let backend: LlmBackend | null = null;
+    let usage: Record<string, number> = {};
+    try {
+      const result = await this.#d.llm.complete(request);
+      raw = result.text;
+      model = result.model;
+      backend = result.backend ?? null;
+      usage = result.usage as unknown as Record<string, number>;
+    } catch (err) {
+      this.#event('system', 'agent.turn.error', { scope: 'summary', cause: (err as Error).message });
+      this.#notice('error', 'That summary did not come back — try again.');
+      throw err;
+    }
+
+    // The cap, in code. A prompt that asks for 150 words is a prompt that produces 260.
+    const { body, truncated } = composeSummaryBody(raw);
+    const existing = summaryInThread(all, threadId);
+
+    const row = await this.#mailbox.enqueue(() => {
+      if (existing) {
+        this.#d.store.messages.updateBody(existing.id, body, this.#nowIso());
+        const updated = this.#d.store.messages.get(existing.id)!;
+        this.#d.transport.emit({
+          type: 'message.appended',
+          roomId: this.#d.roomId,
+          message: messageView(updated, participants, this.#d.roster),
+        });
+        return updated;
+      }
+      return this.#insertMessage({
+        participantId: this.#referenceParticipant().id,
+        body,
+        model,
+        backend,
+        usage: JSON.stringify(usage),
+        anchorId: threadId,
+        kind: 'summary',
+        sourceThreadId: threadId,
+      });
+    });
+
+    /**
+     * **Not an agent turn**, and for once that claim is the same one `pivot-spec.md` §B1 made: no
+     * floor, no `consecutive_agent_turns`, no timer, no ledger. The learner pressed a button on
+     * their own document; nobody took the conversational floor to do it.
+     */
+    this.#event('system', 'flow.summarise', {
+      anchor_id: threadId,
+      message_id: row.id,
+      thread_messages: thread.length,
+      words: body.split(/\s+/).length,
+      truncated,
+      regenerated: existing !== undefined,
+      took_floor: false,
+      reset_timer: false,
+    });
+
+    return {
+      messageId: row.id,
+      anchorId: threadId,
+      sourceThreadId: threadId,
+      body,
+      truncated,
+      regenerated: existing !== undefined,
+    };
+  }
+
+  /**
+   * **The conversation behind a summary card** (issue #41): the click that expands it, and the
+   * composer that continues it. Ids only — the bodies are already in `room.messages`.
+   */
+  threadOf(summaryId: string): { summaryId: string; threadId: string; messageIds: string[] } | null {
+    const card = this.#d.store.messages.get(summaryId);
+    if (!card || (card.kind ?? 'turn') !== 'summary') return null;
+    const threadId = card.source_thread_id ?? card.anchor_id;
+    if (threadId === null) return null;
+    const messageIds = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .filter((m) => m.anchor_id === threadId && m.id !== summaryId)
+      .sort((a, b) => a.seq - b.seq)
+      .map((m) => m.id);
+    return { summaryId, threadId, messageIds };
+  }
+
+  /**
+   * **The offer** (`rule:offer_summary`, R1).
+   *
+   * A one-line Teacher turn saying the card is available, posted at most once per thread after
+   * the thread has two Teacher turns in it and the sitting has taught something. Written by
+   * `summary.ts` rather than generated, the same treatment the hand-off line gets and for the
+   * same reason (`flow-build-plan.md` §4.2: "a rule I can see and turn down"), and it **inserts
+   * nothing** — the button on it does, if the learner presses it.
+   */
+  #maybeOfferSummary(anchorId: string | null): void {
+    if (anchorId === null || this.#offeredSummary.has(anchorId)) return;
+    const teacher = agentByRole(this.#d.roster, 'peer');
+    const participant = this.#d.store.participants.byAgentKey(this.#d.roomId, teacher.key);
+    if (!participant) return;
+    const thread = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .filter((m) => m.anchor_id === anchorId)
+      .sort((a, b) => a.seq - b.seq);
+    const offer = shouldOfferSummary({
+      thread,
+      teacherParticipantId: participant.id,
+      taughtSomething: this.#taught.length > 0,
+      alreadyOffered: false,
+    });
+    if (!offer) return;
+    this.#offeredSummary.add(anchorId);
+    this.#insertMessage({
+      participantId: participant.id,
+      body: SUMMARY_OFFER_LINE,
+      model: 'rule:offer_summary',
+      anchorId,
+    });
+    this.#event('peer', 'agent.turn.dispatched', { move: 'offer_summary', decided_by: 'rule:offer_summary' });
+  }
+
+  /**
+   * The reference participant, created with the room.
+   *
+   * It survives #41 as **the summary card's author**. The entry card is retired, but the argument
+   * for a voice that is outside the roster was always about the *artefact*: a durable block in the
+   * learner's document is not Ellie speaking, and a persona's name on it would make every later
+   * turn from her read against a record she did not write. `agent_key` is null, which is what the
+   * schema already means by "not an agent" — `agentByRole` cannot find it and the orchestrator
+   * cannot select it. Made on demand for a room that predates this build.
+   */
+  #referenceParticipant() {
+    const existing = findReferenceParticipant(this.#d.store.participants.forRoom(this.#d.roomId));
+    if (existing) return existing;
+    const row = {
+      id: this.#d.newId('p'),
+      room_id: this.#d.roomId,
+      kind: 'agent' as const,
+      user_id: null,
+      agent_key: null,
+      display_name: REFERENCE_DISPLAY_NAME,
+      joined_at: this.#nowIso(),
+      left_at: null,
+    };
+    this.#d.store.participants.insert(row);
+    return row;
   }
 
   /**
@@ -1603,6 +1818,12 @@ export class RoomActor {
       this.#releaseTurn(pending.id, row.id);
       this.#noteTurnForFlow(decision, row.id);
       if (trigger === 'silence') this.#markFirstHelp();
+      /**
+       * **The offer** (#41, `rule:offer_summary`). After the Teacher's reply, never instead of it,
+       * and never into a silence — a learner who has gone quiet is not being asked to press a
+       * button. It posts one line and inserts nothing; R1 is the whole design.
+       */
+      if (decision.role === 'peer' && trigger !== 'silence') this.#maybeOfferSummary(anchorId);
     });
 
     this.#pending = null;
@@ -2109,6 +2330,7 @@ export class RoomActor {
     cards: Record<string, { collapsed?: boolean; removed?: boolean }>;
     objectives: Record<string, string>;
     pitch: PitchState;
+    offeredSummary: string[];
   } {
     return {
       session: this.#flow,
@@ -2122,6 +2344,7 @@ export class RoomActor {
       objectives: Object.fromEntries(this.#objectiveByAnchor),
       // "Simpler", said once, on this file (#41). It outlives the sitting because the learner does.
       pitch: this.#pitch,
+      offeredSummary: [...this.#offeredSummary],
     };
   }
 
@@ -2348,6 +2571,10 @@ export class RoomActor {
     decidedBy?: string | null;
     /** What the REFERENCE call was allowed to see, already phrased (migration 015). */
     scopeShown?: string | null;
+    /** What this card is (migration 017, issue #41). Defaults to a conversation turn. */
+    kind?: 'turn' | 'answer' | 'summary';
+    /** On a summary card: the anchor of the thread it was written from (migration 017). */
+    sourceThreadId?: string | null;
   }): MessageRow {
     const seq = this.#d.store.messages.maxSeq(this.#d.roomId) + 1;
     const row: MessageRow = {
@@ -2373,6 +2600,8 @@ export class RoomActor {
       total_ms: input.totalMs ?? null,
       decided_by: input.decidedBy ?? null,
       scope_shown: input.scopeShown ?? null,
+      kind: input.kind ?? 'turn',
+      source_thread_id: input.sourceThreadId ?? null,
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);

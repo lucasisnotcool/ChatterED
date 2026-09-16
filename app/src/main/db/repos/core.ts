@@ -133,6 +133,11 @@ export function messagesRepo(db: SqlDatabase): MessagesRepo {
         s: seq,
       })?.body,
     get: (id) => plain(db.prepare('SELECT * FROM messages WHERE id = @id').get<MessageRow>({ id })),
+    // Regenerate, on a summary card (#41). `released_at` moves with it so the footer's timestamp
+    // says when this version was written, which is the honest answer to "when did I make this".
+    updateBody: (id, body, at) => {
+      db.prepare('UPDATE messages SET body = @b, released_at = @at WHERE id = @id').run({ id, b: body, at });
+    },
     maxSeq: (roomId) =>
       db.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE room_id = @r').get<{ m: number }>({
         r: roomId,

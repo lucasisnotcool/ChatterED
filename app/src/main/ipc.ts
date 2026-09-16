@@ -11,6 +11,8 @@ import type {
   Bootstrap,
   CreateSessionInput,
   FlowAnswerView,
+  FlowSummaryView,
+  FlowThreadOfView,
   FlowRelayView,
   FlowRoomView,
   FlowWhisperView,
@@ -901,6 +903,26 @@ export class AppService {
    * was looking at. Same resolver, same `scopeShown`, so the third turn in a thread is answered on
    * the same slide as the first.
    */
+  /**
+   * **"Summarise into the document"** (issue #41). One `summary` card under the segment, written
+   * from the thread. Called again on the same thread it replaces the card rather than adding one.
+   */
+  async flowSummarise(input: { roomId: string; threadId: string }): Promise<FlowSummaryView> {
+    const actor = this.#requireActor(input.roomId);
+    try {
+      const out = await actor.summarise(input.threadId);
+      return { roomId: input.roomId, ...out, flow: flowRoomView(actor, actor.lockedAnchors()) };
+    } finally {
+      this.#persistFlow();
+    }
+  }
+
+  /** The conversation behind a summary card (issue #41): the click, and the composer's target. */
+  flowThreadOf(input: { summaryId: string }): FlowThreadOfView | null {
+    if (!this.#actor) return null;
+    return this.#actor.threadOf(input.summaryId);
+  }
+
   async flowSend(input: { roomId: string; segmentId: string; text: string }): Promise<void> {
     const actor = this.#requireActor(input.roomId);
     const context = await this.#askContextFor(input.roomId, input.segmentId, input.text);
@@ -1266,6 +1288,8 @@ export class AppService {
     );
     handle<{ fileId: string; question: string }>(IPC.flowAskDeck, (input) => this.flowAskDeck(input));
     handle<{ answerId: string }>(IPC.flowExplainBack, (input) => this.flowExplainBack(input.answerId));
+    handle<{ roomId: string; threadId: string }>(IPC.flowSummarise, (input) => this.flowSummarise(input));
+    handle<{ summaryId: string }>(IPC.flowThreadOf, (input) => this.flowThreadOf(input));
     handle<{ roomId: string; segmentId: string; text: string }>(IPC.flowSend, (input) => this.flowSend(input));
     handle<{ fileId: string; segmentId: string }>(IPC.flowWhisperOpen, (input) => this.flowWhisperOpen(input));
     handle<{ roomId: string; fileId: string; segmentId: string; threadId: string; text: string }>(
