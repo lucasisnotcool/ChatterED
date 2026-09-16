@@ -810,3 +810,94 @@ Screenshots in the session scratchpad under `flow/`, numbered from 20. Tests 491
 **Not verified live:** that Study does *not* hand off inside a minute — that is the fake-clock
 pair in `flow.test.ts` (the same 55-second sitting, `r1_engagement` and `r3_maturity` by name),
 because waiting out the shipped floor live is what the previous section already measured.
+
+---
+
+## Ask privately — the whisper popover on a card (16 Sep, `flow-build-plan.md` §3.5, issues #25, #16)
+
+**The whisper moved from a rail into the document.** `⌘K` on a focused segment card — and a faint
+**🔒 Ask privately ⌘K** in the same card's label strip, because a gesture with no visible handle
+is a gesture only its author knows about, and the person `design-brief.md` §D5 wrote this for is
+the one least likely to have read a shortcut list. `App.svelte` stands its finder binding down
+while `store.flowFocus` is set, the sentence it already writes for a room.
+
+### What a "round" became
+
+`design-brief.md` §D5 clears a whisper **at the end of the round** (Dennis et al., *ephemerality*).
+A flow has no rounds, so the unit is the **segment sitting**, and the private thread id is keyed on
+`${flow session id}|${anchorId}` in an in-memory map that is deliberately **absent from
+`flowSnapshot()`**. Three consequences, all of them the point: ⌘K on another card opens an empty
+thread; a sitting that closed while the app was shut (`flow.ts`'s 20-minute gap) takes its private
+threads with it; and quitting ends every one of them. Rows are never deleted — they stay in
+`whispers` for the research export and become *unreachable*, which is the shape `whisper.cleared`
+already had.
+
+| File | What it is |
+|---|---|
+| `components/WhisperPopover.svelte` (**new**) | Anchored **under** the card, never over it: §4.1's never-rule holds for a popover as it does for an AI card, which is why the caret points up. `Esc` and click-away close it. The vocabulary is `WhisperPane.svelte`'s — the lock, "Private with Ellie", "Max can't see this", the limits statement first — and the insert ladder is `RelayOffer.svelte`'s offer → preview → edit → sent, with one verb changed: in a document you *insert into the document*. |
+| `room/actor.ts` | `openSegmentWhisper` (Ellie resolved from the **room's own participants**, so the renderer cannot name an addressee and a room created under another pairing still opens), `sendSegmentWhisper`, `closeSegmentWhisper`, `noteSelection`; `relay()` gained an `anchorId` so the approved card lands in the segment's thread; `handOffDue`'s `whisperOpen` wired for the first time. |
+| `room/context.whisper.ts` | An optional `segment` — **the same page text `flowAskHere` gives the REFERENCE call**, resolved once in `ipc.#segmentContext` so a private answer and a public one cannot be looking at different slides. It goes in `messages`, never `system[0]`: the prefix is frozen and hashed at confirmation, and a per-segment block there would invalidate every cached prefix on every ⌘K. |
+| `main/ipc.ts`, `shared/ipc.ts`, preload, `mockBridge.ts` | `flow:whisperOpen` / `whisperSend` / `whisperRelay` / `whisperClose`, and `flow:selection`. `flow:whisperOpen` **creates the document's room** the way "+ Ask here" does: refusing to open one until a public question had been asked would make the private channel the second-class one. |
+| `room/timer.ts` + `.test.ts` (7 new) | §B8's idle predicate. `isIdle` / `lastActivityTs` are pure; `onSelectionChange()` is a second caller of the extension path `typing()` already used (now `#extendWindow()`). **There is no field for scroll** — that is the enforcement, not a comment. The machine and its constants are untouched. |
+| `room/context.test.ts` | The canary, extended three ways — see below. |
+
+### The leak canary, extended and not relaxed
+
+The flow's component walk was a blanket ban on the word *whisper*. It is now an **allowlist of what
+a component may say**: `WhisperPopover.svelte` is exempt, and everywhere else a line may name the
+layer only to mount the popover, to pass a `flowWhisper*` store field through, or to print
+`promotedFromWhisper`, which is a field of a *shared* message. A second test asserts no other flow
+component reads `.turns`. A third describe block is **runtime, not static**: it plants the canary in
+a real private whisper on a real actor and looks for it in both agents' group prompts, the REFERENCE
+request, the room snapshot, the persisted sitting and `flow:messages` — then relays, and asserts the
+approved text is in the document and the canary still is not.
+
+### Dual attribution, and a deliberate departure
+
+`MessageView.promotedFromWhisper`'s docstring said the UI **must not** render a badge
+(`product-design.md` §B4). The flow prints one — `FROM A PRIVATE NOTE`, in `FlowThread` for a
+learner-authored card and in `AiSegment` for Ellie's — and the docstring now says why. A chat message
+scrolls away; a card in a document is the artefact `pivot-spec.md` §B5 says the learner would show a
+tutor, and a sentence they re-read in a week should say where it came from. It says *that* a private
+note happened, never what was in it, and **no agent's prompt carries the line**: the group builder
+reads `body` and nothing else.
+
+**Verified live over CDP** (own port 9336, own `--user-data-dir`, vault = `/Users/lohzh/ChatterED/Academia`,
+backend `scripted`) on `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`:
+
+| Check | Measured |
+|---|---|
+| The affordance | `🔒 Ask privately ⌘K` in every card's label strip, faint until hover or focus; clicking it opens the popover on that card |
+| ⌘K on a focused card | popover opens **anchored 6 px under the card**, `overlapsCrop: false`, composer **pre-focused**, and the vault finder does **not** open (0 finder nodes) |
+| The limits line | first thing in the pane, verbatim: *"I can see the group chat and explain background bits, but I won't answer Max's question for you — and nothing here reaches him unless you send it."* |
+| The private answer | **1.35 s** from Enter — inside the shipped 1–2 s whisper floor, and visibly shorter than any agent's |
+| The flow while it is open | 0 occurrences of the private question or answer anywhere in `.scroll` with the popover subtree removed |
+| **Insert into the document** | offer → preview shows `You` · `FROM A PRIVATE NOTE` with the draft from the script's `relayOffer`; approving inserts a shared card **under the same segment** (`underSegment: seg_…6hulf`) |
+| The inserted card | the approved text only; the private question does not appear in the flow |
+| Ledger after the insert | **0 glyphs** on that card — R5 live: nothing said privately, relayed or not, moves a row |
+| `Esc` / click-away | popover gone, card unchanged |
+| ⌘K again, same card, same sitting | the same 3 turns |
+| ⌘K on another card | **1 turn** — the limits line, and nothing else |
+| Close and reopen the document | 0 popovers, 0 occurrences of either private turn, **the inserted card still there with its provenance tag** |
+| §B9 off-screen breadcrumb | scrolling away while Ellie is typing docks one chip, `↑ your private note · p.6`, centred on the flow pane; it disappears when the answer lands |
+
+Screenshots in the session scratchpad under `flow/`, numbered from 30. Tests 507 → 520 green.
+
+**Five bugs the live run found, all fixed** (`fc41e11`), and every one invisible to the suite
+because the suite builds its own room: the whisper resolved its counterpart by roster *key* while a
+room keeps its participants for life, so ⌘K threw on any deck opened before the pairing last changed
+— the shipped pane had the same latent bug and gets the same fix; ⌘K on a second card closed the
+popover instead of moving it; the breadcrumb was `position: sticky` inside the scroller and so only
+appeared once you had scrolled to the end of the deck; a private answer was the one place in the app
+rendering raw `**` markers; and the foot line said *"clears when you leave this card"* when it in
+fact clears with the sitting.
+
+**Not in this pass.** `aiBody()` restores paragraphs and maths and **not bold**, app-wide — so the
+Critique 1 whisper beat's `**no**` and `*and*` show their markers in the popover exactly as they
+would on a REFERENCE card. The honest fix is one line in `script.critique1.ts` (drop the markers from
+`CRITIQUE1_WHISPERS[0]`), and that file belongs to the roster track, so it is left alone. `⌘K` is
+bound to the *focused* card only; there is no "whisper about the whole document" entry point, and
+`pivot-spec.md` §B5's addressee segmented control is gone on purpose — #32 removed the second option
+by removing the group, and a private channel to the Tester is the one shape this must not have. The
+selection-change wiring is asserted by fake-clock tests rather than live: watching a 45-second window
+not fire is not something a CDP run can show in a screenshot.
