@@ -1128,3 +1128,64 @@ free-text field that ships is `cause`, which is the child process's own stderr t
 jq -c 'select(.turn=="turn_7")' ~/Library/Logs/ChatterED/main.log
 jq -c 'select(.event=="orchestrator.response") | {ms, parsed_ok, chosen_role, decided_by}' …
 ```
+
+## The room_6a9609d5c6fb silence — fixed and verified live, 16 Sep 2026
+
+**What happened.** Build 78 (`523bd53`), installed app, live CLI backend, the real 58-page
+CS4246 deck. The learner asked *"So manhattan distance is not admissible, while straight line is
+admissible?"* at 02:30:33. At 02:30:38 `progress.update {"parse_ok":false}`. At 02:30:53 a
+`turn_decisions` row with trigger `student_message`, move `correct_misconception`, target
+`admissible-heuristics`, a rationale naming the exact error — and `chosen_participant_id` **NULL**,
+which downstream means deliberate silence. No turn was dispatched. The silence timer was re-armed
+and fired at 02:31:38 and 02:32:29, posting the *same* pool nudge twice.
+
+**Four root causes.**
+
+1. **The role vocabulary was never translated.** `decideTurn` accepted only the stored strings
+   `peer`/`challenger`; every word the model reads says Teacher and Tester. Anything else — a
+   name, a missing field, a bare `null` — became `role = null`, which collapsed `speak` and threw
+   an already-made decision away.
+2. **The call should not have happened.** By the time control reaches the model the answer is
+   forced: the Tester has only two rule-doors, silence is wrong when the learner has just asked,
+   and §B1 says the thread is the Teacher's. `rule:teacher_answers` says so in code.
+3. **The ledger had no schema and no instructions**, so it failed on *every* live turn; the rail
+   has never moved outside the scripted client. That is the `parse_ok:false`.
+4. **Failure was indistinguishable from silence** at the end of `#runAgentTurn`, so nothing was
+   shown and the timer nudged on top of the outage.
+
+**Orchestrator latency, measured.** Before, on the CLI at this room's prompt size: **17.1 s and
+20.0 s** on `sonnet`, 12.6 s and 39.6 s on `haiku` — the cost is 0.9k–3.8k output tokens of
+reasoning before the object, not the prompt and not process start-up, so haiku is not the fix.
+After: **0–4 ms**, no model call.
+
+**Verified live on build 86 (`1cded6f`)**, installed by `npm run install:local -- --force`, CLI
+backend, driven over CDP against `CS4246/Lecture-complex v4.0.pdf` (59 segments, never copied
+into the repo). *Ask here* → *Explain it back* → the same learner message:
+
+```
+turn.start            trigger=student_message anchor=seg_mu3he86g65558u backend=claude-cli
+orchestrator.request  model=sonnet backend=claude-cli anchored=true
+orchestrator.response ms=1 parsed_ok=true decided_by=rule:teacher_answers chosen_role=peer move=respond
+llm.request  scope=group  system_chars=15090 prompt_chars=2308 cache_breakpoints=2
+llm.complete scope=group  ms=4060 ttft_ms=1699 reply_chars=460 model=claude-sonnet-5
+turn.dispatched       role=peer move=respond decided_by=rule:teacher_answers
+                      latency_target_ms=5249 ttft_actual_ms=1699 total_ms=5254
+ledger.request        model=sonnet elements=5
+ledger.applied        ms=28030 parse_ok=true   ← off the critical path
+```
+
+Ellie replies, once, in the right thread. `turn.dispatched.total_ms` **5254**, against 28 777 ms
+on the first post-fix build, when the turn still awaited the ledger — see the commit that stopped
+it. No `turn.failed`, one `agent.thinking` (the wait has a location before it has content, §B9).
+`grep -ci 'manhattan|admissible|straight line' main.log` → **0**; `grep -c sk-ant` → **0**.
+
+**Not verified live.** (a) The failed-turn **card and its Retry** — covered by six tests driving
+the real `RoomActor` against a failing client, but an attempt to force a live failure by pointing
+Settings at a broken binary did not reach the actor, because `openRoom` reuses an actor that is
+already open for that room and the client is bound at construction. That is itself worth an issue:
+a backend change in Settings does not take effect until the room is reopened. (b) The **stage-1
+nudge rotation** in a live room (unit-tested only). (c) The **ledger actually moving a row** — it
+now parses, but both live proposals were held by the confidence and evidence gates, so no ○→◐
+transition has been seen against a real deck yet. (d) Token *streaming* to the UI: there is none
+by design — the reply is buffered and released at the latency floor, and the thinking indicator is
+what fills the wait.
