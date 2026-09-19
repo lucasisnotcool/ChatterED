@@ -3,9 +3,22 @@ import {
   CSV_COLUMNS,
   applyDelta,
   callLine,
+  compactTokens,
   counterLine,
   counterTitle,
   csvFilename,
+  failedClause,
+  indicatorTitle,
+  ingestSplit,
+  meterLine,
+  meterTitle,
+  msLabel,
+  partHasCost,
+  reportedLine,
+  scopeRows,
+  sessionChip,
+  sessionLine,
+  sliceLine,
   tokensLabel,
   toCsv,
   updateBelongs,
@@ -13,9 +26,19 @@ import {
   usdSuffix,
   usdWithLabel,
   validateRateCard,
+  windowChip,
   windowLine,
 } from './cost.js';
-import { emptyTokens, type CostCallView, type CostSummary, type CostTokens } from '../../shared/cost.js';
+import {
+  emptyTokens,
+  totalTokens,
+  type CliWindowBurn,
+  type CostCallView,
+  type CostMessageCost,
+  type CostSlice,
+  type CostSummary,
+  type CostTokens,
+} from '../../shared/cost.js';
 
 function tokens(partial: Partial<CostTokens> = {}): CostTokens {
   return { ...emptyTokens(), ...partial };
@@ -287,5 +310,174 @@ describe('a zero needs no hedge', () => {
 
   it('is what the scripted video path shows — tokens, and nothing about money', () => {
     expect(counterLine(summary({ mode: 'none', estimatedUsd: 0 }))).toBe('this thread · 4.2k tokens');
+  });
+});
+
+// ── The always-available surfaces (#42 item C) ──────────────────────────────
+
+function slice(key: string, partial: Partial<CostSlice> = {}): CostSlice {
+  return {
+    key,
+    calls: 1,
+    tokens: tokens({ input: 1_000, output: 200 }),
+    estimatedUsd: 0.004,
+    reportedUsd: null,
+    ...partial,
+  };
+}
+
+function messageCost(partial: Partial<CostMessageCost> = {}): CostMessageCost {
+  return {
+    messageId: 'm7',
+    kind: 'message',
+    turnId: 'turn_m7',
+    anchorId: 'doc',
+    calls: 2,
+    tokens: tokens({ input: 900, output: 260, cacheRead: 6_000 }),
+    estimatedUsd: 0.0046,
+    reportedUsd: null,
+    ms: 4_200,
+    models: ['claude-sonnet-5'],
+    byScope: [],
+    mode: 'subscription',
+    failedCalls: 0,
+    ...partial,
+  };
+}
+
+describe('the per-message meter', () => {
+  it('leads with tokens and keeps the label on the dollars, every single card', () => {
+    // 7160 tokens → `7.2k`. The label is the point: forty of these a session, unlabelled, is
+    // forty claims that a student on a subscription owes money.
+    expect(meterLine(messageCost())).toBe('7.2k tok · <$0.01 API-equivalent');
+    expect(meterLine(messageCost({ estimatedUsd: 0.023 }))).toBe('7.2k tok · ≈ $0.023 API-equivalent');
+  });
+
+  it('drops the money on the API path’s own hedge, and on the scripted path entirely', () => {
+    expect(meterLine(messageCost({ mode: 'api', estimatedUsd: 0.023 }))).toBe('7.2k tok · ≈ $0.023');
+    expect(meterLine(messageCost({ mode: 'none', estimatedUsd: 0 }))).toBe('7.2k tok');
+  });
+
+  it('says calls, model, latency in the tooltip', () => {
+    const title = meterTitle(messageCost());
+    expect(title).toBe('2 calls · claude-sonnet-5 · 4.2 s');
+    expect(meterTitle(messageCost({ calls: 1 }))).toContain('1 call ·');
+  });
+
+  it('puts the CLI’s own figure beside the estimate and never into it', () => {
+    const cost = messageCost({ reportedUsd: 0.0078, estimatedUsd: 0.0046 });
+    expect(meterTitle(cost)).toContain('CLI-reported <$0.01');
+    // The headline is still the app's own arithmetic, untouched by the CLI's.
+    expect(meterLine(cost)).toBe('7.2k tok · <$0.01 API-equivalent');
+    expect(reportedLine(0.0078)).toBe('CLI-reported <$0.01');
+    expect(reportedLine(null)).toBeNull();
+  });
+
+  it('says in one clause that a retried turn was paid for twice', () => {
+    expect(failedClause(1)).toBe('1 call failed or was pre-empted — a retried turn costs twice');
+    expect(failedClause(2)).toContain('2 calls failed or were pre-empted');
+    expect(failedClause(0)).toBeNull();
+    expect(meterTitle(messageCost({ failedCalls: 1 }))).toContain('a retried turn costs twice');
+  });
+
+  it('times itself in the unit a human reads, or not at all', () => {
+    expect(msLabel(940)).toBe('940 ms');
+    expect(msLabel(4_200)).toBe('4.2 s');
+    expect(msLabel(42_000)).toBe('42.0 s');
+    expect(msLabel(null)).toBeNull();
+  });
+});
+
+describe('a breakdown row', () => {
+  it('names a scope in the app’s own words, not the wire’s', () => {
+    const rows = scopeRows([slice('group'), slice('orchestrator'), slice('docedit')], 'subscription');
+    expect(rows.map((r) => r.label)).toEqual(['Agent turns', 'Turn decisions', 'Doc edits']);
+    expect(rows[0]?.detail).toBe('1.2k tok · <$0.01 API-equivalent');
+  });
+
+  it('shows a call count only when there was more than one call', () => {
+    expect(sliceLine(slice('group', { calls: 1 }), 'api')).toBe('1.2k tok · <$0.01');
+    expect(sliceLine(slice('group', { calls: 6, estimatedUsd: 0.3 }), 'api')).toBe('1.2k tok · ≈ $0.30 · 6 calls');
+  });
+
+  it('falls back to the raw key rather than dropping a scope it has never heard of', () => {
+    expect(scopeRows([slice('futurescope')], 'api')[0]?.label).toBe('futurescope');
+  });
+});
+
+describe('the ingest split, which is the doc counter’s whole reason to exist', () => {
+  const slices = [
+    slice('notes', { calls: 4, tokens: tokens({ cacheRead: 300_000 }), estimatedUsd: 0.06 }),
+    slice('objectives', { calls: 1, tokens: tokens({ input: 20_000 }), estimatedUsd: 0.04 }),
+    slice('ingest', { calls: 1, tokens: tokens({ input: 20_000 }), estimatedUsd: 0.04 }),
+    slice('group', { calls: 9, tokens: tokens({ input: 30_000, output: 4_000 }), estimatedUsd: 0.1 }),
+    slice('docedit', { calls: 3, tokens: tokens({ input: 10_000 }), estimatedUsd: 0.02 }),
+  ];
+
+  it('puts the once-per-deck work on one side and the conversation on the other', () => {
+    const { ingest, conversation } = ingestSplit(slices);
+    expect(ingest.calls).toBe(6);
+    expect(totalTokens(ingest.tokens)).toBe(340_000);
+    expect(ingest.estimatedUsd).toBeCloseTo(0.14);
+    expect(conversation.calls).toBe(12);
+    expect(totalTokens(conversation.tokens)).toBe(44_000);
+    expect(conversation.estimatedUsd).toBeCloseTo(0.12);
+  });
+
+  it('adds back up to the whole, so the two lines can never exceed the total', () => {
+    const { ingest, conversation } = ingestSplit(slices);
+    const whole = slices.reduce((n, s) => n + totalTokens(s.tokens), 0);
+    expect(totalTokens(ingest.tokens) + totalTokens(conversation.tokens)).toBe(whole);
+  });
+
+  it('is empty on the side that has nothing, which is what gets drawn as nothing at all', () => {
+    const { ingest, conversation } = ingestSplit([slice('group')]);
+    expect(partHasCost(ingest)).toBe(false);
+    expect(partHasCost(conversation)).toBe(true);
+    expect(ingestSplit([]).conversation.calls).toBe(0);
+  });
+});
+
+describe('the title-bar indicator', () => {
+  const burn: CliWindowBurn = {
+    windowStart: '2026-09-16T05:00:00.000Z',
+    windowEnd: '2026-09-16T10:00:00.000Z',
+    hours: 5,
+    tokens: tokens({ input: 120_000 }),
+    calls: 40,
+    estimatedUsd: 0.8,
+    reportedUsd: null,
+  };
+
+  it('is two short halves, tokens only — there is no room for a claim up there', () => {
+    expect(compactTokens(tokens({ input: 12_000 }))).toBe('12k tok');
+    expect(sessionChip(summary({ level: 'app', tokens: tokens({ input: 12_000 }), calls: 5 }))).toBe('session 12k tok');
+    expect(windowChip(burn)).toBe('5 h 120k tok');
+  });
+
+  it('hides the window half entirely on an install that has no window', () => {
+    expect(windowChip(null)).toBeNull();
+  });
+
+  it('hides itself before the first call rather than showing a zero', () => {
+    expect(sessionChip(null)).toBeNull();
+    expect(sessionChip(summary({ level: 'app', tokens: emptyTokens(), calls: 0 }))).toBeNull();
+  });
+
+  it('calls this launch "this session", because counterLine would call it all time', () => {
+    const session = summary({ level: 'app', tokens: tokens({ input: 12_000 }), estimatedUsd: 0.05, mode: 'subscription' });
+    expect(sessionLine(session)).toBe('this session · 12k tokens · ≈ $0.05 API-equivalent');
+    expect(counterLine(session)).toContain('all time');
+  });
+
+  it('says the rest in the tooltip, one claim per line', () => {
+    const app = summary({ level: 'app', mode: 'subscription', estimatedUsd: 0.28, cliWindow: burn });
+    const session = summary({ level: 'app', tokens: tokens({ input: 12_000 }), estimatedUsd: 0.05, mode: 'subscription' });
+    const lines = indicatorTitle(app, session).split('\n');
+    expect(lines[0]).toBe('this session · 12k tokens · ≈ $0.05 API-equivalent');
+    expect(lines[1]).toBe('all time · 4.2k tokens · ≈ $0.28 API-equivalent');
+    expect(lines[2]).toBe('last 5 h · 120k tokens · ≈ $0.80 API-equivalent');
+    expect(lines[3]).toContain('rate card');
+    expect(indicatorTitle(null, null)).toBe('Click for the whole picture.');
   });
 });

@@ -27,17 +27,24 @@
  */
 import {
   CLI_WINDOW_HOURS,
+  COST_SCOPE_LABEL,
   REPORTED_USD_LABEL,
   addTokens,
+  emptyTokens,
   formatTokens,
   formatUsd,
+  isIngestScope,
   totalTokens,
   usdLabel,
   type CliWindowBurn,
   type CostCallView,
   type CostLevel,
+  type CostMessageCost,
   type CostMode,
+  type CostScope,
+  type CostSlice,
   type CostSummary,
+  type CostTokens,
   type CostUpdate,
 } from '../../shared/cost.js';
 
@@ -135,6 +142,184 @@ export function windowLine(burn: CliWindowBurn | null, mode: CostMode): string |
   const tokens = `${tokensLabel(totalTokens(burn.tokens))} tokens`;
   const money = usdWithLabel(burn.estimatedUsd, mode);
   return money.length === 0 ? `last ${burn.hours || CLI_WINDOW_HOURS} h · ${tokens}` : `last ${burn.hours || CLI_WINDOW_HOURS} h · ${tokens} · ${money}`;
+}
+
+/**
+ * `this session · 12k tokens · ≈ $0.05 API-equivalent`.
+ *
+ * Its own sentence rather than `counterLine`'s, and not an oversight: the session summary is a
+ * **level `'app'` summary with a window on it** (`loadCost({ level: 'app', since: SESSION_WINDOW })`),
+ * so `LEVEL_WORD` would have the title bar call this launch's burn *all time*.
+ */
+export function sessionLine(session: Pick<CostSummary, 'tokens' | 'estimatedUsd' | 'mode'>): string {
+  const tokens = `${tokensLabel(totalTokens(session.tokens))} tokens`;
+  const money = usdWithLabel(session.estimatedUsd, session.mode);
+  return money.length === 0 ? `this session · ${tokens}` : `this session · ${tokens} · ${money}`;
+}
+
+// ── The always-available surfaces (#42 item C) ──────────────────────────────
+//
+// Four counters that are never *asked for* — under a message, under a thread, in the doc header,
+// in the title bar. They are the same sentence at four scales, and everything they say is built
+// here rather than in the components, for the reason this file exists at all: a fifth surface
+// that words it differently is a fifth number as far as a learner is concerned.
+//
+// They are shorter than `counterLine`'s, because they live in 10px type next to somebody's
+// lecture. `tok` rather than `tokens` is the whole of that abbreviation — the dollar label is
+// **never** shortened, because "API-equivalent" is the claim, not the decoration.
+
+/** `12.4k tok`. Tokens are the fact, so this is what a surface with room for one number shows. */
+export function compactTokens(tokens: CostTokens): string {
+  return `${tokensLabel(totalTokens(tokens))} tok`;
+}
+
+/**
+ * **The collapsed meter under one agent card**: `12.4k tok · ≈ $0.02 API-equivalent`.
+ *
+ * The label survives the abbreviation. A meter reading `12.4k tok · ≈ $0.02` under every reply,
+ * on a backend where nobody is billed per token, is forty small claims per session that a student
+ * owes money — which is the one failure `shared/cost.ts` note 2 exists to prevent.
+ */
+export function meterLine(cost: Pick<CostMessageCost, 'tokens' | 'estimatedUsd' | 'mode'>): string {
+  const tokens = compactTokens(cost.tokens);
+  const money = usdWithLabel(cost.estimatedUsd, cost.mode);
+  return money.length === 0 ? tokens : `${tokens} · ${money}`;
+}
+
+/** `1.4 s`, `940 ms`, or null when not one of the calls timed itself. */
+export function msLabel(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null;
+  const v = Math.max(0, Math.round(ms));
+  return v < 1_000 ? `${v} ms` : `${(v / 1_000).toFixed(1)} s`;
+}
+
+/**
+ * **A retried turn cost twice**, said in one clause.
+ *
+ * `'aborted'` is deliberately not in this count — `isFailedOutcome` says so, and a learner who
+ * pressed Stop does not need to be told their own decision failed. What they do need to be told
+ * is that a call that threw, or one the notes lane pre-empted, was paid for and then paid for
+ * again, which is the only reason a number here can be twice what the reply looks worth.
+ */
+export function failedClause(failedCalls: number): string | null {
+  if (!Number.isFinite(failedCalls) || failedCalls <= 0) return null;
+  return failedCalls === 1
+    ? '1 call failed or was pre-empted — a retried turn costs twice'
+    : `${failedCalls} calls failed or were pre-empted — a retried turn costs twice`;
+}
+
+/**
+ * `CLI-reported $0.01` — the CLI's own `total_cost_usd`, named as its own.
+ *
+ * It goes **beside** the estimate, never into it. The two disagreed by ~1.7× on the one
+ * measurement in `segmentation-cost.md` §UNVERIFIED 6 and reconciling them is nobody's business
+ * here; showing one and hiding the other, or adding them, would both be inventions.
+ */
+export function reportedLine(reportedUsd: number | null): string | null {
+  return reportedUsd === null ? null : `${REPORTED_USD_LABEL} ${formatUsd(reportedUsd)}`;
+}
+
+/** The tooltip on a collapsed meter: what the expanded panel says, on one line. */
+export function meterTitle(cost: CostMessageCost): string {
+  const parts = [`${cost.calls} call${cost.calls === 1 ? '' : 's'}`];
+  if (cost.models.length > 0) parts.push(cost.models.join(', '));
+  const ms = msLabel(cost.ms);
+  if (ms !== null) parts.push(ms);
+  const reported = reportedLine(cost.reportedUsd);
+  if (reported !== null) parts.push(reported);
+  const failed = failedClause(cost.failedCalls);
+  if (failed !== null) parts.push(failed);
+  return parts.join(' · ');
+}
+
+/** `4.2k tok · ≈ $0.03 API-equivalent · 6 calls`. One line of a breakdown, at any level. */
+export function sliceLine(slice: Pick<CostSlice, 'calls' | 'tokens' | 'estimatedUsd'>, mode: CostMode): string {
+  const parts = [compactTokens(slice.tokens)];
+  const money = usdWithLabel(slice.estimatedUsd, mode);
+  if (money.length > 0) parts.push(money);
+  if (slice.calls > 1) parts.push(`${slice.calls} calls`);
+  return parts.join(' · ');
+}
+
+/** One row of an expanded breakdown, in the scope's own words (`COST_SCOPE_LABEL`). */
+export interface CostRow {
+  key: string;
+  label: string;
+  detail: string;
+}
+
+export function scopeRows(slices: readonly CostSlice[], mode: CostMode): CostRow[] {
+  return slices.map((slice) => ({
+    key: slice.key,
+    label: COST_SCOPE_LABEL[slice.key as CostScope] ?? slice.key,
+    detail: sliceLine(slice, mode),
+  }));
+}
+
+/** One side of the ingest split. The same three fields every summary and slice carries. */
+export interface CostPart {
+  calls: number;
+  tokens: CostTokens;
+  estimatedUsd: number;
+}
+
+/**
+ * **What building the document cost, against what talking about it cost.**
+ *
+ * The two-pass notes ingest, the concept pack and the objectives tree are paid once per deck
+ * before a word is said, and on a forty-slide lecture they are the largest single cost in the
+ * app. A doc-header counter that showed one total would answer *"is this app expensive?"* with a
+ * number that is mostly a one-off, and the learner would be right to conclude the wrong thing.
+ *
+ * Which scopes fall on which side is `isIngestScope` in `shared/cost.ts` — a shared constant
+ * precisely so the analytics SQL and this counter cannot come to disagree about `objectives`.
+ */
+export function ingestSplit(slices: readonly CostSlice[]): { ingest: CostPart; conversation: CostPart } {
+  const ingest: CostPart = { calls: 0, tokens: emptyTokens(), estimatedUsd: 0 };
+  const conversation: CostPart = { calls: 0, tokens: emptyTokens(), estimatedUsd: 0 };
+  for (const slice of slices) {
+    const side = isIngestScope(slice.key as CostScope) ? ingest : conversation;
+    side.calls += slice.calls;
+    side.tokens = addTokens(side.tokens, slice.tokens);
+    side.estimatedUsd += slice.estimatedUsd;
+  }
+  return { ingest, conversation };
+}
+
+/** Is there anything on this side of the split? Nothing is drawn for an empty one — not a zero. */
+export function partHasCost(part: CostPart): boolean {
+  return part.calls > 0 || totalTokens(part.tokens) > 0;
+}
+
+/** `session 12k tok` — the title bar's left half. Null before the first call of the launch. */
+export function sessionChip(session: Pick<CostSummary, 'tokens' | 'calls'> | null): string | null {
+  if (!session || (session.calls === 0 && totalTokens(session.tokens) === 0)) return null;
+  return `session ${compactTokens(session.tokens)}`;
+}
+
+/**
+ * `5 h 120k tok` — the right half, and **null on an install that has no rolling window**.
+ *
+ * An API-key or scripted install is not inside a five-hour window at all, and a `0` there would
+ * be a limit reported against a constraint that does not exist for that learner.
+ */
+export function windowChip(burn: CliWindowBurn | null): string | null {
+  if (!burn) return null;
+  return `${burn.hours || CLI_WINDOW_HOURS} h ${compactTokens(burn.tokens)}`;
+}
+
+/** Everything the title-bar indicator is far too small to say, one claim per line. */
+export function indicatorTitle(app: CostSummary | null, session: CostSummary | null): string {
+  const lines: string[] = [];
+  if (session) lines.push(sessionLine(session));
+  if (app) {
+    lines.push(counterLine(app));
+    const burn = windowLine(app.cliWindow, app.mode);
+    if (burn !== null) lines.push(burn);
+    lines.push(counterTitle(app));
+  }
+  lines.push('Click for the whole picture.');
+  return lines.join('\n');
 }
 
 /**
