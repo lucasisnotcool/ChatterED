@@ -74,6 +74,20 @@ import type {
   WhisperThreadView,
   WhisperTurnView,
 } from '../../shared/types.js';
+import {
+  addTokens,
+  emptyTokens,
+  totalTokens,
+  type CostAnalytics,
+  type CostAnalyticsQuery,
+  type CostCallView,
+  type CostDayRow,
+  type CostDocumentRow,
+  type CostMessageCost,
+  type CostScope,
+  type CostSlice,
+  type CostTokens,
+} from '../../shared/cost.js';
 
 /**
  * The dev vault: one topic, one file, and the file is the demo deck the brief names (§7).
@@ -1958,13 +1972,289 @@ export function createMockBridge(): ChatterEdApi {
         backfilledCalls: 0,
       };
     },
-    async costRecent() { return []; },
+    async costRecent() { return mockCalls(); },
     async costExport() { return { path: '~/Documents/ChatterED/usage-mock.csv', rows: 0, bytes: 0 }; },
     onCostUpdated() { return () => undefined; },
+
+    /**
+     * **Per-message cost in `vite dev`** (#42 item B).
+     *
+     * Derived from the message id rather than random, so the same card shows the same number on
+     * every reload and a screenshot can be compared with the one before it. The shape is the one
+     * the real join produces: an agent turn carries `group` plus the `orchestrator` decision that
+     * chose the speaker, roughly every third one also carries the `ledger` coding and the
+     * `docedit` planner, and a learner message carries nothing at all — which is what makes the
+     * meter's *absence* under a learner block something a designer can look at here.
+     */
+    async costMessages({ threadId }) {
+      const out: CostMessageCost[] = [];
+      for (const m of messages) {
+        if (m.speaker.kind === 'student') continue;
+        if (threadId && (m.anchorId ?? 'doc') !== threadId) continue;
+        out.push(mockMessageCost(m.id, 'message', m.anchorId));
+      }
+      for (const w of whisperTurns) {
+        if (w.sender !== 'agent') continue;
+        if (threadId && w.threadId !== threadId) continue;
+        out.push(mockMessageCost(w.id, 'whisper', w.threadId));
+      }
+      return out;
+    },
+
+    /**
+     * **The Usage page's fixture** (#42 item D).
+     *
+     * Deliberately *lopsided*: one deck whose notes ingest is four-fifths of its cost, one that
+     * has barely been opened, and a day-by-day series with a quiet weekend in it. A fixture with
+     * five equal bars makes every chart look fine and hides exactly the failures the page exists
+     * to show — a ranked list that does not rank, a stacked bar whose segments are all the same
+     * size, an axis that never has to round.
+     */
+    async costAnalytics(query) {
+      return mockAnalytics(query ?? {});
+    },
 
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     // `vite dev` has no window to be fullscreen; the traffic lights are never drawn there.
     onAppCommand() { return () => undefined; },
     onWindowState(listener) { listener({ fullScreen: false }); return () => undefined; },
+  };
+}
+
+// ── The cost fixtures (#42 item E) ──────────────────────────────────────────
+//
+// Everything below is deterministic. `vite dev` is where the cost surfaces are designed and
+// screenshotted, and a fixture that moves between reloads makes a before/after comparison
+// worthless — so every number here is a pure function of an id or an index, and the same page
+// renders identically on every run.
+
+/** A small stable hash, so `m7` always costs what `m7` cost last time. */
+function seedOf(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h);
+}
+
+function usdFor(tokens: CostTokens): number {
+  // Sonnet 5's card rate, the same arithmetic `rates.ts` does: $2 / $10 per MTok, cache write
+  // 1.25× input and cache read 0.1×.
+  const usd = (tokens.input * 2 + tokens.output * 10 + tokens.cacheWrite * 2.5 + tokens.cacheRead * 0.2) / 1e6;
+  return Number(usd.toFixed(6));
+}
+
+function scopeSlice(key: CostScope, tokens: CostTokens, calls = 1): CostSlice {
+  return { key, calls, tokens, estimatedUsd: usdFor(tokens), reportedUsd: null };
+}
+
+function mockMessageCost(id: string, kind: 'message' | 'whisper', anchorId: string | null): CostMessageCost {
+  const seed = seedOf(id);
+  const generation: CostTokens = {
+    input: 380 + (seed % 900),
+    output: 160 + (seed % 420),
+    cacheWrite: seed % 3 === 0 ? 1_800 : 0,
+    cacheRead: 4_200 + (seed % 7_000),
+  };
+  const slices: CostSlice[] = [scopeSlice(kind === 'whisper' ? 'whisper' : 'group', generation)];
+  if (kind === 'message') {
+    slices.push(scopeSlice('orchestrator', { input: 120, output: 90, cacheWrite: 0, cacheRead: 2_400 }));
+    if (seed % 3 === 0) slices.push(scopeSlice('ledger', { input: 90, output: 70, cacheWrite: 0, cacheRead: 1_100 }));
+    if (seed % 4 === 0) slices.push(scopeSlice('docedit', { input: 210, output: 260, cacheWrite: 0, cacheRead: 1_900 }));
+  }
+  const tokens = slices.reduce<CostTokens>((acc, s) => addTokens(acc, s.tokens), emptyTokens());
+  return {
+    messageId: id,
+    kind,
+    turnId: `turn_${id}`,
+    anchorId,
+    calls: slices.length,
+    tokens,
+    estimatedUsd: usdFor(tokens),
+    // The CLI reports its own figure on most calls and it runs high against the card — the ~1.7×
+    // of `segmentation-cost.md` §UNVERIFIED 6, reproduced here so the two-figure layout is
+    // exercised rather than only the one-figure one.
+    reportedUsd: seed % 5 === 0 ? null : Number((usdFor(tokens) * 1.7).toFixed(6)),
+    ms: 1_400 + (seed % 5_200),
+    models: ['claude-sonnet-5'],
+    byScope: slices.sort((a, b) => totalTokens(b.tokens) - totalTokens(a.tokens)),
+    mode: 'subscription',
+    failedCalls: seed % 11 === 0 ? 1 : 0,
+  };
+}
+
+const MOCK_FILES = [
+  { fileId: 'file_btw', title: 'Critique 1 — the /btw side channel.pdf' },
+  { fileId: 'file_psd', title: 'CS3249 Lecture 4 — convexity.pdf' },
+  { fileId: 'file_hci', title: 'Interaction design reader.pdf' },
+];
+
+function mockCalls(): CostCallView[] {
+  const scopes: CostScope[] = ['notes', 'group', 'orchestrator', 'docedit', 'ledger', 'objectives', 'whisper'];
+  return Array.from({ length: 14 }, (_, i) => {
+    const seed = seedOf(`call${i}`);
+    const scope = scopes[i % scopes.length]!;
+    const tokens: CostTokens = {
+      input: 200 + (seed % 2_400),
+      output: 120 + (seed % 900),
+      cacheWrite: i % 4 === 0 ? 2_400 : 0,
+      cacheRead: 3_000 + (seed % 12_000),
+    };
+    return {
+      id: `use_${i}`,
+      createdAt: new Date(Date.now() - i * 7 * 60_000).toISOString(),
+      scope,
+      model: i % 3 === 0 ? 'claude-haiku-4-5' : 'claude-sonnet-5',
+      backend: 'claude-cli',
+      tokens,
+      estimatedUsd: usdFor(tokens),
+      reportedUsd: Number((usdFor(tokens) * 1.7).toFixed(6)),
+      durationMs: scope === 'notes' ? 42_000 + (seed % 38_000) : 1_200 + (seed % 9_000),
+      roomId: 'room_mock',
+      fileId: MOCK_FILES[i % MOCK_FILES.length]!.fileId,
+      anchorId: i % 2 === 0 ? 'doc' : `span_${(seed % 0xffffff).toString(16).padStart(6, '0')}`,
+      turnId: `turn_m${i}`,
+      backfilled: false,
+      outcome: i === 5 ? 'preempted' : i === 9 ? 'error' : 'ok',
+    } satisfies CostCallView;
+  });
+}
+
+function mockAnalytics(query: CostAnalyticsQuery): CostAnalytics {
+  /**
+   * The lopsided fixture. `file_btw` is a deck that has been worked through — a big ingest and a
+   * lot of conversation on top; `file_psd` has been ingested and barely opened, which is the
+   * shape that makes the ingest/conversation split worth drawing; `file_hci` is a deck somebody
+   * scrolled once.
+   */
+  const shape = [
+    { ingest: 340_000, talk: 210_000, calls: 186 },
+    { ingest: 288_000, talk: 24_000, calls: 61 },
+    { ingest: 96_000, talk: 3_400, calls: 14 },
+  ];
+  const all = MOCK_FILES.map((file, i) => {
+    const s = shape[i]!;
+    const split = (n: number): CostTokens => ({
+      input: Math.round(n * 0.04),
+      output: Math.round(n * 0.07),
+      cacheWrite: Math.round(n * 0.24),
+      cacheRead: Math.round(n * 0.65),
+    });
+    const ingestTokens = split(s.ingest);
+    const talkTokens = split(s.talk);
+    const tokens = addTokens(ingestTokens, talkTokens);
+    return {
+      fileId: file.fileId,
+      title: file.title,
+      calls: s.calls,
+      tokens,
+      estimatedUsd: usdFor(tokens),
+      reportedUsd: Number((usdFor(tokens) * 1.7).toFixed(6)),
+      ingest: { calls: Math.round(s.calls * 0.2), tokens: ingestTokens, estimatedUsd: usdFor(ingestTokens) },
+      conversation: { calls: Math.round(s.calls * 0.8), tokens: talkTokens, estimatedUsd: usdFor(talkTokens) },
+      firstCallAt: new Date(Date.now() - (9 - i) * 86_400_000).toISOString(),
+      lastCallAt: new Date(Date.now() - i * 3_600_000).toISOString(),
+    } satisfies CostDocumentRow;
+  });
+  const documents = query.fileId ? all.filter((d) => d.fileId === query.fileId) : all;
+
+  const tokens = documents.reduce<CostTokens>((acc, d) => addTokens(acc, d.tokens), emptyTokens());
+  const calls = documents.reduce((n, d) => n + d.calls, 0);
+  const share = (fraction: number, key: CostScope | string): CostSlice => ({
+    key,
+    calls: Math.max(1, Math.round(calls * fraction)),
+    tokens: {
+      input: Math.round(tokens.input * fraction),
+      output: Math.round(tokens.output * fraction),
+      cacheWrite: Math.round(tokens.cacheWrite * fraction),
+      cacheRead: Math.round(tokens.cacheRead * fraction),
+    },
+    estimatedUsd: usdFor({
+      input: Math.round(tokens.input * fraction),
+      output: Math.round(tokens.output * fraction),
+      cacheWrite: Math.round(tokens.cacheWrite * fraction),
+      cacheRead: Math.round(tokens.cacheRead * fraction),
+    }),
+    reportedUsd: null,
+  });
+
+  // Fourteen days, with a quiet weekend and one day the deck was ingested.
+  const byDay: CostDayRow[] = Array.from({ length: 14 }, (_, i) => {
+    const date = new Date(Date.now() - (13 - i) * 86_400_000);
+    const weekend = date.getUTCDay() === 0 || date.getUTCDay() === 6;
+    const weight = i === 3 ? 3.4 : i === 11 ? 1.9 : weekend ? 0.08 : 0.4 + ((i * 7) % 5) / 10;
+    const t: CostTokens = {
+      input: Math.round(tokens.input * weight * 0.07),
+      output: Math.round(tokens.output * weight * 0.07),
+      cacheWrite: Math.round(tokens.cacheWrite * weight * 0.07),
+      cacheRead: Math.round(tokens.cacheRead * weight * 0.07),
+    };
+    return { day: date.toISOString().slice(0, 10), calls: Math.round(calls * weight * 0.07), tokens: t, estimatedUsd: usdFor(t) };
+  });
+
+  const recent = mockCalls();
+  const session: CostTokens = { input: 3_400, output: 1_900, cacheWrite: 12_000, cacheRead: 68_000 };
+  return {
+    windowStart: query.since === 'session' ? new Date(Date.now() - 2 * 3_600_000).toISOString() : (query.since ?? null),
+    windowEnd: query.until ?? null,
+    fileId: query.fileId ?? null,
+    backend: query.backend ?? null,
+    total: {
+      calls,
+      tokens,
+      estimatedUsd: usdFor(tokens),
+      reportedUsd: Number((usdFor(tokens) * 1.7).toFixed(6)),
+      reportedCalls: Math.round(calls * 0.82),
+    },
+    session: { calls: 19, tokens: session, estimatedUsd: usdFor(session) },
+    documents,
+    byScope: [
+      share(0.52, 'notes'),
+      share(0.21, 'group'),
+      share(0.09, 'docedit'),
+      share(0.07, 'orchestrator'),
+      share(0.05, 'objectives'),
+      share(0.04, 'ledger'),
+      share(0.02, 'whisper'),
+    ],
+    byModel: [share(0.74, 'claude-sonnet-5'), share(0.26, 'claude-haiku-4-5')],
+    byBackend: [share(1, 'claude-cli')],
+    byDay,
+    outcomes: [
+      { outcome: 'ok', calls: Math.max(0, calls - 7), tokens, estimatedUsd: usdFor(tokens) },
+      { outcome: 'error', calls: 2, tokens: emptyTokens(), estimatedUsd: 0 },
+      { outcome: 'aborted', calls: 1, tokens: emptyTokens(), estimatedUsd: 0 },
+      { outcome: 'preempted', calls: 4, tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 2_100 }, estimatedUsd: 0.00042 },
+    ],
+    cache: {
+      freshInput: tokens.input,
+      cacheRead: tokens.cacheRead,
+      cacheWrite: tokens.cacheWrite,
+      hitShare: tokens.cacheRead / Math.max(1, tokens.cacheRead + tokens.input),
+    },
+    perMessage: {
+      learnerMessages: 48,
+      agentMessages: 62,
+      meanUsdPerLearnerMessage: Number((usdFor(tokens) / 48).toFixed(6)),
+      meanTokensPerLearnerMessage: Math.round(totalTokens(tokens) / 48),
+      medianUsdPerAgentMessage: 0.0091,
+      medianTokensPerAgentMessage: 9_400,
+    },
+    slowest: [...recent].sort((a, b) => (b.durationMs ?? 0) - (a.durationMs ?? 0)).slice(0, 10),
+    priciest: [...recent].sort((a, b) => b.estimatedUsd - a.estimatedUsd).slice(0, 10),
+    cliWindow: {
+      windowStart: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+      windowEnd: new Date().toISOString(),
+      hours: 5,
+      tokens: { input: 6_200, output: 3_100, cacheWrite: 41_000, cacheRead: 302_000 },
+      calls: 38,
+      estimatedUsd: usdFor({ input: 6_200, output: 3_100, cacheWrite: 41_000, cacheRead: 302_000 }),
+      reportedUsd: 0.212,
+    },
+    mode: 'subscription',
+    rateCardDate: '2026-06-24',
+    knownFiles: MOCK_FILES,
+    generatedAt: new Date().toISOString(),
   };
 }

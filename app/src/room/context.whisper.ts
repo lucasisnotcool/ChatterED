@@ -91,7 +91,26 @@ export function buildWhisperContext(store: WhisperStore, input: WhisperContextIn
     max_tokens: input.maxTokens ?? 400,
     system,
     messages: turns,
-    meta: { scope: 'whisper', roomId: input.roomId, agentKey: input.speaker.key },
+    /**
+     * **A private thread is a thread, and it is billed to one** (#42 item A).
+     *
+     * `anchorId` is the whisper thread's id, which is what `cost:summary` at thread level keys
+     * on — so the footer on a `PrivateThread` card asks the same question, of the same column,
+     * as the footer on the doc chat. Before this it was omitted and every whisper call landed in
+     * the ledger with a null anchor: countable at file level, invisible at the level the learner
+     * was looking at.
+     *
+     * `fileId` is deliberately *not* set: the ledger resolves it from `roomId`
+     * (`CostLedger#fileFor`), and a second spelling of the same fact is a second thing to get
+     * wrong. `turnId` is the caller's — `#whisper()` mints one per exchange, because a whisper
+     * is not a `#runAgentTurn` turn and has no `PendingTurn` to borrow an id from.
+     */
+    meta: {
+      scope: 'whisper',
+      roomId: input.roomId,
+      agentKey: input.speaker.key,
+      anchorId: input.threadId,
+    },
   };
 }
 

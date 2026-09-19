@@ -243,6 +243,15 @@ export interface MessageRow {
    * fourth kind of identifier.
    */
   source_thread_id?: string | null;
+  /**
+   * **Which agent turn wrote this row** (migration 021, issue #42).
+   *
+   * The join that makes a per-message cost possible: every LLM call an agent turn makes is
+   * already filed in `llm_usage` under the actor's correlation id, and this is the other end of
+   * it. Null on every learner message (they cause calls, they do not make them), on every
+   * rule-written line, and on every row recorded before the migration.
+   */
+  turn_id?: string | null;
   created_at: string;
 }
 
@@ -281,6 +290,13 @@ export interface WhisperRow {
   relay_offer: string | null;
   promoted_message_id: string | null;
   usage: string | null;
+  /**
+   * The private exchange's own correlation id (migration 021, issue #42) — minted by
+   * `sendWhisper` and carried by both rows of the exchange, so the reply's cost is one `SUM`
+   * over `llm_usage.turn_id`. A whisper is not a `#runAgentTurn` turn; the id is in the same
+   * namespace because "which reply did this call write" is one question.
+   */
+  turn_id?: string | null;
   created_at: string;
 }
 

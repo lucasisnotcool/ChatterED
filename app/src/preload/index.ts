@@ -105,6 +105,8 @@ const api: ChatterEdApi = {
   costSummary: (input) => ipcRenderer.invoke(IPC.costSummary, input),
   costRecent: (input) => ipcRenderer.invoke(IPC.costRecent, input),
   costExport: (input) => ipcRenderer.invoke(IPC.costExport, input),
+  costMessages: (input) => ipcRenderer.invoke(IPC.costMessages, input),
+  costAnalytics: (input) => ipcRenderer.invoke(IPC.costAnalytics, input),
   onCostUpdated: (listener) => {
     const handler = (_event: unknown, payload: CostUpdate) => listener(payload);
     ipcRenderer.on(IPC.costUpdated, handler);

@@ -18,14 +18,24 @@
  * case is a counter that is low; the alternative — a full disk turning into a failed reply — is
  * not a trade this app makes.
  *
- * **Errors are not recorded, and that is a real gap.** A call that throws reports no usage: the
- * CLI kills the child before a `result` message, and the API stream never reaches
- * `finalMessage()`. Tokens were spent on the provider's side and this ledger cannot see them,
- * so a summary is a floor, not a total. Said out loud here because the alternative is a panel
- * that quietly under-reports the exact sessions that went wrong.
+ * **A call that throws is recorded too** (migration 021; the gap #42 shipped with, closed).
+ *
+ * It used to record nothing, and the consequence was worse than an undercount: every total got
+ * quietly *better* the more a session went wrong, because a killed call left no trace at all. So
+ * the decorator now writes a row on the failure path as well, carrying
+ *
+ *  - **whatever usage the backend managed to report** before it died. `usageFromError()` reads it
+ *    off the thrown error, which `claude-cli.ts` attaches when a `result` message arrived before
+ *    the kill. Usually that is nothing, and a zero-token row is the honest answer: the tokens the
+ *    provider burned are not observable from here and inventing them would be worse than a zero.
+ *  - **why it ended** — `'aborted'` for the learner's Stop, `'preempted'` for a notes window the
+ *    lane killed to let a click through (which `notes/ingest.ts` then re-queues, so a *second*
+ *    row follows for the same work), `'error'` for everything else.
+ *
+ * The error is always re-thrown. Accounting never changes what the caller sees.
  */
-import type { CostBackend, CostScope } from '../../shared/cost.js';
-import type { LLMClient, LlmRequest, LlmResult, LlmScope } from '../../room/llm/types.js';
+import { type CostBackend, type CostOutcome, type CostScope, type CostTokens } from '../../shared/cost.js';
+import { LlmAbortedError, type LLMClient, type LlmRequest, type LlmResult, type LlmScope, type LlmUsage } from '../../room/llm/types.js';
 import { log, type Logger } from '../log.js';
 import type { RecordInput } from './ledger.js';
 
@@ -40,17 +50,28 @@ export function costedClient(inner: LLMClient, sink: CostSink | null, logger: ()
     kind: inner.kind,
     async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
       const startedAt = Date.now();
-      const result = await inner.complete(request, onDelta, signal);
+      let result: LlmResult;
       try {
-        sink.record(recordFor(request, result, inner.kind, Date.now() - startedAt));
+        result = await inner.complete(request, onDelta, signal);
       } catch (err) {
-        logger().warn('cost.record_failed', {
-          scope: request.meta.scope,
-          class: err instanceof Error ? err.name : 'Error',
-          cause: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
-        });
+        write(() => sink.record(recordForFailure(request, err, inner.kind, Date.now() - startedAt)));
+        throw err;
       }
+      write(() => sink.record(recordFor(request, result, inner.kind, Date.now() - startedAt)));
       return result;
+
+      /** A failed accounting write must never cost the learner their turn. See the header. */
+      function write(fn: () => void): void {
+        try {
+          fn();
+        } catch (err) {
+          logger().warn('cost.record_failed', {
+            scope: request.meta.scope,
+            class: err instanceof Error ? err.name : 'Error',
+            cause: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+          });
+        }
+      }
     },
   };
 }
@@ -82,7 +103,96 @@ export function recordFor(request: LlmRequest, result: LlmResult, kind: CostBack
     anchorId: request.meta.anchorId ?? null,
     reportedUsd: typeof result.costUsd === 'number' ? result.costUsd : null,
     durationMs,
+    outcome: 'ok',
   };
+}
+
+/**
+ * **The same mapping, for a call that never returned.**
+ *
+ * The attribution is taken entirely from the *request* — there is no result to read a resolved
+ * model id off, so `request.model` stands, and it is the alias (`sonnet`) rather than the dated
+ * id on the CLI path. That is correct and not a downgrade: it is what this app asked for, and it
+ * is all that is knowable about a call that was killed.
+ */
+export function recordForFailure(request: LlmRequest, err: unknown, kind: CostBackend, durationMs: number): RecordInput {
+  const harvested = usageFromError(err);
+  return {
+    scope: request.meta.costScope ?? costScopeFor(request.meta.scope),
+    model: harvested.model ?? request.model,
+    backend: kind,
+    tokens: harvested.tokens,
+    turnId: request.meta.turnId ?? null,
+    roomId: request.meta.roomId ?? null,
+    fileId: request.meta.fileId ?? null,
+    anchorId: request.meta.anchorId ?? null,
+    reportedUsd: harvested.costUsd,
+    durationMs,
+    outcome: outcomeFor(err),
+  };
+}
+
+/**
+ * Stop is `'aborted'`; the pre-emption the notes lane suffers is `'preempted'`; everything else
+ * is `'error'`.
+ *
+ * `CliPreemptedError` is matched **by name, not by class**: it lives in `src/main/llm/` and this
+ * module is imported by `src/room`'s tests, so an import would drag the CLI backend (and
+ * `node:child_process`) into every one of them. A name is enough for a class this module only
+ * ever reads.
+ */
+export function outcomeFor(err: unknown): CostOutcome {
+  if (err instanceof LlmAbortedError) return 'aborted';
+  const name = err instanceof Error ? err.name : '';
+  if (name === 'LlmAbortedError') return 'aborted';
+  if (name === 'CliPreemptedError') return 'preempted';
+  return 'error';
+}
+
+/**
+ * **What the backend managed to report before it threw**, read off the error.
+ *
+ * Duck-typed rather than an interface the backends implement, because the shape has to survive
+ * an error that crossed a `Promise.all`, a re-throw and an `AggregateError` without anybody
+ * having remembered to re-attach it. A missing or malformed carrier reads as zero, which is the
+ * common case and the honest one.
+ */
+export function usageFromError(err: unknown): { tokens: CostTokens; model: string | null; costUsd: number | null } {
+  const empty = { tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }, model: null, costUsd: null };
+  if (typeof err !== 'object' || err === null) return empty;
+  const carrier = (err as { llmUsage?: unknown }).llmUsage;
+  if (typeof carrier !== 'object' || carrier === null) return empty;
+  const u = carrier as { usage?: Partial<LlmUsage>; model?: unknown; costUsd?: unknown };
+  const usage = u.usage ?? {};
+  return {
+    tokens: {
+      input: num(usage.input_tokens),
+      output: num(usage.output_tokens),
+      cacheWrite: num(usage.cache_creation_input_tokens),
+      cacheRead: num(usage.cache_read_input_tokens),
+    },
+    model: typeof u.model === 'string' && u.model.length > 0 ? u.model : null,
+    costUsd: typeof u.costUsd === 'number' && Number.isFinite(u.costUsd) ? u.costUsd : null,
+  };
+}
+
+/**
+ * **Attach what a call consumed to the error that ends it.** Called by the backends on their
+ * failure paths; read back by `usageFromError` above. Non-enumerable so it cannot end up in a
+ * log line or a JSON-serialised error — the carrier is an accounting channel, not a payload.
+ */
+export function attachUsageToError<E>(err: E, carried: { usage?: LlmUsage; model?: string | null; costUsd?: number | null }): E {
+  if (typeof err !== 'object' || err === null) return err;
+  try {
+    Object.defineProperty(err, 'llmUsage', { value: carried, enumerable: false, configurable: true });
+  } catch {
+    // A frozen error is not worth failing a call over.
+  }
+  return err;
+}
+
+function num(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0;
 }
 
 /**

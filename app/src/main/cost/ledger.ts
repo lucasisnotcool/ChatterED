@@ -21,12 +21,14 @@
 import { randomUUID } from 'node:crypto';
 import {
   CLI_WINDOW_HOURS,
+  COST_OUTCOMES,
   COST_SCOPES,
   emptyTokens,
   modeFor,
   type CliWindowBurn,
   type CostBackend,
   type CostCallView,
+  type CostOutcome,
   type CostScope,
   type CostSlice,
   type CostSummary,
@@ -60,6 +62,8 @@ export interface UsageRow {
   duration_ms: number | null;
   backfilled: number;
   source: string;
+  /** 'ok' | 'error' | 'aborted' | 'preempted' (migration 021). */
+  outcome: string;
 }
 
 /** What the decorator hands over. Everything optional is genuinely unknown, not merely unset. */
@@ -81,6 +85,8 @@ export interface RecordInput {
   source?: string;
   /** A deterministic id, so a backfill run twice inserts the same row twice and SQLite refuses. */
   id?: string;
+  /** How the call ended. Omitted means `'ok'` — the only shape that existed before 021. */
+  outcome?: CostOutcome;
 }
 
 export interface CostLedgerDeps {
@@ -158,6 +164,7 @@ export class CostLedger {
       duration_ms: typeof input.durationMs === 'number' ? Math.round(input.durationMs) : null,
       backfilled: input.backfilled ? 1 : 0,
       source: input.source ?? 'live',
+      outcome: input.outcome ?? 'ok',
     };
     insert(this.#d.db, 'llm_usage', row as unknown as Record<string, unknown>);
     return viewOf(row);
@@ -181,11 +188,11 @@ export class CostLedger {
         `INSERT OR IGNORE INTO llm_usage
            (id, created_at, turn_id, room_id, file_id, anchor_id, scope, model, backend,
             input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-            reported_cost_usd, estimated_cost_usd, rate_card, rate_exact, duration_ms, backfilled, source)
+            reported_cost_usd, estimated_cost_usd, rate_card, rate_exact, duration_ms, backfilled, source, outcome)
          VALUES
            (@id, @created_at, @turn_id, @room_id, @file_id, @anchor_id, @scope, @model, @backend,
             @input_tokens, @output_tokens, @cache_write_tokens, @cache_read_tokens,
-            @reported_cost_usd, @estimated_cost_usd, @rate_card, @rate_exact, @duration_ms, @backfilled, @source)`,
+            @reported_cost_usd, @estimated_cost_usd, @rate_card, @rate_exact, @duration_ms, @backfilled, @source, @outcome)`,
       )
       .run({
         id: input.id,
@@ -208,6 +215,7 @@ export class CostLedger {
         duration_ms: typeof input.durationMs === 'number' ? Math.round(input.durationMs) : null,
         backfilled: 1,
         source: input.source ?? 'backfill',
+        outcome: input.outcome ?? 'ok',
       });
     return this.count() > before;
   }
@@ -416,7 +424,13 @@ export function viewOf(row: UsageRow): CostCallView {
     anchorId: row.anchor_id,
     turnId: row.turn_id,
     backfilled: row.backfilled === 1,
+    outcome: asOutcome(row.outcome),
   };
+}
+
+/** A row from a future build with an outcome this one does not know reads as `'ok'`. */
+function asOutcome(raw: string | null | undefined): CostOutcome {
+  return (COST_OUTCOMES as readonly string[]).includes(raw ?? '') ? (raw as CostOutcome) : 'ok';
 }
 
 /** A row written by a future build with a scope this one does not know reads as `'group'`. */

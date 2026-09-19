@@ -37,6 +37,9 @@ export const CSV_COLUMNS = [
   'turn_id',
   'backfilled',
   'source',
+  // Migration 021. Without it a killed call reads as a completed one with no tokens, which is
+  // the one reading of a zero row that is worse than not having it.
+  'outcome',
 ] as const;
 
 /**
@@ -71,6 +74,7 @@ export function toCsv(rows: readonly UsageRow[]): string {
         r.turn_id ?? '',
         r.backfilled,
         r.source,
+        r.outcome ?? 'ok',
       ]
         .map(cell)
         .join(','),

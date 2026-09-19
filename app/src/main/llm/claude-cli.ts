@@ -41,6 +41,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import type { LLMClient, LlmMessage, LlmRequest, LlmResult, LlmUsage } from '../../room/llm/types.js';
 import { EMPTY_USAGE, LlmAbortedError } from '../../room/llm/types.js';
+import { attachUsageToError, usageFromError } from '../cost/client.js';
 
 /**
  * An Electron app launched from Finder inherits launchd's PATH, not the login shell's — so
@@ -485,7 +486,23 @@ export class ClaudeCliClient implements LLMClient {
     } catch (err) {
       // The learner's question took the lane. Distinguished from their Stop, because the caller
       // does different things with the two: a pre-empted draft is retried, a stopped turn is not.
-      if (preempted && !signal?.aborted) throw new CliPreemptedError();
+      //
+      // Whatever the killed child had already reported travels with the substitution, or the
+      // cost row for a pre-empted window would be a zero where a number was available
+      // (`src/main/cost/client.ts`).
+      if (preempted && !signal?.aborted) {
+        const carried = usageFromError(err);
+        throw attachUsageToError(new CliPreemptedError(), {
+          usage: {
+            input_tokens: carried.tokens.input,
+            output_tokens: carried.tokens.output,
+            cache_read_input_tokens: carried.tokens.cacheRead,
+            cache_creation_input_tokens: carried.tokens.cacheWrite,
+          },
+          model: carried.model,
+          costUsd: carried.costUsd,
+        });
+      }
       throw err;
     } finally {
       cliQueue.release();
@@ -643,6 +660,19 @@ export class ClaudeCliClient implements LLMClient {
       let settled = false;
       let sawResult = false;
 
+      /**
+       * **Reject, carrying what the run had already reported.**
+       *
+       * Usually nothing: `usage` only arrives on the `result` message, and a SIGKILL beats it.
+       * But a run that *did* see a result and then failed on `is_error` — or one killed after it
+       * — has real numbers on `acc`, and dropping them is how a ledger becomes a floor
+       * (`src/main/cost/client.ts`). The carrier is non-enumerable, so nothing that logs or
+       * serialises this error sees it.
+       */
+      const fail = (err: unknown): void => {
+        reject(attachUsageToError(err, { usage: acc.usage, model: acc.model, costUsd: acc.costUsd }));
+      };
+
       const finish = (fn: () => void): void => {
         if (settled) return;
         settled = true;
@@ -661,7 +691,7 @@ export class ClaudeCliClient implements LLMClient {
         ? () => {
             finish(() => {
               child.kill('SIGKILL');
-              reject(new LlmAbortedError());
+              fail(new LlmAbortedError());
             });
           }
         : null;
@@ -671,7 +701,7 @@ export class ClaudeCliClient implements LLMClient {
       const timer = setTimeout(() => {
         finish(() => {
           child.kill('SIGKILL');
-          reject(new Error(`The Claude CLI did not answer within ${Math.round(timeoutMs / 1000)}s.`));
+          fail(new Error(`The Claude CLI did not answer within ${Math.round(timeoutMs / 1000)}s.`));
         });
       }, timeoutMs);
 
@@ -729,7 +759,7 @@ export class ClaudeCliClient implements LLMClient {
       });
 
       child.on('error', (err: NodeJS.ErrnoException) => {
-        finish(() => reject(err.code === 'ENOENT' ? new ClaudeCliNotFoundError() : err));
+        finish(() => fail(err.code === 'ENOENT' ? new ClaudeCliNotFoundError() : err));
       });
 
       child.on('close', (code) => {
@@ -737,19 +767,19 @@ export class ClaudeCliClient implements LLMClient {
         finish(() => {
           const combined = `${stderr}\n${acc.resultText ?? ''}`;
           if (looksNotLoggedIn(combined)) {
-            reject(new ClaudeCliNotLoggedInError());
+            fail(new ClaudeCliNotLoggedInError());
             return;
           }
           if (code !== 0) {
-            reject(new Error(`The Claude CLI exited ${code}: ${stderr.trim().slice(0, 300) || 'no output'}`));
+            fail(new Error(`The Claude CLI exited ${code}: ${stderr.trim().slice(0, 300) || 'no output'}`));
             return;
           }
           if (!sawResult) {
-            reject(new Error(`The Claude CLI produced no parseable result: ${(acc.text || stderr).trim().slice(0, 300) || 'empty output'}`));
+            fail(new Error(`The Claude CLI produced no parseable result: ${(acc.text || stderr).trim().slice(0, 300) || 'empty output'}`));
             return;
           }
           if (acc.isError) {
-            reject(new Error(`The Claude CLI reported an error: ${(acc.resultText ?? stderr).trim().slice(0, 300)}`));
+            fail(new Error(`The Claude CLI reported an error: ${(acc.resultText ?? stderr).trim().slice(0, 300)}`));
             return;
           }
           if (acc.ttftMs < 0) acc.ttftMs = this.#now() - startedAt;

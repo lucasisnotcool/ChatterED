@@ -27,7 +27,16 @@ import type {
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AskScope } from './scope.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
-import type { CostCallView, CostSummary, CostSummaryQuery, CostUpdate } from './cost.js';
+import type {
+  CostAnalytics,
+  CostAnalyticsQuery,
+  CostCallView,
+  CostMessageCost,
+  CostMessageQuery,
+  CostSummary,
+  CostSummaryQuery,
+  CostUpdate,
+} from './cost.js';
 import type {
   FlowAnswerView,
   FlowShowAnswerView,
@@ -160,6 +169,10 @@ export const IPC = {
   costSummary: 'cost:summary',
   costRecent: 'cost:recent',
   costExport: 'cost:export',
+  /** What each reply in a room cost, joined on `turn_id` (#42 item B, migration 021). */
+  costMessages: 'cost:messages',
+  /** Every panel of the Usage page, aggregated in SQLite (#42 item D). */
+  costAnalytics: 'cost:analytics',
   /** main → renderer: one call was just recorded, with the deltas, so a counter can tick. */
   costUpdated: 'cost:updated',
 
@@ -597,6 +610,24 @@ export interface ChatterEdApi {
    * return where it went. A second export on the same day replaces the first.
    */
   costExport(input?: { since?: string | null }): Promise<{ path: string; rows: number; bytes: number }>;
+  /**
+   * **What each message in a room cost** — the level the other three cannot reach, because it is
+   * a sum over a *causal set* and not over a filter: every call made on one reply's behalf (the
+   * turn that wrote it, the decision that chose the speaker, the ledger coding of the learner
+   * message it answered, the doc-edit planner it triggered).
+   *
+   * One call answers a whole column; `cost.updated` keeps it current afterwards, matched by the
+   * `turnId` the event already carries. A message with no row is one written by a rule, or one
+   * recorded before migration 021 — the renderer shows no meter there rather than a zero.
+   */
+  costMessages(input: CostMessageQuery): Promise<CostMessageCost[]>;
+  /**
+   * **The Usage page, in one call.** Totals and this session; documents ranked with their ingest
+   * split out; tokens by scope, by model, by backend and by day; the rolling 5-hour window; cost
+   * per learner message; cache hit share; the slowest and priciest recent calls; and what was
+   * killed. Filters: time range, document, backend. No learner text, ever.
+   */
+  costAnalytics(input?: CostAnalyticsQuery): Promise<CostAnalytics>;
   /**
    * Subscribe to the per-call tick. Fires after every recorded call and carries the **delta**
    * plus the running session totals, so three counters can be updated without re-asking.

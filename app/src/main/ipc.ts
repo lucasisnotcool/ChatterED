@@ -50,6 +50,7 @@ import { RATE_CARD_DATE, RATE_CARD_SETTING, parseRateCardOverride } from './cost
 import { CostLedger } from './cost/ledger.js';
 import { backfillUsage } from './cost/backfill.js';
 import { writeCsv } from './cost/export.js';
+import { registerCostIpc } from './cost/ipc.js';
 import { emptyTokens, addTokens, type CostSummaryQuery, type CostTokens, type CostUpdate } from '../shared/cost.js';
 import type { TurnLog } from '../room/ports.js';
 /**
@@ -1516,6 +1517,8 @@ export class AppService {
       log().info('cost.export', { rows: result.rows, bytes: result.bytes });
       return result;
     });
+    // Per-message cost and the Usage page (#42 items B and D) — `src/main/cost/ipc.ts`.
+    registerCostIpc({ db: this.#d.db, sessionStart: () => this.#cost.sessionStart, handle });
 
     handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
     handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope; objectiveId?: string }>(

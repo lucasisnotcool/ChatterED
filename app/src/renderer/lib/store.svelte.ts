@@ -47,7 +47,11 @@ import { isViewerCommand, runViewerCommand } from './viewer.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../../shared/scope.js';
 import {
   SESSION_WINDOW,
+  type CostAnalytics,
+  type CostAnalyticsQuery,
   type CostCallView,
+  type CostMessageCost,
+  type CostMessageQuery,
   type CostSummary,
   type CostSummaryQuery,
   type CostUpdate,
@@ -115,6 +119,8 @@ interface CostApi {
   costSummary(input: CostSummaryQuery): Promise<CostSummary>;
   costRecent(input: { limit?: number; fileId?: string | null }): Promise<CostCallView[]>;
   costExport(input: { since?: string | null }): Promise<{ csv: string } | string | null>;
+  costMessages(input: CostMessageQuery): Promise<CostMessageCost[]>;
+  costAnalytics(input: CostAnalyticsQuery): Promise<CostAnalytics>;
 }
 
 function costApi(): Partial<CostApi> {
@@ -147,6 +153,8 @@ function objectivesLanded(): boolean {
 const PANEL_OPEN_KEY = 'chattered.objectives.open';
 const PANEL_WIDTH_KEY = 'chattered.objectives.width';
 const PANEL_AUTO_KEY = 'chattered.objectives.openWithFile';
+/** Per-message meters, on by default (#42 item C). A view preference, so it lives beside those. */
+const MESSAGE_COST_KEY = 'chattered.cost.perMessage';
 export const DEFAULT_PANEL_WIDTH = 300;
 export const MIN_PANEL_WIDTH = 220;
 export const MAX_PANEL_WIDTH = 520;
@@ -178,7 +186,17 @@ function readWidth(): number {
   }
 }
 
-export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings';
+/**
+ * `'usage'` is the Usage page (#42 item D) — a **destination**, not a panel in Settings.
+ *
+ * Settings ▸ Usage is where the first counters landed, and it was the wrong home for them: a
+ * page nobody opens unless something is already wrong, next to the API key and the model
+ * dropdowns. What a deck cost, which deck cost the most and how much of the five-hour window is
+ * gone are things a learner should be able to look at on the way past, so they get a stop on the
+ * nav rail and a reachable indicator in the title bar. The Settings section stays where it is —
+ * it is where the rate card is edited, and that genuinely is a setting.
+ */
+export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings' | 'usage';
 
 /** One shared 200 ms tick. The wait-line transitions across it, so it reads as continuous. */
 class Clock {
@@ -407,6 +425,33 @@ class Store {
   /** The last calls, for Settings ▸ Usage and the ⌥⌘D drawer. Sizes and counts; no bodies. */
   costRecent: CostCallView[] = $state([]);
   costBusy = $state(false);
+
+  /**
+   * **What each message on screen cost** (#42 item B), keyed by message id.
+   *
+   * One map for the whole room rather than one fetch per card: a chat column has twenty cards in
+   * it and twenty round trips to draw twenty meters would put the ledger in front of the
+   * conversation. A message that is not in here has no meter — which is every learner block,
+   * every rule-written line, and every row recorded before migration 021.
+   */
+  costMessages: Record<string, CostMessageCost> = $state({});
+  /** The Usage page's whole payload. Null until it has been opened once. */
+  costAnalytics: CostAnalytics | null = $state(null);
+  costAnalyticsBusy = $state(false);
+  /**
+   * The filters the page is currently showing, held here rather than in the component so that a
+   * live `cost.updated` re-reads *what the learner is looking at* and not an unfiltered page.
+   */
+  costAnalyticsQuery: CostAnalyticsQuery = $state({});
+  /**
+   * **Per-message meters, on by default** (#42 item C, the Settings toggle).
+   *
+   * Default *shown*, because the brief's ask is that the cost be visible at every level and a
+   * number nobody has found is not visible. It is small, low-contrast and under the card, so the
+   * cost of being wrong about the default is a line of grey text; the cost of defaulting it off
+   * is a feature that ships dark.
+   */
+  showMessageCost = $state(readFlag(MESSAGE_COST_KEY, true));
 
   // ── The whisper popover on a segment (§3.5, issue #16) ─────────────────
   /**
@@ -1476,6 +1521,56 @@ class Store {
     void this.loadCost({ level: 'file', fileId });
   }
 
+  /**
+   * **The per-message meters for one room** (#42 item B).
+   *
+   * Idempotent per room *and* re-askable: `force` is what the `cost.updated` handler passes,
+   * because a turn that just finished has changed exactly one message's number and the cheapest
+   * correct thing to do is re-read the room's map. One query, not twenty.
+   */
+  async loadMessageCosts(roomId: string, threadId: string | null = null): Promise<void> {
+    if (!hasCost('costMessages')) return;
+    const rows = await quiet(() => costApi().costMessages!({ roomId, threadId }));
+    if (!rows) return;
+    const next: Record<string, CostMessageCost> = threadId ? { ...this.costMessages } : {};
+    for (const row of rows) next[row.messageId] = row;
+    this.costMessages = next;
+  }
+
+  /** Is this room's map loaded? Asked once by the chat column, on open. */
+  #messageCostRoom: string | null = null;
+
+  ensureMessageCosts(roomId: string | null): void {
+    if (!roomId || !this.costOn || this.#messageCostRoom === roomId) return;
+    this.#messageCostRoom = roomId;
+    void this.loadMessageCosts(roomId);
+  }
+
+  setShowMessageCost(on: boolean): void {
+    this.showMessageCost = on;
+    writeFlag(MESSAGE_COST_KEY, on);
+  }
+
+  /** **The Usage page** (#42 item D). One call; every panel on the page is a field of it. */
+  async loadAnalytics(query: CostAnalyticsQuery = {}): Promise<void> {
+    if (!hasCost('costAnalytics')) return;
+    this.costAnalyticsQuery = query;
+    this.costAnalyticsBusy = true;
+    const result = await quiet(() => costApi().costAnalytics!(query));
+    if (result) this.costAnalytics = result;
+    this.costAnalyticsBusy = false;
+  }
+
+  get analyticsOn(): boolean {
+    return hasCost('costAnalytics');
+  }
+
+  /** The nav rail's and the title-bar indicator's door onto it. */
+  async openUsage(): Promise<void> {
+    this.screen = 'usage';
+    await this.loadAnalytics();
+  }
+
   /** Settings ▸ Usage: all time, this session, and the calls behind them. */
   async loadUsage(): Promise<void> {
     if (!this.costOn) return;
@@ -1536,8 +1631,19 @@ class Store {
     if (this.costApp) this.costApp = applyDelta(this.costApp, update);
     if (this.costSession) this.costSession = applyDelta(this.costSession, update);
     this.costRecent = [update.call, ...this.costRecent].slice(0, 40);
+    /**
+     * **The per-message map, re-read rather than patched** (#42 item B).
+     *
+     * The event carries the call's `turnId`, which is the join key — but the message that turn
+     * wrote may not exist yet when the first call of it lands (the decision fires before the
+     * reply is inserted), so patching by id would drop the decision's tokens on every turn. One
+     * query per turn, only while a room is open, is the correct trade: `cost:messages` is a
+     * grouped read over one room's rows, and it is what makes the meter agree with the ledger.
+     */
+    if (update.call.turnId && this.#messageCostRoom) void this.loadMessageCosts(this.#messageCostRoom);
     // The tables and the window burn are re-read, but only where they are actually on screen.
     if (this.screen === 'settings') void this.loadUsage();
+    if (this.screen === 'usage') void this.loadAnalytics(this.costAnalyticsQuery);
   }
 
   /** The ⌥⌘D drawer's rows (audit §10). No bodies are in them, by construction in the actor. */

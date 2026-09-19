@@ -90,6 +90,24 @@ export const COST_SCOPE_LABEL: Record<CostScope, string> = {
   docedit: 'Doc edits',
 };
 
+/**
+ * **The scopes that build a document rather than talk about one.**
+ *
+ * The two-pass notes ingest, the concept pack and the objectives tree are paid **once per deck,
+ * before a word is said** — six calls and some minutes on a 40-slide lecture, the largest single
+ * cost in the app. Everything else is conversation and scales with how long the learner stays.
+ *
+ * A ranked "which documents cost the most" list that did not split these two would be a list of
+ * *which decks were opened*, which is not the question. So the split is a shared constant: the
+ * analytics SQL groups on it and the doc header counter prints it as its own line, and the two
+ * cannot come to disagree about which side `objectives` falls on.
+ */
+export const INGEST_SCOPES: readonly CostScope[] = ['notes', 'ingest', 'objectives'] as const;
+
+export function isIngestScope(scope: CostScope): boolean {
+  return (INGEST_SCOPES as readonly string[]).includes(scope);
+}
+
 /** Mirrors `LlmBackend`. Repeated rather than imported: `src/shared` may not depend on `src/room`. */
 export type CostBackend = 'anthropic' | 'claude-cli' | 'scripted';
 
@@ -229,6 +247,39 @@ export interface CliWindowBurn {
   reportedUsd: number | null;
 }
 
+/**
+ * **How a call ended** (migration 021; #42's known gap, closed).
+ *
+ * Until 2026-09-19 a call that threw recorded nothing, so every total was a floor that got
+ * quietly *better* the more a session went wrong. The decorator now records either way.
+ *
+ * - `'ok'` — returned normally.
+ * - `'error'` — threw. The tokens on the row are whatever the backend managed to report first,
+ *   which on the CLI path is usually nothing: it kills the child before the `result` message.
+ *   A zero-token `error` row is therefore not noise, it is the only trace that a call happened.
+ * - `'aborted'` — the learner pressed Stop. **Not a failure** (`LlmAbortedError` says so), but
+ *   it is not a completed call either and a panel that mixed the two would mis-describe both.
+ * - `'preempted'` — the notes lane was killed so a learner's click could get through
+ *   (`CliPreemptedError`), and `notes/ingest.ts` re-queued that window. The row that follows is a
+ *   *second* call for the same work; without this one the re-queue looks like cost the ingest
+ *   invented.
+ */
+export type CostOutcome = 'ok' | 'error' | 'aborted' | 'preempted';
+
+export const COST_OUTCOMES: readonly CostOutcome[] = ['ok', 'error', 'aborted', 'preempted'] as const;
+
+export const COST_OUTCOME_LABEL: Record<CostOutcome, string> = {
+  ok: 'Completed',
+  error: 'Failed',
+  aborted: 'Stopped by you',
+  preempted: 'Pre-empted and re-queued',
+};
+
+/** Did this call produce an answer? `'aborted'` is deliberately *not* a failure (see above). */
+export function isFailedOutcome(outcome: CostOutcome): boolean {
+  return outcome === 'error' || outcome === 'preempted';
+}
+
 /** One row for the debug drawer. No prompt, no reply, no bodies — sizes and counts only. */
 export interface CostCallView {
   id: string;
@@ -245,6 +296,8 @@ export interface CostCallView {
   anchorId: string | null;
   turnId: string | null;
   backfilled: boolean;
+  /** Rows written before migration 021 read as `'ok'`, which is what they were. */
+  outcome: CostOutcome;
 }
 
 /**
@@ -259,6 +312,169 @@ export interface CostUpdate {
   call: CostCallView;
   /** Running totals for the app since launch, so a header counter needs no second call. */
   sessionTotals: { tokens: CostTokens; calls: number; estimatedUsd: number };
+}
+
+// ── per message (#42 item B) ────────────────────────────────────────────────
+
+/**
+ * **What one message cost**, which is the level a learner actually asks about.
+ *
+ * The three levels above are sums over a *filter* — a document, a thread, everything. This one
+ * is a sum over a **causal set**: every call made on one reply's behalf. For an agent turn that
+ * is the orchestrator's decision, the ledger coding of the learner message it answered, the
+ * generation itself (or Ellie's structured cue, which replaces it), and the doc-edit planner
+ * that ran beside it. Five calls, one card on screen, one number.
+ *
+ * The join is `messages.turn_id = llm_usage.turn_id` (migration 021). The actor already filed
+ * every call under `PendingTurn.id`; the column that landed with 021 is the other end of it.
+ * Private threads join the same way through `whispers.turn_id`.
+ *
+ * A message with **no** row here is not a message that cost nothing — it is one written by a
+ * rule (the hand-off line, a nudge), or one recorded before 021. The renderer shows no meter at
+ * all in that case rather than a zero, because `0 tok` on a model-written turn is a lie and on a
+ * rule-written one is a distraction.
+ */
+export interface CostMessageQuery {
+  roomId: string;
+  /** Narrow to one thread — `'doc'`, a `span_…` anchor, or a private thread id. */
+  threadId?: string | null;
+}
+
+export interface CostMessageCost {
+  /** `messages.id`, or `whispers.id` when `kind` is `'whisper'`. */
+  messageId: string;
+  kind: 'message' | 'whisper';
+  turnId: string;
+  anchorId: string | null;
+  calls: number;
+  tokens: CostTokens;
+  estimatedUsd: number;
+  reportedUsd: number | null;
+  /** Summed `duration_ms` over the calls. Null when not one of them timed itself. */
+  ms: number | null;
+  /** Which models answered, biggest contributor first. Usually one. */
+  models: string[];
+  /** turn · decision · ledger · doc edit — the breakdown the expanded meter shows. */
+  byScope: CostSlice[];
+  mode: CostMode;
+  /** Calls that threw or were pre-empted. Shown, because a retried turn cost twice. */
+  failedCalls: number;
+}
+
+// ── the analytics page (#42 item D) ─────────────────────────────────────────
+
+/** Every filter the Usage page offers. All optional; omitting all of them is "everything". */
+export interface CostAnalyticsQuery {
+  /** ISO, or `SESSION_WINDOW`. Omit for all time. */
+  since?: string | null;
+  /** ISO. Omit for "up to now". */
+  until?: string | null;
+  fileId?: string | null;
+  backend?: CostBackend | null;
+}
+
+/** One document, ranked. The ingest split is the point: it is the big one and it is one-off. */
+export interface CostDocumentRow {
+  fileId: string;
+  title: string;
+  calls: number;
+  tokens: CostTokens;
+  estimatedUsd: number;
+  reportedUsd: number | null;
+  /**
+   * The one-off cost of *making* the document: the two-pass notes ingest, the concept pack, the
+   * objectives tree. Paid once per deck, before a word is said.
+   */
+  ingest: { calls: number; tokens: CostTokens; estimatedUsd: number };
+  /** Everything since: turns, decisions, doc edits, ledger, whispers, summaries. */
+  conversation: { calls: number; tokens: CostTokens; estimatedUsd: number };
+  firstCallAt: string | null;
+  lastCallAt: string | null;
+}
+
+/** One day's burn, for the bar chart. `day` is `YYYY-MM-DD`, in the machine's own local dates. */
+export interface CostDayRow {
+  day: string;
+  calls: number;
+  tokens: CostTokens;
+  estimatedUsd: number;
+}
+
+/**
+ * **The number a course-wide deployment is budgeted from.**
+ *
+ * Mean *and* median, because the distribution is skewed and saying so is the honest thing: one
+ * ingest-adjacent outlier moves a mean by a factor and leaves a median where it was. A budget
+ * built on the mean over-provisions; one built on the median under-provisions; both are shown.
+ */
+export interface CostPerMessageStats {
+  /** Learner messages in the window — the denominator a per-student estimate divides by. */
+  learnerMessages: number;
+  /** Agent replies that a model actually wrote (a rule-written line is not one). */
+  agentMessages: number;
+  meanUsdPerLearnerMessage: number;
+  medianUsdPerAgentMessage: number;
+  meanTokensPerLearnerMessage: number;
+  medianTokensPerAgentMessage: number;
+}
+
+/**
+ * **Cache hit share.** On the CLI path this is substantially the whole bill (`rates.ts` note 2:
+ * 86 plain input tokens against 288,291 cache reads over 43 calls), so a panel that showed only
+ * "input tokens" would be describing a rounding error.
+ */
+export interface CostCacheStats {
+  freshInput: number;
+  cacheRead: number;
+  cacheWrite: number;
+  /** `cacheRead / (cacheRead + freshInput)`, or 0 when there was no input at all. */
+  hitShare: number;
+}
+
+export interface CostOutcomeRow {
+  outcome: CostOutcome;
+  calls: number;
+  tokens: CostTokens;
+  estimatedUsd: number;
+}
+
+/** What the Usage page draws. One IPC call; every panel on it is a field here. */
+export interface CostAnalytics {
+  /** The filters as the main process resolved them — `SESSION_WINDOW` already substituted. */
+  windowStart: string | null;
+  windowEnd: string | null;
+  fileId: string | null;
+  backend: CostBackend | null;
+
+  /** Everything inside the filters. */
+  total: {
+    calls: number;
+    tokens: CostTokens;
+    estimatedUsd: number;
+    reportedUsd: number | null;
+    reportedCalls: number;
+  };
+  /** Since this launch, *ignoring* the time filter — the one number that is always "right now". */
+  session: { calls: number; tokens: CostTokens; estimatedUsd: number };
+
+  documents: CostDocumentRow[];
+  byScope: CostSlice[];
+  byModel: CostSlice[];
+  byBackend: CostSlice[];
+  byDay: CostDayRow[];
+  outcomes: CostOutcomeRow[];
+  cache: CostCacheStats;
+  perMessage: CostPerMessageStats;
+  /** Slowest and most expensive recent calls. Ten each, no bodies, ever. */
+  slowest: CostCallView[];
+  priciest: CostCallView[];
+
+  cliWindow: CliWindowBurn | null;
+  mode: CostMode;
+  rateCardDate: string;
+  /** Every document the ledger knows about, for the filter menu. Unfiltered by the query. */
+  knownFiles: { fileId: string; title: string }[];
+  generatedAt: string;
 }
 
 // ── labelling ───────────────────────────────────────────────────────────────

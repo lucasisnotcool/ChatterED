@@ -1265,6 +1265,15 @@ export class RoomActor {
     const material = this.#d.store.materials.get(this.#room().material_id)!;
     const context = this.#askContext.get(threadId);
     this.#summaries += 1;
+    /**
+     * **A summary card is not an agent turn, and it still costs one call** (#42 item B).
+     *
+     * `pivot-spec.md` §B1 is right that nobody took the floor for it — no `#pending`, no timer,
+     * no ledger — but the learner pressed a button and a model answered, and the card is the
+     * only place that fact can be shown. So it mints an id of its own in the same namespace as
+     * `PendingTurn.id`, hands it to the call and writes it on the row it inserts.
+     */
+    const summaryTurnId = this.#d.newId('turn');
     const request = buildSummaryRequest({
       model: this.#models.orchestrator,
       roomId: this.#d.roomId,
@@ -1275,6 +1284,8 @@ export class RoomActor {
       anchorId: threadId,
       scriptCue: `summary:${this.#summaries}`,
     });
+    // `fileId` is left to the ledger, which resolves it from `roomId` — one spelling of one fact.
+    request.meta.turnId = summaryTurnId;
 
     let raw: string;
     let model = request.model;
@@ -1316,6 +1327,7 @@ export class RoomActor {
         anchorId: threadId,
         kind: 'summary',
         sourceThreadId: threadId,
+        turnId: summaryTurnId,
       });
     });
 
@@ -1495,6 +1507,16 @@ export class RoomActor {
     const agentKey = this.#d.store.participants.get(agentParticipantId)?.agent_key ?? '';
     const agent = agentByKey(this.#d.roster, agentKey) ?? agentByRole(this.#d.roster, 'peer');
     const snapshot = this.#room().turn_seq;
+    /**
+     * **A private exchange is a turn for accounting purposes** (#42 item B, migration 021).
+     *
+     * It is emphatically not one for any other purpose — no floor, no orchestrator, no ledger,
+     * no `#pending` — which is exactly why it has to mint its own id: the ledger's per-message
+     * join is `turn_id`, and a whisper reply with none is a card the learner cannot ask "what
+     * did that cost" about. Minted before the student's row so both halves of the exchange carry
+     * it and the reply can be found from either.
+     */
+    const whisperTurnId = this.#d.newId('turn');
 
     const studentTurn = await this.#mailbox.enqueue(() => {
       this.#whisperTurns += 1;
@@ -1511,6 +1533,7 @@ export class RoomActor {
         relay_offer: null,
         promoted_message_id: null,
         usage: null,
+        turn_id: whisperTurnId,
         created_at: this.#nowIso(),
       };
       this.#d.store.whispers.insert(row);
@@ -1536,6 +1559,8 @@ export class RoomActor {
       segment: segment ?? null,
     });
     request.meta.scriptCue = `whisper:${this.#whisperTurns}`;
+    // The thread is already on `meta.anchorId` (`context.whisper.ts`); this is the other half.
+    request.meta.turnId = whisperTurnId;
 
     const started = this.#d.clock.now();
     const result = await this.#d.llm.complete(request);
@@ -1559,6 +1584,7 @@ export class RoomActor {
         relay_offer: scripted ? JSON.stringify(scripted) : null,
         promoted_message_id: null,
         usage: JSON.stringify(result.usage),
+        turn_id: whisperTurnId,
         created_at: this.#nowIso(),
       };
       this.#d.store.whispers.insert(row);
@@ -2619,6 +2645,8 @@ export class RoomActor {
         ttftActualMs: visibleTtft,
         totalMs: this.#d.clock.now() - turnStart,
         decidedBy: decision.decidedBy,
+        // Migration 021: the other end of `llm_usage.turn_id`, so this card can say what it cost.
+        turnId: pending.id,
         dividerCause:
           trigger === 'silence' ? this.#dividerFor(opts.silenceStage ?? 1, agent, decision.moveType) : null,
         anchorId,
@@ -2827,6 +2855,8 @@ export class RoomActor {
           ...(stream.firstVisibleAt === null ? {} : { ttftActualMs: stream.firstVisibleAt - turnStart }),
           totalMs: this.#d.clock.now() - turnStart,
           decidedBy: decision.decidedBy,
+          // A stopped turn still spent what it spent, and the partial is where it shows.
+          turnId: pending.id,
           anchorId,
           stopped: true,
         });
@@ -4165,6 +4195,21 @@ export class RoomActor {
     kind?: 'turn' | 'answer' | 'summary' | 'doc_text';
     /** On a summary card: the anchor of the thread it was written from (migration 017). */
     sourceThreadId?: string | null;
+    /**
+     * **Which turn wrote this** (migration 021, #42 item B).
+     *
+     * The other end of `llm_usage.turn_id`: every call the turn made — the orchestrator's
+     * decision, the ledger coding, the generation, the doc-edit planner beside it — already
+     * files under this id, and with it on the row a message's cost is one `SUM`.
+     *
+     * **Explicit, never inferred from `#pending`.** A learner message sent while an agent turn
+     * is still pending would otherwise inherit that turn's id and be billed for a reply it
+     * caused rather than received. Only the sites that *are* the turn's own output pass one:
+     * the dispatch, the stopped partial, and the summary card (which has its own call and mints
+     * its own id). A rule-written line — the hand-off, a nudge, the summary offer — passes
+     * nothing and gets no meter, which is right: it cost nothing.
+     */
+    turnId?: string | null;
   }): MessageRow {
     const seq = this.#d.store.messages.maxSeq(this.#d.roomId) + 1;
     const row: MessageRow = {
@@ -4192,6 +4237,7 @@ export class RoomActor {
       scope_shown: input.scopeShown ?? null,
       kind: input.kind ?? 'turn',
       source_thread_id: input.sourceThreadId ?? null,
+      turn_id: input.turnId ?? null,
       created_at: this.#nowIso(),
     };
     this.#d.store.messages.insert(row);
