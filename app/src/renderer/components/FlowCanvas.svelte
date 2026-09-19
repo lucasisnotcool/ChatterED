@@ -926,11 +926,12 @@
    * into view, ring it for a moment — because a citation and a ref are the same kind of pointer
    * and behaving differently would make one of them look broken.
    */
+  let pageJumped = 0;
   $effect(() => {
     const want = store.goToPage;
-    if (!want) return;
+    if (!want || want.token === pageJumped) return;
+    pageJumped = want.token;
     const segmentId = untrack(() => cards.find((c) => c.page === want.page)?.segmentId ?? null);
-    store.goToPage = null;
     if (!segmentId) return;
     bringIntoView(segmentId);
     ring(segmentId);

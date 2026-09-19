@@ -193,3 +193,67 @@ describe('plainText', () => {
     expect(collapsedLine('**Bold** opener.\n\nmore')).toBe('Bold opener.');
   });
 });
+
+/**
+ * The Tester's grounds, made checkable (issue #47, `attempt-first.md` §3).
+ *
+ * The behaviour is a nice-to-have; the safety property is not. `pages` is the only thing that can
+ * turn on the one extra tag this module emits, and what lands in the attribute is a parsed integer
+ * and never a substring of the model's turn.
+ */
+describe('a p. N the deck actually has', () => {
+  const pages = [1, 3, 5, 12];
+
+  it('writes nothing at all without pages', () => {
+    expect(paragraphs('the deck settles it at p. 3')).toBe('<p>the deck settles it at p. 3</p>');
+  });
+
+  it('links every shape the prompt asks for', () => {
+    for (const written of ['p. 3', 'p.3', 'page 3', 'pp. 3', 'P. 3']) {
+      const html = paragraphs(`settled at ${written}: "no tools"`, { pages });
+      expect(html).toContain('data-page="3"');
+      // The learner's own wording is kept, so the link matches what Max wrote.
+      expect(html).toContain(`>${written}<`);
+    }
+  });
+
+  it('leaves a citation to a page this document does not have as plain text', () => {
+    const html = paragraphs('as p. 7 has it', { pages });
+    expect(html).not.toContain('data-page');
+    expect(html).toContain('as p. 7 has it');
+  });
+
+  it('links inside a list item and a bolded span', () => {
+    expect(paragraphs('- what was missing, per p. 5', { pages })).toContain('data-page="5"');
+    expect(paragraphs('**p. 12** settles it', { pages })).toContain('data-page="12"');
+  });
+
+  it('leaves maths alone', () => {
+    // `p.3` inside TeX is not a citation, and the formula must reach KaTeX untouched.
+    const html = paragraphs('the bound is $p. 3 \\le x$', { pages });
+    expect(html).toContain('class="katex"');
+    expect(html).not.toContain('data-page');
+  });
+
+  it('puts only an integer in the attribute, whatever the model wrote', () => {
+    // A model-written quote, angle brackets and all, next to a citation.
+    const html = paragraphs('p. 3: "<script>alert(1)</script> is not in the deck"', { pages });
+    expect(html).toContain('data-page="3"');
+    expect(html).not.toContain('<script');
+    expect(html).toContain('&lt;script');
+    // Four digits is a page number; five is not a page this or any deck has.
+    expect(paragraphs('p. 30000', { pages })).not.toContain('data-page');
+  });
+
+  it('is the only tag added, and it is a button with no href', () => {
+    const html = paragraphs('grounded at p. 1 and p. 5', { pages });
+    expect(html.match(/<button/g)).toHaveLength(2);
+    expect(html).not.toContain('href');
+    expect(html).toContain('type="button"');
+  });
+
+  it('carries through aiBody, which is what the card calls', () => {
+    const body = aiBody('what landed, per p. 5', { pages });
+    expect(body.html).toContain('data-page="5"');
+  });
+});

@@ -25,7 +25,25 @@
  * `` `code` ``, a table, and above all raw HTML. There is no configuration and no escape hatch,
  * because the security property this file is here to hold — *no model-written string ever
  * becomes a tag* — is only checkable if the set of tags this file can emit is finite and short.
- * It is: `<p> <br> <strong> <em> <ul> <ol> <li>`, and KaTeX's own output.
+ * It is: `<p> <br> <strong> <em> <ul> <ol> <li>`, one `<button>` (below), and KaTeX's own output.
+ *
+ * ## The one added tag: a `p. N` that the deck actually has (issue #47, §3)
+ *
+ * `attempt-first.md` §3 asks the Tester to ground every point in its feedback as `p. N: "…"`,
+ * quoting the page's own words. §3 then says that a `p. N` which matches a card's page **may be
+ * made clickable** — a citation the learner can check in one gesture rather than by scrolling and
+ * counting, which is the whole argument of DG2 (R6's 11-of-21 wrong verdicts went unchallenged).
+ *
+ * The rules that keep this from being a hole:
+ *
+ *   1. It is a `<button>`, never an `<a href>`: there is no URL, nothing navigates, and a model
+ *      cannot influence where it goes. The only model-derived part is **an integer** parsed out of
+ *      the text, and it is re-emitted as `String(number)`.
+ *   2. It runs on **already-escaped** text, after emphasis, so nothing new can become a tag.
+ *   3. It fires only for a page in `pages` — the deck's own page numbers, from the caller. A
+ *      citation to a page this document does not have is left as plain text, because a dead link
+ *      to a slide that is not there is worse than no link.
+ *   4. No `pages` means no buttons, so every other caller of this module is unchanged.
  *
  * **Maths is typeset with KaTeX in the app's own style, never in the slide's**
  * (`pdf-fidelity-segmentation.md` §C4): "Matching Beamer's typeface would make agent-written
@@ -71,23 +89,52 @@ function emphasis(escaped: string): string {
 }
 
 /**
+ * `p. 3`, `p.3`, `pp. 3` or `page 3` → a button, when the deck has that page.
+ *
+ * Applied to text that has **already been escaped and emphasised**, for the reason `emphasis()`
+ * gives: there is no `<` left from the model, so the only markup in the result is what this
+ * function writes. The page number is re-emitted from a parsed integer and never from the matched
+ * substring, which is what makes the attribute injection-proof rather than merely escaped.
+ *
+ * The word is kept as the learner wrote it — `p. 3` stays `p. 3` and `page 3` stays `page 3` —
+ * because a citation the app has silently reworded is a citation the learner cannot match against
+ * what the Tester actually said.
+ */
+const PAGE_REF = /\b(pp?\.\s?|page\s)(\d{1,4})\b/gi;
+
+function pageRefs(escaped: string, pages: readonly number[]): string {
+  if (pages.length === 0) return escaped;
+  return escaped.replace(PAGE_REF, (whole, word: string, digits: string) => {
+    const page = Number.parseInt(digits, 10);
+    if (!Number.isInteger(page) || !pages.includes(page)) return whole;
+    return (
+      `<button type="button" class="pageref" data-page="${String(page)}"` +
+      ` title="Go to page ${String(page)} in this document">${escapeHtml(word)}${String(page)}</button>`
+    );
+  });
+}
+
+/**
  * One block's inline content: escaped text with `$…$` and `$$…$$` typeset and emphasis applied.
  *
  * The escape happens **before** the maths is put back, so a `<` inside a formula reaches KaTeX
  * as `&lt;` — which KaTeX renders as `<` — while a `<` outside one can never reach the DOM as a
  * tag. Nothing in this file writes raw learner or model text into HTML.
+ *
+ * `pages` never reaches the maths spans: a `p` inside a formula is a variable, and `p.3` in TeX
+ * is not a citation.
  */
-function inline(text: string): string {
+function inline(text: string, pages: readonly number[]): string {
   const parts: string[] = [];
   const re = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g;
   let last = 0;
   for (const match of text.matchAll(re)) {
     const at = match.index;
-    parts.push(emphasis(escapeHtml(text.slice(last, at))));
+    parts.push(pageRefs(emphasis(escapeHtml(text.slice(last, at))), pages));
     parts.push(match[1] !== undefined ? tex(match[1], true) : tex(match[2]!, false));
     last = at + match[0].length;
   }
-  parts.push(emphasis(escapeHtml(text.slice(last))));
+  parts.push(pageRefs(emphasis(escapeHtml(text.slice(last))), pages));
   return parts.join('');
 }
 
@@ -155,15 +202,23 @@ function blockify(lines: readonly string[]): Block[] {
 }
 
 /** A block's text, with single newlines kept as breaks. */
-function flowed(text: string): string {
-  return inline(text).replace(/\n/g, '<br>');
+function flowed(text: string, pages: readonly number[]): string {
+  return inline(text, pages).replace(/\n/g, '<br>');
 }
 
-function renderBlock(block: Block): string {
-  if (block.kind === 'p') return `<p>${flowed(block.lines.join('\n'))}</p>`;
-  const items = block.items.map((item) => `<li>${flowed(item)}</li>`).join('');
+function renderBlock(block: Block, pages: readonly number[]): string {
+  if (block.kind === 'p') return `<p>${flowed(block.lines.join('\n'), pages)}</p>`;
+  const items = block.items.map((item) => `<li>${flowed(item, pages)}</li>`).join('');
   if (block.kind === 'ul') return `<ul>${items}</ul>`;
   return `<ol${block.start === 1 ? '' : ` start="${block.start}"`}>${items}</ol>`;
+}
+
+/**
+ * The pages this document has, so a `p. N` in a Tester's grounds can be made clickable (§3).
+ * Omit it — as every caller but the flow's own card does — and no button is written at all.
+ */
+export interface AiTextOptions {
+  pages?: readonly number[];
 }
 
 export interface AiBody {
@@ -183,20 +238,24 @@ export interface AiBody {
  * The split is on the rule `reference.ts` writes, and only when it is on a line of its own, so a
  * turn that happens to contain a horizontal-bar character mid-sentence is untouched.
  */
-export function aiBody(body: string): AiBody {
+export function aiBody(body: string, options: AiTextOptions = {}): AiBody {
   const lines = body.split('\n');
   const ruleAt = lines.findIndex((l) => l.trim() === RULE_LINE);
   const answer = ruleAt >= 0 ? lines.slice(0, ruleAt).join('\n') : body;
   const handBack = ruleAt >= 0 ? lines.slice(ruleAt + 1).join('\n').trim() : null;
-  return { html: paragraphs(answer), handBack: handBack && handBack.length > 0 ? handBack : null };
+  return {
+    html: paragraphs(answer, options),
+    handBack: handBack && handBack.length > 0 ? handBack : null,
+  };
 }
 
 /**
  * The subset, rendered. Blank-line-separated paragraphs, numbered and bulleted lists, emphasis
  * and maths — and every other character of the model's turn as literal escaped text.
  */
-export function paragraphs(text: string): string {
-  return blockify(text.trim().split('\n')).map(renderBlock).join('');
+export function paragraphs(text: string, options: AiTextOptions = {}): string {
+  const pages = options.pages ?? [];
+  return blockify(text.trim().split('\n')).map((b) => renderBlock(b, pages)).join('');
 }
 
 /**

@@ -66,7 +66,14 @@
   /** Neutral grey for the reference voice — deliberately not one of the three personas. */
   const hue = $derived(agent ? agent.colour : 'var(--muted)');
   const isTester = $derived(agent?.role === 'challenger');
-  const parsed = $derived(aiBody(streaming ?? message.body));
+  /**
+   * The deck's own page numbers, so a `p. N` in the Tester's grounds becomes a button (issue #47,
+   * §3). Read off the store rather than passed in: `FlowThread` renders in two places and the deck
+   * is the same deck in both, and the alternative is threading one array through three components
+   * that have no other interest in it. Empty outside the flow, where no button is written.
+   */
+  const deckPages = $derived([...new Set((store.flow?.segments ?? []).map((sg) => sg.page))]);
+  const parsed = $derived(aiBody(streaming ?? message.body, { pages: deckPages }));
   /** A turn that came back with no text at all still has to say so — see `emptyBody`. */
   const empty = $derived(emptyBody(streaming ?? message.body, streaming !== null));
   /**
@@ -74,6 +81,21 @@
    * model that never ran — and this app can silently be answering from `ScriptedClient`. Hidden
    * until the card is hovered, except `scripted`, which is shown unconditionally for that reason.
    */
+  /**
+   * A click anywhere in the body, looking for a `p. N` citation (issue #47, §3).
+   *
+   * Delegated because the body is `@html` and there is no Svelte handler to attach to a button
+   * `aitext.ts` wrote. The only thing trusted here is `data-page`, and `aitext.ts` writes it from a
+   * parsed integer that is in the deck — so the worst a model can do is cite a page that exists.
+   */
+  function onBodyClick(e: MouseEvent): void {
+    const hit = (e.target as HTMLElement | null)?.closest?.('[data-page]');
+    const page = Number(hit?.getAttribute('data-page') ?? '');
+    if (!Number.isInteger(page) || page <= 0) return;
+    e.stopPropagation();
+    store.requestPage(page);
+  }
+
   const meta = $derived(metaParts(message));
   const loud = $derived(metaAlwaysOn((message as { backend?: string | null }).backend));
   /**
@@ -147,8 +169,18 @@
     {#if empty}
       <p class="empty">{EMPTY_TURN_LINE}</p>
     {:else}
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-      <div class="body">{@html parsed.html}</div>
+      <!--
+        **The grounds, clickable** (§3). One delegated handler rather than a component per
+        citation: the body is `@html`, so there is no Svelte handler to attach, and the only thing
+        this listens for is a `data-page` written by `aitext.ts` from a parsed integer. `FlowCanvas`
+        owns where the flow actually goes — this only says which page was asked for.
+      -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="body" onclick={onBodyClick}>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+        {@html parsed.html}
+      </div>
     {/if}
 
     {#if parsed.handBack}
@@ -261,6 +293,21 @@
   /* The attempt loop's tag is a sentence rather than two words, so it is not upper-cased — at
      9.5 px, "ANSWER WITHHELD UNTIL YOU TRY" in caps is a header, and this is a footnote. */
   .rule-tag.decided { text-transform: none; letter-spacing: 0.01em; white-space: nowrap; }
+
+  /*
+    A citation, not a link. Underlined on the dotted rather than the solid, because it goes nowhere
+    outside the document: it scrolls the deck to the page the Tester cited. `:global` because the
+    button is written by `aitext.ts` into `@html` and Svelte's scoping cannot see it.
+  */
+  .body :global(.pageref) {
+    font: inherit;
+    color: var(--indigo);
+    border-bottom: 1px dotted var(--indigo);
+    padding: 0;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .body :global(.pageref:hover) { border-bottom-style: solid; }
 
   .body :global(p) { margin: 0 0 8px; font-size: 13.5px; line-height: 1.6; }
   .body :global(p:last-child) { margin-bottom: 0; }
