@@ -1,0 +1,627 @@
+/**
+ * The notes document's own styles (`docs/research/collab-doc.md` §3, §5).
+ *
+ * **Global, not Svelte-scoped, on purpose.** Most of what is styled here is DOM that ProseMirror
+ * created — node views, decoration widgets, the author spans the schema's `toDOM` emits — and
+ * Svelte's scoping class never reaches any of it. Prefixing every class with `nd-` is what keeps
+ * that honest: one namespace, one file, nothing leaking into the rest of the shell.
+ *
+ * The palette extends `styles/app.css` rather than restating it. Ellie's green is the existing
+ * `--peer`; Max's red is new, because `--challenger` is amber and §0 says red.
+ *
+ * **Colour is never the only signal** (the colour-blind rule, argued in `pm/chrome.ts`): every
+ * agent thing carries the agent's name in words, a left rail whose *shape* differs (Ellie solid,
+ * Max dashed) and its own glyph.
+ */
+
+.nd {
+  --nd-ellie: #0f7b6c;
+  --nd-ellie-tint: #e9f5f2;
+  --nd-ellie-edge: #9ed3c8;
+  --nd-max: #b91c1c;
+  --nd-max-tint: #fdedec;
+  --nd-max-edge: #eeb0ac;
+  --nd-column: 720px;
+  --nd-gutter: 132px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--pane);
+}
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+
+.nd-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--pane);
+  flex: 0 0 auto;
+}
+
+.nd-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nd-head-meta {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.nd-head-spacer { flex: 1 1 auto; }
+
+.nd-toggle {
+  border: 1px solid var(--hairline);
+  background: var(--pane);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nd-toggle:hover { border-color: #d4d4e2; color: var(--text); }
+.nd-toggle[aria-pressed='true'] {
+  border-color: #b9c6e8;
+  background: #eef2ff;
+  color: #2f3d8f;
+}
+.nd-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.nd-toggle[aria-pressed='true'] .nd-toggle-dot { background: #4257c8; }
+
+/* ── the scrolling document ─────────────────────────────────────────────── */
+
+.nd-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--ground);
+}
+
+.nd-sheet {
+  max-width: calc(var(--nd-column) + var(--nd-gutter) * 2);
+  margin: 0 auto;
+  padding: 36px var(--nd-gutter) 96px;
+}
+
+.nd-frozen-note {
+  max-width: var(--nd-column);
+  margin: 0 auto 18px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  background: #eef2ff;
+  border: 1px solid #ccd6f6;
+  color: #33417f;
+  font-size: 12px;
+}
+
+/* ── ProseMirror ────────────────────────────────────────────────────────── */
+
+.nd-editor { position: relative; }
+
+.nd-editor .ProseMirror {
+  max-width: var(--nd-column);
+  margin: 0 auto;
+  outline: none;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.68;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every block is a positioning context, so the chips and controls can sit in the gutters. */
+.nd-editor .ProseMirror > * { position: relative; }
+
+.nd-editor .ProseMirror h1 {
+  font-size: 27px;
+  line-height: 1.24;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  margin: 0 0 22px;
+}
+.nd-editor .ProseMirror h2 {
+  font-size: 19px;
+  line-height: 1.32;
+  font-weight: 620;
+  letter-spacing: -0.012em;
+  margin: 40px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+.nd-editor .ProseMirror h3 {
+  font-size: 15px;
+  font-weight: 640;
+  margin: 26px 0 8px;
+}
+.nd-editor .ProseMirror p { margin: 0 0 14px; }
+.nd-editor .ProseMirror ul,
+.nd-editor .ProseMirror ol { margin: 0 0 16px; padding-left: 24px; }
+.nd-editor .ProseMirror li { margin: 0 0 4px; }
+.nd-editor .ProseMirror li > p { margin: 0; }
+.nd-editor .ProseMirror pre {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: #f4f4f8;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.nd-editor .ProseMirror code {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+  background: #f1f1f6;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.nd-editor .ProseMirror pre code { background: none; padding: 0; }
+
+/* Inline maths is *styled*, not typeset: a mark cannot have a node view, and replacing the
+   text would put the source out of the cursor's reach. See `pm/nodeviews.ts`. */
+.nd-editor .math-inline {
+  font-family: 'KaTeX_Math', Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 1.03em;
+  color: #26264a;
+}
+
+.nd-mathblock {
+  margin: 0 0 18px;
+  padding: 10px 0;
+  overflow-x: auto;
+  text-align: center;
+}
+.nd-mathblock.nd-math-error {
+  text-align: left;
+  color: var(--challenger);
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+/* ── who wrote it: colour on [data-edit-id], never on [data-author] alone ── */
+/* `keepEdit` nulls the edit id and the colour must go with it (schema.ts). */
+
+.nd-editor [data-author='ellie'][data-edit-id] {
+  background: var(--nd-ellie-tint);
+  box-shadow: inset 0 -1px 0 var(--nd-ellie-edge);
+  border-radius: 2px;
+}
+.nd-editor [data-author='max'][data-edit-id] {
+  background: var(--nd-max-tint);
+  box-shadow: inset 0 -1px 0 var(--nd-max-edge);
+  border-radius: 2px;
+}
+
+/* The learner's own words carry no tint at all: the document is theirs by default. */
+
+/* ── suggestions (§5.4) ─────────────────────────────────────────────────── */
+
+.nd-editor [data-suggest='del'] {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  color: var(--text-2);
+  opacity: 0.75;
+}
+.nd-editor [data-suggest='ins'][data-by='ellie'] {
+  color: var(--nd-ellie);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.nd-editor [data-suggest='ins'][data-by='max'] {
+  color: var(--nd-max);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── the typing animation ───────────────────────────────────────────────── */
+/* `display: none`, so the line reflows as it fills — see `pm/reveal.ts`. */
+
+.nd-unwritten,
+.nd-unwritten-block { display: none !important; }
+
+/* ── agent cursors ──────────────────────────────────────────────────────── */
+
+.nd-cursor {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  vertical-align: text-bottom;
+}
+.nd-cursor-caret {
+  position: absolute;
+  left: -1px;
+  top: -0.12em;
+  width: 2px;
+  height: 1.24em;
+  border-radius: 1px;
+}
+.nd-ellie .nd-cursor-caret { background: var(--nd-ellie); }
+.nd-max .nd-cursor-caret { background: var(--nd-max); }
+.nd-cursor-typing .nd-cursor-caret { animation: nd-blink 1.05s steps(1) infinite; }
+
+@keyframes nd-blink { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0.25; } }
+
+.nd-cursor-flag {
+  position: absolute;
+  left: -1px;
+  top: -1.72em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 2px;
+  border-radius: 4px 4px 4px 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fff;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+.nd-ellie .nd-cursor-flag { background: var(--nd-ellie); }
+.nd-max .nd-cursor-flag { background: var(--nd-max); }
+.nd-cursor-glyph { font-size: 10px; opacity: 0.85; }
+.nd-cursor-think { letter-spacing: 1px; animation: nd-shimmer 1.4s ease-in-out infinite; }
+
+@keyframes nd-shimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* ── the provenance chip (§3), in the right gutter ──────────────────────── */
+
+.nd-chip-holder { position: absolute; left: 100%; top: 0.24em; width: 0; }
+
+.nd-chip {
+  display: inline-block;
+  white-space: nowrap;
+  margin-left: 16px;
+  padding: 1px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.6;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.nd-editor .ProseMirror > *:hover .nd-chip,
+.nd-chip:focus-visible { opacity: 1; }
+.nd-chip:hover { color: var(--indigo); border-color: #c7c7e8; }
+.nd-chip-dead { cursor: default; color: var(--challenger); border-color: #e8d4b4; opacity: 1; }
+
+/* ── Remove · Keep, in the left gutter (§5) ─────────────────────────────── */
+
+.nd-editcl-anchor { position: absolute; }
+
+.nd-editctl {
+  position: absolute;
+  right: 100%;
+  top: 0.1em;
+  width: calc(var(--nd-gutter) - 22px);
+  margin-right: 18px;
+  text-align: right;
+  user-select: none;
+  font-size: 10.5px;
+  line-height: 1.5;
+  border-right: 2px solid;
+  padding-right: 8px;
+}
+.nd-editctl.nd-ellie { border-right-style: solid; border-right-color: var(--nd-ellie); }
+.nd-editctl.nd-max { border-right-style: dashed; border-right-color: var(--nd-max); }
+
+.nd-editctl-who { display: block; font-weight: 600; }
+.nd-editctl.nd-ellie .nd-editctl-who { color: var(--nd-ellie); }
+.nd-editctl.nd-max .nd-editctl-who { color: var(--nd-max); }
+.nd-editctl-why {
+  display: block;
+  color: var(--muted);
+  margin-top: 1px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.nd-editctl-row { margin-top: 4px; display: flex; justify-content: flex-end; gap: 5px; }
+.nd-editctl-dot { color: var(--muted); }
+.nd-editctl-btn {
+  color: var(--text-2);
+  border-bottom: 1px solid var(--hairline);
+  font-size: 10.5px;
+}
+.nd-editctl-btn:hover { color: var(--indigo); border-bottom-color: var(--indigo); }
+
+/* ── Accept · Reject on a suggestion ────────────────────────────────────── */
+
+.nd-suggest {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  width: 240px;
+  margin-left: 22px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: var(--pane);
+  box-shadow: 0 6px 20px rgb(20 20 40 / 9%);
+  font-size: 11.5px;
+  line-height: 1.5;
+  user-select: none;
+  z-index: 3;
+}
+.nd-suggest.nd-ellie { border-left: 3px solid var(--nd-ellie); }
+.nd-suggest.nd-max { border-left: 3px dashed var(--nd-max); }
+.nd-suggest-who { font-weight: 600; margin-bottom: 3px; }
+.nd-suggest.nd-ellie .nd-suggest-who { color: var(--nd-ellie); }
+.nd-suggest.nd-max .nd-suggest-who { color: var(--nd-max); }
+.nd-suggest-note { color: var(--text-2); }
+.nd-suggest-row { margin-top: 9px; display: flex; gap: 8px; }
+.nd-suggest-accept,
+.nd-suggest-reject {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  background: var(--pane);
+  color: var(--text-2);
+}
+.nd-suggest-accept { border-color: var(--indigo); background: var(--indigo); color: #fff; }
+.nd-suggest-accept:hover { background: #443cd0; }
+.nd-suggest-reject:hover { border-color: #d4d4e2; color: var(--text); }
+
+/* ── the span that has a thread (§3) ────────────────────────────────────── */
+
+.nd-threadspan {
+  background: #fff5cc;
+  box-shadow: inset 0 -1px 0 #e8cf7a;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.nd-threadspan:hover { background: #ffedb0; }
+
+/* ── Max's question in the document (§5.2) ──────────────────────────────── */
+
+.nd-q {
+  margin: 22px 0;
+  padding: 12px 16px 4px;
+  border-left: 3px dashed var(--nd-max);
+  background: #fdf7f7;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.nd-q-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.nd-q-who {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--nd-max);
+}
+.nd-q-tag {
+  font-size: 10.5px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--nd-max-edge);
+  color: var(--nd-max);
+  background: #fff;
+}
+.nd-q-tag[data-status='you_got_this'] { border-color: #a7d7c5; color: #14714f; }
+.nd-q-tag[data-status='partly_yours'] { border-color: #e2c391; color: #8a5a11; }
+.nd-q-tag[data-status='released'] { border-color: var(--hairline); color: var(--muted); }
+.nd-q-remove {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  border-bottom: 1px solid transparent;
+}
+.nd-q-remove:hover { color: var(--nd-max); border-bottom-color: var(--nd-max-edge); }
+.nd-q-body > p:last-child { margin-bottom: 10px; }
+
+/* ── inline slide figures (§3) ──────────────────────────────────────────── */
+
+.nd-figure { margin: 22px 0; }
+.nd-figure-frame {
+  display: block;
+  width: 100%;
+  min-height: 60px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #eef0f5;
+  line-height: 0;
+}
+.nd-figure-frame:hover { border-color: #c7c7e8; }
+.nd-figure-frame canvas { display: block; width: 100%; height: auto; }
+.nd-figure-caption {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── the flash a scrollToBlock leaves behind ────────────────────────────── */
+
+.nd-flash { animation: nd-flash 1.4s ease-out; border-radius: 3px; }
+@keyframes nd-flash {
+  0% { background: #fff0bf; }
+  100% { background: transparent; }
+}
+
+/* ── ingest states ──────────────────────────────────────────────────────── */
+
+.nd-state {
+  max-width: 460px;
+  margin: 12vh auto 0;
+  text-align: center;
+  color: var(--text-2);
+}
+.nd-state-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.nd-state-line { font-size: 12px; color: var(--muted); }
+.nd-state-bar {
+  margin: 18px auto 0;
+  width: 220px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.nd-state-fill { height: 100%; background: var(--nd-ellie); transition: width 0.3s ease; }
+.nd-state-sweep {
+  height: 100%;
+  width: 38%;
+  background: var(--nd-ellie);
+  animation: nd-sweep 1.5s ease-in-out infinite;
+}
+@keyframes nd-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(263%); }
+}
+.nd-state-actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; }
+
+/* "Ellie is still writing", at the end of a streaming document. */
+.nd-writing {
+  max-width: var(--nd-column);
+  margin: 18px auto 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--nd-ellie);
+}
+.nd-writing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--nd-ellie);
+  animation: nd-shimmer 1.4s ease-in-out infinite;
+}
+
+/* ── the carousel (§3) ──────────────────────────────────────────────────── */
+
+.nd-carousel {
+  max-width: var(--nd-column);
+  margin: 40px auto 0;
+  border-top: 1px solid var(--hairline);
+  padding-top: 12px;
+}
+.nd-carousel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.nd-carousel-toggle:hover { color: var(--text); }
+.nd-carousel-caret { color: var(--muted); font-size: 9px; }
+.nd-carousel-count { color: var(--muted); margin-left: auto; }
+.nd-carousel-section { margin-top: 16px; }
+.nd-carousel-head {
+  font-size: 10.5px;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.nd-thumbs { display: flex; flex-wrap: wrap; gap: 10px; }
+.nd-thumb {
+  width: 132px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #eef0f5;
+  padding: 0;
+  line-height: 0;
+  position: relative;
+}
+.nd-thumb:hover { border-color: #c7c7e8; }
+.nd-thumb canvas { display: block; width: 100%; height: auto; }
+.nd-thumb-blank { height: 76px; }
+.nd-thumb-label {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgb(20 20 40 / 62%);
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 1.6;
+}
+
+/* ── the in-doc slide modal (§3) ────────────────────────────────────────── */
+
+.nd-modal-veil {
+  position: fixed;
+  inset: 0;
+  background: rgb(18 18 30 / 52%);
+  display: flex;
+  flex-direction: column;
+  z-index: 60;
+}
+.nd-modal-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: #fff;
+  font-size: 11.5px;
+}
+.nd-modal-bar button {
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 6px;
+  padding: 2px 9px;
+  font-size: 11px;
+}
+.nd-modal-bar button:hover { background: rgb(255 255 255 / 14%); }
+.nd-modal-bar button:disabled { opacity: 0.35; cursor: default; }
+.nd-modal-spacer { flex: 1 1 auto; }
+.nd-modal-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.nd-modal-page {
+  position: relative;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 38%);
+  line-height: 0;
+}
+.nd-modal-page canvas { display: block; }
+.nd-modal-rect {
+  position: absolute;
+  border: 2px solid #ffd44d;
+  border-radius: 3px;
+  box-shadow: 0 0 0 9999px rgb(18 18 30 / 34%);
+  pointer-events: none;
+}

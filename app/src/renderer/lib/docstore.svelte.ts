@@ -677,6 +677,50 @@ export class DocStore {
     }
   }
 
+  /**
+   * The carousel's grouping (§3: "all slides, collapsed and labelled, **grouped by the section
+   * of the notes they feed**").
+   *
+   * Walked from the live document rather than stored, because the learner can retitle a heading
+   * or move a paragraph and the grouping has to follow. A page that no block claims lands in a
+   * trailing "Not in the notes" group, which is the carousel quietly answering R3's and R4's
+   * failure — *what did the ingest leave out?* — without anybody having to ask.
+   */
+  sections(): { title: string; pages: number[] }[] {
+    const view = this.#view;
+    const groups: { title: string; pages: number[] }[] = [];
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local scratch set
+    const claimed = new Set<number>();
+    if (view) {
+      let current: { title: string; pages: number[] } | null = null;
+      view.state.doc.forEach((node) => {
+        const level = node.type.name === 'heading' ? (node.attrs.level as number) : null;
+        if (level !== null && level <= 2) {
+          current = { title: node.textContent.trim() || 'Untitled section', pages: [] };
+          groups.push(current);
+        }
+        const pages = node.type.name === 'slide_figure'
+          ? [node.attrs.page as number]
+          : blockAttrs(node).pages;
+        for (const page of pages) {
+          if (!Number.isInteger(page) || page < 1) continue;
+          claimed.add(page);
+          if (!current) {
+            current = { title: 'Opening', pages: [] };
+            groups.push(current);
+          }
+          if (!current.pages.includes(page)) current.pages.push(page);
+        }
+      });
+    }
+    const rest: number[] = [];
+    for (let page = 1; page <= this.pageCount; page++) if (!claimed.has(page)) rest.push(page);
+    const out = groups.filter((group) => group.pages.length > 0);
+    out.forEach((group) => group.pages.sort((a, b) => a - b));
+    if (rest.length > 0) out.push({ title: 'Not in the notes', pages: rest });
+    return out;
+  }
+
   // ── the slide modal (§3) ──────────────────────────────────────────────────────────────────
 
   openSlide(page: number, rect: Rect | null = null): void {
