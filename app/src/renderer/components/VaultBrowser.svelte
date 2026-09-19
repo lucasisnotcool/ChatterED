@@ -13,6 +13,7 @@
   import DocumentPane from './DocumentPane.svelte';
   import FlowCanvas from './FlowCanvas.svelte';
   import SearchResults from './SearchResults.svelte';
+  import ThreeColumn from './shell/ThreeColumn.svelte';
   import VaultSidebar from './VaultSidebar.svelte';
 
   let {
@@ -33,6 +34,17 @@
   }
 </script>
 
+<!--
+  **A PDF opens as the collaborative notes doc** (#48, `docs/research/collab-doc.md` §0).
+
+  The whole window becomes the three-column shell — file panel · doc · chats — rather than the
+  sidebar plus a pane, because the file panel is one of the three columns and the shell owns
+  whether it is open. `FlowCanvas` below is untouched and still reachable from the flow's own
+  toggle; the lead removes the old flow UI in one commit at the end of the parallel phase.
+-->
+{#if store.openDoc && store.openDoc.kind === 'pdf' && store.docView === 'flow' && !inRoom}
+  <ThreeColumn doc={store.openDoc} onclose={() => store.closeDoc()} />
+{:else}
 <div class="browser">
   <VaultSidebar onopen={open} />
 
@@ -88,6 +100,7 @@
     {/if}
   </div>
 </div>
+{/if}
 
 <style>
   .browser { flex: 1; display: flex; min-width: 0; min-height: 0; }
