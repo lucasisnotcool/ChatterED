@@ -292,6 +292,17 @@
 .nd-chip {
   display: inline-block;
   white-space: nowrap;
+  /*
+   * The holder is zero-width and sits in the right gutter, so the chip must live inside that
+   * gutter or it lives outside the pane. `p. 12` always does; `added: <reason>` is written by
+   * the ingest or by a doc edit and can run to a sentence — "added: a question Max asked about
+   * this part of the notes" measured 303 px against a 132 px gutter in the live run of 20 Sep,
+   * and put a horizontal scrollbar under the whole document. The full text is on the chip's
+   * `title`, which is where a reason already lived.
+   */
+  max-width: calc(var(--nd-gutter) - 22px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-left: 16px;
   padding: 1px 7px;
   border: 1px solid var(--hairline);
