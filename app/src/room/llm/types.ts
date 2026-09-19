@@ -47,6 +47,21 @@ export interface LlmRequest {
   temperature?: number;
   /** Structured output schema for the orchestrator and the ledger calls. */
   jsonSchema?: Record<string, unknown>;
+  /**
+   * **Images to answer with** (#48, `collab-doc.md` §2: the refine pass runs "with the slide
+   * images"). Absolute paths to files main has already written, with the source page each one
+   * is of, so a `figure` block's `page` can be right.
+   *
+   * Optional, and **nothing in `src/room` reads it** — it is set by `src/main/notes/ingest.ts`
+   * and consumed by the two live backends, which reach the pixels by different doors: the API
+   * path sends base64 image blocks in the user message, and the CLI path, which has no image
+   * flag and a prompt on stdin, grants `Read` for the one directory they are in. The scripted
+   * backend ignores it, as it ignores the model id.
+   *
+   * A path, not bytes: the CLI can only be given a path, and putting a 66-page deck's worth of
+   * JPEG through this object would put it in every log line and every retry.
+   */
+  images?: { path: string; mime: string; page: number }[];
   meta: {
     scope: LlmScope;
     roomId?: string;

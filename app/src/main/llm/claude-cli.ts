@@ -38,7 +38,7 @@
 import { spawn } from 'node:child_process';
 import { accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import type { LLMClient, LlmMessage, LlmRequest, LlmResult, LlmUsage } from '../../room/llm/types.js';
 import { EMPTY_USAGE, LlmAbortedError } from '../../room/llm/types.js';
 
@@ -171,9 +171,18 @@ export const CLI_PRIORITY: Record<string, number> = {
   whisper: 0,
   // Decides who speaks. Usually settled by rule now (`rule:teacher_answers`), rarely a call.
   orchestrator: 1,
-  // Nobody is waiting to read either of these.
+  /**
+   * **The doc edit belongs to the turn the learner is reading** (#48, collab-doc.md §5). It runs
+   * after the agent's words have landed, so it is not on the visible latency path — but it is
+   * what writes the answer into the document, and a learner watching Ellie's cursor sit still
+   * for a minute behind a notes window has been lied to by the cursor. Above the background
+   * lane, below the turn itself.
+   */
+  docedit: 1,
+  // Nobody is waiting to read any of these.
   ledger: 2,
   ingest: 2,
+  notes: 2,
 };
 
 export const CLI_DEFAULT_PRIORITY = 1;
@@ -191,8 +200,16 @@ export const CLI_DEFAULT_PRIORITY = 1;
  * the state it started in, and the next room open or the next answer starts it again. The
  * ledger is *not* here — it is seconds, not a minute, and killing it loses a rail movement that
  * the learner's words have already earned.
+ *
+ * **`notes` is here too, and it is the one that is *not* disposable** (#48). A notes window is
+ * the longest call the app makes and a deck is seven to nine of them back to back, so a learner
+ * who asks a question three windows in must not wait behind one — but a killed window would
+ * lose a slice of the document, not a draft nobody has seen. The difference is paid for in the
+ * caller, not here: `notes/ingest.ts` catches `CliPreemptedError` and **re-queues that window**,
+ * and `ingest_state` on the row means even an app quit resumes rather than redoes. Pre-emption
+ * is a kill; whether it is a loss is the caller's decision, and for this caller it is not.
  */
-export const CLI_PREEMPTIBLE: ReadonlySet<string> = new Set(['ingest']);
+export const CLI_PREEMPTIBLE: ReadonlySet<string> = new Set(['ingest', 'notes']);
 
 /**
  * How long a pre-emptible call waits before it even joins the queue.
@@ -215,7 +232,26 @@ export const CLI_LOW_PRIORITY_GRACE_MS = 1_200;
  * the serialising fix turning into the very wait it was added to prevent. It still must not be
  * *killed*, though — a rail movement the learner's own words earned is not disposable.
  */
-export const CLI_DEFERRED: ReadonlySet<string> = new Set(['ingest', 'ledger']);
+export const CLI_DEFERRED: ReadonlySet<string> = new Set(['ingest', 'ledger', 'notes']);
+
+/**
+ * **One lane, still — and that is a decision, not an omission** (#48).
+ *
+ * A windowed notes ingest is seven to nine serial calls on a 66-page deck, and the obvious fix
+ * is a second lane so the ingest and a learner's question never contend. The comment on
+ * `CliQueue` above is why that is not done: on 2026-09-16 the group call and the ledger call
+ * were dispatched three milliseconds apart and **both** came back `exited 1: no output`. Two
+ * `claude` children starting into the same config at the same instant is a shape the CLI does
+ * not survive, and a second lane would make that the *normal* state of a deck being ingested
+ * rather than a rare race.
+ *
+ * So the ingest is kept off the learner's way by the three mechanisms that do not spawn a second
+ * child: priority 2 (it never takes the lane from something waiting), the grace window above
+ * (the click that starts it is usually the click that asks something), and pre-emption with a
+ * re-queue (what is already running is killed, and retried afterwards). The cost is that the
+ * ingest is *slower* while a learner is asking questions, which is the right way round.
+ */
+export const CLI_SINGLE_LANE = true;
 
 /** Thrown when a background call was killed to let a learner-facing one through. Not a failure. */
 export class CliPreemptedError extends Error {
@@ -337,6 +373,15 @@ export const CLI_RETRY_DELAY_MS = 500;
  */
 export const CLI_TIMEOUT_MS: Record<string, number> = {
   ingest: 300_000,
+  /**
+   * A notes window is the biggest single answer the app asks for: eight to twelve slides in, and
+   * cohesive prose notes with provenance on every block out — several thousand output tokens,
+   * plus (on the image path) a Read tool call per slide before the answer even begins. Measured
+   * on the CS3249 Lecture 4 deck, a text-only window runs 60–150 s and an image window longer.
+   * It is pre-emptible and nobody is waiting on it, so a generous ceiling costs nothing; it only
+   * decides when a stuck child is declared stuck.
+   */
+  notes: 600_000,
 };
 
 /**
@@ -489,12 +534,32 @@ export class ClaudeCliClient implements LLMClient {
 
   /** The argv for one call. Exported shape so the test can assert it without spawning. */
   argsFor(request: LlmRequest, systemText: string): string[] {
+    const images = request.images ?? [];
     return [
       '-p',
       '--model',
       request.model,
+      /**
+       * **`--tools ""` is the rule, and `Read` on an image request is the one exception** (#48).
+       *
+       * The notes ingest's refine pass is specified "with the slide images" (collab-doc.md §2),
+       * and this backend has no image flag and no argv big enough for a JPEG — the prompt is on
+       * stdin for exactly that reason. The only door the CLI leaves open is its own file tools,
+       * so a request that carries `images` is given **Read and nothing else**, plus the one
+       * directory those images are in, and `promptFor` lists the absolute paths with an
+       * instruction to read every one before answering.
+       *
+       * Two properties keep this from eroding the posture argued at the top of this file: the
+       * grant is *per request* (every call without `images` produces byte-identical argv to the
+       * one it produced before this existed, which `claude-cli.test.ts` asserts), and `--add-dir`
+       * names a directory the app itself wrote inside `userData` — the child is not given the
+       * learner's vault, their home directory or the repository. `--strict-mcp-config`,
+       * `--setting-sources ""` and `--disable-slash-commands` are unchanged, so no MCP server and
+       * no user setting rides in with the grant.
+       */
       '--tools',
-      '',
+      images.length > 0 ? 'Read' : '',
+      ...imageDirs(images).flatMap((dir) => ['--add-dir', dir]),
       '--output-format',
       'stream-json',
       '--include-partial-messages',
@@ -711,7 +776,42 @@ export class ClaudeCliClient implements LLMClient {
  * `request.messages` appears in this string, in order.
  */
 export function promptFor(request: LlmRequest): string {
-  return flattenMessages(request.messages);
+  const flat = flattenMessages(request.messages);
+  const images = request.images ?? [];
+  if (images.length === 0) return flat;
+  return `${imageInstruction(images)}\n\n${flat}`;
+}
+
+/** The directories `--add-dir` must name: one per distinct parent, in first-seen order. */
+export function imageDirs(images: readonly { path: string }[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const image of images) {
+    const dir = dirname(image.path);
+    if (dir.length === 0 || seen.has(dir)) continue;
+    seen.add(dir);
+    out.push(dir);
+  }
+  return out;
+}
+
+/**
+ * How a CLI request asks for its images.
+ *
+ * It goes **first**, before the transcript, because it is an instruction about how to answer and
+ * the answer's own instructions are in `--system-prompt`. The paths are absolute and listed one
+ * per line with their page number, so the model can tie a picture to the page whose text it is
+ * reading — a figure block's `page` has to be right, and "the third image" is not a page number.
+ */
+export function imageInstruction(images: readonly { path: string; page: number }[]): string {
+  return [
+    'BEFORE YOU ANSWER: read every one of these slide images with the Read tool. They are the',
+    'slides the text below was extracted from, and they show the layout, the diagrams and the',
+    'figures that the text layer cannot carry. Read all of them, then answer. Do not use any',
+    'other tool, and do not read any other file.',
+    '',
+    ...images.map((image) => `  p. ${image.page}: ${image.path}`),
+  ].join('\n');
 }
 
 export const OWN_TURN_PREFIX = 'You said: ';

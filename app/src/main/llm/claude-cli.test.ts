@@ -28,8 +28,10 @@ import {
   CLI_DROPPED_ENV,
   CLI_LOW_PRIORITY_GRACE_MS,
   CLI_PREEMPTIBLE,
+  CLI_PRIORITY,
   CLI_TIMEOUT_MS,
   CliPreemptedError,
+  imageDirs,
   isEmptyExitOne,
   resolveClaudeBinary,
   systemTextFor,
@@ -562,11 +564,15 @@ describe('the empty `exited 1`', () => {
  * is being asked for, and only for the calls nobody is waiting on.
  */
 describe('the per-scope timeout', () => {
-  it('gives the ingest longer than a turn, and leaves every other scope alone', () => {
+  it('gives the two ingests longer than a turn, and leaves every other scope alone', () => {
     expect(CLI_TIMEOUT_MS.ingest).toBe(300_000);
+    // A notes window is the biggest answer the app asks for, and on the image path it reads a
+    // slide per page before it starts writing (#48).
+    expect(CLI_TIMEOUT_MS.notes).toBe(600_000);
     expect(CLI_TIMEOUT_MS.group).toBeUndefined();
     expect(CLI_TIMEOUT_MS.reference).toBeUndefined();
     expect(CLI_TIMEOUT_MS.ledger).toBeUndefined();
+    expect(CLI_TIMEOUT_MS.docedit).toBeUndefined();
   });
 
   /** Only a call that can be pre-empted for a learner may hold a lane for five minutes. */
@@ -611,5 +617,124 @@ describe('the environment one child is given', () => {
   it('pins thinking off for a schema-bound call and leaves a turn alone', () => {
     expect(cliEnv({ HOME: '/h' }, request({ jsonSchema: { type: 'object' } })).MAX_THINKING_TOKENS).toBe('0');
     expect(cliEnv({ HOME: '/h' }, request()).MAX_THINKING_TOKENS).toBeUndefined();
+  });
+});
+
+/**
+ * **The notes ingest's two lane changes** (#48, collab-doc.md §2).
+ *
+ * A 66-page deck is seven to nine serial windows, each the longest call the app makes. The
+ * constants are what keeps that off a learner's way, and they are asserted rather than trusted
+ * because every one of them was written for a failure that was measured once already.
+ */
+describe('the notes lane', () => {
+  it('is background priority, deferred, and pre-emptible', () => {
+    expect(CLI_PRIORITY.notes).toBe(2);
+    expect(CLI_DEFERRED.has('notes')).toBe(true);
+    expect(CLI_PREEMPTIBLE.has('notes')).toBe(true);
+  });
+
+  it('puts the doc edit above the background lane and below the turn', () => {
+    // It is not on the visible latency path, but a learner is watching the agent's cursor for it.
+    expect(CLI_PRIORITY.docedit).toBe(1);
+    expect(CLI_PRIORITY.docedit).toBeGreaterThan(CLI_PRIORITY.group!);
+    expect(CLI_PRIORITY.docedit).toBeLessThan(CLI_PRIORITY.notes!);
+    expect(CLI_DEFERRED.has('docedit')).toBe(false);
+    expect(CLI_PREEMPTIBLE.has('docedit')).toBe(false);
+  });
+
+  it('kills a running notes window for a learner, so the answer never waits behind one', async () => {
+    cliQueue.reset();
+    const c = client('slow');
+    const window = c.complete(request({ meta: { scope: 'notes' } })).catch((e: Error) => e);
+    await new Promise((r) => setTimeout(r, CLI_LOW_PRIORITY_GRACE_MS + 60));
+    const answer = await c.complete(request({ meta: { scope: 'group' } }));
+    expect(answer.text).toBe('slow');
+    // A `CliPreemptedError` and not a failure: `notes/ingest.ts` re-queues that window, which is
+    // the whole difference between this and the disposable concept ingest.
+    expect(await window).toBeInstanceOf(CliPreemptedError);
+  });
+});
+
+/**
+ * **Images on a backend with no image flag** (#48, collab-doc.md §2: the refine pass runs "with
+ * the slide images").
+ *
+ * The rule this protects is in the header of `claude-cli.ts`: `--tools ""` keeps the user's own
+ * Claude Code configuration out of the room, and it was measured — without it a call loaded
+ * their MCP servers and 6,319 extra cached tokens. So the grant is per request, and every call
+ * that carries no images must produce **byte-identical argv** to the one it produced before this
+ * existed.
+ */
+describe('the image request', () => {
+  const dir = '/tmp/chattered-notes-pages/sha';
+  const withImages = (): LlmRequest =>
+    request({
+      meta: { scope: 'notes', costScope: 'notes' },
+      jsonSchema: { type: 'object' },
+      images: [
+        { path: `${dir}/p-1.jpg`, mime: 'image/jpeg', page: 1 },
+        { path: `${dir}/p-2.jpg`, mime: 'image/jpeg', page: 2 },
+      ],
+    });
+
+  it('leaves every other request’s argv byte-identical', () => {
+    const c = client('ok');
+    expect(c.argsFor(request(), 'SYS')).toEqual([
+      '-p', '--model', 'sonnet',
+      '--tools', '',
+      '--output-format', 'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+      '--no-session-persistence',
+      '--strict-mcp-config',
+      '--setting-sources', '',
+      '--disable-slash-commands',
+      '--system-prompt', 'SYS',
+    ]);
+    expect(c.argsFor(request(), 'SYS')).not.toContain('--add-dir');
+  });
+
+  it('grants Read and the one directory the images are in, and nothing else', () => {
+    const args = client('ok').argsFor(withImages(), 'SYS');
+    expect(args).toEqual([
+      '-p', '--model', 'sonnet',
+      '--tools', 'Read',
+      '--add-dir', dir,
+      '--output-format', 'stream-json',
+      '--include-partial-messages',
+      '--verbose',
+      '--no-session-persistence',
+      // The config isolation is unchanged: no MCP server and no user setting rides in with it.
+      '--strict-mcp-config',
+      '--setting-sources', '',
+      '--disable-slash-commands',
+      '--json-schema', JSON.stringify({ type: 'object' }),
+      '--system-prompt', 'SYS',
+    ]);
+    // One --add-dir per distinct directory, not one per image.
+    expect(args.filter((a) => a === '--add-dir')).toHaveLength(1);
+    expect(args).not.toContain('--bare');
+  });
+
+  it('lists the absolute paths with their page numbers, ahead of the transcript', () => {
+    const prompt = promptFor(withImages());
+    expect(prompt.startsWith('BEFORE YOU ANSWER:')).toBe(true);
+    expect(prompt).toContain(`  p. 1: ${dir}/p-1.jpg`);
+    expect(prompt).toContain(`  p. 2: ${dir}/p-2.jpg`);
+    // The transcript itself is still there, unchanged and last.
+    expect(prompt.endsWith('Student: a PSD Hessian means convex.')).toBe(true);
+    // And a request with no images is untouched.
+    expect(promptFor(request())).toBe('Student: a PSD Hessian means convex.');
+  });
+
+  it('collapses several directories into one --add-dir each', () => {
+    expect(
+      imageDirs([
+        { path: '/a/p-1.jpg' },
+        { path: '/a/p-2.jpg' },
+        { path: '/b/p-3.jpg' },
+      ]),
+    ).toEqual(['/a', '/b']);
   });
 });
