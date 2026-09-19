@@ -90,6 +90,15 @@ function client(docEdit: Record<string, unknown> | null = null): LLMClient & { r
         const body = JSON.stringify(docEdit ?? { edit: 'none', points_to: 'b_bbb', why: 'the notes already say it' });
         return { text: body, model: request.model, usage, ttftMs: 1, backend: 'scripted' as const };
       }
+      /**
+       * Ellie's cue (#48 §4.3) is the one agent turn that is schema-bound rather than streamed,
+       * and it takes a different branch of `#generate`. It is here because a call that leaves by
+       * a different door is exactly the kind that gets its `meta` set on the door it does not use.
+       */
+      if (request.meta.scope === 'group' && request.jsonSchema) {
+        const body = JSON.stringify({ text: 'I think it is the forwarding that costs, but I am not sure.', has_mistake: false, claim: '' });
+        return { text: body, model: request.model, usage, ttftMs: 1, backend: 'scripted' as const };
+      }
       if (request.meta.scope === 'orchestrator') {
         const body = JSON.stringify({ speak: true, role: 'peer', move_type: 'respond', rationale: 'x' });
         return { text: body, model: request.model, usage, ttftMs: 1, backend: 'scripted' as const };
@@ -525,5 +534,33 @@ describe('no learner text may reach a cost surface', () => {
     // And nothing that came back is a body under another name: the only strings on these shapes
     // are ids, model names, scopes and timestamps.
     expect(serialised).not.toContain('side channel');
+  });
+});
+
+describe('Ellie’s cue', () => {
+  /**
+   * The schema-bound turn (#48 §4.3). It leaves `#generate` by a different door from every other
+   * agent turn, which is exactly the kind of call that ends up with its `meta` set on the door it
+   * does not use — so it is asserted on its own rather than assumed to be covered by `group`.
+   */
+  it('is billed like any other turn, to the thread and the turn that fired it', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const before = h.rows().length;
+    // Max's question has waited past the reading time with no attempt: `rule:ellie_cue`.
+    await settle(h.clock, Promise.resolve(), 200_000);
+
+    const cued = h.llm.requests.find((r) => r.meta.scope === 'group' && r.jsonSchema !== undefined);
+    expect(cued, 'the cue never fired').toBeDefined();
+    expect(cued!.meta.turnId).toMatch(/^turn_/);
+    expect(cued!.meta.anchorId).toBe(DOC);
+
+    const added = h.rows().slice(before).filter((r) => r.scope === 'group');
+    expect(added.length).toBeGreaterThan(0);
+    for (const row of added) {
+      expect(row.anchor_id).toBe(DOC);
+      expect(row.file_id).toBe(FILE);
+      expect(row.turn_id).toMatch(/^turn_/);
+    }
   });
 });
