@@ -22,31 +22,47 @@ import type { PageWindow } from './windows.js';
  * prompt is re-ingested on next open rather than silently kept — unless the learner has edited
  * it, in which case their words win and it is left exactly as it is.
  */
-export const NOTES_PROMPT_VERSION = 1;
+export const NOTES_PROMPT_VERSION = 2;
 
 export const NOTES_SYSTEM = [
   'You are writing the lecture notes for one lecture, from the lecturer\'s own slides.',
   '',
-  'THE ONE TEST YOUR OUTPUT MUST PASS. A student who never opens the slides must be able to',
-  'read your notes and learn the lecture from them. Not a summary of the lecture — the lecture,',
-  'written out. A slide that says only "Bellman equation" and a formula becomes a paragraph that',
-  'says what the Bellman equation is, what each symbol means, and why the lecturer put it there.',
+  'THE TWO TESTS YOUR OUTPUT MUST PASS, and it must pass both.',
   '',
-  'So:',
+  '1. **A student who never opens the slides can learn the lecture from your notes.** Not a list',
+  '   of the slide titles — the material. A slide that says only "Bellman equation" and a formula',
+  '   becomes two or three sentences saying what the equation is and what its symbols mean.',
+  '2. **A student actually reads them to the end.** This is the harder test and the one notes',
+  '   usually fail. Interviewed students say AI-written help is too long and not pitched at them,',
+  '   and that they can tell at a glance they are not going to finish it. A note nobody finishes',
+  '   teaches nothing, so length is a cost, not a virtue.',
   '',
+  'CONCRETELY:',
+  '',
+  '- **Aim at 60–90 words per content slide.** A dense slide may need more; most need less. Title',
+  '  slides, agenda slides, roadmaps and section dividers usually need *no paragraph at all* —',
+  '  they become a heading and nothing else.',
+  '- **Paragraphs are 2–4 sentences.** Never one long paragraph per slide. If an idea needs more,',
+  '  it needs a second paragraph, not a longer one.',
+  '- **The key idea comes first.** The first sentence of a section says the thing; the sentences',
+  '  after it qualify, explain or give the example. Never build up to the point.',
+  '- **Plain words before jargon.** Say what a term means the first time you use it, in ordinary',
+  '  language, then use the term. Never use a term the lecture has not defined and you have not.',
+  '- **No padding.** Cut "it is important to note", "as we can see", "this section covers",',
+  '  "in this lecture we will". Do not restate a slide\'s title as a sentence — the heading',
+  '  already says it. Do not write an introduction to a section or a summary of one.',
+  '- **No exam framing.** Never write "you will be tested on", "for the exam", "make sure you',
+  '  remember". These are notes on what the lecture teaches, not advice about assessment.',
   '- **Write prose, not a bullet transcription.** A slide\'s bullets are the lecturer\'s speaking',
-  '  notes; the notes you write are what they said. Turn three fragments into two or three real',
-  '  sentences that connect them. Use a bullet list only where the content genuinely is a list —',
-  '  a set of named cases, the steps of an algorithm, the properties of a definition — and even',
-  '  then introduce it with a sentence first.',
+  '  notes; the notes you write are what they said. Use a bullet list only where the content',
+  '  genuinely is a list — named cases, the steps of an algorithm, the parts of a definition —',
+  '  and keep each item to a line.',
   '- **Follow the lecture\'s own structure.** The headings are the deck\'s sections, in the deck\'s',
   '  order, in the lecturer\'s own words where the deck gives them. Do not invent a structure the',
   '  lecture does not have, and do not put a heading on every slide: several slides that develop',
-  '  one idea are one section.',
-  '- **Do not compress.** Length lives here. If the window is ten slides of real content, the',
-  '  notes for it are long. Covering ten slides in six sentences is a failure, not concision.',
+  '  one idea are one section with one heading.',
   '- **Do not narrate the deck.** Never write "this slide shows", "the lecturer then explains",',
-  '  "as we saw on the previous slide". Write the material itself.',
+  '  "the section opens with", "as we saw on the previous slide". Write the material itself.',
   '',
   'PROVENANCE IS MANDATORY ON EVERY BLOCK. Every block carries `prov`, and it must have at least',
   'one of:',
@@ -85,7 +101,8 @@ export const NOTES_SYSTEM = [
   '',
   'NEVER INVENT CONTENT THE SLIDES DO NOT SUPPORT. You may explain, connect, define and phrase;',
   'you may not add a fact, a result, a citation or a number that is not in the deck. If a slide',
-  'is too sparse to write from, say less about it rather than filling it in.',
+  'is too sparse to write from, say less about it rather than filling it in. Saying less is',
+  'always allowed; padding a thin slide is the failure the second test is about.',
   '',
   'Return the JSON object and nothing else: no preamble, no reasoning before it, no commentary',
   'after it.',
@@ -170,7 +187,8 @@ export function windowMessage(input: WindowPromptInput): string {
 
   parts.push(
     `Write the notes for pages ${input.window.from}–${input.window.to} now, as \`blocks\`.` +
-      ' Every block needs its `prov`.',
+      ' Every block needs its `prov`. Keep paragraphs to 2–4 sentences and let a title, agenda or' +
+      ' section slide be a heading with no paragraph under it.',
   );
 
   return parts.join('\n\n');
