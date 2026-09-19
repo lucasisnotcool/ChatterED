@@ -38,6 +38,19 @@ import { Fragment, Mark, Node, Schema, type MarkSpec, type NodeSpec } from 'pros
 import type { Transaction } from 'prosemirror-state';
 import type { DocAuthor, OutlineEntry, Rect } from './types.js';
 
+/**
+ * What a `parseDOM` handler below actually touches: one method.
+ *
+ * It is spelled out rather than written `HTMLElement` because of the "No DOM" paragraph above.
+ * This file is compiled into the **main** bundle as well as the renderer's — the ingest validates
+ * its drafts against this schema — and `tsconfig.main.json`'s `lib` is `ES2022` with no DOM, so
+ * naming `HTMLElement` here fails `npm run build:main` even though main never runs a parse rule.
+ * `HTMLElement` is assignable to this, so the rules still type-check where a view supplies one.
+ */
+interface AttrSource {
+  getAttribute(name: string): string | null;
+}
+
 // ── ids ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -97,7 +110,7 @@ function blockDataAttrs(node: Node): Record<string, string> {
 }
 
 /** The inverse, for `parseDOM`. Only ever runs inside a view; kept symmetrical so paste works. */
-function readBlockAttrs(dom: HTMLElement): Record<string, unknown> {
+function readBlockAttrs(dom: AttrSource): Record<string, unknown> {
   const pages = (dom.getAttribute('data-pages') ?? '')
     .split(',')
     .map((n) => Number.parseInt(n, 10))
@@ -132,7 +145,7 @@ const heading: NodeSpec = {
   attrs: { level: { default: 1 }, ...BLOCK_ATTRS },
   parseDOM: [1, 2, 3].map((level) => ({
     tag: `h${level}`,
-    getAttrs: (dom: HTMLElement) => ({ ...readBlockAttrs(dom), level }),
+    getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), level }),
   })),
   toDOM: (node) => [`h${String(node.attrs.level)}`, blockDataAttrs(node), 0],
 };
@@ -152,7 +165,7 @@ const ordered_list: NodeSpec = {
   parseDOM: [
     {
       tag: 'ol',
-      getAttrs: (dom: HTMLElement) => ({
+      getAttrs: (dom: AttrSource) => ({
         ...readBlockAttrs(dom),
         start: Number.parseInt(dom.getAttribute('start') ?? '1', 10) || 1,
       }),
@@ -175,7 +188,7 @@ const list_item: NodeSpec = {
   content: 'paragraph block*',
   defining: true,
   attrs: { blockId: { default: '' } },
-  parseDOM: [{ tag: 'li', getAttrs: (dom: HTMLElement) => ({ blockId: dom.getAttribute('data-block-id') ?? '' }) }],
+  parseDOM: [{ tag: 'li', getAttrs: (dom: AttrSource) => ({ blockId: dom.getAttribute('data-block-id') ?? '' }) }],
   toDOM: (node) => {
     const id = node.attrs.blockId as string;
     return ['li', id ? { 'data-block-id': id } : {}, 0];
@@ -198,7 +211,7 @@ const code_block: NodeSpec = {
     {
       tag: 'pre',
       preserveWhitespace: 'full',
-      getAttrs: (dom: HTMLElement) => ({ ...readBlockAttrs(dom), lang: dom.getAttribute('data-lang') }),
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), lang: dom.getAttribute('data-lang') }),
     },
   ],
   toDOM: (node) => {
@@ -218,7 +231,7 @@ const math_block: NodeSpec = {
   parseDOM: [
     {
       tag: 'div[data-math-block]',
-      getAttrs: (dom: HTMLElement) => ({ ...readBlockAttrs(dom), tex: dom.getAttribute('data-tex') ?? '' }),
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), tex: dom.getAttribute('data-tex') ?? '' }),
     },
   ],
   toDOM: (node) => [
@@ -249,7 +262,7 @@ const q_block: NodeSpec = {
   parseDOM: [
     {
       tag: 'section[data-question-id]',
-      getAttrs: (dom: HTMLElement) => ({
+      getAttrs: (dom: AttrSource) => ({
         ...readBlockAttrs(dom),
         questionId: dom.getAttribute('data-question-id') ?? '',
         askedBy: dom.getAttribute('data-asked-by') ?? 'max',
@@ -292,7 +305,7 @@ const slide_figure: NodeSpec = {
   parseDOM: [
     {
       tag: 'figure[data-page]',
-      getAttrs: (dom: HTMLElement) => ({
+      getAttrs: (dom: AttrSource) => ({
         ...readBlockAttrs(dom),
         page: Number.parseInt(dom.getAttribute('data-page') ?? '1', 10) || 1,
         rect: parseRect(dom.getAttribute('data-rect')),
@@ -344,7 +357,7 @@ const math_inline: MarkSpec = {
   attrs: { tex: { default: '' } },
   inclusive: false,
   parseDOM: [
-    { tag: 'span[data-tex]', getAttrs: (dom: HTMLElement) => ({ tex: dom.getAttribute('data-tex') ?? '' }) },
+    { tag: 'span[data-tex]', getAttrs: (dom: AttrSource) => ({ tex: dom.getAttribute('data-tex') ?? '' }) },
   ],
   toDOM: (mark) => ['span', { 'data-tex': mark.attrs.tex as string, class: 'math-inline' }, 0],
 };
@@ -376,7 +389,7 @@ const author: MarkSpec = {
   parseDOM: [
     {
       tag: 'span[data-author]',
-      getAttrs: (dom: HTMLElement) => ({
+      getAttrs: (dom: AttrSource) => ({
         by: dom.getAttribute('data-author') ?? 'ingest',
         editId: dom.getAttribute('data-edit-id'),
         at: Number.parseInt(dom.getAttribute('data-at') ?? '0', 10) || 0,
@@ -402,7 +415,7 @@ function suggestMark(kind: 'ins' | 'del'): MarkSpec {
     parseDOM: [
       {
         tag: `span[data-suggest="${kind}"]`,
-        getAttrs: (dom: HTMLElement) => ({
+        getAttrs: (dom: AttrSource) => ({
           suggestionId: dom.getAttribute('data-suggestion-id') ?? '',
           by: dom.getAttribute('data-by') ?? 'max',
         }),

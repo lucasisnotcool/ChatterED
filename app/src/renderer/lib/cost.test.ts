@@ -61,6 +61,11 @@ function call(partial: Partial<CostCallView> = {}): CostCallView {
     anchorId: 'seg-1',
     turnId: 't1',
     backfilled: false,
+    // `outcome` became a required field on the view when failed calls started being recorded
+    // (`main/cost/client.ts`); without a default here the spread of a `Partial` widens it back
+    // to `CostOutcome | undefined` and the factory stops type-checking. Every call this file
+    // builds is a call that returned, so 'ok' is the right default.
+    outcome: 'ok',
     ...partial,
   };
 }
