@@ -157,6 +157,22 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
     expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(false);
   });
 
+  /**
+   * Max's question belongs to the thread it was asked in. A question the learner asks from
+   * another thread (a Ctrl+E span elsewhere in the notes) is Ellie's, and it neither clarifies
+   * nor attempts the one that is open.
+   */
+  it('sends a question asked in another thread to Ellie, and leaves Max’s question open', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('what does a strict subset mean here?', 'span_0123456789ab'));
+
+    expect(rules(h)).toEqual(['rule:ellie_answers', 'rule:max_followup', 'rule:ellie_answers']);
+    const quiz = h.actor.pendingQuizView()!.quiz;
+    expect(quiz.attempts).toBe(0);
+    expect(quiz.answerShown).toBe(false);
+  });
+
   /** …and it fires again once that question has been resolved. */
   it('fires again on the next question, once the open one has closed', async () => {
     const h = build();

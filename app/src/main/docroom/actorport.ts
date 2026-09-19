@@ -80,3 +80,13 @@ export function requireActorMethod<K extends keyof DocActorMethods>(actor: DocAc
   }
   return (actor as unknown as Record<string, DocActorMethods[K]>)[method as string]!;
 }
+
+/**
+ * **T3's nine methods have landed** (lead, integration pass, #48). This line is the proof, checked
+ * by the compiler on every build: if `RoomActor` ever stops satisfying `DocActorMethods` — a
+ * renamed method, a changed parameter — this file stops compiling, which is where the mismatch
+ * should be found, rather than at the runtime guard above on a learner's first message. The guard
+ * stays: it costs nothing, and the handler tests drive a fake actor through it.
+ */
+const ROOM_ACTOR_SATISFIES_DOC_ACTOR: RoomActor extends DocActorMethods ? true : never = true;
+void ROOM_ACTOR_SATISFIES_DOC_ACTOR;

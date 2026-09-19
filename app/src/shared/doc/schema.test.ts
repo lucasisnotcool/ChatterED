@@ -185,6 +185,16 @@ describe('docOutline', () => {
     expect(outline[0]!.text.endsWith('…')).toBe(true);
   });
 
+  it('gives a block the learner wrote in far more room, so their notes reach the prompt', () => {
+    const long = Array.from({ length: 60 }, (_, i) => `w${String(i)}`).join(' ');
+    const outline = docOutline(docOf(para('b_1', long, 'user')));
+    expect(outline[0]!.learnerText).toBe(true);
+    expect(outline[0]!.text.split(' ')).toHaveLength(60);
+    // …and it is still capped: a pasted essay cannot swamp a turn.
+    const essay = Array.from({ length: 400 }, (_, i) => `w${String(i)}`).join(' ');
+    expect(docOutline(docOf(para('b_2', essay, 'user')))[0]!.text.split(' ')).toHaveLength(160);
+  });
+
   it('names a q_block by its question id', () => {
     const q = notesSchema.nodes.q_block!.create(
       { blockId: 'b_q', questionId: 'q7', pages: [], reason: 'quiz', objectiveIds: [] },

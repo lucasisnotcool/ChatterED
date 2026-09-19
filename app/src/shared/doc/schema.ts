@@ -574,6 +574,14 @@ export function learnerSpans(doc: Node): LearnerSpan[] {
 
 /** ~24 words (the contract). A prompt gets the shape of a block, never its body. */
 const OUTLINE_WORDS = 24;
+/**
+ * **…except a block the learner wrote in** (interviews, `findings.md` §6; #48). P2's central
+ * complaint was that what he writes down is never "registered to the AI", so a block holding
+ * learner-authored text reaches the prompt whole enough to be built on: the agents must answer
+ * *from* the learner's notes, not past them. The cost is prompt budget only on blocks the learner
+ * actually wrote in, and it is capped so a pasted essay cannot swamp a turn.
+ */
+const LEARNER_OUTLINE_WORDS = 160;
 
 function truncateWords(text: string, limit = OUTLINE_WORDS): string {
   const words = text.replace(/\s+/g, ' ').trim().split(' ').filter((w) => w.length > 0);
@@ -588,7 +596,10 @@ function outlineText(node: Node): string {
   }
   if (node.type.name === 'math_block') return truncateWords(node.attrs.tex as string);
   // `\n` between a list's items so two bullets do not read as one sentence.
-  return truncateWords(node.textBetween(0, node.content.size, '\n', ' '));
+  return truncateWords(
+    node.textBetween(0, node.content.size, '\n', ' '),
+    hasLearnerText(node) ? LEARNER_OUTLINE_WORDS : OUTLINE_WORDS,
+  );
 }
 
 function entryFor(node: Node, path: string[]): OutlineEntry {

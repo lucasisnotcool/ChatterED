@@ -840,6 +840,27 @@ export class RoomActor {
        * Only an **attempt** puts the room in feedback debt. An answer request, a clarification or
        * an "ok" leaves the count where it is, which is what makes the lock about having tried.
        */
+      /**
+       * **Max's question lives in one thread, and only that thread answers it** (#48, brief §4.2:
+       * *"Ellie's answer to a new learner question simply stands, and Max's open question stays
+       * open"*). The collab doc has several threads at once — the doc chat and every Ctrl+E span
+       * thread — so a learner who highlights another paragraph and asks about it while Max waits
+       * is asking Ellie, exactly as "+ Ask here" was. Without this, that question was classified
+       * against Max's and drew `rule:quiz_clarify`, or counted as an attempt at a question it was
+       * not about. Inside the question's own thread nothing changes: a clarification there is
+       * still Max's (row 5), and `@Ellie` is still the way to reach her from it.
+       */
+      // Collab-doc rooms only, like `rule:max_followup`: the old flow's scripted take answers a
+      // hand-off question from a neighbouring card, and keeps working until that UI is removed.
+      if (
+        origin !== 'ask' &&
+        this.#docPort.docId() !== null &&
+        this.#pendingQuiz !== null &&
+        quizOpen(this.#pendingQuiz) &&
+        (this.#anchorOfQuiz(this.#pendingQuiz) ?? null) !== (anchorId ?? null)
+      ) {
+        origin = 'ask';
+      }
       this.#lastLearnerTurn = origin === 'ask' ? null : classifyLearnerTurn(body);
       /**
        * **An Ask never touches the open question.** Not the attempt count, not the answer lock, not
