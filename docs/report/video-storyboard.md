@@ -1,62 +1,47 @@
-<!-- Extracted verbatim from docs/research/flow-build-plan.md §2 by tools/make-submission-zip.sh.
-     The plan is the source of truth; edit it there, not here. -->
+# The video: 14 beats, under 10 minutes
 
-## 2. The video — 16 beats, ≤ 10 minutes
+**Re-cut 19 Sep 2026 for #48**, against `docs/research/collab-doc.md` §7. This file is now the
+source of truth for the video; the version extracted from `flow-build-plan.md` §2 filmed the attempt
+loop on slide crops, which #48 replaced. (`tools/make-submission-zip.sh` still extracts the old §2
+and has to be pointed here before the ZIP is built.)
 
-**Re-cut 19 Sep 2026 for #47**, against `attempt-first.md` §6, which supersedes the version of this
-section that filmed the time-based hand-off as the Tester's only door. The hero interaction is now
-the **attempt loop**: ~5½ of the 10 minutes on it, document machinery compressed into one beat, and
-the whisper down to a sentence.
+**Deck:** `Academia/Sources/CS3249+Lecture+4.pdf`, the module's own Week 4 lecture on prototyping
+CUIs, 66 slides. **Backend:** live (the local Claude CLI, Sonnet 5). **Everything on screen is
+real.** Ingest the deck **before** filming and film beat 4 on a second, short deck so the viewer
+sees an ingest start without waiting through one.
 
-**Deck:** `Academia/Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf` (#32) —
-7 pages, 16:9, tagged, committed, and it is Lucas's own work, which removes any question about showing
-someone else's material on camera. **Backend:** `scripted`. **Network:** off. The learner's lines are
-typed live and are `CRITIQUE1_LEARNER_LINES` in `app/src/room/llm/script.critique1.ts`.
+**Filming rules.** (1) Face visible through every talking beat: 1 of the 5 video marks is
+ownership, and the brief asks for it. (2) One window, three columns, no cuts inside a beat. (3) The
+learner's lines are typed live, not pasted. (4) A live model will not say the same words twice: the
+*rules* are what is being demonstrated, so narrate the rule tag under each turn, not the wording.
+(5) Set the pacing profile to **Demo** so Ellie's cue arrives in seconds, and say so once.
 
-**Four filming rules.** (1) One deck, one scroll position per beat, camera still. (2) The first thing
-the viewer sees the machine do is *propose*, not *write* — a tick, not a paragraph. (3) Say "scripted"
-the first time something is scripted, then stop apologising: `ScriptedClient` replays real turns
-through the real actor, the real rules, the real ledger gates and the real whisper scoping. (4) Face
-visible throughout the talking beats — 5 of the 16 marks depend on it.
-
-**One deviation from the brief, stated here rather than discovered in the edit.** §6 says the loop
-runs on *one* slide. It runs on **two cards**: the lower half of page 3 and page 5. The "+ Try this"
-pick is scoped to the objectives the card teaches (§2.1), and page 3's lower card teaches exactly one,
-so a second question on a row still at ○ has to come from another card. One scroll, and beat 9 says
-why out loud — which is a better demonstration of *"questions based on my weaknesses"* than a second
-question on the objective just answered would have been.
+**What the rubric's 5 marks want:** one complete multi-turn interaction (2), project-specific
+reasoning: the problem, how learner and CUI divide the work, one design decision, one limitation
+(2), and evidence that it is yours (1). Beats 1–3 and 13–14 carry the reasoning and need no app:
+record them first.
 
 | # | t | Frame | What happens | What is said |
 |---|---|---|---|---|
-| 1 | 0:00 | Face | Name, module, the task in one sentence. | "One learning task: reading a lecture deck and being able to defend what it says — in your own words, not the machine's." |
-| 2 | 0:25 | Face + quote slide | Step 1 in 40 s: the coded study of six real AI study sessions, the difficulty, one verbatim quote. | "In five of six sessions, not one learner turn contained the learner's own attempt — and the AI never asked for one. Every offer to quiz was declined. The difficulty is **reduced persistence**: *[verbatim quote]*. The one session that worked, worked because the learner typed *'I will attempt the question'* and *'do not send the answer'*." |
-| 3 | 1:05 | Two screenshots | Old: PDF left, chat right. New: the flow. | "Everything they showed me was this shape, and the attempt ends up in neither half. So I moved the conversation into the deck — and made the learner go first." |
-| 4 | 1:25 | **App, real** — the whole document machinery, one beat | Open the deck from the vault: seven crop cards, a build-steps chip. Scroll to page 3, hover a tick, click it — the card divides in place. Toggle **Original pages** on and off. | "Their own file, out of their own folder — each card is a crop of the rendered page, so the maths and the figures are the lecturer's pixels. Those ticks are the page's own geometry saying where a boundary *could* go: local, no model, no network. That split was a number changing, not a re-render, and the toggle proves it — nothing was ever converted." |
-| 5 | 2:05 | **+ Try this** | The second faint line under the new card. Click it. The thread opens and the Tester asks **one** question, back in 4 s. | "Two lines under every card. *Ask here* gets me an explanation. *Try this* gets me a question — and it is a button, not an offer I can decline, because a declinable offer is exactly what all six of those sessions declined. It came back in four seconds, not eleven: I asked for it." |
-| 6 | 2:35 | **The attempt, typed** | The learner types the attempt in full, on camera. Nothing else speaks. | "This is the turn that did not exist in five of six transcripts. Nobody is talking over me while I write it, and the app will not answer its own question while it waits." |
-| 7 | 3:15 | **Grounded feedback** | Amber ring, `Max is reading…`, the counter climbing 9–12 s. Then feedback: **Partly there** first, then what landed, what was missing, the correction — each with a `p. 3: "…"` quote of the page's own words — and one follow-up question at the end; the composer now reads *Your next attempt…* | "Eleven seconds, deliberately: Tan et al. found two-second replies read as less thoughtful, and nine got the best usefulness ratings. And every judgement in there cites the slide. In the session I coded, the AI's verdict on the learner's answer was wrong 11 times out of 21 — nine of them calling a correct answer wrong — and the learner replied 'ok'. You cannot say 'ok' to a quote you can read." |
-| 8 | 4:05 | **The ledger moves** | `○ → ◐` on the whisper-analogy row, with the learner's own sentence quoted under it. The limit-tests row does not move. | "That moved because *I* wrote it — the rail quotes my sentence, and rule one is that the evidence has to be a verbatim substring of something I typed. Agreement moves nothing. And notice what stayed at ○." |
-| 9 | 4:35 | **Try another** | The control under the feedback. On the page 5 card, **+ Try this** again; the question is on the row still at ○. | "The next question is picked by level, lowest first. One of my participants wrote that she could not track her own progress, so she prompted it to ask questions about her weaknesses — that is this button." |
-| 10 | 5:00 | **The answer, withheld** | The learner types *"what's the answer?"* — R6's own words. One narrowing hint comes back, one clause saying a single try unlocks the answer, and **no answer**. Under the composer: *"Max won't give the answer until you've tried once."* | "This is the design decision I most want to be judged on. In the session I coded, that question was asked five times before the learner imposed attempt-first by hand — and answered five times. Here it is refused, and it is refused by a rule in the orchestrator that runs before any model is consulted. The model is never asked whether to answer its own question." |
-| 11 | 5:45 | **+ Ask here**, mid-quiz | On the same card, the Ask line. The Teacher answers the *prerequisite* — what "a strict subset of the main session" means — and says she will not answer the Tester's question. | "The explain path never goes away; it is one click, and it answers first. What it will not do is do the quiz for me. The deck assumes I know what a session's context is and never defines it — so the thing I was actually missing was never the answer." |
-| 12 | 6:25 | **Second attempt, second feedback** | The learner types the second attempt. *Partly there* again, grounded on page 5, ending on a follow-up, and `○ → ◐` on the limit-tests row. | "Same loop, harder question, and the same two quotes underneath it. Both rows are at ◐ now. Neither is at ● — that one needs a challenge I have survived, and I have not." |
-| 13 | 7:05 | **Show the answer** | The control is visible now, and was not before. Click it: the model answer, with its grounds, and a line naming what the attempt already had. The rail does not move. | "Available now, because I have tried once. Watch the rail while it arrives: nothing moves. I read this, I did not write it — so it is logged, and it earns me nothing." |
-| 14 | 7:35 | **Whisper popover** | `⌘K`; the embarrassing question; a private answer; **Insert into the document**. | "One sentence on this: `/btw` from my Critique 1 claimed it could send something back and couldn't — this can, with my permission, and that is the only path from private to shared." |
-| 15 | 7:50 | **Compare-on-hover** + **a scan** | Hover the page chip: the source page with the segment outlined. Then open a scanned PDF: whole pages, with the notice. | "When it is not a slide deck it says so and gives you whole pages. It is honest about what it cannot segment, which matters more than pretending." |
-| 16 | 8:05 | Face, 1:30 | Division of labour · one design decision · one limitation · real vs scripted. | Decision: *"The answer is withheld until the learner has typed one attempt — and that is a rule in the orchestrator, not a line in a prompt. `classifyLearnerTurn` reads the turn, `rule:answer_withheld` fires, and the model is never asked whether to answer its own question. It is the protocol one of my six learners built by hand, made the default."* Limitation: *"Feedback grounds are asked for, not verified. The prompt requires a `p. N` quote; nothing in the code checks it against the page — the scripted path is checked in a test, a live model is not. The SQL session is exactly why that is A2's first job: 11 wrong verdicts out of 21, and the learner accepted them."* |
+| 1 | 0:00 | Face | Name, module, the task in one sentence. | "One learning task: a student has a lecture deck, a test coming, and wants to understand it well enough to answer questions about it, in their own words." |
+| 2 | 0:20 | Face + one slide of numbers | Step 1 in 50 s. | "I interviewed **[LUCAS: n]** students and coded six real AI study sessions turn by turn. In five of six, not one learner turn held the learner's own reasoning, and the AI never asked for any. **Whoever asks the question does the thinking, and by default that is the AI.** Two learners did want to be tested and had to build it by hand; one typed 'do not send the answer' and later 'I will attempt the question… increase or reduce the difficulty'. Before that, five of six questions ended in 'answer?', granted every time. The difficulty is **reduced persistence**: the chat gives your attempt no place, and no reason to keep going once it gets hard. **[LUCAS: one interview quote.]**" |
+| 3 | 1:10 | Two screenshots | Old shape: deck left, chat right. New shape: file panel, notes, chats. | "Half of them opened by asking for lecture notes, so notes are the artefact. But notes you write *with* two collaborators, like a shared doc, where one of them keeps asking you things." |
+| 4 | 1:30 | **App** — ingest, on a short deck | Drop a PDF in. "Ellie is reading the slides…", then the first section appears and keeps filling in. Cut to the Week 4 deck, already ingested. | "Two passes: all the slide text and geometry first, then a model refines it into notes you can read without the slides. It takes a few minutes on 66 slides, so here is one I made earlier." |
+| 5 | 2:00 | **Provenance** | Click a `p. 23` chip: the slide opens in the modal. Scroll past an inline diagram. Open the collapsed carousel. | "Every block knows which slide it came from, or says why it was added. In one session I coded, 'all lectures' silently became lectures 7 to 13, and nobody could tell. Diagrams are crops of the real slide, not redrawn." |
+| 6 | 2:35 | **Highlight, Ctrl+E, ask** | Highlight a sentence, Ctrl+E, type a question. Ellie answers in chat (tag: *ellie answers*); her green cursor types the missing explanation into the notes. | "I ask at the sentence, not with a screenshot. Ellie answers, and because the notes did not already say it, she writes it in. Green is hers; one click removes it." |
+| 7 | 3:20 | **Max asks** | Max's one follow-up appears in chat (tag: *max followup*) and as a red question block in the notes. | "Then the part no AI did in five of six sessions: it asks *me*. One question, by rule, never two open at once. And it lives in the notes until I deal with it." |
+| 8 | 3:45 | **I try; feedback; the bar** | Type an attempt. Max: *Partly there*, a `p. N` quote, a follow-up on the gap. Answer again: *Well done*. A bar segment fills; Max's corrected answer is typed under his question. Open the lesson card: "You wrote: '…'". | "A verdict first, then the slide it rests on: in the session I coded the AI's verdict was wrong 11 times in 21 and the learner said 'ok'. You cannot say 'ok' to a quote you can read. The bar filled because *I* wrote that; the card shows my sentence." |
+| 9 | 5:00 | **I stall; Ellie's guess** | Next question. Say nothing. Ellie offers a hedged, half-right take (tag: *Ellie's guess*); Max asks whether she is right. | "This is the design decision I most want judged. When I go quiet, I do not get the answer and I do not get nagged. I get a classmate who is half right. Xu and colleagues found people explain more to a peer than to a tutor. She may even be wrong on purpose, and it is never written into the notes." |
+| 10 | 5:50 | **I give up** | Type "i don't know". Max gives the full answer, corrects Ellie, the bar does not move, and the next question is visibly easier. | "Any way of saying 'I give up' releases the answer, at once, by a rule in code, and earns nothing. And it tells Max the question was too hard. The learner who made AI practice work lowered the difficulty by hand in the same message that set attempt-first. No question is ever left hanging." |
+| 11 | 6:40 | **I write in the notes** | Type a sentence of my own into the notes. After a pause Max assesses it; his correction arrives as strikethrough plus red, with Accept and Reject. Reject it: my text is exactly as it was. Toggle **Freeze**. | "Everything here started as AI text, so the agents may rewrite it freely. What I write, they cannot touch: a guard in code turns any change to my text into a suggestion. And what I write counts as an attempt, like a chat answer." |
+| 12 | 7:30 | **Private thread + Start** | Open Max's private tab, ask something embarrassing, "insert into the document". Then click the bar, a lesson card, **Start**: Ellie announces the objective, the doc scrolls, she asks me to begin. | "Two quick ones. Private threads: the only way out of them is my own click. And the bar is a way in: each objective is a lesson I can start." |
+| 13 | 8:10 | Face | Division of labour. | "I ask, I answer first, I decide when to give up, and I own my text. Ellie writes and explains and thinks aloud as a peer. Max asks, marks, releases, and keeps the notes correct. The rules decide who speaks and whether an answer is due; the model only writes the words. The lecture says the flow becomes the rails in your prompt. Mine are in code, because a prompt is not a contract." |
+| 14 | 8:50 | Face | One limitation, and what A2 tests. | "The limitation: the notes are AI-written and re-typeset. Provenance makes them checkable, but nothing verifies them against the slide, and the same is true of Max's quotes. And releasing the answer on any give-up is a bet that an easier question teaches more than a refusal. My transcripts cannot settle that. It is the first thing A2 tests." |
 
-Budget lands at **9:35**, 25 s under the cap, with the attempt loop (beats 5–13) at **5:30**. **Beats
-1–3 and 16 carry 3 of the video's 5 marks** and depend on nothing in the app — record them first, on
-Sun 21 morning.
+Budget: **9:30**, 30 s under the cap.
 
-**Fallback storyboard.** If the attempt loop's actor side (#47 Tracks A and B: `flow:tryHere`,
-`classifyLearnerTurn`, `rule:answer_withheld`, `rule:answer_shown`) is not green by Saturday, beats
-5–13 are filmed on the **secondary door** instead: the learner keeps the thread going, the time-based
-hand-off fires by rule, and the same two questions and the same two grounded feedback turns arrive in
-the same order — `script.critique1.ts` asks C2 then C1 at *both* doors for exactly this reason. What is
-lost is beat 10, the withheld answer, which is the one important design decision; so beat 16 says
-instead that the rule is specified, tested at the script level, and not in this build, and beat 5
-becomes *"this door is the design and here is the door that shipped"*. If segmentation falls over,
-beat 4 collapses to *"every page is one segment; splitting is specified and is not in this build"* and
-the fidelity proof moves onto beat 15, which is stronger anyway. Beats 1–3 and 16 are unchanged in all
-three worlds.
+**Fallbacks, in the order they would be needed.** If the live model is slow on the day, beats 6–10
+are filmed on the `scripted` backend (same rules, same actor, replayed words) and beat 13 says so
+once. If Ellie's cue does not fire on camera, press **Pass** in beat 10 instead and describe beat 9
+over the rule tag in the log. If suggestions misbehave, beat 11 shows the guard refusing an agent
+edit to my text (the edit lands beside it instead), which demonstrates the same rule.
