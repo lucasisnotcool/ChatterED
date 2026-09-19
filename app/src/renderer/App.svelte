@@ -13,6 +13,7 @@
   import StatusBar from './components/StatusBar.svelte';
   import TopicSheet from './components/TopicSheet.svelte';
   import TitleBar from './components/TitleBar.svelte';
+  import Usage from './components/Usage.svelte';
   import { store } from './lib/store.svelte.js';
 
   void store.init();
@@ -55,6 +56,8 @@
         <SessionSetup />
       {:else if store.screen === 'settings'}
         <Settings />
+      {:else if store.screen === 'usage'}
+        <Usage />
       {:else if store.room}
         <Room room={store.room} />
       {/if}

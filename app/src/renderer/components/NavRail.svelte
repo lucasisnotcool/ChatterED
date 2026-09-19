@@ -32,6 +32,19 @@
 
   <span class="spacer"></span>
 
+  <!-- Usage (#42 item D). A real item with its own screen, next to Settings rather than inside
+       it: what a semester of this app costs is a question with a page, not a section. -->
+  <button
+    type="button"
+    class="item"
+    class:active={store.screen === 'usage'}
+    title="Usage"
+    aria-label="Usage"
+    onclick={() => void store.openUsage()}
+  >
+    <span class="icon" aria-hidden="true">◴</span>
+  </button>
+
   <button
     type="button"
     class="item"
