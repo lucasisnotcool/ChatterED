@@ -396,6 +396,12 @@ export async function referenceContext(
 export interface StoredFlowState {
   session: FlowSession | null;
   taught: TaughtItem[];
+  /**
+   * The Tester's open question. **A row written before issue #47 has no `attempts` and no
+   * `answerShown`**, and `flow.ts` reads both as absent rather than as zero-by-luck
+   * (`attemptsOf`, `answerShownOf`): the answer stays withheld until the learner does something,
+   * which is the safe end of the lock.
+   */
   pendingQuiz: PendingQuiz | null;
   answers: ReferenceAnswerState[];
   /** anchorId → the highest `seq` the learner has seen there (audit §7). Absent in old rows. */
@@ -434,12 +440,19 @@ export function flowRoomView(actor: RoomActor, lockedByAnchor: Map<string, strin
   const room = actor.snapshot();
   const seen = actor.seenSnapshot();
   const cards = actor.cardStateSnapshot();
+  /**
+   * **The open Tester question, in the thread it was asked in** (issue #47, `attempt-first.md`
+   * §2.4). At most one is open at a time — `PendingQuiz` is one object per room — so this is a
+   * single lookup rather than a map, and every other thread reports `null`. The renderer reads it
+   * for the composer's *"Max won't give the answer until you've tried once"* line, for **Show the
+   * answer** (`attempts >= 1 && !answerShown`) and for **Try another** (after `feedbackGiven`).
+   */
+  const pendingQuiz = actor.pendingQuizView();
   const threadView = (anchorId: string, messageIds: string[]): FlowThreadView => ({
     anchorId,
     messageIds,
     lockedByAnswerId: lockedByAnchor.get(anchorId) ?? null,
-    // Filled by the attempt loop (issue #47): the actor's pending quiz, projected per thread.
-    quiz: null,
+    quiz: pendingQuiz?.anchorId === anchorId ? pendingQuiz.quiz : null,
     lastSeenSeq: seen[anchorId] ?? 0,
     collapsed: cards[anchorId]?.collapsed ?? false,
     removed: cards[anchorId]?.removed ?? false,

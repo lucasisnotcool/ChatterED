@@ -11,7 +11,9 @@ import type {
   Bootstrap,
   CreateSessionInput,
   FlowAnswerView,
+  FlowShowAnswerView,
   FlowSummaryView,
+  FlowTryView,
   FlowThreadOfView,
   FlowRelayView,
   FlowRoomView,
@@ -26,7 +28,7 @@ import type {
   SettingsView,
 } from '../shared/types.js';
 import { IPC } from '../shared/ipc.js';
-import { rosterFor, PINNED_PAIRING } from '../room/agents.js';
+import { rosterFor, teacherName, PINNED_PAIRING } from '../room/agents.js';
 import { RoomActor } from '../room/actor.js';
 import { FLOW_PROFILE_SETTING, flowProfileFor, type FlowProfile } from '../room/flow.js';
 import type { LLMClient } from '../room/llm/types.js';
@@ -70,6 +72,7 @@ import {
 } from './flowroom.js';
 import type { SegmentDocumentView } from '../shared/segment/types.js';
 import type { LearningObjectiveState, LearningTree } from '../shared/objectives.js';
+import { pickObjectiveForCard } from '../shared/objectives-pick.js';
 import { DECK_ANCHOR_ID, type AskScope } from '../shared/scope.js';
 import type { ReferenceContext } from '../room/reference.js';
 import { capText } from './vault/extract.js';
@@ -912,6 +915,134 @@ export class AppService {
     };
   }
 
+  /**
+   * **"+ Try this"** on one segment (issue #47, `attempt-first.md` §2.1): the learner asks Max for
+   * one question, and this resolves the three things the actor cannot.
+   *
+   *  1. **The room**, created on the first press exactly as `flowAskHere` creates it — a deck whose
+   *     first act is a Try is as much a sitting as one whose first act is a question. It is created
+   *     *before* the tree is checked, because a refusal still has to answer with a `FlowRoomView`
+   *     (the renderer re-renders the thread either way), and creating a room is idempotent.
+   *  2. **The objective**, by `pickObjectiveForCard` — one pure function, unit-tested, shared with
+   *     the renderer so the line's label and the question can never be about different objectives.
+   *     `objectiveId` overrides it: that is the objectives-panel click, and **Try another** on a
+   *     thread the learner wants to stay on.
+   *  3. **The page**, by the same `referenceContext` an Ask uses, so Max can quote the slide he is
+   *     asked to ground his feedback in (§3).
+   *
+   * `refused` and no question when the tree is `pending` or `failed`, in the tree's own words.
+   */
+  async flowTryHere(input: { fileId: string; segmentId: string; objectiveId?: string }): Promise<FlowTryView> {
+    const { roomId } = await openOrCreateFlowRoom(this.#flowDeps(), input.fileId);
+    this.openRoom(roomId, { opener: false });
+    const actor = this.#requireActor(roomId);
+    const anchorId = input.segmentId;
+    const refuse = (reason: string): FlowTryView => ({
+      roomId,
+      anchorId,
+      objectiveId: '',
+      refused: reason,
+      flow: flowRoomView(actor, actor.lockedAnchors()),
+    });
+
+    const tree = this.#d.store.objectives.tree(input.fileId);
+    if (!tree || tree.status !== 'ready') {
+      /**
+       * §2.1: *"if the tree is `pending` or `failed`, the line is disabled with the reason"*. The
+       * two reasons are the panel's own (`renderer/lib/objectives.panelStatus`) so the disabled
+       * line and the panel above it never say different things about the same tree.
+       */
+      const reason =
+        !tree || tree.status === 'pending'
+          ? `${teacherName(rosterFor(this.pairing()))} is still reading the deck.`
+          : (tree.error ?? 'That deck could not be read.');
+      log().info('flow.try.refused', { file_id: input.fileId, status: tree?.status ?? 'none' });
+      return refuse(reason);
+    }
+
+    const card = await this.#cardFor(input.fileId, anchorId);
+    const picked =
+      input.objectiveId && tree.objectives.some((o) => o.id === input.objectiveId)
+        ? { objectiveId: input.objectiveId, reason: 'given' as const }
+        : pickObjectiveForCard({
+            objectives: tree.objectives,
+            states: this.#d.store.objectives.states(input.fileId),
+            card,
+          });
+    if (!picked) return refuse('This deck has no objectives to ask about yet.');
+
+    const objective = tree.objectives.find((o) => o.id === picked.objectiveId)!;
+    const context = await referenceContext(
+      { segments: this.#segments, vault: this.#vault },
+      {
+        fileId: input.fileId,
+        segmentId: anchorId === DECK_ANCHOR_ID ? null : anchorId,
+        // The question is about this page, always: a Try is asked *at* the card (§2.1), so the
+        // scope is stated rather than guessed from a question nobody typed.
+        question: objective.title,
+        scope: 'segment',
+        outline: this.#d.store.materials.get(this.#d.store.rooms.get(roomId)!.material_id)!.outline,
+      },
+    );
+
+    log().info('flow.try', {
+      file_id: input.fileId,
+      anchor_id: anchorId,
+      objective_id: objective.id,
+      pick_reason: picked.reason,
+    });
+    try {
+      await actor.tryHere({ anchorId, objectiveId: objective.id, context });
+    } finally {
+      this.#persistFlow();
+    }
+    this.#ensurePack(roomId);
+    return {
+      roomId,
+      anchorId,
+      objectiveId: objective.id,
+      refused: null,
+      flow: flowRoomView(actor, actor.lockedAnchors()),
+    };
+  }
+
+  /**
+   * **Show the answer** (§2.4). The refusal is the actor's: it is the only thing that knows whether
+   * the learner has attempted the question, which is the whole of the condition. Same division as
+   * `flowStop`.
+   */
+  async flowShowAnswer(input: { roomId: string; threadId: string }): Promise<FlowShowAnswerView> {
+    const actor = this.#requireActor(input.roomId);
+    try {
+      const out = await actor.showAnswer(input.threadId);
+      return {
+        roomId: input.roomId,
+        anchorId: input.threadId,
+        shown: out.shown,
+        refused: out.refused,
+        flow: flowRoomView(actor, actor.lockedAnchors()),
+      };
+    } finally {
+      this.#persistFlow();
+    }
+  }
+
+  /**
+   * The card an anchor names, for the objective pick. `null` for the deck anchor and for a segment
+   * the document no longer has — in both cases nothing is nearer than anything else, and
+   * `pickObjectiveForCard` answers with the lowest level in the deck.
+   */
+  async #cardFor(fileId: string, segmentId: string): Promise<{ segmentId: string; page: number } | null> {
+    if (segmentId === DECK_ANCHOR_ID) return null;
+    try {
+      const view = await this.#segments.document(fileId);
+      const segment = view.segments.find((s) => s.id === segmentId);
+      return segment ? { segmentId: segment.id, page: segment.page } : null;
+    } catch {
+      return null;
+    }
+  }
+
   flowExplainBack(answerId: string): { unlocked: boolean; anchorId: string | null } {
     if (!this.#actor) throw new Error('No open room');
     const result = this.#actor.explainBack(answerId);
@@ -1316,6 +1447,11 @@ export class AppService {
     handle<{ roomId: string; threadId: string }>(IPC.flowSummarise, (input) => this.flowSummarise(input));
     handle<{ summaryId: string }>(IPC.flowThreadOf, (input) => this.flowThreadOf(input));
     handle<{ roomId: string; segmentId: string; text: string }>(IPC.flowSend, (input) => this.flowSend(input));
+    // The attempt loop's two doors (issue #47), next to the Ask they are the counterpart of.
+    handle<{ fileId: string; segmentId: string; objectiveId?: string }>(IPC.flowTryHere, (input) =>
+      this.flowTryHere(input),
+    );
+    handle<{ roomId: string; threadId: string }>(IPC.flowShowAnswer, (input) => this.flowShowAnswer(input));
     handle<{ fileId: string; segmentId: string }>(IPC.flowWhisperOpen, (input) => this.flowWhisperOpen(input));
     handle<{ roomId: string; fileId: string; segmentId: string; threadId: string; text: string }>(
       IPC.flowWhisperSend,

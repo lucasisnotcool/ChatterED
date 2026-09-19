@@ -23,6 +23,7 @@ import {
   type FlowRoomDeps,
 } from './flowroom.js';
 import { API_PLAN } from '../room/llm/models.js';
+import type { RoomActor } from '../room/actor.js';
 import { capText } from './vault/extract.js';
 import { REFERENCE_TEXT_CAP } from './vault/service.js';
 
@@ -249,12 +250,13 @@ describe('what one question is answered from', () => {
 });
 
 describe('where the deck thread renders', () => {
-  /** `flowRoomView` needs three reads off the actor and nothing else. */
-  function fakeActor(anchors: string[]) {
+  /** `flowRoomView` needs four reads off the actor and nothing else. */
+  function fakeActor(anchors: string[], quiz: ReturnType<RoomActor['pendingQuizView']> = null) {
     return {
       snapshot: () => ({ messages: anchors.map((anchorId, i) => ({ id: `m${i}`, anchorId, seq: i + 1 })) }),
       seenSnapshot: () => ({}),
       cardStateSnapshot: () => ({}),
+      pendingQuizView: () => quiz,
     } as unknown as Parameters<typeof flowRoomView>[0];
   }
 
@@ -266,6 +268,24 @@ describe('where the deck thread renders', () => {
   it('leaves a flow with no deck question exactly as it was', () => {
     const view = flowRoomView(fakeActor(['seg_1', 'seg_2']), new Map());
     expect(view.threads.map((t) => t.anchorId)).toEqual(['seg_1', 'seg_2']);
+  });
+
+  /**
+   * **The open question lands on its own thread and on no other** (issue #47, `attempt-first.md`
+   * §2.4). The renderer reads `quiz` for three controls, and a quiz reported on the wrong card would
+   * offer *"Show the answer"* under a question the learner has not been asked.
+   */
+  it('reports the open Tester question only in the thread it was asked in', () => {
+    const quiz = {
+      anchorId: 'seg_2',
+      quiz: { quizMessageId: 'm9', elementId: 'obj_a', attempts: 1, feedbackGiven: true, answerShown: false },
+    };
+    const view = flowRoomView(fakeActor(['seg_1', 'seg_2'], quiz), new Map());
+    expect(view.threads.find((t) => t.anchorId === 'seg_1')!.quiz).toBeNull();
+    const asked = view.threads.find((t) => t.anchorId === 'seg_2')!.quiz!;
+    expect(asked.attempts).toBe(1);
+    expect(asked.answerShown).toBe(false);
+    expect(asked.elementId).toBe('obj_a');
   });
 });
 
