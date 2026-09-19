@@ -7,6 +7,17 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 import type { ChatterEdApi } from '../../shared/ipc.js';
+/**
+ * **The real classifier, imported and not copied** (issue #47, `attempt-first.md` §2.2).
+ *
+ * `src/room/attempt.ts` is where the rule lives, because the orchestrator's answer-withholding
+ * rules read it. It is pure and its only import is `room/ledger.ts`'s `isAgreementPhrase`, which
+ * itself imports nothing but types — so there is no main-process module graph to pull into
+ * `vite dev`, and a local copy would only be a second rule to drift from. The mock classifies a
+ * learner turn with exactly the function the real loop classifies it with; `labels.test.ts` has
+ * reached across the same seam, for the same reason, since the room shipped.
+ */
+import { classifyLearnerTurn } from '../../room/attempt.js';
 import { DECK_ANCHOR_ID, guessScope, scopeShownFor, type AskScope } from '../../shared/scope.js';
 import { refusalMessage, type SegmentDocumentView, type SegmentRefusal } from '../../shared/segment/index.js';
 import type { LearningObjective, LearningObjectiveState, LearningTree } from '../../shared/objectives.js';
@@ -55,62 +66,6 @@ function emptyFlow(fileId: string, refused?: SegmentRefusal['reason']): SegmentD
     segments: [],
     refused: refused ? { reason: refused, message: refusalMessage(refused) } : null,
   };
-}
-
-/**
- * ── the attempt loop's classifier, **copied on purpose** (issue #47) ──────────
- *
- * `docs/research/attempt-first.md` §2.2 puts the real one in `src/room/attempt.ts`, where the
- * orchestrator can call it; this is the dev mock's local copy, and it is a copy rather than an
- * import because this file is renderer-side scaffolding and must not pull the main process's
- * module graph into `vite dev`. **It has to track §2.2**, and the shared tests are the brief's own
- * examples — R6's literal lines — so a drift between the two shows up as a failure here.
- */
-const ANSWER_REQUESTS = [
-  'answer?',
-  "what's the answer",
-  'what is the answer',
-  'just tell me',
-  'give me the answer',
-  'send me the answer',
-  'show me the answer',
-  'solve it',
-  'please solve',
-  'how would you do it',
-  'how do you do it',
-  'i give up',
-  'skip',
-] as const;
-
-/** Ledger rule 4's agreement-only turns: a receipt, not a contribution. */
-const AGREEMENT = new Set([
-  'ok', 'okay', 'k', 'kk', 'yes', 'yeah', 'yep', 'no', 'nope', 'sure', 'right', 'cool', 'nice',
-  'thanks', 'thank', 'you', 'got', 'it', 'i', 'see', 'understood', 'makes', 'sense', 'hmm', 'ah',
-  'oh', 'alright', 'fine', 'great',
-]);
-
-export type MockLearnerTurn = 'attempt' | 'answer_request' | 'question' | 'other';
-
-/**
- * §2.2, in the order the brief states it. The order matters: an answer request that happens to end
- * in `?` is an answer request, and "what's the answer?" must never be read as a clarification.
- *
- * **`attempt` is the default, and a two-word answer is an attempt.** It may not move the ledger —
- * rule 4's eight-word floor is a separate question, answered separately — but it lifts the answer
- * lock, which is §2.2's own sentence and the one thing this function exists to get right.
- */
-export function classifyMockLearnerTurn(body: string): MockLearnerTurn {
-  const text = body.replace(/[\u2018\u2019]/g, "'").trim().toLowerCase();
-  if (text.length === 0) return 'other';
-  const words = text.split(/\s+/);
-  if (words.length <= 25 && ANSWER_REQUESTS.some((phrase) => text.includes(phrase))) {
-    return 'answer_request';
-  }
-  // One sentence: nothing terminal before the final mark.
-  const oneSentence = !/[.?!]\s/.test(text) && !/[.?!].+$/.test(text.slice(0, -1));
-  if (words.length <= 25 && text.endsWith('?') && oneSentence) return 'question';
-  if (words.every((w) => AGREEMENT.has(w.replace(/[^a-z']/g, '')))) return 'other';
-  return 'attempt';
 }
 
 const ROOM = 'mock-room-1';
@@ -571,7 +526,7 @@ export function createMockBridge(): ChatterEdApi {
 
   /** One learner turn into an open quiz, by §2.3's table. Every branch is a rule, never a model. */
   function mockQuizTurn(anchorId: string, quiz: FlowQuizView, text: string, messageId: string): void {
-    const kind = classifyMockLearnerTurn(text);
+    const kind = classifyLearnerTurn(text);
     if (kind === 'attempt') {
       quiz.attempts += 1;
       quiz.feedbackGiven = false;

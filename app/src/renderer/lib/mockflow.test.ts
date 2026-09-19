@@ -11,7 +11,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { claimsForAnchor, groupByAnchor, threadFor } from '../../shared/flowthread.js';
 import type { RoomEvent } from '../../shared/types.js';
-import { classifyMockLearnerTurn, createMockBridge } from './mockBridge.js';
+import { classifyLearnerTurn } from '../../room/attempt.js';
+import { createMockBridge } from './mockBridge.js';
 import { quizControls } from './quiz.js';
 
 const SEG = 'seg_page3_lower';
@@ -137,33 +138,34 @@ describe('the thread, end to end', () => {
  * decision can be *asserted* end to end: **no answer before one attempt**, on the same surface the
  * renderer reads. The classifier's cases quote R6's own lines, because they are the evidence.
  */
-describe('classifyMockLearnerTurn (§2.2)', () => {
+describe('classifyLearnerTurn (§2.2), the rule the mock loop reads', () => {
   it("reads R6's own answer requests as answer requests", () => {
     for (const line of ['answer?', 'please solve the question', "what's the answer", 'send me the answer']) {
-      expect(classifyMockLearnerTurn(line)).toBe('answer_request');
+      expect(classifyLearnerTurn(line)).toBe('answer_request');
     }
-    expect(classifyMockLearnerTurn('I give up')).toBe('answer_request');
+    expect(classifyLearnerTurn('I give up')).toBe('answer_request');
     // Curly apostrophes are what a Mac keyboard actually produces.
-    expect(classifyMockLearnerTurn('what\u2019s the answer')).toBe('answer_request');
+    expect(classifyLearnerTurn('what\u2019s the answer')).toBe('answer_request');
   });
 
   it('reads a one-sentence clarification as a question, not an attempt', () => {
-    expect(classifyMockLearnerTurn('what does T mean?')).toBe('question');
+    expect(classifyLearnerTurn('what does T mean?')).toBe('question');
     // An answer request that happens to end in "?" is still an answer request: order matters.
-    expect(classifyMockLearnerTurn('what is the answer?')).toBe('answer_request');
+    expect(classifyLearnerTurn('what is the answer?')).toBe('answer_request');
   });
 
   it('reads agreement and emptiness as neither', () => {
-    for (const line of ['ok', 'okay', 'got it', 'thanks', '   ', '']) {
-      expect(classifyMockLearnerTurn(line)).toBe('other');
+    // `ledger.ts`'s own AGREEMENT vocabulary — rule 4's second ground, reused verbatim by §2.2.
+    for (const line of ['ok', 'okay', 'got it', 'makes sense', 'i see', '   ', '']) {
+      expect(classifyLearnerTurn(line)).toBe('other');
     }
   });
 
   it('reads everything else as an attempt, including a two-word one', () => {
-    expect(classifyMockLearnerTurn('no tools')).toBe('attempt');
-    expect(classifyMockLearnerTurn('it reads the session and has no tools of its own')).toBe('attempt');
+    expect(classifyLearnerTurn('no tools')).toBe('attempt');
+    expect(classifyLearnerTurn('it reads the session and has no tools of its own')).toBe('attempt');
     // Two sentences, the second a question: not the one-sentence clarification shape.
-    expect(classifyMockLearnerTurn('I think the window is bounded. But why does that cost anything?')).toBe('attempt');
+    expect(classifyLearnerTurn('I think the window is bounded. But why does that cost anything?')).toBe('attempt');
   });
 });
 
