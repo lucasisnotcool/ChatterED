@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
-# Build the Assignment 1 submission ZIP — `flow-build-plan.md` §3.6, "Build the ZIP: source,
-# this plan, pivot-spec.md, the beat script, the storyboards, the §F3 follow-up and its answers.
-# Gate: … ZIP opens on another machine."
+# Build the Assignment 1 submission ZIP: the prototype's source, the briefs it is built against,
+# the report drafts and the storyboard. Gate: the ZIP opens on another machine.
+#
+# Re-pointed 19 Sep 2026 for #48 (`docs/research/collab-doc.md`): the briefs are the collab-doc
+# ones, and the storyboard is `docs/report/video-storyboard.md` itself, no longer an extract of
+# the superseded `flow-build-plan.md` §2.
 #
 # **The file list is an allowlist, never an exclude list.** Every path that goes in is named
 # below and enumerated through `git ls-files`, so three things are true by construction rather
@@ -14,9 +17,12 @@
 #
 # **What is deliberately *not* in it.** The rest of `Academia/` — the source papers are other
 # people's work and are not ours to redistribute, so exactly one folder goes in: the Critique 1
-# deck, which is Lucas's own and is the deck the demo and the vault need. The rest of
-# `docs/research/` — a marker gets the four briefs the prototype is built against, not the
-# eighteen. `.claude/` in full: project policy is not submission material.
+# deck, which is Lucas's own and gives the vault something to open. **The filmed demo deck, the
+# CS3249 Week 4 lecture, is the lecturer's and is NOT in the ZIP** (it is not committed either);
+# the README says to open any slide deck. The rest of `docs/research/` — a marker gets the briefs
+# the prototype is built against, not all of them. `.claude/` in full: project policy is not
+# submission material. `Academia/Interviews/` and the raw transcripts are git-ignored and so are
+# unreachable by construction.
 #
 # Usage:  tools/make-submission-zip.sh
 # Output: dist/ChatterED-A1-<short-sha>.zip  (dist/ is git-ignored)
@@ -44,11 +50,14 @@ trap 'rm -rf "$STAGE"' EXIT
 PATHSPECS=(
   # The prototype, source only. `git ls-files` is what makes this "source only".
   'app'
-  # The four briefs the build is against: the plan (with §2's storyboard in it), the pivot spec,
-  # the fidelity/segmentation argument, and the flow-session research.
-  'docs/research/flow-build-plan.md'
-  'docs/research/pivot-spec.md'
-  'docs/research/pdf-fidelity-segmentation.md'
+  # The briefs the build is against: the collab doc (the source of truth), the two de-identified
+  # evidence write-ups behind it, the transcript study's method files, and the two earlier briefs
+  # whose rules survive into it (the classifier, verdicts and turn sizes; the flow session).
+  'docs/research/collab-doc.md'
+  'docs/research/interviews/findings.md'
+  'docs/research/ai-use-transcripts/README.md'
+  'docs/research/ai-use-transcripts/analysis'
+  'docs/research/attempt-first.md'
   'docs/research/flow-session.md'
   # The report and its working drafts.
   'docs/report'
@@ -70,28 +79,13 @@ echo "    ${COUNT} files"
 # the first thing anybody does with a submission ZIP is unzip it and look for a README.
 cp app/README.md "$STAGE/README.md"
 
-# ── the video storyboard, extracted verbatim from §2 of the plan ─────────────
-# §2 is the storyboard; it lives inside the plan because the plan is what argues for it. The
-# submission wants it as its own file, so it is *extracted*, never retyped: everything from the
-# `## 2.` heading to the `## 3.` heading, less the trailing rule and blank lines. Regenerated on
-# every build, so the copy in `docs/report/` can never drift from the brief that owns it.
-STORY="$STAGE/docs/report/video-storyboard.md"
-mkdir -p "$(dirname "$STORY")"
-{
-  echo "<!-- Extracted verbatim from docs/research/flow-build-plan.md §2 by tools/make-submission-zip.sh."
-  echo "     The plan is the source of truth; edit it there, not here. -->"
-  echo
-  awk '/^## 2\. /{f=1} /^## 3\. /{f=0} f' docs/research/flow-build-plan.md \
-    | awk 'BEGIN{n=0} {lines[n++]=$0} END{while (n>0 && (lines[n-1]=="" || lines[n-1]=="---")) n--; for(i=0;i<n;i++) print lines[i]}'
-} > "$STORY"
-if [[ ! -s "$STORY" ]]; then
-  echo "refusing: §2 of the plan extracted to nothing — the heading shape changed." >&2
+# ── the video storyboard ────────────────────────────────────────────────────
+# `docs/report/video-storyboard.md` is the source of truth since #48 and rides in with
+# `docs/report` above. Refuse if it is missing: a submission without it is incomplete.
+if [[ ! -s "$STAGE/docs/report/video-storyboard.md" ]]; then
+  echo "refusing: docs/report/video-storyboard.md is missing or empty." >&2
   exit 1
 fi
-if [[ -f docs/report/video-storyboard.md ]] && ! diff -q docs/report/video-storyboard.md "$STORY" >/dev/null; then
-  echo "    note: docs/report/video-storyboard.md differs from §2; the archive carries §2."
-fi
-echo "    storyboard: $(wc -l < "$STORY" | tr -d ' ') lines"
 
 # ── belt and braces ─────────────────────────────────────────────────────────
 # The allowlist already makes these unreachable. This is the check that fails loudly if somebody
