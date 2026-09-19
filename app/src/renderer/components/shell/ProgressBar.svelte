@@ -78,12 +78,20 @@
     padding: 5px 8px;
     border-radius: 7px;
     text-align: left;
+    /* A backstop: nothing in this row may reach over the header and into the chat column, which
+       is what a fixed-width segment strip did at 1100 px. */
+    overflow: hidden;
   }
   .bar:hover { background: var(--ground); }
 
-  .segments { display: inline-flex; gap: 3px; flex: none; }
+  /* The strip narrows before anything else does: nine segments of 22 px is 222 px, and a doc
+     header in a 1100 px window does not have 222 px to give. They stay equal to each other,
+     which is the only thing a countable bar actually promises. */
+  .segments { display: flex; gap: 3px; flex: 0 1 auto; min-width: 0; }
   .seg {
-    width: 22px;
+    flex: 1 1 22px;
+    min-width: 5px;
+    max-width: 22px;
     height: 7px;
     border-radius: 2px;
     background: var(--hairline);
@@ -93,7 +101,7 @@
     background-repeat: no-repeat;
     transition: background-image 480ms ease-out;
   }
-  .seg.wide { width: 120px; }
+  .seg.wide { max-width: 120px; flex-basis: 120px; }
   .seg.half {
     background-image: linear-gradient(to right, var(--indigo) 0%, var(--indigo) 50%, transparent 50%);
   }

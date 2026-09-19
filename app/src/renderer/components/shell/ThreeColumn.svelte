@@ -192,7 +192,9 @@
       </div>
 
       <button type="button" class="mini" onclick={() => (store.docView = 'viewer')}>Page viewer</button>
-      <button type="button" class="mini" onclick={() => void store.revealFile(doc.fileId)}>Reveal in Finder</button>
+      <button type="button" class="mini wide-only" onclick={() => void store.revealFile(doc.fileId)}>
+        Reveal in Finder
+      </button>
       <button type="button" class="mini" onclick={onclose}>Close</button>
     </header>
 
@@ -232,11 +234,13 @@
 
   .files { flex: none; display: flex; min-height: 0; }
 
+  /* The document keeps a floor of its own. It is the widest thing on screen by design, and a
+     column narrow enough to break a sentence over three lines is not a document. */
   .doc {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
-    min-width: 0;
+    min-width: 380px;
     min-height: 0;
     background: var(--pane);
   }
@@ -251,6 +255,12 @@
     border-bottom: 1px solid var(--hairline);
     background: var(--ground);
   }
+  /*
+    Every item in this header must be able to give ground, or the row overflows its own column
+    and the buttons end up drawn over the chat's tabs — which is what 1100 px looked like in the
+    browser. The name ellipses, the bar has a floor of zero and a ceiling, and the one button
+    that is not a destination hides below 1280 px.
+  */
   .name {
     font-size: 12px;
     font-weight: 600;
@@ -258,14 +268,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 26ch;
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 4ch;
   }
   /* The bar is given room to be a bar: it is the one piece of chrome in this header that is
      about the learner rather than about the file, and it is the header's only flexible item —
      a spacer beside it would halve its width and squeeze the status line out of existence,
      which is what the first browser run showed. */
-  .progress { position: relative; flex: 1 1 auto; min-width: 240px; max-width: 560px; margin-right: auto; }
-  .mini { font-size: 11px; color: var(--text-2); flex: none; }
+  .progress { position: relative; flex: 1 1 auto; min-width: 0; max-width: 560px; margin-right: auto; }
+  .mini { font-size: 11px; color: var(--text-2); flex: none; white-space: nowrap; }
   .mini:hover { color: var(--indigo); }
 
   .docbody { flex: 1; overflow-y: auto; min-height: 0; }
@@ -280,11 +291,14 @@
   }
   .splitter:hover, .splitter:focus-visible { background: var(--indigo-tint); }
 
-  .chats { flex: none; min-height: 0; }
+  /* Its width is the learner's, but it yields before the document does: `flex-shrink: 1` with a
+     floor, so a narrow window takes it back to 300 px instead of squeezing the doc to nothing. */
+  .chats { flex: 0 1 auto; min-width: 300px; min-height: 0; }
 
-  @media (max-width: 1100px) {
+  @media (max-width: 1280px) {
     /* A narrow window gives the document the room first; the conversation keeps its floor. */
     .progress { max-width: 300px; }
+    .wide-only { display: none; }
     .name { max-width: 16ch; }
   }
 </style>
