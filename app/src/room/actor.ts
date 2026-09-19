@@ -171,6 +171,12 @@ export const FLOOR_YIELD_AFTER_SCAFFOLD_MS = 16_000;
  * enforced in the product, not just in the prompt (§C5): a nudge that supplies subject matter
  * turns a persistence problem into a comprehension shortcut.
  */
+/**
+ * How often the actor checks whether the sitting has gone idle with a question still open
+ * (#48 §4.7). Thirty seconds against a twenty-minute gap — see `start()`.
+ */
+export const CLOSURE_TICK_MS = 30_000;
+
 export const CONTENT_FREE_NUDGES = [
   'Still turning it over? Happy to wait. Or I can make the question smaller if that helps.',
   'No rush — want me to break the question into two?',
@@ -587,6 +593,8 @@ export class RoomActor {
   #nextQuestionId: string | null = null;
   /** Which door the release in flight came through, read by `#noteTurnForFlow` when it lands. */
   #releaseBy: 'give_up' | 'pass' | 'closure' | null = null;
+  /** Cancels the closure tick. Null while the actor is stopped. */
+  #stopClosureTick: (() => void) | null = null;
   /**
    * **Every question Max has asked on this file**, verbatim (interview finding, `findings.md` §6:
    * quiz quality decays through a long session and the questions start to circle). Handed to the
@@ -669,10 +677,42 @@ export class RoomActor {
 
   start(): void {
     this.#timer.start();
+    /**
+     * **The closure tick** (#48, `collab-doc.md` §4.7: *"If a question is still open when the flow
+     * session goes idle (the existing inactivity gap)… Max releases the answer"*).
+     *
+     * It is a clock of its own rather than a hook on the silence timer, because the two measure
+     * different things: the silence timer is reading time (2 minutes of quiet after a turn), and
+     * this is the **flow session's 20-minute gap** — the learner has left. Thirty seconds of
+     * granularity on a twenty-minute deadline is generous and costs one comparison.
+     *
+     * `tickSession` is wall-clock against an absolute deadline (`flow.ts`: *"the row is the
+     * timer"*), so this survives sleep and a relaunch exactly as the silence timer does: a gap
+     * that elapsed while the app was shut closes on the first tick after it comes back.
+     */
+    this.#stopClosureTick = this.#d.clock.setInterval(() => this.#tickClosure(), CLOSURE_TICK_MS);
   }
 
   stop(): void {
     this.#timer.stop();
+    this.#stopClosureTick?.();
+    this.#stopClosureTick = null;
+  }
+
+  /**
+   * One comparison a tick: has the sitting gone idle with a question still open? If it has, the
+   * debt is paid — and it is paid **once**, because `closeOpenQuestion` closes the question, after
+   * which `quizOpen` is false and this does nothing until the next question is asked.
+   */
+  #tickClosure(): void {
+    const session = this.#flow;
+    if (session === null || !quizOpen(this.#pendingQuiz)) return;
+    const ticked = tickSession(session, this.#d.clock.now());
+    if (ticked.closedAt === null) return;
+    this.#flow = ticked;
+    void this.closeOpenQuestion('closure').catch((err) => {
+      this.#log.event('error', 'quiz.closure.error', { cause: failureReason(err) });
+    });
   }
 
   /** Launch / resume recovery: idempotent, fenced by timerEpoch (architecture-mac.md §B.4). */

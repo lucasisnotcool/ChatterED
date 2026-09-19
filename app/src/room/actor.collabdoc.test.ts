@@ -384,6 +384,24 @@ describe('releasing and closing a question', () => {
     expect(resolve!.batch.ops[0]).toMatchObject({ op: 'resolve_q', resolution: 'released' });
   });
 
+  /**
+   * §4.7's first clause, on its own clock: *"If a question is still open when the flow session
+   * goes idle (the existing inactivity gap)… Max releases the answer."* The gap is 20 minutes
+   * (`flow.FLOW.sessionGapMs`) and the actor checks every 30 s.
+   */
+  it('releases it on its own when the sitting goes idle, without anyone calling close', async () => {
+    const h = await withOpenQuestion();
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(false);
+
+    // Past the 20-minute inactivity gap, with nothing typed.
+    await h.clock.run(21 * 60_000);
+    await h.clock.run(60_000);
+
+    expect(rules(h)).toContain('rule:closure');
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(true);
+    expect(h.doc.outcomes.filter((o) => o.releasedBy === 'closure')).toHaveLength(1);
+  });
+
   it('is a no-op when nothing is open, so a file close is always safe to call', async () => {
     const h = build();
     await expect(h.actor.closeOpenQuestion('closure')).resolves.toBeUndefined();
