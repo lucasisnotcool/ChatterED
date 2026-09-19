@@ -205,6 +205,18 @@ export async function pageImages(doc: PdfDoc, options: PageImagesOptions): Promi
   const quality = options.quality ?? PAGE_IMAGE_QUALITY;
   const batchSize = options.batchSize ?? PAGE_IMAGE_BATCH;
   const total = doc.numPages;
+  /**
+   * **A deck with no page count is a wiring bug, not an empty deck.**
+   *
+   * Every failure below this line is swallowed on purpose (images are optional). That charity is
+   * wrong here: `numPages: undefined` walks through `pageNumbers` as `Array.from({length: NaN})`
+   * and produces *zero* pages with no error at all — which is exactly how the first live ingest
+   * ran text-only against §2's "with the slide images" and said so only in one log field. Handed
+   * the wrong object, this now says so.
+   */
+  if (!Number.isInteger(total) || total < 1) {
+    throw new Error(`pageImages: the document reports no pages (numPages=${String(total)})`);
+  }
   const groups = batches(pageNumbers(total), batchSize);
 
   let sent = 0;
@@ -270,6 +282,20 @@ export class SlideSource {
 
   static async open(bytes: Uint8Array): Promise<SlideSource> {
     return new SlideSource(await openPdf(bytes));
+  }
+
+  /**
+   * The open pdf.js document, in the shape `pageImages()` reads.
+   *
+   * The two jobs at the top of this file share one parsed deck rather than opening the bytes
+   * twice, but `pageImages` is written against pdf.js's own document so it can be driven by a
+   * stub in a test. This getter is the one seam between them. It exists because the call site in
+   * `docstore.svelte.ts` used to bridge the gap with `as unknown as`, and a `SlideSource` has
+   * `pageCount`, not `numPages`: the cast type-checked, `numPages` came out `undefined`, and the
+   * ingest silently ran with no slide images at all.
+   */
+  get pdfDoc(): PdfDoc {
+    return this.#doc;
   }
 
   /** The page's own box in points. Null until the page has been measured once. */

@@ -290,7 +290,7 @@ export class DocStore {
     if (!source || token !== this.#openToken) return;
     this.rasterising = { done: 0, total: source.pageCount };
     try {
-      await pageImages(source as unknown as Parameters<typeof pageImages>[0], {
+      await pageImages(source.pdfDoc, {
         onProgress: (done, total) => {
           if (token === this.#openToken) this.rasterising = { done, total };
         },
@@ -300,8 +300,11 @@ export class DocStore {
           return true;
         },
       });
-    } catch {
-      // Noted above: optional input.
+    } catch (err) {
+      // Noted above: optional input, so the ingest still runs. But it is not *silent* any more:
+      // the whole of this pass failing is the difference between §2's two-pass refine and a
+      // text-only one, and the only other place that shows is `with_images` in one log line.
+      console.warn('notes: the slide images were not sent —', message(err));
     } finally {
       if (token === this.#openToken) this.rasterising = null;
     }
