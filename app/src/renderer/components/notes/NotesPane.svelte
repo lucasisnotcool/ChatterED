@@ -41,6 +41,17 @@
     if (id) void doc.open(id);
   });
 
+  /**
+   * The span highlights are drawn from T5's list, and a thread appearing there changes nothing in
+   * the document — so nothing would tell ProseMirror's decoration set to rebuild. Watching the
+   * signature here is what closes that gap.
+   */
+  $effect(() => {
+    const signature = (chat().spanThreads ?? []).map((t) => `${t.threadId}:${t.blockId}`).join('|');
+    void signature;
+    doc.refreshChrome();
+  });
+
   const status = $derived(doc.ingest.status);
   const ready = $derived(status === 'streaming' || status === 'ready');
   const savedLabel = $derived.by(() => {

@@ -175,7 +175,10 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
         const chip = button('nd-chip', label, reason ? reason : `Open the source slide (${label})`, () => {
           if (page !== null) ctx.onOpenSlide(page, rect);
         });
-        if (page === null) chip.classList.add('nd-chip-dead');
+        // A block with a reason and no page is ordinary (§2 allows either); a block with
+        // neither is an ingest bug and says so in the one place a reader will see it.
+        if (label === 'no source') chip.classList.add('nd-chip-bad');
+        else if (page === null) chip.classList.add('nd-chip-flat');
         holder.append(chip);
         return holder;
       }),
@@ -184,24 +187,52 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
   return out;
 }
 
+/**
+ * Remove · Keep, one control per block that carries pending edits.
+ *
+ * **Grouped by block, not one per edit.** Two edits on the same block — Max asking a question and
+ * then resolving it, which is the commonest pair there is — put two widgets at the same position,
+ * and two absolutely-positioned widgets at the same position overlap into unreadable soup. It was
+ * built the naive way first and that is exactly what it did.
+ */
 function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
-  const out: Decoration[] = [];
+  const byPos = new Map<number, DocEditRecord[]>();
   for (const edit of ctx.edits) {
     const target = edit.blockIds.map((id) => blockPos(doc, id)).find((hit) => hit !== null);
     if (!target) continue;
-    const name = AGENT_NAME[edit.author];
+    const at = byPos.get(target.pos) ?? [];
+    at.push(edit);
+    byPos.set(target.pos, at);
+  }
+
+  const out: Decoration[] = [];
+  for (const [pos, edits] of byPos) {
+    const key = `edits:${edits.map((e) => e.editId).join(',')}`;
     out.push(
-      widget(target.pos + 1, `edit:${edit.editId}`, -1, () => {
-        const holder = el('div', `nd-editctl nd-${edit.author}`);
-        holder.append(el('span', 'nd-editctl-who', `${name} wrote this`));
-        if (edit.why) holder.append(el('span', 'nd-editctl-why', edit.why));
-        const row = el('div', 'nd-editctl-row');
-        row.append(
-          button('nd-editctl-btn', 'Remove', `Take ${name}'s edit out again`, () => ctx.onRemoveEdit(edit.editId)),
-          el('span', 'nd-editctl-dot', '·'),
-          button('nd-editctl-btn', 'Keep', 'Keep the text and drop the colour', () => ctx.onKeepEdit(edit.editId)),
-        );
-        holder.append(row);
+      widget(pos + 1, key, -1, () => {
+        const holder = el('div', 'nd-editctl');
+        for (const edit of edits) {
+          const name = AGENT_NAME[edit.author];
+          const row = el('div', `nd-editctl-one nd-${edit.author}`);
+          row.append(el('span', 'nd-editctl-who', `${name} wrote this`));
+          if (edit.why) {
+            const why = el('span', 'nd-editctl-why', edit.why);
+            why.title = edit.why;
+            row.append(why);
+          }
+          const actions = el('div', 'nd-editctl-row');
+          actions.append(
+            button('nd-editctl-btn', 'Remove', `Take ${name}'s edit out again`, () =>
+              ctx.onRemoveEdit(edit.editId),
+            ),
+            el('span', 'nd-editctl-dot', '·'),
+            button('nd-editctl-btn', 'Keep', 'Keep the text and drop the colour', () =>
+              ctx.onKeepEdit(edit.editId),
+            ),
+          );
+          row.append(actions);
+          holder.append(row);
+        }
         return holder;
       }),
     );

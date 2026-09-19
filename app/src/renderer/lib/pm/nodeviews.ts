@@ -91,6 +91,10 @@ class MathBlockView implements NodeView {
  * The canvas is replaced wholesale rather than redrawn in place, which is what keeps the "one
  * `drawImage` out of a real page canvas" chain intact.
  */
+/** How long a figure waits for the deck to finish opening, and how often it looks. */
+const FIGURE_RETRY_MS = 400;
+const FIGURE_RETRIES = 75;
+
 class SlideFigureView implements NodeView {
   readonly dom: HTMLElement;
   #frame: HTMLElement;
@@ -99,6 +103,8 @@ class SlideFigureView implements NodeView {
   #width = 0;
   #observer: ResizeObserver | null = null;
   #token = 0;
+  #retries = 0;
+  #retry: ReturnType<typeof setTimeout> | null = null;
 
   constructor(node: Node, ctx: NodeViewContext) {
     this.#node = node;
@@ -138,9 +144,19 @@ class SlideFigureView implements NodeView {
     if (width <= 0) return;
     // Only re-render when the box grew: shrinking is what `drawImage` scaling is for.
     if (this.#width >= width && this.#frame.firstElementChild) return;
-    this.#width = width;
     const source = this.#ctx.slides();
-    if (!source) return;
+    if (!source) {
+      // The deck is still opening. A figure that gave up here would stay an empty grey box for
+      // the life of the document, because nothing else re-enters a node view once it is built:
+      // the ResizeObserver only fires on a size change, and a decoration rebuild does not
+      // repaint an atom. So it waits, briefly and with a bound.
+      if (this.#retries < FIGURE_RETRIES) {
+        this.#retries++;
+        this.#retry = setTimeout(() => this.#paint(), FIGURE_RETRY_MS);
+      }
+      return;
+    }
+    this.#width = width;
     const token = ++this.#token;
     const page = this.#node.attrs.page as number;
     const rect = (this.#node.attrs.rect as Rect | null) ?? null;
@@ -176,6 +192,7 @@ class SlideFigureView implements NodeView {
 
   destroy(): void {
     this.#observer?.disconnect();
+    if (this.#retry) clearTimeout(this.#retry);
     this.#token++;
   }
 }

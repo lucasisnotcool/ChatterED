@@ -250,18 +250,30 @@ export class DocStore {
       const document_ = await bridge().openDocument({ fileId });
       if (token !== this.#openToken) return;
       if (document_.kind !== 'pdf' || !document_.bytes) return;
-      const source = await SlideSource.open(document_.bytes);
-      if (token !== this.#openToken) {
-        source.destroy();
-        return;
-      }
-      this.#slides = source;
-      if (this.pageCount === 0) this.pageCount = source.pageCount;
-      this.slidesReady = true;
-      this.#bump();
+      await this.attachSlides(document_.bytes, token);
     } catch {
       // No slides is a degraded document, not a broken one: the notes still read.
     }
+  }
+
+  /**
+   * Open a deck's bytes as *the* slide source for this document.
+   *
+   * Separate from `#openSlides` so the dev harness can hand it a real deck when the mock bridge
+   * has no bytes to give — the carousel, the modal and every inline crop then run against real
+   * pixels, which is the only way to see whether "pixels, not a redraw" actually holds.
+   */
+  async attachSlides(bytes: Uint8Array, token = this.#openToken): Promise<void> {
+    const source = await SlideSource.open(bytes);
+    if (token !== this.#openToken) {
+      source.destroy();
+      return;
+    }
+    this.#slides?.destroy();
+    this.#slides = source;
+    if (this.pageCount === 0) this.pageCount = source.pageCount;
+    this.slidesReady = true;
+    this.#bump();
   }
 
   /**
@@ -338,6 +350,12 @@ export class DocStore {
     if (!this.learnerTouched) this.learnerTouched = true;
   }
 
+  /** The learner's own writing, per block (§6). Also what the dev harness aims a suggestion at. */
+  learnerText(): { blockId: string; text: string }[] {
+    const view = this.#view;
+    return view ? learnerTextByBlock(view.state.doc) : [];
+  }
+
   /** The chrome plugin reads this on every rebuild. Snapshotted: no proxy leaves the store. */
   chromeContext(): ChromeContext {
     return {
@@ -353,6 +371,18 @@ export class DocStore {
       onOpenSlide: (page, rect) => this.openSlide(page, rect),
       onFocusThread: (threadId) => this.focusThread?.(threadId),
     };
+  }
+
+  /**
+   * Redraw the chrome without touching the document.
+   *
+   * Public because one input to the chrome is **not** this store's: the span highlights come from
+   * `store.chat.spanThreads` (T5), and a new thread there changes nothing in the document, so
+   * nothing would otherwise tell the decoration set to rebuild. `NotesPane` watches that list and
+   * calls this. Found by watching it: the thread existed, the highlight did not appear.
+   */
+  refreshChrome(): void {
+    this.#bump();
   }
 
   /** Redraw the chrome without touching the document. */
@@ -439,6 +469,9 @@ export class DocStore {
     if (!view || !docId) return;
 
     if (this.frozen) {
+      // The cursor goes with the edit. Main sent `typing` a beat before this batch; leaving that
+      // flag parked mid-paragraph would say an agent is writing in a document it is locked out of.
+      this.cursors = this.cursors.filter((cursor) => cursor.author !== batch.author);
       await this.#reportEdit(batch.editId, 'dropped_frozen', []);
       return;
     }
@@ -577,6 +610,12 @@ export class DocStore {
       if (!step) {
         this.#animations.delete(editId);
         live.dispatch(reveal.finish(live.state.tr, editId).setMeta(AGENT_TR, true).setMeta('addToHistory', false));
+        // The agent has stopped typing, so its cursor goes with the animation. Main will send
+        // its own `doc.cursor idle` a moment later; without this the flag would sit in the
+        // middle of a paragraph until it did, which reads as a bug rather than as presence.
+        if (!this.#animations.has(editId)) {
+          this.cursors = this.cursors.filter((cursor) => cursor.author !== author);
+        }
         this.#bump();
         return;
       }
@@ -638,9 +677,10 @@ export class DocStore {
   caretBlockId(): string | null {
     const view = this.#view;
     if (!view) return null;
-    const $from = view.state.selection.$from;
-    for (let depth = $from.depth; depth >= 0; depth--) {
-      const node = $from.node(depth);
+    // Not `$from`: a `$`-prefixed identifier is reserved inside a `.svelte.ts` module.
+    const at = view.state.selection.$from;
+    for (let depth = at.depth; depth >= 0; depth--) {
+      const node = at.node(depth);
       const { blockId } = blockAttrs(node);
       if (blockId) return blockId;
     }

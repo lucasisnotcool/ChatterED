@@ -36,6 +36,20 @@
   let holder = $state<HTMLElement | null>(null);
   let outline = $state<Rect | null>(rect);
   let stageWidth = $state(900);
+  let stageHeight = $state(700);
+
+  /**
+   * 100 % means **the whole slide, visible** — not "as wide as the stage".
+   *
+   * A 16:9 slide rendered to the full width of a tall window is taller than the window, so the
+   * learner who clicked `p. 12` to check one line lands halfway down it and has to scroll to see
+   * the slide they asked for. The base width is therefore whichever of width and height binds.
+   */
+  const fitWidth = $derived.by(() => {
+    const size = source?.size(at) ?? null;
+    const aspect = size && size.height > 0 ? size.width / size.height : 4 / 3;
+    return Math.max(240, Math.min(stageWidth, (stageHeight - 32) * aspect));
+  });
 
   onMount(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -72,7 +86,7 @@
     const element = holder;
     const from = source;
     const which = at;
-    const width = Math.round(stageWidth * STEPS[zoomIndex]!);
+    const width = Math.round(fitWidth * STEPS[zoomIndex]!);
     if (!element || !from || width <= 0) return;
     let live = true;
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
@@ -101,6 +115,7 @@
     if (!element) return;
     const measure = (): void => {
       stageWidth = Math.max(320, element.clientWidth - 48);
+      stageHeight = Math.max(240, element.clientHeight);
     };
     measure();
     const observer = new ResizeObserver(measure);
