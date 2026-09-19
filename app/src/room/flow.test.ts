@@ -21,7 +21,9 @@ import {
   answerQuiz,
   answerShownOf,
   attemptsOf,
+  closureDue,
   markAnswerShown,
+  qResolutionOf,
   quizOpen,
   openQuiz,
   expireQuizOnClose,
@@ -677,6 +679,31 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     expect(quizOpen(quiz)).toBe(false);
     expect(answerShownOf(quiz)).toBe(true);
     expect(quizOpen(null)).toBe(false);
+  });
+
+  /**
+   * §4.2 of `collab-doc.md`: feedback carries "a follow-up on the same question **unless *Well
+   * done***", and §5.3 resolves the Q block as *you got this* on that verdict. The live run of
+   * 20 Sep found the other half missing: the question stayed open after a *Well done*, so the
+   * learner's next question drew `rule:quiz_clarify`, no new follow-up could ever fire (it is
+   * gated on nothing being open) and closure would have released an answer they already gave.
+   */
+  it('closes on a Well done, and stays open on the other two verdicts', () => {
+    const asked = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+
+    const done = markFeedbackGiven(asked, 'complete', 'complete');
+    expect(quizOpen(done)).toBe(false);
+    expect(closureDue(done)).toBe(false);
+    // Not a release: the Q block still resolves as the learner's own win, not as *released*.
+    expect(answerShownOf(done)).toBe(false);
+    expect(qResolutionOf(done)).toBe('you_got_this');
+
+    // `QuizVerdict` is the two-valued one the composer reads; `QuizVerdict3` is the outcome's.
+    for (const verdict of ['partial', 'not_yet'] as const) {
+      const open = markFeedbackGiven(asked, 'partial', verdict);
+      expect(quizOpen(open)).toBe(true);
+      expect(closureDue(open)).toBe(true);
+    }
   });
 
   it('an unanswered quiz expires at session close rather than becoming a debt', () => {

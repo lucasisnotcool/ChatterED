@@ -1027,9 +1027,22 @@ export function answerShownOf(quiz: PendingQuiz | null): boolean {
  * **Is the Tester's question still live?** The gate on every rule in §2.3, and the reason the
  * quiz survives its own feedback turn: after feedback the learner may still try again, ask a
  * clarification, or ask for the answer, and all three need this to be true.
+ *
+ * **Except after a *Well done*.** `collab-doc.md` §4.2 gives feedback "a follow-up on the same
+ * question **unless *Well done***", and §5.3 has the Q block resolve as *you got this* on exactly
+ * that verdict — so the document already treats the question as finished. Until 20 Sep this
+ * predicate did not, and the live run found what that costs: the learner got a *Well done*, asked
+ * something new, and drew `rule:quiz_clarify` — Max answering as though the new question were a
+ * query about his old one. Worse, `rule:max_followup` is gated on *no* question being open
+ * (§4.2's "one open Max question at a time"), so after the first *Well done* of a sitting Max
+ * could never ask again, and `closureDue` would eventually have him release the answer to a
+ * question the learner had already got right.
+ *
+ * *Partly there* and *Not yet* are unchanged: those questions stay open, which is what the
+ * follow-up on the same question and the "Your next attempt…" composer are for.
  */
 export function quizOpen(quiz: PendingQuiz | null): boolean {
-  return quiz !== null && !answerShownOf(quiz);
+  return quiz !== null && !answerShownOf(quiz) && verdict3Of(quiz) !== 'complete';
 }
 
 /**
