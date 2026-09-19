@@ -46,6 +46,16 @@ export interface LlmRequest {
     /** Scripted replay only: which script beat this request corresponds to. */
     scriptCue?: string;
     /**
+     * **Scripted replay only: the cue to try if the first one has nothing** (issue #47).
+     *
+     * The ledger call on a Tester **feedback** turn is cued `feedback:N`, because a judgement of an
+     * attempt belongs to the turn that judges it (`attempt-first.md` §2.3) — but
+     * `script.psd-hessian.ts` keys its ledger blocks to the learner cue (`student:N`), and it must
+     * keep working. So the actor passes both and the scripted client tries them in order. No live
+     * backend reads either field.
+     */
+    scriptCueFallback?: string;
+    /**
      * **Cost attribution** (`src/main/cost/`, `src/shared/cost.ts`). All three are optional and
      * nothing in `src/room` reads them — they exist so that the one decorator every call passes
      * through can file the call under the right document and the right thread without the room

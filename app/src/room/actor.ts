@@ -56,6 +56,7 @@ import {
   FLOW,
   answerQuiz,
   attemptsOf,
+  feedbackDue,
   handOffDue,
   handOffLine,
   markAnswerShown,
@@ -578,6 +579,13 @@ export class RoomActor {
      * 58-page prefix. Optional: the pre-flow room-level composer has no segment.
      */
     context?: ReferenceContext,
+    /**
+     * **Where this turn came from** (#47). `askHere` sets `ask`, and that is the whole of the
+     * explain path's exemption from the answer lock: an Ask is a request for the Teacher, so it is
+     * neither an attempt nor a request for Max's answer, however its words happen to read (§6,
+     * beat 11; the bug the scripted take pinned on 2026-09-19).
+     */
+    origin: 'composer' | 'ask' = 'composer',
   ): Promise<void> {
     const body = text.trim();
     if (body.length === 0) return;
@@ -635,8 +643,13 @@ export class RoomActor {
        * Only an **attempt** puts the room in feedback debt. An answer request, a clarification or
        * an "ok" leaves the count where it is, which is what makes the lock about having tried.
        */
-      this.#lastLearnerTurn = classifyLearnerTurn(body);
-      if (this.#pendingQuiz) {
+      this.#lastLearnerTurn = origin === 'ask' ? null : classifyLearnerTurn(body);
+      /**
+       * **An Ask never touches the open question.** Not the attempt count, not the answer lock, not
+       * the feedback debt: it is a question for Ellie, and counting it would unlock the answer to
+       * Max's question on the strength of the learner asking something else.
+       */
+      if (this.#pendingQuiz && origin !== 'ask') {
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',
         });
@@ -646,7 +659,12 @@ export class RoomActor {
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
     });
 
-    await this.#runAgentTurn('student_message', { studentBody: body, anchorId, studentMessageId });
+    await this.#runAgentTurn('student_message', {
+      studentBody: body,
+      anchorId,
+      studentMessageId,
+      askedHere: origin === 'ask',
+    });
   }
 
   /**
@@ -789,7 +807,9 @@ export class RoomActor {
      * from a second one that drifts.
      */
     const before = this.#d.store.messages.maxSeq(this.#d.roomId);
-    await this.sendMessage(question, input.anchorId);
+    // `'ask'`: the same learner turn in every respect except the one that matters mid-question —
+    // it is the Teacher's, and it is not an attempt at Max's question (#47 §6, beat 11).
+    await this.sendMessage(question, input.anchorId, undefined, 'ask');
     const asked = this.#d.store.messages
       .forRoom(this.#d.roomId)
       .find((m) => m.seq === before + 1);
@@ -1512,6 +1532,8 @@ export class RoomActor {
       tryHere?: { objectiveId: string };
       /** **Show the answer** (#47 §2.4): the button's door into `rule:answer_shown`. */
       showAnswer?: boolean;
+      /** **"+ Ask here"** (#47 §6): the explain path, which is the Teacher's even mid-question. */
+      askedHere?: boolean;
     } = {},
   ): Promise<void> {
     /**
@@ -1634,6 +1656,7 @@ export class RoomActor {
       learnerTurn:
         trigger === 'student_message' || trigger === 'promote' ? this.#lastLearnerTurn : null,
       showAnswer: opts.showAnswer === true,
+      askedHere: opts.askedHere === true,
     };
 
     const cue =
@@ -1671,9 +1694,25 @@ export class RoomActor {
       opts.showAnswer !== true &&
       this.#lastLearnerTurn !== 'answer_request';
     if (ledgerRuns) {
+      /**
+       * **The proposal travels with the turn that judges the attempt** (#47 §2.3, and a seam the
+       * scripted take found on 2026-09-19).
+       *
+       * The ledger call used to carry the learner cue always, so a Critique 1 ledger block written
+       * against `feedback:2` — where it belongs, because it is a judgement of the attempt that
+       * feedback answers — was never reached, and the rail stayed at ○ ○ ○ after two attempts and
+       * two feedback turns. `feedbackDue` is already true here (the mailbox tick counted the
+       * attempt), so the upcoming decision is `rule:quiz_feedback` and the cue is known.
+       *
+       * Both cues are passed, not one: `script.psd-hessian.ts` keys its blocks to `student:N`, and
+       * switching globally would silence that script (`scripted.ledgerFor` tries them in order).
+       */
+      const ledgerCue = feedbackDue(this.#pendingQuiz)
+        ? quizCue('feedback', this.#testerQuestions)
+        : cue;
       // `#updateLedger` catches its own failures and surfaces them as a card, so nothing here
       // can reject; the `catch` is belt and braces against a future edit that changes that.
-      void this.#updateLedger(cue, turnStart).catch(() => undefined);
+      void this.#updateLedger(ledgerCue, turnStart, ledgerCue === cue ? undefined : cue).catch(() => undefined);
     }
     const decidedAt = this.#d.clock.now();
     const decision = opts.tryHere
@@ -2362,7 +2401,7 @@ export class RoomActor {
     return this.#d.llm.complete(request, onDelta, signal);
   }
 
-  async #updateLedger(cue: string, turnStart: number): Promise<void> {
+  async #updateLedger(cue: string, turnStart: number, fallbackCue?: string): Promise<void> {
     const turnLog = this.#turnLog;
     const messages = this.#d.store.messages.forRoom(this.#d.roomId);
     const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
@@ -2400,7 +2439,14 @@ export class RoomActor {
      */
     request.system = [{ type: 'text', text: ledgerSystemBlock(this.#d.pack), cache_control: { type: 'ephemeral' } }];
     request.model = this.#models.fast;
-    request.meta = { ...request.meta, scope: 'ledger', scriptCue: cue, anchorId: this.#pending?.anchorId ?? null };
+    request.meta = {
+      ...request.meta,
+      scope: 'ledger',
+      scriptCue: cue,
+      // Scripted replay only, and only on a feedback turn — see the call site (#47 §2.3).
+      ...(fallbackCue === undefined ? {} : { scriptCueFallback: fallbackCue }),
+      anchorId: this.#pending?.anchorId ?? null,
+    };
     // Structured output, for the same reason the decision uses it: the CLI enforces the schema
     // and repairs one bad answer before the caller ever sees it (`claude-cli.ts`).
     request.jsonSchema = LEDGER_SCHEMA;

@@ -83,6 +83,20 @@ export interface DecisionInput {
    */
   showAnswer?: boolean;
   /**
+   * **This turn came through "+ Ask here"** (issue #47, and `flow-build-plan.md` §2 beat 11).
+   *
+   * An Ask is an explicit request for the *Teacher*, and `attempt-first.md` §6 films it as the
+   * explain path that runs **while** a Tester question is open: *"Ellie's '+ Ask here' appears once,
+   * as the explain path, when the second question needs a prerequisite."* Without this flag §2.2
+   * classifies the Ask like any other learner turn, and the Ask the video types is 39 words — long
+   * enough to read as an *attempt*, which gave the turn to Max, counted as the try that unlocks the
+   * answer, and scored the ledger against a question. Shortening it does not help: under 25 words it
+   * is a `question` and draws `rule:quiz_clarify`, which is still Max.
+   *
+   * So the answer lock is skipped for an Ask, and the actor does not touch `pendingQuiz` on one.
+   */
+  askedHere?: boolean;
+  /**
    * True while a REFERENCE answer on this thread is waiting for "Explain it back". Neither
    * agent may post there at all until the learner presses it (pivot-spec.md §B1, enforced in
    * code and not in a prompt).
@@ -243,7 +257,9 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
    * available until the answer is shown, a new question replaces it, or the sitting closes.
    */
   const pending = input.pendingQuiz ?? null;
-  if (pending !== null && quizOpen(pending)) {
+  // `askedHere` is the explain path, and it is the Teacher's whether or not a question is open
+  // (§6, beat 11) — see `DecisionInput.askedHere`.
+  if (pending !== null && quizOpen(pending) && input.askedHere !== true) {
     const quiz = pending;
     const attempts = attemptsOf(quiz);
     const learnerTurn = input.trigger === 'student_message' || input.trigger === 'promote';

@@ -2212,3 +2212,37 @@ nothing changes for a room still on them.
    page 1 of a deck whose first objective is on page 4 that yields nothing, and a dead line on the
    first slide is a worse reading of §2.1 than looking forward by the same measure — so the pick
    falls forward as a last resort and `ObjectivePick.reason` records which clause answered.
+
+### Two seams the scripted-take track found, and what they cost (2026-09-19, later the same day)
+
+Both were pinned as failing tests in `script.critique1.test.ts` before either was fixed, which is
+why they read as assertions now rather than as comments.
+
+1. **The ledger proposal has to travel with the turn that judges the attempt.** `#updateLedger` was
+   cued with the *learner* cue always, so a Critique 1 block written against `feedback:2` was never
+   reached: two attempts, two feedback turns, and the rail still ○ ○ ○ — on camera, *"that moved
+   because **I** wrote it"* pointing at three rows that had not. The fix cues the ledger call
+   `feedback:N` on a feedback turn **with the learner cue behind it** (`meta.scriptCueFallback`,
+   resolved in `scripted.ledgerFor`, which counts a beat as a hit only if it actually proposes
+   elements), because `script.psd-hessian.ts` keys its blocks to `student:N` and switching globally
+   would have silenced that script. The take's assertion is now `{ C1: 2, C2: 2, C3: 0 }`.
+2. **An Ask mid-question was being answered by Max.** `askHere` runs an ordinary learner turn on
+   purpose (one implementation of a learner turn, not two), so §2.2 classified it — and beat 11's Ask
+   is 39 words, which reads as an *attempt*: the Tester answered instead of the Teacher, the Ask
+   counted as the try that unlocks the answer, and the ledger was scored against a question. Under 25
+   words it would have drawn `rule:quiz_clarify`, still the Tester. `sendMessage` now carries the
+   turn's **origin**; an Ask sets `askedHere` on the decision and never touches `pendingQuiz`, so
+   `attempt-first.md` §6's explain path works while a question is open. The one thing it does not
+   outrank is a feedback debt already owed for an unanswered attempt (only reachable when a feedback
+   turn failed), and that is asserted too.
+
+**Two notes from the other tracks, recorded here because they belong to the same beat.**
+`CRITIQUE1_TAKE.turnsK` is now **5** and the warm-up is simplified (`c553463`, the scripted-take
+track). The renderer refreshes quiz state by polling `flow:messages` on `turn.released`
+(`store.refreshFlowQuiz`), because **there is no quiz event on the stream**: `FlowThreadView.quiz`
+travels only on a `FlowRoomView`. Track A did not add a `quiz.updated` event — the two state
+transitions a renderer cares about (`attempts`, `answerShown`) both happen inside a turn that already
+emits `turn.released`, so the poll is correct, and adding an event would be a second source of the
+same fact. If the poll ever proves too coarse, the event belongs next to `ledger.updated`.
+
+Verified after both fixes: **1128 tests green, 65 files.**

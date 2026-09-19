@@ -340,3 +340,77 @@ describe('the classification never goes stale', () => {
     expect(decisions(h).at(-1)!.decided_by).toBe('rule:quiz_clarify');
   });
 });
+
+/**
+ * **The two seams the scripted take found on 2026-09-19**, fixed here and pinned in both places:
+ * the ledger proposal has to travel with the turn that judges the attempt, and an Ask is the
+ * Teacher's even while Max is waiting.
+ */
+describe('“+ Ask here” while a question is open', () => {
+  it('is the Teacher’s, and is not the attempt that unlocks the answer', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.tryHere(TRY));
+    await settle(
+      h.clock,
+      h.actor.askHere({
+        anchorId: SEG,
+        // 39 words: long enough that §2.2 would read it as an attempt if the origin did not say
+        // otherwise, which is exactly the shape of the line the video's beat 11 types.
+        question:
+          'Before I try that, can you explain what positive semidefinite actually means for a matrix, ' +
+          'and how that relates to the second derivative test I learned for one variable, because I ' +
+          'think that is the bit I am missing here',
+        context: {
+          scope: 'segment',
+          passageText: 'PAGE',
+          outline: '',
+          retrievedPages: [],
+          scopeShown: 'p. 2',
+        },
+      }),
+    );
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:teacher_answers');
+    expect(h.actor.pendingQuizView()!.quiz.attempts).toBe(0);
+    expect((await h.actor.showAnswer(SEG)).refused).toBe("Max won't give the answer until you've tried once.");
+  });
+
+  it('is the Teacher’s for a short Ask too, which would have classified as a clarification', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.tryHere(TRY));
+    await settle(
+      h.clock,
+      h.actor.askHere({
+        anchorId: SEG,
+        question: 'what does semidefinite mean?',
+        context: { scope: 'segment', passageText: 'PAGE', outline: '', retrievedPages: [], scopeShown: 'p. 2' },
+      }),
+    );
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:teacher_answers');
+    expect(h.actor.pendingQuizView()!.quiz.attempts).toBe(0);
+  });
+});
+
+describe('the ledger call on a feedback turn', () => {
+  /**
+   * The judgement of an attempt belongs to the turn that judges it, so the ledger call carries
+   * `feedback:N` — **with the learner cue behind it**, because `script.psd-hessian.ts` keys its own
+   * ledger blocks to `student:N` and must keep replaying.
+   */
+  it('is cued feedback:N with the learner cue as the fallback', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.tryHere(TRY));
+    await settle(h.clock, h.actor.sendMessage('The Hessian has to be positive semidefinite everywhere.', SEG));
+
+    const ledger = h.llm.requests.filter((r) => r.meta.scope === 'ledger').at(-1)!;
+    expect(ledger.meta.scriptCue).toBe('feedback:1');
+    expect(ledger.meta.scriptCueFallback).toBe('student:1');
+  });
+
+  it('keeps the learner cue, with no fallback, on an ordinary turn', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('A function is convex when its Hessian is PSD.', SEG));
+    const ledger = h.llm.requests.filter((r) => r.meta.scope === 'ledger').at(-1)!;
+    expect(ledger.meta.scriptCue).toBe('student:1');
+    expect(ledger.meta.scriptCueFallback).toBeUndefined();
+  });
+});

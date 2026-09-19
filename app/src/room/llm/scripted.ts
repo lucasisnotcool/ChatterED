@@ -145,7 +145,7 @@ export class ScriptedClient implements LLMClient {
       case 'orchestrator':
         return JSON.stringify(decisionFor(cue, script));
       case 'ledger':
-        return JSON.stringify(ledgerFor(cue, lastStudentText(request), script));
+        return JSON.stringify(ledgerFor(cue, lastStudentText(request), script, request.meta.scriptCueFallback));
       case 'whisper':
         return script.whisperBeatFor(cue)?.text ?? 'Still read-only over here.';
       // Not an agent turn, and deliberately not a persona: the register of the deck, never a
@@ -177,8 +177,20 @@ export function ledgerFor(
   cue: string,
   studentText: string,
   script: ScriptSource = PSD_HESSIAN_SCRIPT,
+  /**
+   * **The cue to fall back to when the first one has no proposal** (issue #47). The attempt loop
+   * cues the ledger call `feedback:N`, with the learner cue behind it, so a script that keys its
+   * blocks to `feedback:N` (Critique 1) and one that keys them to `student:N` (PSD/Hessian) can
+   * both be replayed by the same actor. Only a beat that actually proposes elements counts as a
+   * hit, because an empty proposal and a missing beat are the same thing to the caller.
+   */
+  fallbackCue?: string,
 ): Record<string, unknown> {
-  const beat = script.beatFor(cue);
+  const primary = script.beatFor(cue);
+  const beat =
+    (primary?.ledger?.elements ?? []).length > 0 || fallbackCue === undefined
+      ? primary
+      : (script.beatFor(fallbackCue) ?? primary);
   const quote = verbatimQuote(studentText);
   const elements = (beat?.ledger?.elements ?? []).map((e) => ({
     id: e.id,

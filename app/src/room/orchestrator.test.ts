@@ -208,6 +208,33 @@ describe('the answer lock while a Tester question is open', () => {
     }
   });
 
+  /**
+   * **The explain path is the Teacher's, mid-question** (§6, `flow-build-plan.md` §2 beat 11). An
+   * Ask is an explicit request for Ellie, so none of the four rules above may take it — not even
+   * when its words would classify as an attempt or a clarification.
+   */
+  it('lets an Ask through to the Teacher, whatever its words would have classified as', () => {
+    // Asked, and asked again after an attempt has been answered — the two states an Ask can land in.
+    for (const quiz of [asked(), markFeedbackGiven(attempted())]) {
+      for (const turn of ['attempt', 'answer_request', 'question', 'other'] as const) {
+        const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: turn, askedHere: true, anchoredThread: true }))!;
+        expect(d.decidedBy, turn).toBe('rule:teacher_answers');
+        expect(d.role, turn).toBe('peer');
+      }
+    }
+  });
+
+  /**
+   * The one thing an Ask does **not** outrank: feedback the Tester already owes for an attempt that
+   * was made and never answered (`rule:quiz_feedback`, Rowland 2014). That state only arises when a
+   * feedback turn failed, and discharging the debt first is the brief's strongest constraint — the
+   * actor never produces it from an Ask, because an Ask does not touch `pendingQuiz` at all.
+   */
+  it('does not cancel a feedback debt that is already owed', () => {
+    const d = ruleDecision(input({ pendingQuiz: attempted(), learnerTurn: 'attempt', askedHere: true }))!;
+    expect(d.decidedBy).toBe('rule:quiz_feedback');
+  });
+
   it('never fires into a silence: a hint on a timer is the silence rule’s business', () => {
     const d = ruleDecision(
       input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked(), learnerTurn: 'answer_request', lastAgentTurn: 'tester_question' }),

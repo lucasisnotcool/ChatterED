@@ -840,9 +840,8 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
     expect(lastBody(h)).toBe(beatFor('hint:2')!.text);
     expect(lastBody(h)).not.toMatch(/\bmemory\b/);
 
-    // Beat 11 — the explain path — is filmed here, and is the one beat of §2 the machinery does not
-    // yet deliver. See the test below: an Ask into a card with an open question is classified as an
-    // attempt and drawn to the Tester, so it is left out of this chain rather than asserted wrongly.
+    // Beat 11 — the explain path — now works mid-question (`origin: 'ask'`, #47 §6) and is asserted
+    // in the test below rather than here, so this chain stays the attempt loop's own.
 
     // Beat 12 — the second attempt, and feedback grounded on page 5.
     await settle(h.clock, h.actor.sendMessage(ATTEMPT_2));
@@ -851,25 +850,18 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
 
     // Beat 13 — and now the answer is available, because one attempt is on the record.
     /**
-     * **Beat 8 of §2 — "the ledger moves" — does not happen yet, and this is the seam.**
+     * **Beat 8 of §2 — "the ledger moves, on the learner's own words".**
      *
-     * Both attempts have been made and both feedback turns given, and the rail is still ○ ○ ○.
-     * The blocks are on `feedback:1` and `feedback:2`, because a judgement of the attempt belongs
-     * to the turn that judges it; `actor.ts` cues the *turn* with `feedback:N` and the **ledger
-     * call** with the learner cue (`#updateLedger(cue, …)`, where `cue` is `student:N`), and
-     * `student:N` reaches the explain beat, which proposes nothing. So nothing is proposed and
-     * nothing moves — on camera, the presenter's *"that moved because **I** wrote it"* would point
-     * at three rows that did not.
-     *
-     * It is a bug in `actor.ts` against `attempt-first.md` §2.3, not in the script: the proposal
-     * has to travel with the turn it is a judgement of. The fix is Track A/B's and is not free —
-     * `script.psd-hessian.ts` keys its blocks to `student:N`, so switching the ledger cue globally
-     * would silence *that* script; passing the quiz cue only on a `quiz_feedback` turn, or trying
-     * the turn cue and falling back to the learner cue, both work. When it lands, this assertion
-     * flips to `{ C1: 2, C2: 2, C3: 0 }` — which is what `applyLedgerRules` already returns for
-     * these two proposals and these two typed lines, three tests above.
+     * The seam this pinned: the ledger call carried the *learner* cue, so a block written against
+     * `feedback:2` — where it belongs, because it is a judgement of the attempt that feedback
+     * answers — was never reached, and the rail stayed ○ ○ ○ after two attempts and two feedback
+     * turns. Fixed in `actor.ts` by cueing the ledger call `feedback:N` on a feedback turn **with
+     * the learner cue behind it** (`meta.scriptCueFallback`, resolved in `scripted.ledgerFor`), so
+     * `script.psd-hessian.ts`'s `student:N` blocks keep working. C1 and C2 now move to 2 — exactly
+     * what `applyLedgerRules` returns for these two proposals and these two typed lines, three
+     * tests above — and C3 stays at ○, because nothing the learner wrote is about it.
      */
-    expect(levels(h)).toEqual({ C1: 0, C2: 0, C3: 0 });
+    expect(levels(h)).toEqual({ C1: 2, C2: 2, C3: 0 });
 
     const railBefore = levels(h);
     const shown = await settle(h.clock, h.actor.showAnswer(P5));
@@ -881,22 +873,19 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
   });
 
   /**
-   * **A bug against `flow-build-plan.md` §2 beat 11 and `attempt-first.md` §6, pinned here so it is
-   * not discovered on camera.** §6: *"Ellie's '+ Ask here' appears once, as the explain path, when
-   * the second question needs a prerequisite."* What happens today is the opposite. `askHere` runs
-   * an ordinary learner turn, so §2.2 classifies it — and the Ask the take types is 39 words, over
-   * the 25-word ceiling on `question`, so it falls through to `attempt`. Three things then go wrong
-   * at once: `rule:quiz_feedback` gives the turn to the Tester instead of the Teacher, the Ask
-   * counts as the attempt that unlocks the answer, and the ledger is scored against a question.
+   * **Beat 11: the explain path runs while a question is open** (`flow-build-plan.md` §2 beat 11,
+   * `attempt-first.md` §6 — *"Ellie's '+ Ask here' appears once, as the explain path, when the second
+   * question needs a prerequisite"*).
    *
-   * Shortening the line does not fix it — at 25 words or fewer it is a `question` and draws
-   * `rule:quiz_clarify`, which is still the Tester. The fix belongs where the doors are decided:
-   * **an Ask is an explicit request for the Teacher**, so a turn that arrives through `askHere`
-   * should take `rule:teacher_answers` whether or not a quiz is open on that card, and must not
-   * increment `attempts`. That is Track A/B's call to make in `actor.ts` / `orchestrator.ts`; this
-   * test records the behaviour it would change, and fails loudly when it changes.
+   * This test was written as a pinned bug and is now the assertion of the fix. An Ask used to be
+   * classified like any other learner turn, and the Ask the take types is 39 words — over the
+   * 25-word ceiling on `question`, so it read as an **attempt**: Max answered instead of Ellie, the
+   * Ask counted as the try that unlocks the answer, and the ledger was scored against a question.
+   * Shortening it would not have helped (under 25 words it draws `rule:quiz_clarify`, still Max).
+   * `actor.sendMessage` now carries the turn's origin, and an Ask skips the answer lock and never
+   * touches `pendingQuiz`.
    */
-  it('gives an Ask mid-quiz to the Tester, which §6 says is the Teacher\u2019s (open bug)', async () => {
+  it('gives an Ask mid-quiz to the Teacher, and it is not the attempt that unlocks the answer', async () => {
     const h = build();
     await settle(
       h.clock,
@@ -904,9 +893,12 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
     );
     await settle(h.clock, h.actor.askHere({ anchorId: P5, question: ASK, context: segmentContext({ text: segmentText(5) }) }));
 
-    // Today: the Tester, treating a question as an attempt. Wanted: `rule:teacher_answers`.
-    expect(lastDecision(h).decided_by).toBe('rule:quiz_feedback');
-    // And the cost: the answer lock is open although nothing was attempted.
-    expect(await settle(h.clock, h.actor.showAnswer(P5))).toEqual({ shown: true, refused: null });
+    // The Teacher answers the thread she was asked in, mid-question.
+    expect(lastDecision(h).decided_by).toBe('rule:teacher_answers');
+    // And the lock is still shut, because nothing has been attempted.
+    expect(await h.actor.showAnswer(P5)).toEqual({
+      shown: false,
+      refused: "Max won't give the answer until you've tried once.",
+    });
   });
 });
