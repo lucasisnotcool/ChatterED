@@ -157,8 +157,11 @@ T6 ── notes:docText ─► synthetic `doc_text` learner message ─► actor
 
 Agreed signatures across tracks:
 
-- **T4 → T5:** Ctrl+E calls `store.chat.openSpanThread({ blockId, quote })`; a span highlight click
-  calls `store.chat.focusThread(threadId)`. **T5 → T4:** a thread's "jump" and the lesson card's
+- **T4 → T5:** Ctrl+E calls `store.chat.openSpanThread({ blockId, quote })` and nothing else: T5
+  opens a *draft* span thread in the chat column, focused, with the quote as a chip; the learner
+  types the question there, and T5 calls `chatOpenSpan` on send. T4 draws the persistent span
+  highlights from `store.chat.spanThreads: { threadId, blockId, quote }[]` (read-only, verbatim
+  text match inside the block); a highlight click calls `store.chat.focusThread(threadId)`. **T5 → T4:** a thread's "jump" and the lesson card's
   Start call `store.doc.scrollToBlock(blockId)`; "insert into the document" needs
   `store.doc.caretBlockId()`.
 - **T6 → T3 (methods T3 adds on `RoomActor`):**
