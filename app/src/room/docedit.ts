@@ -339,11 +339,22 @@ export function buildQuestionEdit(
     text: string;
     /** The thread's block, when it has one. */
     blockId: string | null;
+    /**
+     * **Where the exchange was, when Max's own question does not say.**
+     *
+     * A follow-up rarely re-cites the page Ellie just quoted — it says "and what happens then?"
+     * — so on its own text alone the page intersection is empty and the anchor falls all the way
+     * through to the last entry of the outline, i.e. the end of the notes. The live run of 20 Sep
+     * put a red Q block about page 2 under the last bullet of page 7. These are the pages the
+     * answer it follows cited, and they are used only when the question cites none of its own.
+     */
+    fallbackPages?: readonly number[];
     pageCount?: number;
   },
 ): AgentDocOpBatch | null {
   if (deps.docPort.hasQuestion(input.questionId)) return null;
-  const pages = pagesCited(input.text, input.pageCount);
+  const own = pagesCited(input.text, input.pageCount);
+  const pages = own.length > 0 ? own : [...(input.fallbackPages ?? [])];
   const anchorBlockId =
     input.blockId ?? deps.docPort.blocksForPages(pages).at(-1) ?? deps.docPort.outlineNear({ blockId: null, pages }).at(-1)?.blockId ?? null;
   if (anchorBlockId === null) return null;

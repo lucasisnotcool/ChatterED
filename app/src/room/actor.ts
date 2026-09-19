@@ -31,6 +31,7 @@ import {
   buildQuestionEdit,
   buildResolveEdit,
   buildWhisperInsert,
+  pagesCited,
   planAnswerEdit,
   planSuggestionEdit,
   type DocEditDeps,
@@ -473,6 +474,15 @@ export class RoomActor {
    * explanation to try again, or a second silence would re-explain the nudge.
    */
   #lastAgentTurn: LastAgentTurn = 'none';
+  /**
+   * The pages the last answer cited, for §5.2's anchor.
+   *
+   * Max's follow-up is about whatever Ellie has just answered, and it almost never repeats her
+   * `p. N` — so without this the Q block has no page to intersect and lands at the end of the
+   * notes. Written before her doc edit is planned (the plan is a model call; the follow-up turn
+   * overtakes it), read only when Max's own question cites nothing.
+   */
+  #lastAnswerPages: readonly number[] = [];
   /** The turn whose `turn.received` is still on screen, so exactly one `turn.released` closes it. */
   #received: string | null = null;
   /** Settings ▸ Reply speed. Read per turn, so a change applies to the next turn, never this one. */
@@ -3784,6 +3794,7 @@ export class RoomActor {
             objectiveId: quiz.objectiveId ?? null,
             text,
             blockId,
+            fallbackPages: this.#lastAnswerPages,
           }),
           { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
         );
@@ -3827,6 +3838,9 @@ export class RoomActor {
       }
       // 5.1 — Ellie answered, and the notes may be missing it. The one model call in here.
       if (decision.role === 'peer' && (decision.moveType === 'answer_then_teach' || decision.moveType === 'lesson_start')) {
+        // Recorded *before* the plan's model call, because `rule:max_followup` dispatches while
+        // that call is still out and his Q block is what needs these pages (see the field).
+        this.#lastAnswerPages = pagesCited(text);
         const pages = this.#askContext.get(anchorId ?? '')?.page;
         const outline = this.#docPort.outlineNear({
           blockId,

@@ -209,6 +209,49 @@ describe('buildQuestionEdit (§5.2)', () => {
     const d = deps({ blocksForPages: () => [], outlineNear: () => [] });
     expect(buildQuestionEdit(d, { questionId: 'q_9', objectiveId: null, text: 'why?', blockId: null })).toBeNull();
   });
+
+  /**
+   * The live run of 20 Sep: Ellie answered citing p. 2 and p. 6, Max's follow-up cited nothing —
+   * so the intersection was empty and the Q block landed under the last bullet of page 7.
+   */
+  it('falls back to the pages the answer it follows cited', () => {
+    const seen: number[][] = [];
+    const d = deps({
+      blocksForPages: (pages) => {
+        seen.push([...pages]);
+        return pages.length > 0 ? ['b_p2'] : [];
+      },
+    });
+    const batch = buildQuestionEdit(d, {
+      questionId: 'q_9',
+      objectiveId: null,
+      text: 'And what happens to that exchange next?',
+      blockId: null,
+      fallbackPages: [2, 6],
+    })!;
+    expect(seen).toEqual([[2, 6]]);
+    expect(batch.ops[0]).toMatchObject({ anchorBlockId: 'b_p2' });
+    // The block's own provenance still speaks for Max's text, which cited no page at all.
+    expect(batch.ops[0]).toMatchObject({ prov: { pages: [], reason: expect.stringContaining('Max') } });
+  });
+
+  it('prefers the pages the question itself cites over the answer’s', () => {
+    const seen: number[][] = [];
+    const d = deps({
+      blocksForPages: (pages) => {
+        seen.push([...pages]);
+        return ['b_2'];
+      },
+    });
+    buildQuestionEdit(d, {
+      questionId: 'q_9',
+      objectiveId: null,
+      text: 'On p. 4, why does that hold?',
+      blockId: null,
+      fallbackPages: [2, 6],
+    });
+    expect(seen).toEqual([[4]]);
+  });
 });
 
 describe('buildResolveEdit (§5.3)', () => {
