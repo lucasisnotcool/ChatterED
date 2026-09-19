@@ -1099,6 +1099,14 @@ class Store {
    * another** deliberately omits it so the pick runs again and a missed objective comes round
    * while a landed one gives way (§2.4, *"questions based on my weaknesses"* as a button).
    */
+  /**
+   * Is the channel actually reachable? Guarded like `canAskDeck`: a build whose preload does not
+   * carry `flow:tryHere` should say the line is not available, not offer it and do nothing.
+   */
+  get canTryHere(): boolean {
+    return has('flowTryHere');
+  }
+
   async tryHere(segmentId: string, objectiveId?: string): Promise<void> {
     const fileId = this.flowFor;
     if (!fileId || !has('flowTryHere')) return;

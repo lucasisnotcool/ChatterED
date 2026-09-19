@@ -133,3 +133,15 @@ describe('ruleTag', () => {
     expect(ruleTag(undefined)).toBeNull();
   });
 });
+
+describe('tryHereState, on a build that cannot reach the channel', () => {
+  it('is disabled whatever the tree says', () => {
+    const s = tryHereState({ tree: { status: 'ready' }, reachable: false });
+    expect(s.enabled).toBe(false);
+    expect(s.reason).toBe('This build cannot ask for a question yet.');
+  });
+
+  it('is live when the channel is there and the tree is ready', () => {
+    expect(tryHereState({ tree: { status: 'ready' }, reachable: true }).enabled).toBe(true);
+  });
+});

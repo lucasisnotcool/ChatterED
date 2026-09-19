@@ -39,7 +39,11 @@ export function attemptNote(testerName = 'Max'): string {
 
 /** What the thread draws for the quiz it has, if any. Every field is a pure function of it. */
 export interface QuizControls {
-  /** A quiz is open in this thread: the composer is the attempt box. */
+  /**
+   * This thread has a Tester question on it. True from the question landing until the thread is
+   * reopened on another — including after a shown answer, when the composer is an ordinary
+   * composer again but **Try another** is still the way on.
+   */
   open: boolean;
   /** The composer's placeholder. */
   placeholder: string;
@@ -111,10 +115,15 @@ export function tryHereState(input: {
   tree: Pick<LearningTree, 'status' | 'error'> | null;
   teacherName?: string;
   note?: string | null;
+  /** False on a build whose preload does not carry `flow:tryHere` yet. */
+  reachable?: boolean;
 }): TryHereState {
   const teacher = input.teacherName ?? 'Ellie';
   const note = input.note ?? null;
   const tree = input.tree;
+  if (input.reachable === false) {
+    return { enabled: false, reason: 'This build cannot ask for a question yet.' };
+  }
   // No tree at all: the ingest was never asked for, or this backend cannot do one. Either way
   // there is no objective to quiz from, and the backend's own sentence is the better one.
   if (!tree) return { enabled: false, reason: note ?? `${teacher} has not read this deck yet.` };

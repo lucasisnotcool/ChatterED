@@ -899,6 +899,7 @@
     tryHereState({
       tree: store.objectivesTree,
       teacherName: store.teacherName,
+      reachable: store.canTryHere,
       note: backendNote({
         backend: store.boot?.backend ?? null,
         status: store.objectivesTree?.status ?? null,
