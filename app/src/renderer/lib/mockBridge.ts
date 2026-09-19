@@ -21,6 +21,36 @@ import { classifyLearnerTurn } from '../../room/attempt.js';
 import { DECK_ANCHOR_ID, guessScope, scopeShownFor, type AskScope } from '../../shared/scope.js';
 import { refusalMessage, type SegmentDocumentView, type SegmentRefusal } from '../../shared/segment/index.js';
 import type { LearningObjective, LearningObjectiveState, LearningTree } from '../../shared/objectives.js';
+import { DOC_ANCHOR_ID, SPAN_THREAD_PREFIX } from '../../shared/doc/types.js';
+import type {
+  AgentAuthor,
+  AgentDocOpBatch,
+  DocEditRecord,
+  DocQuizView,
+  NotesDocView,
+  PrivateTurnView,
+  ProgressObjectiveView,
+  ProgressView,
+  QResolution,
+  Suggestion,
+  ThreadView,
+} from '../../shared/doc/types.js';
+import { parseMention } from './chatview.js';
+import {
+  MOCK_CONTENT_SHA,
+  MOCK_DOC_ID,
+  MOCK_FILE_ID,
+  MOCK_FILE_NAME,
+  MOCK_PAGE_COUNT,
+  MOCK_TITLE,
+  MOCK_WINDOWS,
+  mockBlockOnPage,
+  mockLastBlockId,
+  mockNotesJson,
+  // Renamed on the way in: this file already has a `mockObjectives`, and it is the *other* kind
+  // — the learning-objective tree the retired panel drew (#38).
+  mockObjectives as fixtureObjectives,
+} from './mockNotes.js';
 import type {
   AgentProfile,
   Bootstrap,
@@ -39,19 +69,48 @@ import type {
   TimerView,
   TurnParticipantView,
   TurnTraceView,
+  VaultFileView,
   VaultView,
   WhisperThreadView,
   WhisperTurnView,
 } from '../../shared/types.js';
 
-const EMPTY_VAULT: VaultView = {
-  rootPath: null,
-  displayName: '',
-  topics: [],
+/**
+ * The dev vault: one topic, one file, and the file is the demo deck the brief names (§7).
+ *
+ * See `openDocument` below for why this is no longer empty. The display name carries
+ * `(dev fixture)` wherever it is shown, so nothing on screen claims a file was read from disk.
+ */
+const MOCK_VAULT_FILE: VaultFileView = {
+  id: MOCK_FILE_ID,
+  name: `${MOCK_FILE_NAME} (dev fixture)`,
+  relPath: `CS3249/${MOCK_FILE_NAME}`,
+  kind: 'pdf',
+  size: 2_525_927,
+  mtimeMs: 1_758_240_000_000,
+  topicId: 'cs3249',
+  pageCount: MOCK_PAGE_COUNT,
+  indexed: true,
+  indexError: null,
+};
+
+const MOCK_VAULT: VaultView = {
+  rootPath: '~/vault (dev fixture)',
+  displayName: 'Dev fixture vault',
+  topics: [
+    {
+      id: 'cs3249',
+      name: 'CS3249',
+      relPath: 'CS3249',
+      colour: '#2f6f8f',
+      moduleCode: 'CS3249',
+      fileCount: 1,
+    },
+  ],
   otherCount: 0,
-  totalFiles: 0,
-  lastScanAt: null,
-  index: { total: 0, done: 0, failed: 0, running: false, current: null },
+  totalFiles: 1,
+  lastScanAt: new Date(1_758_240_000_000).toISOString(),
+  index: { total: 1, done: 1, failed: 0, running: false, current: null },
 };
 
 function emptyFlow(fileId: string, refused?: SegmentRefusal['reason']): SegmentDocumentView {
@@ -545,7 +604,7 @@ export function createMockBridge(): ChatterEdApi {
       });
       return;
     }
-    if (kind === 'answer_request') {
+    if (kind === 'give_up') {
       if (quiz.attempts === 0) {
         // The rule the whole brief is about. No ledger, no attempt, one hint that narrows it.
         think(max, 9000, TRY_HINT, { anchorId, decidedBy: 'rule:answer_withheld' });
@@ -607,6 +666,520 @@ export function createMockBridge(): ChatterEdApi {
       body: answer.body, truncated: false, scopeShown, flow: flowView(),
     };
   }
+
+  // ══ the collaborative notes doc (#48, `docs/research/collab-doc.md`) ════════════════════════
+  /**
+   * Everything below replays the brief's own beats so the three renderer tracks can be built and
+   * looked at under `vite dev`. It is scaffolding and not a spec — but the **shapes** are the
+   * contract's, the **rules** are the brief's, and the two things a mock can get wrong in a way
+   * that hides a real bug are deliberately honest here:
+   *
+   *  1. every decision is a rule, named on the turn (`decidedBy`), decided before any "model"
+   *     is consulted — §4.2's table, in code, exactly as the orchestrator does it;
+   *  2. progress moves **only** on the learner's own words. A released answer, Ellie's cue and
+   *     an agreement fill nothing, and there is no branch here that could make them.
+   *
+   * The conversation's words are fixed text. The grounds in them are not decoration: they cite
+   * pages the fixture document actually carries, so a `p. N` in the chat is clickable and lands
+   * on a block that exists.
+   */
+  const notes = {
+    docId: MOCK_DOC_ID,
+    fileId: MOCK_FILE_ID,
+    contentSha: MOCK_CONTENT_SHA,
+    title: MOCK_TITLE,
+    pageCount: MOCK_PAGE_COUNT,
+    version: 1,
+    doc: mockNotesJson(),
+    frozen: false,
+    edits: [] as DocEditRecord[],
+    suggestions: [] as Suggestion[],
+    windowsDone: 1,
+    windowsTotal: 1 + MOCK_WINDOWS.length,
+    status: 'none' as 'none' | 'pending' | 'streaming' | 'ready' | 'failed',
+  };
+  /** Objectives, and their fills. The one number the whole progress surface is drawn from. */
+  let objectives: ProgressObjectiveView[] = fixtureObjectives();
+  let editSeq = 0;
+  let questionSeq = 0;
+  let docTurns = 0;
+  /** Threads by id: the doc chat, and one per span. Private threads are held separately. */
+  const chatThreadMap = new Map<string, ThreadView>();
+  const privateThreadMap = new Map<AgentAuthor, { threadId: string; turns: PrivateTurnView[] }>();
+  /** §4.3 fires **once per question**; this is that latch, plus the timer it is armed on. */
+  let cueHandle: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The silence threshold, shortened. `attempt-first.md` §5 scales it to reading time and floors
+   * it at 120 s; the Demo pacing profile shortens it, and a mock nobody can sit through is a mock
+   * nobody drives. 18 s is long enough to read Max's question and short enough to film.
+   */
+  const MOCK_SILENCE_MS = 18_000;
+
+  const hex12 = () => globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+
+  function notesIngestView() {
+    return {
+      status: notes.status,
+      windowsDone: notes.windowsDone,
+      windowsTotal: notes.windowsTotal,
+      // §2's refine pass runs on structured text + geometry on the default backend (contract E1).
+      withImages: false,
+      error: null,
+    };
+  }
+
+  function notesView(): NotesDocView {
+    return {
+      docId: notes.docId,
+      fileId: notes.fileId,
+      contentSha: notes.contentSha,
+      title: notes.title,
+      pageCount: notes.pageCount,
+      version: notes.version,
+      doc: notes.doc,
+      ingest: notesIngestView(),
+      frozen: notes.frozen,
+      edits: notes.edits.filter((e) => e.status === 'applied'),
+      suggestions: notes.suggestions.filter((s) => s.status === 'open'),
+    };
+  }
+
+  function emitNotesStatus(): void {
+    emit({
+      type: 'notes.status',
+      roomId: ROOM,
+      fileId: notes.fileId,
+      docId: notes.docId,
+      ingest: notesIngestView(),
+    });
+  }
+
+  /** A thread, created on demand. The id **is** the anchor: there is no second key (§types). */
+  function thread(threadId: string, seed: Partial<ThreadView> = {}): ThreadView {
+    const found = chatThreadMap.get(threadId);
+    if (found) return found;
+    const made: ThreadView = {
+      threadId,
+      kind: threadId.startsWith(SPAN_THREAD_PREFIX) ? 'span' : 'doc',
+      blockId: null,
+      quote: null,
+      agentKey: null,
+      messageIds: [],
+      lastSeenSeq: 0,
+      quiz: null,
+      createdAt: iso(),
+      ...seed,
+    };
+    chatThreadMap.set(threadId, made);
+    return made;
+  }
+
+  /** Push a thread's current state. Replaces the `refreshFlowQuiz` poll (contract D10). */
+  function pushThread(t: ThreadView): void {
+    t.messageIds = messages.filter((m) => m.anchorId === t.threadId).map((m) => m.id);
+    emit({ type: 'chat.thread', roomId: ROOM, thread: { ...t, quiz: t.quiz ? { ...t.quiz } : null } });
+  }
+
+  function progressView(): ProgressView {
+    const taught = objectives.filter((o) => !o.assumedByDeck);
+    return {
+      fileId: notes.fileId,
+      docId: notes.docId,
+      status: 'ready',
+      completed: taught.filter((o) => o.fill === 1).length,
+      total: taught.length,
+      fraction: taught.length === 0 ? 0 : taught.reduce((s, o) => s + o.fill, 0) / taught.length,
+      objectives: objectives.map((o) => ({ ...o })),
+    };
+  }
+
+  function emitProgress(): void {
+    emit({ type: 'progress.updated', roomId: ROOM, fileId: notes.fileId, progress: progressView() });
+  }
+
+  /**
+   * Move one objective — **only ever from the learner's own words**, which is why every call site
+   * below sits on an attempt and none sits on a release, a cue or an agreement (§6).
+   */
+  function fillObjective(objectiveId: string, fill: 0 | 0.5 | 1, evidence: string): void {
+    objectives = objectives.map((o) =>
+      o.objectiveId === objectiveId
+        ? {
+            ...o,
+            fill,
+            level: fill === 1 ? 3 : fill === 0.5 ? 2 : 0,
+            evidence: evidence.slice(0, 160),
+            lastMovedAt: iso(),
+          }
+        : o,
+    );
+    emitProgress();
+  }
+
+  function emitCursor(author: AgentAuthor, blockId: string | null, state: 'idle' | 'thinking' | 'typing'): void {
+    emit({ type: 'doc.cursor', roomId: ROOM, docId: notes.docId, author, blockId, state });
+  }
+
+  /**
+   * An agent edit, on its way to the renderer to be typed in behind the cursor.
+   *
+   * **Freeze is honoured here as well as in the renderer** (contract D4): the brief says an edit
+   * that would have happened while frozen is *dropped, not queued*, and a mock that queued would
+   * hide the one bug that rule exists to prevent.
+   */
+  function emitEdit(batch: Omit<AgentDocOpBatch, 'editId'>): string | null {
+    if (notes.frozen) return null;
+    editSeq += 1;
+    const editId = `edit_mock_${editSeq}`;
+    const full: AgentDocOpBatch = { ...batch, editId };
+    emitCursor(batch.author, batch.focusBlockId, 'typing');
+    emit({ type: 'doc.edit', roomId: ROOM, docId: notes.docId, batch: full });
+    notes.edits.push({
+      editId,
+      docId: notes.docId,
+      author: batch.author,
+      cause: batch.cause,
+      ops: batch.ops,
+      status: 'applied',
+      blockIds: [],
+      why: batch.why,
+      turnId: null,
+      messageId: messages.at(-1)?.id ?? null,
+      objectiveId: null,
+      docVersion: notes.version,
+      createdAt: iso(),
+      resolvedAt: null,
+    });
+    later(1600, () => emitCursor(batch.author, null, 'idle'));
+    return editId;
+  }
+
+  // ── the words ────────────────────────────────────────────────────────────────────────────
+  // Fixed text, grounded in pages the fixture document actually carries.
+
+  const ELLIE_ANSWERS = [
+    'The short version is that a prototype exists **to be wrong cheaply**. So fidelity is an ' +
+      'economic decision, not a craft one — p. 22 puts it as buying exactly as much realism as ' +
+      'the question you are asking needs.\n\n' +
+      'For a conversational interface that lands differently from a GUI: there are no screens to ' +
+      'wireframe, so the pipeline is scripts → dialogue maps → Wizard of Oz (p. 38). What you are ' +
+      'prototyping is the dialogue itself.',
+    'Because the thing that breaks is almost never the wording — it is the **repair**. p. 39 ' +
+      'lists the parts of a designed dialogue, and repair is the one it calls make-or-break: ' +
+      'every other part can be mediocre and the system still works, but a conversation that ' +
+      'cannot recover from a misunderstanding is over.\n\n' +
+      'That is also why paper runs out so fast here. p. 34: paper hides feel and response time, ' +
+      'and a repair turn is mostly timing.',
+  ];
+
+  const ELLIE_MENTION =
+    'Just me, then. The bit I would hold on to is p. 20: every design goal should name the ' +
+      'cheapest prototype that could falsify it. If you cannot name one, what you have written ' +
+      'down is a hope rather than a goal.';
+
+  const MAX_MENTION =
+    'Directly, then. Name one design goal from your own project and the prototype that could ' +
+      'falsify it. If the prototype you name is "build it and see", the goal is not testable yet.';
+
+  const MAX_QUESTIONS = [
+    'One question, then. You are building a coach that nags people to go for a walk. Which ' +
+      'prototype would you build **first** to find out whether people would actually answer it — ' +
+      'and name one thing that prototype could not tell you.',
+    'Smaller one, since that landed. p. 34 splits what a paper session reveals from what it ' +
+      'hides. Name one thing on the *hidden* side, in your own words.',
+  ];
+
+  const MAX_FEEDBACK_PARTIAL =
+    'Partly there. You have the cheap-first half, and p. 22: "a prototype exists to be wrong ' +
+      'cheaply" is where the deck settles it.\n\n' +
+      'What is missing is the second half of my question. p. 34 lists four things a paper ' +
+      'session hides, and one of them is exactly what a nagging coach lives or dies on. Which ' +
+      'one, and why does it matter here?';
+
+  const MAX_FEEDBACK_COMPLETE =
+    'Well done. Timing is the one — p. 34: "feel — efficiency, response time" — and you said why ' +
+      'it bites here rather than just naming it. A reminder that arrives at the wrong moment is ' +
+      'not a wording problem and paper will never show it to you.\n\n' +
+      'That is this objective done.';
+
+  const MAX_CLARIFY =
+    'Fair question, and I will answer it without answering mine. "Prototype" here means anything ' +
+      'you could put in front of a person — a script read aloud counts. So: which one would you ' +
+      'build first, and what would it fail to tell you?';
+
+  const MAX_RELEASED =
+    'Here it is, and it changes nothing on your progress — that only moves on words you wrote ' +
+      'yourself.\n\n' +
+      'Build the **paper prototype or the sample dialogue** first: p. 22, be wrong cheaply. What ' +
+      'it cannot tell you is on p. 34 — look, feel, response time, and whether subtle feedback is ' +
+      'noticed. For a nagging coach the fatal one is **timing**: the message that arrives at the ' +
+      'wrong moment reads as nagging however well it is worded.\n\n' +
+      'Next one on this will be smaller.';
+
+  const MAX_NUDGE =
+    'Take your time. A wrong attempt is worth more to me than a right silence — and if you would ' +
+      'rather have the answer, say so and it is yours.';
+
+  /** §4.3: unsure, partial, at most 60 words, and with one plausible student mistake in it. */
+  const ELLIE_CUE =
+    'I will go first, and I am genuinely not sure. I think you build the paper version — it is ' +
+      'the cheapest thing that could be wrong. And I *think* paper would also show you whether ' +
+      'the reminder lands at a good moment, because the timings are written on the script. Knock ' +
+      'that second bit down if it is wrong.';
+
+  /** §4.3: Max neither confirms nor corrects — he names the part worth improving. At most 50. */
+  const MAX_PROMPT =
+    'Ellie has the cheap-first half right. Look at her second sentence, about the script carrying ' +
+      'the timing. p. 34 has a column for what a paper session hides. Improve on it, or tell me ' +
+      'whether she is right.';
+
+  // ── the doc chat (§4.1) ──────────────────────────────────────────────────────────────────
+
+  /** Arm §4.3's cue on the open question. Fires once, then silence is left alone until closure. */
+  function armCue(threadId: string): void {
+    if (cueHandle) clearTimeout(cueHandle);
+    cueHandle = setTimeout(() => {
+      const t = chatThreadMap.get(threadId);
+      if (!t?.quiz?.open || t.quiz.cueGiven || t.quiz.attempts > 0) return;
+      t.quiz.cueGiven = true;
+      pushThread(t);
+      think(ellie, 4500, ELLIE_CUE, { anchorId: threadId, decidedBy: 'rule:ellie_cue' }, () => {
+        // Max answers *her*, aimed at the learner. Two agent turns back to back is the cap
+        // (MASG §5.4.4) and the silence rules are checked before it, which is contract E5.
+        later(2600, () => {
+          think(max, 6000, MAX_PROMPT, { anchorId: threadId, decidedBy: 'rule:max_prompt' });
+        });
+      });
+    }, MOCK_SILENCE_MS);
+  }
+
+  /** Max asks one question: to the chat, and into the document as a Q block (§5.2). */
+  function askDocQuestion(threadId: string, objectiveId: string, n = 0): void {
+    questionSeq += 1;
+    const questionId = `q_mock_${questionSeq}`;
+    const body = MAX_QUESTIONS[Math.min(n, MAX_QUESTIONS.length - 1)]!;
+    think(max, 9000, body, { anchorId: threadId, decidedBy: 'rule:max_followup' }, () => {
+      const t = thread(threadId);
+      const quiz: DocQuizView = {
+        quizMessageId: `m${seq + 1}`,
+        elementId: objectiveId,
+        attempts: 0,
+        feedbackGiven: false,
+        answerShown: false,
+        verdict: null,
+        questionId,
+        objectiveId,
+        cueGiven: false,
+        resolution: null,
+        open: true,
+      };
+      t.quiz = quiz;
+      pushThread(t);
+      emitEdit({
+        author: 'max',
+        cause: 'q_block',
+        focusBlockId: mockBlockOnPage(34),
+        why: 'The document did not already ask this, so the question goes in where it is about.',
+        ops: [
+          {
+            op: 'insert_q',
+            anchorBlockId: mockBlockOnPage(34),
+            questionId,
+            objectiveId,
+            text: 'Which prototype would you build first to find out whether people answer a nagging coach — and what could it not tell you?',
+            prov: { pages: [22, 34], reason: 'asked in the conversation' },
+          },
+        ],
+      });
+      armCue(threadId);
+    });
+  }
+
+  /** Resolve the open question in the document (§5.3). The Q block stays; the answer goes under it. */
+  function resolveDocQuestion(threadId: string, resolution: QResolution): void {
+    const t = chatThreadMap.get(threadId);
+    const quiz = t?.quiz;
+    if (!t || !quiz) return;
+    quiz.open = false;
+    quiz.resolution = resolution;
+    pushThread(t);
+    if (cueHandle) clearTimeout(cueHandle);
+    emitEdit({
+      author: 'max',
+      cause: 'q_resolved',
+      focusBlockId: mockBlockOnPage(34),
+      why: `The question is resolved (${resolution}), so the correct version goes under it.`,
+      ops: [
+        {
+          op: 'resolve_q',
+          questionId: quiz.questionId,
+          resolution,
+          blocks: [
+            {
+              kind: 'paragraph',
+              text:
+                'Build the cheapest thing that could be wrong — a sample dialogue or a paper ' +
+                'prototype. What it cannot show you is **feel and response time** (p. 34), and ' +
+                'for a reminder that is the property the whole design rests on.',
+              prov: { pages: [22, 34], reason: null },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  /** One learner turn into an open question — §4.2's table, as branches, before any "model". */
+  function docQuizTurn(threadId: string, quiz: DocQuizView, text: string): void {
+    const kind = classifyLearnerTurn(text);
+    const t = thread(threadId);
+    if (kind === 'give_up') {
+      releaseDocAnswer(threadId, 'give_up');
+      return;
+    }
+    if (kind === 'question') {
+      think(max, 7000, MAX_CLARIFY, { anchorId: threadId, decidedBy: 'rule:quiz_clarify' });
+      return;
+    }
+    if (kind !== 'attempt') {
+      think(max, 7000, MAX_NUDGE, { anchorId: threadId, decidedBy: 'rule:quiz_nudge' });
+      return;
+    }
+    quiz.attempts += 1;
+    quiz.feedbackGiven = false;
+    quiz.verdict = null;
+    pushThread(t);
+    if (cueHandle) clearTimeout(cueHandle);
+    const second = quiz.attempts > 1;
+    think(
+      max,
+      9000,
+      second ? MAX_FEEDBACK_COMPLETE : MAX_FEEDBACK_PARTIAL,
+      { anchorId: threadId, decidedBy: 'rule:quiz_feedback' },
+      () => {
+        quiz.feedbackGiven = true;
+        quiz.verdict = second ? 'complete' : 'partial';
+        pushThread(t);
+        // The learner's own words, and only those, move the bar.
+        fillObjective(quiz.objectiveId ?? 'obj-fidelity', second ? 1 : 0.5, text);
+        if (second) resolveDocQuestion(threadId, 'you_got_this');
+      },
+    );
+  }
+
+  /** §4.4: the give-up path and the Pass control land in the same place, by design. */
+  function releaseDocAnswer(threadId: string, by: 'give_up' | 'pass' | 'closure'): void {
+    const t = chatThreadMap.get(threadId);
+    const quiz = t?.quiz;
+    if (!t || !quiz) return;
+    if (cueHandle) clearTimeout(cueHandle);
+    think(
+      max,
+      9000,
+      MAX_RELEASED,
+      { anchorId: threadId, decidedBy: by === 'closure' ? 'rule:closure' : 'rule:answer_released' },
+      () => {
+        quiz.answerShown = true;
+        quiz.feedbackGiven = true;
+        resolveDocQuestion(threadId, 'released');
+      },
+    );
+  }
+
+  /** One learner turn in the doc chat or a span thread. Every branch is §4.2's table. */
+  function docChatTurn(threadId: string, text: string): void {
+    const t = thread(threadId);
+    const mine = post(text, null, { anchorId: threadId });
+    pushThread(t);
+    emit({
+      type: 'turn.received',
+      roomId: ROOM,
+      received: {
+        turnId: `turn_mock_${mockTurn + 1}`,
+        messageId: mine.id,
+        anchorId: threadId,
+        receivedAt: iso(),
+        yieldMs: 8000,
+        etaMs: null,
+        responder: null,
+      },
+    });
+
+    // An open question takes the turn: the learner is answering, not starting a conversation.
+    if (t.quiz?.open) {
+      docQuizTurn(threadId, t.quiz, text);
+      return;
+    }
+
+    const mention = parseMention(text);
+    if (mention?.agent === 'max') {
+      think(max, 9000, MAX_MENTION, { anchorId: threadId, decidedBy: 'rule:mention' });
+      return;
+    }
+    if (mention?.agent === 'ellie') {
+      think(ellie, 4500, ELLIE_MENTION, { anchorId: threadId, decidedBy: 'rule:mention' });
+      return;
+    }
+
+    docTurns += 1;
+    const n = docTurns;
+    const answer = ELLIE_ANSWERS[Math.min(n - 1, ELLIE_ANSWERS.length - 1)]!;
+    emitCursor('ellie', mockBlockOnPage(22), 'thinking');
+    think(ellie, 4500, answer, { anchorId: threadId, decidedBy: 'rule:ellie_answers' }, () => {
+      // §5.1: what she answered was not in the document, so she writes it in where it belongs.
+      later(900, () =>
+        emitEdit({
+          author: 'ellie',
+          cause: 'answer_missing',
+          focusBlockId: mockBlockOnPage(22),
+          why: 'Asked in the chat and the notes did not say it, so it goes in at the segment it belongs to.',
+          ops: [
+            {
+              op: 'insert_after',
+              anchorBlockId: mockBlockOnPage(22),
+              blocks: [
+                {
+                  kind: 'paragraph',
+                  text:
+                    'Name the question before you choose the fidelity: the prototype you want is ' +
+                    'the cheapest one that could **falsify** the design goal you wrote down.',
+                  prov: { pages: [20, 22], reason: 'asked in the conversation' },
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      // Ellie answered in full, so the rule gives Max the floor for one question — and only
+      // while nothing is already open (§4.2: one open Max question at a time per file).
+      const open = [...chatThreadMap.values()].some((x) => x.quiz?.open);
+      if (!open && n === 1) later(3200, () => askDocQuestion(threadId, 'obj-fidelity', 0));
+    });
+  }
+
+  // ── private threads (§4.1) ───────────────────────────────────────────────────────────────
+
+  function privateThread(agent: AgentAuthor) {
+    const found = privateThreadMap.get(agent);
+    if (found) return found;
+    const made = { threadId: `priv_${agent}_${hex12()}`, turns: [] as PrivateTurnView[] };
+    privateThreadMap.set(agent, made);
+    return made;
+  }
+
+  const PRIVATE_REPLY: Record<AgentAuthor, string> = {
+    ellie:
+      'Not embarrassing, and nothing here reaches Max. Two sentences: **formative** studies are ' +
+      'the ones you run while the design is still moving — small, quick, and the audience is ' +
+      'your own team (p. 18). **Summative** ones are the ones you run when there is something to ' +
+      'judge, and the audience is everybody else.\n\n' +
+      'If it helps, put it in the document and it stops being a thing you have to hold in your head.',
+    max:
+      "Between us, and Ellie can't see this. You are allowed to ask me what the question is " +
+      'asking — that is not the same as asking for the answer, and I will always answer it.\n\n' +
+      'What I want from that question is one item from the *hidden* column of p. 34 and a reason ' +
+      'it matters for a reminder specifically. One sentence is enough.',
+  };
 
   return {
     async bootstrap(): Promise<Bootstrap> {
@@ -752,20 +1325,49 @@ export function createMockBridge(): ChatterEdApi {
     },
     async closeWhisper({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
 
-    // The vault needs a filesystem, which `vite dev` does not have. Empty, never fabricated:
-    // a mock vault full of invented file names would be a screenshot of a lie.
-    getVault: async () => EMPTY_VAULT,
-    chooseVault: async () => null,
-    rescanVault: async () => EMPTY_VAULT,
-    topicCandidates: async () => [],
-    promoteTopics: async () => EMPTY_VAULT,
-    vaultTree: async () => [],
+    /**
+     * The vault needs a filesystem, which `vite dev` does not have — so it holds **exactly one
+     * file, labelled as the fixture it is** (#48).
+     *
+     * This is a deliberate change from "empty, never fabricated". The argument for the empty
+     * vault was that invented file names would be a screenshot of a lie; the argument for this
+     * one row is that the collab doc's whole surface hangs off an open document, and a shell
+     * that cannot be opened at all cannot be built or reviewed without Electron. The row names
+     * the real deck, says `(dev fixture)` in its own display name, and opens the fixture notes —
+     * which are themselves written from that deck, page by page. Nothing here claims to have
+     * read a file it has not.
+     */
+    getVault: async () => MOCK_VAULT,
+    chooseVault: async () => MOCK_VAULT,
+    rescanVault: async () => MOCK_VAULT,
+    topicCandidates: async () => [{ relPath: 'CS3249', name: 'CS3249', fileCount: 1, promoted: true }],
+    promoteTopics: async () => MOCK_VAULT,
+    vaultTree: async () => [
+      { name: MOCK_FILE_NAME, relPath: `CS3249/${MOCK_FILE_NAME}`, dir: false, children: [], file: MOCK_VAULT_FILE },
+    ],
     findFiles: async () => [],
     searchVault: async () => [],
-    openDocument: async ({ fileId }) => ({
-      fileId, name: '', relPath: '', absPath: '', kind: 'other' as const, ext: '', size: 0,
-      pageCount: null, text: null, bytes: null, error: 'No vault outside Electron.',
-    }),
+    openDocument: async ({ fileId }) =>
+      fileId === MOCK_FILE_ID
+        ? {
+            fileId,
+            name: `${MOCK_FILE_NAME} (dev fixture)`,
+            relPath: `CS3249/${MOCK_FILE_NAME}`,
+            absPath: `~/vault/CS3249/${MOCK_FILE_NAME}`,
+            kind: 'pdf' as const,
+            ext: '.pdf',
+            size: 2_525_927,
+            pageCount: MOCK_PAGE_COUNT,
+            text: null,
+            // No pdf.js bytes outside Electron: the carousel, the modal and the inline figures
+            // degrade to their captions, and everything else is real.
+            bytes: null,
+            error: null,
+          }
+        : {
+            fileId, name: '', relPath: '', absPath: '', kind: 'other' as const, ext: '', size: 0,
+            pageCount: null, text: null, bytes: null, error: 'No vault outside Electron.',
+          },
     revealFile: async () => undefined,
     sessionSeed: async ({ fileId }) => ({
       fileId, fileName: '', relPath: '', moduleCode: null, pageFrom: null, pageTo: null,
@@ -998,53 +1600,270 @@ export function createMockBridge(): ChatterEdApi {
     },
 
     // ── collab-doc (#48) ────────────────────────────────────────────────────────────────────
-    // Placeholders the lead put here so the tree typechecks on day 0. **Track T5 owns this file**
-    // and replaces every one of them with a working mock (a fixture notes doc, scripted chats,
-    // progress) so the editor and the shell can be built under `vite dev`.
+
+    /** Null until the deck has been ingested once — and it never starts one, as the channel says. */
     async notesGet() {
-      return null;
+      return notes.status === 'none' ? null : notesView();
     },
-    async notesIngest() {
-      throw new Error('mock: notes ingest not built yet');
+    /**
+     * The two-pass ingest, in miniature: the doc opens on window 1 and the rest fills in behind
+     * the "Ellie is still writing" marker (§2). The windows only ever **append** after the
+     * previous window's last block, which is the rule (contract E9) that makes it safe for the
+     * learner to be typing while window 3 lands.
+     */
+    async notesIngest({ force }) {
+      if (notes.status === 'ready' && force !== true) return notesView();
+      notes.status = 'streaming';
+      notes.windowsDone = 1;
+      emitNotesStatus();
+      MOCK_WINDOWS.forEach((blocks, i) => {
+        later(1400 + i * 2600, () => {
+          emit({
+            type: 'notes.window',
+            roomId: ROOM,
+            fileId: notes.fileId,
+            docId: notes.docId,
+            /**
+             * Window 2 names the last block of window 1; window 3 names nothing.
+             *
+             * The renderer mints the ids for a window's own blocks (`ops.appendWindow`), so the
+             * mock cannot name the block window 2 ended on — and `appendWindow` treats a null
+             * anchor as *the end of the document*, which is exactly right for the window after
+             * one whose ids it does not know. Either way a window only ever **adds**, which is
+             * the rule that makes it safe while the learner is already typing (contract E9).
+             */
+            afterBlockId: i === 0 ? mockLastBlockId() : null,
+            blocks,
+          });
+          notes.windowsDone = i + 2;
+          if (notes.windowsDone >= notes.windowsTotal) notes.status = 'ready';
+          emitNotesStatus();
+        });
+      });
+      return notesView();
     },
-    async notesPageImages() {
-      return { stored: 0 };
+    /** No canvas in `vite dev` either; the fixture's one figure renders as its caption. */
+    async notesPageImages({ images }) {
+      return { stored: images.length };
     },
-    async notesSave({ baseVersion }) {
-      return { ok: true as const, version: baseVersion + 1 };
+    /**
+     * Optimistic save. The conflict branch is real — pass a stale `baseVersion` and the stored
+     * doc comes back — because a renderer that has never met a conflict has never been tested
+     * against the one thing that will happen the first time a window lands mid-keystroke (D5).
+     */
+    async notesSave({ baseVersion, doc }) {
+      if (baseVersion !== notes.version) {
+        return { ok: false as const, conflict: true as const, version: notes.version, doc: notes.doc };
+      }
+      notes.doc = doc;
+      notes.version += 1;
+      // The blocks moved, so the objectives' own block ids are re-derived from the saved doc —
+      // by page intersection, through T2's `blocksForPages`, as the main process will.
+      const fills = new Map(objectives.map((o) => [o.objectiveId, o]));
+      objectives = fixtureObjectives(doc).map((o) => ({ ...(fills.get(o.objectiveId) ?? o), blockIds: o.blockIds }));
+      return { ok: true as const, version: notes.version };
     },
     async notesFreeze({ frozen }) {
+      notes.frozen = frozen;
       return { frozen };
     },
-    async notesEditResolved() {},
-    async notesSuggestionResolved() {},
-    async notesDocText() {
-      return { assessed: false, threadId: null, reason: 'mock' };
+    async notesEditResolved({ editId, status, blockIds, suggestion }) {
+      const edit = notes.edits.find((e) => e.editId === editId);
+      if (edit) {
+        edit.status = status;
+        edit.blockIds = blockIds;
+        edit.resolvedAt = status === 'applied' ? null : iso();
+      }
+      if (suggestion) notes.suggestions.push(suggestion);
     },
+    async notesSuggestionResolved({ suggestionId, status }) {
+      const found = notes.suggestions.find((s) => s.suggestionId === suggestionId);
+      if (found) {
+        found.status = status;
+        found.resolvedAt = iso();
+      }
+    },
+    /**
+     * **The learner wrote in the document and paused** (§6). Main decides whether it is an
+     * attempt; here it always is, and the whole of §6's path runs: a span thread, Max's feedback
+     * in it, the objective moving on the learner's own words, and — because a correction to
+     * learner text may never be applied over it — a **suggestion** rather than an edit (§5.4).
+     */
+    async notesDocText({ blockId, text }) {
+      const threadId = `${SPAN_THREAD_PREFIX}${hex12()}`;
+      const t = thread(threadId, { kind: 'span', blockId, quote: text.slice(0, 120) });
+      post(text, null, { anchorId: threadId, kind: 'answer' });
+      pushThread(t);
+      think(
+        max,
+        9000,
+        'Partly there, and this is your own sentence so it counts. p. 34: paper hides feel and ' +
+          'response time — your line says "paper shows you the flow", which is right, but the ' +
+          'word *and timing* in it is the part the deck contradicts. I have suggested the ' +
+          'correction rather than making it; accept or reject it, it is your text.',
+        { anchorId: threadId, decidedBy: 'rule:quiz_feedback' },
+        () => {
+          fillObjective('obj-paper', 0.5, text);
+          const suggestionId = `sug_mock_${hex12()}`;
+          const suggestion: Suggestion = {
+            suggestionId,
+            docId: notes.docId,
+            editId: `edit_mock_${editSeq + 1}`,
+            author: 'max',
+            blockId,
+            status: 'open',
+            note: 'p. 34 lists response time under what paper hides.',
+            threadId,
+            createdAt: iso(),
+            resolvedAt: null,
+          };
+          notes.suggestions.push(suggestion);
+          emitEdit({
+            author: 'max',
+            cause: 'suggestion',
+            focusBlockId: blockId,
+            why: 'A correction to your own sentence is a suggestion, never an edit.',
+            ops: [],
+            suggestion: {
+              blockId,
+              quote: text.slice(0, 120),
+              replacement: text.slice(0, 120).replace(/and timing/i, 'but not timing'),
+              note: suggestion.note ?? '',
+              threadId,
+            },
+          });
+          emit({ type: 'doc.suggestion', roomId: ROOM, docId: notes.docId, suggestion });
+        },
+      );
+      return { assessed: true, threadId, reason: null };
+    },
+
     async chatThreads({ fileId }) {
-      return { roomId: null, fileId, threads: [] };
+      return {
+        roomId: chatThreadMap.size > 0 ? ROOM : null,
+        fileId,
+        threads: [...chatThreadMap.values()].map((t) => ({ ...t, quiz: t.quiz ? { ...t.quiz } : null })),
+      };
     },
-    async chatSend() {
-      throw new Error('mock: chat not built yet');
+    async chatSend({ fileId, threadId, text }) {
+      const id = threadId ?? DOC_ANCHOR_ID;
+      docChatTurn(id, text);
+      void fileId;
+      return { roomId: ROOM, threadId: id };
     },
-    async chatOpenSpan() {
-      throw new Error('mock: chat not built yet');
+    /** Highlight + Ctrl+E: the span's own thread, with the learner's question already in it. */
+    async chatOpenSpan({ blockId, quote, question }) {
+      const threadId = `${SPAN_THREAD_PREFIX}${hex12()}`;
+      const t = thread(threadId, { kind: 'span', blockId, quote });
+      post(question, null, { anchorId: threadId });
+      pushThread(t);
+      think(
+        ellie,
+        4500,
+        'About that line specifically: it is the deck\'s own wording from p. 34, and the column ' +
+          'it sits in is *hidden*, not *revealed*. The useful way to hold it is that paper tests ' +
+          'the **structure** of the conversation and nothing about its **timing**.',
+        { anchorId: threadId, decidedBy: 'rule:ellie_answers' },
+      );
+      return { roomId: ROOM, threadId };
     },
-    async chatPrivateOpen() {
-      throw new Error('mock: chat not built yet');
+    async chatPrivateOpen({ agent }) {
+      const t = privateThread(agent);
+      return { roomId: ROOM, threadId: t.threadId, turns: t.turns.map((x) => ({ ...x })) };
     },
-    async chatPrivateSend() {},
-    async chatInsertIntoDoc() {
-      return { editId: null };
+    async chatPrivateSend({ threadId, text }) {
+      const entry = [...privateThreadMap.entries()].find(([, v]) => v.threadId === threadId);
+      if (!entry) return;
+      const [agent, held] = entry;
+      const mine: PrivateTurnView = {
+        id: `pt_${hex12()}`,
+        role: 'learner',
+        agentKey: agent,
+        text,
+        createdAt: iso(),
+        insertedEditId: null,
+      };
+      held.turns.push(mine);
+      emit({ type: 'chat.private', roomId: ROOM, threadId, turn: { ...mine } });
+      later(agent === 'ellie' ? 2600 : 4200, () => {
+        const reply: PrivateTurnView = {
+          id: `pt_${hex12()}`,
+          role: 'agent',
+          agentKey: agent,
+          text: PRIVATE_REPLY[agent],
+          createdAt: iso(),
+          insertedEditId: null,
+        };
+        held.turns.push(reply);
+        emit({ type: 'chat.private', roomId: ROOM, threadId, turn: { ...reply } });
+      });
     },
-    async quizPass() {
-      return { released: false, refused: 'mock' };
+    /** The one path from private to shared (§4.1). It is the learner's click, never the agent's. */
+    async chatInsertIntoDoc({ threadId, turnId, anchorBlockId }) {
+      const entry = [...privateThreadMap.entries()].find(([, v]) => v.threadId === threadId);
+      if (!entry) return { editId: null };
+      const [agent, held] = entry;
+      const turn = held.turns.find((t) => t.id === turnId);
+      if (!turn) return { editId: null };
+      const anchor = anchorBlockId ?? mockBlockOnPage(18);
+      const editId = emitEdit({
+        author: agent,
+        cause: 'whisper_insert',
+        focusBlockId: anchor,
+        why: 'You asked for this privately and then asked for it in the document.',
+        ops: [
+          {
+            op: 'insert_after',
+            anchorBlockId: anchor,
+            blocks: [
+              {
+                kind: 'paragraph',
+                text: turn.text.split('\n\n')[0] ?? turn.text,
+                prov: { pages: [18], reason: 'brought over from a private note' },
+              },
+            ],
+          },
+        ],
+      });
+      if (editId) {
+        turn.insertedEditId = editId;
+        emit({ type: 'chat.private', roomId: ROOM, threadId, turn: { ...turn } });
+      }
+      return { editId };
     },
+    /** §4.4's Pass. The same release the give-up phrases get, and it fills nothing either. */
+    async quizPass({ threadId }) {
+      const t = chatThreadMap.get(threadId);
+      if (!t?.quiz?.open) return { released: false, refused: 'No question is open here.' };
+      releaseDocAnswer(threadId, 'pass');
+      return { released: true, refused: null };
+    },
+
     async progressGet({ fileId }) {
-      return { fileId, docId: null, status: 'none' as const, completed: 0, total: 0, fraction: 0, objectives: [] };
+      void fileId;
+      return progressView();
     },
-    async progressStart() {
-      throw new Error('mock: progress not built yet');
+    /**
+     * A lesson card's **Start** (§6): Ellie says what we need to understand, the doc scrolls to
+     * the segment that carries it, and she ends by asking the learner for a question. The scroll
+     * target is returned rather than pushed, because the renderer owns where the document goes.
+     */
+    async progressStart({ objectiveId }) {
+      const objective = objectives.find((o) => o.objectiveId === objectiveId) ?? objectives[0]!;
+      const t = thread(DOC_ANCHOR_ID);
+      const pages = objective.pages.length > 0 ? ` It is on ${objective.pages.map((n) => `p. ${n}`).join(', ')}.` : '';
+      think(
+        ellie,
+        3600,
+        `Right — **${objective.title.toLowerCase()}**.\n\n` +
+          `What we need is this: ${objective.statement}${pages} I have scrolled the notes to the ` +
+          'part that carries it.\n\n' +
+          'Ask me something about it to begin — "I do not know where to start" is a perfectly ' +
+          'good first question.',
+        { anchorId: DOC_ANCHOR_ID, decidedBy: 'rule:lesson_start' },
+        () => pushThread(t),
+      );
+      return { roomId: ROOM, threadId: DOC_ANCHOR_ID, blockId: objective.blockIds[0] ?? null };
     },
 
     // ── The learning-objective tree (issue #38) ──────────────────────────
