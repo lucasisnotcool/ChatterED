@@ -22,6 +22,7 @@
   import { taughtObjectives } from '../../lib/progressview.js';
   import { loadNotesPane, type PaneComponent } from './panes.js';
   import ChatColumn from './ChatColumn.svelte';
+  import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
   import NotesPlaceholder from './NotesPlaceholder.svelte';
   import ProgressBar from './ProgressBar.svelte';
@@ -66,12 +67,26 @@
   let filesOpen = $state(readBool(FILES_OPEN_KEY, true));
   let dragging = $state(false);
   let Pane = $state<PaneComponent | null>(null);
+  /**
+   * False until `loadNotesPane()` has answered, because **"no pane yet" and "no pane at all" are
+   * not the same thing** and mounting the stand-in for the first is expensive.
+   *
+   * `NotesPlaceholder` starts a *real* ingest if the file has none (it has to: it was the only
+   * notes surface while T4 was building theirs). So while the glob resolved — one microtask, but
+   * a microtask the placeholder's own `$effect` runs inside — the stand-in was calling
+   * `notesIngest` on every fresh deck, seconds before T4's pane could rasterise a single page.
+   * The ingest was then already `pending` when the real pane asked, so it adopted it and never
+   * sent the slides, and §2's refine pass ran text-only on every deck. Found in the live run of
+   * 20 Sep, where it is the whole of `with_images: false`.
+   */
+  let paneResolved = $state(false);
 
   /** T4's editor, the moment their file exists. Until then, the read-only stand-in. */
   $effect(() => {
     void loadNotesPane().then((found) => {
       untrack(() => {
         Pane = found;
+        paneResolved = true;
       });
     });
   });
@@ -203,7 +218,7 @@
         <!-- T4's editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
         {@const Editor = Pane as import('svelte').Component<{ fileId: string }>}
         <Editor fileId={doc.fileId} />
-      {:else}
+      {:else if paneResolved}
         <NotesPlaceholder fileId={doc.fileId} />
       {/if}
     </div>

@@ -59,6 +59,15 @@ const SAVE_DEBOUNCE_MS = 800;
 /** How often the doc-text pause detector is polled while there is something pending. */
 const DOC_TEXT_TICK_MS = 1_000;
 
+/**
+ * How long a first ingest waits for the deck to open before it starts without the slides.
+ *
+ * Generous on purpose: it is not a pacing knob but a deadlock guard. A 66-page deck parses in
+ * seconds even with main busy extracting the same file, so reaching this means something is
+ * wrong, and §2 is explicit that an ingest with no images still has to produce notes.
+ */
+const SLIDES_WAIT_MS = 60_000;
+
 const EMPTY_INGEST: NotesIngestView = {
   status: 'none',
   windowsDone: 0,
@@ -151,17 +160,33 @@ export class DocStore {
     this.loading = true;
 
     try {
-      void this.#openSlides(fileId, token);
+      const slides = this.#openSlides(fileId, token);
 
       const existing = has('notesGet') ? await bridge().notesGet({ fileId }) : null;
       if (token !== this.#openToken) return;
       if (existing) {
+        // Reopening: the notes are already written, so nothing waits on the deck's pixels and
+        // the pane draws while the carousel is still parsing behind it.
         this.#adopt(existing);
         this.loading = false;
         return;
       }
 
-      // Nothing yet: send the slides, then start the two-pass ingest.
+      /**
+       * Nothing yet: send the slides, then start the two-pass ingest.
+       *
+       * **This is the one place the deck's bytes are waited for.** The images are an input to
+       * the refine pass, not decoration, so starting the ingest before they are in main's hands
+       * silently downgrades it to text-only — which is what happened on every live ingest until
+       * 20 Sep: `#openSlides` was left running, `#sendPageImages` polled for five seconds, and
+       * main was busy extracting the very same deck, so the poll always lost.
+       *
+       * Bounded, because the alternative failure is worse: a deck whose pixels never arrive must
+       * still become notes. `#openSlides` swallows its own errors and always settles, so the
+       * timeout is only reached by something pathological (a pdf.js worker that never answers).
+       */
+      await Promise.race([slides, new Promise((resolve) => setTimeout(resolve, SLIDES_WAIT_MS))]);
+      if (token !== this.#openToken) return;
       await this.#sendPageImages(fileId, token);
       if (token !== this.#openToken) return;
       if (!has('notesIngest')) {
