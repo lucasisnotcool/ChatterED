@@ -454,6 +454,32 @@ describe('the silence rule reads what the quiet is quiet about', () => {
     }
   });
 
+  /**
+   * The live run of 2026-09-19 (STATUS, "#47 live"): "+ Try this", then an Ask to Ellie in the same
+   * thread, then quiet. `lastAgentTurn` was the explanation, so nothing was said over an open
+   * question with no attempt — against §5's own rule. What the learner owes decides, not who spoke.
+   */
+  it('fills the silence over an open quiz even when the last agent turn was an explanation', () => {
+    const quiz = openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0);
+    const s1 = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 1, pendingQuiz: quiz });
+    expect(s1.speak).toBe(true);
+    expect(s1.role).toBe('challenger');
+    expect(s1.moveType).toBe('content_free_nudge');
+    expect(s1.decidedBy).toBe('rule:silence_quiz_waiting');
+    const s2 = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2, pendingQuiz: quiz });
+    expect(s2.role).toBe('challenger');
+    expect(s2.moveType).toBe('quiz_hint');
+    expect(s2.targetElementId).toBe('R2');
+    expect(s2.decidedBy).toBe('rule:silence_hint');
+  });
+
+  it('still says nothing after an explanation once the answer has been shown (no debt)', () => {
+    const quiz = { ...openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0), answerShown: true };
+    const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 1, pendingQuiz: quiz });
+    expect(d.speak).toBe(false);
+    expect(d.decidedBy).toBe('rule:silence_after_explanation');
+  });
+
   it('keeps §C5 whole while the Tester is waiting: stage 1 adds no subject matter', () => {
     const d = silence({ lastAgentTurn: 'tester_question' });
     expect(d.role).toBe('peer');

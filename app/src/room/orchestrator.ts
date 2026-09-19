@@ -480,6 +480,51 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
 export function silenceDecision(input: DecisionInput): TurnDecision {
   const stage = input.silenceStage ?? 1;
   const last = input.lastAgentTurn ?? 'none';
+  const quiz = input.pendingQuiz ?? null;
+
+  /**
+   * **An open question outranks whoever spoke last** (issue #47, live run of 2026-09-19).
+   *
+   * The learner clicked "+ Try this", asked Ellie a clarification in the same thread, and went
+   * quiet. `lastAgentTurn` was `teacher_explanation`, so the branch below said nothing, and no
+   * stage 2 ever followed: an unanswered Tester question with `attempts: 0` sat there with the
+   * app silent — the exact case §5 says is the one silence the app *does* fill. What the silence
+   * means is decided by what the learner owes, and an open quiz is a debt regardless of the last
+   * speaker. Both stages are the Tester's, so the divider does not read "Ellie stepped in" over
+   * Max's question: stage 1 is the content-free pool (§C5, role-agnostic in `#generate`), stage 2
+   * is his hint. `feedbackDue` is excluded — that is the Tester owing the learner, not the reverse,
+   * and `ruleDecision` settles it before a silence can reach here.
+   */
+  if (quizOpen(quiz) && !feedbackDue(quiz)) {
+    if (stage === 1) {
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'content_free_nudge',
+        probeType: null,
+        targetElementId: null,
+        challenges: [],
+        rationale: 'The Tester\'s question is open and the learner has gone quiet: a content-free line, no subject matter.',
+        decidedBy: 'rule:silence_quiz_waiting',
+        handOffLine: null,
+        failure: null,
+      };
+    }
+    return {
+      speak: true,
+      role: 'challenger',
+      moveType: 'quiz_hint',
+      probeType: null,
+      targetElementId: quiz!.elementId,
+      challenges: [],
+      rationale:
+        'The learner is stuck on the Tester\'s question; the Tester hints, because the Teacher ' +
+        'supplying it would be answering the quiz.',
+      decidedBy: 'rule:silence_hint',
+      handOffLine: null,
+      failure: null,
+    };
+  }
 
   /**
    * **After an explanation, nothing** (issue #47, `attempt-first.md` §5 — and this is
