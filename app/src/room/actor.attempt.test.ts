@@ -331,7 +331,7 @@ describe('the classification never goes stale', () => {
       h.actor.relay({
         threadId: whisper.threadId,
         whisperId: turn.id,
-        attribution: 'own',
+        attribution: 'as_me',
         text: 'Does PSD allow a zero eigenvalue?',
         anchorId: SEG,
       }),

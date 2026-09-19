@@ -952,10 +952,18 @@ export class AppService {
        * two reasons are the panel's own (`renderer/lib/objectives.panelStatus`) so the disabled
        * line and the panel above it never say different things about the same tree.
        */
+      /**
+       * **The tree's own note wins.** §2.1 names both reasons — *"Ellie is still reading the deck"*
+       * / *"needs a live backend"* — and the second of them is carried on a **pending** row, not a
+       * failed one (`objectives/ingest.ts`: a deck on the scripted backend has not gone wrong, it
+       * simply cannot be read). Reading the status alone would promise a spinner that never
+       * resolves, which is the failure `backendNote` exists to stop in the panel.
+       */
       const reason =
-        !tree || tree.status === 'pending'
+        tree?.error?.trim() ||
+        (!tree || tree.status === 'pending'
           ? `${teacherName(rosterFor(this.pairing()))} is still reading the deck.`
-          : (tree.error ?? 'That deck could not be read.');
+          : 'That deck could not be read.');
       log().info('flow.try.refused', { file_id: input.fileId, status: tree?.status ?? 'none' });
       return refuse(reason);
     }
