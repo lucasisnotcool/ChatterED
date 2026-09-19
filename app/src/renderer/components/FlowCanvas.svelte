@@ -63,6 +63,7 @@
   import AskHereLine from './AskHereLine.svelte';
   import { pillLabel, scrollDecision, thinkingAnchor } from '../lib/flowchat.js';
   import {
+    backendNote,
     buildTree,
     firstRef,
     nodeIndex,
@@ -71,6 +72,7 @@
     teachAnchorRef,
     teachPrefill,
   } from '../lib/objectives.js';
+  import { tryHereState } from '../lib/quiz.js';
   import { store } from '../lib/store.svelte.js';
   import DebugDrawer from './DebugDrawer.svelte';
   import ObjectivesPanel from './ObjectivesPanel.svelte';
@@ -886,6 +888,54 @@
     scroller?.querySelector<HTMLElement>(`[data-segment="${segmentId}"]`)?.scrollIntoView({ block: 'center' });
   }
 
+  // ── "+ Try this" (issue #47, `attempt-first.md` §2.1) ─────────────────────
+  /**
+   * Whether the line is live, computed **once for the deck** rather than per card: the answer is
+   * a property of the objective tree, and forty cards asking it forty times would be forty copies
+   * of the same sentence. The scripted backend's own note is preferred when it has one, because
+   * "needs a live backend" is true and "Ellie is still reading the deck" would not be.
+   */
+  const tryState = $derived(
+    tryHereState({
+      tree: store.objectivesTree,
+      teacherName: store.teacherName,
+      note: backendNote({
+        backend: store.boot?.backend ?? null,
+        status: store.objectivesTree?.status ?? null,
+        fromFixture: store.objectivesFromFixture,
+      }),
+    }),
+  );
+
+  /**
+   * A click on "+ Try this", on a card or from the objectives panel.
+   *
+   * The refusal timer is armed here rather than in the store for the same reason the segment
+   * refusals are: the ~2 s the sentence stays on the card is a property of this view, and the
+   * store holds no timers.
+   */
+  async function tryHere(segmentId: string, objectiveId?: string): Promise<void> {
+    await store.tryHere(segmentId, objectiveId);
+    if (store.flowRefusal) armRefusal();
+  }
+
+  /**
+   * A `p. N` citation in a Tester's grounds, clicked (§3, the nice-to-have).
+   *
+   * The same two gestures the objectives panel's click makes — bring the first card on that page
+   * into view, ring it for a moment — because a citation and a ref are the same kind of pointer
+   * and behaving differently would make one of them look broken.
+   */
+  $effect(() => {
+    const want = store.goToPage;
+    if (!want) return;
+    const segmentId = untrack(() => cards.find((c) => c.page === want.page)?.segmentId ?? null);
+    store.goToPage = null;
+    if (!segmentId) return;
+    bringIntoView(segmentId);
+    ring(segmentId);
+  });
+
   /**
    * A click, Enter or ⌘Enter on a node.
    *
@@ -935,6 +985,26 @@
     askPrefill = { segmentId, text: teachPrefill(node.objective.title) };
     store.setAskObjective({ id: objectiveId, title: node.objective.title });
     store.openAsk(segmentId);
+  }
+
+  /**
+   * **Try this** on a node in the objectives panel (issue #47, item 5).
+   *
+   * The panel's third verb, beside navigate-and-ask and **Teach me this**: the learner has picked
+   * the objective themselves, so the pick in §2.1 is bypassed and the id travels with the call.
+   * It lands on the node's **first ref segment** — the same card the panel's own click scrolls to
+   * — because a question about an objective belongs under the slide that teaches it. A node with
+   * no ref in this deck has nowhere to put the question and does not offer the action.
+   */
+  async function tryObjective(objectiveId: string): Promise<void> {
+    const node = objectiveIndex.get(objectiveId);
+    if (!node) return;
+    selectedObjective = objectiveId;
+    const segmentId = resolveRefSegment(firstRef(node.objective), cards);
+    if (!segmentId) return;
+    bringIntoView(segmentId);
+    ring(segmentId);
+    await tryHere(segmentId, objectiveId);
   }
 
   /** Esc in the panel comes back to the deck, at the card the panel sent the learner to. */
@@ -1100,6 +1170,7 @@
               {room}
               lockedByAnswerId={store.flowLocks[DECK_ANCHOR_ID] ?? null}
               composerOpen={store.composerAt === DECK_ANCHOR_ID}
+              quiz={store.flowQuiz[DECK_ANCHOR_ID] ?? null}
             />
           {/if}
         {/if}
@@ -1148,6 +1219,10 @@
             askAbout={store.askingAt === card.segmentId ? store.askObjective : null}
             askPrefill={askPrefill?.segmentId === card.segmentId ? askPrefill.text : ''}
             onaskabout={() => store.setAskObjective(null)}
+            tryReason={tryState.reason}
+            tryBusy={store.tryBusy === card.segmentId}
+            testerName={store.testerName}
+            ontry={() => void tryHere(card.segmentId)}
             highlight={highlightId === card.segmentId}
             objectives={objectivesForSegment(
               store.objectivesTree?.objectives ?? [],
@@ -1209,6 +1284,7 @@
                 {room}
                 lockedByAnswerId={store.flowLocks[card.segmentId] ?? null}
                 composerOpen={store.composerAt === card.segmentId}
+                quiz={store.flowQuiz[card.segmentId] ?? null}
               />
             {/if}
           {/if}
@@ -1240,6 +1316,8 @@
       selectedId={selectedObjective}
       onactivate={(id, ask) => goToObjective(id, ask)}
       onteach={(id) => void teachObjective(id)}
+      ontry={(id) => void tryObjective(id)}
+      tryReason={tryState.reason}
       onescape={focusFlow}
       onclose={() => store.setObjectivesOpen(false)}
     />

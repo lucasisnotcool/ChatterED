@@ -43,6 +43,12 @@
     selectedId = null,
     onactivate,
     onteach,
+    ontry,
+    /**
+     * Why **Try this** is disabled, when it is (issue #47): the tree's status, worded once for the
+     * whole deck by `tryHereState()` in `lib/quiz.ts`. Null when the action is live.
+     */
+    tryReason = null,
     onescape,
     onclose,
   }: {
@@ -51,6 +57,9 @@
     /** Enter scrolls; a click and ⌘Enter also open the question (§5). */
     onactivate?: (objectiveId: string, ask: boolean) => void;
     onteach?: (objectiveId: string) => void;
+    /** **Try this** on a node: the Tester asks about *this* objective (`attempt-first.md` §2.1). */
+    ontry?: (objectiveId: string) => void;
+    tryReason?: string | null;
     /** Esc returns focus to the flow — the panel never becomes a place you are stuck in. */
     onescape?: () => void;
     onclose?: () => void;
@@ -249,6 +258,11 @@
         selected={selectedId === row.id}
         lit={store.objectivesLit.ids.includes(row.id)}
         teachable={row.node.objective.assumedByDeck && firstRef(row.node.objective) === null}
+        {tryReason}
+        testerName={store.testerName}
+        tryBusy={store.tryBusy !== null}
+        tryable={ontry !== undefined && firstRef(row.node.objective) !== null}
+        ontry={() => ontry?.(row.id)}
         onfocusrow={() => (focusId = row.id)}
         ontoggle={() => toggle(row.id)}
         onactivate={(ask) => {

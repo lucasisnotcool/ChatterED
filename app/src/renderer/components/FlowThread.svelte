@@ -20,7 +20,7 @@
    *    content, which is the whole reason a held reply in a document reads as deliberate rather
    *    than as lag.
    */
-  import type { MessageView, RoomSnapshot } from '../../shared/types.js';
+  import type { FlowQuizView, MessageView, RoomSnapshot } from '../../shared/types.js';
   import {
     RECEIVED_LINE,
     pendingFor,
@@ -32,6 +32,7 @@
   import { clockTime } from '../lib/time.js';
   import { counterLine, counterTitle } from '../lib/cost.js';
   import { canSummarise, conversationFor, offersSummary, splitThread } from '../lib/summary.js';
+  import { quizControls } from '../lib/quiz.js';
   import AiSegment from './AiSegment.svelte';
   import SummaryCard from './SummaryCard.svelte';
   import ThinkingIndicator from './ThinkingIndicator.svelte';
@@ -45,12 +46,20 @@
     /** The REFERENCE card this thread is locked by, if any. */
     lockedByAnswerId = null,
     composerOpen = false,
+    /**
+     * **The Tester's open question here** (issue #47, `attempt-first.md` §2.3–§2.4), from
+     * `FlowThreadView.quiz`. Null when no quiz is open, which is the usual case. Everything this
+     * component does with it goes through `quizControls()`, so which control is offered in which
+     * state is one tested pure function and not a fan of `{#if}`s in markup.
+     */
+    quiz = null,
   }: {
     anchorId: string;
     messages: MessageView[];
     room: RoomSnapshot;
     lockedByAnswerId?: string | null;
     composerOpen?: boolean;
+    quiz?: FlowQuizView | null;
   } = $props();
 
   let text = $state('');
@@ -178,8 +187,21 @@
    */
   const firingAgent = $derived(room.agents.find((a) => a.role === 'peer') ?? null);
 
+  /**
+   * **The attempt loop's controls** (§2.4). The Tester's own name comes off the live roster, for
+   * the same reason `firingAgent` does — #32 pinned the pairing, not the names.
+   */
+  const tester = $derived(room.agents.find((a) => a.role === 'challenger') ?? null);
+  const controls = $derived(quizControls(quiz, tester?.displayName ?? 'Max'));
+  /**
+   * A quiz open in this thread means the composer belongs open, whatever the learner last
+   * clicked: Max has asked a question *here* and the box to answer it in has to be under it.
+   * `composerAt` still governs everywhere else, so this only ever adds a composer.
+   */
+  const composerHere = $derived(composerOpen || controls.open);
+
   $effect(() => {
-    if (composerOpen && box) box.focus();
+    if (composerHere && box) box.focus();
   });
 
   function beat(): void {
@@ -330,14 +352,14 @@
     <p class="locked">
       Ellie and Max are out of this thread until you have said it back.
     </p>
-  {:else if composerOpen}
+  {:else if composerHere}
     <div class="composer">
       <textarea
         bind:this={box}
         bind:value={text}
         rows="3"
-        placeholder="Explain this in your own words…"
-        aria-label="Your explanation"
+        placeholder={controls.placeholder}
+        aria-label={controls.open ? 'Your attempt' : 'Your explanation'}
         oninput={beat}
         onkeydown={(e) => {
           e.stopPropagation();
@@ -353,6 +375,17 @@
           }
         }}
       ></textarea>
+
+      {#if controls.note}
+        <!--
+          **The rule, stated before it bites** (`attempt-first.md` §2.4). One quiet line, not a
+          banner and not a modal: it is the sentence R6's learner typed by hand at turn 20, after
+          which their attempts went 4 → 17 and their answer requests 5 → 2. The app says it first
+          so the withheld answer reads as the design it is rather than as a model being evasive.
+        -->
+        <p class="attemptnote">{controls.note}</p>
+      {/if}
+
       <!--
         **The silence timer, in the flow (audit §4).** The 45 s countdown, the *"Ellie may chime
         in"* caption and the **Hold** / **Wait for me** controls existed only under the room's
@@ -386,6 +419,42 @@
   {/if}
 
   <!--
+    **After the feedback, the next question is a click** (§2.4).
+
+    Deliberately outside the composer branch: **Try another** has to survive the quiz closing on a
+    shown answer, and a control that disappears with the box it sat next to would take the only
+    on-ramp to the second question with it. Faint, in the same register as "+ Ask here" — the
+    loop is the app's structure, not its nagging.
+
+    No modal and no confirm on **Show the answer**. The one guard that matters is a rule in the
+    orchestrator, it has already fired by the time this is drawn (`attempts >= 1`), and asking
+    "are you sure?" of a learner who has tried once and decided would be the app second-guessing
+    a decision §2.4 hands them on purpose.
+  -->
+  {#if controls.tryAnother || controls.showAnswer}
+    <div class="quizacts">
+      {#if controls.tryAnother}
+        <button
+          type="button"
+          class="quizact"
+          disabled={store.tryBusy === anchorId}
+          title={`${tester?.displayName ?? 'Max'} asks another question, on whatever you have shown least of`}
+          onclick={() => void store.tryHere(anchorId)}
+        >{store.tryBusy === anchorId ? 'Asking…' : 'Try another'}</button>
+      {/if}
+      {#if controls.showAnswer}
+        <button
+          type="button"
+          class="quizact"
+          disabled={store.showBusy === anchorId}
+          title="You have tried once, so this is yours to ask for. It is logged and it moves nothing on the ledger."
+          onclick={() => void store.showAnswer(anchorId)}
+        >{store.showBusy === anchorId ? 'Asking…' : 'Show the answer'}</button>
+      {/if}
+    </div>
+  {/if}
+
+  <!--
     **The thread's own footer**, outside the composer branch on purpose.
     It used to live in the `{:else}` of it, which meant that the moment the learner opened the
     composer the thread's spend and its **Summarise** action both vanished — exactly while they
@@ -394,7 +463,7 @@
   -->
   {#if convo.length > 0}
     <div class="threadfoot">
-      {#if !composerOpen && !lockedByAnswerId}
+      {#if !composerHere && !lockedByAnswerId}
         <button type="button" class="reopen" onclick={() => (store.composerAt = anchorId)}>Reply here</button>
       {/if}
       {#if spend && spend.calls > 0}
@@ -543,6 +612,25 @@
     color: var(--muted);
     font-style: italic;
   }
+
+  /* The rule under the box. Italic and muted, like `.locked`: both are the app saying what it
+     will and will not do, which is a different voice from anything an agent says. */
+  .attemptnote {
+    margin: 6px 0 0;
+    font-size: 11.5px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* §2.4's two controls. `.reopen`'s weight exactly — an offer, not a call to action. */
+  .quizacts { display: flex; align-items: center; gap: 14px; margin: 6px 0 2px; }
+  .quizact {
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.7;
+  }
+  .quizact:hover:not(:disabled) { opacity: 1; color: var(--indigo); }
+  .quizact:disabled { opacity: 0.5; cursor: default; }
 
   .composer { margin: 10px 0 4px; }
   textarea {

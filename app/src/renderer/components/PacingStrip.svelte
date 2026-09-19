@@ -61,6 +61,20 @@
       <strong>{profile.rule}</strong> — and you can send him away when he arrives.
     </p>
 
+    <!--
+      **The attempt rule, said plainly** (issue #47, `attempt-first.md` §0 and §6).
+      The strip already discloses the two things a learner cannot see — that the wait is deliberate
+      and that the Tester arrives by a rule — and since #47 there is a third: the answer is
+      withheld until one attempt. That is a rule in the orchestrator, not a mood the model is in,
+      and a rule the learner meets without having been told is the same manipulation the latency
+      disclosure exists to avoid. One sentence, in the order it actually happens.
+    -->
+    <p>
+      When you press <strong>+ Try this</strong> on a slide, {tester} asks; you try; the answer comes
+      after one try. Asking for it earlier gets you a hint instead — and once you have tried, the
+      answer is yours to ask for, and it changes nothing on your progress either way.
+    </p>
+
     <p>
       Pacing is set to <strong>{profile.label}</strong>. You can change it, or read this again, in
       Settings ▸ Tester pacing.

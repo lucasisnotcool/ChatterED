@@ -76,6 +76,17 @@
     /** A question the app has proposed and the learner has not yet sent (**Teach me this**). */
     askPrefill = '',
     /**
+     * **"+ Try this"** (issue #47, `attempt-first.md` §2.1). Null when the line is live; otherwise
+     * the sentence that says why it is not — the objective tree is `pending` or `failed`, so there
+     * is nothing to pick a question from. Disabled *with* the reason rather than hidden: a missing
+     * control is indistinguishable from a build that does not have one.
+     */
+    tryReason = null,
+    /** This card's Try-this is in flight. The Tester's question arrives on the event stream. */
+    tryBusy = false,
+    /** The Tester's own name, off the live roster — the pairing is pinned, the names are data (#32). */
+    testerName = 'Max',
+    /**
      * The objectives this segment teaches, from the file's tree. The glyph strip now means
      * "what this slide is for and how far you have got with it" as well as which claims moved
      * here (`learning-objectives.md` §5).
@@ -95,6 +106,7 @@
     onaskopen,
     onaskcancel,
     onaskabout,
+    ontry,
     onaskprivately,
     onactivate,
     ondragbegin,
@@ -121,6 +133,9 @@
     askBusyLabel?: string;
     askAbout?: { id: string; title: string } | null;
     askPrefill?: string;
+    tryReason?: string | null;
+    tryBusy?: boolean;
+    testerName?: string;
     objectives?: SegmentObjective[];
     highlight?: boolean;
     privateOpen?: boolean;
@@ -133,6 +148,8 @@
     onaskcancel?: () => void;
     /** ✕ on the `about:` chip. The question stays; what it is tagged with does not. */
     onaskabout?: () => void;
+    /** A click on "+ Try this". A click, never a box: §2.1's entry is one gesture. */
+    ontry?: () => void;
     /** "Ask privately" / ⌘K. The card raises it; `FlowCanvas` owns what opens (§3.5). */
     onaskprivately?: () => void;
     onactivate?: () => void;
@@ -519,20 +536,48 @@
     </div>
   {/if}
 
-  <!-- Every boundary in this document is the learner's, and so is every question (beat 7). -->
+  <!--
+    Every boundary in this document is the learner's, and so is every question (beat 7).
+
+    **Two lines since #47**, side by side and equally faint: "+ Ask here" is Ellie answering, and
+    "+ Try this" is Max asking. They are the same weight on purpose — `attempt-first.md` §0 makes
+    the attempt loop the hero interaction, but a loud button would make it the app's demand rather
+    than the learner's move, and a declinable demand is exactly what the six coded sessions
+    declined. The asymmetry is in the order, not the styling.
+  -->
   <div class="askrow" style={`width: ${box.w}px`}>
-    <AskHereLine
-      open={askOpen}
-      busy={askBusy}
-      busyLabel={askBusyLabel}
-      anchorId={card.segmentId}
-      about={askAbout}
-      prefill={askPrefill}
-      onabout={() => onaskabout?.()}
-      onopen={() => onaskopen?.()}
-      oncancel={() => onaskcancel?.()}
-      onask={(question, scope) => onask?.(question, scope)}
-    />
+    <div class="askslot">
+      <AskHereLine
+        open={askOpen}
+        busy={askBusy}
+        busyLabel={askBusyLabel}
+        anchorId={card.segmentId}
+        about={askAbout}
+        prefill={askPrefill}
+        onabout={() => onaskabout?.()}
+        onopen={() => onaskopen?.()}
+        oncancel={() => onaskcancel?.()}
+        onask={(question, scope) => onask?.(question, scope)}
+      />
+    </div>
+    <!-- Out of the way while the Ask prompt has the row: one line is asking for a question. -->
+    {#if !askOpen && !askBusy}
+      {#if tryBusy}
+        <span class="trying" role="status">Asking {testerName}…</span>
+      {:else}
+        <button
+          type="button"
+          class="try"
+          disabled={tryReason !== null}
+          title={tryReason ?? `${testerName} asks you one question about this slide`}
+          aria-label={tryReason ?? `Try this: ${testerName} asks you one question about this slide`}
+          onclick={(e) => {
+            e.stopPropagation();
+            ontry?.();
+          }}
+        >+ Try this</button>
+      {/if}
+    {/if}
   </div>
 
   {#if comparing}
@@ -749,7 +794,34 @@
   .tick.v:hover, .tick.v:focus-visible { border-left-color: var(--indigo); border-left-width: 2px; height: 14px; width: 0; }
 
   /* The "+ Ask here" line lives in AskHereLine.svelte; this only gives it the card's width. */
-  .askrow { align-self: flex-start; }
+  /* One row, two offers. 26 px tall either way, which is what ASK_LINE in flowview.ts assumes
+     and what the split's scroll anchor is measured against. */
+  .askrow { align-self: flex-start; display: flex; align-items: center; gap: 10px; }
+  .askslot { flex: 1; min-width: 0; display: flex; align-items: center; }
+
+  /* Deliberately identical to `.ask` in AskHereLine: the two offers are peers. */
+  .try {
+    flex: none;
+    height: 26px;
+    padding: 0 4px;
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+  .try:hover:not(:disabled) { opacity: 1; color: var(--indigo); }
+  /* Still readable, and still carrying its reason as a tooltip — a control the learner can see is
+     coming is better than one that appears without explanation once the ingest finishes. */
+  .try:disabled { opacity: 0.32; cursor: default; }
+  .trying {
+    flex: none;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
 
   /* The ledger glyphs. 400 ms fade on arrival, carried over from LedgerRow verbatim. */
   .glyphs { display: inline-flex; align-items: baseline; gap: 3px; flex: none; }

@@ -32,21 +32,37 @@
     selected = false,
     /** Offered on an assumed prerequisite, which by definition has no segment to scroll to. */
     teachable = false,
+    /**
+     * **Try this** (issue #47, `attempt-first.md` §2.1): the Tester asks one question about *this*
+     * objective. Offered on any node the deck actually teaches — a node with no ref has no card to
+     * put the question under, which is the case **Teach me this** covers instead.
+     */
+    tryable = false,
+    /** Why it is disabled, when the deck's tree is not ready. Null when the action is live. */
+    tryReason = null,
+    tryBusy = false,
+    testerName = 'Max',
     onactivate,
     ontoggle,
     onfocusrow,
     onteach,
+    ontry,
   }: {
     row: ObjectiveRow;
     focused?: boolean;
     lit?: boolean;
     selected?: boolean;
     teachable?: boolean;
+    tryable?: boolean;
+    tryReason?: string | null;
+    tryBusy?: boolean;
+    testerName?: string;
     /** `ask` is what separates Enter from a click and ⌘Enter (§5): navigate, or also ask. */
     onactivate?: (ask: boolean) => void;
     ontoggle?: () => void;
     onfocusrow?: () => void;
     onteach?: () => void;
+    ontry?: () => void;
   } = $props();
 
   const objective = $derived(row.node.objective);
@@ -167,16 +183,39 @@
       <span class="state">{glyphFor(level)} {wordFor(level)}</span>
       {#if refs}<span class="refs">{refs}</span>{:else}<span class="refs">not taught in this deck</span>{/if}
     </p>
-    {#if teachable}
-      <button
-        type="button"
-        class="teach"
-        tabindex="-1"
-        onclick={(e) => {
-          e.stopPropagation();
-          onteach?.();
-        }}
-      >Teach me this</button>
+    <!--
+      The card's actions. **Teach me this** is the Teacher explaining a prerequisite the deck
+      assumes; **Try this** is the Tester asking about an objective the deck teaches, so the two are
+      near-complements and a node rarely shows both. Same weight, because §2.1 makes the attempt
+      loop the default door and not the loud one.
+    -->
+    {#if teachable || tryable}
+      <div class="acts">
+        {#if teachable}
+          <button
+            type="button"
+            class="act"
+            tabindex="-1"
+            onclick={(e) => {
+              e.stopPropagation();
+              onteach?.();
+            }}
+          >Teach me this</button>
+        {/if}
+        {#if tryable}
+          <button
+            type="button"
+            class="act"
+            tabindex="-1"
+            disabled={tryReason !== null || tryBusy}
+            title={tryReason ?? `${testerName} asks you one question about this objective`}
+            onclick={(e) => {
+              e.stopPropagation();
+              ontry?.();
+            }}
+          >Try this</button>
+        {/if}
+      </div>
     {/if}
   </div>
 </div>
@@ -283,13 +322,14 @@
   .state { white-space: nowrap; }
   .refs { font-variant-numeric: tabular-nums; }
 
-  .teach {
-    margin-top: 9px;
+  .acts { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+  .act {
     font-size: 11px;
     color: var(--indigo);
     border: 1px solid var(--indigo);
     border-radius: var(--radius);
     padding: 3px 9px;
   }
-  .teach:hover { background: var(--indigo-tint); }
+  .act:hover:not(:disabled) { background: var(--indigo-tint); }
+  .act:disabled { color: var(--muted); border-color: var(--hairline); cursor: default; }
 </style>
