@@ -9,13 +9,17 @@ default only the agents' *words* are replayed (§4).
 ChatterED opens a lecture deck as a **flow**. Each page is a **crop of the pdf.js-rendered page** —
 the lecturer's own pixels, never re-typeset — and faint **ticks** mark where the page's own geometry
 says a boundary could go (local; no model, no network); clicking one **splits the crop in place**.
-**+ Ask here** inserts a neutral **REFERENCE** card — 120 words, in the app's own font — which locks
-the agents out of that thread until **Explain it back →**. **Ellie, the Teacher**, then explains from
-the slide; when a rule on a clock says the learner has been in flow and two concepts are fresh, she
-**hands off to Max, the Tester**, who asks one question and never answers it. Only the learner's
-verbatim words move the **Explanation Ledger** ○ → ◐ → ●, and ● is unreachable without a Tester
-probe. **⌘K** opens a **whisper popover**: private with Ellie, ephemeral, with **Insert into the
-document** the only path from private to shared.
+Under every card sit two faint lines. **+ Try this** asks **Max, the Tester**, for one question on the
+objective that card teaches; the learner attempts; Max gives feedback that cites the slide (`p. N:
+"…"`); **Try another** picks the next question from whatever the learner has shown least, and **Show
+the answer** appears only after one attempt — Max never gives the answer before one try, by a rule in
+the orchestrator and not a prompt (issue #47, `docs/research/attempt-first.md`). **+ Ask here** asks
+**Ellie, the Teacher**, who answers first and then teaches, from the slide and beyond it. Only the
+learner's verbatim words move the **Explanation Ledger** ○ → ◐ → ●, and ● is unreachable without a
+Tester question; a shown answer moves nothing. A rule on a clock can still hand Ellie's thread to Max
+when the learner has been in flow (`flow-session.md`), now the secondary door. **⌘K** opens a
+**whisper popover**: private with Ellie, ephemeral, with **Insert into the document** the only path
+from private to shared.
 
 ## 2. Run it
 
@@ -26,8 +30,8 @@ npm run dev     # compiles main + preload, Vite on :5273, launches Electron
 ```
 
 - **Node ≥ 22.12** (`package.json` → `engines`; built on 22.14), npm 10+, Xcode command-line tools.
-- **Settings ▸ Backend = Scripted** (no network calls at all); **Settings ▸ Tester pacing = Demo**
-  (the hand-off fires in a minute, not the study profile's ten).
+- **Settings ▸ Backend = Scripted** (no network calls at all). **Settings ▸ Tester pacing** only
+  affects the secondary, clock-driven hand-off; **+ Try this** needs no warm-up.
 - **Open folder →** this ZIP's `Academia/`, promote **Sources**, open
   `Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf`.
 
