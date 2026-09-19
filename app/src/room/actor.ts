@@ -12,6 +12,7 @@
  *  - **a held reply is cancelled, not queued, when the learner speaks** (turn rule 6);
  *  - **a group prompt is assembled from a store view that has no whispers** (§D.4).
  */
+import type { DocPort } from './docport.js';
 import type {
   AgentProfile,
   ReplySpeed,
@@ -207,6 +208,12 @@ export interface RoomActorDeps {
     level: 0 | 1 | 2 | 3;
     assumedByDeck: boolean;
   }[];
+  /**
+   * **The notes doc, as the actor sees it** (collab-doc §5, #48; `docport.ts`). Optional: a room
+   * with no doc gets `NO_DOC`, where every read is empty and every write is dropped, so nothing
+   * downstream needs a null check.
+   */
+  docPort?: DocPort;
 }
 
 interface PendingTurn {

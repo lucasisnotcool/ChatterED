@@ -997,6 +997,56 @@ export function createMockBridge(): ChatterEdApi {
       cardState.set(anchorId, next);
     },
 
+    // ── collab-doc (#48) ────────────────────────────────────────────────────────────────────
+    // Placeholders the lead put here so the tree typechecks on day 0. **Track T5 owns this file**
+    // and replaces every one of them with a working mock (a fixture notes doc, scripted chats,
+    // progress) so the editor and the shell can be built under `vite dev`.
+    async notesGet() {
+      return null;
+    },
+    async notesIngest() {
+      throw new Error('mock: notes ingest not built yet');
+    },
+    async notesPageImages() {
+      return { stored: 0 };
+    },
+    async notesSave({ baseVersion }) {
+      return { ok: true as const, version: baseVersion + 1 };
+    },
+    async notesFreeze({ frozen }) {
+      return { frozen };
+    },
+    async notesEditResolved() {},
+    async notesSuggestionResolved() {},
+    async notesDocText() {
+      return { assessed: false, threadId: null, reason: 'mock' };
+    },
+    async chatThreads({ fileId }) {
+      return { roomId: null, fileId, threads: [] };
+    },
+    async chatSend() {
+      throw new Error('mock: chat not built yet');
+    },
+    async chatOpenSpan() {
+      throw new Error('mock: chat not built yet');
+    },
+    async chatPrivateOpen() {
+      throw new Error('mock: chat not built yet');
+    },
+    async chatPrivateSend() {},
+    async chatInsertIntoDoc() {
+      return { editId: null };
+    },
+    async quizPass() {
+      return { released: false, refused: 'mock' };
+    },
+    async progressGet({ fileId }) {
+      return { fileId, docId: null, status: 'none' as const, completed: 0, total: 0, fraction: 0, objectives: [] };
+    },
+    async progressStart() {
+      throw new Error('mock: progress not built yet');
+    },
+
     // ── The learning-objective tree (issue #38) ──────────────────────────
     async objectivesTree({ fileId }) {
       mockFileId = fileId;

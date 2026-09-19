@@ -5,6 +5,7 @@
  * structured cloning. No classes, no Dates, no functions. Timestamps are ISO-8601 strings,
  * which is also how they are stored in SQLite (architecture-mac.md §D.1).
  */
+import type { DocRoomEvent } from './docevents.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type { CostUpdate } from './cost.js';
 
@@ -833,6 +834,8 @@ export interface TurnTraceView {
 
 /** Events pushed from main to the renderer. The renderer never polls. */
 export type RoomEvent =
+  // The collab doc's events (#48) live beside this file so the union gains one line, not eight.
+  | DocRoomEvent
   | { type: 'message.appended'; roomId: string; message: MessageView }
   | { type: 'agent.thinking'; roomId: string; thinking: ThinkingView }
   | { type: 'agent.thinking.cleared'; roomId: string }

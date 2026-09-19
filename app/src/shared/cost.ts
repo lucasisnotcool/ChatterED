@@ -58,7 +58,10 @@ export type CostScope =
   | 'ledger'
   | 'ingest'
   | 'objectives'
-  | 'summary';
+  | 'summary'
+  // collab-doc (#48): the two-pass notes ingest, and the structured doc-edit call after a turn.
+  | 'notes'
+  | 'docedit';
 
 export const COST_SCOPES: readonly CostScope[] = [
   'group',
@@ -69,6 +72,8 @@ export const COST_SCOPES: readonly CostScope[] = [
   'ingest',
   'objectives',
   'summary',
+  'notes',
+  'docedit',
 ] as const;
 
 /** Human wording for a scope, so a counter and a drawer never label the same row differently. */
@@ -81,6 +86,8 @@ export const COST_SCOPE_LABEL: Record<CostScope, string> = {
   ingest: 'Setup',
   objectives: 'Objectives',
   summary: 'Summaries',
+  notes: 'Lecture notes',
+  docedit: 'Doc edits',
 };
 
 /** Mirrors `LlmBackend`. Repeated rather than imported: `src/shared` may not depend on `src/room`. */

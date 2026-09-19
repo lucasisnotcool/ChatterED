@@ -53,6 +53,10 @@ import {
   type CostUpdate,
 } from '../../shared/cost.js';
 import { applyDelta, updateBelongs } from './cost.js';
+// collab-doc (#48): three sibling stores, each owned by one track. This file only hosts them.
+import { DocStore } from './docstore.svelte.js';
+import { ChatStore } from './chatstore.svelte.js';
+import { ProgressStore } from './progressstore.svelte.js';
 
 /**
  * Is a `flow:*` turn-status call actually on the bridge?
@@ -191,6 +195,11 @@ export interface LedgerPulse {
 }
 
 class Store {
+  /** collab-doc (#48). The notes doc, the chats and the progress bar keep their own state. */
+  readonly doc = new DocStore();
+  readonly chat = new ChatStore();
+  readonly progress = new ProgressStore();
+
   screen: Screen = $state('loading');
   boot: Bootstrap | null = $state(null);
   room: RoomSnapshot | null = $state(null);
@@ -515,6 +524,12 @@ class Store {
   }
 
   apply(e: RoomEvent): void {
+    // collab-doc (#48): every event goes to the three sibling stores first. They take what is
+    // theirs (`notes.*`, `doc.*`, `chat.*`, `progress.*`, and the message/turn events the chats
+    // draw from) and ignore the rest; nothing below depends on what they did with it.
+    this.doc.apply(e);
+    this.chat.apply(e);
+    this.progress.apply(e);
     const room = this.room;
     /**
      * **`cost.updated`, handled before the switch** (issue #41 item 4).

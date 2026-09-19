@@ -41,6 +41,16 @@ import type {
   TurnTraceView,
 } from './types.js';
 
+import type {
+  AgentAuthor,
+  ChatView,
+  DocEditStatus,
+  NotesDocView,
+  PageImage,
+  PrivateTurnView,
+  ProgressView,
+  Suggestion,
+} from './doc/types.js';
 export const IPC = {
   bootstrap: 'app:bootstrap',
   setApiKey: 'app:setApiKey',
@@ -152,6 +162,28 @@ export const IPC = {
   costExport: 'cost:export',
   /** main → renderer: one call was just recorded, with the deltas, so a counter can tick. */
   costUpdated: 'cost:updated',
+
+  // ── collab-doc (#48, docs/research/collab-doc.md) ────────────────────────────────────────
+  // The lecture-notes document. Bodies in `src/main/notes/ipc.ts`.
+  notesGet: 'notes:get',
+  notesIngest: 'notes:ingest',
+  notesPageImages: 'notes:pageImages',
+  notesSave: 'notes:save',
+  notesFreeze: 'notes:freeze',
+  notesEditResolved: 'notes:editResolved',
+  notesSuggestionResolved: 'notes:suggestionResolved',
+  // The chats. Bodies in `src/main/docroom/ipc.ts`.
+  notesDocText: 'notes:docText',
+  chatThreads: 'chat:threads',
+  chatSend: 'chat:send',
+  chatOpenSpan: 'chat:openSpan',
+  chatPrivateOpen: 'chat:privateOpen',
+  chatPrivateSend: 'chat:privateSend',
+  chatInsertIntoDoc: 'chat:insertIntoDoc',
+  quizPass: 'quiz:pass',
+  // Progress. Bodies in `src/main/docroom/progress.ts`.
+  progressGet: 'progress:get',
+  progressStart: 'progress:start',
 } as const;
 
 export interface ChatterEdApi {
@@ -587,6 +619,93 @@ export interface ChatterEdApi {
    * fullscreen it is not, and the reserved spacer must collapse (issue #21).
    */
   onWindowState(listener: (state: WindowState) => void): () => void;
+
+  // ── collab-doc (#48) ─────────────────────────────────────────────────────────────────────
+  // Payloads are the contract types in `shared/doc/types.ts`; see `app/docs/COLLAB-CONTRACT.md`.
+
+  /** The notes doc for a file, or null when it has never been ingested. Never starts an ingest. */
+  notesGet(input: { fileId: string }): Promise<NotesDocView | null>;
+  /**
+   * Start (or, with `force`, redo) the two-pass ingest. Resolves as soon as the doc row exists —
+   * the windows arrive as `notes.window` / `notes.status` events. A doc the learner has edited is
+   * never re-ingested over unless `force` is set.
+   */
+  notesIngest(input: { fileId: string; force?: boolean }): Promise<NotesDocView>;
+  /**
+   * Page images for the refine pass, sent in batches **before** `notesIngest`. Optional: with
+   * none, the ingest runs on structured text + geometry. Main cannot rasterise a PDF.
+   */
+  notesPageImages(input: { fileId: string; images: PageImage[]; done: boolean }): Promise<{ stored: number }>;
+  /**
+   * Persist the renderer's doc. Optimistic: `baseVersion` must be the stored version, else the
+   * stored doc comes back as a conflict and the renderer rebases.
+   */
+  notesSave(input: {
+    docId: string;
+    baseVersion: number;
+    doc: unknown;
+    learnerTouched: boolean;
+  }): Promise<{ ok: true; version: number } | { ok: false; conflict: true; version: number; doc: unknown }>;
+  notesFreeze(input: { docId: string; frozen: boolean }): Promise<{ frozen: boolean }>;
+  /** What became of an agent edit in the renderer: applied, kept, removed, dropped or guarded. */
+  notesEditResolved(input: {
+    docId: string;
+    editId: string;
+    status: DocEditStatus;
+    blockIds: string[];
+    docVersion: number;
+    /** Set when the guard turned (part of) the batch into a suggestion. */
+    suggestion?: Suggestion | null;
+  }): Promise<void>;
+  notesSuggestionResolved(input: {
+    docId: string;
+    suggestionId: string;
+    status: 'accepted' | 'rejected';
+  }): Promise<void>;
+  /**
+   * The learner paused after writing in the doc (brief §6). Main decides whether it maps to an
+   * objective and is long enough to be an attempt; if so it becomes a `doc_text` learner message
+   * in that span's thread and Max assesses it.
+   */
+  notesDocText(input: {
+    fileId: string;
+    docId: string;
+    blockId: string;
+    text: string;
+  }): Promise<{ assessed: boolean; threadId: string | null; reason: string | null }>;
+
+  /** Every thread on the file's room: the doc chat, span threads, and the two private threads. */
+  chatThreads(input: { fileId: string }): Promise<ChatView>;
+  /** Creates the room on the first message. `threadId` defaults to the doc chat. */
+  chatSend(input: { fileId: string; threadId?: string; text: string }): Promise<{ roomId: string; threadId: string }>;
+  /** Highlight + Ctrl+E: a question anchored to a span. */
+  chatOpenSpan(input: {
+    fileId: string;
+    blockId: string;
+    quote: string;
+    question: string;
+  }): Promise<{ roomId: string; threadId: string }>;
+  chatPrivateOpen(input: {
+    fileId: string;
+    agent: AgentAuthor;
+  }): Promise<{ roomId: string; threadId: string; turns: PrivateTurnView[] }>;
+  chatPrivateSend(input: { roomId: string; threadId: string; text: string }): Promise<void>;
+  /** The one path from private to shared (brief §4.1). */
+  chatInsertIntoDoc(input: {
+    roomId: string;
+    threadId: string;
+    turnId: string;
+    anchorBlockId: string | null;
+  }): Promise<{ editId: string | null }>;
+  /** The Pass control on Max's open question: releases the answer (brief §4.4). */
+  quizPass(input: { roomId: string; threadId: string }): Promise<{ released: boolean; refused: string | null }>;
+
+  progressGet(input: { fileId: string }): Promise<ProgressView>;
+  /** A lesson card's Start: Ellie's intro in the doc chat; returns where to scroll (brief §6). */
+  progressStart(input: {
+    fileId: string;
+    objectiveId: string;
+  }): Promise<{ roomId: string; threadId: string; blockId: string | null }>;
 }
 
 declare global {

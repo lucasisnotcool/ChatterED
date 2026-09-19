@@ -29,7 +29,18 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
     "better-sqlite3": "^13.0.3",
-    "pdfjs-dist": "^6.3.289"
+    "pdfjs-dist": "^6.3.289",
+    "prosemirror-commands": "^1.7.2",
+    "prosemirror-dropcursor": "^1.8.3",
+    "prosemirror-gapcursor": "^1.4.1",
+    "prosemirror-history": "^1.5.0",
+    "prosemirror-inputrules": "^1.5.1",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-model": "^1.25.11",
+    "prosemirror-schema-list": "^1.5.1",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-transform": "^1.12.1",
+    "prosemirror-view": "^1.42.4"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

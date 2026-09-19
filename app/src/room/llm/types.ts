@@ -27,7 +27,17 @@ export interface LlmMessage {
  * **new scope, not a new agent**. It answers the learner's "+ Ask here" question in the deck's
  * own register, and what it produces is not an agent turn — see `src/room/reference.ts`.
  */
-export type LlmScope = 'group' | 'whisper' | 'orchestrator' | 'ledger' | 'ingest' | 'reference';
+export type LlmScope =
+  | 'group'
+  | 'whisper'
+  | 'orchestrator'
+  | 'ledger'
+  | 'ingest'
+  | 'reference'
+  /** collab-doc (#48): one window of the two-pass lecture-notes ingest. Long, background, retried. */
+  | 'notes'
+  /** collab-doc (#48): the structured call that plans an agent's doc edit after its turn. */
+  | 'docedit';
 
 export interface LlmRequest {
   model: string;

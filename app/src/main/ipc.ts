@@ -78,6 +78,12 @@ import type { ReferenceContext } from '../room/reference.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
 import { SegmentService, type SplitInput } from './vault/segments.js';
+// collab-doc (#48): the three modules behind the hooks in `register()`, and what they may ask for.
+import type { DocHost } from './dochost.js';
+import { registerNotesIpc } from './notes/ipc.js';
+import { createDocPort } from './notes/docport.js';
+import { registerDocRoomIpc } from './docroom/ipc.js';
+import { registerProgressIpc } from './docroom/progress.js';
 
 export interface IpcDeps {
   store: LocalStore;
@@ -460,6 +466,13 @@ export class AppService {
        * went online two turns ago is known on this one.
        */
       learnerObjectives: () => this.#learnerObjectives(material.file_id),
+      // collab-doc (#48): the actor's view of this file's notes doc — an outline to read, block
+      // ids to address, and where its edits and Max's verdicts are recorded.
+      docPort: createDocPort(this.docHost(), {
+        fileId: material.file_id,
+        contentSha: material.file_sha256,
+        roomId,
+      }),
     });
     this.#actor.start();
     this.#actor.recover();
@@ -1261,6 +1274,59 @@ export class AppService {
     ].join('\n');
   }
 
+  /**
+   * **What the collab-doc modules may ask of the app** (#48, `dochost.ts`). One narrow object,
+   * so the notes ingest, the chats and the progress bar are three modules beside this file and
+   * not three more sections of it.
+   */
+  docHost(): DocHost {
+    const roomFor = async (fileId: string, create: boolean) => {
+      if (create) {
+        const { roomId, created } = await openOrCreateFlowRoom(this.#flowDeps(), fileId);
+        this.openRoom(roomId, { opener: false });
+        return { roomId, actor: this.#requireActor(roomId), created };
+      }
+      const { contentSha } = await this.#segments.document(fileId);
+      const material = this.#d.store.materials.forFile(fileId, contentSha);
+      if (!material) return null;
+      const room = this.#d.store.rooms.openOrScheduled().find((r) => r.material_id === material.id);
+      if (!room) return null;
+      this.openRoom(room.id, { opener: false });
+      return { roomId: room.id, actor: this.#requireActor(room.id), created: false };
+    };
+    return {
+      db: this.#d.db,
+      store: this.#d.store,
+      vault: this.#vault,
+      segments: this.#segments,
+      userDataDir: this.#d.userDataDir,
+      emit: (event) => this.emit(event),
+      backend: () => this.backend(),
+      llm: (resolved, material) => this.llm(resolved, material),
+      openFlowRoom: async (fileId) => (await roomFor(fileId, true))!,
+      roomForFile: async (fileId) => {
+        const found = await roomFor(fileId, false);
+        return found ? { roomId: found.roomId, actor: found.actor } : null;
+      },
+      actorFor: (roomId) => this.#requireActor(roomId),
+      currentActor: () => this.#actor,
+      fileForRoom: (roomId) => this.#fileIdForRoom(roomId),
+      persistFlow: () => this.#persistFlow(),
+      objectivesTree: (fileId) => this.objectivesTree(fileId),
+      objectivesStates: (fileId) => this.objectivesStates(fileId),
+      ensureObjectives: (fileId) => {
+        void this.#segments
+          .document(fileId)
+          .then((view) => this.#ensureTree(fileId, view))
+          .catch(() => undefined);
+      },
+      fileBytesKey: async (fileId) => {
+        const view = await this.#segments.document(fileId);
+        return { contentSha: view.contentSha, pageCount: view.pageCount };
+      },
+    };
+  }
+
   #requireActor(roomId: string): RoomActor {
     if (!this.#actor) throw new Error('No open room');
     if (this.#actor.snapshot().roomId !== roomId) throw new Error('That room is not open');
@@ -1290,6 +1356,12 @@ export class AppService {
     };
 
     handle(IPC.bootstrap, () => this.bootstrap());
+
+    // collab-doc (#48). Each module owns its channels; this file only places the hooks.
+    const docHost = this.docHost();
+    registerNotesIpc(docHost, handle);
+    registerDocRoomIpc(docHost, handle);
+    registerProgressIpc(docHost, handle);
 
     handle<string>(IPC.setApiKey, (key) => {
       if (!looksLikeAnthropicKey(key)) {
