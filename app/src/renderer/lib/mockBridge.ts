@@ -428,6 +428,7 @@ export function createMockBridge(): ChatterEdApi {
         anchorId,
         messageIds: messages.filter((m) => m.anchorId === anchorId).map((m) => m.id),
         lockedByAnswerId: locked.get(anchorId) ?? null,
+        quiz: null,
         lastSeenSeq: seen.get(anchorId) ?? 0,
         collapsed: cardState.get(anchorId)?.collapsed ?? false,
         removed: cardState.get(anchorId)?.removed ?? false,
@@ -675,6 +676,13 @@ export function createMockBridge(): ChatterEdApi {
         threadId,
         messageIds: messages.filter((m) => m.anchorId === threadId && m.id !== summaryId).map((m) => m.id),
       };
+    },
+    /** The attempt loop (issue #47). Typed stubs; the renderer track gives them a body. */
+    async flowTryHere({ segmentId }) {
+      return { roomId: ROOM, anchorId: segmentId, objectiveId: '', refused: 'not mocked yet', flow: flowView() };
+    },
+    async flowShowAnswer({ threadId }) {
+      return { roomId: ROOM, anchorId: threadId, shown: false, refused: 'not mocked yet', flow: flowView() };
     },
     async flowSend({ segmentId, text }) {
       const mine = post(text, null, { anchorId: segmentId });

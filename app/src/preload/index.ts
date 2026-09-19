@@ -63,6 +63,9 @@ const api: ChatterEdApi = {
   // conversation it was written from.
   flowSummarise: (input) => ipcRenderer.invoke(IPC.flowSummarise, input),
   flowThreadOf: (input) => ipcRenderer.invoke(IPC.flowThreadOf, input),
+  // The attempt loop (issue #47): one Tester question on a card, and the answer after one try.
+  flowTryHere: (input) => ipcRenderer.invoke(IPC.flowTryHere, input),
+  flowShowAnswer: (input) => ipcRenderer.invoke(IPC.flowShowAnswer, input),
   flowSend: (input) => ipcRenderer.invoke(IPC.flowSend, input),
   flowMessages: (input) => ipcRenderer.invoke(IPC.flowMessages, input),
   flowWhisperOpen: (input) => ipcRenderer.invoke(IPC.flowWhisperOpen, input),

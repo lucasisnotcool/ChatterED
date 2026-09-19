@@ -575,6 +575,27 @@ export interface FlowThreadView {
    * card to be locked behind and nothing ever sets this. Render a composer, always.
    */
   lockedByAnswerId: string | null;
+  /**
+   * **The Tester's open question in this thread**, if any (issue #47, `attempt-first.md` §2.3).
+   * Null when no quiz is open here. The renderer reads it for three things: the composer's
+   * *"Max won't give the answer until you've tried once"* line (`attempts === 0`), the **Show the
+   * answer** control (`attempts >= 1 && !answerShown`), and **Try another** (after `feedbackGiven`).
+   */
+  quiz: FlowQuizView | null;
+}
+
+/** What the renderer may know about a pending quiz. Never the answer, never the seeds. */
+export interface FlowQuizView {
+  /** The Tester message that asked it. */
+  quizMessageId: string;
+  /** The objective / pack element under test. */
+  elementId: string;
+  /** Learner turns classified as an attempt since the question was asked (`room/attempt.ts`). */
+  attempts: number;
+  /** True once the Tester's feedback turn has landed for the latest attempt. */
+  feedbackGiven: boolean;
+  /** True once `flow:showAnswer` (or an answer request after one attempt) has been honoured. */
+  answerShown: boolean;
 }
 
 /**
@@ -680,6 +701,31 @@ export interface FlowSummaryView {
  * `flow.room.messages` and two copies could disagree. `null` when the id is not a summary card,
  * or its thread no longer exists.
  */
+/**
+ * **"+ Try this"** on a segment (issue #47): the Tester has been asked for one question on the
+ * objective the card teaches. Resolves as soon as the pick is made; the question itself arrives
+ * on the event stream at the short latency band, like a Teacher turn.
+ */
+export interface FlowTryView {
+  roomId: string;
+  anchorId: string;
+  /** The objective the pick chose (`attempt-first.md` §2.1). */
+  objectiveId: string;
+  /** Why no question could be asked, when the tree is not ready; `null` on success. */
+  refused: string | null;
+  flow: FlowRoomView;
+}
+
+/** **Show the answer** after at least one attempt (issue #47, `rule:answer_shown`). */
+export interface FlowShowAnswerView {
+  roomId: string;
+  anchorId: string;
+  /** False when refused: no open quiz here, or no attempt yet. The ledger never moves on this. */
+  shown: boolean;
+  refused: string | null;
+  flow: FlowRoomView;
+}
+
 export interface FlowThreadOfView {
   summaryId: string;
   threadId: string;

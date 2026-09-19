@@ -30,8 +30,10 @@ import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type { CostCallView, CostSummary, CostSummaryQuery, CostUpdate } from './cost.js';
 import type {
   FlowAnswerView,
+  FlowShowAnswerView,
   FlowSummaryView,
   FlowThreadOfView,
+  FlowTryView,
   FlowRelayView,
   FlowRoomView,
   FlowWhisperView,
@@ -113,6 +115,10 @@ export const IPC = {
   flowSummarise: 'flow:summarise',
   /** The source thread behind a summary card, so a click can expand it (issue #41). */
   flowThreadOf: 'flow:threadOf',
+  /** **"+ Try this"** on a segment: one Tester question on the objective the card teaches (issue #47). */
+  flowTryHere: 'flow:tryHere',
+  /** **Show the answer** after at least one attempt; refused before (issue #47, `rule:answer_shown`). */
+  flowShowAnswer: 'flow:showAnswer',
   flowSend: 'flow:send',
   flowMessages: 'flow:messages',
 
@@ -378,6 +384,23 @@ export interface ChatterEdApi {
    * the agent's answer arrives on the event stream at its latency floor.
    */
   flowSend(input: { roomId: string; segmentId: string; text: string }): Promise<void>;
+  /**
+   * **"+ Try this"** on one segment (issue #47, `docs/research/attempt-first.md` §2.1).
+   *
+   * Creates the document's room if it does not exist, exactly like `flowAskHere`. The main
+   * process picks the objective — the ones the card teaches, lowest level first, deck order as
+   * the tie-break, nearest earlier objective by page as the fallback — unless `objectiveId` is
+   * passed (a click in the objectives panel, or **Try another** on a thread that already has one).
+   * Max's question arrives on the event stream. `refused` is set, and no question is asked, when
+   * the tree is `pending` or `failed`.
+   */
+  flowTryHere(input: { fileId: string; segmentId: string; objectiveId?: string }): Promise<FlowTryView>;
+  /**
+   * **Show the answer** on a thread with an open quiz (issue #47, §2.3 `rule:answer_shown`).
+   * Honoured only after at least one attempt; before that `shown` is false and `refused` says
+   * why. The answer turn is Max's, cites the deck, closes the quiz, and never moves the ledger.
+   */
+  flowShowAnswer(input: { roomId: string; threadId: string }): Promise<FlowShowAnswerView>;
   /**
    * The document's room and its threads, grouped by segment. `null` when the document has never
    * been asked a question — which is the common case, and is why nothing is created here.

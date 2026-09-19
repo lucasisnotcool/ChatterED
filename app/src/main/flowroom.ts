@@ -438,6 +438,8 @@ export function flowRoomView(actor: RoomActor, lockedByAnchor: Map<string, strin
     anchorId,
     messageIds,
     lockedByAnswerId: lockedByAnchor.get(anchorId) ?? null,
+    // Filled by the attempt loop (issue #47): the actor's pending quiz, projected per thread.
+    quiz: null,
     lastSeenSeq: seen[anchorId] ?? 0,
     collapsed: cards[anchorId]?.collapsed ?? false,
     removed: cards[anchorId]?.removed ?? false,
