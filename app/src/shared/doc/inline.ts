@@ -124,43 +124,89 @@ function has(marks: readonly Mark[], name: string): Mark | null {
   return marks.find((mark) => mark.type.name === name) ?? null;
 }
 
+/** One marked leaf, on the way back out. `author` and the suggestion marks are not markup. */
+function leaf(token: Token): string {
+  if (token.tex !== null) return `$${token.tex}$`;
+  if (token.code) return `\`${token.text}\``;
+  return token.text;
+}
+
 /**
- * ProseMirror inline content → the closed subset.
+ * Tokens → the subset, **one marker per run rather than one per text node**.
  *
- * The markers are re-emitted per text node rather than per run, which can produce `**a****b**`
- * for two adjacent bold spans with different authors — harmless in a prompt, and the round trip
- * still parses back to the same marks. Markers are written outermost-first in the same order
- * `inlineToNodes` reads them, so `nodesToInline(inlineToNodes(x))` is `x` for anything the
- * subset can express.
+ * The difference matters because a text node is split by every mark it does not share — two
+ * authors, an edit id, a suggestion — so a single bold phrase written by Ellie and then half
+ * kept would come back as `**a****b**` if each node emitted its own markers. Grouping by the
+ * formatting mark and nesting outward (`strong`, then `em`, then the leaf) makes
+ * `nodesToInline(inlineToNodes(x)) === x` for everything the subset can express, which is what
+ * a suggestion's `quote` and a prompt's block text both rely on.
+ */
+function emphasised(tokens: readonly Token[]): string {
+  let out = '';
+  let i = 0;
+  while (i < tokens.length) {
+    const em = tokens[i]!.em;
+    let j = i;
+    while (j < tokens.length && tokens[j]!.em === em) j++;
+    const inner = tokens.slice(i, j).map(leaf).join('');
+    out += em ? `*${inner}*` : inner;
+    i = j;
+  }
+  return out;
+}
+
+function serialise(tokens: readonly Token[]): string {
+  let out = '';
+  let i = 0;
+  while (i < tokens.length) {
+    const strong = tokens[i]!.strong;
+    let j = i;
+    while (j < tokens.length && tokens[j]!.strong === strong) j++;
+    const inner = emphasised(tokens.slice(i, j));
+    out += strong ? `**${inner}**` : inner;
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * ProseMirror inline content → the closed subset. A nested block (a list item's paragraph, a
+ * q_block's children) is flattened onto its own line: this is text for a prompt or a quote, not
+ * a serialisation format, and the document itself is always the JSON.
  */
 export function nodesToInline(fragment: Fragment): string {
-  let out = '';
+  const lines: string[] = [];
+  let tokens: Token[] = [];
+  const flush = (): void => {
+    if (tokens.length === 0) return;
+    lines.push(serialise(tokens));
+    tokens = [];
+  };
+
   fragment.forEach((node) => {
     if (node.isText) {
-      const text = node.text ?? '';
       const math = has(node.marks, 'math_inline');
-      if (math) {
-        out += `$${(math.attrs.tex as string) || text}$`;
-        return;
-      }
-      let piece = text;
-      if (has(node.marks, 'code')) piece = `\`${piece}\``;
-      if (has(node.marks, 'em')) piece = `*${piece}*`;
-      if (has(node.marks, 'strong')) piece = `**${piece}**`;
-      out += piece;
+      tokens.push({
+        text: node.text ?? '',
+        strong: has(node.marks, 'strong') !== null,
+        em: has(node.marks, 'em') !== null,
+        code: has(node.marks, 'code') !== null,
+        tex: math ? ((math.attrs.tex as string) || (node.text ?? '')) : null,
+      });
       return;
     }
     if (node.type.name === 'math_block') {
-      out += `$${node.attrs.tex as string}$`;
+      tokens.push({ text: '', strong: false, em: false, code: false, tex: node.attrs.tex as string });
       return;
     }
-    // A nested block (a list item's paragraph, a q_block's children): its text, flattened.
     if (node.isBlock) {
+      flush();
       const inner = nodesToInline(node.content);
-      if (inner.length > 0) out += out.length > 0 ? `\n${inner}` : inner;
+      if (inner.length > 0) lines.push(inner);
     }
   });
-  return out;
+  flush();
+  return lines.join('\n');
 }
 
 /** A block's text as the subset, for a prompt's `quote` or a suggestion's search. */
