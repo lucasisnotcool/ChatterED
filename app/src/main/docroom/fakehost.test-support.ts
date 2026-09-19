@@ -1,0 +1,264 @@
+/**
+ * A `DocHost` and a `RoomActor` that exist only in a test (#48, track T6).
+ *
+ * `DocHost` is the whole of what the collab-doc modules may ask of the app, which makes it also
+ * the whole of what a handler test has to stand up. Everything here is the narrowest thing that
+ * satisfies the port: a real migrated database and store (the handlers genuinely write rows), and
+ * spies for the four things that leave the process — the actor, the event stream, the vault's
+ * text and the objective tree.
+ *
+ * Not a `*.test.ts`, so vitest does not collect it as a suite.
+ */
+
+import type { Node } from 'prosemirror-model';
+import type { RoomEvent } from '../../shared/types.js';
+import type { LearningObjective, LearningObjectiveState, LearningTree } from '../../shared/objectives.js';
+import type { PrivateTurnView, ThreadView } from '../../shared/doc/types.js';
+import type { SqlDatabase } from '../db/driver.js';
+import type { LocalStore } from '../db/store.js';
+import type { DocHost, IpcHandle } from '../dochost.js';
+import { openTestDb, seedRoom } from '../../test-support/db.js';
+import type { DocActorMethods } from './actorport.js';
+
+export const SHA = 'sha-deck';
+export const FILE_ID = 'f_deck';
+export const DOC_ID = 'doc_deck';
+
+export interface ActorCall {
+  method: string;
+  args: unknown[];
+}
+
+/** The actor's side of the nine agreed signatures, recorded rather than run. */
+export class FakeActor {
+  calls: ActorCall[] = [];
+  threads: ThreadView[] = [];
+  privateTurns: PrivateTurnView[] = [];
+  /** Methods to pretend T3 has not written yet. */
+  missing = new Set<string>();
+
+  #record(method: string, args: unknown[]): void {
+    if (this.missing.has(method)) throw new Error(`method ${method} is missing in this fixture`);
+    this.calls.push({ method, args });
+  }
+
+  last(method: string): ActorCall | undefined {
+    return [...this.calls].reverse().find((c) => c.method === method);
+  }
+
+  sendMessage: DocActorMethods['sendMessage'] = async (...args) => {
+    this.#record('sendMessage', args);
+  };
+  pass: DocActorMethods['pass'] = async (...args) => {
+    this.#record('pass', args);
+    return { released: true, refused: null };
+  };
+  startLesson: DocActorMethods['startLesson'] = async (...args) => {
+    this.#record('startLesson', args);
+  };
+  assessDocText: DocActorMethods['assessDocText'] = async (...args) => {
+    this.#record('assessDocText', args);
+  };
+  openPrivate: DocActorMethods['openPrivate'] = (...args) => {
+    this.#record('openPrivate', args);
+    return { threadId: 'wthread_1', turns: this.privateTurns };
+  };
+  sendPrivate: DocActorMethods['sendPrivate'] = async (...args) => {
+    this.#record('sendPrivate', args);
+  };
+  insertPrivateIntoDoc: DocActorMethods['insertPrivateIntoDoc'] = async (...args) => {
+    this.#record('insertPrivateIntoDoc', args);
+    return { editId: 'edit_1' };
+  };
+  docThreads: DocActorMethods['docThreads'] = () => this.threads;
+  closeOpenQuestion: DocActorMethods['closeOpenQuestion'] = async (...args) => {
+    this.#record('closeOpenQuestion', args);
+  };
+
+  /** Drop a method from the object, the way a build where T3 has not landed would have it. */
+  omit(...methods: (keyof DocActorMethods)[]): this {
+    for (const method of methods) {
+      delete (this as unknown as Record<string, unknown>)[method];
+      this.missing.add(method);
+    }
+    return this;
+  }
+}
+
+export interface FakeHost {
+  host: DocHost;
+  db: SqlDatabase;
+  store: LocalStore;
+  actor: FakeActor;
+  events: RoomEvent[];
+  roomId: string;
+  /** Rooms this host has been asked to open, in order. Empty ⟹ no read created one. */
+  opened: string[];
+  /** Set to null to make the file look like it has never been spoken to. */
+  roomExists: boolean;
+  setTree(objectives: LearningObjective[], status?: LearningTree['status']): void;
+  setStates(states: LearningObjectiveState[]): void;
+  ensureCalls: string[];
+  pageText: string;
+}
+
+export interface FakeHostOptions {
+  /** Written into `notes_docs` as the file's document. Omit for a file with no notes doc. */
+  doc?: Node;
+  docId?: string;
+  fileId?: string;
+  contentSha?: string;
+}
+
+/** A migrated database, a seeded room, and a `DocHost` over the two. */
+export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
+  const { db, store } = openTestDb();
+  const seeded = seedRoom(store);
+  const actor = new FakeActor();
+  const events: RoomEvent[] = [];
+  const fileId = opts.fileId ?? FILE_ID;
+  const contentSha = opts.contentSha ?? SHA;
+  const docId = opts.docId ?? DOC_ID;
+
+  if (opts.doc) {
+    db.prepare(
+      `INSERT INTO notes_docs
+         (id, content_sha, file_id, title, page_count, version, doc_json, ingest_status,
+          ingest_version, created_at, updated_at)
+       VALUES (@id, @sha, @file, 'Notes', 12, 1, @json, 'ready', 1, @now, @now)`,
+    ).run({
+      id: docId,
+      sha: contentSha,
+      file: fileId,
+      json: JSON.stringify(opts.doc.toJSON()),
+      now: '2026-09-19T10:00:00.000Z',
+    });
+  }
+
+  const state: {
+    tree: LearningTree | null;
+    states: LearningObjectiveState[];
+    ensureCalls: string[];
+    opened: string[];
+    roomExists: boolean;
+    pageText: string;
+  } = {
+    tree: null,
+    states: [],
+    ensureCalls: [],
+    opened: [],
+    roomExists: false,
+    pageText: 'The page the block came from.',
+  };
+
+  const room = { roomId: seeded.roomId, actor: actor as unknown as never };
+
+  const host = {
+    db,
+    store,
+    userDataDir: '/tmp/chattered-test',
+    vault: {
+      textFor: async () => state.pageText,
+      deckText: async () => ({ text: 'The whole deck.', pages: 12, truncated: false }),
+      topPages: () => [],
+    },
+    segments: {},
+    emit: (event: RoomEvent) => {
+      events.push(event);
+    },
+    backend: () => ({}),
+    llm: () => ({}),
+    openFlowRoom: async (id: string) => {
+      state.opened.push(id);
+      state.roomExists = true;
+      return { ...room, created: true };
+    },
+    roomForFile: async () => (state.roomExists ? room : null),
+    actorFor: () => room.actor,
+    currentActor: () => room.actor,
+    fileForRoom: () => fileId,
+    persistFlow: () => {},
+    objectivesTree: () => state.tree,
+    objectivesStates: () => state.states,
+    ensureObjectives: (id: string) => {
+      state.ensureCalls.push(id);
+    },
+    fileBytesKey: async () => ({ contentSha, pageCount: 12 }),
+  } as unknown as DocHost;
+
+  return {
+    host,
+    db,
+    store,
+    actor,
+    events,
+    roomId: seeded.roomId,
+    get opened() {
+      return state.opened;
+    },
+    get roomExists() {
+      return state.roomExists;
+    },
+    set roomExists(value: boolean) {
+      state.roomExists = value;
+    },
+    get ensureCalls() {
+      return state.ensureCalls;
+    },
+    get pageText() {
+      return state.pageText;
+    },
+    set pageText(value: string) {
+      state.pageText = value;
+    },
+    setTree(objectives, status = 'ready') {
+      state.tree = {
+        fileId,
+        contentSha,
+        generatedAt: '2026-09-19T09:00:00.000Z',
+        model: 'sonnet',
+        version: 1,
+        objectives,
+        status,
+      };
+    },
+    setStates(states) {
+      state.states = states;
+    },
+  };
+}
+
+/** The handler table `register*Ipc` fills in, and the call that runs one. */
+export function handlerTable(): { handle: IpcHandle; call: <T>(channel: string, payload?: unknown) => Promise<T> } {
+  const handlers = new Map<string, (payload: unknown) => unknown>();
+  const handle: IpcHandle = <T>(channel: string, fn: (payload: T) => unknown) => {
+    handlers.set(channel, fn as (payload: unknown) => unknown);
+  };
+  return {
+    handle,
+    call: async <T>(channel: string, payload: unknown = {}): Promise<T> => {
+      const fn = handlers.get(channel);
+      if (!fn) throw new Error(`no handler for ${channel}`);
+      return (await fn(payload)) as T;
+    },
+  };
+}
+
+/** An objective, with only the fields the progress view reads spelled out. */
+export function objective(id: string, over: Partial<LearningObjective> = {}): LearningObjective {
+  return {
+    id,
+    fileId: FILE_ID,
+    title: `Objective ${id}`,
+    kind: 'objective',
+    statement: 'What the learner must be able to say.',
+    criteria: ['names it', 'says why'],
+    quizSeeds: [`Explain ${id}.`],
+    refs: [{ page: 1 }],
+    parentId: null,
+    requires: [],
+    assumedByDeck: false,
+    order: 1,
+    ...over,
+  };
+}
