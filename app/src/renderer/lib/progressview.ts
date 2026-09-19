@@ -85,7 +85,13 @@ export function isComplete(view: ProgressView | null): boolean {
  * rather than congratulating: this is a document, not a game.
  */
 export function statusLine(view: ProgressView | null): string {
-  if (!view || view.status === 'pending') return 'Ellie is still reading the deck…';
+  /**
+   * `none` reads the same as `pending`, deliberately. Asking `progress:get` is what *starts* the
+   * objective ingest, so by the time this line is drawn the deck is being read either way — and
+   * "no objectives for this deck yet" would be the app reporting a permanent absence a second
+   * before the tree lands.
+   */
+  if (!view || view.status === 'pending' || view.status === 'none') return 'Ellie is still reading the deck…';
   if (view.status === 'failed') return 'The objectives could not be read from this deck.';
   const total = totalOf(view);
   if (total === 0) return 'No objectives for this deck yet.';

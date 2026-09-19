@@ -72,6 +72,8 @@ describe('the bar counts what the deck teaches', () => {
 describe('statusLine', () => {
   it('says what is being waited for rather than showing an empty bar', () => {
     expect(statusLine(view([], 'pending'))).toContain('reading the deck');
+    // `none` is not "there are none": asking is what starts the ingest.
+    expect(statusLine(view([], 'none'))).toContain('reading the deck');
     expect(statusLine(view([], 'failed'))).toContain('could not be read');
     expect(statusLine(null)).toContain('reading the deck');
   });
