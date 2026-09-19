@@ -15,32 +15,13 @@
 
 import { DOC_ANCHOR_ID } from '../../shared/doc/types.js';
 import type { ProgressObjectiveView, ProgressView, QuizOutcome } from '../../shared/doc/types.js';
+import { progressFill } from '../../shared/doc/progress.js';
 import type { LearningObjective } from '../../shared/objectives.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
 import { threadsRepo } from '../db/repos/threads.js';
 import { docActor, requireActorMethod } from './actorport.js';
 import { blockIdsForObjective, notesDocRow, openNotesDoc, pagesOfObjective } from './doc.js';
-/**
- * **Stand-in for T2's `progressFill`** (`src/shared/doc/progress.ts`), which has not landed yet.
- *
- * The rule is the brief's §6, stated once: a *Well done* on the learner's own words fills the
- * objective, a *Partly there* half-fills it, and everything else — *Not yet.*, a released answer
- * (give-up, Pass or closure), Ellie's cue, agreement — fills nothing. Best verdict wins, because
- * an objective the learner has since answered fully is not un-learned by an earlier *Not yet*.
- *
- * Delete this and import T2's the moment the file exists; the contract names it as the one
- * definition, and two of them is exactly the drift this comment exists to make visible.
- */
-function progressFill(outcomes: readonly QuizOutcome[]): 0 | 0.5 | 1 {
-  let fill: 0 | 0.5 | 1 = 0;
-  for (const outcome of outcomes) {
-    if (outcome.kind !== 'verdict') continue;
-    if (outcome.verdict === 'complete') return 1;
-    if (outcome.verdict === 'partial') fill = 0.5;
-  }
-  return fill;
-}
 
 /** The outcome that earned an objective its fill: the best verdict, and the earliest of those. */
 function bestOutcome(outcomes: readonly QuizOutcome[]): QuizOutcome | null {

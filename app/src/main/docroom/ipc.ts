@@ -225,6 +225,9 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
   handle<{ fileId: string; blockId: string; quote: string; question: string }>(
     'chat:openSpan',
     async (input) => {
+      // `blockId: ''` is T2's "not minted yet", not a name. A thread anchored to it would match
+      // every un-minted block in the document, so it is refused before a room is created.
+      if (!input.blockId) throw new Error('chat:openSpan needs a minted blockId');
       const { roomId, actor } = await host.openFlowRoom(input.fileId);
       const contentSha = await host.fileBytesKey(input.fileId).then(
         (k) => k.contentSha,
@@ -339,7 +342,9 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         () => null,
       );
       const opened = openNotesDoc(host.db, { contentSha, fileId: input.fileId });
-      if (!opened?.doc) return { assessed: false, threadId: null, reason: 'no_doc' };
+      // A block with no id is one the editor has not minted an id for yet; there is nothing to
+      // anchor a thread to and nothing to map to an objective, so it is not an attempt.
+      if (!opened?.doc || !input.blockId) return { assessed: false, threadId: null, reason: 'no_doc' };
 
       const objectiveId = objectiveForBlock(host.objectivesTree(input.fileId), opened.doc, input.blockId);
       const key = `${input.docId}:${input.blockId}`;

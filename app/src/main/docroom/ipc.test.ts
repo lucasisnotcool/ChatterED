@@ -184,6 +184,14 @@ describe('chat:openSpan', () => {
     expect(fx.actor.last('sendMessage')!.args[0]).toBe('What does that mean?');
   });
 
+  it('refuses an un-minted block id before it creates a room', async () => {
+    const fx = fakeHost({ doc: deck() });
+    await expect(
+      wire(fx).call('chat:openSpan', { fileId: 'f_deck', blockId: '', quote: 'q', question: 'Why?' }),
+    ).rejects.toThrow(/minted blockId/);
+    expect(fx.opened).toEqual([]);
+  });
+
   it('binds the objective when the block’s pages name exactly one, and not when two do', async () => {
     const fx = fakeHost({ doc: deck() });
     fx.setTree([objective('o2', { refs: [{ page: 2 }] })]);
@@ -343,6 +351,13 @@ describe('notes:docText', () => {
   it('refuses a file with no ingested document', async () => {
     const fx = fakeHost();
     const out = await wire(fx).call<{ reason: string | null }>('notes:docText', payload);
+    expect(out).toEqual({ assessed: false, threadId: null, reason: 'no_doc' });
+  });
+
+  it('refuses a block whose id has not been minted', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o2', { refs: [{ page: 2 }] })]);
+    const out = await wire(fx).call<{ reason: string | null }>('notes:docText', { ...payload, blockId: '' });
     expect(out).toEqual({ assessed: false, threadId: null, reason: 'no_doc' });
   });
 });
