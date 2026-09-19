@@ -1,0 +1,203 @@
+/**
+ * Reading the notes document from the chat side (#48). **Track T6.**
+ *
+ * The chats need three things from the document T1 owns: which pages a block came from (the
+ * *where* of a span thread, in place of the segment the flow used), which objective a block
+ * carries (the doc-text attempt gate, and the span thread's `objectiveId`), and which blocks an
+ * objective's lesson card should scroll to.
+ *
+ * All three are reads of `notes_docs.doc_json` through T2's pure helpers, so there is exactly one
+ * definition of "the blocks for these pages" in the app. Nothing here writes.
+ *
+ * **Keyed on the bytes.** `notes_docs.content_sha` is the unique key (migration 020, following
+ * 009 and 017); `file_id` is provenance and is only consulted when the caller could not resolve a
+ * sha, because a rescan re-mints it (#39).
+ */
+
+import type { Node } from 'prosemirror-model';
+import { blockAttrs, blockPos, blocksForPages, docFromJson } from '../../shared/doc/schema.js';
+import type { LearningObjective, LearningTree } from '../../shared/objectives.js';
+import type { SqlDatabase } from '../db/driver.js';
+import { plain, plainAll } from '../db/sql.js';
+
+export interface NotesDocRow {
+  docId: string;
+  contentSha: string;
+  fileId: string | null;
+  title: string;
+  pageCount: number;
+  version: number;
+  frozen: boolean;
+}
+
+interface DocRow {
+  id: string;
+  content_sha: string;
+  file_id: string | null;
+  title: string;
+  page_count: number;
+  version: number;
+  doc_json: string;
+  frozen: number;
+}
+
+/**
+ * The parsed document, memoised on `(docId, version)`.
+ *
+ * `notes:save` bumps the version on every accepted save, so a stale entry is impossible: the
+ * cache either matches the row it was parsed from or it is not used. One entry, because the app
+ * has one document open at a time; a second file simply replaces it.
+ */
+let memo: { docId: string; version: number; doc: Node } | null = null;
+
+function parse(row: DocRow): Node | null {
+  if (memo && memo.docId === row.id && memo.version === row.version) return memo.doc;
+  try {
+    const doc = docFromJson(JSON.parse(row.doc_json) as unknown);
+    memo = { docId: row.id, version: row.version, doc };
+    return doc;
+  } catch {
+    // A document whose JSON will not parse is one the learner has to re-ingest, not a crash on
+    // the way to answering their question: the thread still opens, it just has no page context.
+    return null;
+  }
+}
+
+/** Test seam: drop the parsed-document cache. */
+export function resetDocCache(): void {
+  memo = null;
+}
+
+function toRow(row: DocRow): NotesDocRow {
+  return {
+    docId: row.id,
+    contentSha: row.content_sha,
+    fileId: row.file_id,
+    title: row.title,
+    pageCount: row.page_count,
+    version: row.version,
+    frozen: row.frozen !== 0,
+  };
+}
+
+function readRow(db: SqlDatabase, key: { contentSha?: string | null; fileId?: string | null }): DocRow | undefined {
+  if (key.contentSha) {
+    const row = plain(
+      db.prepare('SELECT * FROM notes_docs WHERE content_sha = @sha').get<DocRow>({ sha: key.contentSha }),
+    );
+    if (row) return row;
+  }
+  if (key.fileId) {
+    return plain(
+      db
+        .prepare('SELECT * FROM notes_docs WHERE file_id = @f ORDER BY updated_at DESC LIMIT 1')
+        .get<DocRow>({ f: key.fileId }),
+    );
+  }
+  return undefined;
+}
+
+/** The document row for these bytes (or, failing that, this file), without parsing it. */
+export function notesDocRow(
+  db: SqlDatabase,
+  key: { contentSha?: string | null; fileId?: string | null },
+): NotesDocRow | null {
+  const row = readRow(db, key);
+  return row ? toRow(row) : null;
+}
+
+/** The row **and** the parsed document. `doc` is null when the row's JSON is unreadable. */
+export function openNotesDoc(
+  db: SqlDatabase,
+  key: { contentSha?: string | null; fileId?: string | null },
+): { row: NotesDocRow; doc: Node | null } | null {
+  const row = readRow(db, key);
+  if (!row) return null;
+  return { row: toRow(row), doc: parse(row) };
+}
+
+/** The pages a block came from, in the order the ingest recorded them. Empty when unknown. */
+export function pagesForBlock(doc: Node | null, blockId: string): number[] {
+  if (!doc) return [];
+  const at = blockPos(doc, blockId);
+  if (!at) return [];
+  const attrs = blockAttrs(at.node);
+  // A `slide_figure` is an atom whose page lives on its own attr rather than in `pages`.
+  if (at.node.type.name === 'slide_figure' && typeof at.node.attrs.page === 'number') {
+    return attrs.pages.length > 0 ? attrs.pages : [at.node.attrs.page as number];
+  }
+  return attrs.pages;
+}
+
+/** The objective ids the ingest stamped on a block — a hint, never the whole answer (§3). */
+export function objectiveHintsOnBlock(doc: Node | null, blockId: string): string[] {
+  if (!doc) return [];
+  const at = blockPos(doc, blockId);
+  return at ? blockAttrs(at.node).objectiveIds : [];
+}
+
+/** The deck pages an objective is taught on: `refs[].page`, deduplicated, ascending. */
+export function pagesOfObjective(objective: LearningObjective): number[] {
+  const pages = new Set<number>();
+  for (const ref of objective.refs) {
+    if (typeof ref.page === 'number' && Number.isFinite(ref.page)) pages.add(ref.page);
+  }
+  return [...pages].sort((a, b) => a - b);
+}
+
+/**
+ * The objective a block is about, or null.
+ *
+ * **Exactly one, or none** (the contract's rule). A block whose pages are taught by two
+ * objectives is genuinely ambiguous, and guessing one of them would attribute the learner's
+ * sentence to something they were not writing about — which is the ledger's verbatim-evidence
+ * rule broken at the other end. The ingest's own `objectiveIds` hint wins when it names exactly
+ * one objective that is actually in the tree, because it was produced with the block's text in
+ * front of it; otherwise the page intersection decides.
+ */
+export function objectiveForBlock(
+  tree: LearningTree | null,
+  doc: Node | null,
+  blockId: string,
+): string | null {
+  if (!tree || tree.objectives.length === 0) return null;
+  const byId = new Map(tree.objectives.map((o) => [o.id, o]));
+
+  const hinted = [...new Set(objectiveHintsOnBlock(doc, blockId))].filter((id) => byId.has(id));
+  if (hinted.length === 1) return hinted[0]!;
+
+  const pages = new Set(pagesForBlock(doc, blockId));
+  if (pages.size === 0) return null;
+  const hits = tree.objectives.filter((o) => pagesOfObjective(o).some((p) => pages.has(p)));
+  return hits.length === 1 ? hits[0]!.id : null;
+}
+
+/**
+ * The doc blocks that carry an objective, in document order. The first is where **Start** scrolls.
+ *
+ * `notes_objective_blocks` is a cache of the page intersection (migration 020), written by
+ * whoever computed it last; when it is empty — a fresh ingest, or an objective tree that landed
+ * after the doc — the intersection is recomputed here rather than reported as "no blocks", which
+ * would make a lesson card's Start do nothing on the first run.
+ */
+export function blockIdsForObjective(
+  db: SqlDatabase,
+  doc: Node | null,
+  docId: string | null,
+  objective: LearningObjective,
+): string[] {
+  if (docId) {
+    const cached = plainAll(
+      db
+        .prepare(
+          `SELECT block_id FROM notes_objective_blocks
+            WHERE doc_id = @d AND objective_id = @o ORDER BY ord, block_id`,
+        )
+        .all<{ block_id: string }>({ d: docId, o: objective.id }),
+    ).map((r) => r.block_id);
+    if (cached.length > 0) return cached;
+  }
+  if (!doc) return [];
+  const pages = pagesOfObjective(objective);
+  return pages.length === 0 ? [] : blocksForPages(doc, pages);
+}
