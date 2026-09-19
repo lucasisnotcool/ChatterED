@@ -67,7 +67,20 @@ import { VERDICT_OPENERS } from './flow.js';
  * the renderer implements the subset (`renderer/lib/aitext.ts`) and this rule names it, so the two
  * halves agree about what is allowed rather than about what is likely.
  */
-export const PROMPT_VERSION = 'prompts.v0.6';
+/**
+ * **v0.7 is the collaborative notes doc (#48).**
+ *
+ * Bumped deliberately, and the cost is stated rather than discovered: `sharedBlock` feeds
+ * `prefix_sha256`, so this moves the frozen prefix hash on every material and every open room
+ * re-caches once. That is harmless here — a new document opens a new room anyway — but it is the
+ * kind of change that must be a decision, so it is one (`ARCHITECT-REPORT.md` §D12).
+ *
+ * What moves with it: six new moves in `turnDirective` (`quiz` under `rule:max_followup`,
+ * `peer_guess`, `max_prompt`, `lesson_start`, `mention_reply`, and `quiz_answer` re-framed as a
+ * release rather than as an unlock), and the deletion of `rule:answer_withheld`'s "one try unlocks
+ * it" clause, which no rule can produce any more. The blocks themselves are in `prompts.doc.ts`.
+ */
+export const PROMPT_VERSION = 'prompts.v0.7';
 
 export interface SharedBlockInput {
   material: MaterialRow;
@@ -540,9 +553,9 @@ export function quizBlock(input: {
    */
   if (turn === 'answer') {
     lines.push(
-      'The learner has attempted this and has asked to see the answer. Give it: the model answer to',
-      'the question you asked, in full, and then one sentence on what their attempt already had of',
-      'it. Under 150 words. No new question, and do not withhold any part of it.',
+      'The learner is not going to answer this one. Give it: the model answer to the question you',
+      'asked, in full, and — if they attempted it — one sentence on what their attempt already had',
+      'of it. Under 150 words. No new question, and do not withhold any part of it.',
       ...GROUNDS,
     );
     return lines.join('\n');
@@ -562,13 +575,17 @@ export function quizBlock(input: {
     );
     return lines.join('\n');
   }
+  /**
+   * **`hint_withheld` is unreachable since #48** (`collab-doc.md` \u00a74.4 retires
+   * `rule:answer_withheld`, its only producer). The branch stays for one release so a caller that
+   * passes the old turn kind still gets sensible words rather than a question stem, and it no
+   * longer claims the app has a rule it does not have.
+   */
   if (turn === 'hint_withheld') {
     lines.push(
-      'The learner has asked for the answer and has not attempted the question yet. The answer is',
-      'not given before one attempt \u2014 that is the app\u2019s rule, not your preference, so do not',
-      'negotiate it and do not apologise for it. Give **one** hint that narrows the question: a',
-      'first step, a case to try, or the piece of it to look at first. Say in one clause that one',
-      'try unlocks the answer. Do not answer it, and do not ask a second question.',
+      'The learner has asked for the answer. Give **one** hint that narrows the question: a first',
+      'step, a case to try, or the piece of it to look at first. Do not answer it, and do not ask a',
+      'second question.',
     );
     return lines.join('\n');
   }
@@ -714,26 +731,58 @@ export function turnDirective(d: TurnDirective): string {
       'the whole question, and do not ask a second one.',
     );
     /**
-     * **The answer asked for before a try** (#47 §2.3, `rule:answer_withheld`). The hint is the
-     * same hint; what this adds is that the learner has *asked for the answer* and must be told, in
-     * one clause, what unlocks it — R6 asked twice, was answered twice, and produced no attempt
-     * until the rule existed.
+     * **`rule:answer_withheld`'s clause is deleted** (#48, `collab-doc.md` §4.4 retires the rule).
+     * It told the learner in one clause that one try unlocked the answer. Nothing withholds the
+     * answer any more, so a turn that said so would be describing a rule the app no longer has.
+     * `quiz_hint` survives for `rule:quiz_nudge` and `rule:silence_hint`, which are unchanged.
      */
-    if (d.byRule === 'rule:answer_withheld') {
-      bits.push(
-        'They asked for the answer and have not attempted the question. The answer is not given',
-        'before one attempt — that is the app’s rule, not your preference. Say in one clause that',
-        'one try unlocks it, do not negotiate, and do not apologise.',
-      );
-    }
   }
-  /** §2.3's two new Tester moves. The note (`quizBlock`) carries the rest. */
+  /**
+   * **The release** (#48, §4.4 and §4.7). Same move as #47's shown answer, and the prompt is the
+   * same in every respect but the framing: it is not an unlock the learner earned, it is the
+   * answer they are owed. `releaseBlock` in the note carries the rest — what their attempt had,
+   * and Ellie's guess corrected when she made a mistake.
+   */
   if (d.move === 'quiz_answer') {
     bits.push(
-      'The learner has attempted this and asked to see the answer, so give it in full — the model',
-      'answer, then one sentence on what their attempt already had of it. Cite the deck as',
-      '`p. N: “…”` for each point. Under 150 words, and no new question.',
+      'Give the answer to the question you asked, in full — and then, if they attempted it, one',
+      'sentence on what their attempt already had of it. Cite the deck as `p. N: “…”` for each',
+      'point. Under 150 words, and no new question.',
     );
+  }
+  /** §4.2 row 1, second turn: one Socratic follow-up, pitched by `pitchBlock` in the note. */
+  if (d.move === 'quiz' && d.byRule === 'rule:max_followup') {
+    bits.push(
+      'Ellie has just answered the learner’s question. Ask **one** follow-up that makes them use it',
+      'in their own words. Do not answer it, and do not ask two.',
+    );
+  }
+  /**
+   * §4.3. Both halves are short, both are limited in the note, and both are restated here because
+   * the directive is the sentence nearest the generation — which is where the word cap has to be
+   * for a turn whose whole design is that it is small.
+   */
+  if (d.move === 'peer_guess') {
+    bits.push(
+      'You are thinking aloud as a classmate, not teaching: hedged, part of it right, at most 60',
+      'words, never the full answer, and no question at the end.',
+    );
+  }
+  if (d.move === 'max_prompt') {
+    bits.push(
+      'Answer Ellie’s guess but talk to the **learner**: name the part worth looking at and ask them',
+      'to improve on it or say whether she is right. At most 50 words. Neither confirm nor correct it.',
+    );
+  }
+  /** §6's Start button, and §4.2 row 3's `@Max`. The notes carry the objective and the limits. */
+  if (d.move === 'lesson_start') {
+    bits.push(
+      'Say what this lesson is about in two or three sentences and then ask them to ask you a',
+      'question to begin. Do not teach it yet.',
+    );
+  }
+  if (d.move === 'mention_reply') {
+    bits.push('The learner addressed you by name. Answer them; do not start a new question.');
   }
   if (d.move === 'quiz_clarify') {
     bits.push(

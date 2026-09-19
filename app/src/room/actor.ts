@@ -12,7 +12,38 @@
  *  - **a held reply is cancelled, not queued, when the learner speaks** (turn rule 6);
  *  - **a group prompt is assembled from a store view that has no whispers** (§D.4).
  */
-import type { DocPort } from './docport.js';
+import { NO_DOC, type DocPort } from './docport.js';
+import {
+  DOC_ANCHOR_ID,
+  SPAN_THREAD_PREFIX,
+  type AgentAuthor,
+  type AgentDocOpBatch,
+  type DocQuizView,
+  type PrivateTurnView,
+  type QuizOutcome,
+  type QuizVerdict3,
+  type ThreadKind,
+  type ThreadView,
+} from '../shared/doc/types.js';
+import { parseMention } from '../shared/doc/mention.js';
+import {
+  buildQuestionEdit,
+  buildResolveEdit,
+  buildWhisperInsert,
+  planAnswerEdit,
+  type DocEditDeps,
+} from './docedit.js';
+import {
+  ELLIE_CUE_SCHEMA,
+  docTextBlock,
+  ellieAnswersBlock,
+  ellieCueBlock,
+  lessonStartBlock,
+  maxFollowupBlock,
+  maxPromptBlock,
+  mentionReplyBlock,
+  releaseBlock,
+} from './prompts.doc.js';
 import type {
   AgentProfile,
   ReplySpeed,
@@ -61,9 +92,15 @@ import {
   handOffDue,
   handOffLine,
   markAnswerShown,
+  markCueGiven,
   markFeedbackGiven,
+  cueGiven,
+  cueMistakeToCorrect,
   feedbackVerdict,
+  feedbackVerdict3,
+  qResolutionOf,
   verdictOf,
+  verdict3Of,
   quizOpen,
   noteActivity,
   noteHandOff,
@@ -78,8 +115,12 @@ import {
 } from './flow.js';
 import {
   classifyAgentTurn,
+  closureDecision,
   decideTurn,
   extractJson as extractJsonObject,
+  followupDue,
+  lessonStartDecision,
+  maxFollowupDecision,
   type LastAgentTurn,
   type TurnDecision,
   type TurnTrigger,
@@ -468,6 +509,71 @@ export class RoomActor {
    */
   #nudgeCursor = -1;
 
+  // ── the collaborative notes doc (#48) ──────────────────────────────────
+
+  /**
+   * **The actor's only view of the document** (`docport.ts`). `NO_DOC` for a room with no notes
+   * doc, where every read is empty and every write is dropped — so nothing downstream needs a null
+   * check and a room opened before the ingest ran simply never edits.
+   */
+  #docPort: DocPort;
+  /**
+   * **The three channels** (brief §4.1), as a thread registry keyed by `messages.anchor_id`.
+   *
+   * There is no second thread identifier, which is the whole of architect §A.4: a thread id IS an
+   * anchor id. `'doc'` is the doc chat, `span_<12 hex>` is a Ctrl+E thread, and a private thread's
+   * key is its whisper thread id. What this map holds is the little that an anchor id cannot say
+   * for itself — the block a span hangs off, the quote it was opened on, when it was created.
+   */
+  #threads = new Map<string, { kind: ThreadKind; blockId: string | null; quote: string | null; agentKey: AgentAuthor | null; createdAt: string }>();
+  /**
+   * **A private thread per agent** (brief §4.1: *"one with Ellie, one with Max"*).
+   *
+   * This is the deliberate widening of #32, which resolved Ellie in code specifically so the
+   * renderer could not ask for a private channel to the Tester. The brief asks for exactly that
+   * channel, so the argument #32 made — *"a private channel to the person quizzing you is the one
+   * shape this feature must not have"* — is overruled by name in `collab-doc.md` §4.1, and the
+   * protection it was really buying is kept in full elsewhere: a private thread **never edits the
+   * doc**, never reaches the group context, and never touches the ledger or the open question.
+   * `context.test.ts`'s canary is widened to cover both threads rather than relaxed.
+   *
+   * Keyed by agent and by sitting, exactly as `#segmentWhispers` is, so a private thread dies with
+   * its flow session and with the app.
+   */
+  #privateThreads = new Map<string, string>();
+  /**
+   * **Every question that has resolved on this file**, newest last, for `pitch.pitchInputs`
+   * (brief §4.5) and for the outcome rows the progress bar is a pure function of (§6).
+   *
+   * In memory and per-actor, which is the same scope `#taught` has: the durable copy is written
+   * through `docPort.recordOutcome`, and this is the reading copy so a pitch does not need a
+   * round trip to main in the middle of a turn.
+   */
+  #outcomes: QuizOutcome[] = [];
+  /** The mention parsed off the learner's row this turn, carried to the decision. Never stored. */
+  #lastMention: AgentAuthor | null = null;
+  /**
+   * **The question with the marker taken off**, for the prompt only.
+   *
+   * The row keeps `@Max what is a heuristic?` verbatim — the transcript is the learner's, not the
+   * app's, and the renderer highlights the mention from the same parse. What the model is asked to
+   * answer is `what is a heuristic?`, because an answer that opens by acknowledging being
+   * addressed is a turn spent on the app rather than on the question.
+   */
+  #mentionRest: string | null = null;
+  /** What Ellie's structured cue reported about itself, for the turn that records it (§4.7). */
+  #pendingCue: { hasMistake: boolean; claim: string | null } | null = null;
+  /** Her cue's text, so Max's prompt can answer *it* rather than the question (§4.3 step 2). */
+  #cueText: string | null = null;
+  /** The objective a `lesson_start` turn is about, for the length of that turn (§6). */
+  #lessonTarget: { title: string; statement: string; criteria: string[]; pages: number[] } | null = null;
+  /** The learner's own doc text being assessed, for the length of that turn (§6). */
+  #docTextTarget: { blockId: string; text: string; anchorId: string } | null = null;
+  /** Questions asked, so a `questionId` is minted once and shared by the Q block and the outcomes. */
+  #nextQuestionId: string | null = null;
+  /** Which door the release in flight came through, read by `#noteTurnForFlow` when it lands. */
+  #releaseBy: 'give_up' | 'pass' | 'closure' | null = null;
+
   #log: TurnLog;
   /** The current turn's logger, so helpers off the main path (`#failTurn`) share its id. */
   #turnLog: TurnLog;
@@ -492,6 +598,7 @@ export class RoomActor {
     this.#objectiveByAnchor = new Map(Object.entries(deps.flowState?.objectives ?? {}));
     this.#pitch = deps.flowState?.pitch ?? DEFAULT_PITCH;
     this.#offeredSummary = new Set(deps.flowState?.offeredSummary ?? []);
+    this.#docPort = deps.docPort ?? NO_DOC;
     const room = this.#room();
     // The room's own constants until the first turn says how much there was to read.
     this.#stages = { stageOneMs: deps.config.silence_ms, stageTwoMs: deps.config.stage_two_ms };
@@ -599,6 +706,25 @@ export class RoomActor {
     const body = text.trim();
     if (body.length === 0) return;
     if (anchorId !== null && context) this.#askContext.set(anchorId, context);
+    /**
+     * **`@Ellie` / `@Max`, parsed on the learner's own row** (#48, brief §4.2 rows 2–3).
+     *
+     * Parsed here, in code, and read by `ruleDecision` — for the same reason
+     * `classifyLearnerTurn` is: who answers is a rule, and a model asked to notice a mention is a
+     * model that will sometimes not. Two halves that are easy to get backwards:
+     *
+     *  - **the row is stored verbatim.** The learner wrote `@Max`, the transcript says `@Max`, and
+     *    the renderer highlights it with the same function. Stripping it from the record would be
+     *    the app editing what they said;
+     *  - **the model is shown `rest`** — the question without the marker — so the answer is not
+     *    about being addressed. That happens in `#askNote`, at prompt-assembly time.
+     */
+    // An Ask has already named its answerer (`origin: 'ask'` is Ellie's door), so a mention inside
+    // one would be a second answer to a settled question.
+    const mention = origin === 'ask' ? null : parseMention(body);
+    this.#lastMention = mention?.agent ?? null;
+    this.#mentionRest = mention === null ? null : mention.rest;
+    this.#registerThread(anchorId, anchorId?.startsWith(SPAN_THREAD_PREFIX) ? 'span' : 'doc');
 
     /**
      * The id of the row the learner just wrote, carried out of the mailbox so `turn.received`
@@ -1540,10 +1666,16 @@ export class RoomActor {
        * on.
        */
       tryHere?: { objectiveId: string };
-      /** **Show the answer** (#47 §2.4): the button's door into `rule:answer_shown`. */
+      /** **Pass** (#48 §4.4): the control's door into `rule:answer_released`. */
       showAnswer?: boolean;
       /** **"+ Ask here"** (#47 §6): the explain path, which is the Teacher's even mid-question. */
       askedHere?: boolean;
+      /** **`rule:max_followup`** (#48 §4.2): the second of the two chained agent turns. */
+      followup?: { objectiveId: string | null };
+      /** **`rule:closure`** (#48 §4.7): the sitting went idle with a question still open. */
+      closure?: { elementId: string };
+      /** **`rule:lesson_start`** (#48 §6): the lesson card's Start. */
+      lesson?: { objectiveId: string };
     } = {},
   ): Promise<void> {
     /**
@@ -1654,8 +1786,17 @@ export class RoomActor {
       referenceLocked: this.#referenceLocked(anchorId),
       // In the flow every turn has an anchor, and a learner turn under a segment is the
       // Teacher's to answer by rule — no model call, no 20 s, no null role (orchestrator.ts
-      // `rule:teacher_answers`). `null` is the pre-flow room-level stream.
+      // `rule:ellie_answers`). `null` is the pre-flow room-level stream.
       anchoredThread: anchorId !== null,
+      /**
+       * **Which channel this is** (#48, brief §4.1). A private thread never reaches here at all —
+       * `sendPrivate` goes through the whisper path, which does not run the orchestrator — so this
+       * is only ever `doc` or `span`, and it is passed so the gate reads as the brief states it.
+       */
+      threadKind: anchorId === null ? null : this.#threadKindOf(anchorId),
+      /** Who the learner named, if anyone (brief §4.2 rows 2–3). Only on a learner turn. */
+      mention:
+        trigger === 'student_message' || trigger === 'promote' ? this.#lastMention : null,
       // What the quiet is quiet *about* (#37, `silenceDecision`).
       lastAgentTurn: this.#lastAgentTurn,
       /**
@@ -1702,7 +1843,7 @@ export class RoomActor {
     const ledgerRuns =
       (trigger === 'student_message' || trigger === 'promote') &&
       opts.showAnswer !== true &&
-      this.#lastLearnerTurn !== 'answer_request';
+      this.#lastLearnerTurn !== 'give_up';
     if (ledgerRuns) {
       /**
        * **The proposal travels with the turn that judges the attempt** (#47 §2.3, and a seam the
@@ -1744,7 +1885,19 @@ export class RoomActor {
           handOffLine: null,
           failure: null,
         } satisfies TurnDecision)
-      : opts.teach
+      : /**
+         * **The three turns #48 writes in code** (`collab-doc.md` §4.2, §4.7, §6). Same argument
+         * as `rule:try_here` above it: the learner (or the clock) has already named the move, so
+         * there is nothing left for a model to decide and a call here would buy 20 s of Sonnet to
+         * be told what the button already said.
+         */
+        opts.followup
+        ? maxFollowupDecision(opts.followup.objectiveId)
+        : opts.closure
+          ? closureDecision(opts.closure.elementId)
+          : opts.lesson
+            ? lessonStartDecision(opts.lesson.objectiveId)
+            : opts.teach
       ? ({
           speak: true,
           role: 'peer',
@@ -1772,21 +1925,15 @@ export class RoomActor {
      * "how often was the answer asked for before a try, and how often after" — the question the
      * report's DG1 claim rests on.
      */
-    if (decision.decidedBy === 'rule:answer_withheld') {
-      this.#event('challenger', 'quiz.answer_withheld', {
+    if (decision.decidedBy === 'rule:answer_released' || decision.decidedBy === 'rule:closure') {
+      this.#event('challenger', 'quiz.answer_released', {
         element_id: decision.targetElementId,
         attempts: attemptsOf(this.#pendingQuiz),
+        released_by: this.#releaseReason(decision, opts),
         anchor_id: anchorId,
-      });
-    }
-    if (decision.decidedBy === 'rule:answer_shown') {
-      this.#event('challenger', 'quiz.answer_shown', {
-        element_id: decision.targetElementId,
-        attempts: attemptsOf(this.#pendingQuiz),
-        by: opts.showAnswer === true ? 'button' : 'answer_request',
-        anchor_id: anchorId,
-        // §2.3, stated where it can be audited rather than only in the comment above the call.
+        // §4.4: "It fills no progress." Stated where it can be audited, not only in a comment.
         ledger_touched: false,
+        fills_progress: false,
       });
     }
     /**
@@ -1884,8 +2031,12 @@ export class RoomActor {
     }
 
     // "+ Try this" is the other door onto the same counter, and it is counted here for the same
-    // reason the hand-off is above: the cue has to carry the question's number.
-    if (decision.decidedBy === 'rule:try_here') this.#testerQuestions += 1;
+    // reason the hand-off is above: the cue has to carry the question's number. `rule:max_followup`
+    // is the third door (#48 §4.2) and counts identically — one counter, so a second question's
+    // feedback can never be cued as the first question's.
+    if (decision.decidedBy === 'rule:try_here' || decision.decidedBy === 'rule:max_followup') {
+      this.#testerQuestions += 1;
+    }
     /**
      * **The script cues of one Tester question** (#47; `attempt.quizCue`). Every turn that belongs
      * to question N carries `:N`, so the scripted backend can hold a whole attempt loop — question,
@@ -2708,22 +2859,84 @@ export class RoomActor {
       this.#d.onTaught?.({ elementId: decision.targetElementId, at: this.#nowIso() });
     }
     if (decision.moveType === 'quiz' && decision.targetElementId) {
-      this.#pendingQuiz = openQuiz({ quizMessageId: messageId, elementId: decision.targetElementId }, now);
+      /**
+       * **The question's own id** (#48). Minted here, once, and shared by three things that must
+       * agree about which question they mean: the doc's `q_block` (brief §5.2), the `resolve_q`
+       * that closes it (§5.3), and every `quiz_outcomes` row filed under it (§6). Deriving it from
+       * the message id instead would tie the Q block's life to a message row's thread, which is
+       * the coupling architect §A.4 warns against.
+       */
+      this.#pendingQuiz = openQuiz(
+        {
+          quizMessageId: messageId,
+          elementId: decision.targetElementId,
+          questionId: this.#nextQuestionId ?? this.#d.newId('q'),
+          objectiveId: this.#objectiveOf(decision.targetElementId),
+          anchorId: this.#turnAnchorId,
+        },
+        now,
+      );
+      this.#nextQuestionId = null;
+      this.#emitThread(this.#turnAnchorId);
     }
     if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
       // Rowland 2014's constraint is discharged only when the feedback turn actually landed. It is
       // per *attempt* since #47: a second attempt re-opens it (`flow.answerQuiz`).
       // And the turn's first line is read once, for the verdict (`flow.feedbackVerdict`): it is
       // what tells the composer to ask for the next attempt or to say the question is done.
-      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text));
+      const answered = this.#pendingQuiz.answerMessageId;
+      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text), feedbackVerdict3(text));
+      /**
+       * **One outcome row per verdict** (#48, brief §6). The progress bar is a pure function of
+       * these (`shared/doc/progress.progressFill`), which is the whole reason they exist as rows
+       * rather than as a second copy of the ledger's level: *Well done* completes an objective,
+       * *Partly there* half-fills it, *Not yet* and every release fill nothing — and that is three
+       * values the ledger's four levels cannot express without being re-interpreted twice.
+       */
+      this.#recordOutcome({
+        kind: 'verdict',
+        verdict: verdict3Of(this.#pendingQuiz),
+        releasedBy: null,
+        messageId: answered,
+        source: this.#docTextTarget !== null ? 'doc_text' : 'chat',
+      });
+      this.#emitThread(this.#anchorOfQuiz(this.#pendingQuiz));
     }
     /**
-     * **The answer closes the question** (#47 §2.3), and closes it only once it has actually
-     * landed — the same discipline as the feedback flag above. After this `quizOpen` is false, so
-     * none of the answer-lock rules can fire again on this question and "Show the answer" goes away.
+     * **The released answer closes the question** (#48 §4.4), and closes it only once it has
+     * actually landed — the same discipline as the feedback flag above. After this `quizOpen` is
+     * false, so none of the rules above can fire again on this question and Pass goes away.
      */
     if (decision.moveType === 'quiz_answer' && this.#pendingQuiz) {
-      this.#pendingQuiz = markAnswerShown(this.#pendingQuiz);
+      const releasedBy = this.#releaseBy ?? 'give_up';
+      this.#pendingQuiz = markAnswerShown(this.#pendingQuiz, releasedBy);
+      this.#releaseBy = null;
+      // §4.4: "It fills no progress." The row is still written, because a question the learner
+      // never answered is evidence about the *teaching*, and §4.5's pitch reads it.
+      this.#recordOutcome({ kind: 'released', verdict: null, releasedBy, messageId: null, source: 'chat' });
+      this.#emitThread(this.#anchorOfQuiz(this.#pendingQuiz));
+    }
+    /**
+     * **Ellie's cue, recorded as a fact** (#48 §4.3, §4.7, architect §E6). `#pendingCue` is what
+     * the structured call reported about itself; putting it on the question is what lets the
+     * closure rule check that a mistake she made was corrected, however long afterwards.
+     */
+    if (decision.moveType === 'peer_guess' && this.#pendingQuiz) {
+      const reported = this.#pendingCue;
+      this.#cueText = text;
+      this.#pendingQuiz = markCueGiven(this.#pendingQuiz, {
+        at: now,
+        hasMistake: reported?.hasMistake === true,
+        claim: reported?.claim ?? null,
+      });
+      this.#pendingCue = null;
+      this.#event('peer', 'quiz.cue_given', {
+        element_id: decision.targetElementId,
+        has_mistake: reported?.hasMistake === true,
+        // The claim itself is learner-visible content and never goes to the log.
+        words: wordCount(text),
+      });
+      this.#emitThread(this.#anchorOfQuiz(this.#pendingQuiz));
     }
   }
 
@@ -2744,6 +2957,159 @@ export class RoomActor {
      * it would be the app agreeing to forget the evidence and keeping the inference drawn from it.
      */
     this.#pitch = DEFAULT_PITCH;
+  }
+
+  // ── the collab doc's threads, outcomes and edits (#48) ───────────────────
+
+  /**
+   * **A thread id IS an anchor id** (architect §A.4). `'doc'` is the doc chat, `'deck'` is its
+   * alias in rooms opened before this build, `span_<12 hex>` is a Ctrl+E thread, and a private
+   * thread's key is its whisper thread id. Registering one is idempotent and costs nothing, which
+   * is why it happens on every path that can be the first message in a thread.
+   */
+  #registerThread(
+    anchorId: string | null,
+    kind: ThreadKind,
+    extra: { blockId?: string | null; quote?: string | null; agentKey?: AgentAuthor | null } = {},
+  ): void {
+    if (anchorId === null) return;
+    const existing = this.#threads.get(anchorId);
+    this.#threads.set(anchorId, {
+      kind,
+      blockId: extra.blockId ?? existing?.blockId ?? null,
+      quote: extra.quote ?? existing?.quote ?? null,
+      agentKey: extra.agentKey ?? existing?.agentKey ?? null,
+      createdAt: existing?.createdAt ?? this.#nowIso(),
+    });
+    if (existing === undefined) this.#emitThread(anchorId);
+  }
+
+  /**
+   * Which channel an anchor belongs to. Read from the id rather than from the registry where the
+   * id says so, because a room reopened from the database has messages whose threads were never
+   * registered in this actor's lifetime — and a span thread that came back as `doc` would put
+   * Ctrl+E's question in the wrong column.
+   */
+  #threadKindOf(anchorId: string): ThreadKind {
+    const known = this.#threads.get(anchorId);
+    if (known) return known.kind;
+    if (anchorId.startsWith(SPAN_THREAD_PREFIX)) return 'span';
+    return 'doc';
+  }
+
+  /**
+   * **The threads the actor knows about, with their quiz state** (brief §4.1; T6 merges this with
+   * its own registry on `chat:threads`).
+   *
+   * The quiz travels on the thread rather than on a whole-room view, which is what retires the
+   * renderer's `refreshFlowQuiz` poll (architect §D10): with three chat columns a poll on every
+   * `turn.released` is three reads of everything to notice one change.
+   */
+  docThreads(): ThreadView[] {
+    const messages = this.#d.store.messages.forRoom(this.#d.roomId);
+    const byAnchor = new Map<string, string[]>();
+    for (const m of messages.slice().sort((a, b) => a.seq - b.seq)) {
+      const anchor = m.anchor_id;
+      if (anchor === null) continue;
+      const list = byAnchor.get(anchor) ?? [];
+      list.push(m.id);
+      byAnchor.set(anchor, list);
+    }
+    const anchors = new Set<string>([...this.#threads.keys(), ...byAnchor.keys()]);
+    const quizAnchor = this.#pendingQuiz === null ? null : this.#anchorOfQuiz(this.#pendingQuiz);
+    const views: ThreadView[] = [];
+    for (const anchorId of anchors) {
+      const reg = this.#threads.get(anchorId);
+      const kind = reg?.kind ?? this.#threadKindOf(anchorId);
+      views.push({
+        threadId: anchorId,
+        kind,
+        blockId: reg?.blockId ?? null,
+        quote: reg?.quote ?? null,
+        agentKey: reg?.agentKey ?? null,
+        // A private thread's turns live in `whispers`, not in `messages` (brief §4.1), so it
+        // never carries message ids — which is also the shape that makes a leak impossible here.
+        messageIds: kind === 'private' ? [] : (byAnchor.get(anchorId) ?? []),
+        lastSeenSeq: this.#seen.get(anchorId) ?? 0,
+        quiz: anchorId === quizAnchor ? this.#docQuizView() : null,
+        createdAt: reg?.createdAt ?? this.#nowIso(),
+      });
+    }
+    return views;
+  }
+
+  /** `FlowQuizView` plus what the collab doc adds: the question id, the cue, the resolution. */
+  #docQuizView(): DocQuizView | null {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null) return null;
+    return {
+      quizMessageId: quiz.quizMessageId,
+      elementId: quiz.elementId,
+      attempts: attemptsOf(quiz),
+      feedbackGiven: quiz.feedbackGiven === true,
+      answerShown: quiz.answerShown === true,
+      verdict: verdictOf(quiz),
+      questionId: quiz.questionId ?? quiz.quizMessageId,
+      objectiveId: quiz.objectiveId ?? null,
+      cueGiven: cueGiven(quiz),
+      resolution: qResolutionOf(quiz),
+      open: quizOpen(quiz),
+    };
+  }
+
+  /**
+   * **`chat.thread`, whenever a thread is created or its quiz state changes** (architect §D10).
+   * Cheap, idempotent, and emitted from exactly the places that can change either fact.
+   */
+  #emitThread(anchorId: string | null): void {
+    if (anchorId === null) return;
+    const view = this.docThreads().find((t) => t.threadId === anchorId);
+    if (!view) return;
+    this.#d.transport.emit({ type: 'chat.thread', roomId: this.#d.roomId, thread: view });
+  }
+
+  /**
+   * One resolved question, as a row. Written through the port so the durable copy is main's, and
+   * kept in memory so `pitchInputs` does not need a round trip mid-turn.
+   */
+  #recordOutcome(input: {
+    kind: 'verdict' | 'released';
+    verdict: QuizVerdict3 | null;
+    releasedBy: 'give_up' | 'pass' | 'closure' | null;
+    messageId: string | null;
+    source: 'chat' | 'doc_text';
+  }): void {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null) return;
+    const outcome: Omit<QuizOutcome, 'id' | 'contentSha' | 'createdAt'> = {
+      roomId: this.#d.roomId,
+      objectiveId: quiz.objectiveId ?? null,
+      questionId: quiz.questionId ?? quiz.quizMessageId,
+      kind: input.kind,
+      verdict: input.verdict,
+      releasedBy: input.releasedBy,
+      messageId: input.messageId,
+      source: input.source,
+    };
+    this.#outcomes.push({ ...outcome, id: this.#d.newId('qo'), contentSha: '', createdAt: this.#nowIso() });
+    try {
+      this.#docPort.recordOutcome(outcome);
+    } catch (err) {
+      // The conversation never blocks on the document (§5, and the ledger's own rule §4.6).
+      this.#turnLog.event('error', 'doc.outcome.error', { cause: failureReason(err) });
+    }
+  }
+
+  /** Which door a release came through, for the event log and for `markAnswerShown`. */
+  #releaseReason(decision: TurnDecision, opts: { showAnswer?: boolean }): 'give_up' | 'pass' | 'closure' {
+    if (decision.decidedBy === 'rule:closure') return 'closure';
+    return opts.showAnswer === true ? 'pass' : 'give_up';
+  }
+
+  /** The objective a ledger element belongs to. They share one id space (`objectives/pack.ts`). */
+  #objectiveOf(elementId: string | null): string | null {
+    if (elementId === null) return null;
+    return this.#d.pack.elements.some((e) => e.id === elementId) ? elementId : null;
   }
 
   #learnerLabel(elementId: string): string {
