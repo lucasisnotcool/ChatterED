@@ -206,6 +206,12 @@
         {/if}
       </div>
 
+      <!-- What this document has cost (#42 item C), beside the bar. It is `flex: none` and about
+           six characters wide, and it renders nothing at all when there is no ledger or no call
+           on this file — so the header's own rule holds: nothing here may push the buttons over
+           the chat column's tabs at 1100px. -->
+      <CostCounter />
+
       <button type="button" class="mini" onclick={() => (store.docView = 'viewer')}>Page viewer</button>
       <button type="button" class="mini wide-only" onclick={() => void store.revealFile(doc.fileId)}>
         Reveal in Finder

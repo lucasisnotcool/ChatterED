@@ -458,6 +458,31 @@
     {#if store.costOn}
       <section>
         <h2>Usage</h2>
+
+        <!--
+          The per-message meter's off switch (#42 item C).
+
+          Default **on**: the ask is that cost be visible, and a number nobody finds is not
+          visible. But a line of grey figures under every reply is a line of grey figures beside
+          somebody's lecture, and a learner who has decided they do not want to be told what each
+          sentence cost should be able to say so once and never see it again. The counters at the
+          thread, document and app levels stay — they are not in anybody's way.
+        -->
+        <label class="choice" class:on={store.showMessageCost}>
+          <input
+            type="checkbox"
+            checked={store.showMessageCost}
+            onchange={(e) => store.setShowMessageCost(e.currentTarget.checked)}
+          />
+          <span class="choice-text">
+            <span class="choice-label">Show what each message cost</span>
+            <span class="quiet">
+              A small line under each of Ellie's and Max's replies — tokens first, then what the
+              same calls would have cost on the API. Click one to see what the reply was made of.
+            </span>
+          </span>
+        </label>
+
         {#if !allTime || allTime.calls === 0}
           <p class="quiet">
             {store.costBusy ? 'Reading the ledger…' : 'No model calls recorded yet.'}

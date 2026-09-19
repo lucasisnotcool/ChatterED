@@ -20,6 +20,7 @@
   import { chatComposer, messagesOf } from '../../lib/chatview.js';
   import { clock, store } from '../../lib/store.svelte.js';
   import ChatMessage from './ChatMessage.svelte';
+  import CostFooter from '../cost/CostFooter.svelte';
   import MentionComposer from './MentionComposer.svelte';
   import SpanThreadCard from './SpanThreadCard.svelte';
   import ThinkingIndicator from '../ThinkingIndicator.svelte';
@@ -259,6 +260,11 @@
     {#if refused}
       <p class="refused" role="status">{refused}</p>
     {/if}
+
+    <!-- What this thread has cost (#42 item C). Above the composer rather than at the end of the
+         scroller, so it is where the learner already is rather than somewhere they have to
+         scroll to — and so it does not move every time a reply lands. -->
+    <CostFooter anchorId={docId} />
 
     <MentionComposer
       placeholder={draft ? 'Ask about this line…' : composer.placeholder}

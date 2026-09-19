@@ -14,6 +14,7 @@
    */
   import { bridge } from '../lib/bridge.js';
   import { titleBarInset } from '../lib/chrome.js';
+  import CostIndicator from './cost/CostIndicator.svelte';
 
   let fullScreen = $state(false);
   $effect(() => bridge().onWindowState((s) => (fullScreen = s.fullScreen)));
@@ -24,6 +25,12 @@
 <header class="titlebar" style="--tl-inset: {inset}px">
   <div class="lights" aria-hidden="true"></div>
   <span class="brand">◆ ChatterED</span>
+  <span class="gap"></span>
+  <!-- The app-level cost indicator (#42 item C). Here rather than in `StatusBar` because this is
+       the only chrome present on every screen; the status bar renders inside the old room only.
+       `.no-drag` is not optional — without it the button is part of the window's drag handle and
+       never receives the click. -->
+  <CostIndicator />
 </header>
 
 <style>
@@ -46,6 +53,8 @@
     width: var(--tl-inset);
     transition: width 140ms ease-out;
   }
+
+  .gap { flex: 1; min-width: 12px; }
 
   .brand {
     font-size: 12px;
