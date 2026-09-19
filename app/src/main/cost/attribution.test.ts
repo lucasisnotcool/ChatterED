@@ -564,3 +564,24 @@ describe('Ellie’s cue', () => {
     }
   });
 });
+
+describe('a doc-text assessment', () => {
+  /**
+   * §6's carrier: the learner's own writing in the document, inserted as a synthetic learner
+   * message in the span's thread and then judged by the existing pipeline. There is no call *for*
+   * the carrier — it is the learner's words — so the row that matters is the turn it triggers,
+   * and it has to land on the span rather than on the doc chat.
+   */
+  it('bills the turn it triggers to the span thread the text came from', async () => {
+    const h = build();
+    await settle(
+      h.clock,
+      h.actor.assessDocText({ anchorId: SPAN, objectiveId: 'obj_1', blockId: 'b_mine', text: 'the cost moves to forwarding' }),
+    );
+
+    const rows = h.rows();
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.anchor_id === SPAN)).toBe(true);
+    expect(rows.every((r) => r.file_id === FILE && r.turn_id !== null)).toBe(true);
+  });
+});
