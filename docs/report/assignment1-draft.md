@@ -3,15 +3,15 @@
 *Draft for Lucas to edit, rewritten 19 Sep 2026 against `docs/research/collab-doc.md` (#48). The
 previous draft (the attempt loop on slide crops) is in git history at `30f39e8`.*
 
-**Two kinds of bracket, neither is submission text.** `[LUCAS: …]` is yours alone: participant
-details and what your interviews found. I have not seen the interviews and have written nothing
-that depends on them, so you can check the transcript reading against them. `[BUILD: …]` is a fact
+**Two kinds of bracket, neither is submission text.** `[LUCAS: …]` is yours alone: things only you
+can confirm (consent wording, exact quotes). The interview paragraphs were written from your notes
+*after* the transcript reading was committed, so the two readings were independent; where they
+disagree, Step 1 says so. `[BUILD: …]` is a fact
 the finished build has to supply; I fill those in after the end-to-end run.
 
-**Body word count: 1,822 / 2,000**, counted over Steps 1 to 4 and Limitations, with the brackets and
-the architecture figure excluded (Step 1 = 588, Step 2 = 668, Step 3 = 261, Step 4 = 213, Limitations
-= 92). That leaves about 180 words for your interview material. If you need more room, the easiest
-cuts are DG5 and the last row of the roles table.
+**Body word count: 1,993 / 2,000**, counted over Steps 1 to 4 and Limitations, with the brackets and
+the architecture figure excluded. The interview material is now in (from `docs/research/interviews/findings.md`);
+if you add exact quotes, the easiest cuts are DG5 and the last row of the roles table.
 
 ---
 
@@ -21,8 +21,9 @@ cuts are DG5 and the last row of the roles table.
 
 I studied how NUS undergraduates revise lecture material with generative AI. I combined two
 methods, as the Week 4 lecture recommends: interviews for what people *say*, and observation for
-what they *do* (Lee, 2026). **[LUCAS: n interviewed; programme, year, gender per participant
-P1…Pn; consent; one sentence on the interview protocol.]** For observation, six students shared a
+what they *do* (Lee, 2026). I interviewed three final-year students with their consent: **P1**
+(Mechanical Engineering, M), **P2** and **P3** (Computer Science, M and F). **[LUCAS: confirm
+consent wording and interview length.]** For observation, six students shared a
 real study session with ChatGPT, Claude or Perplexity (R1 to R6). I coded all 152 turns with a
 codebook built on ICAP (Chi & Wylie, 2014) and tutorial dialogue moves (Graesser et al., 1995); a
 second, independent coder agreed at κ = 0.90 to 1.00 on the dimensions used here.
@@ -36,8 +37,7 @@ lecture notes.
 
 **In an AI study chat, whoever asks the question does the thinking, and by default that is the
 AI.** In five of six sessions, none of 31 learner turns contained the learner's own reasoning, and
-no AI turn asked for any. One learner typed 41 words against the AI's 3,829; four of their turns
-were a bare slide image. The hard questions were handed over whole: "Why is C not independent of
+no AI turn asked for any. The hard questions were handed over whole: "Why is C not independent of
 F?", never with a guess attached.
 
 Two learners did ask to be tested, and had to engineer it. One wrote "do not send the answer with
@@ -48,13 +48,18 @@ it: 17 attempts and two requests, both after more than 100 minutes, one with "th
 complex".
 
 So the brief's **reduced persistence** fits, in a specific form: *the conversation gives the
-learner's attempt no place, and no reason to be sustained once the question gets hard.* The same
-message set two things, attempt-first and lower difficulty, so persistence here tracks difficulty
-at least as much as it tracks a withheld answer.
+learner's attempt no place, and no reason to be sustained once the question gets hard.* That
+message also lowered the difficulty, so persistence here tracks difficulty as much as a withheld
+answer.
 
-**[LUCAS: what the interviews say about this. Did they try before asking? Why do they ask for the
-answer: too hard, no time, habit? One or two verbatim quotes. If the interviews disagree with the
-transcripts anywhere, say so here; a discrepancy is a finding.]**
+The interviews say why. All three described help that outruns them. P1 tried studying with AI and
+"could not keep up": each answer assumed knowledge he lacked, and after rounds of clarification he
+was "so far away from the notes" that he doubted the next answer. He now uses AI mainly to answer
+quizzes. P3 has AI write her notes, but they come out so long that she knows she will not finish
+them, and on hard modules she gives up on them. P2 screenshots slides into a chat that "does not
+see what he is seeing". One discrepancy is a finding: P1 *does* try a tutorial question before
+asking, so the missing attempt is missing from the conversation, not from the learner. **[LUCAS:
+the phrases in quotation marks are from your notes; replace with exact words if you have them.]**
 
 ### 1.3 User needs
 
@@ -62,14 +67,19 @@ transcripts anywhere, say so here; a discrepancy is a finding.]**
 - **N2, questions I can actually answer.** A question pitched too hard is handed back; the learner
   who succeeded lowered the difficulty by hand.
 - **N3, feedback I can check, worked through before the next question.** Once that learner
-  attempted, 11 of 21 AI verdicts were wrong, each refuted by running the query, nine calling a
+  attempted, 11 of 21 AI verdicts were wrong, nine calling a
   correct answer wrong; the learner replied "ok". 17 of 21 feedback turns also carried the next
   question, and no later attempt was ever a second try.
 - **N4, notes I can trust.** One session's "all lectures" silently became lectures 7 to 13;
   another claimed "97% concept coverage" after its own check failed.
 - **N5, answers sized for reading.** Seven of eight follow-up questions repaired the AI's previous
   answer ("What does it mean to marginalise a probability?"); replies ran 159 to 1,190 words.
-- **[LUCAS: any need the interviews add, or drop one the interviews contradict.]**
+- **N6, notes that are mine too.** P3 wants to edit the notes with the AI and control where
+  additions go; P2 cannot get what the AI tells him back into his slides, and what he handwrites
+  the AI never sees.
+
+N2 and N5 were raised by all three interviewees; N3 by none of them: the errors in the transcripts
+went unnoticed, which is why it is a need.
 
 ### 1.4 Potential CUI support
 
@@ -116,25 +126,23 @@ practice with feedback (Rowland, 2014: g = 0.73 against 0.39 without); self-expl
 al., 1989); explaining to a peer who is *less* sure than you elicits more than explaining to a
 tutor (Xu et al., 2026). *Need:* N1. *Realisation:* Max's question is the learner's to answer;
 after a reading-time silence Ellie gives a hedged, partial take, which may hold one plausible
-mistake, and Max aims it back at the learner. Users prefer being offered options over being asked
-again (Ashktorab et al., 2019).
+mistake, and Max aims it back at the learner.
 
 **DG2, a give-up lowers the question, never the learner.** *Theory:* contingent tutoring: more
 help after failure, less after success (Wood, Bruner & Ross, 1976); a global escape must be
-reachable from every node of a dialogue (Moore & Arar, 2019). *Need:* N2. *Realisation:* "I don't
+reachable from every node of a dialogue (Moore & Arar, 2019). *Need:* N2 (P1: "easier questions first… a progression journey"). *Realisation:* "I don't
 know", in any phrasing, releases Max's full answer at once, fills no progress, and makes the next
 question easier. No question is ever left unanswered.
 
 **DG3, feedback shows its grounds and is finished before the next question.** *Theory:* trust is
 calibrated only when the basis of a judgement is visible (Lee & See, 2004). *Need:* N3.
 *Realisation:* a verdict first, each point quoted from the slide as `p. N: "…"`, a follow-up on the
-*same* question, and one open question at a time. Max's corrected answer is written into the notes
-under his question.
+*same* question, and one open question at a time.
 
 **DG4, notes with provenance, and the learner's text is sovereign.** *Theory:* appropriate
 reliance again (Lee & See, 2004); Joshi & Vogel (2026) found lower AI involvement gives stronger
 ownership, which an AI-written document cuts against, so the counterweight is a hard rule.
-*Need:* N4. *Realisation:* every block links to its slides or states why it was added; agents
+*Need:* N4, N6. *Realisation:* every block links to its slides or states why it was added; agents
 address blocks, and a code-side guard turns any change to learner-written text into an
 accept-or-reject suggestion.
 
@@ -194,14 +202,14 @@ A running app, on CS3249's own Week 4 deck (66 slides). **[BUILD: ingest time an
    nothing, and his next question is easier.
 6. **I write.** I add my own sentence to the notes. Max assesses it as an attempt, and his
    correction arrives as a strikethrough suggestion I accept or reject. Nothing of mine is
-   overwritten; *Freeze* stops all agent edits.
+   overwritten.
 
 **[BUILD: what is live in the filmed build, and anything that is not.]**
 
 ## Limitations
 
-Six observed sessions, one contributing 59% of turns; the second coder is a model. **[LUCAS: limits
-of the interviews.]** The notes are AI-written and re-typeset: provenance makes them checkable, but
+Six observed sessions, one contributing 59% of turns; the second coder is a model. The three interviews are my notes in paraphrase, all
+final-year students, two from computing. The notes are AI-written and re-typeset: provenance makes them checkable, but
 nothing verifies them against the slide in code, and the same holds for feedback quotes. Releasing
 the answer on any give-up is a bet that a lowered question teaches more than a refused answer; no
 evidence here settles it, and it is A2's first test. Ellie's deliberate mistake risks a learner who
@@ -210,9 +218,6 @@ reads it and leaves; a closure rule corrects it, but only inside the app.
 ---
 
 ## References
-
-Ashktorab, Z., Jain, M., Liao, Q. V., & Weisz, J. D. (2019). Resilient chatbots: Repair strategy
-preferences for conversational breakdowns. *CHI '19*.
 
 Brysbaert, M. (2019). How many words do we read per minute? A review and meta-analysis of reading
 rate. *Journal of Memory and Language*, 109, 104047.
@@ -276,9 +281,8 @@ programme, gender or year of study explicitly.
 **Check before you trust a citation.** These I took from the repo's own briefs and source texts
 (verified there): Xu et al., Song et al., Tan et al., Houde et al., Joshi & Vogel, Rowland, Lee &
 See, Brysbaert, Chi, Graesser, and the Week 4 deck itself (rails, global escapes, the four traps,
-"combine two" methods, goals that name what would falsify them). **These four I cited from
-memory and you should open before submitting:** Wood, Bruner & Ross (1976), Ashktorab et al.
-(2019, quoted on the lecture's repair slide), Moore & Arar (2019, cited on the lecture's flow
+"combine two" methods, goals that name what would falsify them). **These three I cited from
+memory and you should open before submitting:** Wood, Bruner & Ross (1976), Moore & Arar (2019, cited on the lecture's flow
 slide), Grice (1975, named on the lecture's dialogue slide). The claim attached to Xu et al. in
 DG1 (a less-sure peer elicits more than a tutor) should be checked against
 `Academia/Sources/_text/who-you-explain-to-matters.txt` for the exact comparison before it goes in.
