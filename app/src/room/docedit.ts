@@ -148,6 +148,17 @@ export interface AnswerEditInput {
   answer: string;
   /** The block the thread hangs off, when it has one (a span thread always does). */
   blockId: string | null;
+  /**
+   * **A span thread's edit lands at that span's block, and nowhere the planner finds tidier**
+   * (interview finding, `docs/research/interviews/findings.md` §6).
+   *
+   * One interviewee complained specifically of additions landing in the wrong place; all three
+   * described answers drifting away from the slide through rounds of clarification. When the
+   * learner highlighted a span and asked about *it*, the answer belongs beside it — that is not a
+   * judgement a model should be asked to make, because the learner already made it when they
+   * highlighted. So the anchor is pinned and only the *content* is planned.
+   */
+  pinAnchor?: boolean;
   /** The deck's page count, so a citation outside it is dropped rather than trusted. */
   pageCount?: number;
   outline: readonly OutlineEntry[];
@@ -254,12 +265,17 @@ export async function planAnswerEdit(
 
   const { blocks } = validateDrafts(parsed, input.pageCount ?? Number.MAX_SAFE_INTEGER);
   const anchorBlockId =
-    (typeof parsed.anchor_block_id === 'string' ? parsed.anchor_block_id : null) ??
-    (typeof parsed.block_id === 'string' ? parsed.block_id : null) ??
-    input.blockId ??
-    input.outline.at(-1)?.blockId ??
-    null;
+    input.pinAnchor === true && input.blockId !== null
+      ? input.blockId
+      : ((typeof parsed.anchor_block_id === 'string' ? parsed.anchor_block_id : null) ??
+        (typeof parsed.block_id === 'string' ? parsed.block_id : null) ??
+        input.blockId ??
+        input.outline.at(-1)?.blockId ??
+        null);
   if (anchorBlockId === null) return { batch: null, pointsTo: null };
+  // A pinned anchor is the learner's own highlight, so the only op that can honour it is one that
+  // adds beside it: replacing or appending to the span they asked about is not "answering here".
+  const pinned = input.pinAnchor === true && input.blockId !== null;
 
   /**
    * **Learner text is worked around, not through** (brief §5.4).
@@ -271,7 +287,7 @@ export async function planAnswerEdit(
    * as theirs is downgraded to `insert_after` here, where the reason can be stated, and §6's
    * `buildSuggestionEdit` stays the only deliberate producer of a suggestion.
    */
-  const targetIsLearners = input.outline.some((e) => e.blockId === anchorBlockId && e.learnerText);
+  const targetIsLearners = pinned || input.outline.some((e) => e.blockId === anchorBlockId && e.learnerText);
 
   let op: AgentDocOp | null = null;
   if (!targetIsLearners && edit === 'append_to_block' && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {

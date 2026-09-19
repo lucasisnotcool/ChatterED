@@ -26,6 +26,7 @@ import {
   type ThreadView,
 } from '../shared/doc/types.js';
 import { parseMention } from '../shared/doc/mention.js';
+import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import {
   buildQuestionEdit,
   buildResolveEdit,
@@ -35,9 +36,11 @@ import {
 } from './docedit.js';
 import {
   ELLIE_CUE_SCHEMA,
+  cueCorrectionLines,
   docTextBlock,
   ellieAnswersBlock,
   ellieCueBlock,
+  learnerNotesBlock,
   lessonStartBlock,
   maxFollowupBlock,
   maxPromptBlock,
@@ -105,6 +108,7 @@ import {
   noteActivity,
   noteHandOff,
   openQuiz,
+  pickTarget,
   openSession,
   tickSession,
   type FlowProfile,
@@ -139,7 +143,17 @@ import {
   teachObjectiveBlock,
   whereBlock,
 } from './prompts.js';
-import { DEFAULT_PITCH, notePitch, pitchLine, type PitchState } from './pitch.js';
+import {
+  DEFAULT_PITCH,
+  notePitch,
+  pitchBlock,
+  pitchInputs,
+  pitchLine,
+  type PitchInputs,
+  type PitchOutcome,
+  type PitchState,
+} from './pitch.js';
+import { progressFill } from '../shared/doc/progress.js';
 import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
@@ -573,6 +587,13 @@ export class RoomActor {
   #nextQuestionId: string | null = null;
   /** Which door the release in flight came through, read by `#noteTurnForFlow` when it lands. */
   #releaseBy: 'give_up' | 'pass' | 'closure' | null = null;
+  /**
+   * **Every question Max has asked on this file**, verbatim (interview finding, `findings.md` §6:
+   * quiz quality decays through a long session and the questions start to circle). Handed to the
+   * question prompt so a rephrasing of one already asked is ruled out by name rather than hoped
+   * against. Capped, because the point is a list he can read, not a transcript.
+   */
+  #questionsAsked: string[] = [];
 
   #log: TurnLog;
   /** The current turn's logger, so helpers off the main path (`#failTurn`) share its id. */
@@ -1001,17 +1022,89 @@ export class RoomActor {
    * answered.
    */
   async showAnswer(anchorId: string): Promise<{ shown: boolean; refused: string | null }> {
+    const result = await this.pass(anchorId);
+    return { shown: result.released, refused: result.refused };
+  }
+
+  /**
+   * **Pass** (#48, `collab-doc.md` §4.4: *"There is also a **Pass** control on the open
+   * question"*), and the whole of what changed from "Show the answer".
+   *
+   * The attempt precondition is **gone**. #47 refused the button before one try and said so in the
+   * composer; the brief retires that knowingly (§1): *"a learner must never see a question they
+   * never get the answer to, and a refused answer teaches less than a lowered question."* So the
+   * only refusal left is the one that is about the world rather than about the learner — there is
+   * no open question here to pass on.
+   *
+   * `showAnswer()` stays as its old name because `IPC.flowShowAnswer` is frozen for this build.
+   */
+  async pass(anchorId: string): Promise<{ released: boolean; refused: string | null }> {
     const quiz = this.#pendingQuiz;
     if (quiz === null || !quizOpen(quiz) || this.#anchorOfQuiz(quiz) !== anchorId) {
-      return { shown: false, refused: 'There is no open question here.' };
-    }
-    if (attemptsOf(quiz) < 1) {
-      // §2.4's own words, so the copy the learner sees and the reason the code gives are one string.
-      return { shown: false, refused: "Max won't give the answer until you've tried once." };
+      return { released: false, refused: 'There is no open question here.' };
     }
     this.#noteLearnerActivity('ask', anchorId);
+    this.#releaseBy = 'pass';
+    this.#event('student', 'quiz.pass', { anchor_id: anchorId, attempts: attemptsOf(quiz) });
     await this.#runAgentTurn('promote', { anchorId, showAnswer: true });
-    return { shown: true, refused: null };
+    return { released: true, refused: null };
+  }
+
+  /**
+   * **`rule:closure` — no question Max asked is left without its answer** (brief §4.7).
+   *
+   * Two callers, and the difference between them is the whole of architect §E3. The **inactivity
+   * gap** calls it from inside a turn, where there is time for a real model answer. The **file
+   * close** (and `before-quit`) calls it from a path that must never block: closing a file
+   * unmounts the renderer and may dispose the actor before a 9–12 s Tester turn could land.
+   *
+   * So a close that cannot get an answer quickly does not wait for one. The question is still
+   * resolved — in the doc, as *released*, from the objective's own criteria — because a Q block
+   * left open forever is the debt §4.7 exists to pay. Silence would be the one outcome the brief
+   * rules out.
+   */
+  async closeOpenQuestion(reason: 'closure' = 'closure'): Promise<void> {
+    const quiz = this.#pendingQuiz;
+    if (!quizOpen(quiz) || quiz === null) return;
+    const anchorId = this.#anchorOfQuiz(quiz) ?? quiz.anchorId ?? this.#lastAnchorId;
+    this.#releaseBy = reason;
+    this.#event('challenger', 'quiz.closure', {
+      element_id: quiz.elementId,
+      anchor_id: anchorId,
+      attempts: attemptsOf(quiz),
+      cue_had_mistake: quiz.cueHasMistake === true,
+    });
+    try {
+      await this.#runAgentTurn('promote', { anchorId, closure: { elementId: quiz.elementId } });
+    } catch (err) {
+      // A close that throws must still close. The Q block is resolved from the criteria below.
+      this.#turnLog.event('error', 'quiz.closure.error', { cause: failureReason(err) });
+      this.#resolveFromCriteria(quiz);
+    }
+  }
+
+  /**
+   * The fallback half of §4.7: no model answer could be had in time, so the Q block is resolved
+   * from the objective's own criteria — which is what the ingest already wrote as *what a correct
+   * demonstration contains*. It is a worse answer than Max's and it is infinitely better than an
+   * open question the learner never gets back to.
+   */
+  #resolveFromCriteria(quiz: PendingQuiz): void {
+    if (!quizOpen(quiz)) return;
+    this.#pendingQuiz = markAnswerShown(quiz, 'closure');
+    this.#recordOutcome({ kind: 'released', verdict: null, releasedBy: 'closure', messageId: null, source: 'chat' });
+    const element = this.#d.pack.elements.find((e) => e.id === quiz.elementId);
+    const criteria = (element?.demonstration ?? []).filter((c) => c.trim().length > 0);
+    if (criteria.length === 0) return;
+    const text = [`The answer needed to cover:`, ...criteria.map((c) => `- ${c}`)].join('\n');
+    void this.#emitDocEdit(
+      buildResolveEdit(this.#docEditDeps(quiz.anchorId ?? null, null), {
+        questionId: quiz.questionId ?? quiz.quizMessageId,
+        resolution: 'released',
+        text,
+      }),
+      { objectiveId: quiz.objectiveId ?? null, messageId: null, turnId: null },
+    );
   }
 
   /**
@@ -1301,11 +1394,16 @@ export class RoomActor {
     text: string,
     /** The anchored segment, when the whisper came from the flow's popover (§3.5). */
     segment?: { label: string; page: number | null; text: string },
+    /**
+     * Who the private thread is with, when the caller knows (#48 §4.1's Max thread). Absent
+     * callers keep the Teacher, which is every path that predates the second private channel.
+     */
+    agentParticipantIdHint?: string,
   ): Promise<void> {
     const body = text.trim();
     if (body.length === 0) return;
     const thread = this.#d.store.whispers.forThread(threadId);
-    const agentParticipantId = thread[0]?.agent_participant_id ?? this.#peerParticipant().id;
+    const agentParticipantId = thread[0]?.agent_participant_id ?? agentParticipantIdHint ?? this.#peerParticipant().id;
     const agentKey = this.#d.store.participants.get(agentParticipantId)?.agent_key ?? '';
     const agent = agentByKey(this.#d.roster, agentKey) ?? agentByRole(this.#d.roster, 'peer');
     const snapshot = this.#room().turn_seq;
@@ -1532,6 +1630,234 @@ export class RoomActor {
   /** `Esc` / click-away. The popover is closed; nothing is written and nothing is posted. */
   closeSegmentWhisper(): void {
     this.#whisperAnchor = null;
+  }
+
+  // ── private threads, with Ellie *and* Max (#48, collab-doc.md §4.1) ───────
+
+  /**
+   * **One private thread with Ellie, one with Max.**
+   *
+   * `openSegmentWhisper` above resolves Ellie in code specifically so the renderer could not ask
+   * for a private channel to the Tester (#32: *"a private channel to the person quizzing you is
+   * the one shape this feature must not have"*). `collab-doc.md` §4.1 overrules that by name, and
+   * this method is the deliberate widening — it is not an oversight and it is not a generalisation
+   * of the old one, which is why it is a new method rather than a parameter on the old.
+   *
+   * What #32 was really protecting is kept whole, and is enforced somewhere other than here:
+   *
+   *  - a private thread **never edits the doc**. The only crossing is `insertPrivateIntoDoc`,
+   *    which the learner presses (§4.1);
+   *  - a private turn never reaches the group context — `buildWhisperContext` is the only builder
+   *    that can see `whispers`, and `context.test.ts`'s canary now plants a string in **both**
+   *    threads and looks for it in every shared surface;
+   *  - a private turn never touches the ledger, the open question, the silence timer or the taught
+   *    set. `sendWhisper` already does none of those things, and this changes none of that.
+   *
+   * Ephemeral by construction, the same way ⌘K is: the key carries the flow session id, so a
+   * sitting that closed takes its private threads with it, and the map is deliberately absent from
+   * `flowSnapshot()` so quitting ends every one of them.
+   */
+  openPrivate(agent: AgentAuthor): { threadId: string; turns: PrivateTurnView[] } {
+    const role = agent === 'max' ? 'challenger' : 'peer';
+    const participant = this.#participantForRole(role);
+    this.#noteLearnerActivity('whisper', null);
+    const key = `${this.#flow?.id ?? 'no-session'}|private|${agent}`;
+    let threadId = this.#privateThreads.get(key);
+    if (!threadId) {
+      threadId = this.#d.newId('wthread');
+      this.#privateThreads.set(key, threadId);
+    }
+    this.#registerThread(threadId, 'private', { agentKey: agent });
+    this.#event('student', 'whisper.open', { agent_key: participant.agent_key, private_thread: true });
+    return { threadId, turns: this.#privateTurns(threadId, agent) };
+  }
+
+  /**
+   * A learner turn in a private thread. Straight through `sendWhisper`, which is the point: one
+   * implementation of "a private turn", so the four things a whisper does not do stay not done for
+   * Max exactly as they are for Ellie.
+   */
+  async sendPrivate(threadId: string, text: string): Promise<void> {
+    const agent = this.#privateAgentOf(threadId);
+    const before = this.#d.store.whispers.forThread(threadId).length;
+    await this.sendWhisper(threadId, text, undefined, this.#privateParticipantFor(threadId, agent).id);
+    for (const turn of this.#privateTurns(threadId, agent).slice(before)) {
+      this.#d.transport.emit({ type: 'chat.private', roomId: this.#d.roomId, threadId, turn });
+    }
+  }
+
+  /**
+   * **"Insert into the document"** — the one path from private to shared (brief §4.1, issue #16's
+   * surviving half).
+   *
+   * It is the *learner's* act, so there is no model call and no judgement about whether the doc
+   * already says it: they have made that call. The batch is authored by the agent whose thread it
+   * came from, with `cause: 'whisper_insert'`, which is how the edit log can say later that this
+   * block entered the document by the one door that crosses the private boundary.
+   */
+  async insertPrivateIntoDoc(input: {
+    threadId: string;
+    turnId: string;
+    anchorBlockId: string | null;
+  }): Promise<{ editId: string | null }> {
+    const turn = this.#d.store.whispers.get(input.turnId);
+    if (!turn || turn.thread_id !== input.threadId || turn.sender !== 'agent') return { editId: null };
+    const agent = this.#privateAgentOf(input.threadId);
+    const batch = buildWhisperInsert(this.#docEditDeps(null, null), {
+      author: agent,
+      text: turn.body,
+      anchorBlockId: input.anchorBlockId,
+    });
+    const emitted = await this.#emitDocEdit(batch, { objectiveId: null, messageId: null, turnId: null });
+    if (emitted) {
+      this.#event('student', 'whisper.relay', {
+        attribution: 'insert_into_doc',
+        thread_id: input.threadId,
+        edit_id: batch!.editId,
+        ledger_touched: false,
+      });
+    }
+    return { editId: emitted ? batch!.editId : null };
+  }
+
+  /** Private turns as the chat column renders them. Never `messages`, and never a group surface. */
+  #privateTurns(threadId: string, agent: AgentAuthor): PrivateTurnView[] {
+    return this.#d.store.whispers.forThread(threadId).map((row) => ({
+      id: row.id,
+      role: row.sender === 'student' ? ('learner' as const) : ('agent' as const),
+      agentKey: agent,
+      text: row.body,
+      createdAt: row.created_at,
+      insertedEditId: null,
+    }));
+  }
+
+  /** Which agent a private thread belongs to, from the registry, defaulting to the Teacher. */
+  #privateAgentOf(threadId: string): AgentAuthor {
+    const registered = this.#threads.get(threadId)?.agentKey;
+    if (registered === 'ellie' || registered === 'max') return registered;
+    for (const [key, id] of this.#privateThreads) {
+      if (id === threadId) return key.endsWith('|max') ? 'max' : 'ellie';
+    }
+    return 'ellie';
+  }
+
+  #privateParticipantFor(threadId: string, agent: AgentAuthor) {
+    const existing = this.#d.store.whispers.forThread(threadId)[0]?.agent_participant_id;
+    if (existing) return this.#d.store.participants.get(existing) ?? this.#participantForRole(agent === 'max' ? 'challenger' : 'peer');
+    return this.#participantForRole(agent === 'max' ? 'challenger' : 'peer');
+  }
+
+  /**
+   * The room's participant for a role, not the setting's — `#peerParticipant`'s argument
+   * generalised to both roles. A room keeps its participants for life (`agents.ts`), so resolving
+   * by roster key alone throws on any room opened before the pairing was last changed.
+   */
+  #participantForRole(role: 'peer' | 'challenger') {
+    const participants = this.#d.store.participants.forRoom(this.#d.roomId);
+    const preferred = agentByRole(this.#d.roster, role);
+    const row =
+      participants.find((p) => p.agent_key === preferred.key) ??
+      participants.find((p) => p.agent_key?.startsWith(`${role}.`));
+    if (!row) throw new Error(`This room has no ${role === 'peer' ? 'Teacher' : 'Tester'} to ask privately.`);
+    return row;
+  }
+
+  // ── the lesson card, and the learner's own doc text (#48 §6) ─────────────
+
+  /**
+   * **Start**, on a lesson card (brief §6). One Ellie turn that says what the objective is and
+   * ends by asking the learner to ask — *"has Ellie prompt the learner to ask a question to
+   * begin"*. It teaches nothing, deliberately: every studied session opened by the learner asking
+   * (R1, R3, R4), and lecturing first would take that from them.
+   *
+   * It reuses `tryHere`'s code path, as the brief's own §9 note says it should — the learner named
+   * the move, so the orchestrator is bypassed and the decision is written here.
+   */
+  async startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void> {
+    this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
+    this.#registerThread(input.anchorId, this.#threadKindOf(input.anchorId), { blockId: input.blockId });
+    this.#noteLearnerActivity('ask', input.anchorId);
+    const element = this.#d.pack.elements.find((e) => e.id === input.objectiveId);
+    this.#lessonTarget = {
+      title: element?.learner_label || element?.label || input.objectiveId,
+      // The element's own label is the statement of what it is; `demonstration` is what a correct
+      // answer contains, which is exactly §6's "what it asks of you".
+      statement: element?.label ?? '',
+      criteria: [...(element?.demonstration ?? [])],
+      pages: [],
+    };
+    this.#event('student', 'flow.lesson_start', { objective_id: input.objectiveId, anchor_id: input.anchorId });
+    try {
+      await this.#runAgentTurn('promote', { anchorId: input.anchorId, lesson: { objectiveId: input.objectiveId } });
+    } finally {
+      this.#lessonTarget = null;
+    }
+  }
+
+  /**
+   * **The learner's own doc text counts** (brief §6, architect §E4).
+   *
+   * *"When the learner writes in the doc (their own provenance span, at least one sentence, in a
+   * segment mapped to an objective), it is assessed as an attempt on that objective once they
+   * pause."*
+   *
+   * The carrier is a **synthetic learner message** with `kind: 'doc_text'` in the span's thread,
+   * inserted here — inside the mailbox, which is the only writer to `messages` — carrying the span
+   * verbatim. Then the existing pipeline runs untouched: `classifyLearnerTurn`, `answerQuiz`,
+   * `rule:quiz_feedback`, and every one of the ledger's hard rules, whose evidence id stays a
+   * message id. The cost is one row; the benefit is that §6 needs no second evaluator and the
+   * ledger's verbatim rule protects doc text exactly as it protects a typed answer.
+   *
+   * If there is no open question the text is still recorded and still judged by the ledger — it is
+   * the learner's own words about an objective, which is what the ledger scores.
+   */
+  async assessDocText(input: { anchorId: string; objectiveId: string; blockId: string; text: string }): Promise<void> {
+    const body = input.text.trim();
+    if (body.length === 0) return;
+    this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
+    this.#registerThread(input.anchorId, 'span', { blockId: input.blockId, quote: body.slice(0, 90) });
+    this.#docTextTarget = { blockId: input.blockId, text: body, anchorId: input.anchorId };
+
+    let messageId: string | null = null;
+    await this.#mailbox.enqueue(() => {
+      this.#noteLearnerActivity('turn', input.anchorId);
+      const row = this.#insertMessage({
+        participantId: this.#studentParticipant().id,
+        body,
+        anchorId: input.anchorId,
+        kind: 'doc_text',
+      });
+      messageId = row.id;
+      /**
+       * Classified like any learner turn, and for the same reason the relay path is: the rules
+       * that answer it read this, and a stale classification from whatever was last typed in the
+       * chat would mark doc text against the wrong intent.
+       */
+      this.#lastLearnerTurn = classifyLearnerTurn(body);
+      this.#lastMention = null;
+      this.#mentionRest = null;
+      if (this.#pendingQuiz) {
+        this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, { attempt: this.#lastLearnerTurn === 'attempt' });
+      }
+      this.#event('student', 'flow.doc_text', {
+        anchor_id: input.anchorId,
+        block_id: input.blockId,
+        objective_id: input.objectiveId,
+        chars: body.length,
+      });
+      this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
+    });
+
+    try {
+      await this.#runAgentTurn('promote', {
+        anchorId: input.anchorId,
+        studentBody: body,
+        studentMessageId: messageId,
+      });
+    } finally {
+      this.#docTextTarget = null;
+    }
   }
 
   /**
@@ -1973,7 +2299,18 @@ export class RoomActor {
      * included, keeps the Tester's band.
      */
     const band =
-      decision.decidedBy === 'rule:try_here' ? agentByRole(this.#d.roster, 'peer').latency : agent.latency;
+      decision.decidedBy === 'rule:try_here' ||
+      /**
+       * **§4.3's pair is short, and waiting 9–12 s on either half would break it** (#48). Ellie's
+       * cue is a peer thinking aloud — a classmate does not deliberate for twelve seconds — and
+       * Max's prompt answers her while the learner is still reading it. Both use the Teacher's
+       * 4–6 s band. Tan et al.'s considered judgement is about *feedback on an answer*, and
+       * neither of these is that.
+       */
+      decision.moveType === 'peer_guess' ||
+      decision.moveType === 'max_prompt'
+        ? agentByRole(this.#d.roster, 'peer').latency
+        : agent.latency;
     const target = this.#floor(latencyTargetMs({ ...agent, latency: band }, this.#d.config.latency_scale, this.#rand));
     this.#d.store.rooms.update(this.#d.roomId, {
       state: 'agent_scheduled',
@@ -2043,20 +2380,7 @@ export class RoomActor {
      * attempt, feedback, hint, clarification, answer — as named beats, and a second question's
      * feedback can never be played against the first.
      */
-    const turnCue =
-      decision.decidedBy === 'rule:handoff'
-        ? quizCue('handoff', this.#testerQuestions)
-        : decision.decidedBy === 'rule:try_here'
-          ? quizCue('try', this.#testerQuestions)
-          : decision.moveType === 'quiz_feedback'
-            ? quizCue('feedback', this.#testerQuestions)
-            : decision.moveType === 'quiz_hint'
-              ? quizCue('hint', this.#testerQuestions)
-              : decision.moveType === 'quiz_clarify'
-                ? quizCue('clarify', this.#testerQuestions)
-                : decision.moveType === 'quiz_answer'
-                  ? quizCue('answer', this.#testerQuestions)
-                  : cue;
+    const turnCue = this.#cueFor(decision, cue);
 
     /**
      * Generate now; hold the tokens until the floor. The buffer is the product decision.
@@ -2193,6 +2517,8 @@ export class RoomActor {
         ? stream.firstVisibleAt - turnStart
         : Math.max(0, this.#d.clock.now() - turnStart);
 
+    /** The row this turn wrote, carried out of the mailbox for the doc-edit call beside it. */
+    let dispatchedMessageId: string | null = null;
     await this.#mailbox.enqueue(() => {
       this.#clearThinking();
       const row = this.#insertMessage({
@@ -2257,6 +2583,7 @@ export class RoomActor {
         totalMs: this.#d.clock.now() - turnStart,
       });
       this.#releaseTurn(pending.id, row.id);
+      dispatchedMessageId = row.id;
       this.#noteTurnForFlow(decision, row.id, text);
       if (trigger === 'silence') this.#markFirstHelp();
       /**
@@ -2268,6 +2595,14 @@ export class RoomActor {
     });
 
     this.#pending = null;
+    /**
+     * **The doc edit runs beside the turn** (#48, brief §5; architect §A.2's last row).
+     *
+     * `void`, not `await`: the reply has already been released, and a document that could make the
+     * next turn wait would be the artefact charging the conversation for its own ambitions. Every
+     * failure inside is swallowed and logged there.
+     */
+    void this.#maybeDocEdit(decision, text, dispatchedMessageId ?? '', pending.id, anchorId);
     this.#lastAgentTurn = classifyAgentTurn(decision, this.#lastAgentTurn);
     /**
      * **How long the next silence has to be** (#47 §5): the reading time of what was just said,
@@ -2280,6 +2615,65 @@ export class RoomActor {
     if (decision.probeType) this.#lastProbeType = decision.probeType;
     for (const id of decision.challenges) this.#challenged.add(id);
     this.#armTimer(trigger === 'silence');
+
+    /**
+     * **`rule:max_followup` — the second of the two consecutive agent turns** (#48, brief §4.2
+     * row 1): *"Ellie answers in full, then Max asks one follow-up to the chat."*
+     *
+     * Chained here, at the end of the turn that earned it, rather than decided inside it: it is a
+     * second turn, with its own floor, its own thinking indicator and its own Stop, and folding it
+     * into the first would make it a paragraph rather than a turn.
+     *
+     * `MAX_CONSECUTIVE_AGENT_TURNS` is 2 and this spends the second, which is right at the cap
+     * (architect §E5). `silenceDecision` is still reached **before** the cap is checked, so §4.3's
+     * cue can still fire afterwards — there is an orchestrator test on exactly that, because it is
+     * a one-line regression waiting to happen.
+     *
+     * The gate is the brief's own invariant, and it is checked *after* the answer rather than
+     * before: **one open Max question at a time per file**. While one is open Ellie's answer simply
+     * stands and his question stays open.
+     */
+    if (
+      /**
+       * **The follow-up needs a doc to be about.** `rule:max_followup` is a collab-doc rule and
+       * it arrives with the collab doc: a room with no notes document (`NO_DOC`) is the old flow,
+       * which `collab-doc.md` §9 supersedes as a *surface* and which the lead removes in one
+       * commit at the end of this build. Until then it keeps behaving as it did, and that is what
+       * this gate buys — one condition rather than thirty rewritten tests asserting a turn the
+       * old surface has no column to draw.
+       */
+      this.#docPort.docId() !== null &&
+      followupDue({
+        decidedBy: decision.decidedBy,
+        pendingQuiz: this.#pendingQuiz,
+        mention: this.#lastMention,
+        threadKind: anchorId === null ? null : this.#threadKindOf(anchorId),
+      })
+    ) {
+      const target = this.#followupTarget();
+      this.#nextQuestionId = this.#d.newId('q');
+      await this.#runAgentTurn('promote', { anchorId, followup: { objectiveId: target } });
+    }
+  }
+
+  /**
+   * **Which objective the follow-up is about** (brief §4.2: *"targets an objective the answer
+   * touched that the learner has not yet shown, lowest first"*).
+   *
+   * The pick is the one `+ Try this` already used — lowest ledger level first, deck order as the
+   * tie-break (`flow.pickTarget`) — reused rather than reinvented, because two policies for "what
+   * should the Tester ask about" is how the two of them come to disagree. What is narrowed here is
+   * the pool: the taught set, which is what the answers in this sitting have actually touched.
+   */
+  #followupTarget(): string | null {
+    const levels = Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level]));
+    const taught = latestByElement(this.#taught).map((item) => ({ ...item, ageMs: 0, recency: 1 }));
+    const picked = pickTarget(taught, levels);
+    if (picked) return picked.elementId;
+    // Nothing taught yet in this sitting: fall back to the lowest-level element in the pack, which
+    // is the same ordering one step wider.
+    const byLevel = [...this.#d.pack.elements].sort((a, b) => (levels[a.id] ?? 0) - (levels[b.id] ?? 0));
+    return byLevel[0]?.id ?? null;
   }
 
   /**
@@ -2559,6 +2953,28 @@ export class RoomActor {
     // which is the one query the log exists to answer.
     request.meta.turnId = this.#pending?.id;
     request.meta.anchorId = this.#pending?.anchorId ?? null;
+
+    /**
+     * **Ellie's cue is a structured call** (#48 §4.3, architect §E6).
+     *
+     * *"Ellie's cue may contain a plausible mistake"* is a prompt request, and §4.7 requires the
+     * resolving turn to correct it — so whether she planted one, and what the claim was, have to
+     * be **facts** the closure rule can check rather than prose a model was asked to self-report
+     * in. Asking for them as fields is the same discipline as everywhere else here: the rules
+     * decide, the model writes the words.
+     *
+     * It does not stream. A schema-bound reply is a JSON object, and chunking one into the
+     * renderer would put `{"text":"I think` on screen; a 60-word turn loses nothing by arriving
+     * whole, and it goes out through the same pump as one delta so the dispatch path is unchanged.
+     */
+    if (decision.moveType === 'peer_guess') {
+      request.jsonSchema = ELLIE_CUE_SCHEMA;
+      const result = await this.#d.llm.complete(request, undefined, signal);
+      const cue = parseCue(result.text);
+      this.#pendingCue = { hasMistake: cue.hasMistake, claim: cue.claim };
+      onDelta?.(cue.text);
+      return { ...result, text: cue.text };
+    }
     return this.#d.llm.complete(request, onDelta, signal);
   }
 
@@ -2877,6 +3293,8 @@ export class RoomActor {
         now,
       );
       this.#nextQuestionId = null;
+      // The list the next question prompt reads, so a session cannot circle (findings.md §6).
+      this.#questionsAsked = [...this.#questionsAsked, text.trim()].filter((q) => q.length > 0).slice(-8);
       this.#emitThread(this.#turnAnchorId);
     }
     if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
@@ -2994,6 +3412,10 @@ export class RoomActor {
     const known = this.#threads.get(anchorId);
     if (known) return known.kind;
     if (anchorId.startsWith(SPAN_THREAD_PREFIX)) return 'span';
+    // `'doc'` is the collab doc's chat and `'deck'` is what the same thread was called before it
+    // (`shared/scope.ts`'s `DECK_ANCHOR_ID`). Both are the doc chat; a room recorded under the old
+    // name keeps its messages where they are rather than being migrated to a new id.
+    if (anchorId === DOC_ANCHOR_ID || anchorId === DECK_ANCHOR_ID) return 'doc';
     return 'doc';
   }
 
@@ -3100,6 +3522,208 @@ export class RoomActor {
     }
   }
 
+  /**
+   * **The script cue for one turn** (#47's `quizCue`, extended by #48's beats).
+   *
+   * Every turn that belongs to Tester question *N* carries `:N`, so `script.notes.ts` can hold a
+   * whole loop — answer, follow-up, attempt, feedback, cue, prompt, give-up, release — as named
+   * beats, and a second question's feedback can never be played against the first.
+   */
+  #cueFor(decision: TurnDecision, fallback: string): string {
+    const n = this.#testerQuestions;
+    switch (decision.decidedBy) {
+      case 'rule:handoff':
+        return quizCue('handoff', n);
+      case 'rule:try_here':
+        return quizCue('try', n);
+      case 'rule:max_followup':
+        return quizCue('followup', n);
+      case 'rule:ellie_cue':
+        return quizCue('cue', n);
+      case 'rule:max_prompt':
+        return quizCue('prompt', n);
+      case 'rule:closure':
+        return quizCue('closure', n);
+      case 'rule:answer_released':
+        return quizCue('release', n);
+      case 'rule:lesson_start':
+        return `lesson:${n + 1}`;
+      default:
+        break;
+    }
+    switch (decision.moveType) {
+      case 'quiz_feedback':
+        return this.#docTextTarget !== null ? quizCue('doctext', n) : quizCue('feedback', n);
+      case 'quiz_hint':
+        return quizCue('hint', n);
+      case 'quiz_clarify':
+        return quizCue('clarify', n);
+      case 'quiz_answer':
+        return quizCue('answer', n);
+      default:
+        return fallback;
+    }
+  }
+
+  /** Everything `docedit.ts` needs to bill and address a call. */
+  #docEditDeps(anchorId: string | null, turnId: string | null): DocEditDeps {
+    return {
+      llm: this.#d.llm,
+      docPort: this.#docPort,
+      // `models.orchestrator`, as every schema-bound call in this app does: `fast` deliberately
+      // resolves to the same model, because Haiku emits 2–4× the output tokens on a schema and is
+      // *slower* for it (`llm/models.ts`'s measured table).
+      model: this.#models.orchestrator,
+      newId: this.#d.newId,
+      roomId: this.#d.roomId,
+      fileId: this.#d.store.materials.get(this.#room().material_id)?.file_id ?? null,
+      anchorId,
+      turnId,
+    };
+  }
+
+  /**
+   * **Record it, then emit it** (brief §5, architect §B.5).
+   *
+   * `recordEdit` comes first and deliberately: an edit the renderer never reports back on is still
+   * in the log, which is the only way "every agent edit can be removed in one click" can be true
+   * after a crash. The cursor moves before the edit so the learner sees *who* is about to write
+   * where, which is §5's "typed in at reading speed with the cursor, not pasted".
+   *
+   * Returns whether anything was emitted. **Nothing in here may throw**: a doc-edit failure is not
+   * a turn failure (§5, and the ledger's own rule in `progress-tracking.md` §4.6 — the
+   * conversation never blocks on the artefact beside it).
+   */
+  async #emitDocEdit(
+    batch: AgentDocOpBatch | null,
+    meta: { objectiveId: string | null; messageId: string | null; turnId: string | null },
+  ): Promise<boolean> {
+    if (batch === null) return false;
+    const docId = this.#docPort.docId();
+    // §3's Freeze: *"Edits that would have happened are dropped, not queued."* Checked here as
+    // well as in the renderer (architect §D4) — in both, because a queue in main is the easy
+    // mistake and it makes Freeze a delay rather than a refusal.
+    if (docId === null || this.#docPort.frozen()) return false;
+    try {
+      this.#d.transport.emit({
+        type: 'doc.cursor',
+        roomId: this.#d.roomId,
+        docId,
+        author: batch.author,
+        blockId: batch.focusBlockId,
+        state: 'thinking',
+      });
+      this.#docPort.recordEdit({
+        batch,
+        roomId: this.#d.roomId,
+        turnId: meta.turnId,
+        messageId: meta.messageId,
+        objectiveId: meta.objectiveId,
+      });
+      this.#d.transport.emit({
+        type: 'doc.cursor',
+        roomId: this.#d.roomId,
+        docId,
+        author: batch.author,
+        blockId: batch.focusBlockId,
+        state: 'typing',
+      });
+      this.#d.transport.emit({ type: 'doc.edit', roomId: this.#d.roomId, docId, batch });
+      this.#event(batch.author === 'max' ? 'challenger' : 'peer', 'doc.edit', {
+        edit_id: batch.editId,
+        cause: batch.cause,
+        ops: batch.ops.map((o) => o.op),
+        suggestion: batch.suggestion !== undefined,
+      });
+      return true;
+    } catch (err) {
+      this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), edit_id: batch.editId });
+      return false;
+    }
+  }
+
+  /**
+   * **The edit that goes with a turn** (brief §5.1–5.3), run **beside** the turn and never inside
+   * it: the reply has already been released by the time this starts, and nothing here can delay,
+   * fail or cancel it.
+   *
+   * Two turns deliberately produce no edit. **Ellie's cue** — §4.3 is explicit: *"It is never
+   * written to the doc"*, because a guess that may contain a plausible mistake is the one thing
+   * that must not become durable notes. And **every private turn**, which is §4.1's whole boundary.
+   */
+  async #maybeDocEdit(decision: TurnDecision, text: string, messageId: string, turnId: string, anchorId: string | null): Promise<void> {
+    if (this.#docPort.docId() === null || this.#docPort.frozen()) return;
+    if (decision.moveType === 'peer_guess' || decision.moveType === 'max_prompt') return;
+    const deps = this.#docEditDeps(anchorId, turnId);
+    const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);
+    const quiz = this.#pendingQuiz;
+    try {
+      // 5.2 — Max asked a question: it goes in as a Q block at the segment it is about.
+      if (decision.moveType === 'quiz' && quiz !== null) {
+        await this.#emitDocEdit(
+          buildQuestionEdit(deps, {
+            questionId: quiz.questionId ?? quiz.quizMessageId,
+            objectiveId: quiz.objectiveId ?? null,
+            text,
+            blockId,
+          }),
+          { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
+        );
+        return;
+      }
+      // 5.3 — a Max question resolved: his correct version goes under the Q block, tagged.
+      const resolution = qResolutionOf(quiz);
+      if (
+        quiz !== null &&
+        resolution !== null &&
+        (decision.moveType === 'quiz_answer' || decision.moveType === 'quiz_feedback')
+      ) {
+        await this.#emitDocEdit(
+          buildResolveEdit(deps, {
+            questionId: quiz.questionId ?? quiz.quizMessageId,
+            resolution,
+            text,
+          }),
+          { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
+        );
+        return;
+      }
+      // 5.1 — Ellie answered, and the notes may be missing it. The one model call in here.
+      if (decision.role === 'peer' && (decision.moveType === 'answer_then_teach' || decision.moveType === 'lesson_start')) {
+        const pages = this.#askContext.get(anchorId ?? '')?.page;
+        const outline = this.#docPort.outlineNear({
+          blockId,
+          pages: typeof pages === 'number' ? [pages] : undefined,
+        });
+        const { batch, pointsTo } = await planAnswerEdit(deps, {
+          answer: text,
+          blockId,
+          outline,
+          // The learner highlighted this span and asked about it: the answer goes beside it, not
+          // wherever the planner finds tidier (`findings.md` §6).
+          pinAnchor: anchorId !== null && this.#threadKindOf(anchorId) === 'span' && blockId !== null,
+        });
+        if (batch === null) {
+          // §5.1: "If the doc already says it, no edit; she points to the block instead."
+          if (pointsTo !== null) {
+            this.#d.transport.emit({
+              type: 'doc.cursor',
+              roomId: this.#d.roomId,
+              docId: this.#docPort.docId()!,
+              author: 'ellie',
+              blockId: pointsTo,
+              state: 'idle',
+            });
+          }
+          return;
+        }
+        await this.#emitDocEdit(batch, { objectiveId: null, messageId, turnId });
+      }
+    } catch (err) {
+      this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
+    }
+  }
+
   /** Which door a release came through, for the event log and for `markAnswerShown`. */
   #releaseReason(decision: TurnDecision, opts: { showAnswer?: boolean }): 'give_up' | 'pass' | 'closure' {
     if (decision.decidedBy === 'rule:closure') return 'closure';
@@ -3133,6 +3757,13 @@ export class RoomActor {
    *    demonstration contains (#38 §4).
    */
   #turnNote(decision: TurnDecision): string | undefined {
+    /**
+     * **The collab doc's own turns** (#48), checked first because each of them is a whole turn
+     * rather than a variation on the Tester's or the Teacher's. Their blocks are in
+     * `prompts.doc.ts`; what is assembled here is the data they read.
+     */
+    const docBlock = this.#docTurnNote(decision);
+    if (docBlock !== undefined) return docBlock;
     if (decision.role === 'challenger' && decision.targetElementId) {
       const element = this.#d.pack.elements.find((e) => e.id === decision.targetElementId);
       if (!element) return undefined;
@@ -3149,7 +3780,11 @@ export class RoomActor {
        * and the slide the learner is looking at are the same text.
        */
       const where = this.#whereNote();
-      return [where, quiz].filter((b): b is string => typeof b === 'string' && b.length > 0).join('\n\n') || undefined;
+      return (
+        [where, quiz, ...this.#docExtras(decision)]
+          .filter((b): b is string => typeof b === 'string' && b.length > 0)
+          .join('\n\n') || undefined
+      );
     }
     /**
      * The Teacher's note is now **several blocks**, in the order she should read them: what this
@@ -3166,7 +3801,157 @@ export class RoomActor {
     if (decision.role === 'peer') blocks.push(this.#learnerNote());
     const taught = this.#taughtNote(decision);
     if (taught) blocks.push(taught);
+    blocks.push(...this.#docExtras(decision));
     return blocks.length > 0 ? blocks.join('\n\n') : undefined;
+  }
+
+  /**
+   * **The notes for the collab doc's own turns** (#48), or `undefined` when this is not one of
+   * them and the older assembly below should run.
+   *
+   * One function rather than six branches scattered through `#turnNote`, because the *order* the
+   * blocks are read in is a decision and it belongs in one place: where the learner is, what they
+   * have already written there, what this turn is, and only then how it should be pitched.
+   */
+  #docTurnNote(decision: TurnDecision): string | undefined {
+    const blocks: string[] = [];
+    const where = this.#whereNote();
+    const mention = this.#mentionNote();
+    const notes = this.#learnerNotesNote();
+
+    switch (decision.moveType) {
+      case 'mention_reply':
+        blocks.push(mentionReplyBlock());
+        break;
+      case 'quiz': {
+        if (decision.decidedBy !== 'rule:max_followup') return undefined;
+        blocks.push(
+          maxFollowupBlock({
+            objectiveLabel: decision.targetElementId ? this.#learnerLabel(decision.targetElementId) : null,
+            askedBefore: this.#questionsAsked,
+          }),
+          pitchBlock(this.#pitchInputs(decision.targetElementId)),
+        );
+        break;
+      }
+      case 'peer_guess':
+        blocks.push(ellieCueBlock({ question: this.#openQuestionText(), roster: this.#d.roster }));
+        break;
+      case 'max_prompt':
+        blocks.push(maxPromptBlock({ guess: this.#cueText ?? '', roster: this.#d.roster }));
+        break;
+      case 'lesson_start':
+        if (this.#lessonTarget === null) return undefined;
+        blocks.push(lessonStartBlock(this.#lessonTarget));
+        break;
+      case 'quiz_answer': {
+        const quiz = this.#pendingQuiz;
+        blocks.push(
+          releaseBlock({
+            releasedBy: this.#releaseBy ?? (decision.decidedBy === 'rule:closure' ? 'closure' : 'give_up'),
+            attempts: attemptsOf(quiz),
+            cueClaim: cueMistakeToCorrect(quiz),
+            roster: this.#d.roster,
+          }),
+        );
+        break;
+      }
+      default:
+        return undefined;
+    }
+
+    // Where they are, what they have written there, and who they addressed — in front of the
+    // turn's own block, because all three are about the question rather than about the reply.
+    const head = [where, notes, mention].filter((b): b is string => typeof b === 'string' && b.length > 0);
+    return [...head, ...blocks].join('\n\n');
+  }
+
+  /**
+   * **The blocks #48 *adds* to a turn that already existed**, as opposed to the six turns it
+   * invented (`#docTurnNote`). Appended to the older assembly rather than replacing it, because
+   * everything the Teacher and the Tester were already told — the learner's objective states, the
+   * pitch she was asked for, the taught set, the verdict rules — is still true.
+   */
+  #docExtras(decision: TurnDecision): string[] {
+    const blocks: string[] = [];
+    if (decision.moveType === 'answer_then_teach' && (decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention')) {
+      const page = this.#turnAnchorId === null ? null : (this.#askContext.get(this.#turnAnchorId)?.page ?? null);
+      blocks.push(ellieAnswersBlock({ page }));
+      const mention = this.#mentionNote();
+      if (mention) blocks.push(mention);
+    }
+    if (decision.moveType === 'quiz_feedback') {
+      // §6: the attempt came out of the document rather than out of the composer.
+      if (this.#docTextTarget !== null) blocks.push(docTextBlock({ blockQuote: this.#docTextTarget.text }));
+      /**
+       * **§4.7's second invariant, carried on whichever Max turn resolves the question.** A
+       * feedback turn that ends a question Ellie guessed wrongly at must correct her claim
+       * explicitly — that is the mitigation the brief names for the risk it takes on in §1
+       * (*"Ellie's cue may contain a plausible mistake… the closure rule exists for that"*).
+       */
+      const claim = cueMistakeToCorrect(this.#pendingQuiz);
+      if (claim !== null) blocks.push(cueCorrectionLines(claim, agentByRole(this.#d.roster, 'peer').displayName).join('\n'));
+    }
+    // The learner's own notes near the anchor, on any turn that is answering them there.
+    const notes = this.#learnerNotesNote();
+    if (notes && blocks.length > 0) blocks.push(notes);
+    return blocks;
+  }
+
+  /**
+   * **The question, without the marker** (#48 §4.2). The row stays verbatim; the model is asked to
+   * answer the question rather than to acknowledge being addressed.
+   */
+  #mentionNote(): string | undefined {
+    const rest = this.#mentionRest;
+    if (rest === null) return undefined;
+    if (rest.length === 0) {
+      // `@Max` and nothing else. They called him over; the useful reading is "ask me something",
+      // which is what `rule:mention`'s reply block says and what `parseMention` distinguishes from
+      // "no mention" by returning an empty `rest` rather than null.
+      return 'THE LEARNER TYPED ONLY YOUR NAME. Take it as "over to you" and say something useful about where they are.';
+    }
+    return ['WHAT THEY ASKED, WITHOUT THE @NAME', rest].join('\n');
+  }
+
+  /**
+   * **The learner's own notes near the anchor** (interview finding, `findings.md` §6: what he
+   * writes down is never *registered to the AI*).
+   *
+   * The outline marks which blocks carry learner-authored text, which is the only signal needed —
+   * and it is a signal no previous surface in this app had, because until the doc there was
+   * nowhere for the learner to write that the agents could see at all.
+   */
+  #learnerNotesNote(): string | undefined {
+    if (this.#docPort.docId() === null) return undefined;
+    const anchorId = this.#turnAnchorId;
+    const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);
+    const page = anchorId === null ? undefined : this.#askContext.get(anchorId)?.page;
+    const outline = this.#docPort.outlineNear({
+      blockId,
+      pages: typeof page === 'number' ? [page] : undefined,
+    });
+    const mine = outline.filter((e) => e.learnerText && e.text.trim().length > 0);
+    if (mine.length === 0) return undefined;
+    return learnerNotesBlock(mine.map((e) => ({ blockId: e.blockId, text: e.text, pages: e.pages })));
+  }
+
+  /** Max's open question, verbatim, for the cue that has to guess at it (§4.3). */
+  #openQuestionText(): string {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null) return '';
+    return this.#d.store.messages.get(quiz.quizMessageId)?.body ?? '';
+  }
+
+  /** The inputs §4.5's pitch is a pure function of, assembled where all three are reachable. */
+  #pitchInputs(objectiveId: string | null): PitchInputs {
+    const outcomes: PitchOutcome[] = this.#outcomes.map((o) => ({
+      objectiveId: o.objectiveId,
+      kind: o.kind,
+      verdict: o.verdict,
+      releasedBy: o.releasedBy,
+    }));
+    return pitchInputs({ objectiveId, outcomes, fill: progressFill(this.#outcomes) });
   }
 
   /**
@@ -3263,8 +4048,14 @@ export class RoomActor {
     decidedBy?: string | null;
     /** What the REFERENCE call was allowed to see, already phrased (migration 015). */
     scopeShown?: string | null;
-    /** What this card is (migration 017, issue #41). Defaults to a conversation turn. */
-    kind?: 'turn' | 'answer' | 'summary';
+    /**
+     * What this card is (migration 017, issue #41). Defaults to a conversation turn.
+     *
+     * `'doc_text'` (#48 §6, architect §E4 and §D9) is the learner's own writing in the document,
+     * carried into the transcript so the ledger can score it with the evidence rules untouched.
+     * The column is free text and needs no migration.
+     */
+    kind?: 'turn' | 'answer' | 'summary' | 'doc_text';
     /** On a summary card: the anchor of the thread it was written from (migration 017). */
     sourceThreadId?: string | null;
   }): MessageRow {
@@ -3766,6 +4557,29 @@ export function failureReason(err: unknown): string {
  * three rules and only one of them changes what the *note* should say (the other two are hints in
  * the ordinary sense, and `turnDirective` handles the difference).
  */
+/**
+ * **Ellie's cue, out of its structured reply** (#48 §4.3, `ELLIE_CUE_SCHEMA`).
+ *
+ * Tolerant on purpose. A cue whose JSON will not parse is still a turn the learner is waiting for,
+ * and the honest fallback is the raw text with **no** mistake claimed: a claim the app cannot read
+ * is a claim the closure rule cannot check, and asserting one it never saw would be worse than
+ * admitting there is none. The same unwrapper the decision and ledger paths use handles a model
+ * that wraps the object in prose.
+ */
+export function parseCue(raw: string): { text: string; hasMistake: boolean; claim: string | null } {
+  try {
+    const parsed = JSON.parse(extractJsonObject(raw)) as Record<string, unknown>;
+    const text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
+    if (text.length === 0) return { text: raw.trim(), hasMistake: false, claim: null };
+    const claim = typeof parsed.claim === 'string' && parsed.claim.trim().length > 0 ? parsed.claim.trim() : null;
+    // `has_mistake` without a claim is not a mistake the closure rule can correct, so it is not
+    // recorded as one — §4.7's invariant is about a *named* claim, not about a flag.
+    return { text, hasMistake: parsed.has_mistake === true && claim !== null, claim };
+  } catch {
+    return { text: raw.trim(), hasMistake: false, claim: null };
+  }
+}
+
 function quizTurnFor(decision: TurnDecision): QuizTurn {
   switch (decision.moveType) {
     case 'quiz_feedback':

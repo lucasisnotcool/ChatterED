@@ -553,7 +553,7 @@ describe('the stage-1 nudge pool', () => {
    * from: it is what a silence draws from when the *Tester* is waiting for an answer, which is
    * the case `product-design.md` §C5's argument is actually about. The scripted room's turn 3 is
    * Max probing assumptions, so this stream is in that state; an anchored thread would be under
-   * `rule:teacher_answers`, where the last agent turn is always an explanation and the fill is a
+   * `rule:ellie_answers`, where the last agent turn is always an explanation and the fill is a
    * re-explanation instead (`rule:silence_reexplain`, covered in orchestrator.test.ts).
    */
   it('rotates, so the same line never lands twice running', async () => {
@@ -671,7 +671,7 @@ describe('the rail is a side-channel', () => {
  * These drive the real timer through the real actor, and assert on what the learner sees.
  */
 describe('a silence after the Teacher explained', () => {
-  /** An anchored thread is `rule:teacher_answers`'s, so the last agent turn is an explanation. */
+  /** An anchored thread is `rule:ellie_answers`'s, so the last agent turn is an explanation. */
   async function explainedThenQuiet(seconds: number) {
     const h = build();
     await settle(h.clock, h.actor.sendMessage(TURN_2, 'seg_1'));

@@ -91,7 +91,7 @@ describe('“+ Try this”', () => {
     expect(decision.move_type).toBe('quiz');
     expect(decision.decided_by).toBe('rule:try_here');
     expect(decision.target_element_id).toBe(ELEMENT);
-    // §2.1: no model is asked who should speak — that is the same argument `rule:teacher_answers`
+    // §2.1: no model is asked who should speak — that is the same argument `rule:ellie_answers`
     // makes, and the hand-off is no longer the Tester's only door.
     expect(h.llm.requests.some((r) => r.meta.scope === 'orchestrator')).toBe(false);
   });
@@ -147,34 +147,62 @@ describe('“+ Try this”', () => {
   });
 });
 
-describe('the answer lock, end to end', () => {
+/**
+ * **The release, end to end** (#48, `collab-doc.md` §4.4; supersedes the answer lock of #47 §2.3).
+ *
+ * Every test below was an assertion that the answer was *withheld*. The brief deletes that rule
+ * and records the deletion as a knowing departure from the transcript evidence rather than as a
+ * finding: *"a learner must never see a question they never get the answer to, and a refused
+ * answer teaches less than a lowered question."* So the same situations are asserted here with
+ * the opposite outcome, and what took over the refusal's job — `pitch.pitchInputs`, which makes
+ * the next question on that objective easier — is tested in `pitch.test.ts`.
+ */
+describe('releasing the answer, end to end', () => {
   async function asked() {
     const h = build();
     await settle(h.clock, h.actor.tryHere(TRY));
     return h;
   }
 
-  it('hints and logs it when the answer is asked for before a try', async () => {
+  it('releases the answer and logs it when the learner gives up before a try', async () => {
     const h = await asked();
     await settle(h.clock, h.actor.sendMessage('answer?', SEG));
 
     const decision = decisions(h).at(-1)!;
-    expect(decision.decided_by).toBe('rule:answer_withheld');
-    expect(decision.move_type).toBe('quiz_hint');
-    const logged = h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_withheld');
+    expect(decision.decided_by).toBe('rule:answer_released');
+    expect(decision.move_type).toBe('quiz_answer');
+    const logged = h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_released');
     expect(logged).toHaveLength(1);
     expect(JSON.parse(logged[0]!.payload).attempts).toBe(0);
-    // Still open, still nothing attempted: asking twice cannot work.
+    expect(JSON.parse(logged[0]!.payload).released_by).toBe('give_up');
+    // §4.4: "It fills no progress." The question closes; nothing was credited.
+    expect(JSON.parse(logged[0]!.payload).fills_progress).toBe(false);
     expect(h.actor.pendingQuizView()!.quiz.attempts).toBe(0);
-    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(false);
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(true);
   });
 
-  it('tells Max, in the directive, that one try unlocks it', async () => {
+  it('never asks Max to claim the answer is locked behind an attempt', async () => {
     const h = await asked();
     await settle(h.clock, h.actor.sendMessage('please solve the question', SEG));
     const prompt = h.llm.requests.filter((r) => r.meta.scope === 'group').at(-1)!.messages.at(-1)!.content;
-    expect(prompt).toContain('not given before one attempt');
-    expect(prompt).toContain('one try unlocks it');
+    expect(prompt).not.toContain('not given before one attempt');
+    expect(prompt).not.toContain('one try unlocks it');
+    // What it says instead: give it, and do not reproach them for asking.
+    expect(prompt).toContain('GIVE THE ANSWER');
+    expect(prompt).toContain('No reproach');
+  });
+
+  /**
+   * §4.4's "at any time, **with or without an attempt**", and the phrasings the brief adds to the
+   * classifier. Each of these used to draw a hint and now draws the answer.
+   */
+  it('releases it on every one of the brief’s give-up phrasings', async () => {
+    for (const line of ["I don't know", 'this is too hard', "I'm lost", 'idk']) {
+      const h = await asked();
+      await settle(h.clock, h.actor.sendMessage(line, SEG));
+      expect(decisions(h).at(-1)!.decided_by, line).toBe('rule:answer_released');
+      expect(h.actor.pendingQuizView()!.quiz.answerShown, line).toBe(true);
+    }
   });
 
   it('counts an attempt, owes feedback for it, and keeps the question open afterwards', async () => {
@@ -188,21 +216,27 @@ describe('the answer lock, end to end', () => {
     expect(view.quiz.answerShown).toBe(false);
   });
 
-  it('refuses “Show the answer” before a try, in the words the composer uses', async () => {
+  /**
+   * **Pass no longer has an attempt precondition** (#48 §4.4). The composer's quiet line —
+   * *"Max won't give the answer until you've tried once."* — goes with the rule it described.
+   * The only refusal left is the one about the world rather than about the learner.
+   */
+  it('honours Pass before a try, and releases the answer', async () => {
     const h = await asked();
-    const out = await h.actor.showAnswer(SEG);
-    expect(out.shown).toBe(false);
-    expect(out.refused).toBe("Max won't give the answer until you've tried once.");
-    // Nothing was said and nothing was logged as shown.
-    expect(h.store.messages.forRoom(h.roomId)).toHaveLength(1);
-    expect(h.store.events.forSession(h.sessionId).some((e) => e.type === 'quiz.answer_shown')).toBe(false);
+    const out = await settle(h.clock, h.actor.pass(SEG));
+    expect(out).toEqual({ released: true, refused: null });
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:answer_released');
+    const logged = h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_released');
+    expect(JSON.parse(logged[0]!.payload).released_by).toBe('pass');
   });
 
   it('refuses it on a thread with no open question of its own', async () => {
     const h = await asked();
-    const out = await h.actor.showAnswer('seg_9');
-    expect(out.shown).toBe(false);
+    const out = await h.actor.pass('seg_9');
+    expect(out.released).toBe(false);
     expect(out.refused).toBe('There is no open question here.');
+    // `showAnswer` is the same call under its frozen IPC name.
+    expect(await h.actor.showAnswer('seg_9')).toEqual({ shown: false, refused: 'There is no open question here.' });
   });
 
   /**
@@ -210,37 +244,37 @@ describe('the answer lock, end to end', () => {
    * answer."* The ledger call is the one this asserts on, because it is the only mechanism by which
    * anything could be credited to the learner.
    */
-  it('shows the answer after a try, closes the question, and never runs the ledger on it', async () => {
+  it('releases it on Pass after a try, closes the question, and never runs the ledger on it', async () => {
     const h = await asked();
     await settle(h.clock, h.actor.sendMessage('The Hessian has to be positive semidefinite everywhere.', SEG));
     const ledgerCallsBefore = h.llm.requests.filter((r) => r.meta.scope === 'ledger').length;
 
     const out = await settle(h.clock, h.actor.showAnswer(SEG));
     expect(out).toEqual({ shown: true, refused: null });
-    expect(decisions(h).at(-1)!.decided_by).toBe('rule:answer_shown');
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:answer_released');
     expect(decisions(h).at(-1)!.move_type).toBe('quiz_answer');
     expect(h.llm.requests.filter((r) => r.meta.scope === 'ledger')).toHaveLength(ledgerCallsBefore);
 
-    const logged = h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_shown');
+    const logged = h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_released');
     expect(logged).toHaveLength(1);
-    expect(JSON.parse(logged[0]!.payload).by).toBe('button');
+    expect(JSON.parse(logged[0]!.payload).released_by).toBe('pass');
     expect(JSON.parse(logged[0]!.payload).ledger_touched).toBe(false);
-    // Closed: the renderer stops offering it, and no lock rule can fire on this question again.
+    // Closed: the renderer stops offering it, and no rule can fire on this question again.
     expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(true);
     expect((await h.actor.showAnswer(SEG)).refused).toBe('There is no open question here.');
   });
 
-  it('answers the same ask in the composer once there has been a try, and skips the ledger there too', async () => {
+  it('releases the same ask in the composer after a try, and skips the ledger there too', async () => {
     const h = await asked();
     await settle(h.clock, h.actor.sendMessage('The Hessian has to be positive semidefinite everywhere.', SEG));
     const ledgerCallsBefore = h.llm.requests.filter((r) => r.meta.scope === 'ledger').length;
 
     await settle(h.clock, h.actor.sendMessage("what's the answer", SEG));
-    expect(decisions(h).at(-1)!.decided_by).toBe('rule:answer_shown');
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:answer_released');
     expect(h.llm.requests.filter((r) => r.meta.scope === 'ledger')).toHaveLength(ledgerCallsBefore);
-    expect(JSON.parse(h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_shown')[0]!.payload).by).toBe(
-      'answer_request',
-    );
+    expect(
+      JSON.parse(h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_released')[0]!.payload).released_by,
+    ).toBe('give_up');
   });
 
   it('clarifies a question about the question without counting it as an attempt', async () => {
@@ -266,12 +300,21 @@ describe('the script cues of one Tester question', () => {
   it('numbers the question and everything that belongs to it', async () => {
     const h = build();
     await settle(h.clock, h.actor.tryHere(TRY));
-    await settle(h.clock, h.actor.sendMessage('answer?', SEG));
     await settle(h.clock, h.actor.sendMessage('what does PSD mean?', SEG));
+    await settle(h.clock, h.actor.sendMessage('ok', SEG));
     await settle(h.clock, h.actor.sendMessage('The Hessian has to be positive semidefinite everywhere.', SEG));
-    await settle(h.clock, h.actor.showAnswer(SEG));
+    // #48: Pass releases the answer, which is the turn that used to be `answer:1`.
+    await settle(h.clock, h.actor.pass(SEG));
 
-    expect(cues(h)).toEqual(['try:1', 'hint:1', 'clarify:1', 'feedback:1', 'answer:1']);
+    expect(cues(h)).toEqual(['try:1', 'clarify:1', 'hint:1', 'feedback:1', 'release:1']);
+  });
+
+  /** A give-up closes the question, so everything after it belongs to the *next* one. */
+  it('cues a release, and stops cueing the question it closed', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.tryHere(TRY));
+    await settle(h.clock, h.actor.sendMessage('answer?', SEG));
+    expect(cues(h)).toEqual(['try:1', 'release:1']);
   });
 
   it('counts a second question, so its turns cannot be cued as the first’s', async () => {
@@ -314,14 +357,16 @@ describe('the classification never goes stale', () => {
         pageText: 'PAGE',
       }),
     );
-    // Not a second shown answer: one `quiz.answer_shown` in the whole sitting.
-    expect(h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_shown')).toHaveLength(1);
+    // Not a second release: one `quiz.answer_released` in the whole sitting.
+    expect(h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_released')).toHaveLength(1);
   });
 
   it('classifies a relayed whisper question as the learner turn it is', async () => {
     const h = build();
     await settle(h.clock, h.actor.tryHere(TRY));
-    await settle(h.clock, h.actor.sendMessage('answer?', SEG));
+    // #48: an "answer?" here would *release* the answer and close the question, which is the
+    // opposite of what this test is about — so the learner goes quiet instead and the question
+    // stays open for the relayed clarification to land on.
     const whisper = h.actor.openSegmentWhisper(SEG);
     await settle(h.clock, h.actor.sendWhisper(whisper.threadId, 'is PSD the same as positive definite?'));
     const turn = h.store.whispers.forThread(whisper.threadId).find((w) => w.sender === 'agent')!;
@@ -369,9 +414,11 @@ describe('“+ Ask here” while a question is open', () => {
         },
       }),
     );
-    expect(decisions(h).at(-1)!.decided_by).toBe('rule:teacher_answers');
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:ellie_answers');
     expect(h.actor.pendingQuizView()!.quiz.attempts).toBe(0);
-    expect((await h.actor.showAnswer(SEG)).refused).toBe("Max won't give the answer until you've tried once.");
+    // #48 §4.4: the refusal is gone. An Ask still did not count as an attempt — what changed
+    // is that the answer was never behind one.
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(false);
   });
 
   it('is the Teacher’s for a short Ask too, which would have classified as a clarification', async () => {
@@ -385,7 +432,7 @@ describe('“+ Ask here” while a question is open', () => {
         context: { scope: 'segment', passageText: 'PAGE', outline: '', retrievedPages: [], scopeShown: 'p. 2' },
       }),
     );
-    expect(decisions(h).at(-1)!.decided_by).toBe('rule:teacher_answers');
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:ellie_answers');
     expect(h.actor.pendingQuizView()!.quiz.attempts).toBe(0);
   });
 });

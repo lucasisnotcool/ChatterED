@@ -89,7 +89,7 @@ describe('the acknowledgement in the floor-yield window (audit P0 #3)', () => {
 
   it('names the responder and the floor target once a rule has fixed them', async () => {
     const h = build();
-    // An anchored learner turn is the Teacher's by `rule:teacher_answers` — decided with no
+    // An anchored learner turn is the Teacher's by `rule:ellie_answers` — decided with no
     // model call, so the reserved slot can be sized before the yield is over.
     const sending = h.actor.sendMessage(TURN, ANCHOR);
     await h.clock.run(1);
@@ -139,7 +139,7 @@ describe('the acknowledgement in the floor-yield window (audit P0 #3)', () => {
 
 /**
  * A client that streams a known body in known pieces, so a test can say exactly which of them
- * crossed the floor. The orchestrator is answered by `rule:teacher_answers` on an anchored
+ * crossed the floor. The orchestrator is answered by `rule:ellie_answers` on an anchored
  * thread, so only the agent's own generation reaches this.
  */
 function streamingClient(pieces: string[], opts: { ttftMs?: number } = {}): LLMClient {
@@ -371,7 +371,7 @@ describe('timings on the wire (audit §6 and §10)', () => {
     const view = reply.type === 'message.appended' ? reply.message : null;
     expect(view?.model).toBe('claude-haiku-4-5');
     expect(view?.backend).toBe('anthropic');
-    expect(view?.decidedBy).toBe('rule:teacher_answers');
+    expect(view?.decidedBy).toBe('rule:ellie_answers');
     expect(view?.ttftActualMs).toBeGreaterThan(0);
     expect(view?.totalMs).toBeGreaterThanOrEqual(view!.ttftActualMs!);
     expect(view?.stopped).toBe(false);
@@ -387,7 +387,7 @@ describe('timings on the wire (audit §6 and §10)', () => {
     expect(trace).toBeDefined();
     expect(trace!.anchorId).toBe(ANCHOR);
     expect(trace!.trigger).toBe('student_message');
-    expect(trace!.decidedBy).toBe('rule:teacher_answers');
+    expect(trace!.decidedBy).toBe('rule:ellie_answers');
     expect(trace!.role).toBe('peer');
     expect(trace!.backend).toBe('anthropic');
     expect(trace!.decisionMs).not.toBeNull();

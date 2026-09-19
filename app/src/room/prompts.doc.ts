@@ -31,14 +31,68 @@ import { VERDICT_OPENERS } from './flow.js';
  * gives a new reason for: **the doc is where length lives**. An answer that runs long in the chat
  * is an answer that will not fit the segment it belongs to.
  */
-export function ellieAnswersBlock(): string {
-  return [
+export function ellieAnswersBlock(input: { page?: number | null } = {}): string {
+  const lines = [
     'THIS IS THE DOC CHAT',
     'Answer what they asked, in full, in your first sentence — then teach it. About 120 words,',
     'ceiling 180. The document beside you is where length lives: if the answer needs more than',
     'that, say the shape of the rest and let the notes carry it.',
     'Do not end on a question. Max asks the next one.',
-  ].join('\n');
+  ];
+  /**
+   * **Answers stay anchored** (interview finding, `docs/research/interviews/findings.md` §6). All
+   * three interviewees described the same drift: rounds of clarification that end up somewhere
+   * the slide never was, with no way back. The fix is cheap and it is a prompt-level one — name
+   * the page each answer is about — and it pairs with the code-level half in `docedit.ts`, where
+   * a span thread's edit is pinned to that span's own block.
+   */
+  if (typeof input.page === 'number') {
+    lines.push(
+      `**Say which slide this is about**: name \`p. ${input.page}\` in the answer, and if you have to`,
+      'reach elsewhere in the deck to explain it, come back and land it there.',
+    );
+  } else {
+    lines.push(
+      '**Say which slide this is about** as `p. N` somewhere in the answer. An answer with no page',
+      'on it is one the learner cannot check, and three rounds later neither of you knows where it',
+      'started.',
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * **What the learner has written in their own notes, near where they asked** (interview finding,
+ * `findings.md` §6).
+ *
+ * One interviewee's central complaint was that what he writes down is *never registered to the
+ * AI*: he takes notes, the assistant never reads them, and every answer starts from nothing. The
+ * doc makes that fixable for the first time, because the learner's own spans are marked in the
+ * document model (`author.by === 'user'`) and the outline says which blocks carry them.
+ *
+ * So they go into the context, labelled as theirs, with one instruction: **build on it, do not
+ * repeat it**. A reply that re-explains what the learner has already written down correctly is
+ * the same failure in a new place.
+ */
+export function learnerNotesBlock(
+  notes: readonly { blockId: string; text: string; pages: readonly number[] }[],
+): string | undefined {
+  if (notes.length === 0) return undefined;
+  const lines = [
+    'WHAT THE LEARNER HAS WRITTEN IN THEIR OWN NOTES, HERE',
+    'These are **their** words, in the document, beside the part they are asking about:',
+  ];
+  for (const note of notes) {
+    const where = note.pages.length > 0 ? ` (p. ${note.pages.join(', ')})` : '';
+    lines.push(`- ${note.text}${where}`);
+  }
+  lines.push(
+    'Build on this rather than repeating it. If it is right, say so in a clause and go past it; if',
+    'it is wrong or half-right, correct that specific thing. Do not re-explain what they have',
+    'already got down — that is the failure they complained about in the first place.',
+    '**Never rewrite their words.** They are theirs.',
+  );
+  return lines.join('\n');
 }
 
 // ── §4.2 row 1, second turn: rule:max_followup ─────────────────────────────
@@ -52,16 +106,47 @@ export function ellieAnswersBlock(): string {
  * not a comprehension check on the sentence Ellie just wrote, which is the failure mode of a
  * follow-up generated straight off an answer.
  */
-export function maxFollowupBlock(input: { objectiveLabel: string | null }): string {
+export function maxFollowupBlock(input: {
+  objectiveLabel: string | null;
+  /** Every question already asked on this file, so a session cannot circle (interview finding). */
+  askedBefore?: readonly string[];
+}): string {
   const about = input.objectiveLabel ? ` It is about: ${input.objectiveLabel}.` : '';
-  return [
+  const lines = [
     'ASK ONE FOLLOW-UP QUESTION',
     `Ellie has just answered the learner’s question.${about} Ask **one** question that makes them`,
     'use what they have just read — in their own words, or applied to a case.',
     'Not a comprehension check on Ellie’s sentence ("what did she mean by X?"), and not two',
     'questions. Two sentences at most, and the last one is the question.',
     'Do not answer it, and do not hint at the answer.',
-  ].join('\n');
+  ];
+  /**
+   * **Two interview findings, both about the same decay** (`findings.md` §6). One interviewee said
+   * AI quiz quality drops through a long session and the answers become obvious; another asked
+   * for *"easier questions first… a progression"* (which is `pitchBlock`'s job, and this is the
+   * other half).
+   *
+   * An obvious question is one whose answer is readable off its own wording, and a circling
+   * session is one that re-asks what it has already asked in new words. Neither is something a
+   * model can avoid without being told what it has already asked — so it is told.
+   */
+  const asked = (input.askedBefore ?? []).filter((q) => q.trim().length > 0);
+  if (asked.length > 0) {
+    lines.push(
+      '',
+      'YOU HAVE ALREADY ASKED, ON THIS FILE:',
+      ...asked.map((q) => `- ${q}`),
+      'Do not ask any of these again, and do not ask a rephrasing of one. If the only question left',
+      'on this objective would be a rephrasing, move to a different angle on it.',
+    );
+  }
+  lines.push(
+    '',
+    '**The answer must not be readable off the question.** No question that contains its own answer,',
+    'no yes/no, no "is it X or Y?" where one of them is obviously wrong. If reading your question',
+    'aloud would tell them the answer, ask a different one.',
+  );
+  return lines.join('\n');
 }
 
 // ── §4.3: Ellie's cue, and Max's prompt ────────────────────────────────────

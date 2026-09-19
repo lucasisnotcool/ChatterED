@@ -231,7 +231,7 @@ describe('an Ask is a Teacher turn (#41)', () => {
     // A follow-up in the same thread reaches the Teacher by rule \u2014 nothing refuses it.
     await settle(h.clock, h.actor.sendMessage('ok but is that the same as all entries being \u2265 0?', 'seg_3'), 30_000);
     const decisions = h.store.turnDecisions.forRoom(h.roomId);
-    expect(decisions.at(-1)!.decided_by).toBe('rule:teacher_answers');
+    expect(decisions.at(-1)!.decided_by).toBe('rule:ellie_answers');
     expect(decisions.every((d) => d.decided_by !== 'rule:reference_locked')).toBe(true);
 
     // The old button still answers, does nothing, and says so in the log.

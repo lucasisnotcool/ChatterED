@@ -254,8 +254,8 @@ describe('the default explanation shape', () => {
 
 describe('the version', () => {
   it('is bumped, because the prefix hash moves with the rules', () => {
-    // v0.6: #47's house rule 3, the Tester's grounds and the attempt loop's three new directives.
-    expect(PROMPT_VERSION).toBe('prompts.v0.6');
+    // v0.7: #48's six new moves, and the deletion of `rule:answer_withheld`'s unlock clause.
+    expect(PROMPT_VERSION).toBe('prompts.v0.7');
   });
 });
 
@@ -342,8 +342,9 @@ describe('quizBlock', () => {
       demonstration: ['names the missing tools'],
       turn: 'answer',
     })!;
-    expect(block).toContain('has asked to see the answer');
-    expect(block).toContain('what their attempt already had of');
+    // #48 §4.4: released rather than unlocked, and given whether or not they attempted it.
+    expect(block).toContain('is not going to answer this one');
+    expect(flat(block)).toContain('what their attempt already had of it');
     expect(block).toContain('Under 150 words');
     expect(block).toContain('p. N');
     expect(block).not.toContain('A question nobody should ask now.');
@@ -355,12 +356,26 @@ describe('quizBlock', () => {
     expect(block).toContain('leave the question standing');
   });
 
-  it('says one try unlocks the answer when it is asked for too early', () => {
+  /**
+   * **`hint_withheld` no longer claims a rule the app does not have** (#48). `collab-doc.md` §4.4
+   * retires `rule:answer_withheld`, its only producer, so nothing reaches this branch — and a turn
+   * that still said *"one try unlocks it"* would be describing a lock that was taken off.
+   */
+  it('gives a hint without claiming the answer is locked behind an attempt', () => {
     const block = quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn: 'hint_withheld' })!;
     // Flattened, because the prompt is hard-wrapped and the model does not read the newlines.
-    expect(flat(block)).toContain('not given before one attempt');
     expect(flat(block)).toContain('Give **one** hint that narrows the question');
-    expect(flat(block)).toContain('one clause that one try unlocks the answer');
+    expect(flat(block)).not.toContain('one try unlocks');
+    expect(flat(block)).not.toContain('not given before one attempt');
+  });
+
+  /** And the directive half of the same deletion (`turnDirective`, `rule:answer_withheld`). */
+  it('no longer carries an unlock clause on a hint, whatever rule produced it', () => {
+    for (const byRule of ['rule:quiz_nudge', 'rule:silence_hint', 'rule:answer_withheld']) {
+      const d = turnDirective({ agentRole: 'challenger', move: 'quiz_hint', byRule });
+      expect(d, byRule).toContain('Give one hint that narrows it');
+      expect(d, byRule).not.toContain('one try unlocks');
+    }
   });
 
   it('is absent for an element with no seeds and no criteria, so nothing empty is appended', () => {

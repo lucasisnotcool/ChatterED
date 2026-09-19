@@ -492,8 +492,8 @@ describe('the explain path — "+ Ask here", answered by the Teacher', () => {
     const answer = messages.at(-1)!;
     expect(answer.participant_id).toBe(teacher.id);
     expect(answer.anchor_id).toBe(P5);
-    // Decided by rule, not by a 20-second model call (orchestrator.ts `rule:teacher_answers`).
-    expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).toBe('rule:teacher_answers');
+    // Decided by rule, not by a 20-second model call (orchestrator.ts `rule:ellie_answers`).
+    expect(h.store.turnDecisions.forRoom(h.roomId).at(-1)!.decided_by).toBe('rule:ellie_answers');
     // ANSWER FIRST (#36): the thing asked about is settled in the opening sentence.
     expect(answer.body.split('.')[0]).toContain('session');
     expect(answer.body).toContain('strict subset');
@@ -821,13 +821,9 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
     expect(lastDecision(h).decided_by).toBe('rule:try_here');
     expect(lastBody(h)).toBe(beatFor('try:1')!.text);
 
-    // Beat 13's control, asked for too early: refused in the composer's own words, no turn taken.
-    const before = h.store.messages.forRoom(h.roomId).length;
-    expect(await h.actor.showAnswer(P3_LOWER)).toEqual({
-      shown: false,
-      refused: "Max won't give the answer until you've tried once.",
-    });
-    expect(h.store.messages.forRoom(h.roomId).length).toBe(before);
+    // #48 §4.4: Pass no longer has an attempt precondition, so the control that used to be
+    // refused here is honoured. It is exercised on the *second* question below, where it does
+    // not cut the loop short.
 
     // Beats 6–7 — the attempt, typed, and the feedback it is owed. Grounded on page 3.
     await settle(h.clock, h.actor.sendMessage(ATTEMPT_1));
@@ -841,16 +837,21 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
     );
     expect(lastBody(h)).toBe(beatFor('try:2')!.text);
 
-    // Beat 10 — "what's the answer?" with nothing tried on *this* question. Withheld.
+    // Beat 10 — "what's the answer?" with nothing tried on *this* question. Since #48 §4.4 that
+    // is a **give-up**, and Max releases the answer rather than hinting: the brief's knowing
+    // departure from #47, whose replacement is an easier next question (§4.5), not a refusal.
     await settle(h.clock, h.actor.sendMessage(ASK_ANSWER));
-    expect(lastDecision(h).decided_by).toBe('rule:answer_withheld');
-    expect(lastBody(h)).toBe(beatFor('hint:2')!.text);
-    expect(lastBody(h)).not.toMatch(/\bmemory\b/);
+    expect(lastDecision(h).decided_by).toBe('rule:answer_released');
 
     // Beat 11 — the explain path — now works mid-question (`origin: 'ask'`, #47 §6) and is asserted
     // in the test below rather than here, so this chain stays the attempt loop's own.
 
-    // Beat 12 — the second attempt, and feedback grounded on page 5.
+    // Beat 12 — the second attempt. The release above closed question 2, so this attempt is
+    // marked against a fresh one: "+ Try this" again on the same card.
+    await settle(
+      h.clock,
+      h.actor.tryHere({ anchorId: P5, objectiveId: 'C1', context: segmentContext({ text: segmentText(5) }) }),
+    );
     await settle(h.clock, h.actor.sendMessage(ATTEMPT_2));
     expect(lastDecision(h).decided_by).toBe('rule:quiz_feedback');
     expect(lastBody(h)).toContain('p. 5: "did not actually do so, memory protected"');
@@ -871,11 +872,11 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
     expect(levels(h)).toEqual({ C1: 2, C2: 2, C3: 0 });
 
     const railBefore = levels(h);
-    const shown = await settle(h.clock, h.actor.showAnswer(P5));
-    expect(shown).toEqual({ shown: true, refused: null });
-    expect(lastDecision(h).decided_by).toBe('rule:answer_shown');
-    expect(lastBody(h)).toBe(beatFor('answer:2')!.text);
-    // §2.3's last row: the ledger is not run on a shown answer and never moves on one.
+    const shown = await settle(h.clock, h.actor.pass(P5));
+    expect(shown).toEqual({ released: true, refused: null });
+    expect(lastDecision(h).decided_by).toBe('rule:answer_released');
+    // §4.4's last clause, unchanged from #47 §2.3: the ledger is not run on a released answer
+    // and never moves on one. "It fills no progress."
     expect(levels(h)).toEqual(railBefore);
   });
 
@@ -901,11 +902,11 @@ describe('the attempt loop — beats 5–13, on the real actor', () => {
     await settle(h.clock, h.actor.askHere({ anchorId: P5, question: ASK, context: segmentContext({ text: segmentText(5) }) }));
 
     // The Teacher answers the thread she was asked in, mid-question.
-    expect(lastDecision(h).decided_by).toBe('rule:teacher_answers');
-    // And the lock is still shut, because nothing has been attempted.
-    expect(await h.actor.showAnswer(P5)).toEqual({
-      shown: false,
-      refused: "Max won't give the answer until you've tried once.",
-    });
+    expect(lastDecision(h).decided_by).toBe('rule:ellie_answers');
+    // And the Ask still did not count as the attempt: Max's question is untouched and open.
+    // (#48 removed the refusal it used to be asserted through — there is no lock left to be shut.)
+    const view = h.actor.pendingQuizView()!;
+    expect(view.quiz.attempts).toBe(0);
+    expect(view.quiz.answerShown).toBe(false);
   });
 });
