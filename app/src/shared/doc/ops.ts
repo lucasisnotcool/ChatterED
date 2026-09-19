@@ -1,0 +1,601 @@
+/**
+ * ────────────────────────────────────────────────────────────────────────────────────────────
+ * AGENT OPS → ONE TRANSACTION (`docs/research/collab-doc.md` §5, §8; issue #48)
+ * ────────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * > **Agents address blocks, never offsets.** An agent edit is a structured op from main to
+ * > renderer (`insert_after blockId`, `replace_block`, `append_to_block`, `resolve_q`), produced
+ * > by a structured model call given the doc outline near the anchor. The renderer turns it into
+ * > a transaction, runs the **guard**, animates it behind the agent's cursor, and saves.
+ *
+ * This file is the "turns it into a transaction" half, and it is where §5.4's rule becomes
+ * behaviour rather than intent. The three cases, from the contract:
+ *
+ * | op on a block holding learner text | what happens |
+ * |---|---|
+ * | `replace_block` | becomes a **suggestion** — strike the block's text, offer the agent's |
+ * | `remove_block` | **dropped**, `rejected_guard` — nothing an agent says removes your writing |
+ * | `append_to_block` | **relocated** to an `insert_after` of the same block |
+ *
+ * `insert_after`, `insert_before`, `insert_q` and `resolve_q` only ever add, so they never
+ * conflict; an agent has free rein over `ingest`, `ellie` and `max` text and may rewrite, move
+ * and merge it (contract rule 6).
+ *
+ * **Everything is one transaction.** A batch is one edit in the history, one Remove · Keep
+ * control and one `editId`; half a batch applying and half not would leave a control whose
+ * Remove undoes something the learner never saw appear.
+ *
+ * **Missing blocks are skipped, not fatal.** The model is answering about a document it saw one
+ * outline of; between the call and the reply the learner may have deleted the block it chose.
+ * Skipping the op and applying the rest is the behaviour that keeps an agent useful in a live
+ * document; a batch where *nothing* resolved reports `no_change` and the caller logs it.
+ */
+
+import { Fragment, type Node, type Schema } from 'prosemirror-model';
+import type { EditorState, Transaction } from 'prosemirror-state';
+import { learnerConflicts, type LearnerConflict } from './guard.js';
+import { inlineToNodes, nodesToInline } from './inline.js';
+import {
+  authorMark,
+  blockAttrs,
+  blockPos,
+  eachBlock,
+  hasLearnerText,
+  newBlockId,
+  notesSchema,
+  textRuns,
+} from './schema.js';
+import { suggestReplaceOnTr } from './suggest.js';
+import type {
+  AgentDocOp,
+  AgentDocOpBatch,
+  DocAuthor,
+  DocBlockDraft,
+  DocEditRecord,
+  Suggestion,
+} from './types.js';
+
+export interface ApplyResult {
+  tr: Transaction | null;
+  status: 'applied' | 'rejected_guard' | 'no_change';
+  /** What the edit created or touched: what Remove undoes, and what the colour is on. */
+  blockIds: string[];
+  /** Non-empty ⇒ part of the batch was held back for learner text. */
+  conflicts: LearnerConflict[];
+  /** Set when the batch (or its held-back part) became a suggestion. */
+  suggestion: Suggestion | null;
+}
+
+// ── drafts → nodes ──────────────────────────────────────────────────────────────────────────
+
+function provAttrs(draft: DocBlockDraft): { blockId: string; pages: number[]; reason: string | null; objectiveIds: string[] } {
+  return {
+    blockId: newBlockId(),
+    pages: [...(draft.prov?.pages ?? [])],
+    reason: draft.prov?.reason ?? null,
+    objectiveIds: [],
+  };
+}
+
+/**
+ * `DocBlockDraft[]` → ProseMirror blocks, every text span authored.
+ *
+ * `at` is beyond the cross-track signature and optional (see `inline.ts`): one timestamp for a
+ * whole batch reads better in a log than one per block, and a test can pin it.
+ */
+export function draftToNodes(
+  schema: Schema,
+  drafts: readonly DocBlockDraft[],
+  author: DocAuthor,
+  editId: string | null,
+  at?: number,
+): Node[] {
+  const out: Node[] = [];
+  for (const draft of drafts) {
+    const attrs = provAttrs(draft);
+    const inline = (text: string): Node[] => inlineToNodes(schema, text, author, editId, at);
+    switch (draft.kind) {
+      case 'heading':
+        out.push(schema.nodes.heading!.create({ ...attrs, level: draft.level }, inline(draft.text)));
+        break;
+      case 'paragraph':
+        out.push(schema.nodes.paragraph!.create(attrs, inline(draft.text)));
+        break;
+      case 'bullets':
+      case 'numbers': {
+        const items = draft.items
+          .filter((item) => item.trim().length > 0)
+          .map((item) =>
+            schema.nodes.list_item!.create(
+              { blockId: newBlockId() },
+              // The item's paragraph keeps the list's provenance: a bullet the learner clicks the
+              // chip on should point at the same slide the list does.
+              schema.nodes.paragraph!.create({ ...attrs, blockId: newBlockId() }, inline(item)),
+            ),
+          );
+        if (items.length === 0) break;
+        const type = draft.kind === 'bullets' ? schema.nodes.bullet_list! : schema.nodes.ordered_list!;
+        out.push(type.create(draft.kind === 'numbers' ? { ...attrs, start: 1 } : attrs, items));
+        break;
+      }
+      case 'code': {
+        // Code is literal: no `**bold**` inside it, so the text goes in as one authored span.
+        const mark = at === undefined ? authorMark(author, editId) : authorMark(author, editId, at);
+        const text = draft.text.length > 0 ? [schema.text(draft.text, [mark])] : [];
+        out.push(schema.nodes.code_block!.create({ ...attrs, lang: draft.lang ?? null }, text));
+        break;
+      }
+      case 'math':
+        out.push(schema.nodes.math_block!.create({ ...attrs, tex: draft.tex }));
+        break;
+      case 'figure':
+        out.push(
+          schema.nodes.slide_figure!.create({
+            ...attrs,
+            page: draft.page,
+            rect: draft.rect,
+            caption: draft.caption,
+            evidentiary: true,
+          }),
+        );
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
+}
+
+/** The ids of blocks this fragment introduces, including a list's items. */
+function idsOf(nodes: readonly Node[]): string[] {
+  const ids: string[] = [];
+  for (const node of nodes) {
+    const id = (node.attrs as { blockId?: string }).blockId;
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/** A draft's text, for the times a block op has to become an inline suggestion. */
+function draftsToText(drafts: readonly DocBlockDraft[]): string {
+  const parts: string[] = [];
+  for (const draft of drafts) {
+    switch (draft.kind) {
+      case 'heading':
+      case 'paragraph':
+      case 'code':
+        parts.push(draft.text);
+        break;
+      case 'bullets':
+      case 'numbers':
+        parts.push(draft.items.join(' '));
+        break;
+      case 'math':
+        parts.push(`$${draft.tex}$`);
+        break;
+      case 'figure':
+        parts.push(draft.caption);
+        break;
+      default:
+        break;
+    }
+  }
+  return parts.filter((part) => part.trim().length > 0).join(' ');
+}
+
+// ── applying a batch ────────────────────────────────────────────────────────────────────────
+
+function findQBlock(doc: Node, questionId: string): { pos: number; node: Node } | null {
+  let found: { pos: number; node: Node } | null = null;
+  eachBlock(doc, (node, pos) => {
+    if (found) return;
+    if (node.type.name === 'q_block' && (node.attrs.questionId as string) === questionId) {
+      found = { pos, node };
+    }
+  });
+  return found;
+}
+
+/** The learner runs inside one block, as conflicts — what a held-back op reports. */
+function conflictsInBlock(node: Node, pos: number): LearnerConflict[] {
+  const { blockId } = blockAttrs(node);
+  const out: LearnerConflict[] = [];
+  let open: LearnerConflict | null = null;
+  for (const run of textRuns(node, pos + 1)) {
+    const isUser = run.marks.some((mark) => mark.type.name === 'author' && mark.attrs.by === 'user');
+    if (!isUser) {
+      open = null;
+      continue;
+    }
+    if (open !== null && open.to === run.from) {
+      open.to = run.to;
+      open.text += run.text;
+      continue;
+    }
+    open = { blockId, from: run.from, to: run.to, text: run.text };
+    out.push(open);
+  }
+  return out;
+}
+
+export function applyBatch(
+  state: EditorState,
+  batch: AgentDocOpBatch,
+  opts: { frozen: boolean; docId: string; now: string },
+): ApplyResult {
+  // §3's Freeze: "no agent edits the doc; agents still talk. Edits that would have happened are
+  // dropped, not queued." Nothing is built, so nothing can leak out of a later mapping.
+  if (opts.frozen) {
+    return { tr: null, status: 'no_change', blockIds: [], conflicts: [], suggestion: null };
+  }
+
+  const at = Number.isFinite(Date.parse(opts.now)) ? Date.parse(opts.now) : Date.now();
+  const tr = state.tr;
+  const touched: string[] = [];
+  const conflicts: LearnerConflict[] = [];
+  let guardBlocked = false;
+  let suggestion: Suggestion | null = null;
+
+  const nodesFor = (drafts: readonly DocBlockDraft[]): Node[] =>
+    draftToNodes(notesSchema, drafts, batch.author, batch.editId, at);
+
+  const suggest = (blockId: string, quote: string, replacement: string, note: string | null, threadId: string | null): boolean => {
+    const suggestionId = `sg_${globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const ok = suggestReplaceOnTr(tr, {
+      suggestionId,
+      by: batch.author,
+      blockId,
+      quote,
+      replacement,
+    });
+    if (!ok) return false;
+    suggestion = {
+      suggestionId,
+      docId: opts.docId,
+      editId: batch.editId,
+      author: batch.author,
+      blockId,
+      status: 'open',
+      note,
+      threadId,
+      createdAt: opts.now,
+      resolvedAt: null,
+    };
+    if (!touched.includes(blockId)) touched.push(blockId);
+    return true;
+  };
+
+  const applyOp = (op: AgentDocOp): void => {
+    switch (op.op) {
+      case 'insert_after':
+      case 'insert_before': {
+        const anchorId = op.anchorBlockId;
+        const target = blockPos(tr.doc, anchorId);
+        if (!target) return;
+        const nodes = nodesFor(op.blocks);
+        if (nodes.length === 0) return;
+        const where = op.op === 'insert_after' ? target.pos + target.node.nodeSize : target.pos;
+        tr.insert(where, Fragment.fromArray(nodes));
+        touched.push(...idsOf(nodes));
+        return;
+      }
+
+      case 'replace_block': {
+        const target = blockPos(tr.doc, op.blockId);
+        if (!target) return;
+        const nodes = nodesFor(op.blocks);
+        if (nodes.length === 0) return;
+        if (hasLearnerText(target.node)) {
+          // Case 2a: the learner wrote here. The rewrite becomes an offer over the block's own
+          // words — struck, with the agent's version beside it — and the learner decides.
+          conflicts.push(...conflictsInBlock(target.node, target.pos));
+          const quote = nodesToInline(target.node.content);
+          const made = suggest(op.blockId, quote, draftsToText(op.blocks), batch.why || null, null);
+          if (!made) guardBlocked = true;
+          return;
+        }
+        tr.replaceWith(target.pos, target.pos + target.node.nodeSize, Fragment.fromArray(nodes));
+        touched.push(...idsOf(nodes));
+        return;
+      }
+
+      case 'append_to_block': {
+        const target = blockPos(tr.doc, op.blockId);
+        if (!target) return;
+        if (op.text.trim().length === 0) return;
+        const attrs = blockAttrs(target.node);
+        if (hasLearnerText(target.node) || !target.node.isTextblock) {
+          // Case 2c: relocated to an `insert_after` of the same block — the sentence still lands
+          // where it was meant to, and not one character of the learner's is moved.
+          conflicts.push(...conflictsInBlock(target.node, target.pos));
+          const nodes = nodesFor([
+            { kind: 'paragraph', text: op.text, prov: { pages: attrs.pages, reason: attrs.reason } },
+          ]);
+          tr.insert(target.pos + target.node.nodeSize, Fragment.fromArray(nodes));
+          touched.push(...idsOf(nodes));
+          return;
+        }
+        const nodes = inlineToNodes(notesSchema, op.text, batch.author, batch.editId, at);
+        if (nodes.length === 0) return;
+        tr.insert(target.pos + 1 + target.node.content.size, Fragment.fromArray(nodes));
+        touched.push(attrs.blockId);
+        return;
+      }
+
+      case 'remove_block': {
+        const target = blockPos(tr.doc, op.blockId);
+        if (!target) return;
+        if (hasLearnerText(target.node)) {
+          // Case 2b. Nothing an agent says removes the learner's writing — not even as a
+          // suggestion, because a suggestion is an offer to change words, not to delete a block.
+          conflicts.push(...conflictsInBlock(target.node, target.pos));
+          guardBlocked = true;
+          return;
+        }
+        tr.delete(target.pos, target.pos + target.node.nodeSize);
+        touched.push(op.blockId);
+        return;
+      }
+
+      case 'insert_q': {
+        const target = blockPos(tr.doc, op.anchorBlockId);
+        if (!target) return;
+        if (op.text.trim().length === 0) return;
+        const blockId = newBlockId();
+        const question = notesSchema.nodes.paragraph!.create(
+          {
+            blockId: newBlockId(),
+            pages: [...(op.prov?.pages ?? [])],
+            reason: op.prov?.reason ?? null,
+            objectiveIds: op.objectiveId ? [op.objectiveId] : [],
+          },
+          inlineToNodes(notesSchema, op.text, batch.author, batch.editId, at),
+        );
+        const qBlock = notesSchema.nodes.q_block!.create(
+          {
+            blockId,
+            pages: [...(op.prov?.pages ?? [])],
+            reason: op.prov?.reason ?? null,
+            objectiveIds: op.objectiveId ? [op.objectiveId] : [],
+            questionId: op.questionId,
+            askedBy: batch.author,
+            status: 'open',
+            resolution: null,
+            objectiveId: op.objectiveId,
+          },
+          question,
+        );
+        tr.insert(target.pos + target.node.nodeSize, qBlock);
+        touched.push(blockId);
+        return;
+      }
+
+      case 'resolve_q': {
+        const target = findQBlock(tr.doc, op.questionId);
+        if (!target) return;
+        // The Q block stays (§5): the question and its answer are the record of the exchange, and
+        // the learner removes it if they want to.
+        tr.setNodeMarkup(target.pos, undefined, {
+          ...target.node.attrs,
+          status: 'resolved',
+          resolution: op.resolution,
+        });
+        touched.push((target.node.attrs.blockId as string) || '');
+        const nodes = nodesFor(op.blocks);
+        if (nodes.length === 0) return;
+        // After the question paragraph — Max's correct version reads under the question it
+        // answers, not at the bottom of whatever else has accumulated in the block.
+        const first = target.node.firstChild;
+        const insertAt = target.pos + 1 + (first ? first.nodeSize : 0);
+        tr.insert(insertAt, Fragment.fromArray(nodes));
+        touched.push(...idsOf(nodes));
+        return;
+      }
+
+      default:
+        return;
+    }
+  };
+
+  for (const op of batch.ops) applyOp(op);
+
+  // The suggestion path is here rather than in the caller: a `cause: 'suggestion'` batch names
+  // the quote and the replacement directly (§6 — Max correcting something the learner wrote in
+  // the doc), so there is nothing to guard. The edit *is* the offer.
+  if (batch.suggestion) {
+    suggest(
+      batch.suggestion.blockId,
+      batch.suggestion.quote,
+      batch.suggestion.replacement,
+      batch.suggestion.note,
+      batch.suggestion.threadId,
+    );
+  }
+
+  if (tr.steps.length === 0) {
+    return {
+      tr: null,
+      status: guardBlocked ? 'rejected_guard' : 'no_change',
+      blockIds: [],
+      conflicts,
+      suggestion: null,
+    };
+  }
+
+  // The belt to the braces: whatever the ops above believed they were doing, ask the guard what
+  // the finished transaction would actually take out of the learner's document. A conflict here
+  // is a bug in *this file*, and the suite asserts it stays empty for every op — but it is
+  // cheap, and §5.4 is not a rule to hold by care when it can be held by a check.
+  const guarded = learnerConflicts(state, tr);
+  if (guarded.length > 0) {
+    return { tr: null, status: 'rejected_guard', blockIds: [], conflicts: guarded, suggestion: null };
+  }
+
+  const blockIds = [...new Set(touched.filter((id) => id.length > 0))];
+  return { tr, status: 'applied', blockIds, conflicts, suggestion };
+}
+
+// ── Remove · Keep (§5) ──────────────────────────────────────────────────────────────────────
+
+type EditRef = Pick<DocEditRecord, 'editId' | 'blockIds'>;
+
+interface Removal {
+  from: number;
+  to: number;
+}
+
+/**
+ * **Remove** — "every agent edit can be removed … in one click" (§5).
+ *
+ * What it removes is `editId`, everywhere it is: whole blocks the edit created, and the spans it
+ * added to blocks it did not. `blockIds` is a hint that narrows the search, never the authority —
+ * the edit may have been split by the learner typing in the middle of it, and the mark on the
+ * text is the truth.
+ *
+ * **The one thing it must never do** is take the learner's words with it. A learner who typed
+ * inside Ellie's paragraph and then clicked Remove on Ellie's edit gets their own sentence back
+ * in an otherwise-empty block, not a deleted paragraph — so a block is removed whole only when
+ * nothing in it is the learner's.
+ */
+export function removeEdit(state: EditorState, edit: EditRef): Transaction | null {
+  const doc = state.doc;
+  const removals: Removal[] = [];
+
+  eachBlock(doc, (node, pos) => {
+    const blockEnd = pos + node.nodeSize;
+    const owns = spansOfEdit(node, pos, edit.editId);
+    const isEditsBlock =
+      edit.blockIds.includes(blockAttrs(node).blockId) ||
+      // A block with content, all of it this edit's, is this edit's block even if the record's
+      // `blockIds` has drifted (a list's items, a q_block's resolution paragraph).
+      (owns.length > 0 && !hasForeignText(node, edit.editId));
+
+    if (!isEditsBlock && owns.length === 0) return;
+
+    if (hasLearnerText(node)) {
+      // The learner is in here. Take the agent's spans, leave the block and their words.
+      removals.push(...owns);
+      return;
+    }
+    if (isEditsBlock) {
+      // A resolved Q block goes whole — the question and its answer are one thing (§5.3), and a
+      // Q block whose question has been removed is worse than no Q block.
+      removals.push({ from: pos, to: blockEnd });
+      return;
+    }
+    removals.push(...owns);
+  });
+
+  if (removals.length === 0) return null;
+
+  // A q_block and the spans inside it are both on the list; keep the outermost of any nested
+  // pair, drop exact duplicates, and delete back to front so no position is ever stale.
+  const outermost = removals.filter(
+    (range, i) =>
+      !removals.some(
+        (other, j) =>
+          j !== i &&
+          other.from <= range.from &&
+          other.to >= range.to &&
+          (other.to - other.from > range.to - range.from || j < i),
+      ),
+  );
+
+  const tr = state.tr;
+  for (const removal of [...outermost].sort((a, b) => b.from - a.from)) {
+    tr.delete(removal.from, removal.to);
+  }
+  return tr.steps.length > 0 ? tr : null;
+}
+
+/** The runs of one edit's text inside a node, merged where a mark boundary split them. */
+function spansOfEdit(node: Node, pos: number, editId: string): Removal[] {
+  const spans: Removal[] = [];
+  let open: Removal | null = null;
+  for (const run of textRuns(node, pos + 1)) {
+    const mine = run.marks.some((mark) => mark.type.name === 'author' && mark.attrs.editId === editId);
+    if (!mine) {
+      open = null;
+      continue;
+    }
+    if (open !== null && open.to === run.from) {
+      open.to = run.to;
+      continue;
+    }
+    open = { from: run.from, to: run.to };
+    spans.push(open);
+  }
+  return spans;
+}
+
+/** True when the node holds text that is not this edit's — anyone else's, learner or agent. */
+function hasForeignText(node: Node, editId: string): boolean {
+  let foreign = false;
+  node.descendants((child) => {
+    if (foreign) return false;
+    if (!child.isText) return true;
+    const author = child.marks.find((mark) => mark.type.name === 'author');
+    if (!author || author.attrs.editId !== editId) foreign = true;
+    return !foreign;
+  });
+  return foreign;
+}
+
+/**
+ * **Keep** — "*Keep* drops the colour and keeps the text and its provenance" (§5).
+ *
+ * One mark change and nothing else: `editId` goes to `null`, `by` stays. The text is still Max's
+ * in the record and in the outline; it has simply stopped being a *pending* edit, which is the
+ * only thing the colour ever meant. The renderer colours on `[data-edit-id]` (`schema.ts`), so
+ * the colour goes with the attribute.
+ */
+export function keepEdit(state: EditorState, edit: EditRef): Transaction | null {
+  const tr = state.tr;
+  const authorType = notesSchema.marks.author!;
+  const changes: { from: number; to: number; by: DocAuthor; at: number }[] = [];
+
+  state.doc.descendants((node, pos) => {
+    if (!node.isText) return true;
+    const mark = node.marks.find((m) => m.type.name === 'author' && m.attrs.editId === edit.editId);
+    if (!mark) return false;
+    changes.push({
+      from: pos,
+      to: pos + node.nodeSize,
+      by: mark.attrs.by as DocAuthor,
+      at: (mark.attrs.at as number) ?? 0,
+    });
+    return false;
+  });
+
+  if (changes.length === 0) return null;
+  for (const change of changes) {
+    tr.removeMark(change.from, change.to, authorType);
+    tr.addMark(change.from, change.to, authorType.create({ by: change.by, editId: null, at: change.at }));
+  }
+  return tr.steps.length > 0 ? tr : null;
+}
+
+// ── the ingest's windows (§2) ───────────────────────────────────────────────────────────────
+
+/**
+ * **An ingest window only ever appends** (contract rule 5).
+ *
+ * "Long decks are ingested in page windows with a running outline so the notes stay cohesive;
+ * the doc opens as soon as the first window lands and fills in behind a visible marker" (§2) —
+ * and the learner is reading, and may already be writing, while that happens. So there is no
+ * guard case here: the one thing this can do is add after `afterBlockId`, or at the end when the
+ * previous window's last block is gone (the learner deleted it) or there is no previous window.
+ */
+export function appendWindow(
+  state: EditorState,
+  afterBlockId: string | null,
+  blocks: readonly DocBlockDraft[],
+): Transaction {
+  const tr = state.tr;
+  const nodes = draftToNodes(notesSchema, blocks, 'ingest', null);
+  if (nodes.length === 0) return tr;
+  const target = afterBlockId ? blockPos(tr.doc, afterBlockId) : null;
+  const where = target ? target.pos + target.node.nodeSize : tr.doc.content.size;
+  tr.insert(where, Fragment.fromArray(nodes));
+  return tr;
+}
