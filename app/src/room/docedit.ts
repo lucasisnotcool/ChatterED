@@ -452,6 +452,95 @@ export function buildSuggestionEdit(
   };
 }
 
+/**
+ * **The one structured call on the suggestion path** (brief §6).
+ *
+ * Max has just marked what the learner wrote in the document, and his feedback says what is
+ * wrong with it in prose. Turning that into a Google-Docs suggestion needs two things prose does
+ * not carry: **which of their words** to strike, character for character, and what to put in
+ * their place. Asking for them as fields is the same discipline as `ELLIE_CUE_SCHEMA` — a fact
+ * the renderer has to locate in a document may not be a sentence a model wrote around it.
+ *
+ * `none` is the common answer and the right one: most feedback is about what is missing rather
+ * than about what is wrong, and a suggestion on text that was fine is the app correcting the
+ * learner for sport.
+ */
+export const SUGGESTION_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['suggest'],
+  additionalProperties: false,
+  properties: {
+    suggest: {
+      type: 'boolean',
+      description: 'False unless the learner’s own words are wrong and have to change.',
+    },
+    quote: {
+      type: ['string', 'null'],
+      description:
+        'The part of THEIR text to replace, copied character for character out of it. Not a paraphrase.',
+    },
+    replacement: { type: ['string', 'null'], description: 'What it should read instead.' },
+    note: { type: ['string', 'null'], description: 'One sentence beside Accept · Reject. Never the whole correction.' },
+  },
+};
+
+export function suggestionPrompt(input: { text: string; feedback: string }): string {
+  return [
+    'The learner wrote this in their own lecture notes:',
+    '"""',
+    input.text,
+    '"""',
+    '',
+    'The tester has just marked it:',
+    '"""',
+    input.feedback,
+    '"""',
+    '',
+    'Does **their own wording** have to change for the notes to be correct? Answer with the JSON',
+    'object alone — no prose, no fence.',
+    '',
+    'Answer `{"suggest":false}` unless something they wrote is actually **wrong**. Missing is not',
+    'wrong: an incomplete note is still their note, and the rest belongs in the conversation or in',
+    'a block added beside it. Only a claim that is false earns a suggestion.',
+    '',
+    'When it does: `quote` must be copied **character for character** out of their text above — the',
+    'shortest run that contains the error — because it has to be found in the document. A',
+    'paraphrase cannot be, and the suggestion silently becomes nothing. `replacement` is what that',
+    'run should read instead, in their register, not yours. `note` is one sentence saying why.',
+  ].join('\n');
+}
+
+/**
+ * Plan a correction to the learner's own doc text, or decide there is none. Returns the batch
+ * ready to emit; `null` covers "nothing to correct", "the quote was not verbatim" and "the call
+ * failed", all of which the caller answers the same way.
+ */
+export async function planSuggestionEdit(
+  deps: DocEditDeps,
+  input: { blockId: string; text: string; feedback: string; threadId: string | null },
+): Promise<AgentDocOpBatch | null> {
+  const request: LlmRequest = {
+    model: deps.model,
+    max_tokens: 600,
+    system: [{ type: 'text', text: suggestionPrompt(input) }],
+    messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
+    jsonSchema: SUGGESTION_SCHEMA,
+    meta: docEditMeta(deps),
+  };
+  const result = await deps.llm.complete(request);
+  const parsed = JSON.parse(extractJson(result.text)) as Record<string, unknown>;
+  if (parsed.suggest !== true) return null;
+  return buildSuggestionEdit(deps, {
+    blockId: input.blockId,
+    text: input.text,
+    quote: typeof parsed.quote === 'string' ? parsed.quote : '',
+    replacement: typeof parsed.replacement === 'string' ? parsed.replacement : '',
+    note: typeof parsed.note === 'string' ? parsed.note : '',
+    threadId: input.threadId,
+  });
+}
+
 // ── "insert into the document", from a private thread ──────────────────────
 
 /**

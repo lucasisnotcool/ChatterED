@@ -561,6 +561,44 @@ describe('assessDocText', () => {
     expect(rules(h).at(-1)).toBe('rule:quiz_feedback');
   });
 
+  /**
+   * **§6's suggestion, and the one gate on it.** The learner's own words are the only text an
+   * agent may not simply rewrite, so a correction to them is offered rather than applied — and
+   * the quote has to be findable in the document, which is why `buildSuggestionEdit` checks it
+   * against their text rather than trusting the model.
+   */
+  it('offers a suggestion when their own words are wrong, quoting them verbatim', async () => {
+    const text = 'The agent carries the forwarding decision, so the cost is the agent’s.';
+    const h = build({}, {
+      suggest: true,
+      quote: 'The agent carries the forwarding decision',
+      replacement: 'The learner carries the forwarding decision',
+      note: 'it is the learner who decides',
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.assessDocText({ anchorId: SPAN, objectiveId: ELEMENT, blockId: 'b_mine', text }));
+
+    const suggestion = h.doc.edits.find((e) => e.batch.cause === 'suggestion')!;
+    expect(suggestion.batch.ops).toEqual([]);
+    expect(suggestion.batch.suggestion).toMatchObject({
+      blockId: 'b_mine',
+      quote: 'The agent carries the forwarding decision',
+      replacement: 'The learner carries the forwarding decision',
+      threadId: SPAN,
+    });
+    expect(text).toContain(suggestion.batch.suggestion!.quote);
+  });
+
+  it('offers nothing when the correction would be a paraphrase of what they wrote', async () => {
+    const h = build({}, { suggest: true, quote: 'a line they never wrote', replacement: 'x', note: 'y' });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(
+      h.clock,
+      h.actor.assessDocText({ anchorId: SPAN, objectiveId: ELEMENT, blockId: 'b_mine', text: 'The learner carries it.' }),
+    );
+    expect(h.doc.edits.some((e) => e.batch.cause === 'suggestion')).toBe(false);
+  });
+
   it('tells Max the answer came out of the document, and records the outcome as such', async () => {
     const h = build();
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));

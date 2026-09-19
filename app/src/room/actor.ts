@@ -32,6 +32,7 @@ import {
   buildResolveEdit,
   buildWhisperInsert,
   planAnswerEdit,
+  planSuggestionEdit,
   type DocEditDeps,
 } from './docedit.js';
 import {
@@ -1350,6 +1351,17 @@ export class RoomActor {
    * nothing** — the button on it does, if the learner presses it.
    */
   #maybeOfferSummary(anchorId: string | null): void {
+    /**
+     * **Retired where the collab doc exists** (#48, `collab-doc.md` §9: the doc *is* the
+     * artefact now). The offer's whole argument was that a conversation deserves a durable
+     * record in the learner's document — and §5 gives it one without asking, written at the
+     * segment it belongs to. A button offering to summarise into a document that is already
+     * writing itself is the app arguing with its own feature.
+     *
+     * Gated rather than deleted, because the old flow keeps working until the lead removes it in
+     * one commit (COLLAB-CONTRACT rule 3), and `summary.ts` is still what it runs on.
+     */
+    if (this.#docPort.docId() !== null) return;
     if (anchorId === null || this.#offeredSummary.has(anchorId)) return;
     const teacher = agentByRole(this.#d.roster, 'peer');
     const participant = this.#d.store.participants.byAgentKey(this.#d.roomId, teacher.key);
@@ -3725,6 +3737,25 @@ export class RoomActor {
           { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
         );
         return;
+      }
+      /**
+       * **§6 — the one place a suggestion arises naturally.** The learner wrote in the doc, Max
+       * marked it, and their own words are wrong. Everything else an agent wants to change is
+       * worked around; this is the case where the correct edit *is* an edit to learner text, so
+       * it is offered as Accept · Reject with their wording struck through rather than replaced.
+       */
+      const docText = this.#docTextTarget;
+      if (docText !== null && decision.moveType === 'quiz_feedback') {
+        await this.#emitDocEdit(
+          await planSuggestionEdit(deps, {
+            blockId: docText.blockId,
+            text: docText.text,
+            feedback: text,
+            threadId: docText.anchorId,
+          }),
+          { objectiveId: quiz?.objectiveId ?? null, messageId, turnId },
+        );
+        // …and the Q block still resolves below, because the answer was still an answer.
       }
       // 5.3 — a Max question resolved: his correct version goes under the Q block, tagged.
       const resolution = qResolutionOf(quiz);
