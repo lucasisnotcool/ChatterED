@@ -11,6 +11,7 @@ import type {
   CreateSessionInput,
   DocumentView,
   FinderHitView,
+  FlowQuizView,
   FlowWhisperView,
   RecapView,
   RelayAttribution,
@@ -63,6 +64,22 @@ import { applyDelta, updateBelongs } from './cost.js';
  */
 function has(name: keyof ChatterEdApi): boolean {
   return typeof (bridge() as unknown as Record<string, unknown>)[name] === 'function';
+}
+
+/**
+ * `FlowThreadView.quiz`, by anchor (issue #47).
+ *
+ * Built in one place because it is built from two — `flow:messages` on open and every channel
+ * that returns a `FlowRoomView` — and a quiz the renderer forgot to take in is a composer that
+ * goes on asking for an attempt after the answer has been shown. Threads without the field come
+ * from a main process that predates #47 and map to `null`, which is "no quiz open here".
+ */
+function quizMap(
+  threads: readonly { anchorId: string; quiz?: FlowQuizView | null }[],
+): Record<string, FlowQuizView | null> {
+  const out: Record<string, FlowQuizView | null> = {};
+  for (const t of threads) out[t.anchorId] = t.quiz ?? null;
+  return out;
 }
 
 /**
@@ -316,6 +333,34 @@ class Store {
   /** Threads the learner collapsed, persisted through `flow:cardState`. */
   threadCollapsed: Record<string, boolean> = $state({});
 
+  // ── The attempt loop (issue #47, `attempt-first.md` §2) ─────────────────
+  /**
+   * **The Tester's open question, per thread**, projected from `FlowThreadView.quiz`.
+   *
+   * The main process owns it: `attempts` is incremented there, by `classifyLearnerTurn`, because
+   * the whole point of §2.3 is that the model is never asked whether to answer its own question
+   * and neither is the renderer. This map is the projection the composer and the two controls
+   * read, and it is refreshed from `flow:messages` after every released turn — the quiz's state
+   * changes on the *agent's* turn (feedback landing, the answer being shown) and there is no
+   * per-quiz event on the stream, so the end of a turn is the moment to re-read it.
+   */
+  flowQuiz: Record<string, FlowQuizView | null> = $state({});
+  /**
+   * The segment whose **"+ Try this"** is in flight. Named, not a boolean, for the same reason
+   * `summarising` is: the card that was clicked is the card that shows it is working.
+   */
+  tryBusy: string | null = $state(null);
+  /** The thread whose **Show the answer** is in flight. */
+  showBusy: string | null = $state(null);
+  /**
+   * A `p. N` citation in a Tester's grounds that the learner clicked (§3, the nice-to-have).
+   *
+   * A request, not a destination: only `FlowCanvas` knows which card a page means and how the
+   * flow scrolls, so this carries the page and a token — the token so clicking the same page
+   * twice scrolls twice, which a bare number would not.
+   */
+  goToPage: { page: number; token: number } | null = $state(null);
+
   // ── The artefact (issue #41, `conversation-refinement.md` §5) ───────────
   /**
    * The thread whose **Summarise into the document** is in flight. One at a time and named, so
@@ -562,6 +607,12 @@ class Store {
          * a re-read of states that have already been pushed, which is cheap and idempotent.
          */
         void this.refreshObjectiveStates();
+        /**
+         * And the same argument for the quiz (issue #47): `feedbackGiven` and `answerShown` move
+         * on the *agent's* turn, so the end of one is when the thread's controls can have
+         * changed. There is no per-quiz event on the stream; this is the re-read.
+         */
+        void this.refreshFlowQuiz();
         // The counters, while the push side is not live yet — see `#costLive`.
         this.#recountAfterTurn();
         break;
@@ -855,6 +906,11 @@ class Store {
     this.answersCollapsed = {};
     this.summarising = null;
     this.threadOf = {};
+    // The attempt loop is the document's: a closed deck has no open quiz.
+    this.flowQuiz = {};
+    this.tryBusy = null;
+    this.showBusy = null;
+    this.goToPage = null;
     // The file and thread counters are the document's. The app's is not, and survives.
     this.costFile = null;
     this.costThread = {};
@@ -1023,6 +1079,97 @@ class Store {
     this.lastSendAnchor = DECK_ANCHOR_ID;
   }
 
+  // ── The attempt loop (issue #47, `attempt-first.md` §2) ─────────────────
+  /**
+   * **"+ Try this"** — the learner asks the Tester for one question (§2.1).
+   *
+   * The mirror of `askHere()` in every respect that matters, and deliberately so: it creates the
+   * document's room if there is none, it resolves as soon as the pick is made rather than when
+   * the question arrives, and it sets `lastSendAnchor` so the wait chrome — *Max is reading…*,
+   * the neutral received line, the counter — draws **in this thread**. Without that last line
+   * Max's question would appear with no warning under a card the learner was not looking at,
+   * which is the bug #41 fixed for the Teacher and would otherwise be re-introduced here.
+   *
+   * What it is *not* is a text box. §2.1's entry is a click: the objective is picked by a pure
+   * function in the main process (the card's objectives, lowest ledger level first, deck order as
+   * the tie-break) precisely so the learner does not have to know what to ask for — five of six
+   * coded sessions never produced an attempt, and every declinable offer of a quiz was declined.
+   *
+   * `objectiveId` is passed by the objectives panel's **Try this** and by nothing else; **Try
+   * another** deliberately omits it so the pick runs again and a missed objective comes round
+   * while a landed one gives way (§2.4, *"questions based on my weaknesses"* as a button).
+   */
+  async tryHere(segmentId: string, objectiveId?: string): Promise<void> {
+    const fileId = this.flowFor;
+    if (!fileId || !has('flowTryHere')) return;
+    this.askingAt = null;
+    this.tryBusy = segmentId;
+    const view = await run(this, () =>
+      bridge().flowTryHere({ fileId, segmentId, ...(objectiveId ? { objectiveId } : {}) }),
+    );
+    this.tryBusy = null;
+    if (!view) return;
+    this.#takeFlowRoom(view.flow);
+    if (view.refused) {
+      // Inline on the card that was clicked, for a moment — the refusal channel every other
+      // flow gesture already uses (SEGMENTS.md §3), not a modal. A question that cannot be
+      // asked because the deck has not been read yet is not an error worth a dialog.
+      this.flowRefusal = { segmentId, message: view.refused };
+      return;
+    }
+    this.flowRefusal = null;
+    // The question is about to arrive here, so the wait belongs here.
+    this.lastSendAnchor = segmentId;
+  }
+
+  /**
+   * **Show the answer** (§2.3 `rule:answer_shown`).
+   *
+   * Offered only once `flowQuiz` says an attempt exists, and refused by the main process if the
+   * renderer ever gets that wrong — the lock is the orchestrator's, and this call being the only
+   * door to it is what makes the decision auditable. The answer is logged and **moves nothing**:
+   * the ledger never runs on this turn, which is the sentence the report and the video are about.
+   */
+  async showAnswer(anchorId: string): Promise<void> {
+    const roomId = this.room?.roomId;
+    if (!roomId || !has('flowShowAnswer')) return;
+    this.showBusy = anchorId;
+    const view = await run(this, () => bridge().flowShowAnswer({ roomId, threadId: anchorId }));
+    this.showBusy = null;
+    if (!view) return;
+    this.#takeFlowRoom(view.flow);
+    if (!view.shown) {
+      this.flowRefusal = { segmentId: anchorId, message: view.refused ?? 'Try it once first.' };
+      return;
+    }
+    this.flowRefusal = null;
+    this.lastSendAnchor = anchorId;
+  }
+
+  /**
+   * Re-read the threads' quiz state.
+   *
+   * `flow:messages` is the only channel that carries `FlowThreadView.quiz`, and the quiz moves on
+   * turns the learner did not initiate — the feedback landing sets `feedbackGiven`, and a
+   * `rule:answer_shown` turn sets `answerShown` — so the controls would otherwise be one gesture
+   * behind the transcript. Called on `turn.released`; `quiet()` because a build whose main side
+   * has not landed yet has nothing to report to the learner about it.
+   */
+  async refreshFlowQuiz(): Promise<void> {
+    const fileId = this.flowFor;
+    if (!fileId) return;
+    const view = await quiet(() => bridge().flowMessages({ fileId }));
+    // Only the quiz map: `this.room` is live from the event stream and re-seating a whole
+    // snapshot mid-turn would drop the thinking indicator the learner is looking at.
+    if (!view || this.flowFor !== fileId) return;
+    this.flowQuiz = quizMap(view.threads);
+  }
+
+  /** A `p. N` in a Tester's grounds, clicked. `FlowCanvas` owns where the flow goes (§3). */
+  requestPage(page: number): void {
+    this.goToPage = { page, token: (this.goToPage?.token ?? 0) + 1 };
+  }
+
   /**
    * The Teacher, by name — for the Ask line's *"Asking Ellie…"* and the summary card's chrome.
    *
@@ -1032,6 +1179,15 @@ class Store {
    */
   get teacherName(): string {
     return this.room?.agents.find((a) => a.role === 'peer')?.displayName ?? 'Ellie';
+  }
+
+  /**
+   * The Tester, by name — for *"Max is reading…"* and for the composer's one quiet line, which
+   * has to name the agent whose rule it is stating. `'challenger'` is the Tester's role key, for
+   * the same reason `'peer'` is the Teacher's: #32 renamed the words on screen, not the enum.
+   */
+  get testerName(): string {
+    return this.room?.agents.find((a) => a.role === 'challenger')?.displayName ?? 'Max';
   }
 
   /**
@@ -1720,6 +1876,8 @@ class Store {
       lastSeenSeq?: number;
       collapsed?: boolean;
       removed?: boolean;
+      /** The Tester's open question here, if any (issue #47). Absent on an older main process. */
+      quiz?: FlowQuizView | null;
     }[];
   }): void {
     this.flowRoomFor = this.flowFor;
@@ -1740,6 +1898,7 @@ class Store {
     this.flowLocks = locks;
     this.threadSeen = seen;
     this.threadCollapsed = collapsed;
+    this.flowQuiz = quizMap(view.threads);
     /**
      * `removed` is persisted per **anchor**, which is the grain `flow:cardState` offers; a
      * thread holds at most one REFERENCE answer awaiting hand-back at a time, so re-applying it
