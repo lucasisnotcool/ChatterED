@@ -82,3 +82,9 @@ docs/research/ai-use-transcripts/processed/
 # --- Scratch ---
 tmp/
 scratch/
+
+# --- Interview data: local only, never committed ---
+# CLAUDE.md: no participant PII, ever. The sheets under Academia/Interviews/ are raw interview
+# records; what is committed is the de-identified analysis (P-codes, programme/year/gender only)
+# in docs/research/interviews/.
+Academia/Interviews/
