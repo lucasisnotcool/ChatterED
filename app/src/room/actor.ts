@@ -267,6 +267,8 @@ export interface RoomActorDeps {
    * so in as many words.
    */
   learnerObjectives?: () => readonly {
+    /** The tree's own id, which is also the concept element's id (`objectives/pack.ts`). */
+    objectiveId?: string;
     title: string;
     level: 0 | 1 | 2 | 3;
     assumedByDeck: boolean;
@@ -2794,12 +2796,39 @@ export class RoomActor {
   #followupTarget(): string | null {
     const levels = Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level]));
     const taught = latestByElement(this.#taught).map((item) => ({ ...item, ageMs: 0, recency: 1 }));
-    const picked = pickTarget(taught, levels);
+    const assumed = this.#assumedObjectiveIds();
+    const picked = pickTarget(
+      taught.filter((item) => !assumed.has(item.elementId)),
+      levels,
+    );
     if (picked) return picked.elementId;
     // Nothing taught yet in this sitting: fall back to the lowest-level element in the pack, which
     // is the same ordering one step wider.
-    const byLevel = [...this.#d.pack.elements].sort((a, b) => (levels[a.id] ?? 0) - (levels[b.id] ?? 0));
+    const byLevel = [...this.#d.pack.elements]
+      .filter((element) => !assumed.has(element.id))
+      .sort((a, b) => (levels[a.id] ?? 0) - (levels[b.id] ?? 0));
     return byLevel[0]?.id ?? null;
+  }
+
+  /**
+   * **The objectives the deck assumes and never teaches** — which Max must not quiz on.
+   *
+   * The pack deliberately keeps prerequisites as elements (`objectives/pack.ts`: "a node that can
+   * never light is decoration"), and that is right for the *ledger*: a learner who explains the
+   * thing the deck assumed has demonstrated it. It is wrong for the *question*. The bar counts
+   * only what the deck teaches (`docroom/progress.ts`), so a `Well done` on an assumed
+   * prerequisite fills an objective the bar cannot show, and the learner watches a correct answer
+   * move nothing — which is exactly what the live run of 20 Sep did on its first follow-up, on
+   * the fallback branch below.
+   *
+   * Empty when the tree has not landed, which leaves the pick exactly as it was.
+   */
+  #assumedObjectiveIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const objective of this.#d.learnerObjectives?.() ?? []) {
+      if (objective.assumedByDeck && objective.objectiveId) ids.add(objective.objectiveId);
+    }
+    return ids;
   }
 
   /**

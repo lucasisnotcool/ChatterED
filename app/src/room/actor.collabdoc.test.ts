@@ -136,6 +136,34 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
   });
 
   /**
+   * **A question the bar cannot answer for.** `docroom/progress.ts` counts only what the deck
+   * teaches, so a `Well done` on a prerequisite the deck merely assumes fills an objective that
+   * is not in the total — the learner answers correctly and the bar does not move. That is what
+   * the live run of 20 Sep saw: nothing had been taught in the sitting yet, so the follow-up fell
+   * back to the lowest-level element in the pack, which was an assumed one.
+   */
+  it('never asks about an objective the deck only assumes', async () => {
+    const first = PSD_HESSIAN_CONVEXITY_V1.elements[0]!.id;
+    const h = build({
+      learnerObjectives: () => [
+        { objectiveId: first, title: 'assumed', level: 0, assumedByDeck: true },
+        ...PSD_HESSIAN_CONVEXITY_V1.elements.slice(1).map((e) => ({
+          objectiveId: e.id,
+          title: e.learner_label,
+          level: 0 as const,
+          assumedByDeck: false,
+        })),
+      ],
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+
+    expect(rules(h)).toEqual(['rule:ellie_answers', 'rule:max_followup']);
+    const quiz = decisions(h).find((d) => d.decided_by === 'rule:max_followup')!;
+    expect(quiz.target_element_id).not.toBe(first);
+    expect(quiz.target_element_id).toBe(PSD_HESSIAN_CONVEXITY_V1.elements[1]!.id);
+  });
+
+  /**
    * §4.2's own invariant, stated in the brief in as many words: *"One open Max question at a time
    * per file. `rule:max_followup` does not fire while one is open; Ellie's answer to a new learner
    * question simply stands, and Max's open question stays open."*

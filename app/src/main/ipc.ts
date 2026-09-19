@@ -742,7 +742,9 @@ export class AppService {
    * array is a correct answer — no tree yet, or a tree still ingesting — and the block turns that
    * into *assume less* rather than into silence.
    */
-  #learnerObjectives(fileId: string | null): { title: string; level: 0 | 1 | 2 | 3; assumedByDeck: boolean }[] {
+  #learnerObjectives(
+    fileId: string | null,
+  ): { objectiveId: string; title: string; level: 0 | 1 | 2 | 3; assumedByDeck: boolean }[] {
     if (!fileId) return [];
     const tree = this.#d.store.objectives.tree(fileId);
     if (!tree || tree.status !== 'ready') return [];
@@ -750,6 +752,11 @@ export class AppService {
     return [...tree.objectives]
       .sort((a, b) => a.order - b.order)
       .map((o) => ({
+        // The id as well as the title since #48: the Tester's follow-up picks its target from
+        // the concept pack, whose elements carry no `assumedByDeck`, and an objective the deck
+        // only assumes must not be quizzed — the bar does not count it, so answering it well
+        // moves nothing. `room/actor.ts` `#followupTarget` is the reader.
+        objectiveId: o.id,
         title: o.title,
         level: (states.get(o.id)?.level ?? 0) as 0 | 1 | 2 | 3,
         assumedByDeck: o.assumedByDeck,
