@@ -1,11 +1,12 @@
 # CLAUDE.md
 
-**ChatterED** — a learning CUI that lives inside the lecture deck. A PDF opens as a *flow*
-of crops of the rendered pages (never re-typeset); the learner splits them at proposed cuts,
-asks at any point (a neutral REFERENCE answer), is taught by Ellie (Teacher) and quizzed by
-Max (Tester) by a visible rule, with an Explanation Ledger that only the learner's own words
-move, and a private whisper popover with an "insert into the document" path. NUS CS3249
-research prototype, headed for real student use.
+**ChatterED** — a learning CUI built on collaborative editing. A lecture deck is ingested into
+AI-written **lecture notes** with per-block provenance back to the slides; the layout is file
+panel · doc · chats; Ellie (green) and Max (red) edit the doc live beside the learner, whose own
+text is never overwritten; Max's questions are the learner's to answer first, Ellie offers a
+peer's partial take on silence, a give-up releases the answer and lowers the next question; a
+progress bar fills only on the learner's own words. NUS CS3249 research prototype, headed for
+real student use. **Source of truth: `docs/research/collab-doc.md` (#48, the 2026-09-19 pivot).**
 Orientation and the repo map: `README.md`. **Assignment 1 is due 22 Sep 2026.**
 
 ## Start every session here
@@ -75,6 +76,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 | Assignment scope, marks, deadlines | `Academia/Assignment 1_ ...pdf` and `Academia/Sources/_text/assignment1-brief.txt` |
 | Interviews, recruitment, consent, observation | `docs/research/interview-guide.md` |
 | Student AI-chat transcripts, form responses, the coded CUI study | `docs/research/ai-use-transcripts/README.md` (raw/ and processed/ are gitignored, local only) |
+| The interaction model (start here) | `docs/research/collab-doc.md`, then `ai-use-transcripts/analysis/convergence.md` |
 | Any design decision | `docs/research/` — and if the brief is missing, that is the `research` issue about the halted first pass |
 | Multi-agent / peer-vs-challenger evidence | `Academia/Sources/_text/who-you-explain-to-matters.txt`, `MASG_multi-agents-are-social-groups.txt` |
 | Whisper / side-channel rationale | `Academia/Sources/_text/critique1-btw.txt` |
@@ -85,9 +87,13 @@ text first; open the PDF only for figures and layout.
 
 ## Working decisions (recorded as `product` issues, argue there)
 
-- **The flow (#23, #25):** a document is a vertical flow of crop segments of the pdf.js-rendered
-  page; boundaries come from geometry only (no model), shown as ticks and split on click; slides
-  only in A1, other genres open as whole pages with a notice (#27–#31). Vision "suggest cuts" is A2 (#26).
+- **The collaborative notes doc (#48, 2026-09-19) supersedes the crop flow (#23, #25), the attempt
+  lock (#47 point 3), the whisper popover (#16) and the objectives panel (#38) as UI.** Two-pass
+  ingest (extract, then an LLM refine with the slides); ProseMirror doc with `blockId`, block
+  provenance and a per-span author mark; agents address blocks, never offsets; a code-side guard
+  turns any agent change to learner text into an accept/reject suggestion; rules `ellie_answers`,
+  `max_followup`, `mention`, `ellie_cue`, `max_prompt`, `answer_released`, `closure`. "Never
+  re-typeset" is retired. Superseded briefs stay as the record; `collab-doc.md` §9 lists them.
 - **Roster (#32):** Ellie = Teacher (explains from the slide), Max = Tester (one quiz question when
   the hand-off rule in `src/room/flow.ts` fires). No group framing, no disagreement quota, no Theo.
   On-page AI summaries are the neutral REFERENCE voice; the Q&A thread is the Teacher's.
@@ -100,7 +106,8 @@ text first; open the PDF only for figures and layout.
 - LLM (#19): the local Claude CLI by default (per-role haiku/sonnet/opus, default sonnet), an API
   key file as fallback, `scripted` for the video. Load the `claude-api` skill before writing API
   code; do not answer model/pricing questions from memory.
-- Demo deck and fixture: the Critique 1 slides in `Academia/Sources/btw interaction/` (#32).
+- Demo deck: `Academia/Sources/CS3249+Lecture+4.pdf` (#48; a lecturer's deck, not committed). The
+  Critique 1 slides in `Academia/Sources/btw interaction/` (#32) remain the small test fixture.
 
 ## Environment traps
 
