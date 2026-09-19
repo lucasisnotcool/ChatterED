@@ -164,7 +164,7 @@ one where the learner owes an answer.**
 
 ## 6. What the video shows, and the report's Step 2
 
-**Hero interaction, ~6 of 10 minutes, one slide of the Critique 1 deck.** "+ Try this" → Max's
+**Hero interaction, ~6 of 10 minutes, on the Critique 1 deck** (two cards in the filmed take, p. 3 lower and p. 5, because the pick is scoped to the objectives a card teaches and p. 3 lower teaches exactly one; `flow-build-plan.md` §2). "+ Try this" → Max's
 question → the learner's attempt (typed live) → grounded feedback with a `p. N` quote → the ledger
 moves on the learner's words → "Try another" → a second question on the objective still at ○ →
 a second attempt → feedback → "Show the answer" now available; the presenter says why it was not
