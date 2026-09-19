@@ -12,9 +12,18 @@
  */
 import type { LlmRequest } from './types.js';
 import { CRITIQUE1_SCRIPT } from './script.critique1.js';
+import { NOTES_SCRIPT } from './script.notes.js';
 import { beatFor, referenceBeatFor, whisperBeatFor, type ScriptSource } from './script.psd-hessian.js';
 
-export type ScriptName = 'psd-hessian' | 'critique1';
+/**
+ * `notes` (#48) is the collab-doc loop over the same Critique 1 deck: answer → follow-up →
+ * silence → Ellie's cue → Max's prompt → attempt → feedback → give-up → release → an easier
+ * question → closure. It is **selected only by the override**, deliberately: the fixture deck
+ * still picks `critique1` so the attempt-first take keeps playing for anyone who runs it, and
+ * choosing between two scripts over one deck by sniffing the deck is not something a sniffer can
+ * do. `vite dev` and the tests for the new loop name it.
+ */
+export type ScriptName = 'psd-hessian' | 'critique1' | 'notes';
 
 /** The default script: `design-brief.md` §G, the one `actor.test.ts` runs on. */
 export const PSD_HESSIAN_SCRIPT: ScriptSource = {
@@ -27,6 +36,7 @@ export const PSD_HESSIAN_SCRIPT: ScriptSource = {
 export const SCRIPTS: Record<ScriptName, ScriptSource> = {
   'psd-hessian': PSD_HESSIAN_SCRIPT,
   critique1: CRITIQUE1_SCRIPT,
+  notes: NOTES_SCRIPT,
 };
 
 /**
@@ -76,9 +86,13 @@ export interface PickScriptInput {
   override?: string | null;
 }
 
+function isScriptName(value: unknown): value is ScriptName {
+  return value === 'critique1' || value === 'psd-hessian' || value === 'notes';
+}
+
 export function pickScriptName(input: PickScriptInput): ScriptName {
   const override = input.override;
-  if (override === 'critique1' || override === 'psd-hessian') return override;
+  if (isScriptName(override)) return override;
   if (input.contentSha && CRITIQUE1_FIXTURE.contentShas.has(input.contentSha)) return 'critique1';
   if (input.fileName && CRITIQUE1_FIXTURE.fileNamePattern.test(input.fileName)) return 'critique1';
   return 'psd-hessian';
@@ -94,6 +108,9 @@ export function pickScriptName(input: PickScriptInput): ScriptName {
  */
 export function matchFixtureDeck(input: PickScriptInput): ScriptName | null {
   const override = input.override;
+  // `notes` is not a *deck*, it is a second script over the Critique 1 one, so it resolves to that
+  // deck's fixture here — the question this function answers is "which deck is this".
+  if (override === 'notes') return 'critique1';
   if (override === 'critique1' || override === 'psd-hessian') return override;
   if (input.contentSha && CRITIQUE1_FIXTURE.contentShas.has(input.contentSha)) return 'critique1';
   if (input.fileName && CRITIQUE1_FIXTURE.fileNamePattern.test(input.fileName)) return 'critique1';

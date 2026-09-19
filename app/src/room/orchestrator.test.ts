@@ -650,13 +650,18 @@ describe('the silence rule reads what the quiet is quiet about', () => {
       expect(d.decidedBy).toBe('rule:max_prompt');
     });
 
-    it('fires once per question: after the cue, the silence is left to closure', () => {
+    /**
+     * The pair is one event across the two stages of one round: stage 2 with the cue already
+     * given is Max's prompt, and a *second* round's stage 1 is the gate closing.
+     */
+    it('fires once per question: after the pair, the silence is left to closure', () => {
       const spent = markCueGiven(unattempted(), { at: 1_000, hasMistake: true, claim: 'a plausible wrong claim' });
-      for (const stage of [1, 2] as const) {
-        const d = silence({ lastAgentTurn: 'tester_question', silenceStage: stage, pendingQuiz: spent });
-        expect(d.speak, `stage ${stage}`).toBe(false);
-        expect(d.decidedBy, `stage ${stage}`).toBe('rule:cue_spent');
-      }
+      expect(silence({ lastAgentTurn: 'tester_question', silenceStage: 2, pendingQuiz: spent }).decidedBy).toBe(
+        'rule:max_prompt',
+      );
+      const again = silence({ lastAgentTurn: 'tester_question', silenceStage: 1, pendingQuiz: spent });
+      expect(again.speak).toBe(false);
+      expect(again.decidedBy).toBe('rule:cue_spent');
     });
 
     it('stands down once the learner has attempted: the old pair takes the silence back', () => {

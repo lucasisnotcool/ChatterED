@@ -1077,10 +1077,15 @@ export class RoomActor {
     try {
       await this.#runAgentTurn('promote', { anchorId, closure: { elementId: quiz.elementId } });
     } catch (err) {
-      // A close that throws must still close. The Q block is resolved from the criteria below.
       this.#turnLog.event('error', 'quiz.closure.error', { cause: failureReason(err) });
-      this.#resolveFromCriteria(quiz);
     }
+    /**
+     * **And it closes whether or not the turn landed.** `#runAgentTurn` swallows a generation
+     * failure into a card rather than throwing — which is right for a conversation and wrong for a
+     * debt — so the state is checked here rather than in a `catch`. If the question is still open,
+     * the model could not be had, and §4.7's fallback resolves it from the objective's criteria.
+     */
+    if (quizOpen(this.#pendingQuiz)) this.#resolveFromCriteria(this.#pendingQuiz!);
   }
 
   /**
@@ -1094,7 +1099,17 @@ export class RoomActor {
     this.#pendingQuiz = markAnswerShown(quiz, 'closure');
     this.#recordOutcome({ kind: 'released', verdict: null, releasedBy: 'closure', messageId: null, source: 'chat' });
     const element = this.#d.pack.elements.find((e) => e.id === quiz.elementId);
-    const criteria = (element?.demonstration ?? []).filter((c) => c.trim().length > 0);
+    /**
+     * *"What a correct demonstration contains"*, which the objective ingest writes as
+     * `demonstration` — and, for a pack that has none (a fixture, or `draftConcept`), the ledger's
+     * own level-3 and level-4 descriptions of the same claim. Both are the objective's criteria in
+     * the sense §4.7 means; taking the second is the difference between a thin answer and none.
+     */
+    const criteria = (
+      (element?.demonstration ?? []).length > 0
+        ? element!.demonstration!
+        : [element?.criteria['3'], element?.criteria['4']].filter((c): c is string => typeof c === 'string')
+    ).filter((c) => c.trim().length > 0);
     if (criteria.length === 0) return;
     const text = [`The answer needed to cover:`, ...criteria.map((c) => `- ${c}`)].join('\n');
     void this.#emitDocEdit(

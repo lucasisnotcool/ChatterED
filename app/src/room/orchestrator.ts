@@ -745,6 +745,29 @@ export function silenceDecision(input: DecisionInput): TurnDecision {
      * answering a question they have already had a go at.
      */
     const noAttemptYet = attemptsOf(quiz) === 0;
+    /**
+     * **The pair is one event across the two stages of one silence round.** Stage 1 is Ellie's
+     * take, stage 2 is Max answering it — and a *second* round's stage 1, with the cue already
+     * given, is the "once per question" gate closing. That ordering is why the stage is checked
+     * before the flag: reading `cueGiven` first would let the cue block its own prompt, which is
+     * the shape this got wrong once and is the reason the test asserts both halves land.
+     */
+    if (noAttemptYet && stage === 2 && cueGiven(quiz)) {
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'max_prompt',
+        probeType: null,
+        targetElementId: quiz!.elementId,
+        challenges: [],
+        rationale:
+          'Max answers Ellie’s guess aimed at the learner: he names the part worth looking at and ' +
+          'asks them to improve on it or say whether she is right.',
+        decidedBy: 'rule:max_prompt',
+        handOffLine: null,
+        failure: null,
+      };
+    }
     if (noAttemptYet && cueGiven(quiz)) {
       return {
         ...SILENT,

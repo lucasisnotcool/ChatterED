@@ -343,6 +343,145 @@ describe('the whisper invariant, over the flow renderer', () => {
  * The relay is the one crossing, and the assertion is precise about it: the *approved* text
  * appears in the document, and the private turn it came out of does not.
  */
+/**
+ * THE SAME CANARY, OVER **TWO** PRIVATE THREADS (#48, `collab-doc.md` §4.1).
+ *
+ * The brief widens the private channel: *"Private threads: one with Ellie, one with Max."* That
+ * overrules #32 by name — `openSegmentWhisper` resolved Ellie in code specifically so the renderer
+ * could not ask for a channel to the Tester, on the argument that *"a private channel to the
+ * person quizzing you is the one shape this feature must not have"*.
+ *
+ * **So the canary is widened, never weakened** (`flow-build-plan.md` §4.6, "extend, never relax").
+ * The old test planted one string in one thread; this plants a *different* string in each of the
+ * two, and looks for both in every shared surface the app can produce — plus, and this is the half
+ * that is new, it checks that **neither thread can see the other**. Max's private thread reading
+ * Ellie's would be a leak the group-scope walk above could never catch, because both sides of it
+ * are whisper scope.
+ */
+const ELLIE_CANARY = 'ZZQX-CANARY-4471-ellie-private-only';
+const MAX_CANARY = 'ZZQX-CANARY-8852-max-private-only';
+
+describe('the whisper invariant, over two private threads', () => {
+  async function twoPrivateThreads() {
+    const seeded = seedRoom();
+    const clock = new FakeClock();
+    let n = 0;
+    const actor = new RoomActor({
+      store: seeded.store,
+      groupStore: groupView(seeded.store),
+      clock,
+      transport: { emit: () => undefined },
+      llm: new ScriptedClient(),
+      roomId: seeded.roomId,
+      sessionId: seeded.sessionId,
+      roster: rosterFor('ellie_peer'),
+      pack: PSD_HESSIAN_CONVEXITY_V1,
+      config: { ...DEFAULT_ROOM_CONFIG, mode: 'scripted' },
+      appVersion: '0.1.0-test',
+      newId: (prefix) => `${prefix}_${(n += 1)}`,
+      random: () => 0.5,
+    });
+    actor.start();
+
+    const ellie = actor.openPrivate('ellie');
+    const max = actor.openPrivate('max');
+    const run = clock.run(60_000);
+    await actor.sendPrivate(ellie.threadId, `only for the teacher: ${ELLIE_CANARY}`);
+    await actor.sendPrivate(max.threadId, `only for the tester: ${MAX_CANARY}`);
+    await run;
+    return { ...seeded, clock, actor, ellie, max };
+  }
+
+  it('opens a separate thread for each agent', async () => {
+    const h = await twoPrivateThreads();
+    expect(h.ellie.threadId).not.toBe(h.max.threadId);
+    const threads = h.actor.docThreads().filter((t) => t.kind === 'private');
+    expect(threads.map((t) => t.agentKey).sort()).toEqual(['ellie', 'max']);
+  });
+
+  it('keeps both canaries out of every shared surface', async () => {
+    const h = await twoPrivateThreads();
+    const roster = rosterFor('ellie_peer');
+
+    for (const speaker of roster) {
+      const prompt = buildGroupContext(groupView(h.store), {
+        roomId: h.roomId,
+        speaker,
+        roster,
+        pack: PSD_HESSIAN_CONVEXITY_V1,
+        directive: { agentRole: speaker.role === 'peer' ? 'peer' : 'challenger', move: 'ask what they mean' },
+      });
+      expect(JSON.stringify(prompt)).not.toContain(ELLIE_CANARY);
+      expect(JSON.stringify(prompt)).not.toContain(MAX_CANARY);
+    }
+
+    for (const surface of [
+      JSON.stringify(h.actor.snapshot()),
+      JSON.stringify(h.actor.flowSnapshot()),
+      JSON.stringify(flowRoomView(h.actor, h.actor.lockedAnchors())),
+      // The collab doc's own thread view (#48). A private thread appears in it — it has to, the
+      // chat column draws it — and it carries **no message ids and no bodies**, by construction.
+      JSON.stringify(h.actor.docThreads()),
+    ]) {
+      expect(surface).not.toContain(ELLIE_CANARY);
+      expect(surface).not.toContain(MAX_CANARY);
+    }
+  });
+
+  /**
+   * **The half that is new with the second thread.** Each private thread is private from the
+   * group *and* from the other one; a Tester who can read what the learner told the Teacher is
+   * the shape #32 refused, and widening the feature must not smuggle it back in.
+   */
+  it('keeps each private thread out of the other', async () => {
+    const h = await twoPrivateThreads();
+    const toEllie = JSON.stringify(h.actor.openPrivate('ellie').turns);
+    const toMax = JSON.stringify(h.actor.openPrivate('max').turns);
+    expect(toEllie).toContain(ELLIE_CANARY);
+    expect(toEllie).not.toContain(MAX_CANARY);
+    expect(toMax).toContain(MAX_CANARY);
+    expect(toMax).not.toContain(ELLIE_CANARY);
+
+    // And the prompt each private turn was built from saw only its own thread.
+    for (const [threadId, mine, theirs] of [
+      [h.ellie.threadId, ELLIE_CANARY, MAX_CANARY],
+      [h.max.threadId, MAX_CANARY, ELLIE_CANARY],
+    ] as const) {
+      const context = JSON.stringify(
+        buildWhisperContext(h.store, {
+          roomId: h.roomId,
+          threadId,
+          upToGroupSeq: 99,
+          speaker: rosterFor('ellie_peer')[0]!,
+          roster: rosterFor('ellie_peer'),
+          pack: PSD_HESSIAN_CONVEXITY_V1,
+        }),
+      );
+      expect(context).toContain(mine);
+      expect(context).not.toContain(theirs);
+    }
+  });
+
+  /** §4.1's one crossing, and it is the learner's: nothing else moves a private turn. */
+  it('crosses into the document only through insertPrivateIntoDoc', async () => {
+    const h = await twoPrivateThreads();
+    const emitted: unknown[] = [];
+    const reply = h.store.whispers.forThread(h.max.threadId).find((w) => w.sender === 'agent')!;
+
+    // Nothing has been written to the doc by either private turn landing.
+    expect(JSON.stringify(emitted)).not.toContain(MAX_CANARY);
+    // The learner presses the button: the agent's reply crosses, and the learner's own turn — the
+    // one carrying the canary — does not.
+    const { editId } = await h.actor.insertPrivateIntoDoc({
+      threadId: h.max.threadId,
+      turnId: reply.id,
+      anchorBlockId: 'b_1',
+    });
+    // No notes doc in this room, so there is nowhere for it to go and nothing is invented.
+    expect(editId).toBeNull();
+  });
+});
+
 describe('the whisper invariant, through the flow', () => {
   async function flowWithWhisper() {
     const seeded = seedRoom();
