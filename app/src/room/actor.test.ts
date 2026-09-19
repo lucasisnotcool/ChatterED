@@ -158,12 +158,16 @@ describe('the room actor', () => {
     await settle(h.clock, h.actor.sendMessage(TURN_4));
     const countBefore = h.store.messages.forRoom(h.roomId).length;
 
-    // 45 s of no keystrokes.
-    await h.clock.run(50_000);
+    /**
+     * **Two minutes of no keystrokes, not 45 s** (#47 §5). The threshold now scales to how much
+     * there was to read — `clamp(2 × words / 238 wpm, 120 s, 300 s)` — and a short scripted turn
+     * lands on the 120 s floor, which is what the divider then says.
+     */
+    await h.clock.run(125_000);
     const messages = h.store.messages.forRoom(h.roomId);
     expect(messages.length).toBe(countBefore + 1);
     const nudge = messages.at(-1)!;
-    expect(nudge.divider_cause).toBe('45s quiet · Ellie stepped in');
+    expect(nudge.divider_cause).toBe('120s quiet · Ellie stepped in');
     // Stage 1 is content-free: it is drawn from the pool, never generated against the concept.
     expect(nudge.body).not.toMatch(/Hessian|PSD|convex/i);
     expect(nudge.model).toBe('pool:content_free');
@@ -557,7 +561,8 @@ describe('the stage-1 nudge pool', () => {
     await settle(h.clock, h.actor.sendMessage(TURN_2));
     const seen: string[] = [];
     for (let i = 0; i < 4; i += 1) {
-      await h.clock.run(50_000);
+      // Past the 120 s floor the thresholds now start at (#47 §5).
+      await h.clock.run(125_000);
       const nudges = h.store.messages.forRoom(h.roomId).filter((m) => m.model === 'pool:content_free');
       const last = nudges.at(-1);
       if (last && seen.at(-1) !== last.body) seen.push(last.body);
@@ -657,13 +662,13 @@ describe('the rail is a side-channel', () => {
 });
 
 /**
- * **The silence after an explanation** (#37), end to end on the fake clock.
+ * **The silence after an explanation** (#37, then #47 §5), end to end on the fake clock.
  *
- * Lucas's transcript: Ellie finished an ELI5 of the MDP tuple, the learner went quiet, and 45 s
- * later she said *"Take your time. If it helps, say the bit you're sure about first."* — the
- * content-free pool line, which is the right move only when the learner owes somebody an answer.
- * These drive the real timer through the real actor, and assert on what the learner sees: the
- * message's provenance and the divider copy above it.
+ * #37 answered it with a re-explanation, on Lucas's transcript of an ELI5 that got "Take your time"
+ * 45 s later. Issue #47 retires that: the coded study puts the median gap before the next learner
+ * turn at **3–6 minutes** against AI turns of 246–1,190 words (`findings.md` RQ5), so the quiet
+ * after an explanation is reading, and the app fills only the silence where an answer is owed.
+ * These drive the real timer through the real actor, and assert on what the learner sees.
  */
 describe('a silence after the Teacher explained', () => {
   /** An anchored thread is `rule:teacher_answers`'s, so the last agent turn is an explanation. */
@@ -676,42 +681,17 @@ describe('a silence after the Teacher explained', () => {
     return { h, fills };
   }
 
-  it('re-explains rather than reaching for the pool, and says so on the divider', async () => {
-    const { fills } = await explainedThenQuiet(50);
-    expect(fills.length).toBe(1);
-    const fill = fills[0]!;
-    /**
-     * **Not the pool.** A re-explanation is content, and content cannot come out of three fixed
-     * lines: the fill was generated, so it carries the model that produced it. (The *body* here
-     * is still the video script's silence beat — `ScriptedClient` keys on the cue, not the move —
-     * so what is asserted is the provenance, which is the thing this change decides.)
-     */
-    expect(fill.model).not.toBe('pool:content_free');
-    expect(fill.model).toContain('scripted:');
-    expect(fill.decided_by).toBe('rule:silence_reexplain');
-    // §C5: the divider names the cause, and since #37 it must name *which* cause.
-    expect(fill.divider_cause).toBe('45s quiet · Ellie tried again');
-  });
-
-  it('offers to step back at 90 s, which the dog-pile cap used to make unreachable', async () => {
-    const { h, fills } = await explainedThenQuiet(50);
-    expect(fills.length).toBe(1);
-    // The room is now at two consecutive agent turns — the explanation and the fill.
-    expect(h.store.rooms.get(h.roomId)!.consecutive_agent_turns).toBe(2);
-    const before = h.store.messages.forRoom(h.roomId).length;
-    await h.clock.run(60_000);
-    const second = h.store.messages.forRoom(h.roomId).slice(before);
-    expect(second.length).toBe(1);
-    expect(second[0]!.decided_by).toBe('rule:silence_reexplain');
-    expect(second[0]!.divider_cause).toBe('90s quiet · Ellie offered to step back');
-  });
-
-  it('fires at most twice, so a third quiet produces nothing at all (§C5)', async () => {
-    const { h } = await explainedThenQuiet(50);
-    await h.clock.run(60_000);
-    const before = h.store.messages.forRoom(h.roomId).length;
+  it('says nothing, at either stage, however long the quiet lasts', async () => {
+    const { h, fills } = await explainedThenQuiet(200);
+    expect(fills).toEqual([]);
+    // The timer still fired — it is the *decision* that is silent, and the log says which rule.
+    const decisions = h.store.turnDecisions.forRoom(h.roomId).filter((d) => d.trigger === 'silence');
+    expect(decisions.length).toBeGreaterThanOrEqual(1);
+    expect(decisions.at(-1)!.decided_by).toBe('rule:silence_after_explanation');
     await h.clock.run(300_000);
-    expect(h.store.messages.forRoom(h.roomId).length).toBe(before);
+    expect(h.store.messages.forRoom(h.roomId).slice(-1)[0]!.participant_id).toBe(
+      h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!.id,
+    );
   });
 
   it('goes back to the content-free line once a REFERENCE card is the last thing said', async () => {
@@ -726,7 +706,8 @@ describe('a silence after the Teacher explained', () => {
       }),
     );
     const before = h.store.messages.forRoom(h.roomId).length;
-    await h.clock.run(50_000);
+    // The 120 s floor of #47 §5's threshold; the case itself is unchanged.
+    await h.clock.run(125_000);
     const fills = h.store.messages.forRoom(h.roomId).slice(before);
     expect(fills.length).toBe(1);
     // §C5 unchanged for this case, and the divider still says "stepped in" / "offered a starting

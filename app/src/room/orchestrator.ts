@@ -5,11 +5,16 @@
  * the rules have not already settled it (architecture-options.md §C.3). The rules that matter:
  *
  *  - **Anti-dog-pile** (MASG §5.4.4): at most two consecutive agent turns, ever.
- *  - **What a silence means depends on what was said into it** (#37, `silenceDecision`): after a
- *    Teacher explanation the Teacher re-explains one level simpler; after a Tester question
- *    stage 1 stays content-free (`product-design.md` §C5) and stage 2 is the Tester's own hint.
- *    This narrows design-brief.md §D3's "Max never fires the timer", which was written when
- *    every silence was the learner not starting to explain.
+ *  - **The app fills only the silence where an answer is owed** (#47, `attempt-first.md` §5,
+ *    `silenceDecision`): after a Teacher explanation, nothing at any stage — the quiet is reading;
+ *    after a Tester question, stage 1 stays content-free (`product-design.md` §C5) and stage 2 is
+ *    the Tester's own hint. This narrows design-brief.md §D3's "Max never fires the timer", which
+ *    was written when every silence was the learner not starting to explain, and it retires #37's
+ *    re-explanation, which the transcripts say was answering a silence that meant reading.
+ *  - **The answer is withheld until one attempt** (#47, `attempt-first.md` §2.3): while a Tester
+ *    question is open, what the learner's turn *is* decides who speaks and with what move, and the
+ *    model is never asked whether it should answer its own question. That is the A1 prototype's one
+ *    important design decision, and it is here rather than in a prompt on purpose.
  *  - **The hand-off** (#33, flow-session.md §8.2): the Tester is eligible *only* when
  *    `handOffDue()` says the flow session is ready, and the Teacher's hand-off line is written
  *    here rather than generated — see `TurnDecision.handOffLine`.
@@ -39,7 +44,8 @@
  * call is the fix, which is what `rule:teacher_answers` does.
  */
 import type { AgentRole } from '../shared/types.js';
-import { feedbackDue, type HandOffVerdict, type PendingQuiz } from './flow.js';
+import type { LearnerTurnKind } from './attempt.js';
+import { attemptsOf, feedbackDue, quizOpen, type HandOffVerdict, type PendingQuiz } from './flow.js';
 import type { LLMClient, LlmRequest } from './llm/types.js';
 
 export const MAX_CONSECUTIVE_AGENT_TURNS = 2;
@@ -64,6 +70,18 @@ export interface DecisionInput {
   handOffLine?: string | null;
   /** The Tester's outstanding question, if any. Gates the mandatory feedback rule. */
   pendingQuiz?: PendingQuiz | null;
+  /**
+   * **What the learner's turn was** (`room/attempt.ts`, `attempt-first.md` §2.2), computed by the
+   * actor before anything is decided. It is what the answer lock reads, and the reason the lock is
+   * a rule: the model is never asked whether it should answer its own question (§2.3).
+   */
+  learnerTurn?: LearnerTurnKind | null;
+  /**
+   * The learner pressed **Show the answer** (§2.4). Distinct from an `answer_request` in the
+   * composer only in where it came from; both reach `rule:answer_shown`, and both require one
+   * attempt, which the actor has already checked before it gets here.
+   */
+  showAnswer?: boolean;
   /**
    * True while a REFERENCE answer on this thread is waiting for "Explain it back". Neither
    * agent may post there at all until the learner presses it (pivot-spec.md §B1, enforced in
@@ -200,6 +218,106 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
       handOffLine: null,
       failure: null,
     };
+  }
+  /**
+   * **The answer is withheld until the learner has tried once** (issue #47, `attempt-first.md`
+   * §2.3), and it is withheld *here*, in code, rather than asked for in Max's prompt.
+   *
+   * That placement is the one important design decision of the A1 prototype (§6), and the evidence
+   * is R6: both of the AI's hints were followed by a bare `answer?`, it answered both times, and
+   * the session only produced attempts after the learner typed the rule out by hand — *"I will
+   * attempt the question"*, *"do not send the answer"*. A prompt asking a model not to answer its
+   * own question is a request; this is not.
+   *
+   * Four outcomes, all of them Max's, all checked before the mandatory-feedback rule below because
+   * every one of them is about a turn that is **not** an attempt and therefore owes no feedback:
+   *
+   *  | learner turn | rule | move |
+   *  |---|---|---|
+   *  | `answer_request`, no attempt yet | `rule:answer_withheld` | `quiz_hint` |
+   *  | `answer_request` after an attempt, or the button | `rule:answer_shown` | `quiz_answer` |
+   *  | `question` | `rule:quiz_clarify` | `quiz_clarify` |
+   *  | `other` (agreement, or nothing said) | `rule:quiz_nudge` | `quiz_hint` |
+   *
+   * `quizOpen` is the gate: the question survives its own feedback turn (§2.4), so all four stay
+   * available until the answer is shown, a new question replaces it, or the sitting closes.
+   */
+  const pending = input.pendingQuiz ?? null;
+  if (pending !== null && quizOpen(pending)) {
+    const quiz = pending;
+    const attempts = attemptsOf(quiz);
+    const learnerTurn = input.trigger === 'student_message' || input.trigger === 'promote';
+    const answer = (why: string): TurnDecision => ({
+      speak: true,
+      role: 'challenger',
+      moveType: 'quiz_answer',
+      probeType: null,
+      targetElementId: quiz.elementId,
+      challenges: [],
+      rationale: why,
+      decidedBy: 'rule:answer_shown',
+      handOffLine: null,
+      failure: null,
+    });
+    if (input.showAnswer === true && attempts >= 1) {
+      return answer('The learner has attempted once and asked to see the answer; it is theirs to ask for.');
+    }
+    if (learnerTurn && input.learnerTurn === 'answer_request') {
+      if (attempts >= 1) {
+        return answer(
+          'The learner asked for the answer after attempting it once: the lock is lifted, and the ' +
+            'answer is given with its grounds.',
+        );
+      }
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'quiz_hint',
+        probeType: null,
+        targetElementId: quiz.elementId,
+        // Nothing is put under test by a hint: `challenges` gates the ledger's `defended` state,
+        // and a learner who has not answered has defended nothing.
+        challenges: [],
+        rationale:
+          'The learner asked for the answer before attempting it (R6, twice). One hint, and the ' +
+          'answer stays behind one try.',
+        decidedBy: 'rule:answer_withheld',
+        handOffLine: null,
+        failure: null,
+      };
+    }
+    if (learnerTurn && input.learnerTurn === 'question') {
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'quiz_clarify',
+        probeType: null,
+        targetElementId: quiz.elementId,
+        challenges: [],
+        rationale:
+          'The learner asked what the question means. Max clarifies it without answering it; the ' +
+          'question stays open and this is not an attempt.',
+        decidedBy: 'rule:quiz_clarify',
+        handOffLine: null,
+        failure: null,
+      };
+    }
+    if (learnerTurn && input.learnerTurn === 'other') {
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'quiz_hint',
+        probeType: null,
+        targetElementId: quiz.elementId,
+        challenges: [],
+        rationale:
+          'The learner said nothing that answers the question (ledger rule 4\u2019s agreement, which ' +
+          'is what R6 replied to eleven wrong verdicts). One hint, no answer.',
+        decidedBy: 'rule:quiz_nudge',
+        handOffLine: null,
+        failure: null,
+      };
+    }
   }
   /**
    * **Feedback after a quiz answer is mandatory** (flow-session.md §3, §8.3). Rowland 2014's
@@ -347,21 +465,28 @@ export function silenceDecision(input: DecisionInput): TurnDecision {
   const stage = input.silenceStage ?? 1;
   const last = input.lastAgentTurn ?? 'none';
 
+  /**
+   * **After an explanation, nothing** (issue #47, `attempt-first.md` §5 — and this is
+   * `product-design.md` §C5's original argument returning in full).
+   *
+   * #37 put a re-explanation here: the commonest silence in the flow is a learner who did not
+   * follow the explanation, so say it again more simply. The transcripts say otherwise. The median
+   * gap before the next learner turn in the six studied sessions is **3–6 minutes**
+   * (`findings.md` RQ5), against AI turns of 246–1,190 words — the quiet after an explanation is
+   * *reading*, and #46's own read of the re-explanation was that the first reply had been good
+   * enough and the second added little, while "step back" was opaque.
+   *
+   * So the only silence the app fills is the one where the learner **owes an answer**.
+   * `rule:silence_reexplain` and `offer_step_back` are retired; their move names survive in
+   * `NON_TEACHING_MOVES` and in `#dividerFor` so a room recorded before this build still renders.
+   */
   if (last === 'teacher_explanation') {
     return {
-      speak: true,
-      role: 'peer',
-      moveType: stage === 1 ? 'reexplain_simpler' : 'offer_step_back',
-      probeType: null,
-      targetElementId: input.suggestedTargetElement ?? null,
-      challenges: [],
+      ...SILENT,
       rationale:
-        stage === 1
-          ? 'The quiet followed an explanation, not a question: the Teacher says it again one level simpler, with no question.'
-          : 'The simpler version did not land either; the Teacher offers to step back to the prerequisite.',
-      decidedBy: 'rule:silence_reexplain',
-      handOffLine: null,
-      failure: null,
+        'The quiet followed an explanation. That is reading or leaving, and both are the learner\u2019s ' +
+        '(attempt-first.md \u00a75); the app fills only the silence where an answer is owed.',
+      decidedBy: 'rule:silence_after_explanation',
     };
   }
 
@@ -420,6 +545,8 @@ const NON_TEACHING_MOVES = new Set([
   'yield',
   'content_free_nudge',
   'incomplete_scaffold',
+  // Retired by #47 §5 — nothing produces these any more, and they stay here so that a room
+  // recorded before this build classifies its own history the way it was played.
   'reexplain_simpler',
   'offer_step_back',
   'quiz_hint',
@@ -444,6 +571,13 @@ export function classifyAgentTurn(decision: TurnDecision, previous: LastAgentTur
    * not agreed (#33), so a probe that Ellie ends up delivering still arrives here as `'peer'`.
    * What matters is whether the learner was left owing an answer, and the move is what says so.
    */
+  /**
+   * **The shown answer closes the question** (issue #47). Every other `quiz*` move leaves the
+   * learner owing one — including `quiz_clarify`, which answers a question *about* the question —
+   * but once Max has given the model answer there is nothing outstanding, so a silence after it is
+   * the silence after teaching, which §5 leaves alone.
+   */
+  if (move === 'quiz_answer') return 'teacher_explanation';
   if (/^(quiz|prob)/.test(move) && move !== 'quiz_feedback') return 'tester_question';
   // Feedback is the Tester explaining what the answer should have been, and a learner who goes
   // quiet on it has the same problem as one who goes quiet on Ellie: they did not follow it.

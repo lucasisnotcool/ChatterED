@@ -8,7 +8,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { FakeClock } from '../test-support/clock.js';
-import { answerQuiz, openQuiz, type HandOffVerdict, type QuizzableItem } from './flow.js';
+import {
+  answerQuiz,
+  markAnswerShown,
+  markFeedbackGiven,
+  openQuiz,
+  type HandOffVerdict,
+  type QuizzableItem,
+} from './flow.js';
 import {
   classifyAgentTurn,
   decideTurn,
@@ -98,8 +105,8 @@ describe('feedback after a quiz answer', () => {
 
   it('is a rule, and it outranks everything the model might prefer', () => {
     // flow-session.md §8.3: Rowland 2014, g = 0.73 with feedback against 0.39 without.
-    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10');
-    const d = ruleDecision(input({ pendingQuiz: quiz }))!;
+    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10', { attempt: true });
+    const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: 'attempt' }))!;
     expect(d.speak).toBe(true);
     expect(d.role).toBe('challenger');
     expect(d.moveType).toBe('quiz_feedback');
@@ -114,15 +121,112 @@ describe('feedback after a quiz answer', () => {
 
   it('still owes feedback when two agent turns have already run', () => {
     // The learner has just spoken, so nothing is being piled on; the debt is discharged first.
-    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10');
+    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10', { attempt: true });
     const d = ruleDecision(input({ consecutiveAgentTurns: 2, pendingQuiz: quiz }))!;
     expect(d.decidedBy).toBe('rule:quiz_feedback');
   });
 
   it('is still refused inside a locked REFERENCE thread', () => {
-    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10');
+    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10', { attempt: true });
     const d = ruleDecision(input({ pendingQuiz: quiz, referenceLocked: true }))!;
     expect(d.decidedBy).toBe('rule:reference_locked');
+  });
+});
+
+/**
+ * **The answer lock** (issue #47, `attempt-first.md` §2.3).
+ *
+ * The property: *while Max's question is open, what the learner's turn is decides the reply, and no
+ * model is consulted.* The evidence it encodes is R6 — both hints followed by a bare `answer?`, the
+ * answer given both times, and attempts appearing only after the learner imposed the rule by hand.
+ */
+describe('the answer lock while a Tester question is open', () => {
+  const clock = new FakeClock();
+  const asked = () => openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now());
+  const attempted = () => answerQuiz(asked(), 'm_10', { attempt: true });
+
+  it('withholds the answer before the first attempt, and hints instead', () => {
+    const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'answer_request' }))!;
+    expect(d.speak).toBe(true);
+    expect(d.role).toBe('challenger');
+    expect(d.moveType).toBe('quiz_hint');
+    expect(d.targetElementId).toBe('R2');
+    // A hint puts nothing under test: `challenges` is the gate on the ledger's `defended` state.
+    expect(d.challenges).toEqual([]);
+    expect(d.decidedBy).toBe('rule:answer_withheld');
+  });
+
+  it('gives the answer once the learner has attempted, on the same ask', () => {
+    const d = ruleDecision(input({ pendingQuiz: attempted(), learnerTurn: 'answer_request' }))!;
+    expect(d.role).toBe('challenger');
+    expect(d.moveType).toBe('quiz_answer');
+    expect(d.decidedBy).toBe('rule:answer_shown');
+  });
+
+  it('gives the answer on the button, which is the same rule by another door', () => {
+    const d = ruleDecision(input({ trigger: 'promote', pendingQuiz: attempted(), showAnswer: true }))!;
+    expect(d.moveType).toBe('quiz_answer');
+    expect(d.decidedBy).toBe('rule:answer_shown');
+  });
+
+  it('will not honour the button before an attempt', () => {
+    // The actor refuses first and never runs a turn; this is the second line of the same defence.
+    expect(ruleDecision(input({ trigger: 'promote', pendingQuiz: asked(), showAnswer: true }))).toBeNull();
+  });
+
+  it('clarifies a question about the question without answering it', () => {
+    const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'question' }))!;
+    expect(d.role).toBe('challenger');
+    expect(d.moveType).toBe('quiz_clarify');
+    expect(d.decidedBy).toBe('rule:quiz_clarify');
+  });
+
+  it('nudges on agreement, which is not an answer', () => {
+    const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'other' }))!;
+    expect(d.moveType).toBe('quiz_hint');
+    expect(d.decidedBy).toBe('rule:quiz_nudge');
+  });
+
+  it('lets an attempt through to the mandatory-feedback rule', () => {
+    expect(ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'attempt' }))).toBeNull();
+    const d = ruleDecision(input({ pendingQuiz: attempted(), learnerTurn: 'attempt' }))!;
+    expect(d.decidedBy).toBe('rule:quiz_feedback');
+  });
+
+  it('is still open after feedback, so a later ask is answered rather than re-locked', () => {
+    const quiz = markFeedbackGiven(attempted());
+    const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: 'answer_request' }))!;
+    expect(d.decidedBy).toBe('rule:answer_shown');
+  });
+
+  it('is closed once the answer has been shown: nothing here fires again', () => {
+    const quiz = markAnswerShown(markFeedbackGiven(attempted()));
+    for (const turn of ['answer_request', 'question', 'other'] as const) {
+      // Back to the ordinary rules — in a segment thread that is `rule:teacher_answers`.
+      const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: turn, anchoredThread: true }))!;
+      expect(d.decidedBy, turn).toBe('rule:teacher_answers');
+    }
+  });
+
+  it('never fires into a silence: a hint on a timer is the silence rule’s business', () => {
+    const d = ruleDecision(
+      input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked(), learnerTurn: 'answer_request', lastAgentTurn: 'tester_question' }),
+    )!;
+    expect(d.decidedBy).toBe('rule:silence_peer');
+  });
+
+  it('still yields to the REFERENCE lock and to the learner’s last word', () => {
+    expect(
+      ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'answer_request', referenceLocked: true }))!.decidedBy,
+    ).toBe('rule:reference_locked');
+    expect(ruleDecision(input({ trigger: 'wrap_up', pendingQuiz: asked(), learnerTurn: 'answer_request' }))!.decidedBy).toBe(
+      'rule:last_word',
+    );
+  });
+
+  it('outranks the hand-off: an open question is answered before a new one is set', () => {
+    const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'other', handOff: due() }))!;
+    expect(d.decidedBy).toBe('rule:quiz_nudge');
   });
 });
 
@@ -308,21 +412,19 @@ describe('the silence rule reads what the quiet is quiet about', () => {
   const silence = (overrides: Partial<DecisionInput> = {}) =>
     ruleDecision(input({ trigger: 'silence', silenceStage: 1, ...overrides }))!;
 
-  it('re-explains one level simpler when the quiet followed a Teacher explanation', () => {
-    const d = silence({ lastAgentTurn: 'teacher_explanation' });
-    expect(d.speak).toBe(true);
-    expect(d.role).toBe('peer');
-    expect(d.moveType).toBe('reexplain_simpler');
-    expect(d.decidedBy).toBe('rule:silence_reexplain');
-    // A real generated turn, not the pool: `#generate` only short-circuits `content_free_nudge`.
-    expect(d.moveType).not.toBe('content_free_nudge');
-  });
-
-  it('offers to step back at stage 2, when the simpler version did not land either', () => {
-    const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2 });
-    expect(d.role).toBe('peer');
-    expect(d.moveType).toBe('offer_step_back');
-    expect(d.decidedBy).toBe('rule:silence_reexplain');
+  /**
+   * **Superseded by `attempt-first.md` §5** (issue #47). #37's re-explanation and its stage-2
+   * "step back" were answering a silence that the transcripts say means *reading*: the median gap
+   * before the next learner turn in the six studied sessions is 3–6 minutes, against AI turns of
+   * 246–1,190 words (`findings.md` RQ5). Nothing is said at either stage now.
+   */
+  it('says nothing at all when the quiet followed a Teacher explanation', () => {
+    for (const stage of [1, 2] as const) {
+      const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: stage });
+      expect(d.speak, `stage ${stage}`).toBe(false);
+      expect(d.role, `stage ${stage}`).toBeNull();
+      expect(d.decidedBy, `stage ${stage}`).toBe('rule:silence_after_explanation');
+    }
   });
 
   it('keeps §C5 whole while the Tester is waiting: stage 1 adds no subject matter', () => {
@@ -355,18 +457,23 @@ describe('the silence rule reads what the quiet is quiet about', () => {
   });
 
   it('is checked before the dog-pile cap, because a silence is nobody piling on', () => {
-    // An explanation (1) plus a stage-1 fill (2) sits at the cap, so before #37 stage 2 could
-    // never be reached at all — `incomplete_scaffold` and `offer_step_back` were both dead code.
-    const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2, consecutiveAgentTurns: 2 });
+    // A question (1) plus a stage-1 fill (2) sits at the cap, so before #37 stage 2 could never be
+    // reached at all — `incomplete_scaffold` and the Tester's hint were both dead code.
+    const d = silence({
+      lastAgentTurn: 'tester_question',
+      silenceStage: 2,
+      consecutiveAgentTurns: 2,
+      pendingQuiz: openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0),
+    });
     expect(d.speak).toBe(true);
-    expect(d.decidedBy).toBe('rule:silence_reexplain');
+    expect(d.decidedBy).toBe('rule:silence_hint');
     // The cap still governs everything that is not a silence.
     expect(ruleDecision(input({ consecutiveAgentTurns: 2 }))!.decidedBy).toBe('rule:no_dogpile');
   });
 
   it('still yields to the REFERENCE lock, which outranks every fill', () => {
     const d = ruleDecision(
-      input({ trigger: 'silence', silenceStage: 1, lastAgentTurn: 'teacher_explanation', referenceLocked: true }),
+      input({ trigger: 'silence', silenceStage: 1, lastAgentTurn: 'tester_question', referenceLocked: true }),
     )!;
     expect(d.speak).toBe(false);
     expect(d.decidedBy).toBe('rule:reference_locked');
@@ -398,6 +505,18 @@ describe('classifying the turn a silence follows', () => {
 
   it('treats quiz feedback as teaching, because that is what it is', () => {
     expect(classifyAgentTurn(decision('quiz_feedback', 'challenger'), 'tester_question')).toBe('teacher_explanation');
+  });
+
+  /**
+   * Issue #47. A hint and a clarification both leave the learner owing the answer, so the thread
+   * still belongs to Max's question and a stage-2 quiet still earns his hint. The shown answer is
+   * the one Tester move that closes it: after it, §5 leaves the silence alone.
+   */
+  it('keeps the question outstanding through a hint and a clarification, and closes it on the answer', () => {
+    expect(classifyAgentTurn(decision('quiz_hint', 'challenger'), 'tester_question')).toBe('tester_question');
+    expect(classifyAgentTurn(decision('quiz_clarify', 'challenger'), 'tester_question')).toBe('tester_question');
+    expect(classifyAgentTurn(decision('quiz_clarify', 'challenger'), 'none')).toBe('tester_question');
+    expect(classifyAgentTurn(decision('quiz_answer', 'challenger'), 'tester_question')).toBe('teacher_explanation');
   });
 
   it('does not let a fill, a yield or the opener rewrite what the thread is about', () => {

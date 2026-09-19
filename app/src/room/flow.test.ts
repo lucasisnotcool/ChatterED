@@ -16,6 +16,10 @@ import {
   insideHorizon,
   markFeedbackGiven,
   answerQuiz,
+  answerShownOf,
+  attemptsOf,
+  markAnswerShown,
+  quizOpen,
   openQuiz,
   expireQuizOnClose,
   recency,
@@ -38,6 +42,7 @@ import {
   type FlowSession,
   type HandOffInput,
   type HandOffVerdict,
+  type PendingQuiz,
   type TaughtItem,
 } from './flow.js';
 import { rosterFor } from './agents.js';
@@ -606,18 +611,69 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     expect(feedbackDue(null)).toBe(false);
   });
 
-  it('is due the moment the learner answers, and stays due until it is delivered', () => {
+  it('is due the moment the learner attempts, and stays due until it is delivered', () => {
     let quiz = openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0);
-    quiz = answerQuiz(quiz, 'm_10');
+    quiz = answerQuiz(quiz, 'm_10', { attempt: true });
     expect(feedbackDue(quiz)).toBe(true);
     expect(feedbackDue(markFeedbackGiven(quiz))).toBe(false);
   });
 
-  it('only the first answer counts, so a follow-up does not re-open the debt', () => {
-    let quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10');
+  /**
+   * **Superseded by `attempt-first.md` §2.3** (issue #47). The old test here asserted that only
+   * the *first* answer counted, so a second answer could not re-open the debt. The attempt loop
+   * invites a revision after feedback — §2.4's "Try another" and the learner's own second go — and
+   * Rowland 2014's number is about feedback on *an attempt*, not on the first one. So each attempt
+   * re-opens it, and only an attempt does.
+   */
+  it('re-opens the debt on a second attempt, and on nothing else', () => {
+    let quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
     quiz = markFeedbackGiven(quiz);
-    expect(answerQuiz(quiz, 'm_11').answerMessageId).toBe('m_10');
     expect(feedbackDue(quiz)).toBe(false);
+
+    const asked = answerQuiz(quiz, 'm_11', { attempt: false });
+    expect(asked.answerMessageId).toBe('m_10');
+    expect(asked.attempts).toBe(1);
+    expect(feedbackDue(asked)).toBe(false);
+
+    const again = answerQuiz(quiz, 'm_12', { attempt: true });
+    expect(again.attempts).toBe(2);
+    expect(feedbackDue(again)).toBe(true);
+  });
+
+  it('counts attempts, and only attempts', () => {
+    let quiz = openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0);
+    expect(attemptsOf(quiz)).toBe(0);
+    quiz = answerQuiz(quiz, 'm_10', { attempt: false });
+    expect(attemptsOf(quiz)).toBe(0);
+    expect(quiz.answerMessageId).toBeNull();
+    quiz = answerQuiz(quiz, 'm_11', { attempt: true });
+    expect(attemptsOf(quiz)).toBe(1);
+  });
+
+  /**
+   * A row written before #47 has neither field. It has to read as "nobody has tried yet", which is
+   * the safe end of the lock: the answer stays withheld until the learner does something.
+   */
+  it('reads a pre-#47 persisted quiz as no attempts and no answer shown', () => {
+    const old = { quizMessageId: 'm_9', elementId: 'R1', askedAt: t0, answerMessageId: null, feedbackGiven: false } as PendingQuiz;
+    expect(attemptsOf(old)).toBe(0);
+    expect(answerShownOf(old)).toBe(false);
+    expect(quizOpen(old)).toBe(true);
+    expect(answerQuiz(old, 'm_10', { attempt: true }).attempts).toBe(1);
+  });
+
+  /**
+   * §2.4: the question survives its own feedback, because *"Show the answer"* and *"Try another"*
+   * both act on it afterwards. Only the shown answer closes it.
+   */
+  it('stays open through feedback and closes on the shown answer', () => {
+    let quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+    quiz = markFeedbackGiven(quiz);
+    expect(quizOpen(quiz)).toBe(true);
+    quiz = markAnswerShown(quiz);
+    expect(quizOpen(quiz)).toBe(false);
+    expect(answerShownOf(quiz)).toBe(true);
+    expect(quizOpen(null)).toBe(false);
   });
 
   it('an unanswered quiz expires at session close rather than becoming a debt', () => {
@@ -625,7 +681,7 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     // against debts.
     const unanswered = openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0);
     expect(expireQuizOnClose(unanswered).expired).toBe(unanswered);
-    expect(expireQuizOnClose(answerQuiz(unanswered, 'm_10')).expired).toBeNull();
+    expect(expireQuizOnClose(answerQuiz(unanswered, 'm_10', { attempt: true })).expired).toBeNull();
   });
 });
 

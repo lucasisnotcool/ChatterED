@@ -16,6 +16,7 @@ import type {
   AgentProfile,
   ReplySpeed,
   StopTurnResult,
+  FlowQuizView,
   FlowWhisperView,
   MessageView,
   RecapView,
@@ -50,12 +51,16 @@ import {
   shouldOfferSummary,
   summaryInThread,
 } from './summary.js';
+import { classifyLearnerTurn, quizCue, type LearnerTurnKind } from './attempt.js';
 import {
   FLOW,
   answerQuiz,
+  attemptsOf,
   handOffDue,
   handOffLine,
+  markAnswerShown,
   markFeedbackGiven,
+  quizOpen,
   noteActivity,
   noteHandOff,
   openQuiz,
@@ -85,6 +90,7 @@ import {
   ledgerDirective,
   quizBlock,
   taughtBlock,
+  type QuizTurn,
   teachObjectiveBlock,
   whereBlock,
 } from './prompts.js';
@@ -93,7 +99,7 @@ import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
-import { SilenceTimer } from './timer.js';
+import { SilenceTimer, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
 import { ledgerView, messageView, timerView, whisperTurnView } from './views.js';
 
 /** No agent indicator at all for the first 8 s after a learner message (product-design.md §C3). */
@@ -304,7 +310,27 @@ export class RoomActor {
   #silenceFires = 0;
   #whisperTurns = 0;
   #lastProbeType: string | null = null;
-  #handOffs = 0;
+  /**
+   * **Tester questions asked in this actor's lifetime, across both doors** (issue #47).
+   *
+   * The time-based hand-off (`rule:handoff`) and "+ Try this" (`rule:try_here`) both ask one, and
+   * every turn that belongs to question *N* — the question, its feedback, its hints, its
+   * clarifications, its answer — carries `:N` in its script cue (`attempt.quizCue`). One counter,
+   * because the scripted beats are written against those names and a second counter would let the
+   * feedback for question 2 be cued as question 1's.
+   */
+  #testerQuestions = 0;
+  /**
+   * **What the learner's last turn was** (`attempt.ts`), carried from the mailbox tick that wrote
+   * the row to the decision that answers it. The answer lock reads it; nothing else may.
+   */
+  #lastLearnerTurn: LearnerTurnKind | null = null;
+  /**
+   * **This window's silence thresholds** (#47 §5), from the word count of the last agent turn. Kept
+   * here as well as in the timer because the divider copy ("Ns quiet · …") has to name the same
+   * number the timer actually waited.
+   */
+  #stages: SilenceStages;
   #lastFillWasScaffold = false;
   #typingUntil = 0;
   #openedAt: number;
@@ -457,6 +483,8 @@ export class RoomActor {
     this.#pitch = deps.flowState?.pitch ?? DEFAULT_PITCH;
     this.#offeredSummary = new Set(deps.flowState?.offeredSummary ?? []);
     const room = this.#room();
+    // The room's own constants until the first turn says how much there was to read.
+    this.#stages = { stageOneMs: deps.config.silence_ms, stageTwoMs: deps.config.stage_two_ms };
     this.#timer = new SilenceTimer({
       clock: deps.clock,
       config: deps.config,
@@ -597,9 +625,22 @@ export class RoomActor {
         body,
         anchorId,
       });
-      // An answer to the Tester's outstanding question puts the room in feedback debt, which
-      // `ruleDecision` then discharges before anything else can be decided.
-      if (this.#pendingQuiz) this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id);
+      /**
+       * **What this turn is, while Max's question is open** (issue #47, `attempt-first.md` §2.2).
+       *
+       * Classified here, on the row the learner just wrote, and read by the rules in
+       * `orchestrator.ruleDecision` — so the decision to withhold or give the answer is made from
+       * the learner's own words and never from a model's reading of them.
+       *
+       * Only an **attempt** puts the room in feedback debt. An answer request, a clarification or
+       * an "ok" leaves the count where it is, which is what makes the lock about having tried.
+       */
+      this.#lastLearnerTurn = classifyLearnerTurn(body);
+      if (this.#pendingQuiz) {
+        this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
+          attempt: this.#lastLearnerTurn === 'attempt',
+        });
+      }
       studentMessageId = row.id;
       this.#event('student', 'message.send', { seq: row.seq, chars: body.length, anchor_id: anchorId });
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
@@ -751,6 +792,98 @@ export class RoomActor {
       .find((m) => m.seq === before + 1);
 
     return { questionId: asked?.id ?? '', scopeShown: input.context.scopeShown };
+  }
+
+  // ── "+ Try this" and "Show the answer" — the attempt loop (issue #47) ─────
+
+  /**
+   * **"+ Try this"** on a segment (`attempt-first.md` §2.1): the learner asks Max for one question.
+   *
+   * This is the **hero interaction** of the A1 prototype, and the reason it exists is that the
+   * alternative does not work: in five of the six studied sessions the learner never produced an
+   * attempt, the AI never asked for one, and *every* offer to quiz was declined — 0 of 10 in R2, 0
+   * of 3 in R5 (`findings.md` §3.0, RQ3). A declinable offer after a rate rule is what learners
+   * decline, so the Tester becomes **askable and default** and the time-based hand-off
+   * (`rule:handoff`, unchanged) becomes the secondary door onto the same `pendingQuiz`.
+   *
+   * What it does, in order: tag the thread with the objective, remember the page (so Max can quote
+   * it — `whereBlock` is now in his note too), open the sitting, and run one Tester turn whose
+   * decision is written here rather than by a model. `#noteTurnForFlow` opens the quiz off that
+   * turn's `moveType: 'quiz'`, which is what arms the answer lock.
+   */
+  async tryHere(input: {
+    anchorId: string;
+    objectiveId: string;
+    /** The page the question is asked on, resolved by `flowroom.referenceContext()` like an Ask. */
+    context?: ReferenceContext;
+  }): Promise<{ anchorId: string; objectiveId: string }> {
+    this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
+    if (input.context) this.#askContext.set(input.anchorId, input.context);
+    this.#noteLearnerActivity('ask', input.anchorId);
+    this.#event('student', 'flow.try', {
+      anchor_id: input.anchorId,
+      objective_id: input.objectiveId,
+      // Which door this question came through, so the log can separate the two (§2.4).
+      door: 'try_here',
+      question_number: this.#testerQuestions + 1,
+    });
+    await this.#runAgentTurn('promote', {
+      anchorId: input.anchorId,
+      tryHere: { objectiveId: input.objectiveId },
+    });
+    return { anchorId: input.anchorId, objectiveId: input.objectiveId };
+  }
+
+  /**
+   * **"Show the answer"** (§2.4), which is only ever visible after one attempt.
+   *
+   * The refusal is the product decision, so it lives here and not in the renderer — the same
+   * argument `stopTurn` makes about its own. Before the first attempt the composer shows a quiet
+   * line instead of the control, and if an older renderer calls anyway it is told why rather than
+   * answered.
+   */
+  async showAnswer(anchorId: string): Promise<{ shown: boolean; refused: string | null }> {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null || !quizOpen(quiz) || this.#anchorOfQuiz(quiz) !== anchorId) {
+      return { shown: false, refused: 'There is no open question here.' };
+    }
+    if (attemptsOf(quiz) < 1) {
+      // §2.4's own words, so the copy the learner sees and the reason the code gives are one string.
+      return { shown: false, refused: "Max won't give the answer until you've tried once." };
+    }
+    this.#noteLearnerActivity('ask', anchorId);
+    await this.#runAgentTurn('promote', { anchorId, showAnswer: true });
+    return { shown: true, refused: null };
+  }
+
+  /**
+   * **The open question, and which thread it is in** (§2.4), for `flowRoomView` to project onto
+   * `FlowThreadView.quiz`.
+   *
+   * The anchor is read off the Tester's own message row rather than stored on `PendingQuiz`: the
+   * row is where a message's thread lives, and a second copy of it is a second thing that can
+   * disagree. `null` when nothing is open — including once the answer has been shown, which is
+   * exactly when the renderer should stop offering to show it.
+   */
+  pendingQuizView(): { anchorId: string; quiz: FlowQuizView } | null {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null) return null;
+    const anchorId = this.#anchorOfQuiz(quiz);
+    if (anchorId === null) return null;
+    return {
+      anchorId,
+      quiz: {
+        quizMessageId: quiz.quizMessageId,
+        elementId: quiz.elementId,
+        attempts: attemptsOf(quiz),
+        feedbackGiven: quiz.feedbackGiven === true,
+        answerShown: quiz.answerShown === true,
+      },
+    };
+  }
+
+  #anchorOfQuiz(quiz: PendingQuiz): string | null {
+    return this.#d.store.messages.get(quiz.quizMessageId)?.anchor_id ?? null;
   }
 
   /**
@@ -1334,7 +1467,7 @@ export class RoomActor {
         .forRoom(this.#d.roomId)
         .map((m) => messageView(m, participants, this.#d.roster, references.get(m.id))),
       ledger: ledgerView(this.#ledgerRows(), this.#d.pack),
-      timer: timerView(this.#timer.snapshot, this.#d.config.silence_ms, this.#d.clock.now(), this.#typingActive()),
+      timer: timerView(this.#timer.snapshot, this.#timer.snapshot.stageOneMs, this.#d.clock.now(), this.#typingActive()),
       thinking: this.#thinking,
       nudgesPaused: this.#timer.snapshot.nudgesPaused,
       mode: this.#d.config.mode,
@@ -1361,6 +1494,14 @@ export class RoomActor {
        * and the orchestrator is skipped. Everything else about the turn is unchanged.
        */
       teach?: { objectiveId: string; title: string };
+      /**
+       * **"+ Try this"** (#47 §2.1): likewise named by the learner. One Tester question on this
+       * objective, decided here rather than by a model, and it opens the quiz the answer lock runs
+       * on.
+       */
+      tryHere?: { objectiveId: string };
+      /** **Show the answer** (#47 §2.4): the button's door into `rule:answer_shown`. */
+      showAnswer?: boolean;
     } = {},
   ): Promise<void> {
     /**
@@ -1475,6 +1616,14 @@ export class RoomActor {
       anchoredThread: anchorId !== null,
       // What the quiet is quiet *about* (#37, `silenceDecision`).
       lastAgentTurn: this.#lastAgentTurn,
+      /**
+       * **The answer lock's two inputs** (#47 §2.3). The classification is only meaningful on a
+       * learner turn, so it is cleared on anything else rather than left to go stale — a silence
+       * fill must not be read as the learner having asked for the answer again.
+       */
+      learnerTurn:
+        trigger === 'student_message' || trigger === 'promote' ? this.#lastLearnerTurn : null,
+      showAnswer: opts.showAnswer === true,
     };
 
     const cue =
@@ -1497,13 +1646,46 @@ export class RoomActor {
      * rail is a side-channel and is now wired as one: it animates when it animates, and the code
      * above it is the conversation.
      */
-    if (trigger === 'student_message' || trigger === 'promote') {
+    /**
+     * **The ledger does not run on the answer** (issue #47, `attempt-first.md` §2.3: *"the ledger
+     * is not run on this turn and never moves on a shown answer"*).
+     *
+     * Two turns are excluded. The **Show the answer** button is not a learner turn at all — there
+     * is no new message to judge, and running the ledger here would re-judge the previous one. An
+     * **answer request** is a learner turn, but it is the learner asking to be told; ledger rule 1
+     * already makes it impossible for Max's words to become the learner's evidence, and this is the
+     * same guarantee said once more where it is cheap to check.
+     */
+    const ledgerRuns =
+      (trigger === 'student_message' || trigger === 'promote') &&
+      opts.showAnswer !== true &&
+      this.#lastLearnerTurn !== 'answer_request';
+    if (ledgerRuns) {
       // `#updateLedger` catches its own failures and surfaces them as a card, so nothing here
       // can reject; the `catch` is belt and braces against a future edit that changes that.
       void this.#updateLedger(cue, turnStart).catch(() => undefined);
     }
     const decidedAt = this.#d.clock.now();
-    const decision = opts.teach
+    const decision = opts.tryHere
+      ? /**
+         * **"+ Try this"** (#47 §2.1). The learner asked Max for a question on this objective;
+         * there is nothing for a model to decide, and `rule:handoff` is not the only door any more.
+         * `challenges` carries the element because a question *is* what puts it under test — which
+         * is the difference between this and the hint the answer lock gives, where nothing is.
+         */
+        ({
+          speak: true,
+          role: 'challenger',
+          moveType: 'quiz',
+          probeType: null,
+          targetElementId: opts.tryHere.objectiveId,
+          challenges: [opts.tryHere.objectiveId],
+          rationale: 'The learner pressed "+ Try this": the Tester asks one question on this objective.',
+          decidedBy: 'rule:try_here',
+          handOffLine: null,
+          failure: null,
+        } satisfies TurnDecision)
+      : opts.teach
       ? ({
           speak: true,
           role: 'peer',
@@ -1526,6 +1708,28 @@ export class RoomActor {
     });
 
     this.#recordDecision(trigger, decision);
+    /**
+     * **The lock, in the event log** (#47 §2.3). These two lines are what the A1 log can be asked
+     * "how often was the answer asked for before a try, and how often after" — the question the
+     * report's DG1 claim rests on.
+     */
+    if (decision.decidedBy === 'rule:answer_withheld') {
+      this.#event('challenger', 'quiz.answer_withheld', {
+        element_id: decision.targetElementId,
+        attempts: attemptsOf(this.#pendingQuiz),
+        anchor_id: anchorId,
+      });
+    }
+    if (decision.decidedBy === 'rule:answer_shown') {
+      this.#event('challenger', 'quiz.answer_shown', {
+        element_id: decision.targetElementId,
+        attempts: attemptsOf(this.#pendingQuiz),
+        by: opts.showAnswer === true ? 'button' : 'answer_request',
+        anchor_id: anchorId,
+        // §2.3, stated where it can be audited rather than only in the comment above the call.
+        ledger_touched: false,
+      });
+    }
     /**
      * **A decision that failed is never allowed to look like a decision to say nothing.**
      *
@@ -1552,7 +1756,19 @@ export class RoomActor {
     }
 
     const agent = agentByRole(this.#d.roster, decision.role);
-    const target = this.#floor(latencyTargetMs(agent, this.#d.config.latency_scale, this.#rand));
+    /**
+     * **A question the learner asked for arrives at the Teacher's band** (#47 §2.1).
+     *
+     * The Tester's 9–12 s floor is Tan et al.'s considered judgement, and it is right for
+     * *feedback*: the learner has answered and the wait says the answer is being weighed. It is
+     * wrong for the question itself when the learner has just pressed a button asking for one, so
+     * a "+ Try this" question uses the Teacher's band (`LATENCY.peer`, 4–6 s — the brief says 3–6 s
+     * and the code's own band is the single source of it). Everything else about the turn, feedback
+     * included, keeps the Tester's band.
+     */
+    const band =
+      decision.decidedBy === 'rule:try_here' ? agentByRole(this.#d.roster, 'peer').latency : agent.latency;
+    const target = this.#floor(latencyTargetMs({ ...agent, latency: band }, this.#d.config.latency_scale, this.#rand));
     this.#d.store.rooms.update(this.#d.roomId, {
       state: 'agent_scheduled',
       pending_turn_id: pending.id,
@@ -1592,7 +1808,7 @@ export class RoomActor {
      * in the code it is the same treatment the stage-1 nudge pool already gets.
      */
     if (decision.decidedBy === 'rule:handoff' && decision.handOffLine) {
-      this.#handOffs += 1;
+      this.#testerQuestions += 1;
       // R1b (`flow.requiresTurnsSinceHandOff`): the Demo profile counts learner turns from here,
       // so a second walkthrough in the same sitting teaches again before it quizzes again.
       if (this.#flow) this.#flow = noteHandOff(this.#flow, this.#d.clock.now());
@@ -1608,14 +1824,29 @@ export class RoomActor {
       });
     }
 
-    // A hand-off and its feedback turn have their own script cues, so the video path can carry
-    // Max's question and his feedback without the orchestrator's cue doing double duty.
+    // "+ Try this" is the other door onto the same counter, and it is counted here for the same
+    // reason the hand-off is above: the cue has to carry the question's number.
+    if (decision.decidedBy === 'rule:try_here') this.#testerQuestions += 1;
+    /**
+     * **The script cues of one Tester question** (#47; `attempt.quizCue`). Every turn that belongs
+     * to question N carries `:N`, so the scripted backend can hold a whole attempt loop — question,
+     * attempt, feedback, hint, clarification, answer — as named beats, and a second question's
+     * feedback can never be played against the first.
+     */
     const turnCue =
       decision.decidedBy === 'rule:handoff'
-        ? `handoff:${this.#handOffs}`
-        : decision.moveType === 'quiz_feedback'
-          ? `feedback:${this.#handOffs}`
-          : cue;
+        ? quizCue('handoff', this.#testerQuestions)
+        : decision.decidedBy === 'rule:try_here'
+          ? quizCue('try', this.#testerQuestions)
+          : decision.moveType === 'quiz_feedback'
+            ? quizCue('feedback', this.#testerQuestions)
+            : decision.moveType === 'quiz_hint'
+              ? quizCue('hint', this.#testerQuestions)
+              : decision.moveType === 'quiz_clarify'
+                ? quizCue('clarify', this.#testerQuestions)
+                : decision.moveType === 'quiz_answer'
+                  ? quizCue('answer', this.#testerQuestions)
+                  : cue;
 
     /**
      * Generate now; hold the tokens until the floor. The buffer is the product decision.
@@ -1828,6 +2059,13 @@ export class RoomActor {
 
     this.#pending = null;
     this.#lastAgentTurn = classifyAgentTurn(decision, this.#lastAgentTurn);
+    /**
+     * **How long the next silence has to be** (#47 §5): the reading time of what was just said,
+     * doubled and clamped. A *fill* is deliberately excluded — the learner is still reading the turn
+     * the fill interrupted, and `#armTimer(true)` therefore leaves the window's thresholds where
+     * they were.
+     */
+    if (trigger !== 'silence') this.#stages = silenceStagesMs(wordCount(text));
     this.#lastFillWasScaffold = trigger === 'silence' && opts.silenceStage === 2;
     if (decision.probeType) this.#lastProbeType = decision.probeType;
     for (const id of decision.challenges) this.#challenged.add(id);
@@ -2084,6 +2322,9 @@ export class RoomActor {
         probeType: decision.probeType ?? undefined,
         targetElementId: decision.targetElementId ?? undefined,
         note: this.#turnNote(decision),
+        // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
+        // clause, and the rule name is what tells them apart.
+        byRule: decision.decidedBy,
       },
     });
     request.meta.scriptCue = cue;
@@ -2404,8 +2645,17 @@ export class RoomActor {
       this.#pendingQuiz = openQuiz({ quizMessageId: messageId, elementId: decision.targetElementId }, now);
     }
     if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
-      // Rowland 2014's constraint is discharged only when the feedback turn actually landed.
+      // Rowland 2014's constraint is discharged only when the feedback turn actually landed. It is
+      // per *attempt* since #47: a second attempt re-opens it (`flow.answerQuiz`).
       this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz);
+    }
+    /**
+     * **The answer closes the question** (#47 §2.3), and closes it only once it has actually
+     * landed — the same discipline as the feedback flag above. After this `quizOpen` is false, so
+     * none of the answer-lock rules can fire again on this question and "Show the answer" goes away.
+     */
+    if (decision.moveType === 'quiz_answer' && this.#pendingQuiz) {
+      this.#pendingQuiz = markAnswerShown(this.#pendingQuiz);
     }
   }
 
@@ -2452,12 +2702,20 @@ export class RoomActor {
     if (decision.role === 'challenger' && decision.targetElementId) {
       const element = this.#d.pack.elements.find((e) => e.id === decision.targetElementId);
       if (!element) return undefined;
-      return quizBlock({
+      const quiz = quizBlock({
         label: element.learner_label || element.label,
         seeds: element.quiz_seeds ?? [],
         demonstration: element.demonstration ?? [],
-        feedback: decision.moveType === 'quiz_feedback',
+        turn: quizTurnFor(decision),
       });
+      /**
+       * **The Tester gets the page too, since #47 §3.** He is asked to ground every point as
+       * `p. N: "…"`, quoting the page's own words — which he cannot do from a 58-page prefix he has
+       * to find the slide in. Same block the Teacher reads, same resolver, so the quote he offers
+       * and the slide the learner is looking at are the same text.
+       */
+      const where = this.#whereNote();
+      return [where, quiz].filter((b): b is string => typeof b === 'string' && b.length > 0).join('\n\n') || undefined;
     }
     /**
      * The Teacher's note is now **several blocks**, in the order she should read them: what this
@@ -2687,9 +2945,9 @@ export class RoomActor {
    * the learner is told a timer fired at all.
    */
   #dividerFor(stage: 1 | 2, agent: AgentProfile, moveType: string): string {
-    const seconds = Math.round(
-      (stage === 1 ? this.#d.config.silence_ms : this.#d.config.stage_two_ms) / 1000,
-    );
+    // #47 §5: the number the learner reads is the one the timer actually waited, which is no longer
+    // a constant — it is the reading time of the turn they went quiet on.
+    const seconds = Math.round((stage === 1 ? this.#stages.stageOneMs : this.#stages.stageTwoMs) / 1000);
     const what =
       moveType === 'reexplain_simpler'
         ? 'tried again'
@@ -2895,9 +3153,12 @@ export class RoomActor {
       this.#turnLog.event('warn', 'timer.held', { reason: this.#nudgesHeldForFailure ? 'turn_failed' : 'turn_stopped' });
       return;
     }
-    this.#timer.arm({ keepCumulativeIdle: afterFill });
+    // #47 §5: a fresh window is armed on the reading time of the turn that opened it; a fill keeps
+    // the window it interrupted, because an agent speaking into a silence does not end the silence.
+    this.#timer.arm(afterFill ? { keepCumulativeIdle: true } : { stages: this.#stages });
     this.#turnLog.event('debug', 'timer.armed', {
-      silence_ms: this.#d.config.silence_ms,
+      stage_one_ms: this.#stages.stageOneMs,
+      stage_two_ms: this.#stages.stageTwoMs,
       after_fill: afterFill,
     });
   }
@@ -2906,7 +3167,7 @@ export class RoomActor {
     this.#d.transport.emit({
       type: 'timer.updated',
       roomId: this.#d.roomId,
-      timer: timerView(this.#timer.snapshot, this.#d.config.silence_ms, this.#d.clock.now(), this.#typingActive()),
+      timer: timerView(this.#timer.snapshot, this.#timer.snapshot.stageOneMs, this.#d.clock.now(), this.#typingActive()),
     });
   }
 
@@ -3062,6 +3323,28 @@ export function failureReason(err: unknown): string {
   if (/rate|429|overloaded|529/i.test(message)) return 'the model was overloaded';
   if (/network|ECONN|fetch|socket/i.test(message)) return 'the connection dropped';
   return 'the call failed';
+}
+
+/**
+ * **Which turn of the attempt loop a Tester decision is** (issue #47 §2.3), for `quizBlock`.
+ *
+ * Keyed on the move, which is what the rules set, and not on the rule name: `quiz_hint` arrives from
+ * three rules and only one of them changes what the *note* should say (the other two are hints in
+ * the ordinary sense, and `turnDirective` handles the difference).
+ */
+function quizTurnFor(decision: TurnDecision): QuizTurn {
+  switch (decision.moveType) {
+    case 'quiz_feedback':
+      return 'feedback';
+    case 'quiz_answer':
+      return 'answer';
+    case 'quiz_clarify':
+      return 'clarify';
+    case 'quiz_hint':
+      return decision.decidedBy === 'rule:answer_withheld' ? 'hint_withheld' : 'question';
+    default:
+      return 'question';
+  }
 }
 
 function scriptRelayOffer(turn: number): { draftText: string; defaultAttribution: RelayAttribution } | null {

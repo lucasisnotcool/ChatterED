@@ -11,8 +11,11 @@
  * throttling, quit and relaunch, none of which a `setTimeout` survives (§C.3).
  *
  * Semantics (design-brief.md §D3, product-design.md §C4/§C5 — these are the hand-owned parts):
- * - stage 1 at 45 s **idle**, where idle is `pivot-spec.md` §B8's predicate — no keystroke in
- *   any composer *and* no selection change; stage 2 at 90 s *cumulative* idle;
+ * - **the thresholds scale to the last agent turn** (#47, `attempt-first.md` §5, `silenceStagesMs`):
+ *   stage 1 at `clamp(2 × words / 238 wpm, 120 s, 300 s)` of **idle**, where idle is
+ *   `pivot-spec.md` §B8's predicate — no keystroke in any composer *and* no selection change;
+ *   stage 2 at stage 1 + 90 s *cumulative* idle. The #8 constants (45 s / 90 s) are what
+ *   `RoomConfig` still carries and what an un-armed or recovered window falls back to;
  * - typing pauses the timer, and nothing else does. Whispering does not (§C.4): whispering is
  *   not explaining to the group;
  * - `cumulativeIdleMs` is NOT reset by typing — it is what drives stage 2 on schedule;
@@ -34,6 +37,14 @@ export interface TimerSnapshot {
   nudgesPaused: boolean;
   /** When the current silence window started (the last group activity). */
   windowStartTs: number | null;
+  /**
+   * **This window's thresholds** (#47 §5), from `silenceStagesMs` on the last agent turn's word
+   * count. They are in memory only: the *deadline* is what survives a relaunch (the row is the
+   * timer), and a recovered window falls back to the room config's constants for its stage-2
+   * comparison, which is the same conservative direction the late-fire cut-off already takes.
+   */
+  stageOneMs: number;
+  stageTwoMs: number;
 }
 
 export interface TimerFire {
@@ -104,6 +115,49 @@ export function isIdle(input: IdleInput, now: number, idleMs: number): boolean {
   return last === null || now - last >= idleMs;
 }
 
+/**
+ * **How long the quiet has to last before it counts** (issue #47, `attempt-first.md` §5).
+ *
+ * The 45 s / 90 s constants (#8) were written for a chat where a turn was a sentence. In the six
+ * studied sessions the AI wrote 246–1,190 words per turn and the median gap before the next learner
+ * turn was **3–6 minutes** (`findings.md` RQ5) — so 45 s of quiet was not a learner disengaging, it
+ * was a learner on line four of what they had been given, and the nudge arrived as an interruption.
+ *
+ * So the threshold scales to what there was to read:
+ *
+ *   stage 1 = clamp(2 × words / 238 wpm, 120 s, 300 s),  stage 2 = stage 1 + 90 s
+ *
+ * 238 wpm is Brysbaert 2019's mean silent reading rate for English prose. **The ×2 is a designer's
+ * margin**, not a finding: reading a dense slide with notation in it is slower than reading prose,
+ * and the cost of nudging too early (an interruption, and one of the two fires per round spent) is
+ * higher than the cost of nudging late. The floor keeps a one-line check-in from firing at 5 s; the
+ * ceiling keeps a 1,200-word wall of text from switching the timer off altogether.
+ *
+ * Stage 2's +90 s is unchanged from #8 — it is a *second* wait on top of the first, not a total.
+ */
+export const READING_WPM = 238;
+export const READING_MARGIN = 2;
+export const STAGE_ONE_FLOOR_MS = 120_000;
+export const STAGE_ONE_CEILING_MS = 300_000;
+export const STAGE_TWO_GAP_MS = 90_000;
+
+export interface SilenceStages {
+  stageOneMs: number;
+  stageTwoMs: number;
+}
+
+export function silenceStagesMs(words: number): SilenceStages {
+  const safe = Number.isFinite(words) && words > 0 ? words : 0;
+  const readMs = (READING_MARGIN * safe * 60_000) / READING_WPM;
+  const stageOneMs = Math.round(Math.min(STAGE_ONE_CEILING_MS, Math.max(STAGE_ONE_FLOOR_MS, readMs)));
+  return { stageOneMs, stageTwoMs: stageOneMs + STAGE_TWO_GAP_MS };
+}
+
+/** Words, the way the threshold counts them: whitespace-separated tokens with a letter or digit. */
+export function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).length;
+}
+
 export const HOLD_MS = 60_000;
 /** Beyond two minutes the *social* premise of the nudge has expired (architecture-mac.md §B.4). */
 export const LATE_FIRE_CUTOFF_MS = 120_000;
@@ -145,6 +199,9 @@ export class SilenceTimer {
       firesThisRound: 0,
       nudgesPaused: false,
       windowStartTs: null,
+      // The room's own constants until the first `arm()` says what was actually said.
+      stageOneMs: opts.config.silence_ms,
+      stageTwoMs: opts.config.stage_two_ms,
       ...opts.initial,
     };
     this.#persistedDeadline = this.#state.deadlineTs;
@@ -177,13 +234,34 @@ export class SilenceTimer {
    * quiet for. Every other caller — a real turn, room open — still resets, because those
    * follow something the learner actually did or was answered by.
    */
-  arm(opts: { keepCumulativeIdle?: boolean } = {}): void {
+  arm(opts: { keepCumulativeIdle?: boolean; stages?: SilenceStages } = {}): void {
     const now = this.#clock.now();
     this.#state.epoch += 1;
-    this.#state.deadlineTs = now + this.#config.silence_ms;
+    /**
+     * **The caller says how long the quiet has to be** (#47 §5). The actor passes
+     * `silenceStagesMs(words of the turn it just dispatched)`; a caller that passes nothing keeps
+     * whatever the last window used, which is what a fill wants — an agent speaking into a silence
+     * does not change what the learner was given to read.
+     */
+    if (opts.stages) {
+      this.#state.stageOneMs = opts.stages.stageOneMs;
+      this.#state.stageTwoMs = opts.stages.stageTwoMs;
+    }
     this.#state.windowStartTs = now;
     this.#carriedIdleMs = opts.keepCumulativeIdle === true ? this.#state.cumulativeIdleMs : 0;
     this.#state.cumulativeIdleMs = this.#carriedIdleMs;
+    /**
+     * **The window is however much quiet is still owed to the next stage** (#47 §5).
+     *
+     * Stage 2 is *"stage 1 + 90 s"*, so the window after a fill is the 90 s gap and not another
+     * whole stage-1 wait. With #8's constants the two were the same length by coincidence
+     * (45 + 45 = 90), which is why this arithmetic was never needed before and why it changes
+     * nothing for a room still running on them.
+     */
+    this.#state.deadlineTs =
+      this.#carriedIdleMs > 0
+        ? now + Math.max(1_000, this.#state.stageTwoMs - this.#carriedIdleMs)
+        : now + this.#state.stageOneMs;
     this.#state.windowExtensionMs = 0;
     this.#persist(now, true);
     this.#hooks.changed(this.snapshot);
@@ -237,7 +315,7 @@ export class SilenceTimer {
     return isIdle(
       { lastKeystrokeTs: this.#lastKeystrokeTs, lastSelectionTs: this.#lastSelectionTs },
       now,
-      this.#config.silence_ms,
+      this.#state.stageOneMs,
     );
   }
 
@@ -249,7 +327,7 @@ export class SilenceTimer {
   #extendWindow(): void {
     const now = this.#clock.now();
     if (this.#state.deadlineTs === null) return;
-    const proposed = now + this.#config.silence_ms;
+    const proposed = now + this.#state.stageOneMs;
     if (proposed <= this.#state.deadlineTs) return;
 
     const added = proposed - this.#state.deadlineTs;
@@ -309,7 +387,7 @@ export class SilenceTimer {
   }
 
   #fireNow(lateByMs: number, cause: TimerFire['cause']): void {
-    const stage: 1 | 2 = this.#state.cumulativeIdleMs >= this.#config.stage_two_ms ? 2 : 1;
+    const stage: 1 | 2 = this.#state.cumulativeIdleMs >= this.#state.stageTwoMs ? 2 : 1;
 
     // Stop the window whatever happens next, so a paused or exhausted timer cannot spin.
     this.#state.deadlineTs = null;

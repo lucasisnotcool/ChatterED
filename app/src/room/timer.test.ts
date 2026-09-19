@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG } from '../test-support/db.js';
-import { LATE_FIRE_CUTOFF_MS, SilenceTimer, isIdle, lastActivityTs, type TimerFire } from './timer.js';
+import {
+  LATE_FIRE_CUTOFF_MS,
+  READING_WPM,
+  STAGE_ONE_CEILING_MS,
+  STAGE_ONE_FLOOR_MS,
+  STAGE_TWO_GAP_MS,
+  SilenceTimer,
+  isIdle,
+  lastActivityTs,
+  silenceStagesMs,
+  wordCount,
+  type TimerFire,
+} from './timer.js';
 
 function makeTimer(overrides: Partial<typeof DEFAULT_ROOM_CONFIG> = {}) {
   const clock = new FakeClock();
@@ -234,5 +246,79 @@ describe('the idle predicate for a document (pivot-spec.md §B8)', () => {
     h.clock.advance(10_000);
     h.timer.onSelectionChange();
     expect(h.timer.snapshot.epoch).toBe(epoch);
+  });
+});
+
+/**
+ * **Reading time, not a constant** (issue #47, `attempt-first.md` §5).
+ *
+ * The number this replaces is #8's 45 s, and the evidence against it is the median 3–6 minute gap
+ * before the next learner turn in the six studied sessions (`findings.md` RQ5) against AI turns of
+ * 246–1,190 words. A 45 s nudge was interrupting someone who was still reading line four.
+ */
+describe('the silence thresholds scale to what there was to read', () => {
+  it('floors a short check-in at two minutes', () => {
+    // 12 words is ~6 s of reading even doubled; the floor is what stops the timer firing then.
+    expect(silenceStagesMs(12).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
+    expect(silenceStagesMs(0).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
+  });
+
+  it('scales in the middle: 2 × words / 238 wpm', () => {
+    // 600 words: 2 × 600 / 238 = 5.04 min, above the ceiling. 400 words is inside the band.
+    const stages = silenceStagesMs(400);
+    expect(stages.stageOneMs).toBe(Math.round((2 * 400 * 60_000) / READING_WPM));
+    expect(stages.stageOneMs).toBeGreaterThan(STAGE_ONE_FLOOR_MS);
+    expect(stages.stageOneMs).toBeLessThan(STAGE_ONE_CEILING_MS);
+  });
+
+  it('caps a wall of text at five minutes, so the timer never switches itself off', () => {
+    expect(silenceStagesMs(1_190).stageOneMs).toBe(STAGE_ONE_CEILING_MS);
+  });
+
+  it('puts stage 2 a further 90 s out, which is #8’s number and is unchanged', () => {
+    const stages = silenceStagesMs(400);
+    expect(stages.stageTwoMs).toBe(stages.stageOneMs + STAGE_TWO_GAP_MS);
+  });
+
+  it('counts words the way the formula means them', () => {
+    expect(wordCount('  two   words ')).toBe(2);
+    expect(wordCount('$f(x)$ is convex — 3 of them')).toBe(6);
+    expect(wordCount('')).toBe(0);
+  });
+
+  it('arms the window on the stages it is given, and keeps them across a fill', () => {
+    const h = makeTimer();
+    const stages = silenceStagesMs(400);
+    h.timer.arm({ stages });
+    expect(h.timer.snapshot.deadlineTs).toBe(h.clock.now() + stages.stageOneMs);
+
+    // The fill re-arms without saying anything new: an agent speaking into a silence does not
+    // change what the learner was given to read.
+    h.timer.arm({ keepCumulativeIdle: true });
+    expect(h.timer.snapshot.deadlineTs).toBe(h.clock.now() + stages.stageOneMs);
+  });
+
+  it('decides the stage on this window’s own stage-2 threshold', async () => {
+    const h = makeTimer();
+    const stages = silenceStagesMs(400);
+    h.timer.arm({ stages });
+    await h.clock.run(stages.stageOneMs + 1_000);
+    expect(h.fires.map((f) => f.stage)).toEqual([1]);
+
+    // Stage 2 is stage 1 **+ 90 s**, so the second window is the gap, not another stage-1 wait.
+    h.timer.arm({ keepCumulativeIdle: true, stages });
+    // The window is what is still owed to stage 2, so the *total* quiet is stage 1 + 90 s.
+    const carried = h.timer.snapshot.cumulativeIdleMs;
+    expect(h.timer.snapshot.deadlineTs).toBe(h.clock.now() + (stages.stageTwoMs - carried));
+    expect(carried + (stages.stageTwoMs - carried)).toBe(stages.stageOneMs + STAGE_TWO_GAP_MS);
+    await h.clock.run(STAGE_TWO_GAP_MS + 2_000);
+    expect(h.fires.map((f) => f.stage)).toEqual([1, 2]);
+  });
+
+  it('falls back to the room config when nothing has said otherwise', () => {
+    const h = makeTimer();
+    h.timer.arm();
+    expect(h.timer.snapshot.stageOneMs).toBe(DEFAULT_ROOM_CONFIG.silence_ms);
+    expect(h.timer.snapshot.stageTwoMs).toBe(DEFAULT_ROOM_CONFIG.stage_two_ms);
   });
 });

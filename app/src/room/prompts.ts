@@ -66,7 +66,7 @@ import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
  * the renderer implements the subset (`renderer/lib/aitext.ts`) and this rule names it, so the two
  * halves agree about what is allowed rather than about what is likely.
  */
-export const PROMPT_VERSION = 'prompts.v0.5';
+export const PROMPT_VERSION = 'prompts.v0.6';
 
 export interface SharedBlockInput {
   material: MaterialRow;
@@ -82,10 +82,12 @@ const HOUSE_RULES = `HOUSE RULES
    the subject needs — including the prerequisites the slide takes for granted — is yours to
    teach, from your own knowledge of the field, whether or not the slide mentions it.
 2. One of you speaks per turn. Never speak twice in a row if the learner has not replied.
-3. Length fits the job. A check-in is a sentence or two; teaching a concept from the ground up
-   aims at about 200 words, with 250 as the ceiling, and should be structured — a numbered list,
-   or two short paragraphs — when that is clearer. Do not pad, do not add a section the learner
-   did not ask for, and do not compress an explanation into a hint.
+3. Length fits the job, and it is shorter than you think. A check-in is a sentence or two;
+   teaching a concept from the ground up aims at **about 120 words, with 180 as the ceiling**, and
+   should be structured — a numbered list, or two short paragraphs — when that is clearer. Keep
+   the shape of an explanation but make each step a sentence or two. Feedback on an answer is
+   under 100 words; a model answer is under 150. The learner asks for more and gets more. Do not
+   pad, do not add a section they did not ask for, and do not compress an explanation into a hint.
 4. The learner closes a thread. Never summarise what it concluded for them. Ending on a question
    is not how you hand the floor back — a finished explanation hands it back by itself.
 5. If the learner contests a point, drop it and say so.
@@ -316,8 +318,28 @@ When the learner has answered, your next turn is **feedback on what they actuall
 landed, what was missing, and the correction. That turn carries no new question. Feedback after
 an answer is required, not optional.
 
-House rule 3's longer lengths are the teacher's. Your question is one or two sentences, and your
-feedback is short.`;
+SHOW YOUR GROUNDS, ALWAYS.
+For each point you make about their answer — what landed, what was missing, the correction — say
+where the deck settles it, as \`p. N: "…"\`, quoting the page's own words verbatim. If the deck does
+not settle a point, say so in the clause where you make it ("the deck doesn't settle this; in
+general…") rather than stating it as if it did. **Never call an answer wrong on a rule you cannot
+ground.** A verdict the learner cannot check is a verdict they have to take on trust, and in the
+sessions behind this design eleven of twenty-one such verdicts were wrong, nine of them marking a
+correct answer as incorrect.
+
+BEING DISAGREED WITH IS NOT A MARK AGAINST THEM.
+If the learner disputes your verdict, engage with the dispute and drop the point if you cannot
+ground it (house rule 5). Contesting you never lowers what the learner has shown; nothing about
+this exchange is a score, and you never imply that arguing costs them anything.
+
+THE ANSWER IS NOT YOURS TO GIVE UNTIL THEY HAVE TRIED.
+You will be told when the learner has attempted the question. Until then, if they ask for the
+answer you give **one hint** and say in one clause that one try unlocks it — the app enforces this,
+so there is no version of the conversation where asking twice works. Once they have attempted it,
+the answer is theirs to ask for and you give it in full, with its grounds.
+
+House rule 3's longer lengths are the teacher's. Your question is one or two sentences, your
+feedback is under 100 words, and a model answer is under 150.`;
     // Theo has left the standing roster (#32): a teach-back *is* a quiz, so it folded into the
     // Tester's question. The block stays so a historical transcript still renders its turns.
     case 'tutee':
@@ -441,24 +463,87 @@ export function learnerBlock(input: {
  * `demonstration` is what a correct answer contains — the objective's criteria — and it is here
  * for the feedback turn, which is the one Rowland 2014 says is worth half the effect.
  */
+/**
+ * **The grounds clause** (issue #47, `attempt-first.md` §3), on every turn that renders a verdict
+ * or a model answer.
+ *
+ * Prompt-level, and Lucas's choice of the two options the brief put up: a code-side check that the
+ * quote is really on the page is A2's first job (§8), and the limitation is stated in the report
+ * rather than hidden. The reason it is asked for at all is R6, where 11 of 21 Tester-style verdicts
+ * were wrong and 9 of those marked a correct answer incorrect — a verdict with its grounds attached
+ * is one the learner can check, which is the whole of Lee & See's trust calibration here.
+ */
+const GROUNDS = [
+  'For each point you make \u2014 what landed, what was missing, the correction \u2014 say where the deck',
+  'settles it, as `p. N: \u201c\u2026\u201d` quoting the page\u2019s own words verbatim. If the deck does not settle a',
+  'point, say so in that clause (\u201cthe deck doesn\u2019t settle this; in general\u2026\u201d) rather than stating it as',
+  'if it did. Never call an answer wrong on a rule you cannot ground, and if the learner disputes a',
+  'verdict, that is not a mark against them.',
+];
+
+/** Which turn of the attempt loop this is (§2.3). `question` is the default. */
+export type QuizTurn = 'question' | 'feedback' | 'answer' | 'clarify' | 'hint_withheld';
+
 export function quizBlock(input: {
   label: string;
   seeds: readonly string[];
   demonstration?: readonly string[];
   /** True on the feedback turn: no new question, say what landed and what was missing. */
   feedback?: boolean;
+  /** #47: the rest of the loop. `feedback: true` is the alias this shipped with. */
+  turn?: QuizTurn;
 }): string | undefined {
   const seeds = input.seeds.filter((s) => s.trim().length > 0);
   const criteria = (input.demonstration ?? []).filter((c) => c.trim().length > 0);
   if (seeds.length === 0 && criteria.length === 0) return undefined;
+  const turn: QuizTurn = input.turn ?? (input.feedback ? 'feedback' : 'question');
   const lines: string[] = [`THIS TURN IS ABOUT: ${input.label}`];
   if (criteria.length > 0) {
     lines.push('A correct demonstration contains:', ...criteria.map((c) => `- ${c}`));
   }
-  if (input.feedback) {
+  if (turn === 'feedback') {
     lines.push(
       'Say what the learner\u2019s answer actually had of that, what was missing, and the correction.',
-      'No new question this turn.',
+      'No new question this turn. Under 100 words.',
+      ...GROUNDS,
+    );
+    return lines.join('\n');
+  }
+  /**
+   * **The answer, after one attempt** (§2.3). It is given in full and it is logged, and nothing
+   * about it moves the learner's record — the ledger is not run on this turn at all, which is
+   * enforced in `actor.ts` and not here.
+   */
+  if (turn === 'answer') {
+    lines.push(
+      'The learner has attempted this and has asked to see the answer. Give it: the model answer to',
+      'the question you asked, in full, and then one sentence on what their attempt already had of',
+      'it. Under 150 words. No new question, and do not withhold any part of it.',
+      ...GROUNDS,
+    );
+    return lines.join('\n');
+  }
+  /**
+   * **A question about the question** (§2.3). The one move that must not leak the answer while
+   * still being useful, which is why it is spelled out rather than left to the model's judgement.
+   */
+  if (turn === 'clarify') {
+    lines.push(
+      'The learner asked you what the question means, not for the answer to it. Answer the',
+      'clarification \u2014 define the term, expand the notation, say which case you mean \u2014 in two or',
+      'three sentences, and then leave the question standing. **Do not answer the question**, do not',
+      'give a hint towards it unless the clarification cannot be made without one, and do not ask',
+      'anything new.',
+    );
+    return lines.join('\n');
+  }
+  if (turn === 'hint_withheld') {
+    lines.push(
+      'The learner has asked for the answer and has not attempted the question yet. The answer is',
+      'not given before one attempt \u2014 that is the app\u2019s rule, not your preference, so do not',
+      'negotiate it and do not apologise for it. Give **one** hint that narrows the question: a',
+      'first step, a case to try, or the piece of it to look at first. Say in one clause that one',
+      'try unlocks the answer. Do not answer it, and do not ask a second question.',
     );
     return lines.join('\n');
   }
@@ -556,6 +641,13 @@ export interface TurnDirective {
   probeType?: string;
   /** Stage-2 silence fills are hedged, incomplete and correctable — never a complete answer. */
   note?: string;
+  /**
+   * **Which rule produced this turn** (issue #47). One move, `quiz_hint`, has three different
+   * causes — the answer was asked for too early, the learner said nothing that answers, or the
+   * timer fired — and only the first of them owes the learner the sentence about one try unlocking
+   * the answer. The rule name is the only thing that distinguishes them.
+   */
+  byRule?: string;
 }
 
 /**
@@ -581,33 +673,47 @@ export function turnDirective(d: TurnDirective): string {
     );
   }
   /**
-   * **The silence moves** (#37). The learner went quiet for 45 s after you explained something.
-   * That is not impatience, it is not knowing where to start — so the move is to say the same
-   * thing again, differently, and the directive has to say what "differently" means or the model
-   * paraphrases itself at the same level and the second try fails the same way as the first.
+   * **`reexplain_simpler` and `offer_step_back` are deleted here** (#47 §5, and §7's table).
+   *
+   * They were #37's answer to a silence after an explanation, and `silenceDecision` no longer
+   * produces either move: the studied sessions say that quiet is *reading* (median 3–6 min before
+   * the next learner turn), so the app says nothing into it. The move names survive in
+   * `orchestrator.NON_TEACHING_MOVES` and in the actor's divider copy so a room recorded before
+   * this build still classifies and renders its own history; there is nothing left for a directive
+   * to say, because nothing will ask for one.
    */
-  if (d.move === 'reexplain_simpler') {
-    bits.push(
-      'The learner has gone quiet since you explained this. Read that as "I did not follow it",',
-      'not as impatience. Say the same point again one level simpler: assume less than you did,',
-      'drop or unpack the notation, and carry it on an everyday analogy or one concrete worked',
-      'example. Open with something like "Let me try that a different way". Do not repeat your',
-      'previous wording, do not add new material, do not apologise, and **end with no question**',
-      '— a full stop, so the floor is theirs without a demand attached.',
-    );
-  }
-  if (d.move === 'offer_step_back') {
-    bits.push(
-      'Still quiet after the simpler version. Offer to go back to whatever this rests on, or ask',
-      'which part lost them — exactly one question, warm, and with a concrete option in it so it',
-      'can be answered in three words.',
-    );
-  }
   if (d.move === 'quiz_hint') {
     bits.push(
       'The learner has not answered your question. Give one hint that narrows it — a first step,',
       'a case to try, or the piece of it to look at first. **Do not answer it**, do not rephrase',
       'the whole question, and do not ask a second one.',
+    );
+    /**
+     * **The answer asked for before a try** (#47 §2.3, `rule:answer_withheld`). The hint is the
+     * same hint; what this adds is that the learner has *asked for the answer* and must be told, in
+     * one clause, what unlocks it — R6 asked twice, was answered twice, and produced no attempt
+     * until the rule existed.
+     */
+    if (d.byRule === 'rule:answer_withheld') {
+      bits.push(
+        'They asked for the answer and have not attempted the question. The answer is not given',
+        'before one attempt — that is the app’s rule, not your preference. Say in one clause that',
+        'one try unlocks it, do not negotiate, and do not apologise.',
+      );
+    }
+  }
+  /** §2.3's two new Tester moves. The note (`quizBlock`) carries the rest. */
+  if (d.move === 'quiz_answer') {
+    bits.push(
+      'The learner has attempted this and asked to see the answer, so give it in full — the model',
+      'answer, then one sentence on what their attempt already had of it. Cite the deck as',
+      '`p. N: “…”` for each point. Under 150 words, and no new question.',
+    );
+  }
+  if (d.move === 'quiz_clarify') {
+    bits.push(
+      'They asked what your question means, not for the answer. Clear the question up in two or',
+      'three sentences and leave it standing. **Do not answer it.**',
     );
   }
   /**

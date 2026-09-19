@@ -131,13 +131,30 @@ export function levelToState(level: number): LedgerState {
   return 'not_yet';
 }
 
+const AGREEMENT =
+  /^(ok(ay)?|yes|yeah|yep|sure|right|true|fair|agreed|i agree|makes sense|got it|i see|fine|exactly|correct)\b/i;
+
+/**
+ * **The agreement half of rule 4, on its own** (issue #47).
+ *
+ * Rule 4 refuses to advance a row on a message with no student-generated claim, and it refuses on
+ * two grounds: the message is too short to contain one (`MIN_CONTENT_WORDS`), or it is agreement
+ * rather than a claim. The attempt loop needs the *second* ground alone — `attempt.ts` classifies
+ * a two-word answer as an attempt on purpose, because the answer lock is about having tried and
+ * the ledger is about having explained (`attempt-first.md` §2.2). Splitting it here keeps one
+ * definition of what agreement sounds like instead of two that can drift.
+ */
+export function isAgreementPhrase(body: string): boolean {
+  const words = body.trim().split(/\s+/).filter((w) => /[a-z0-9]/i.test(w));
+  const stripped = body.trim().replace(/[.!,]/g, '');
+  return AGREEMENT.test(stripped) && words.length < 14;
+}
+
 /** Rule 4's heuristic: a message with no student-generated claim may not advance anything. */
 export function isAgreementOnly(body: string): boolean {
   const words = body.trim().split(/\s+/).filter((w) => /[a-z0-9]/i.test(w));
   if (words.length < MIN_CONTENT_WORDS) return true;
-  const agreement = /^(ok(ay)?|yes|yeah|yep|sure|right|true|fair|agreed|i agree|makes sense|got it|i see|fine|exactly|correct)\b/i;
-  const stripped = body.trim().replace(/[.!,]/g, '');
-  return agreement.test(stripped) && words.length < 14;
+  return isAgreementPhrase(body);
 }
 
 export function applyLedgerRules(input: ApplyInput): ApplyResult {

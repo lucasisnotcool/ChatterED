@@ -148,10 +148,19 @@ describe('answer first, then teach', () => {
 });
 
 describe('length fits the job', () => {
-  it('replaces the flat 80-word cap with a range that can teach a prerequisite', () => {
+  /**
+   * **120/180, since #47 §4.** The 200/250 range this replaces was itself a correction of a flat
+   * 80-word cap; what moved it again is the measurement: the studied sessions ran 246–1,190 AI words
+   * per turn, R2 ran 93 AI words per typed learner word, and the answers were not read in full
+   * (`findings.md` RQ5). Xu et al. ran every agent reply near 80. Prompt-level only — #36's argument
+   * that a code-side cap re-creates the truncation failure is unchanged.
+   */
+  it('aims at 120 words with 180 as the ceiling, and sizes the Tester’s two turns', () => {
     const s = shared();
     expect(s).not.toContain('about 80 words');
-    expect(s).toContain('aims at about 200 words, with 250 as the ceiling');
+    expect(s).not.toContain('about 200 words');
+    expect(s).toContain('aims at **about 120 words, with 180 as the ceiling**');
+    expect(s).toContain('Feedback on an answer is under 100 words; a model answer is under 150.');
     expect(s).toContain('do not compress an explanation into a hint');
   });
 
@@ -244,7 +253,8 @@ describe('the default explanation shape', () => {
 
 describe('the version', () => {
   it('is bumped, because the prefix hash moves with the rules', () => {
-    expect(PROMPT_VERSION).toBe('prompts.v0.5');
+    // v0.6: #47's house rule 3, the Tester's grounds and the attempt loop's three new directives.
+    expect(PROMPT_VERSION).toBe('prompts.v0.6');
   });
 });
 
@@ -276,6 +286,54 @@ describe('quizBlock', () => {
     expect(block).toContain('names the missing tools');
     expect(block).toContain('No new question this turn.');
     expect(block).not.toContain('A question nobody should ask now.');
+  });
+
+  /**
+   * **The grounds clause** (#47 §3): a verdict the learner cannot check is one they have to take on
+   * trust, and R6's Tester-style verdicts were wrong 11 times in 21, nine of them marking a correct
+   * answer incorrect. Asked for in the prompt, not verified in code — that is A2's first job (§8).
+   */
+  it('makes the feedback turn cite the deck, and never mark down a learner who argues', () => {
+    const block = quizBlock({
+      label: 'what /btw can see',
+      seeds: [],
+      demonstration: ['names the missing tools'],
+      turn: 'feedback',
+    })!;
+    expect(block).toContain('p. N');
+    expect(block).toContain('verbatim');
+    expect(block).toContain('the deck doesn\u2019t settle this');
+    expect(block).toContain('Never call an answer wrong on a rule you cannot ground');
+    expect(block).toContain('not a mark against them');
+    expect(block).toContain('Under 100 words');
+  });
+
+  it('gives the whole answer once, with its grounds, on the answer turn', () => {
+    const block = quizBlock({
+      label: 'what /btw can see',
+      seeds: ['A question nobody should ask now.'],
+      demonstration: ['names the missing tools'],
+      turn: 'answer',
+    })!;
+    expect(block).toContain('has asked to see the answer');
+    expect(block).toContain('what their attempt already had of');
+    expect(block).toContain('Under 150 words');
+    expect(block).toContain('p. N');
+    expect(block).not.toContain('A question nobody should ask now.');
+  });
+
+  it('clarifies without answering, and leaves the question standing', () => {
+    const block = quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn: 'clarify' })!;
+    expect(block).toContain('**Do not answer the question**');
+    expect(block).toContain('leave the question standing');
+  });
+
+  it('says one try unlocks the answer when it is asked for too early', () => {
+    const block = quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn: 'hint_withheld' })!;
+    // Flattened, because the prompt is hard-wrapped and the model does not read the newlines.
+    expect(flat(block)).toContain('not given before one attempt');
+    expect(flat(block)).toContain('Give **one** hint that narrows the question');
+    expect(flat(block)).toContain('one clause that one try unlocks the answer');
   });
 
   it('is absent for an element with no seeds and no criteria, so nothing empty is appended', () => {

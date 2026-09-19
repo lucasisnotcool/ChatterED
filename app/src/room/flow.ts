@@ -730,6 +730,23 @@ export function handOffLine(
  * model is asked anything) rather than as a sentence in the Tester's prompt, for exactly the
  * reason `ledger.ts` gives about its own four rules: a prompt asking nicely will be violated.
  */
+/**
+ * **The state model, since the attempt loop** (issue #47, `attempt-first.md` §2.3–§2.4).
+ *
+ * The question does not close when it is answered, and that is the whole of the change. §2.4 gives
+ * the learner three things to do *after* feedback — try another, ask a clarification, or ask for
+ * the answer — and every one of them needs the question still to be here. So:
+ *
+ *  - `attempts` counts learner turns classified as an **attempt** (`room/attempt.ts`), and nothing
+ *    else. It is what the answer lock reads: zero means the answer is withheld, one or more means
+ *    "Show the answer" is available and an answer request is honoured.
+ *  - `feedbackGiven` is **per latest attempt**. A second attempt clears it, so Rowland 2014's
+ *    mandatory-feedback rule (`feedbackDue`) applies to every attempt rather than to the first.
+ *  - `answerShown` is the one thing that closes the question (`quizOpen`). Otherwise it closes
+ *    only when a new question opens over it, or when the sitting closes (`expireQuizOnClose`).
+ *
+ * `feedbackDue` is unchanged in meaning: true after an attempt, until the feedback turn lands.
+ */
 export interface PendingQuiz {
   /** The Tester message that asked it. */
   quizMessageId: string;
@@ -739,18 +756,62 @@ export interface PendingQuiz {
   answerMessageId: string | null;
   /** Set once the Tester's follow-up turn has actually delivered feedback. */
   feedbackGiven: boolean;
+  /**
+   * Learner turns classified as an attempt since this question was asked (§2.2). Absent in rows
+   * persisted before #47, which `openQuiz` and the actor's restore both read as 0.
+   */
+  attempts: number;
+  /** True once the model answer has been given (§2.3's `rule:answer_shown`). Closes the quiz. */
+  answerShown: boolean;
 }
 
 export function openQuiz(input: { quizMessageId: string; elementId: string }, now: number): PendingQuiz {
-  return { ...input, askedAt: now, answerMessageId: null, feedbackGiven: false };
+  return { ...input, askedAt: now, answerMessageId: null, feedbackGiven: false, attempts: 0, answerShown: false };
 }
 
-export function answerQuiz(quiz: PendingQuiz, answerMessageId: string): PendingQuiz {
-  return quiz.answerMessageId === null ? { ...quiz, answerMessageId } : quiz;
+/**
+ * A learner turn landed on the open question.
+ *
+ * **Only an attempt counts** (§2.3): an answer request, a clarification or an "ok" leaves the
+ * count where it is, which is what makes "no answer before one attempt" a fact about the learner
+ * having tried rather than about them having typed. An attempt also re-opens the feedback debt,
+ * because a revision the Tester never answers is the half of retrieval practice Rowland measures.
+ */
+export function answerQuiz(quiz: PendingQuiz, answerMessageId: string, opts: { attempt: boolean }): PendingQuiz {
+  if (!opts.attempt) return quiz;
+  return {
+    ...quiz,
+    answerMessageId,
+    feedbackGiven: false,
+    attempts: attemptsOf(quiz) + 1,
+  };
 }
 
 export function markFeedbackGiven(quiz: PendingQuiz): PendingQuiz {
   return { ...quiz, feedbackGiven: true };
+}
+
+/** The answer has been given. The question is closed; nothing about it moves the ledger. */
+export function markAnswerShown(quiz: PendingQuiz): PendingQuiz {
+  return { ...quiz, answerShown: true };
+}
+
+/** Tolerates a row persisted before #47, where the field did not exist. */
+export function attemptsOf(quiz: PendingQuiz | null): number {
+  return typeof quiz?.attempts === 'number' && Number.isFinite(quiz.attempts) ? quiz.attempts : 0;
+}
+
+export function answerShownOf(quiz: PendingQuiz | null): boolean {
+  return quiz?.answerShown === true;
+}
+
+/**
+ * **Is the Tester's question still live?** The gate on every rule in §2.3, and the reason the
+ * quiz survives its own feedback turn: after feedback the learner may still try again, ask a
+ * clarification, or ask for the answer, and all three need this to be true.
+ */
+export function quizOpen(quiz: PendingQuiz | null): boolean {
+  return quiz !== null && !answerShownOf(quiz);
 }
 
 /**
