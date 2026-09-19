@@ -36,58 +36,75 @@ the words are replayed while the timer, the rules and the ledger are not.
 
 ## 3. The twelve in-app beats
 
-Video beats 4–15 of `docs/research/flow-build-plan.md` §2. Paths under `app/src/`.
+Video beats 4–15 of `docs/research/flow-build-plan.md` §2, re-cut for the **attempt loop**
+(`docs/research/attempt-first.md` §2, §6). Paths under `app/src/`.
 
 | # | Do this | Where |
 |---|---|---|
-| 4 | Open the deck — 7 crop cards, a build-steps chip | `renderer/components/FlowCanvas.svelte` |
-| 5 | Page 3, hover a tick — a dashed guide | `shared/segment/cuts.ts` |
-| 6 | Click the tick at y 0.535 — splits in place, ⌘Z undoes | `shared/segment/ops.ts`, `renderer/lib/flowview.ts` |
-| 7 | **+ Ask here**: *who is actually whispering in the bottom row here?* | `components/AskHereLine.svelte`, `main/flowroom.ts` |
-| 8 | A REFERENCE card lands; the thread is locked | `room/reference.ts`, `components/AiSegment.svelte` |
-| 9 | **Explain it back →**, type `student:1`, then `student:2` | `components/FlowThread.svelte`, `room/actor.ts` |
-| 10 | The hand-off fires, tagged **BY RULE** | `room/flow.ts`, `room/orchestrator.ts` |
-| 11 | Max reads 9–12 s, counter climbing, one question | `room/agents.ts`, `room/actor.ts` |
-| 12 | Type `student:3` — the first two rows to move all sitting, ○→● and ○→◐ | `room/ledger.ts`, `SegmentCard.svelte` |
-| 13 | ⌘K, ask `whisper:1` privately, **Insert into the document** | `components/WhisperPopover.svelte`, `room/context.whisper.ts` |
-| 14 | Toggle **Original pages** | `renderer/lib/flowview.ts` |
+| 4 | Open the deck — 7 crop cards and a build-steps chip; on page 3 hover a tick, then click the one at y 0.535 (⌘Z undoes); toggle **Original pages** | `renderer/components/FlowCanvas.svelte`, `shared/segment/cuts.ts`, `shared/segment/ops.ts` |
+| 5 | **+ Try this** under the lower half of page 3 — the Tester asks **one** question, back in 4–6 s because you asked for it | `room/actor.ts` (`tryHere`), `renderer/lib/objectives.ts`, `room/flow.ts` |
+| 6 | Type **attempt:1** below, verbatim. Nothing speaks over you | `components/FlowThread.svelte` |
+| 7 | Feedback after 9–12 s: what landed, what was missing, the correction, each with a `p. 3: "…"` quote of the page | `room/orchestrator.ts` (`rule:quiz_feedback`), `room/prompts.ts` |
+| 8 | The rail moves `○ → ◐` on *why whispering helps*, quoting **your** sentence. *What /btw can and cannot do* stays at ○ | `room/ledger.ts`, `SegmentCard.svelte` |
+| 9 | Scroll one card and press **+ Try this** on page 5 — the pick is the objective still at ○ | `renderer/lib/objectives.ts` |
+| 10 | Type **askanswer:2** (*what's the answer?*). One narrowing hint, one clause saying a try unlocks it, **no answer** | `room/attempt.ts`, `room/orchestrator.ts` (`rule:answer_withheld`) |
+| 11 | **+ Ask here** on the same card and type **ask:1** — the Teacher answers the *prerequisite*, and says she will not answer the quiz | `components/AskHereLine.svelte`, `rule:teacher_answers` |
+| 12 | Type **attempt:2** — feedback grounded on page 5, and `○ → ◐` on *what /btw can and cannot do* | `room/ledger.ts` |
+| 13 | **Show the answer**, visible only now — the model answer with its grounds, and the rail does not move | `room/orchestrator.ts` (`rule:answer_shown`) |
+| 14 | ⌘K, ask **whisper:1** privately, **Insert into the document** | `components/WhisperPopover.svelte`, `room/context.whisper.ts` |
 | 15 | Hover a page chip; open the 31-page Koala paper | `shared/segment/genre.ts` |
 
-**Type these verbatim** — the ledger quotes what is actually in the box, and a short line trips the
-agreement-is-not-evidence rule. They and `whisper:1` are `CRITIQUE1_LEARNER_LINES` in
-`room/llm/script.critique1.ts`.
+**Type these verbatim** — the ledger quotes what is actually in the box, and a line under eight
+content words trips the agreement-is-not-evidence rule. They are `CRITIQUE1_LEARNER_LINES` in
+`room/llm/script.critique1.ts`, with `whisper:1`.
 
-> **student:1** — Let me try saying it back. The card has the two rows with the same structure, and
-> the only thing that changes underneath is that the whispering partner is the agent itself. Is that
-> the whole of it, or does the bottom row buy something the top one does not?
+> **attempt:1** — The whisper is going to the agent itself rather than to a second person, and I
+> think the property doing the work is politeness, because asking in the main thread would have been
+> a rude interruption while it was still coding.
 >
-> **student:2** — And where is any of that tested rather than asserted? Page 5 has a table of limit
-> tests on it, and I have not worked out yet what the three of them add up to.
+> **askanswer:2** — what's the answer?
 >
-> **student:3** — The third one — it was asked to add a todo to memory, claimed it had, and nothing
-> was written. So it can read the session and reason about the tool calls, but it cannot act: memory
-> was protected, and the same wall is why nothing we settle in the side channel reaches the main
-> agent unless I re-type it as a steering prompt.
+> **ask:1** — before I try that — what does page 5 mean by context being a strict subset of the main
+> session? i keep reading context as the context window and I do not think that is what it is saying
+> here.
+>
+> **attempt:2** — I think it is the third one — it was asked to write a todo into memory and said it
+> had, so its answer was false, and that is the bug because the other two tests came back true.
 
-The first two are **questions on purpose**. The ledger stays at ○ ○ ○ until Max has been answered,
-so beat 12's *"that moved because **I** wrote it"* points at the turn it is about; a hedged read-back
-of the REFERENCE card the app has just written is not the learner explaining anything.
+Both attempts are **partly right on purpose**: feedback with nothing to correct is a compliment, and
+the coded study (`docs/research/ai-use-transcripts/analysis/findings.md` RQ4) found 11 of 21 verdicts
+wrong in the one session that quizzed at all — 9 of them calling a correct answer wrong — with the
+learner replying "ok". That is why every judgement cites the slide, and why a verdict you can check
+is the only kind worth giving. `askanswer:2` is R6's own phrasing, asked five times in that session
+before the learner imposed attempt-first by hand; here it is refused by a rule.
 
 ## 4. Real, scripted, stubbed
 
 **Real:** segmentation — cuts, split, merge, reorder, undo, Original pages, compare-on-hover, the
-genre notice — **geometry only, no model in the path**; the actor's serialised mailbox; the silence
-timer, with quit and sleep recovery; the latency floor, a floor on visible time-to-first-token and
-not an added sleep; the orchestrator, where rules decide first and the model can never put the Tester
-on the floor; `handOffDue()`; the REFERENCE scope, truncated at 120 words *in code*; the ledger's
-four hard rules and the `defended` gate; whisper scoping with a leak canary; persistence — reopen the
-deck and the cards, messages, glyphs and sitting come back.
+genre notice — **geometry only, no model in the path**; the actor's serialised mailbox; the **attempt
+loop's control flow** — `classifyLearnerTurn`, the answer lock (`attempts`, `answerShown`) and the
+four rules over it, so *no model is ever asked whether to answer its own question*; the objective the
+next question comes from, picked by lowest ledger level as a pure function; the silence timer, with
+its thresholds scaled to the reading time of the last turn and firing only where an answer is owed,
+with quit and sleep recovery; the latency floor, a floor on visible time-to-first-token and not an
+added sleep, short band for a question you asked for and 9–12 s for a judgement; the orchestrator,
+where rules decide first and the model can never put the Tester on the floor; `handOffDue()`, still
+shipped as the secondary door; the ledger's four hard rules and the `defended` gate; whisper scoping
+with a leak canary; persistence — reopen the deck and the cards, messages, glyphs and sitting come
+back.
 
-**Scripted:** the agents' turns, the REFERENCE answer, the whisper reply and its relay draft —
-replayed through the *same* code paths a live backend uses. Silence nudges come from a fixed pool in
-**both** modes: they are content-free by construction. **Not scripted even here:** the learner's
-typing, the split, the hand-off line (built by `flow.handOffLine()`), the ledger's evidence, the
+**Scripted:** the agents' turns, the summary card, the whisper reply and its relay draft — replayed
+through the *same* code paths a live backend uses. Silence nudges come from a fixed pool in **both**
+modes: they are content-free by construction. **Not scripted even here:** the learner's typing, the
+split, the hand-off line (built by `flow.handOffLine()`), the answer lock, the ledger's evidence, the
 timings, every rule.
+
+**One thing to be clear about, because the video says it too:** feedback **grounds are asked for, not
+verified**. The prompt requires a `p. N: "…"` quote of the page's own words; no code checks a live
+model's quote against the deck. What *is* checked is the scripted path — `script.critique1.test.ts`
+asserts every quote in every feedback and answer beat is a verbatim substring of `CRITIQUE1_PAGE_TEXT`
+— so the demo cannot misquote the deck on camera, and a live model still can. Verifying the quote the
+way ledger rule 1 verifies the learner's is the first thing A2 owes (`attempt-first.md` §3, §8).
 
 **Not built:** the Firestore mirror (the `outbox` exists, the drain does not), export, history, the
 consent screen, the vision "suggest cuts" pass (#26), genres beyond the honest labeller (#27–#31) —
