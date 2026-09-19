@@ -239,7 +239,10 @@ describe('the answer lock while a Tester question is open', () => {
     const d = ruleDecision(
       input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked(), learnerTurn: 'answer_request', lastAgentTurn: 'tester_question' }),
     )!;
-    expect(d.decidedBy).toBe('rule:silence_peer');
+    // The silence rule's business, and since the live run of 2026-09-19 the open quiz makes it the
+    // Tester's stage-1 line; what matters here is that no lock rule fired into a silence.
+    expect(d.decidedBy).toBe('rule:silence_quiz_waiting');
+    expect(d.decidedBy).not.toMatch(/^rule:(answer_withheld|answer_shown|quiz_clarify|quiz_nudge)$/);
   });
 
   it('still yields to the REFERENCE lock and to the learner’s last word', () => {
