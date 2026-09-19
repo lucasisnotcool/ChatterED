@@ -1488,8 +1488,32 @@ class Store {
    */
   #costLive = false;
 
+  /**
+   * **Which document the counters are about.**
+   *
+   * `flowFor` was the only answer while a PDF opened into `FlowCanvas`. Since #48 it opens into
+   * the three-column shell, which sets `openDoc` and may never touch `flowFor` at all — so a
+   * file counter keyed on `flowFor` alone silently stopped existing on the surface the app now
+   * actually has. Both, in the order of specificity, and one getter so no third surface has to
+   * remember the rule.
+   */
+  get costFileId(): string | null {
+    return this.flowFor ?? this.openDoc?.fileId ?? null;
+  }
+
+  /**
+   * The app-level pair the title-bar indicator needs: everything, and this session. Asked once
+   * — after that `cost.updated` ticks both without a round trip.
+   */
+  ensureAppCost(): void {
+    if (!this.costOn || this.#costAsked.has('app')) return;
+    this.#costAsked.add('app');
+    void this.loadCost({ level: 'app' });
+    void this.loadCost({ level: 'app', since: SESSION_WINDOW });
+  }
+
   ensureThreadCost(anchorId: string): void {
-    const fileId = this.flowFor;
+    const fileId = this.costFileId;
     if (!this.costOn || !fileId) return;
     const key = `thread:${fileId}:${anchorId}`;
     if (this.#costAsked.has(key)) return;
@@ -1505,7 +1529,7 @@ class Store {
    */
   #recountAfterTurn(): void {
     if (this.#costLive || !this.costOn) return;
-    const fileId = this.flowFor;
+    const fileId = this.costFileId;
     if (!fileId) return;
     void this.loadCost({ level: 'file', fileId });
     const anchorId = this.lastSendAnchor;
@@ -1513,7 +1537,7 @@ class Store {
   }
 
   ensureFileCost(): void {
-    const fileId = this.flowFor;
+    const fileId = this.costFileId;
     if (!this.costOn || !fileId) return;
     const key = `file:${fileId}`;
     if (this.#costAsked.has(key)) return;
