@@ -14,6 +14,7 @@ import type {
   AgentProfile,
   Bootstrap,
   ConceptDraft,
+  FlowQuizView,
   LedgerRowView,
   LedgerState,
   LedgerView,
@@ -54,6 +55,62 @@ function emptyFlow(fileId: string, refused?: SegmentRefusal['reason']): SegmentD
     segments: [],
     refused: refused ? { reason: refused, message: refusalMessage(refused) } : null,
   };
+}
+
+/**
+ * ── the attempt loop's classifier, **copied on purpose** (issue #47) ──────────
+ *
+ * `docs/research/attempt-first.md` §2.2 puts the real one in `src/room/attempt.ts`, where the
+ * orchestrator can call it; this is the dev mock's local copy, and it is a copy rather than an
+ * import because this file is renderer-side scaffolding and must not pull the main process's
+ * module graph into `vite dev`. **It has to track §2.2**, and the shared tests are the brief's own
+ * examples — R6's literal lines — so a drift between the two shows up as a failure here.
+ */
+const ANSWER_REQUESTS = [
+  'answer?',
+  "what's the answer",
+  'what is the answer',
+  'just tell me',
+  'give me the answer',
+  'send me the answer',
+  'show me the answer',
+  'solve it',
+  'please solve',
+  'how would you do it',
+  'how do you do it',
+  'i give up',
+  'skip',
+] as const;
+
+/** Ledger rule 4's agreement-only turns: a receipt, not a contribution. */
+const AGREEMENT = new Set([
+  'ok', 'okay', 'k', 'kk', 'yes', 'yeah', 'yep', 'no', 'nope', 'sure', 'right', 'cool', 'nice',
+  'thanks', 'thank', 'you', 'got', 'it', 'i', 'see', 'understood', 'makes', 'sense', 'hmm', 'ah',
+  'oh', 'alright', 'fine', 'great',
+]);
+
+export type MockLearnerTurn = 'attempt' | 'answer_request' | 'question' | 'other';
+
+/**
+ * §2.2, in the order the brief states it. The order matters: an answer request that happens to end
+ * in `?` is an answer request, and "what's the answer?" must never be read as a clarification.
+ *
+ * **`attempt` is the default, and a two-word answer is an attempt.** It may not move the ledger —
+ * rule 4's eight-word floor is a separate question, answered separately — but it lifts the answer
+ * lock, which is §2.2's own sentence and the one thing this function exists to get right.
+ */
+export function classifyMockLearnerTurn(body: string): MockLearnerTurn {
+  const text = body.replace(/[\u2018\u2019]/g, "'").trim().toLowerCase();
+  if (text.length === 0) return 'other';
+  const words = text.split(/\s+/);
+  if (words.length <= 25 && ANSWER_REQUESTS.some((phrase) => text.includes(phrase))) {
+    return 'answer_request';
+  }
+  // One sentence: nothing terminal before the final mark.
+  const oneSentence = !/[.?!]\s/.test(text) && !/[.?!].+$/.test(text.slice(0, -1));
+  if (words.length <= 25 && text.endsWith('?') && oneSentence) return 'question';
+  if (words.every((w) => AGREEMENT.has(w.replace(/[^a-z']/g, '')))) return 'other';
+  return 'attempt';
 }
 
 const ROOM = 'mock-room-1';
@@ -158,7 +215,19 @@ export function createMockBridge(): ChatterEdApi {
    * `turn.released`. Nothing streams before the floor: the mock buffers exactly as `actor.ts`
    * does, so a renderer that looks right here looks right against the CLI backend too.
    */
-  function think(agent: AgentProfile, ms: number, body: string, extra: Partial<MessageView> = {}) {
+  function think(
+    agent: AgentProfile,
+    ms: number,
+    body: string,
+    extra: Partial<MessageView> = {},
+    /**
+     * Run the instant the turn lands and **before** `turn.released` is emitted (issue #47).
+     * The attempt loop's state moves on the agent's turn — feedback landing sets `feedbackGiven`,
+     * the answer turn sets `answerShown` — and the renderer re-reads the quiz on `turn.released`,
+     * so a flag flipped any later than this would be read one gesture stale.
+     */
+    onLanded?: () => void,
+  ) {
     const turnId = `turn_mock_${(mockTurn += 1)}`;
     const anchorId = extra.anchorId ?? null;
     const participant: TurnParticipantView = {
@@ -183,9 +252,12 @@ export function createMockBridge(): ChatterEdApi {
         if (chunk === undefined) {
           stoppable.delete(turnId);
           emit({ type: 'agent.thinking.cleared', roomId: ROOM });
+          onLanded?.();
           const row = post(body, agent, {
             ...extra, latencyTargetMs: ms, ttftActualMs: ms, totalMs: Date.now() - startedAt,
-            decidedBy: 'mock:script',
+            // A rule the caller named wins: `rule:answer_withheld` on this card is the whole
+            // point of the card (`attempt-first.md` §2.3), and 'mock:script' would hide it.
+            decidedBy: extra.decidedBy ?? 'mock:script',
           });
           emit({ type: 'turn.released', roomId: ROOM, turnId, messageId: row.id, stopped: false });
           traces.push({
@@ -319,6 +391,17 @@ export function createMockBridge(): ChatterEdApi {
   let flowTurns = 0;
 
   /**
+   * ── the attempt loop, drivable without Electron (issue #47) ──────────────
+   *
+   * anchor → the Tester's open question there, in exactly the shape the renderer reads. Kept after
+   * the answer is shown rather than deleted, because §2.4's **Try another** is drawn off
+   * `answerShown` and a deleted quiz would take the only on-ramp to the second question with it.
+   */
+  const flowQuizzes = new Map<string, FlowQuizView>();
+  /** `meta.scriptCue = 'try:N'` in the real request — here, just so the copy can vary. */
+  let tryCount = 0;
+
+  /**
    * **The learning-objective tree, mocked** (issue #38, `learning-objectives.md` §2).
    *
    * Four objectives and one prerequisite the deck assumes, which is the smallest tree that
@@ -417,6 +500,116 @@ export function createMockBridge(): ChatterEdApi {
     'You said the exchange "is not added to the history". The deck has a test where it claimed to write a todo and did not. ' +
     'Is that the same property, or a different one? If it is different, name both.';
 
+  // ── the Tester's own copy, for the loop (issue #47, §2.3 and §3) ─────────
+  /**
+   * Max's turns, in the five shapes §2.3's table names. They are *mock* text and not a spec — but
+   * the **grounds** are load-bearing: §3 asks every point in feedback to say where the deck settles
+   * it, as `p. N: "…"`, and the renderer's job (item 4) is to make that `p. N` clickable. A mock
+   * that never produced the citation could not be used to look at the thing being built.
+   */
+  const TRY_HINT =
+    'Not yet — the answer is not mine to give before you have tried once. One narrowing: the page ' +
+    'lists three things the side channel cannot reach, and two of them are about *state* rather ' +
+    'than permission. Name either one and the answer is yours.';
+
+  const TRY_FEEDBACK = [
+    'That lands the first half. You have the read-only part, and p. 3: "no tools of its own" is ' +
+      'where the deck settles it.',
+    'What is missing is the second half. p. 3: "nothing carried between calls" — the exchange is ' +
+      'not only unable to act, it is not remembered either, and your sentence only rules out the ' +
+      'first. Say what happens to the exchange after the answer and you have the whole of it.',
+  ].join('\n\n');
+
+  const TRY_CLARIFY =
+    'Fair question, and I will answer it without answering mine. "The history" here means the ' +
+    'transcript the main agent goes on to read — not your own scrollback. Now: same question.';
+
+  const TRY_NUDGE = 'Take your time. I am not going anywhere, and a wrong attempt is worth more to me than a right silence.';
+
+  const TRY_ANSWER =
+    'Here it is, and it changes nothing on your progress — the ledger only moves on words you ' +
+    'wrote yourself.\n\n' +
+    'Two properties, not one. p. 3: "no tools of its own" is the read-only half: the side channel ' +
+    'cannot act, so a todo it claims to have written was never written. p. 5: "paid for out of the ' +
+    'same window" is the other half: the exchange is answered *from* the main context without being ' +
+    'added to it, so the cost has moved rather than disappeared.\n\n' +
+    'Your attempt had the first. The second is the one the deck spends a page on.';
+
+  /**
+   * §2.1's pick, as much of it as a mock deck can have: the lowest ledger level first, deck order
+   * as the tie-break. The card's own objectives cannot be honoured here — this file has no deck to
+   * resolve a segment against — so it is level-ordered over the whole tree, which is the half of
+   * the rule that the **Try another** button is actually about.
+   */
+  function pickMockObjective(objectiveId?: string): LearningObjective | null {
+    if (objectiveId) return mockObjectives.find((o) => o.id === objectiveId) ?? null;
+    const ranked = [...mockObjectives]
+      .filter((o) => o.refs.length > 0)
+      .sort((a, b) => (mockStates.get(a.id)?.level ?? 0) - (mockStates.get(b.id)?.level ?? 0) || a.order - b.order);
+    return ranked[0] ?? null;
+  }
+
+  /** Max asks one question on an objective, and the quiz opens when the question *lands*. */
+  function askMockQuiz(anchorId: string, objective: LearningObjective): void {
+    tryCount += 1;
+    const seed = objective.quizSeeds[0] ?? `Tell me what "${objective.title}" means in your own words.`;
+    const body = tryCount === 1
+      ? `One question, then. ${seed}`
+      : `Another one, on the part you have shown least of. ${seed}`;
+    // The *question* uses the short band (§2.1: the learner asked for it); the feedback keeps the
+    // Tester's 9–12 s, which is the considered judgement Tan et al. is about.
+    think(max, 4500, body, { anchorId, decidedBy: 'rule:try_here' }, () => {
+      flowQuizzes.set(anchorId, {
+        quizMessageId: `m${seq + 1}`,
+        elementId: objective.id,
+        attempts: 0,
+        feedbackGiven: false,
+        answerShown: false,
+      });
+    });
+  }
+
+  /** One learner turn into an open quiz, by §2.3's table. Every branch is a rule, never a model. */
+  function mockQuizTurn(anchorId: string, quiz: FlowQuizView, text: string, messageId: string): void {
+    const kind = classifyMockLearnerTurn(text);
+    if (kind === 'attempt') {
+      quiz.attempts += 1;
+      quiz.feedbackGiven = false;
+      later(1200, () => {
+        // The ledger runs on the attempt, as it does on every learner turn.
+        moveLedger([['R1', quiz.attempts > 1 ? 'justified' : 'stated', text.slice(0, 64), null]]);
+        moveMockObjective(messageId);
+      });
+      think(max, 9000, TRY_FEEDBACK, { anchorId, decidedBy: 'rule:quiz_feedback' }, () => {
+        quiz.feedbackGiven = true;
+      });
+      return;
+    }
+    if (kind === 'answer_request') {
+      if (quiz.attempts === 0) {
+        // The rule the whole brief is about. No ledger, no attempt, one hint that narrows it.
+        think(max, 9000, TRY_HINT, { anchorId, decidedBy: 'rule:answer_withheld' });
+        return;
+      }
+      showMockAnswer(anchorId, quiz);
+      return;
+    }
+    if (kind === 'question') {
+      // A clarification is not an attempt: the quiz stays open and `attempts` does not move.
+      think(max, 9000, TRY_CLARIFY, { anchorId, decidedBy: 'rule:quiz_clarify' });
+      return;
+    }
+    think(max, 9000, TRY_NUDGE, { anchorId, decidedBy: 'rule:quiz_nudge' });
+  }
+
+  /** The `rule:answer_shown` turn. **The ledger is not run on it**, and never is (§2.3). */
+  function showMockAnswer(anchorId: string, quiz: FlowQuizView): void {
+    think(max, 9000, TRY_ANSWER, { anchorId, decidedBy: 'rule:answer_shown' }, () => {
+      quiz.answerShown = true;
+      quiz.feedbackGiven = true;
+    });
+  }
+
   function flowView() {
     const anchors = [...new Set(messages.filter((m) => m.anchorId).map((m) => m.anchorId!))];
     // The deck thread first, as `flowRoomView()` does in the main process: a deck-level question
@@ -428,7 +621,7 @@ export function createMockBridge(): ChatterEdApi {
         anchorId,
         messageIds: messages.filter((m) => m.anchorId === anchorId).map((m) => m.id),
         lockedByAnswerId: locked.get(anchorId) ?? null,
-        quiz: null,
+        quiz: flowQuizzes.get(anchorId) ?? null,
         lastSeenSeq: seen.get(anchorId) ?? 0,
         collapsed: cardState.get(anchorId)?.collapsed ?? false,
         removed: cardState.get(anchorId)?.removed ?? false,
@@ -677,12 +870,45 @@ export function createMockBridge(): ChatterEdApi {
         messageIds: messages.filter((m) => m.anchorId === threadId && m.id !== summaryId).map((m) => m.id),
       };
     },
-    /** The attempt loop (issue #47). Typed stubs; the renderer track gives them a body. */
-    async flowTryHere({ segmentId }) {
-      return { roomId: ROOM, anchorId: segmentId, objectiveId: '', refused: 'not mocked yet', flow: flowView() };
+    /**
+     * **"+ Try this"** (issue #47, `attempt-first.md` §2.1), driven.
+     *
+     * Creates the room like `flowAskHere`, picks the objective, and resolves **before** the question
+     * exists — which is the real contract: the pick is synchronous, Max's question arrives on the
+     * event stream at the short band, and `quiz` appears on the thread when it lands. A mock that
+     * returned the quiz immediately would let the renderer get away with reading it from the return
+     * value, which the real main process does not offer.
+     */
+    async flowTryHere({ segmentId, objectiveId }) {
+      flowRoomOpen = true;
+      const objective = pickMockObjective(objectiveId);
+      if (!objective) {
+        // §2.1's refusal: nothing to pick from. Inline on the card, never a dialog.
+        return {
+          roomId: ROOM, anchorId: segmentId, objectiveId: '',
+          refused: 'No objectives for this deck yet.', flow: flowView(),
+        };
+      }
+      askMockQuiz(segmentId, objective);
+      return {
+        roomId: ROOM, anchorId: segmentId, objectiveId: objective.id, refused: null, flow: flowView(),
+      };
     },
+    /**
+     * **Show the answer** (§2.3 `rule:answer_shown`) — and the refusal that is the point of it.
+     *
+     * Refused before the first attempt even though the renderer does not offer the control then:
+     * the lock is the orchestrator's, and a mock that honoured a call the real one rejects would
+     * hide exactly the bug worth finding.
+     */
     async flowShowAnswer({ threadId }) {
-      return { roomId: ROOM, anchorId: threadId, shown: false, refused: 'not mocked yet', flow: flowView() };
+      const quiz = flowQuizzes.get(threadId);
+      const no = (refused: string) => ({ roomId: ROOM, anchorId: threadId, shown: false, refused, flow: flowView() });
+      if (!quiz) return no('No question is open here.');
+      if (quiz.attempts === 0) return no("Try it once first — one attempt unlocks the answer.");
+      if (quiz.answerShown) return no('The answer is already on the record here.');
+      showMockAnswer(threadId, quiz);
+      return { roomId: ROOM, anchorId: threadId, shown: true, refused: null, flow: flowView() };
     },
     async flowSend({ segmentId, text }) {
       const mine = post(text, null, { anchorId: segmentId });
@@ -691,6 +917,17 @@ export function createMockBridge(): ChatterEdApi {
         turnId: `turn_mock_${mockTurn + 1}`, messageId: mine.id, anchorId: segmentId,
         receivedAt: iso(), yieldMs: 8000, etaMs: null, responder: null,
       } });
+      /**
+       * **A quiz open here takes the turn** (§2.3): the rules are checked before anything else can
+       * answer, because the learner is answering a question rather than starting a conversation.
+       * Ellie's own path below is untouched and is what runs when no quiz is open.
+       */
+      const quiz = flowQuizzes.get(segmentId);
+      if (quiz && !quiz.answerShown) {
+        mockQuizTurn(segmentId, quiz, text, mine.id);
+        return;
+      }
+
       flowTurns += 1;
       const n = flowTurns;
       later(1200, () => {
@@ -781,7 +1018,7 @@ export function createMockBridge(): ChatterEdApi {
       stoppable.delete(turnId);
       emit({ type: 'agent.thinking.cleared', roomId: ROOM });
       const row = post(live.body.slice(0, Math.max(24, Math.floor(live.body.length / 3))), live.agent, {
-        ...live.extra, stopped: true, decidedBy: 'mock:script',
+        ...live.extra, stopped: true, decidedBy: live.extra.decidedBy ?? 'mock:script',
       });
       emit({ type: 'turn.released', roomId: ROOM, turnId, messageId: row.id, stopped: true });
       arm();
