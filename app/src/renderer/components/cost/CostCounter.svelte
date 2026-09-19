@@ -141,7 +141,10 @@
     top: calc(100% + 6px);
     right: 0;
     z-index: 6;
-    width: 300px;
+    /* Wide enough that the longest row — a scope word beside `15k tok · ≈ $0.02 API-equivalent ·
+       11 calls` — stays on one line. The label is never abbreviated and the dollar label is never
+       dropped, so the panel is what gives. */
+    width: 344px;
     max-width: calc(100vw - 32px);
     padding: 10px 12px 9px;
     background: var(--pane);
@@ -158,16 +161,20 @@
   .split .why { margin: 1px 0 0; font-size: 10px; line-height: 1.45; color: var(--muted); }
 
   .rows { margin: 0; padding: 8px 0 0; border-top: 1px solid var(--hairline); }
+  /* Wrapping, for the reason `CostMeter` gives: the scope's name is the half of the row that
+     says what the number was for, and it must not be the half that gets ellipsised away. */
   .row {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 0 10px;
     padding: 1px 0;
     font-size: 10.5px;
+    line-height: 1.5;
     color: var(--text-2);
   }
-  .row dt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row dd { flex: none; margin: 0; font-variant-numeric: tabular-nums; }
+  .row dt { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row dd { flex: 0 1 auto; margin: 0 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
 
   .note { margin: 7px 0 0; font-size: 10px; line-height: 1.45; color: var(--muted); font-variant-numeric: tabular-nums; }
 </style>

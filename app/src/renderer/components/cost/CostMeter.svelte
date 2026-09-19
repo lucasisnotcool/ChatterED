@@ -81,7 +81,7 @@
       {#if reported}
         <!-- Side by side, never summed: the two figures disagreed by ~1.7× on the one measurement
              in `segmentation-cost.md` §UNVERIFIED 6, and adding them would invent a third. -->
-        <p class="aside">{reported}, which is the CLI's own accounting — shown beside the estimate above, not added to it.</p>
+        <p class="aside">{reported} — its own figure, not added to the one above.</p>
       {/if}
 
       {#if failed}
@@ -113,23 +113,27 @@
   .twist { font-size: 8px; color: var(--muted); }
 
   .rows { margin: 5px 0 0; padding: 0; }
+  /* The detail wraps to its own line rather than eating the label: in a 340px column a scope
+     with a long figure beside it would otherwise ellipsis the one word that says what it was. */
   .row {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 0 10px;
     padding: 1px 0;
     font-size: 10px;
     line-height: 1.5;
     color: var(--text-2);
   }
-  .row dt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row dd { flex: none; margin: 0; font-variant-numeric: tabular-nums; }
+  .row dt { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row dd { flex: 0 1 auto; margin: 0 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
 
   .aside {
     margin: 4px 0 0;
     font-size: 10px;
     line-height: 1.5;
-    color: var(--muted);
+    color: var(--text-2);
+    opacity: 0.7;
     font-variant-numeric: tabular-nums;
   }
 </style>
