@@ -163,7 +163,7 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         { type: 'separator' },
         {
           label: 'How ChatterED Works',
-          click: () => void shell.openExternal('https://github.com/aekyr/ChatterED#readme'),
+          click: () => void shell.openExternal('https://github.com/lucasisnotcool/ChatterED#readme'),
         },
       ],
     },
