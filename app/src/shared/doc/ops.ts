@@ -578,6 +578,24 @@ export function keepEdit(state: EditorState, edit: EditRef): Transaction | null 
 // ── the ingest's windows (§2) ───────────────────────────────────────────────────────────────
 
 /**
+ * The document exactly as `emptyDoc()` left it: a title, and one empty paragraph after it that
+ * carries no provenance. Returns where that paragraph is and how big it is, or null for anything
+ * else — a second block, any text at all, a paragraph that has since been given a page.
+ *
+ * Deliberately strict. It is read once, before a window is inserted, and everything it refuses
+ * is a document the learner may already be writing in.
+ */
+function pristineSeed(doc: Node): { pos: number; size: number } | null {
+  if (doc.childCount !== 2) return null;
+  const body = doc.child(1);
+  if (body.type !== notesSchema.nodes.paragraph) return null;
+  if (body.content.size !== 0) return null;
+  const attrs = blockAttrs(body);
+  if (attrs.pages.length > 0 || attrs.reason !== null) return null;
+  return { pos: doc.child(0).nodeSize, size: body.nodeSize };
+}
+
+/**
  * **An ingest window only ever appends** (contract rule 5).
  *
  * "Long decks are ingested in page windows with a running outline so the notes stay cohesive;
@@ -596,6 +614,26 @@ export function appendWindow(
   if (nodes.length === 0) return tr;
   const target = afterBlockId ? blockPos(tr.doc, afterBlockId) : null;
   const where = target ? target.pos + target.node.nodeSize : tr.doc.content.size;
+  const seed = pristineSeed(tr.doc);
   tr.insert(where, Fragment.fromArray(nodes));
+  /**
+   * **The seed paragraph goes when the notes arrive.**
+   *
+   * `emptyDoc()` has to put an empty paragraph under the title, because the schema's `doc` is
+   * `block+` and a title alone is not a document — and while the ingest runs it is also where
+   * the learner can type. The moment the first window lands it is neither: it is an empty block
+   * with no `pages` and no `reason`, which is precisely what §2 calls a bug in the ingest, and
+   * the provenance chip agrees with it on screen in amber — "no source", between the title and
+   * the first heading, on every freshly ingested deck.
+   *
+   * Only the *pristine* seed is taken (title + one empty, provenance-less paragraph, measured
+   * before the insert): once the learner has typed anywhere, any empty paragraph in the document
+   * is theirs — the caret may be sitting in it — and §5.4 says an agent never removes their text
+   * or their place in it.
+   */
+  if (seed) {
+    const from = tr.mapping.map(seed.pos);
+    tr.delete(from, from + seed.size);
+  }
   return tr;
 }

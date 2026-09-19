@@ -23,7 +23,7 @@ import {
   removeEdit,
   type ApplyResult,
 } from './ops.js';
-import { blockAttrs, blockPos, learnerSpans, notesSchema } from './schema.js';
+import { blockAttrs, blockPos, emptyDoc, learnerSpans, notesSchema } from './schema.js';
 import { rejectSuggestion } from './suggest.js';
 import type { AgentDocOp, AgentDocOpBatch, DocBlockDraft } from './types.js';
 
@@ -392,6 +392,46 @@ describe('rule 5 — appendWindow', () => {
   it('is a no-op transaction for an empty window', () => {
     const state = stateOf(fixtureDoc());
     expect(appendWindow(state, 'b_2', []).steps).toHaveLength(0);
+  });
+
+  /**
+   * The live run of 19 Sep opened every freshly ingested deck with an empty paragraph between
+   * the title and the first heading, wearing an amber `no source` chip — `emptyDoc`'s seed,
+   * which §2 would reject as a block with no provenance if the ingest had produced it.
+   */
+  it('takes the seed paragraph out once the first window has landed', () => {
+    const state = stateOf(emptyDoc('Lecture 4'));
+    expect(state.doc.childCount).toBe(2);
+
+    const doc = state.apply(appendWindow(state, null, window)).doc;
+
+    expect(doc.childCount).toBe(3);
+    expect(doc.child(0).textContent).toBe('Lecture 4');
+    expect(doc.child(1).textContent).toBe('Policy iteration');
+    const empties = [] as string[];
+    doc.forEach((node) => {
+      if (node.content.size === 0) empties.push(node.type.name);
+    });
+    expect(empties).toEqual([]);
+  });
+
+  it('leaves the seed alone once the learner has written anywhere in the document', () => {
+    // Two blocks, but the second one is the learner's: this is no longer a pristine seed, and
+    // the caret may well be sitting in it (§5.4 — an agent never undoes the learner's place).
+    const state = stateOf(docOf(heading('b_t', 1, 'Lecture 4'), para('b_u', 'My own note.', 'user')));
+    const doc = state.apply(appendWindow(state, null, window)).doc;
+
+    expect(doc.child(1).textContent).toBe('My own note.');
+    expect(doc.childCount).toBe(4);
+  });
+
+  it('leaves a second window alone: there is no seed left to take', () => {
+    const state = stateOf(emptyDoc('Lecture 4'));
+    const first = state.apply(appendWindow(state, null, window));
+    const second = first.apply(appendWindow(first, null, [P('And a second window.', [8])]));
+
+    expect(second.doc.childCount).toBe(4);
+    expect(second.doc.lastChild!.textContent).toBe('And a second window.');
   });
 });
 
