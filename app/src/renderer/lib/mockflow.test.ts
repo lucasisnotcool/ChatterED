@@ -139,19 +139,28 @@ describe('the thread, end to end', () => {
  * renderer reads. The classifier's cases quote R6's own lines, because they are the evidence.
  */
 describe('classifyLearnerTurn (§2.2), the rule the mock loop reads', () => {
-  it("reads R6's own answer requests as answer requests", () => {
+  /**
+   * **`answer_request` is now `give_up`** (#48, `collab-doc.md` §4.4).
+   *
+   * The class absorbed the frustration and don't-know phrasings, and what it triggers changed
+   * with it: `rule:answer_withheld` is retired, so a give-up releases the answer at once, with
+   * or without an attempt, and the next question on that objective is pitched lower. The
+   * phrases below are unchanged — they are still R6's own lines — and that is the point: the
+   * evidence did not move, the rule did.
+   */
+  it("reads R6's own answer requests as a give-up", () => {
     for (const line of ['answer?', 'please solve the question', "what's the answer", 'send me the answer']) {
-      expect(classifyLearnerTurn(line)).toBe('answer_request');
+      expect(classifyLearnerTurn(line)).toBe('give_up');
     }
-    expect(classifyLearnerTurn('I give up')).toBe('answer_request');
+    expect(classifyLearnerTurn('I give up')).toBe('give_up');
     // Curly apostrophes are what a Mac keyboard actually produces.
-    expect(classifyLearnerTurn('what\u2019s the answer')).toBe('answer_request');
+    expect(classifyLearnerTurn('what\u2019s the answer')).toBe('give_up');
   });
 
   it('reads a one-sentence clarification as a question, not an attempt', () => {
     expect(classifyLearnerTurn('what does T mean?')).toBe('question');
-    // An answer request that happens to end in "?" is still an answer request: order matters.
-    expect(classifyLearnerTurn('what is the answer?')).toBe('answer_request');
+    // A give-up that happens to end in "?" is still a give-up: order matters.
+    expect(classifyLearnerTurn('what is the answer?')).toBe('give_up');
   });
 
   it('reads agreement and emptiness as neither', () => {
@@ -231,7 +240,13 @@ describe('the answer lock (§2.3)', () => {
   const quizOf = async (bridge: ReturnType<typeof createMockBridge>) =>
     (await bridge.flowMessages({ fileId: 'f1' }))!.threads.find((t) => t.anchorId === SEG)!.quiz!;
 
-  it('withholds the answer, with a hint, on an answer request with no attempt', async () => {
+  /**
+   * **What #48 §4.4 changed.** This test used to assert the opposite: an answer request with no
+   * attempt got `rule:answer_withheld` and a hint. `collab-doc.md` §9 retires that rule — a
+   * give-up releases the answer at once — and what survives is the half that matters for the
+   * ledger: a released answer is not an attempt and moves nothing.
+   */
+  it('releases the answer on a give-up with no attempt, and moves nothing', async () => {
     vi.useFakeTimers();
     try {
       const { bridge } = harness();
@@ -243,11 +258,11 @@ describe('the answer lock (§2.3)', () => {
 
       const view = await bridge.flowMessages({ fileId: 'f1' });
       const last = threadFor(view!.room.messages, SEG).at(-1)!;
-      expect(last.decidedBy).toBe('rule:answer_withheld');
-      // Not an attempt, so the lock is still on and the ledger has not moved.
+      expect(last.decidedBy).toBe('rule:answer_shown');
+      // Still not an attempt: the answer is out, and the ledger has not moved for it.
       const quiz = view!.threads.find((t) => t.anchorId === SEG)!.quiz!;
       expect(quiz.attempts).toBe(0);
-      expect(quiz.answerShown).toBe(false);
+      expect(quiz.answerShown).toBe(true);
       expect(view!.room.ledger.covered).toBe(before);
       expect(quizControls(quiz).showAnswer).toBe(false);
     } finally {

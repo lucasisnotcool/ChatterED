@@ -12,6 +12,7 @@
    * that crosses back into this track. It is **not** an editor: no ProseMirror, no typing, no
    * guard, no save. Every one of those is T4's, and this file is deleted when their pane lands.
    */
+  import { untrack } from 'svelte';
   import type { DocBlockDraft, NotesDocView } from '../../../shared/doc/types.js';
   import type { RoomEvent } from '../../../shared/types.js';
   import { AGENT_HUE } from '../../lib/chatview.js';
@@ -147,9 +148,11 @@
 
   $effect(() => {
     void fileId;
-    lines = [];
-    notes = null;
-    void load();
+    untrack(() => {
+      lines = [];
+      notes = null;
+      void load();
+    });
   });
 
   /**
@@ -157,7 +160,7 @@
    * store that owns them (`store.doc`) is T4's and this file is scaffolding that goes away.
    */
   $effect(() => {
-    return bridge().onEvent((e: RoomEvent) => {
+    return bridge().onEvent((e: RoomEvent) => untrack(() => {
       if (e.type === 'notes.window') {
         insertAfter(e.afterBlockId, e.blocks.map((b) => draftLine(b, 'ingest')));
       } else if (e.type === 'notes.status') {
@@ -177,7 +180,7 @@
           }
         }
       }
-    });
+    }));
   });
 
   /** Highlight + Ctrl+E — T4's keybinding, and the one gesture that crosses into this track. */

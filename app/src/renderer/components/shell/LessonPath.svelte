@@ -48,8 +48,20 @@
     };
   });
 
+  /**
+   * Open on the current step, not at the top.
+   *
+   * A path whose first screen is the work you have already done is a path that makes you scroll
+   * to find out what to do next — which is the opposite of what the interviewee asked for. The
+   * panel still opens at the top when everything is complete: then the whole list *is* the point.
+   */
   $effect(() => {
-    if (progress.open) panel?.focus();
+    if (!progress.open) return;
+    panel?.focus();
+    queueMicrotask(() => {
+      const card = panel?.querySelector<HTMLElement>('.card.next');
+      card?.scrollIntoView({ block: 'nearest' });
+    });
   });
 </script>
 

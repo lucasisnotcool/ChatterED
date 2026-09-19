@@ -16,6 +16,7 @@
    * private turn: `context.test.ts` in `src/room` is the canary for that and it is the main
    * process's to keep, not this component's.
    */
+  import { untrack } from 'svelte';
   import type { AgentAuthor } from '../../../shared/doc/types.js';
   import { AGENT_HUE, AGENT_NAME, AGENT_ROLE_WORD } from '../../lib/chatview.js';
   import { paragraphs } from '../../lib/aitext.js';
@@ -35,14 +36,18 @@
 
   $effect(() => {
     void chat.fileId;
-    void chat.tab;
-    if (chat.tab === agent) void chat.openPrivate(agent);
+    const tab = chat.tab;
+    // `untrack`, for the reason `ThreeColumn`'s own docstring gives: `openPrivate` reads the
+    // channel it is about to write, and an effect that depended on that would re-open it.
+    untrack(() => {
+      if (tab === agent) void chat.openPrivate(agent);
+    });
   });
 
   $effect(() => {
     void channel.turns.length;
     void channel.thinking;
-    const el = scroller;
+    const el = untrack(() => scroller);
     if (!el) return;
     queueMicrotask(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }));
   });

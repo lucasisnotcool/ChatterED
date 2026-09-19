@@ -521,11 +521,6 @@ export function createMockBridge(): ChatterEdApi {
    * it, as `p. N: "…"`, and the renderer's job (item 4) is to make that `p. N` clickable. A mock
    * that never produced the citation could not be used to look at the thing being built.
    */
-  const TRY_HINT =
-    'Not yet — the answer is not mine to give before you have tried once. One narrowing: the page ' +
-    'lists three things the side channel cannot reach, and two of them are about *state* rather ' +
-    'than permission. Name either one and the answer is yours.';
-
   const TRY_FEEDBACK = [
     'Partly there. That lands the first half: you have the read-only part, and p. 3: "no tools of ' +
       'its own" is where the deck settles it.',
@@ -605,11 +600,15 @@ export function createMockBridge(): ChatterEdApi {
       return;
     }
     if (kind === 'give_up') {
-      if (quiz.attempts === 0) {
-        // The rule the whole brief is about. No ledger, no attempt, one hint that narrows it.
-        think(max, 9000, TRY_HINT, { anchorId, decidedBy: 'rule:answer_withheld' });
-        return;
-      }
+      /**
+       * **`rule:answer_withheld` is retired** (#48, `collab-doc.md` §4.4 and §9).
+       *
+       * #47 held the answer back until one attempt and answered an early request with a hint.
+       * The collab-doc brief reverses that on Lucas's reason: a learner must never see a question
+       * they never get the answer to, and a refused answer teaches less than a lowered question.
+       * So a give-up releases at once, with or without an attempt — and it still fills nothing,
+       * which is the half of #47 that survives. `TRY_HINT` goes with the rule that used it.
+       */
       showMockAnswer(anchorId, quiz);
       return;
     }

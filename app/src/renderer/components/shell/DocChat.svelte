@@ -13,6 +13,7 @@
    * elapsed counter for Max only, **Stop** once the floor has passed, and the failure card with
    * its retry. A turn always ends in something the learner can see.
    */
+  import { untrack } from 'svelte';
   import type { MessageView } from '../../../shared/types.js';
   import type { ThreadView } from '../../../shared/doc/types.js';
   import { RECEIVED_LINE, pendingFor, receivedVisible, stopAllowed } from '../../lib/flowchat.js';
@@ -108,25 +109,50 @@
     void entries.length;
     void chat.stream?.text;
     void chat.thinking;
-    const el = scroller;
+    const el = untrack(() => scroller);
     if (!el) return;
     queueMicrotask(() => {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     });
   });
 
-  /** A focus request from a highlight click in the document, or from a lesson card's Start. */
+  /**
+   * A focus request from a highlight click in the document, or from a lesson card's Start.
+   *
+   * The ring it leaves is a **flash**, not a state: "this one" is the message, and a card that
+   * stayed ringed until something else was focused would be claiming to be selected.
+   */
+  let flashed = $state<string | null>(null);
   $effect(() => {
     const request = chat.focusRequest;
-    if (!request || !scroller) return;
-    const node = scroller.querySelector<HTMLElement>(`[data-thread="${CSS.escape(request.threadId)}"]`);
+    const el = untrack(() => scroller);
+    if (!request || !el) return;
+    const node = el.querySelector<HTMLElement>(`[data-thread="${CSS.escape(request.threadId)}"]`);
     node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    untrack(() => {
+      flashed = request.threadId;
+    });
+    const handle = setTimeout(() => {
+      flashed = null;
+    }, 1600);
+    return () => clearTimeout(handle);
   });
 
-  /** Seen, when the column is actually on screen — the unread dot's other half. */
+  /**
+   * Seen, when the column is actually on screen — the unread dot's other half.
+   *
+   * Every thread drawn here, not only the doc thread: a span thread's turns are on screen too,
+   * and an unread count that included them would keep a badge on the tab the learner is
+   * currently reading.
+   */
   $effect(() => {
-    const top = docMessages.reduce((n, m) => Math.max(n, m.seq), 0);
-    if (top > 0) chat.markSeen(docId, top);
+    const marks = [docId, ...spans.map((t) => t.threadId)].map((id) => ({
+      id,
+      top: messagesOf(id, chat.messages).reduce((n, m) => Math.max(n, m.seq), 0),
+    }));
+    untrack(() => {
+      for (const mark of marks) if (mark.top > 0) chat.markSeen(mark.id, mark.top);
+    });
   });
 
   function send(text: string): void {
@@ -164,7 +190,7 @@
         <SpanThreadCard
           thread={entry.thread}
           messages={messagesOf(entry.thread.threadId, chat.messages)}
-          focused={chat.focusRequest?.threadId === entry.thread.threadId}
+          focused={flashed === entry.thread.threadId}
           thinking={heldAnchor === entry.thread.threadId ? chat.thinking : null}
           {pages}
           {onjump}

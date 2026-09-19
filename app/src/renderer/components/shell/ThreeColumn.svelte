@@ -16,6 +16,7 @@
    *  - **the column sizes**, kept per install in `localStorage` the way the flow's zoom and the
    *    objectives panel's width already are.
    */
+  import { untrack } from 'svelte';
   import type { DocumentView } from '../../../shared/types.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
@@ -69,19 +70,31 @@
   /** T4's editor, the moment their file exists. Until then, the read-only stand-in. */
   $effect(() => {
     void loadNotesPane().then((found) => {
-      Pane = found;
+      untrack(() => {
+        Pane = found;
+      });
     });
   });
 
-  /** The file's three surfaces, all opened by the same gesture. */
+  /**
+   * The file's surfaces, all opened by the same gesture.
+   *
+   * `untrack` is not optional here. Both stores *read* their own `fileId` on the way in (that is
+   * how they ignore a second open of the same file), so without it this effect would take a
+   * dependency on the very state it is about to write, and re-run itself into a loop that closed
+   * the file it had just opened — which is exactly what the first browser run did.
+   */
   $effect(() => {
     const fileId = doc.fileId;
-    void store.chat.open(fileId);
-    void store.progress.load(fileId);
-    return () => {
-      store.chat.close();
-      store.progress.close();
-    };
+    untrack(() => {
+      void store.chat.open(fileId);
+      void store.progress.load(fileId);
+    });
+    return () =>
+      untrack(() => {
+        store.chat.close();
+        store.progress.close();
+      });
   });
 
   /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
@@ -178,7 +191,6 @@
         {/if}
       </div>
 
-      <span class="gap"></span>
       <button type="button" class="mini" onclick={() => (store.docView = 'viewer')}>Page viewer</button>
       <button type="button" class="mini" onclick={() => void store.revealFile(doc.fileId)}>Reveal in Finder</button>
       <button type="button" class="mini" onclick={onclose}>Close</button>
@@ -249,9 +261,10 @@
     flex: none;
   }
   /* The bar is given room to be a bar: it is the one piece of chrome in this header that is
-     about the learner rather than about the file. */
-  .progress { position: relative; flex: 1; min-width: 180px; max-width: 520px; }
-  .gap { flex: 1; }
+     about the learner rather than about the file, and it is the header's only flexible item —
+     a spacer beside it would halve its width and squeeze the status line out of existence,
+     which is what the first browser run showed. */
+  .progress { position: relative; flex: 1 1 auto; min-width: 240px; max-width: 560px; margin-right: auto; }
   .mini { font-size: 11px; color: var(--text-2); flex: none; }
   .mini:hover { color: var(--indigo); }
 
@@ -271,7 +284,7 @@
 
   @media (max-width: 1100px) {
     /* A narrow window gives the document the room first; the conversation keeps its floor. */
-    .progress { max-width: 260px; }
+    .progress { max-width: 300px; }
     .name { max-width: 16ch; }
   }
 </style>
