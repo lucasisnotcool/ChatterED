@@ -1,0 +1,122 @@
+[
+ {
+  "ai_turn": "A2",
+  "ai_claim": "the queries use the uploaded schema (they reference contest_results)",
+  "ran_ok": false,
+  "claim_holds": false,
+  "postgres": "ERROR:  relation \"contest_results\" does not exist",
+  "note": ""
+ },
+ {
+  "ai_turn": "A7",
+  "ai_claim": "learner's query fails because COUNT(*) has no alias",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "U1",
+  "note": ""
+ },
+ {
+  "ai_turn": "A12",
+  "ai_claim": "query returns the last-placed team(s) per 2023 contest",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "returned 2 rows; true last places: Hanoi|t1; Jakarta|t2; Porto|t6",
+  "note": "learner L13 flags this; AI concedes in A13"
+ },
+ {
+  "ai_turn": "A17",
+  "ai_claim": "solution query runs on the schema",
+  "ran_ok": false,
+  "claim_holds": false,
+  "postgres": "ERROR:  column \"performance_trend\" does not exist",
+  "note": "HAVING references the output alias; the prose says 'p2.date > p1.date' but the query never orders contests in time, so 'improved/declined' is undefined"
+ },
+ {
+  "ai_turn": "A23",
+  "ai_claim": "a team can appear twice for the same contest, so COUNT(*) over-counts",
+  "ran_ok": false,
+  "claim_holds": false,
+  "postgres": "ERROR:  duplicate key value violates unique constraint \"participate_pkey\"",
+  "note": "PRIMARY KEY (team, site, year) forbids it; with year fixed, COUNT(*) = COUNT(DISTINCT site)"
+ },
+ {
+  "ai_turn": "A26",
+  "ai_claim": "learner's query (L26) does not count the EXCEPT result",
+  "ran_ok": null,
+  "claim_holds": false,
+  "postgres": "",
+  "note": "textual check of L26"
+ },
+ {
+  "ai_turn": "A27",
+  "ai_claim": "COUNT(DISTINCT (p.site, p.year)) is unsupported",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "U1|4",
+  "note": ""
+ },
+ {
+  "ai_turn": "A28",
+  "ai_claim": "learner's correlated reference p.site = f.site is invalid",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "Jakarta|U1|1",
+  "note": ""
+ },
+ {
+  "ai_turn": "A30",
+  "ai_claim": "ORDER BY ... LIMIT inside IN is invalid",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "Jakarta|t1|1|50|40",
+  "note": ""
+ },
+ {
+  "ai_turn": "A31",
+  "ai_claim": "ORDER BY ... LIMIT inside IN is invalid (repeated)",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "U1|t1",
+  "note": ""
+ },
+ {
+  "ai_turn": "A43",
+  "ai_claim": "s.region = ALL (subquery) cannot be used",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "",
+  "note": ""
+ },
+ {
+  "ai_turn": "A15",
+  "ai_claim": "RANK() cannot be used without a CTE or subquery",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "t1|1",
+  "note": ""
+ },
+ {
+  "ai_turn": "A36",
+  "ai_claim": "learner's query is completely correct",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "4 rows vs 3 with the 2024 filter",
+  "note": "question specifies 2024; query has no year filter (false positive)"
+ },
+ {
+  "ai_turn": "A33",
+  "ai_claim": "learner's query has issues that the fixed query corrects",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "identical output",
+  "note": "same rows on the test data: the 'fix' changes nothing observable"
+ },
+ {
+  "ai_turn": "A41",
+  "ai_claim": "learner's query is completely correct",
+  "ran_ok": true,
+  "claim_holds": false,
+  "postgres": "3 rows vs 1 with the 2024 filter",
+  "note": "outer query also returns 2023 participations (false positive)"
+ }
+]

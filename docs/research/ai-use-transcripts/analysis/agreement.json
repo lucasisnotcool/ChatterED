@@ -1,0 +1,313 @@
+{
+ "n_common": 152,
+ "missing_in_one": [],
+ "dims": {
+  "L-ACT": {
+   "n": 76,
+   "agreement": 0.95,
+   "kappa": 0.94
+  },
+  "Q-DEPTH": {
+   "n": 76,
+   "agreement": 0.99,
+   "kappa": 0.97
+  },
+  "ICAP": {
+   "n": 76,
+   "agreement": 0.93,
+   "kappa": 0.91
+  },
+  "OWN": {
+   "n": 76,
+   "agreement": 1.0,
+   "kappa": 1.0
+  },
+  "UPTAKE": {
+   "n": 76,
+   "agreement": 0.92,
+   "kappa": 0.9
+  },
+  "VERIFY": {
+   "n": 76,
+   "agreement": 0.97,
+   "kappa": 0.9
+  },
+  "A-MOVE": {
+   "n": 76,
+   "agreement": 0.99,
+   "kappa": 0.98
+  },
+  "ENDQ": {
+   "n": 76,
+   "agreement": 1.0,
+   "kappa": 1.0
+  },
+  "OFFER": {
+   "n": 76,
+   "agreement": 0.96,
+   "kappa": 0.9
+  },
+  "SCOPE": {
+   "n": 76,
+   "agreement": 0.95,
+   "kappa": 0.57
+  },
+  "EXAMFRAME": {
+   "n": 76,
+   "agreement": 1.0,
+   "kappa": 1.0
+  },
+  "FIDELITY": {
+   "n": 76,
+   "agreement": 0.84,
+   "kappa": 0.68
+  },
+  "ANSWERS-TASK": {
+   "n": 76,
+   "agreement": 0.97,
+   "kappa": 0.95
+  }
+ },
+ "disagreements": [
+  {
+   "turn": "R4:L4",
+   "dim": "L-ACT",
+   "A": "REVISE",
+   "B": "PRODUCE"
+  },
+  {
+   "turn": "R6:L13",
+   "dim": "L-ACT",
+   "A": "ATTEMPT",
+   "B": "REVISE"
+  },
+  {
+   "turn": "R6:L32",
+   "dim": "L-ACT",
+   "A": "ATTEMPT",
+   "B": "CONTROL"
+  },
+  {
+   "turn": "R6:L35",
+   "dim": "L-ACT",
+   "A": "CONTROL",
+   "B": "EXPLAIN"
+  },
+  {
+   "turn": "R6:L35",
+   "dim": "Q-DEPTH",
+   "A": "NONE",
+   "B": "SHALLOW"
+  },
+  {
+   "turn": "R5:L2",
+   "dim": "ICAP",
+   "A": "ACTIVE",
+   "B": "PASSIVE"
+  },
+  {
+   "turn": "R6:L10",
+   "dim": "ICAP",
+   "A": "INTERACTIVE",
+   "B": "CONSTRUCTIVE"
+  },
+  {
+   "turn": "R6:L12",
+   "dim": "ICAP",
+   "A": "PASSIVE",
+   "B": "ACTIVE"
+  },
+  {
+   "turn": "R6:L20",
+   "dim": "ICAP",
+   "A": "ACTIVE",
+   "B": "PASSIVE"
+  },
+  {
+   "turn": "R6:L35",
+   "dim": "ICAP",
+   "A": "ACTIVE",
+   "B": "PASSIVE"
+  },
+  {
+   "turn": "R1:L5",
+   "dim": "UPTAKE",
+   "A": "NEW",
+   "B": "CONTINUE"
+  },
+  {
+   "turn": "R2:L3",
+   "dim": "UPTAKE",
+   "A": "REPAIR",
+   "B": "FOLLOW"
+  },
+  {
+   "turn": "R4:L2",
+   "dim": "UPTAKE",
+   "A": "CONTINUE",
+   "B": "ACCEPT-OFFER"
+  },
+  {
+   "turn": "R6:L20",
+   "dim": "UPTAKE",
+   "A": "NEW",
+   "B": "CONTINUE"
+  },
+  {
+   "turn": "R6:L3",
+   "dim": "UPTAKE",
+   "A": "REPAIR",
+   "B": "CONTINUE"
+  },
+  {
+   "turn": "R6:L4",
+   "dim": "UPTAKE",
+   "A": "NEW",
+   "B": "CONTINUE"
+  },
+  {
+   "turn": "R6:L3",
+   "dim": "VERIFY",
+   "A": "CONTENT",
+   "B": "NONE"
+  },
+  {
+   "turn": "R6:L6",
+   "dim": "VERIFY",
+   "A": "NONE",
+   "B": "CONTENT"
+  },
+  {
+   "turn": "R6:A6",
+   "dim": "A-MOVE",
+   "A": "ASSESS",
+   "B": "TELL"
+  },
+  {
+   "turn": "R4:A1",
+   "dim": "OFFER",
+   "A": "N",
+   "B": "Y"
+  },
+  {
+   "turn": "R4:A3",
+   "dim": "OFFER",
+   "A": "N",
+   "B": "Y"
+  },
+  {
+   "turn": "R6:A3",
+   "dim": "OFFER",
+   "A": "N",
+   "B": "Y"
+  },
+  {
+   "turn": "R1:A2",
+   "dim": "SCOPE",
+   "A": "N",
+   "B": "Y"
+  },
+  {
+   "turn": "R2:A2",
+   "dim": "SCOPE",
+   "A": "Y",
+   "B": "N"
+  },
+  {
+   "turn": "R2:A4",
+   "dim": "SCOPE",
+   "A": "Y",
+   "B": "N"
+  },
+  {
+   "turn": "R6:A15",
+   "dim": "SCOPE",
+   "A": "N",
+   "B": "Y"
+  },
+  {
+   "turn": "R4:A2",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "CONTRADICT"
+  },
+  {
+   "turn": "R4:A4",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "UNVERIFIABLE"
+  },
+  {
+   "turn": "R4:A5",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "UNVERIFIABLE"
+  },
+  {
+   "turn": "R4:A6",
+   "dim": "FIDELITY",
+   "A": "OMIT",
+   "B": "UNVERIFIABLE"
+  },
+  {
+   "turn": "R4:A7",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "UNVERIFIABLE"
+  },
+  {
+   "turn": "R6:A15",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "ERROR"
+  },
+  {
+   "turn": "R6:A27",
+   "dim": "FIDELITY",
+   "A": "ERROR",
+   "B": "OK"
+  },
+  {
+   "turn": "R6:A28",
+   "dim": "FIDELITY",
+   "A": "ERROR",
+   "B": "CONTRADICT"
+  },
+  {
+   "turn": "R6:A36",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "ERROR"
+  },
+  {
+   "turn": "R6:A40",
+   "dim": "FIDELITY",
+   "A": "ERROR",
+   "B": "CONTRADICT"
+  },
+  {
+   "turn": "R6:A5",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "ERROR"
+  },
+  {
+   "turn": "R6:A9",
+   "dim": "FIDELITY",
+   "A": "OK",
+   "B": "CONTRADICT"
+  },
+  {
+   "turn": "R2:A10",
+   "dim": "ANSWERS-TASK",
+   "A": "Y",
+   "B": "N"
+  },
+  {
+   "turn": "R4:A3",
+   "dim": "ANSWERS-TASK",
+   "A": "N",
+   "B": "Y"
+  }
+ ]
+}

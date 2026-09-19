@@ -1,0 +1,1697 @@
+{
+ "R1": {
+  "tool": "Claude (claude.ai, personal notes vault via tools)",
+  "model": "not shown in share",
+  "learner_turns": 6,
+  "ai_turns": 6,
+  "learner_words": 146,
+  "learner_words_typed": 113,
+  "ai_words": 2283,
+  "ai_to_learner_ratio": 15.6,
+  "ai_to_typed_ratio": 20.2,
+  "image_turns": 0,
+  "image_only_turns": [],
+  "lexical_uptake": [
+   {
+    "turn": "L2",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L3",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L4",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L5",
+    "share_in_prev_ai": 0.2
+   },
+   {
+    "turn": "L6",
+    "share_in_prev_ai": 0.43
+   }
+  ],
+  "prompt_reuse": [
+   {
+    "turn": "L2",
+    "similarity_to_prev_prompt": 0.25
+   },
+   {
+    "turn": "L3",
+    "similarity_to_prev_prompt": 0.25
+   },
+   {
+    "turn": "L4",
+    "similarity_to_prev_prompt": 0.03
+   },
+   {
+    "turn": "L5",
+    "similarity_to_prev_prompt": 0.03
+   },
+   {
+    "turn": "L6",
+    "similarity_to_prev_prompt": 0.23
+   }
+  ],
+  "ai_format": "not measurable (rendered share, markdown lost)"
+ },
+ "R2": {
+  "tool": "ChatGPT",
+  "model": "gpt-5-2",
+  "learner_turns": 10,
+  "ai_turns": 10,
+  "learner_words": 41,
+  "learner_words_typed": 41,
+  "ai_words": 3829,
+  "ai_to_learner_ratio": 93.4,
+  "ai_to_typed_ratio": 93.4,
+  "image_turns": 6,
+  "image_only_turns": [
+   "L4",
+   "L7",
+   "L8",
+   "L10"
+  ],
+  "duration_min": 49.0,
+  "pacing": [
+   {
+    "turn": "L2",
+    "prev_ai": "A1",
+    "prev_ai_words": 225,
+    "gap_min": 2.4,
+    "wpm_needed": 94,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L3",
+    "prev_ai": "A2",
+    "prev_ai_words": 168,
+    "gap_min": 11.3,
+    "wpm_needed": 15,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L4",
+    "prev_ai": "A3",
+    "prev_ai_words": 326,
+    "gap_min": 14.9,
+    "wpm_needed": 22,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L5",
+    "prev_ai": "A4",
+    "prev_ai_words": 436,
+    "gap_min": 1.5,
+    "wpm_needed": 287,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L6",
+    "prev_ai": "A5",
+    "prev_ai_words": 428,
+    "gap_min": 3.4,
+    "wpm_needed": 128,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L7",
+    "prev_ai": "A6",
+    "prev_ai_words": 439,
+    "gap_min": 8.3,
+    "wpm_needed": 53,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L8",
+    "prev_ai": "A7",
+    "prev_ai_words": 521,
+    "gap_min": 3.9,
+    "wpm_needed": 132,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L9",
+    "prev_ai": "A8",
+    "prev_ai_words": 442,
+    "gap_min": 0.7,
+    "wpm_needed": 678,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L10",
+    "prev_ai": "A9",
+    "prev_ai_words": 430,
+    "gap_min": 2.6,
+    "wpm_needed": 168,
+    "gap_includes_generation": false
+   }
+  ],
+  "pacing_summary": {
+   "median_gap_min": 3.4,
+   "turns_where_full_read_exceeds_238wpm": [
+    "L5",
+    "L9"
+   ]
+  },
+  "lexical_uptake": [
+   {
+    "turn": "L2",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L3",
+    "share_in_prev_ai": 0.25
+   },
+   {
+    "turn": "L5",
+    "share_in_prev_ai": 1.0
+   },
+   {
+    "turn": "L6",
+    "share_in_prev_ai": 1.0
+   },
+   {
+    "turn": "L9",
+    "share_in_prev_ai": 1.0
+   }
+  ],
+  "prompt_reuse": [
+   {
+    "turn": "L2",
+    "similarity_to_prev_prompt": 0.69
+   },
+   {
+    "turn": "L3",
+    "similarity_to_prev_prompt": 0.24
+   },
+   {
+    "turn": "L6",
+    "similarity_to_prev_prompt": 0.28
+   }
+  ],
+  "ai_format": [
+   {
+    "turn": "A1",
+    "words": 225,
+    "headings_per100": 1.3,
+    "bold_per100": 8.4,
+    "emoji": 0
+   },
+   {
+    "turn": "A2",
+    "words": 168,
+    "headings_per100": 1.8,
+    "bold_per100": 7.7,
+    "emoji": 0
+   },
+   {
+    "turn": "A3",
+    "words": 326,
+    "headings_per100": 2.1,
+    "bold_per100": 5.8,
+    "emoji": 1
+   },
+   {
+    "turn": "A4",
+    "words": 436,
+    "headings_per100": 2.1,
+    "bold_per100": 6.2,
+    "emoji": 4
+   },
+   {
+    "turn": "A5",
+    "words": 428,
+    "headings_per100": 1.9,
+    "bold_per100": 4.9,
+    "emoji": 5
+   },
+   {
+    "turn": "A6",
+    "words": 439,
+    "headings_per100": 2.1,
+    "bold_per100": 5.7,
+    "emoji": 2
+   },
+   {
+    "turn": "A7",
+    "words": 521,
+    "headings_per100": 2.1,
+    "bold_per100": 5.0,
+    "emoji": 5
+   },
+   {
+    "turn": "A8",
+    "words": 442,
+    "headings_per100": 3.8,
+    "bold_per100": 5.9,
+    "emoji": 7
+   },
+   {
+    "turn": "A9",
+    "words": 430,
+    "headings_per100": 1.6,
+    "bold_per100": 4.2,
+    "emoji": 0
+   },
+   {
+    "turn": "A10",
+    "words": 414,
+    "headings_per100": 1.9,
+    "bold_per100": 4.1,
+    "emoji": 0
+   }
+  ]
+ },
+ "R3": {
+  "tool": "Perplexity (Spaces, uploaded course files)",
+  "model": "claude46sonnetthinking",
+  "learner_turns": 1,
+  "ai_turns": 1,
+  "learner_words": 23,
+  "learner_words_typed": 23,
+  "ai_words": 1190,
+  "ai_to_learner_ratio": 51.7,
+  "ai_to_typed_ratio": 51.7,
+  "image_turns": 0,
+  "image_only_turns": [],
+  "duration_min": 0.0,
+  "lexical_uptake": [],
+  "prompt_reuse": [],
+  "ai_format": [
+   {
+    "turn": "A1",
+    "words": 1190,
+    "headings_per100": 1.8,
+    "bold_per100": 4.2,
+    "emoji": 3
+   }
+  ],
+  "model_by_turn": [
+   "claude46sonnetthinking"
+  ],
+  "model_switches": 0
+ },
+ "R4": {
+  "tool": "Perplexity (Spaces, uploaded course files)",
+  "model": "claude46sonnetthinking, pplx_beta, pplx_pro",
+  "learner_turns": 10,
+  "ai_turns": 10,
+  "learner_words": 635,
+  "learner_words_typed": 421,
+  "ai_words": 5058,
+  "ai_to_learner_ratio": 8.0,
+  "ai_to_typed_ratio": 12.0,
+  "image_turns": 0,
+  "image_only_turns": [],
+  "duration_min": 3158.5,
+  "pacing": [
+   {
+    "turn": "L2",
+    "prev_ai": "A1",
+    "prev_ai_words": 108,
+    "gap_min": 1.1,
+    "wpm_needed": 102,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L3",
+    "prev_ai": "A2",
+    "prev_ai_words": 1830,
+    "gap_min": 1.0,
+    "wpm_needed": 1805,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L4",
+    "prev_ai": "A3",
+    "prev_ai_words": 1863,
+    "gap_min": 1.0,
+    "wpm_needed": 1836,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L5",
+    "prev_ai": "A4",
+    "prev_ai_words": 48,
+    "gap_min": 3121.4,
+    "wpm_needed": 0,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L6",
+    "prev_ai": "A5",
+    "prev_ai_words": 218,
+    "gap_min": 7.0,
+    "wpm_needed": 31,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L7",
+    "prev_ai": "A6",
+    "prev_ai_words": 101,
+    "gap_min": 8.4,
+    "wpm_needed": 12,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L8",
+    "prev_ai": "A7",
+    "prev_ai_words": 80,
+    "gap_min": 7.2,
+    "wpm_needed": 11,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L9",
+    "prev_ai": "A8",
+    "prev_ai_words": 171,
+    "gap_min": 5.8,
+    "wpm_needed": 29,
+    "gap_includes_generation": true
+   },
+   {
+    "turn": "L10",
+    "prev_ai": "A9",
+    "prev_ai_words": 192,
+    "gap_min": 5.6,
+    "wpm_needed": 35,
+    "gap_includes_generation": true
+   }
+  ],
+  "pacing_summary": {
+   "median_gap_min": 5.699999999999999,
+   "turns_where_full_read_exceeds_238wpm": [
+    "L3",
+    "L4"
+   ]
+  },
+  "lexical_uptake": [
+   {
+    "turn": "L2",
+    "share_in_prev_ai": 0.4
+   },
+   {
+    "turn": "L3",
+    "share_in_prev_ai": 0.5
+   },
+   {
+    "turn": "L4",
+    "share_in_prev_ai": 0.4
+   },
+   {
+    "turn": "L5",
+    "share_in_prev_ai": 0.03
+   },
+   {
+    "turn": "L6",
+    "share_in_prev_ai": 0.18
+   },
+   {
+    "turn": "L7",
+    "share_in_prev_ai": 0.19
+   },
+   {
+    "turn": "L8",
+    "share_in_prev_ai": 0.24
+   },
+   {
+    "turn": "L9",
+    "share_in_prev_ai": 0.24
+   },
+   {
+    "turn": "L10",
+    "share_in_prev_ai": 0.22
+   }
+  ],
+  "prompt_reuse": [
+   {
+    "turn": "L2",
+    "similarity_to_prev_prompt": 0.27
+   },
+   {
+    "turn": "L3",
+    "similarity_to_prev_prompt": 0.28
+   },
+   {
+    "turn": "L4",
+    "similarity_to_prev_prompt": 0.51
+   },
+   {
+    "turn": "L5",
+    "similarity_to_prev_prompt": 0.03
+   },
+   {
+    "turn": "L6",
+    "similarity_to_prev_prompt": 0.04
+   },
+   {
+    "turn": "L7",
+    "similarity_to_prev_prompt": 0.46
+   },
+   {
+    "turn": "L8",
+    "similarity_to_prev_prompt": 0.41
+   },
+   {
+    "turn": "L9",
+    "similarity_to_prev_prompt": 0.97
+   },
+   {
+    "turn": "L10",
+    "similarity_to_prev_prompt": 1.0
+   }
+  ],
+  "ai_format": [
+   {
+    "turn": "A1",
+    "words": 108,
+    "headings_per100": 0.0,
+    "bold_per100": 5.6,
+    "emoji": 0
+   },
+   {
+    "turn": "A2",
+    "words": 1830,
+    "headings_per100": 0.4,
+    "bold_per100": 3.8,
+    "emoji": 0
+   },
+   {
+    "turn": "A3",
+    "words": 1863,
+    "headings_per100": 1.4,
+    "bold_per100": 3.8,
+    "emoji": 0
+   },
+   {
+    "turn": "A4",
+    "words": 48,
+    "headings_per100": 0.0,
+    "bold_per100": 0.0,
+    "emoji": 0
+   },
+   {
+    "turn": "A5",
+    "words": 218,
+    "headings_per100": 0.0,
+    "bold_per100": 2.8,
+    "emoji": 0
+   },
+   {
+    "turn": "A6",
+    "words": 101,
+    "headings_per100": 0.0,
+    "bold_per100": 0.0,
+    "emoji": 0
+   },
+   {
+    "turn": "A7",
+    "words": 80,
+    "headings_per100": 0.0,
+    "bold_per100": 5.0,
+    "emoji": 0
+   },
+   {
+    "turn": "A8",
+    "words": 171,
+    "headings_per100": 0.0,
+    "bold_per100": 2.3,
+    "emoji": 0
+   },
+   {
+    "turn": "A9",
+    "words": 192,
+    "headings_per100": 0.0,
+    "bold_per100": 2.1,
+    "emoji": 0
+   },
+   {
+    "turn": "A10",
+    "words": 447,
+    "headings_per100": 3.1,
+    "bold_per100": 6.3,
+    "emoji": 20
+   }
+  ],
+  "model_by_turn": [
+   "pplx_beta",
+   "pplx_pro",
+   "pplx_pro",
+   "pplx_beta",
+   "claude46sonnetthinking",
+   "claude46sonnetthinking",
+   "pplx_pro",
+   "claude46sonnetthinking",
+   "pplx_pro",
+   "pplx_pro"
+  ],
+  "model_switches": 6
+ },
+ "R5": {
+  "tool": "ChatGPT",
+  "model": "gpt-4o",
+  "learner_turns": 4,
+  "ai_turns": 4,
+  "learner_words": 28,
+  "learner_words_typed": 28,
+  "ai_words": 982,
+  "ai_to_learner_ratio": 35.1,
+  "ai_to_typed_ratio": 35.1,
+  "image_turns": 1,
+  "image_only_turns": [],
+  "duration_min": 6.4,
+  "pacing": [
+   {
+    "turn": "L2",
+    "prev_ai": "A1",
+    "prev_ai_words": 159,
+    "gap_min": 2.8,
+    "wpm_needed": 56,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L3",
+    "prev_ai": "A2",
+    "prev_ai_words": 313,
+    "gap_min": 3.1,
+    "wpm_needed": 102,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L4",
+    "prev_ai": "A3",
+    "prev_ai_words": 238,
+    "gap_min": 0.5,
+    "wpm_needed": 525,
+    "gap_includes_generation": false
+   }
+  ],
+  "pacing_summary": {
+   "median_gap_min": 2.8,
+   "turns_where_full_read_exceeds_238wpm": [
+    "L4"
+   ]
+  },
+  "lexical_uptake": [
+   {
+    "turn": "L2",
+    "share_in_prev_ai": 1.0
+   },
+   {
+    "turn": "L3",
+    "share_in_prev_ai": 0.25
+   },
+   {
+    "turn": "L4",
+    "share_in_prev_ai": 0.67
+   }
+  ],
+  "prompt_reuse": [
+   {
+    "turn": "L2",
+    "similarity_to_prev_prompt": 0.19
+   },
+   {
+    "turn": "L3",
+    "similarity_to_prev_prompt": 0.34
+   },
+   {
+    "turn": "L4",
+    "similarity_to_prev_prompt": 0.28
+   }
+  ],
+  "ai_format": [
+   {
+    "turn": "A1",
+    "words": 159,
+    "headings_per100": 0.0,
+    "bold_per100": 1.9,
+    "emoji": 0
+   },
+   {
+    "turn": "A2",
+    "words": 313,
+    "headings_per100": 1.3,
+    "bold_per100": 3.5,
+    "emoji": 4
+   },
+   {
+    "turn": "A3",
+    "words": 238,
+    "headings_per100": 1.3,
+    "bold_per100": 5.0,
+    "emoji": 4
+   },
+   {
+    "turn": "A4",
+    "words": 272,
+    "headings_per100": 0.7,
+    "bold_per100": 2.6,
+    "emoji": 0
+   }
+  ]
+ },
+ "R6": {
+  "tool": "ChatGPT",
+  "model": "gpt-4o",
+  "learner_turns": 45,
+  "ai_turns": 45,
+  "learner_words": 1553,
+  "learner_words_typed": 1318,
+  "ai_words": 13556,
+  "ai_to_learner_ratio": 8.7,
+  "ai_to_typed_ratio": 10.3,
+  "image_turns": 0,
+  "image_only_turns": [],
+  "duration_min": 2627.2,
+  "pacing": [
+   {
+    "turn": "L2",
+    "prev_ai": "A1",
+    "prev_ai_words": 39,
+    "gap_min": 0.6,
+    "wpm_needed": 68,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L3",
+    "prev_ai": "A2",
+    "prev_ai_words": 461,
+    "gap_min": 82.0,
+    "wpm_needed": 6,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L4",
+    "prev_ai": "A3",
+    "prev_ai_words": 551,
+    "gap_min": 3.0,
+    "wpm_needed": 186,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L5",
+    "prev_ai": "A4",
+    "prev_ai_words": 79,
+    "gap_min": 32.1,
+    "wpm_needed": 2,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L6",
+    "prev_ai": "A5",
+    "prev_ai_words": 272,
+    "gap_min": 14.6,
+    "wpm_needed": 19,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L7",
+    "prev_ai": "A6",
+    "prev_ai_words": 442,
+    "gap_min": 9.5,
+    "wpm_needed": 46,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L8",
+    "prev_ai": "A7",
+    "prev_ai_words": 416,
+    "gap_min": 2.8,
+    "wpm_needed": 148,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L9",
+    "prev_ai": "A8",
+    "prev_ai_words": 95,
+    "gap_min": 5.9,
+    "wpm_needed": 16,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L10",
+    "prev_ai": "A9",
+    "prev_ai_words": 320,
+    "gap_min": 9.6,
+    "wpm_needed": 33,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L11",
+    "prev_ai": "A10",
+    "prev_ai_words": 312,
+    "gap_min": 0.3,
+    "wpm_needed": 1123,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L12",
+    "prev_ai": "A11",
+    "prev_ai_words": 141,
+    "gap_min": 7.4,
+    "wpm_needed": 19,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L13",
+    "prev_ai": "A12",
+    "prev_ai_words": 221,
+    "gap_min": 16.0,
+    "wpm_needed": 14,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L14",
+    "prev_ai": "A13",
+    "prev_ai_words": 305,
+    "gap_min": 8.4,
+    "wpm_needed": 37,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L15",
+    "prev_ai": "A14",
+    "prev_ai_words": 122,
+    "gap_min": 4.1,
+    "wpm_needed": 30,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L16",
+    "prev_ai": "A15",
+    "prev_ai_words": 380,
+    "gap_min": 30.5,
+    "wpm_needed": 12,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L17",
+    "prev_ai": "A16",
+    "prev_ai_words": 195,
+    "gap_min": 6.1,
+    "wpm_needed": 32,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L18",
+    "prev_ai": "A17",
+    "prev_ai_words": 432,
+    "gap_min": 0.8,
+    "wpm_needed": 520,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L19",
+    "prev_ai": "A18",
+    "prev_ai_words": 218,
+    "gap_min": 19.0,
+    "wpm_needed": 11,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L20",
+    "prev_ai": "A19",
+    "prev_ai_words": 452,
+    "gap_min": 1.5,
+    "wpm_needed": 295,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L21",
+    "prev_ai": "A20",
+    "prev_ai_words": 154,
+    "gap_min": 12.4,
+    "wpm_needed": 12,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L22",
+    "prev_ai": "A21",
+    "prev_ai_words": 175,
+    "gap_min": 52.2,
+    "wpm_needed": 3,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L23",
+    "prev_ai": "A22",
+    "prev_ai_words": 138,
+    "gap_min": 2.6,
+    "wpm_needed": 53,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L24",
+    "prev_ai": "A23",
+    "prev_ai_words": 291,
+    "gap_min": 0.6,
+    "wpm_needed": 524,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L25",
+    "prev_ai": "A24",
+    "prev_ai_words": 118,
+    "gap_min": 3.2,
+    "wpm_needed": 37,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L26",
+    "prev_ai": "A25",
+    "prev_ai_words": 251,
+    "gap_min": 11.9,
+    "wpm_needed": 21,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L27",
+    "prev_ai": "A26",
+    "prev_ai_words": 397,
+    "gap_min": 7.5,
+    "wpm_needed": 53,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L28",
+    "prev_ai": "A27",
+    "prev_ai_words": 330,
+    "gap_min": 12.5,
+    "wpm_needed": 26,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L29",
+    "prev_ai": "A28",
+    "prev_ai_words": 439,
+    "gap_min": 1.6,
+    "wpm_needed": 277,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L30",
+    "prev_ai": "A29",
+    "prev_ai_words": 193,
+    "gap_min": 6.7,
+    "wpm_needed": 29,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L31",
+    "prev_ai": "A30",
+    "prev_ai_words": 553,
+    "gap_min": 10.9,
+    "wpm_needed": 51,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L32",
+    "prev_ai": "A31",
+    "prev_ai_words": 624,
+    "gap_min": 3.7,
+    "wpm_needed": 167,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L33",
+    "prev_ai": "A32",
+    "prev_ai_words": 189,
+    "gap_min": 1271.0,
+    "wpm_needed": 0,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L34",
+    "prev_ai": "A33",
+    "prev_ai_words": 438,
+    "gap_min": 106.9,
+    "wpm_needed": 4,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L35",
+    "prev_ai": "A34",
+    "prev_ai_words": 425,
+    "gap_min": 1.2,
+    "wpm_needed": 366,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L36",
+    "prev_ai": "A35",
+    "prev_ai_words": 325,
+    "gap_min": 5.4,
+    "wpm_needed": 60,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L37",
+    "prev_ai": "A36",
+    "prev_ai_words": 226,
+    "gap_min": 1.6,
+    "wpm_needed": 143,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L38",
+    "prev_ai": "A37",
+    "prev_ai_words": 252,
+    "gap_min": 5.6,
+    "wpm_needed": 45,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L39",
+    "prev_ai": "A38",
+    "prev_ai_words": 257,
+    "gap_min": 2.2,
+    "wpm_needed": 118,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L40",
+    "prev_ai": "A39",
+    "prev_ai_words": 424,
+    "gap_min": 2.6,
+    "wpm_needed": 162,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L41",
+    "prev_ai": "A40",
+    "prev_ai_words": 327,
+    "gap_min": 6.1,
+    "wpm_needed": 54,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L42",
+    "prev_ai": "A41",
+    "prev_ai_words": 254,
+    "gap_min": 8.7,
+    "wpm_needed": 29,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L43",
+    "prev_ai": "A42",
+    "prev_ai_words": 301,
+    "gap_min": 5.1,
+    "wpm_needed": 59,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L44",
+    "prev_ai": "A43",
+    "prev_ai_words": 385,
+    "gap_min": 656.9,
+    "wpm_needed": 1,
+    "gap_includes_generation": false
+   },
+   {
+    "turn": "L45",
+    "prev_ai": "A44",
+    "prev_ai_words": 410,
+    "gap_min": 173.4,
+    "wpm_needed": 2,
+    "gap_includes_generation": false
+   }
+  ],
+  "pacing_summary": {
+   "median_gap_min": 5.9,
+   "turns_where_full_read_exceeds_238wpm": [
+    "L11",
+    "L18",
+    "L20",
+    "L24",
+    "L29",
+    "L35"
+   ]
+  },
+  "lexical_uptake": [
+   {
+    "turn": "L2",
+    "share_in_prev_ai": 0.2
+   },
+   {
+    "turn": "L3",
+    "share_in_prev_ai": 0.41
+   },
+   {
+    "turn": "L4",
+    "share_in_prev_ai": 0.14
+   },
+   {
+    "turn": "L6",
+    "share_in_prev_ai": 0.76
+   },
+   {
+    "turn": "L7",
+    "share_in_prev_ai": 0.83
+   },
+   {
+    "turn": "L8",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L9",
+    "share_in_prev_ai": 0.33
+   },
+   {
+    "turn": "L10",
+    "share_in_prev_ai": 1.0
+   },
+   {
+    "turn": "L11",
+    "share_in_prev_ai": 0.25
+   },
+   {
+    "turn": "L12",
+    "share_in_prev_ai": 0.5
+   },
+   {
+    "turn": "L13",
+    "share_in_prev_ai": 0.42
+   },
+   {
+    "turn": "L14",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L15",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L16",
+    "share_in_prev_ai": 0.33
+   },
+   {
+    "turn": "L17",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L18",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L19",
+    "share_in_prev_ai": 1.0
+   },
+   {
+    "turn": "L20",
+    "share_in_prev_ai": 0.29
+   },
+   {
+    "turn": "L21",
+    "share_in_prev_ai": 0.36
+   },
+   {
+    "turn": "L22",
+    "share_in_prev_ai": 0.0
+   },
+   {
+    "turn": "L23",
+    "share_in_prev_ai": 0.62
+   },
+   {
+    "turn": "L25",
+    "share_in_prev_ai": 0.77
+   },
+   {
+    "turn": "L26",
+    "share_in_prev_ai": 0.75
+   },
+   {
+    "turn": "L27",
+    "share_in_prev_ai": 0.91
+   },
+   {
+    "turn": "L28",
+    "share_in_prev_ai": 0.79
+   },
+   {
+    "turn": "L30",
+    "share_in_prev_ai": 0.62
+   },
+   {
+    "turn": "L31",
+    "share_in_prev_ai": 0.79
+   },
+   {
+    "turn": "L32",
+    "share_in_prev_ai": 0.72
+   },
+   {
+    "turn": "L33",
+    "share_in_prev_ai": 0.41
+   },
+   {
+    "turn": "L34",
+    "share_in_prev_ai": 0.2
+   },
+   {
+    "turn": "L35",
+    "share_in_prev_ai": 0.1
+   },
+   {
+    "turn": "L36",
+    "share_in_prev_ai": 0.83
+   },
+   {
+    "turn": "L37",
+    "share_in_prev_ai": 0.88
+   },
+   {
+    "turn": "L38",
+    "share_in_prev_ai": 0.77
+   },
+   {
+    "turn": "L39",
+    "share_in_prev_ai": 0.5
+   },
+   {
+    "turn": "L40",
+    "share_in_prev_ai": 0.64
+   },
+   {
+    "turn": "L41",
+    "share_in_prev_ai": 0.9
+   },
+   {
+    "turn": "L42",
+    "share_in_prev_ai": 0.69
+   },
+   {
+    "turn": "L43",
+    "share_in_prev_ai": 0.67
+   },
+   {
+    "turn": "L44",
+    "share_in_prev_ai": 0.82
+   },
+   {
+    "turn": "L45",
+    "share_in_prev_ai": 0.5
+   }
+  ],
+  "prompt_reuse": [
+   {
+    "turn": "L2",
+    "similarity_to_prev_prompt": 0.17
+   },
+   {
+    "turn": "L3",
+    "similarity_to_prev_prompt": 0.01
+   },
+   {
+    "turn": "L4",
+    "similarity_to_prev_prompt": 0.05
+   },
+   {
+    "turn": "L5",
+    "similarity_to_prev_prompt": 0.15
+   },
+   {
+    "turn": "L6",
+    "similarity_to_prev_prompt": 0.02
+   },
+   {
+    "turn": "L7",
+    "similarity_to_prev_prompt": 0.57
+   },
+   {
+    "turn": "L8",
+    "similarity_to_prev_prompt": 0.03
+   },
+   {
+    "turn": "L9",
+    "similarity_to_prev_prompt": 0.01
+   },
+   {
+    "turn": "L10",
+    "similarity_to_prev_prompt": 0.53
+   },
+   {
+    "turn": "L11",
+    "similarity_to_prev_prompt": 0.05
+   },
+   {
+    "turn": "L12",
+    "similarity_to_prev_prompt": 0.39
+   },
+   {
+    "turn": "L13",
+    "similarity_to_prev_prompt": 0.19
+   },
+   {
+    "turn": "L14",
+    "similarity_to_prev_prompt": 0.13
+   },
+   {
+    "turn": "L15",
+    "similarity_to_prev_prompt": 0.11
+   },
+   {
+    "turn": "L16",
+    "similarity_to_prev_prompt": 0.43
+   },
+   {
+    "turn": "L17",
+    "similarity_to_prev_prompt": 0.25
+   },
+   {
+    "turn": "L18",
+    "similarity_to_prev_prompt": 0.09
+   },
+   {
+    "turn": "L19",
+    "similarity_to_prev_prompt": 0.32
+   },
+   {
+    "turn": "L20",
+    "similarity_to_prev_prompt": 0.07
+   },
+   {
+    "turn": "L21",
+    "similarity_to_prev_prompt": 0.16
+   },
+   {
+    "turn": "L22",
+    "similarity_to_prev_prompt": 0.07
+   },
+   {
+    "turn": "L23",
+    "similarity_to_prev_prompt": 0.11
+   },
+   {
+    "turn": "L24",
+    "similarity_to_prev_prompt": 0.02
+   },
+   {
+    "turn": "L25",
+    "similarity_to_prev_prompt": 0.01
+   },
+   {
+    "turn": "L26",
+    "similarity_to_prev_prompt": 0.21
+   },
+   {
+    "turn": "L27",
+    "similarity_to_prev_prompt": 0.29
+   },
+   {
+    "turn": "L28",
+    "similarity_to_prev_prompt": 0.2
+   },
+   {
+    "turn": "L29",
+    "similarity_to_prev_prompt": 0.0
+   },
+   {
+    "turn": "L30",
+    "similarity_to_prev_prompt": 0.0
+   },
+   {
+    "turn": "L31",
+    "similarity_to_prev_prompt": 0.49
+   },
+   {
+    "turn": "L32",
+    "similarity_to_prev_prompt": 0.02
+   },
+   {
+    "turn": "L33",
+    "similarity_to_prev_prompt": 0.01
+   },
+   {
+    "turn": "L34",
+    "similarity_to_prev_prompt": 0.09
+   },
+   {
+    "turn": "L35",
+    "similarity_to_prev_prompt": 0.29
+   },
+   {
+    "turn": "L36",
+    "similarity_to_prev_prompt": 0.04
+   },
+   {
+    "turn": "L37",
+    "similarity_to_prev_prompt": 0.27
+   },
+   {
+    "turn": "L38",
+    "similarity_to_prev_prompt": 0.27
+   },
+   {
+    "turn": "L39",
+    "similarity_to_prev_prompt": 0.16
+   },
+   {
+    "turn": "L40",
+    "similarity_to_prev_prompt": 0.05
+   },
+   {
+    "turn": "L41",
+    "similarity_to_prev_prompt": 0.35
+   },
+   {
+    "turn": "L42",
+    "similarity_to_prev_prompt": 0.18
+   },
+   {
+    "turn": "L43",
+    "similarity_to_prev_prompt": 0.25
+   },
+   {
+    "turn": "L44",
+    "similarity_to_prev_prompt": 0.24
+   },
+   {
+    "turn": "L45",
+    "similarity_to_prev_prompt": 0.1
+   }
+  ],
+  "ai_format": [
+   {
+    "turn": "A1",
+    "words": 39,
+    "headings_per100": 0.0,
+    "bold_per100": 0.0,
+    "emoji": 0
+   },
+   {
+    "turn": "A2",
+    "words": 461,
+    "headings_per100": 0.9,
+    "bold_per100": 3.3,
+    "emoji": 1
+   },
+   {
+    "turn": "A3",
+    "words": 551,
+    "headings_per100": 0.7,
+    "bold_per100": 2.7,
+    "emoji": 1
+   },
+   {
+    "turn": "A4",
+    "words": 79,
+    "headings_per100": 1.3,
+    "bold_per100": 3.8,
+    "emoji": 1
+   },
+   {
+    "turn": "A5",
+    "words": 272,
+    "headings_per100": 0.4,
+    "bold_per100": 2.9,
+    "emoji": 1
+   },
+   {
+    "turn": "A6",
+    "words": 442,
+    "headings_per100": 1.8,
+    "bold_per100": 8.4,
+    "emoji": 3
+   },
+   {
+    "turn": "A7",
+    "words": 416,
+    "headings_per100": 1.2,
+    "bold_per100": 4.8,
+    "emoji": 5
+   },
+   {
+    "turn": "A8",
+    "words": 95,
+    "headings_per100": 1.1,
+    "bold_per100": 5.3,
+    "emoji": 1
+   },
+   {
+    "turn": "A9",
+    "words": 320,
+    "headings_per100": 1.2,
+    "bold_per100": 6.2,
+    "emoji": 4
+   },
+   {
+    "turn": "A10",
+    "words": 312,
+    "headings_per100": 1.3,
+    "bold_per100": 6.4,
+    "emoji": 5
+   },
+   {
+    "turn": "A11",
+    "words": 141,
+    "headings_per100": 1.4,
+    "bold_per100": 7.1,
+    "emoji": 1
+   },
+   {
+    "turn": "A12",
+    "words": 221,
+    "headings_per100": 1.4,
+    "bold_per100": 7.2,
+    "emoji": 4
+   },
+   {
+    "turn": "A13",
+    "words": 305,
+    "headings_per100": 1.0,
+    "bold_per100": 6.2,
+    "emoji": 4
+   },
+   {
+    "turn": "A14",
+    "words": 122,
+    "headings_per100": 1.6,
+    "bold_per100": 7.4,
+    "emoji": 1
+   },
+   {
+    "turn": "A15",
+    "words": 380,
+    "headings_per100": 1.1,
+    "bold_per100": 7.9,
+    "emoji": 4
+   },
+   {
+    "turn": "A16",
+    "words": 195,
+    "headings_per100": 1.0,
+    "bold_per100": 7.7,
+    "emoji": 1
+   },
+   {
+    "turn": "A17",
+    "words": 432,
+    "headings_per100": 1.2,
+    "bold_per100": 8.1,
+    "emoji": 4
+   },
+   {
+    "turn": "A18",
+    "words": 218,
+    "headings_per100": 1.8,
+    "bold_per100": 8.7,
+    "emoji": 5
+   },
+   {
+    "turn": "A19",
+    "words": 452,
+    "headings_per100": 0.9,
+    "bold_per100": 6.2,
+    "emoji": 5
+   },
+   {
+    "turn": "A20",
+    "words": 154,
+    "headings_per100": 2.6,
+    "bold_per100": 9.7,
+    "emoji": 4
+   },
+   {
+    "turn": "A21",
+    "words": 175,
+    "headings_per100": 2.9,
+    "bold_per100": 8.6,
+    "emoji": 6
+   },
+   {
+    "turn": "A22",
+    "words": 138,
+    "headings_per100": 2.9,
+    "bold_per100": 9.4,
+    "emoji": 4
+   },
+   {
+    "turn": "A23",
+    "words": 291,
+    "headings_per100": 2.7,
+    "bold_per100": 7.9,
+    "emoji": 7
+   },
+   {
+    "turn": "A24",
+    "words": 118,
+    "headings_per100": 4.2,
+    "bold_per100": 7.6,
+    "emoji": 5
+   },
+   {
+    "turn": "A25",
+    "words": 251,
+    "headings_per100": 2.4,
+    "bold_per100": 11.2,
+    "emoji": 7
+   },
+   {
+    "turn": "A26",
+    "words": 397,
+    "headings_per100": 2.0,
+    "bold_per100": 7.6,
+    "emoji": 7
+   },
+   {
+    "turn": "A27",
+    "words": 330,
+    "headings_per100": 2.4,
+    "bold_per100": 9.1,
+    "emoji": 8
+   },
+   {
+    "turn": "A28",
+    "words": 439,
+    "headings_per100": 2.1,
+    "bold_per100": 8.0,
+    "emoji": 9
+   },
+   {
+    "turn": "A29",
+    "words": 193,
+    "headings_per100": 2.1,
+    "bold_per100": 8.3,
+    "emoji": 4
+   },
+   {
+    "turn": "A30",
+    "words": 553,
+    "headings_per100": 1.6,
+    "bold_per100": 6.3,
+    "emoji": 8
+   },
+   {
+    "turn": "A31",
+    "words": 624,
+    "headings_per100": 1.4,
+    "bold_per100": 6.1,
+    "emoji": 9
+   },
+   {
+    "turn": "A32",
+    "words": 189,
+    "headings_per100": 2.1,
+    "bold_per100": 7.4,
+    "emoji": 2
+   },
+   {
+    "turn": "A33",
+    "words": 438,
+    "headings_per100": 2.1,
+    "bold_per100": 8.0,
+    "emoji": 8
+   },
+   {
+    "turn": "A34",
+    "words": 425,
+    "headings_per100": 1.4,
+    "bold_per100": 7.5,
+    "emoji": 4
+   },
+   {
+    "turn": "A35",
+    "words": 325,
+    "headings_per100": 2.2,
+    "bold_per100": 9.5,
+    "emoji": 4
+   },
+   {
+    "turn": "A36",
+    "words": 226,
+    "headings_per100": 2.7,
+    "bold_per100": 10.6,
+    "emoji": 11
+   },
+   {
+    "turn": "A37",
+    "words": 252,
+    "headings_per100": 2.4,
+    "bold_per100": 9.9,
+    "emoji": 10
+   },
+   {
+    "turn": "A38",
+    "words": 257,
+    "headings_per100": 2.3,
+    "bold_per100": 8.6,
+    "emoji": 11
+   },
+   {
+    "turn": "A39",
+    "words": 424,
+    "headings_per100": 1.4,
+    "bold_per100": 8.3,
+    "emoji": 5
+   },
+   {
+    "turn": "A40",
+    "words": 327,
+    "headings_per100": 2.1,
+    "bold_per100": 8.3,
+    "emoji": 8
+   },
+   {
+    "turn": "A41",
+    "words": 254,
+    "headings_per100": 2.4,
+    "bold_per100": 9.1,
+    "emoji": 10
+   },
+   {
+    "turn": "A42",
+    "words": 301,
+    "headings_per100": 2.0,
+    "bold_per100": 8.0,
+    "emoji": 12
+   },
+   {
+    "turn": "A43",
+    "words": 385,
+    "headings_per100": 2.1,
+    "bold_per100": 7.0,
+    "emoji": 9
+   },
+   {
+    "turn": "A44",
+    "words": 410,
+    "headings_per100": 2.0,
+    "bold_per100": 7.3,
+    "emoji": 9
+   },
+   {
+    "turn": "A45",
+    "words": 227,
+    "headings_per100": 1.8,
+    "bold_per100": 7.0,
+    "emoji": 8
+   }
+  ]
+ }
+}

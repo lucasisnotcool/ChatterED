@@ -74,6 +74,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 | Anything about the product concept | `README.md`, then the three `Academia/Sources/*/README.md` |
 | Assignment scope, marks, deadlines | `Academia/Assignment 1_ ...pdf` and `Academia/Sources/_text/assignment1-brief.txt` |
 | Interviews, recruitment, consent, observation | `docs/research/interview-guide.md` |
+| Student AI-chat transcripts, form responses, the coded CUI study | `docs/research/ai-use-transcripts/README.md` (raw/ and processed/ are gitignored, local only) |
 | Any design decision | `docs/research/` — and if the brief is missing, that is the `research` issue about the halted first pass |
 | Multi-agent / peer-vs-challenger evidence | `Academia/Sources/_text/who-you-explain-to-matters.txt`, `MASG_multi-agents-are-social-groups.txt` |
 | Whisper / side-channel rationale | `Academia/Sources/_text/critique1-btw.txt` |
@@ -110,8 +111,8 @@ text first; open the PDF only for figures and layout.
 - Foreground `sleep N && cmd` is blocked. Poll with a background until-loop.
 - macOS has no `timeout`.
 - `git config user.email` is intentionally empty in this account; commits land as
-  `aekyr <>`, matching the owner's other repos. Do not "fix" it, and never touch global
-  git config.
+  `lucasisnotcool <>` (older commits show the previous handle `aekyr`). Do not "fix" it, and
+  never touch global git config.
 
 ## Repo hygiene
 

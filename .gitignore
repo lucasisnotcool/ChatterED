@@ -73,6 +73,12 @@ env/
 *.swp
 *.swo
 
+# --- Research data: raw and processed transcripts/survey rows stay local ---
+# CLAUDE.md: never commit raw transcripts or participant PII. The README, scripts and
+# analysis in the same tree ARE committed; see docs/research/ai-use-transcripts/README.md.
+docs/research/ai-use-transcripts/raw/
+docs/research/ai-use-transcripts/processed/
+
 # --- Scratch ---
 tmp/
 scratch/
