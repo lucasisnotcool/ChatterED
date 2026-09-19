@@ -11,6 +11,7 @@ import { FakeClock } from '../test-support/clock.js';
 import {
   answerQuiz,
   markAnswerShown,
+  markCueGiven,
   markFeedbackGiven,
   openQuiz,
   type HandOffVerdict,
@@ -18,7 +19,11 @@ import {
 } from './flow.js';
 import {
   classifyAgentTurn,
+  closureDecision,
   decideTurn,
+  followupDue,
+  lessonStartDecision,
+  maxFollowupDecision,
   roleFromMove,
   roleFromName,
   ruleDecision,
@@ -88,15 +93,26 @@ describe('the hand-off rule', () => {
   });
 });
 
-describe('the REFERENCE gate', () => {
-  it('silences both agents on a thread waiting for “Explain it back”', () => {
-    // pivot-spec.md §B1 / flow-build-plan.md §4.3 property 4 — the single most important line in
-    // that section, and the reason this check runs before every other rule.
-    for (const trigger of ['student_message', 'silence', 'open', 'promote'] as const) {
+/**
+ * **The REFERENCE gate is retired** (#48; was `rule:reference_locked`).
+ *
+ * It silenced both agents on a thread whose REFERENCE answer was waiting for *"Explain it back"*.
+ * #41 stopped anything inserting such a card — `actor.#answers` is constructed empty and never
+ * appended to — so the rule has been unreachable in the running app since then, and
+ * `collab-doc.md` §9 retires the card itself. The field is still accepted, and now ignored: this
+ * test is the old one inverted, so that a future edit which re-introduces the branch has to argue
+ * with something rather than quietly change behaviour.
+ */
+describe('the retired REFERENCE gate', () => {
+  it('no longer silences anyone, and no rule reads the flag', () => {
+    for (const trigger of ['student_message', 'promote'] as const) {
       const d = ruleDecision(input({ trigger, referenceLocked: true, handOff: due() }))!;
-      expect(d.speak, trigger).toBe(false);
-      expect(d.decidedBy, trigger).toBe('rule:reference_locked');
+      expect(d.decidedBy, trigger).not.toBe('rule:reference_locked');
+      expect(d.speak, trigger).toBe(true);
     }
+    // And a locked flag on a silence leaves the silence rules exactly where they were.
+    const quiet = ruleDecision(input({ trigger: 'silence', silenceStage: 1, referenceLocked: true }))!;
+    expect(quiet.decidedBy).toBe('rule:silence_peer');
   });
 });
 
@@ -126,52 +142,75 @@ describe('feedback after a quiz answer', () => {
     expect(d.decidedBy).toBe('rule:quiz_feedback');
   });
 
-  it('is still refused inside a locked REFERENCE thread', () => {
+  /**
+   * **`@Ellie` is the one thing that defers it** (#48, brief §4.2 row 2). Naming the Teacher while
+   * Max's question is open is the collab doc's "+ Ask here": she explains, the question stays
+   * open, and Max's feedback is owed on the learner's *next* answer rather than on the aside.
+   */
+  it('stands aside for an @Ellie, and for nothing else', () => {
     const quiz = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now()), 'm_10', { attempt: true });
-    const d = ruleDecision(input({ pendingQuiz: quiz, referenceLocked: true }))!;
-    expect(d.decidedBy).toBe('rule:reference_locked');
+    const d = ruleDecision(input({ pendingQuiz: quiz, mention: 'ellie', threadKind: 'doc' }))!;
+    expect(d.decidedBy).toBe('rule:mention');
+    expect(d.role).toBe('peer');
+    expect(ruleDecision(input({ pendingQuiz: quiz, mention: 'max', threadKind: 'doc' }))!.decidedBy).toBe(
+      'rule:quiz_feedback',
+    );
   });
 });
 
 /**
- * **The answer lock** (issue #47, `attempt-first.md` §2.3).
+ * **The answer is released, not withheld** (#48, `collab-doc.md` §4.4; supersedes
+ * `attempt-first.md` §2.3).
  *
- * The property: *while Max's question is open, what the learner's turn is decides the reply, and no
- * model is consulted.* The evidence it encodes is R6 — both hints followed by a bare `answer?`, the
- * answer given both times, and attempts appearing only after the learner imposed the rule by hand.
+ * The property that survives: *while Max's question is open, what the learner's turn is decides
+ * the reply, and no model is consulted.* What changed is the answer to one of the four cases.
+ * `rule:answer_withheld` is **deleted** — the brief's §1 records it as a knowing departure from
+ * the evidence rather than as something the transcripts settled: *"a learner must never see a
+ * question they never get the answer to, and a refused answer teaches less than a lowered
+ * question"*. The refusal's job is taken over by `pitch.pitchInputs`, which makes the next
+ * question on that objective easier.
+ *
+ * `rule:answer_shown` is renamed `rule:answer_released` and its attempt precondition is gone, on
+ * both doors: the give-up phrase and the **Pass** control.
  */
-describe('the answer lock while a Tester question is open', () => {
+describe('releasing the answer while a Tester question is open', () => {
   const clock = new FakeClock();
   const asked = () => openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now());
   const attempted = () => answerQuiz(asked(), 'm_10', { attempt: true });
 
-  it('withholds the answer before the first attempt, and hints instead', () => {
-    const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'answer_request' }))!;
+  it('releases the answer on a give-up before any attempt', () => {
+    const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'give_up' }))!;
     expect(d.speak).toBe(true);
     expect(d.role).toBe('challenger');
-    expect(d.moveType).toBe('quiz_hint');
+    expect(d.moveType).toBe('quiz_answer');
     expect(d.targetElementId).toBe('R2');
-    // A hint puts nothing under test: `challenges` is the gate on the ledger's `defended` state.
+    // Nothing is put under test by a released answer: `challenges` gates `defended`, and the
+    // learner has defended nothing. §4.4: "It fills no progress."
     expect(d.challenges).toEqual([]);
-    expect(d.decidedBy).toBe('rule:answer_withheld');
+    expect(d.decidedBy).toBe('rule:answer_released');
   });
 
-  it('gives the answer once the learner has attempted, on the same ask', () => {
-    const d = ruleDecision(input({ pendingQuiz: attempted(), learnerTurn: 'answer_request' }))!;
+  it('never produces the retired rule:answer_withheld, at any attempt count', () => {
+    for (const quiz of [asked(), attempted()]) {
+      const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: 'give_up' }))!;
+      expect(d.decidedBy).toBe('rule:answer_released');
+      expect(d.moveType).not.toBe('quiz_hint');
+    }
+  });
+
+  it('releases it on a give-up after an attempt, which is where #47 already stood', () => {
+    const d = ruleDecision(input({ pendingQuiz: attempted(), learnerTurn: 'give_up' }))!;
     expect(d.role).toBe('challenger');
     expect(d.moveType).toBe('quiz_answer');
-    expect(d.decidedBy).toBe('rule:answer_shown');
+    expect(d.decidedBy).toBe('rule:answer_released');
   });
 
-  it('gives the answer on the button, which is the same rule by another door', () => {
-    const d = ruleDecision(input({ trigger: 'promote', pendingQuiz: attempted(), showAnswer: true }))!;
-    expect(d.moveType).toBe('quiz_answer');
-    expect(d.decidedBy).toBe('rule:answer_shown');
-  });
-
-  it('will not honour the button before an attempt', () => {
-    // The actor refuses first and never runs a turn; this is the second line of the same defence.
-    expect(ruleDecision(input({ trigger: 'promote', pendingQuiz: asked(), showAnswer: true }))).toBeNull();
+  it('releases it on Pass, which is the same rule by another door', () => {
+    for (const quiz of [asked(), attempted()]) {
+      const d = ruleDecision(input({ trigger: 'promote', pendingQuiz: quiz, showAnswer: true }))!;
+      expect(d.moveType).toBe('quiz_answer');
+      expect(d.decidedBy).toBe('rule:answer_released');
+    }
   });
 
   it('clarifies a question about the question without answering it', () => {
@@ -193,18 +232,18 @@ describe('the answer lock while a Tester question is open', () => {
     expect(d.decidedBy).toBe('rule:quiz_feedback');
   });
 
-  it('is still open after feedback, so a later ask is answered rather than re-locked', () => {
+  it('is still open after feedback, so a later give-up is answered rather than ignored', () => {
     const quiz = markFeedbackGiven(attempted());
-    const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: 'answer_request' }))!;
-    expect(d.decidedBy).toBe('rule:answer_shown');
+    const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: 'give_up' }))!;
+    expect(d.decidedBy).toBe('rule:answer_released');
   });
 
-  it('is closed once the answer has been shown: nothing here fires again', () => {
-    const quiz = markAnswerShown(markFeedbackGiven(attempted()));
-    for (const turn of ['answer_request', 'question', 'other'] as const) {
-      // Back to the ordinary rules — in a segment thread that is `rule:teacher_answers`.
+  it('is closed once the answer has been released: nothing here fires again', () => {
+    const quiz = markAnswerShown(markFeedbackGiven(attempted()), 'give_up');
+    for (const turn of ['give_up', 'question', 'other'] as const) {
+      // Back to the ordinary rules — in the doc chat that is `rule:ellie_answers`.
       const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: turn, anchoredThread: true }))!;
-      expect(d.decidedBy, turn).toBe('rule:teacher_answers');
+      expect(d.decidedBy, turn).toBe('rule:ellie_answers');
     }
   });
 
@@ -216,11 +255,20 @@ describe('the answer lock while a Tester question is open', () => {
   it('lets an Ask through to the Teacher, whatever its words would have classified as', () => {
     // Asked, and asked again after an attempt has been answered — the two states an Ask can land in.
     for (const quiz of [asked(), markFeedbackGiven(attempted())]) {
-      for (const turn of ['attempt', 'answer_request', 'question', 'other'] as const) {
+      for (const turn of ['attempt', 'give_up', 'question', 'other'] as const) {
         const d = ruleDecision(input({ pendingQuiz: quiz, learnerTurn: turn, askedHere: true, anchoredThread: true }))!;
-        expect(d.decidedBy, turn).toBe('rule:teacher_answers');
+        expect(d.decidedBy, turn).toBe('rule:ellie_answers');
         expect(d.role, turn).toBe('peer');
       }
+    }
+  });
+
+  /** The same exemption, said by the learner instead of by a button (#48, brief §4.2 row 2). */
+  it('lets an @Ellie through to the Teacher while Max’s question is open', () => {
+    for (const turn of ['attempt', 'give_up', 'question', 'other'] as const) {
+      const d = ruleDecision(input({ pendingQuiz: asked(), learnerTurn: turn, mention: 'ellie', threadKind: 'doc' }))!;
+      expect(d.decidedBy, turn).toBe('rule:mention');
+      expect(d.role, turn).toBe('peer');
     }
   });
 
@@ -235,21 +283,18 @@ describe('the answer lock while a Tester question is open', () => {
     expect(d.decidedBy).toBe('rule:quiz_feedback');
   });
 
-  it('never fires into a silence: a hint on a timer is the silence rule’s business', () => {
+  it('never fires into a silence: what a timer does is the silence rule’s business', () => {
     const d = ruleDecision(
-      input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked(), learnerTurn: 'answer_request', lastAgentTurn: 'tester_question' }),
+      input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked(), learnerTurn: 'give_up', lastAgentTurn: 'tester_question' }),
     )!;
-    // The silence rule's business, and since the live run of 2026-09-19 the open quiz makes it the
-    // Tester's stage-1 line; what matters here is that no lock rule fired into a silence.
-    expect(d.decidedBy).toBe('rule:silence_quiz_waiting');
-    expect(d.decidedBy).not.toMatch(/^rule:(answer_withheld|answer_shown|quiz_clarify|quiz_nudge)$/);
+    // Since #48 an unattempted question in a silence draws Ellie's cue (§4.3); what matters here
+    // is that no rule about the learner's *typed* turn fired into a silence.
+    expect(d.decidedBy).toBe('rule:ellie_cue');
+    expect(d.decidedBy).not.toMatch(/^rule:(answer_released|quiz_clarify|quiz_nudge)$/);
   });
 
-  it('still yields to the REFERENCE lock and to the learner’s last word', () => {
-    expect(
-      ruleDecision(input({ pendingQuiz: asked(), learnerTurn: 'answer_request', referenceLocked: true }))!.decidedBy,
-    ).toBe('rule:reference_locked');
-    expect(ruleDecision(input({ trigger: 'wrap_up', pendingQuiz: asked(), learnerTurn: 'answer_request' }))!.decidedBy).toBe(
+  it('still yields to the learner’s last word', () => {
+    expect(ruleDecision(input({ trigger: 'wrap_up', pendingQuiz: asked(), learnerTurn: 'give_up' }))!.decidedBy).toBe(
       'rule:last_word',
     );
   });
@@ -393,8 +438,8 @@ describe('a learner turn never resolves to silence', () => {
 
   /**
    * There is no longer any *other* trigger that reaches the model: `ruleDecision` settles
-   * `open`, `wrap_up`, the REFERENCE lock, the dog-pile cap, the feedback debt, the hand-off,
-   * both silence stages and (since `rule:teacher_answers`) every anchored learner turn. The
+   * `open`, `wrap_up`, the dog-pile cap, the feedback debt, the hand-off,
+   * both silence stages and (since `rule:ellie_answers`) every learner turn in the doc chat. The
    * model's whole remaining job is the pre-flow room-level stream, which is why a failure here
    * can always be answered by the Teacher rather than by nothing.
    */
@@ -405,25 +450,113 @@ describe('a learner turn never resolves to silence', () => {
   });
 });
 
-describe('the Teacher answers a segment thread without a model call', () => {
-  it('needs no model to know who answers a learner turn under a segment', () => {
-    const d = ruleDecision(input({ anchoredThread: true, handOff: due({ due: false }) }))!;
+describe('rule:ellie_answers — Ellie answers the doc chat without a model call', () => {
+  it('needs no model to know who answers a learner turn in the doc chat', () => {
+    const d = ruleDecision(input({ threadKind: 'doc', handOff: due({ due: false }) }))!;
     expect(d.speak).toBe(true);
     expect(d.role).toBe('peer');
     // `answer_then_teach`, not `respond`, since #36: a move called "respond" is satisfied by a
     // Socratic probe, which is the turn this rule exists to produce the opposite of.
     expect(d.moveType).toBe('answer_then_teach');
-    expect(d.decidedBy).toBe('rule:teacher_answers');
+    expect(d.decidedBy).toBe('rule:ellie_answers');
   });
 
-  it('does not outrank the hand-off, the feedback debt or the REFERENCE lock', () => {
-    expect(ruleDecision(input({ anchoredThread: true, handOff: due() }))!.decidedBy).toBe('rule:handoff');
-    expect(ruleDecision(input({ anchoredThread: true, referenceLocked: true }))!.decidedBy).toBe('rule:reference_locked');
-    expect(ruleDecision(input({ anchoredThread: true, consecutiveAgentTurns: 2 }))!.decidedBy).toBe('rule:no_dogpile');
+  it('fires in a span thread too — Ctrl+E is part of the doc chat (brief §4.1)', () => {
+    expect(ruleDecision(input({ threadKind: 'span' }))!.decidedBy).toBe('rule:ellie_answers');
   });
 
-  it('leaves the room-level stream to the model', () => {
+  /**
+   * **A private thread never runs the orchestrator at all** (brief §4.1) — `sendPrivate` goes
+   * through the whisper path. The gate is stated here anyway, because the failure it prevents is
+   * a private turn that leaks into the group context, and the whisper canary is the repo's crown
+   * jewel precisely because that failure is invisible until it is not.
+   */
+  it('never fires in a private thread', () => {
+    expect(ruleDecision(input({ threadKind: 'private' }))).toBeNull();
+  });
+
+  /** A mention names the answerer, so the default does not apply. */
+  it('gives way to an explicit mention', () => {
+    expect(ruleDecision(input({ threadKind: 'doc', mention: 'ellie' }))!.decidedBy).toBe('rule:mention');
+    const max = ruleDecision(input({ threadKind: 'doc', mention: 'max' }))!;
+    expect(max.decidedBy).toBe('rule:mention');
+    expect(max.role).toBe('challenger');
+    expect(max.moveType).toBe('mention_reply');
+  });
+
+  it('does not outrank the hand-off or the dog-pile cap', () => {
+    expect(ruleDecision(input({ threadKind: 'doc', handOff: due() }))!.decidedBy).toBe('rule:handoff');
+    expect(ruleDecision(input({ threadKind: 'doc', consecutiveAgentTurns: 2 }))!.decidedBy).toBe('rule:no_dogpile');
+  });
+
+  it('still reads the old `anchoredThread` flag when no thread kind is given', () => {
+    expect(ruleDecision(input({ anchoredThread: true }))!.decidedBy).toBe('rule:ellie_answers');
+  });
+
+  it('leaves the pre-flow room-level stream to the model', () => {
     expect(ruleDecision(input({ anchoredThread: false, handOff: due({ due: false }) }))).toBeNull();
+  });
+});
+
+/**
+ * **`rule:max_followup`** (#48, brief §4.2 row 1): Ellie answers in full, then Max asks one
+ * Socratic follow-up. The gate is the brief's own invariant — *"One open Max question at a time
+ * per file"* — and it is a pure function so this test can quote it.
+ */
+describe('rule:max_followup', () => {
+  const clock = new FakeClock();
+
+  it('is due after an Ellie answer with no question open', () => {
+    expect(followupDue({ decidedBy: 'rule:ellie_answers', threadKind: 'doc' })).toBe(true);
+  });
+
+  it('is not due while a Max question is already open', () => {
+    const open = openQuiz({ quizMessageId: 'm_9', elementId: 'R2' }, clock.now());
+    expect(followupDue({ decidedBy: 'rule:ellie_answers', pendingQuiz: open, threadKind: 'doc' })).toBe(false);
+    // …and is due again once that question has been released.
+    const closed = markAnswerShown(open, 'give_up');
+    expect(followupDue({ decidedBy: 'rule:ellie_answers', pendingQuiz: closed, threadKind: 'doc' })).toBe(true);
+  });
+
+  it('is not due after a mention — @Ellie draws no follow-up, and @Max does not follow himself', () => {
+    expect(followupDue({ decidedBy: 'rule:mention', mention: 'ellie', threadKind: 'doc' })).toBe(false);
+    expect(followupDue({ decidedBy: 'rule:ellie_answers', mention: 'ellie', threadKind: 'doc' })).toBe(false);
+    expect(followupDue({ decidedBy: 'rule:mention', mention: 'max', threadKind: 'doc' })).toBe(false);
+  });
+
+  it('is never due in a private thread, or after any other rule', () => {
+    expect(followupDue({ decidedBy: 'rule:ellie_answers', threadKind: 'private' })).toBe(false);
+    for (const by of ['rule:handoff', 'rule:quiz_feedback', 'rule:answer_released', 'rule:lesson_start']) {
+      expect(followupDue({ decidedBy: by, threadKind: 'doc' }), by).toBe(false);
+    }
+  });
+
+  it('asks a question aimed at the objective, which is what puts it under test', () => {
+    const d = maxFollowupDecision('obj_3');
+    expect(d.role).toBe('challenger');
+    expect(d.moveType).toBe('quiz');
+    expect(d.targetElementId).toBe('obj_3');
+    expect(d.challenges).toEqual(['obj_3']);
+    expect(d.decidedBy).toBe('rule:max_followup');
+  });
+});
+
+/** The two turns the actor writes in code rather than deciding (brief §4.7, §6). */
+describe('the code-written decisions', () => {
+  it('releases the answer at closure, closing the question the way every other release does', () => {
+    const d = closureDecision('R2');
+    expect(d.role).toBe('challenger');
+    expect(d.moveType).toBe('quiz_answer');
+    expect(d.decidedBy).toBe('rule:closure');
+  });
+
+  it('opens a lesson with Ellie, teaching nothing yet', () => {
+    const d = lessonStartDecision('obj_1');
+    expect(d.role).toBe('peer');
+    expect(d.moveType).toBe('lesson_start');
+    expect(d.decidedBy).toBe('rule:lesson_start');
+    // It asks the learner to ask, so it is not an explanation a silence should be read against.
+    expect(classifyAgentTurn(d, 'none')).toBe('none');
   });
 });
 
@@ -463,24 +596,87 @@ describe('the silence rule reads what the quiet is quiet about', () => {
    * question with no attempt — against §5's own rule. What the learner owes decides, not who spoke.
    */
   it('fills the silence over an open quiz even when the last agent turn was an explanation', () => {
-    const quiz = openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0);
-    const s1 = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 1, pendingQuiz: quiz });
+    // Since #48 an *unattempted* question draws §4.3's pair; the property under test here is
+    // unchanged — an open question outranks whoever spoke last.
+    const quiz = answerQuiz(openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0), 'm2', { attempt: true });
+    const answered = markFeedbackGiven(quiz, 'partial', 'partial');
+    const s1 = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 1, pendingQuiz: answered });
     expect(s1.speak).toBe(true);
     expect(s1.role).toBe('challenger');
     expect(s1.moveType).toBe('content_free_nudge');
     expect(s1.decidedBy).toBe('rule:silence_quiz_waiting');
-    const s2 = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2, pendingQuiz: quiz });
+    const s2 = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 2, pendingQuiz: answered });
     expect(s2.role).toBe('challenger');
     expect(s2.moveType).toBe('quiz_hint');
     expect(s2.targetElementId).toBe('R2');
     expect(s2.decidedBy).toBe('rule:silence_hint');
   });
 
-  it('still says nothing after an explanation once the answer has been shown (no debt)', () => {
-    const quiz = { ...openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0), answerShown: true };
+  it('still says nothing after an explanation once the answer has been released (no debt)', () => {
+    const quiz = markAnswerShown(openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0), 'give_up');
     const d = silence({ lastAgentTurn: 'teacher_explanation', silenceStage: 1, pendingQuiz: quiz });
     expect(d.speak).toBe(false);
     expect(d.decidedBy).toBe('rule:silence_after_explanation');
+  });
+
+  /**
+   * **§4.3, the design decision the A1 report is built on** (#48, `collab-doc.md` §4.3).
+   *
+   * Max's question has waited past the reading-time threshold and the learner has not attempted
+   * it. What goes into that silence is a *peer's partial take and a prompt aimed at the learner* —
+   * Xu et al. (2026)'s "something to improve on, in place of an answer" — and not a hint, which
+   * would be the app doing the retrieval, and not a content-free line, which would be the app
+   * saying nothing. R6: 5 of 6 questions handed back unattempted, both hints followed by `answer?`.
+   */
+  describe('Ellie’s cue and Max’s prompt', () => {
+    const unattempted = () => openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0);
+
+    it('gives stage 1 to Ellie as a peer, aimed at the open question', () => {
+      const d = silence({ lastAgentTurn: 'tester_question', silenceStage: 1, pendingQuiz: unattempted() });
+      expect(d.speak).toBe(true);
+      expect(d.role).toBe('peer');
+      expect(d.moveType).toBe('peer_guess');
+      expect(d.targetElementId).toBe('R2');
+      // A guess by Ellie defends nothing: `challenges` is the ledger's `defended` gate.
+      expect(d.challenges).toEqual([]);
+      expect(d.decidedBy).toBe('rule:ellie_cue');
+    });
+
+    it('gives stage 2 to Max, answering her but aimed at the learner', () => {
+      const d = silence({ lastAgentTurn: 'tester_question', silenceStage: 2, pendingQuiz: unattempted() });
+      expect(d.role).toBe('challenger');
+      expect(d.moveType).toBe('max_prompt');
+      expect(d.targetElementId).toBe('R2');
+      expect(d.decidedBy).toBe('rule:max_prompt');
+    });
+
+    it('fires once per question: after the cue, the silence is left to closure', () => {
+      const spent = markCueGiven(unattempted(), { at: 1_000, hasMistake: true, claim: 'a plausible wrong claim' });
+      for (const stage of [1, 2] as const) {
+        const d = silence({ lastAgentTurn: 'tester_question', silenceStage: stage, pendingQuiz: spent });
+        expect(d.speak, `stage ${stage}`).toBe(false);
+        expect(d.decidedBy, `stage ${stage}`).toBe('rule:cue_spent');
+      }
+    });
+
+    it('stands down once the learner has attempted: the old pair takes the silence back', () => {
+      const attempted = answerQuiz(unattempted(), 'm2', { attempt: true });
+      const answered = markFeedbackGiven(attempted, 'partial', 'partial');
+      expect(silence({ silenceStage: 1, pendingQuiz: answered }).decidedBy).toBe('rule:silence_quiz_waiting');
+      expect(silence({ silenceStage: 2, pendingQuiz: answered }).decidedBy).toBe('rule:silence_hint');
+    });
+
+    /**
+     * **E5, asserted because it is a one-line regression waiting to happen.** `rule:ellie_answers`
+     * and `rule:max_followup` spend both consecutive agent turns, so the cue would be unreachable
+     * if the dog-pile cap were ever checked before the silence branch.
+     */
+    it('still fires after two consecutive agent turns — the cap is checked after the silence', () => {
+      const d = silence({ consecutiveAgentTurns: 2, silenceStage: 1, pendingQuiz: unattempted() });
+      expect(d.decidedBy).toBe('rule:ellie_cue');
+      const s2 = silence({ consecutiveAgentTurns: 2, silenceStage: 2, pendingQuiz: unattempted() });
+      expect(s2.decidedBy).toBe('rule:max_prompt');
+    });
   });
 
   it('keeps §C5 whole while the Tester is waiting: stage 1 adds no subject matter', () => {
@@ -494,8 +690,13 @@ describe('the silence rule reads what the quiet is quiet about', () => {
     const d = silence({
       lastAgentTurn: 'tester_question',
       silenceStage: 2,
-      // Asked, not yet answered — so `feedbackDue` is false and the quiz is genuinely pending.
-      pendingQuiz: openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0),
+      // Attempted and marked *Partly there*, so §4.3's cue has stood down and the quiz is still
+      // genuinely pending (`feedbackDue` false, `quizOpen` true).
+      pendingQuiz: markFeedbackGiven(
+        answerQuiz(openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0), 'm2', { attempt: true }),
+        'partial',
+        'partial',
+      ),
     });
     expect(d.role).toBe('challenger');
     expect(d.moveType).toBe('quiz_hint');
@@ -519,20 +720,16 @@ describe('the silence rule reads what the quiet is quiet about', () => {
       lastAgentTurn: 'tester_question',
       silenceStage: 2,
       consecutiveAgentTurns: 2,
-      pendingQuiz: openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0),
+      pendingQuiz: markFeedbackGiven(
+        answerQuiz(openQuiz({ quizMessageId: 'm1', elementId: 'R2' }, 0), 'm2', { attempt: true }),
+        'partial',
+        'partial',
+      ),
     });
     expect(d.speak).toBe(true);
     expect(d.decidedBy).toBe('rule:silence_hint');
     // The cap still governs everything that is not a silence.
     expect(ruleDecision(input({ consecutiveAgentTurns: 2 }))!.decidedBy).toBe('rule:no_dogpile');
-  });
-
-  it('still yields to the REFERENCE lock, which outranks every fill', () => {
-    const d = ruleDecision(
-      input({ trigger: 'silence', silenceStage: 1, lastAgentTurn: 'tester_question', referenceLocked: true }),
-    )!;
-    expect(d.speak).toBe(false);
-    expect(d.decidedBy).toBe('rule:reference_locked');
   });
 });
 
@@ -573,6 +770,17 @@ describe('classifying the turn a silence follows', () => {
     expect(classifyAgentTurn(decision('quiz_clarify', 'challenger'), 'tester_question')).toBe('tester_question');
     expect(classifyAgentTurn(decision('quiz_clarify', 'challenger'), 'none')).toBe('tester_question');
     expect(classifyAgentTurn(decision('quiz_answer', 'challenger'), 'tester_question')).toBe('teacher_explanation');
+  });
+
+  /**
+   * §4.3's pair is an answer to a silence, not new material: after Ellie's guess and Max's prompt
+   * the thread is still about Max's open question. Max's prompt matters most — it matches none of
+   * the `quiz*` patterns, so without the allowlist it would read as teaching and the closure rule
+   * would be looking at a thread the app believed had moved on.
+   */
+  it('leaves the thread about Max’s question through Ellie’s cue and Max’s prompt', () => {
+    expect(classifyAgentTurn(decision('peer_guess', 'peer'), 'tester_question')).toBe('tester_question');
+    expect(classifyAgentTurn(decision('max_prompt', 'challenger'), 'tester_question')).toBe('tester_question');
   });
 
   it('does not let a fill, a yield or the opener rewrite what the thread is about', () => {

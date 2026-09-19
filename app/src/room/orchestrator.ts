@@ -44,10 +44,27 @@
  * call is the fix, which is what `rule:teacher_answers` does.
  */
 import type { AgentRole } from '../shared/types.js';
+import type { AgentAuthor, ThreadKind } from '../shared/doc/types.js';
 import type { LearnerTurnKind } from './attempt.js';
-import { attemptsOf, feedbackDue, quizOpen, type HandOffVerdict, type PendingQuiz } from './flow.js';
+import {
+  attemptsOf,
+  cueGiven,
+  feedbackDue,
+  quizOpen,
+  type HandOffVerdict,
+  type PendingQuiz,
+} from './flow.js';
 import type { LLMClient, LlmRequest } from './llm/types.js';
 
+/**
+ * **Two consecutive agent turns, ever** (MASG §5.4.4), and #48 spends both of them on purpose:
+ * `rule:ellie_answers` is the first and `rule:max_followup` is the second (`collab-doc.md` §4.2).
+ *
+ * That is right at the cap, which is why `silenceDecision` is still reached **before** the cap is
+ * checked (see the comment above the check): a cue that could not fire after an answer and its
+ * follow-up would make §4.3 unreachable in exactly the case it is written for. There is an
+ * orchestrator test on that, because it is a one-line regression waiting to happen.
+ */
 export const MAX_CONSECUTIVE_AGENT_TURNS = 2;
 
 export type TurnTrigger = 'open' | 'student_message' | 'silence' | 'promote' | 'wrap_up';
@@ -77,9 +94,12 @@ export interface DecisionInput {
    */
   learnerTurn?: LearnerTurnKind | null;
   /**
-   * The learner pressed **Show the answer** (§2.4). Distinct from an `answer_request` in the
-   * composer only in where it came from; both reach `rule:answer_shown`, and both require one
-   * attempt, which the actor has already checked before it gets here.
+   * **Pass** on the open question (#48, brief §4.4's *"There is also a **Pass** control"*).
+   *
+   * Distinct from a `give_up` phrase in the composer only in where it came from: both reach
+   * `rule:answer_released`, and since #48 **neither requires an attempt**. The field keeps its old
+   * name because `IPC.flowShowAnswer` and `actor.showAnswer()` are the door it arrives through and
+   * both are frozen for this build; `actor.pass()` is the collab-doc name for the same call.
    */
   showAnswer?: boolean;
   /**
@@ -97,19 +117,41 @@ export interface DecisionInput {
    */
   askedHere?: boolean;
   /**
-   * True while a REFERENCE answer on this thread is waiting for "Explain it back". Neither
-   * agent may post there at all until the learner presses it (pivot-spec.md §B1, enforced in
-   * code and not in a prompt).
+   * **Retired** (#48). It was true while a REFERENCE answer waited for "Explain it back", and
+   * nothing has pushed a REFERENCE card since #41 — `actor.#answers` is always empty, so the rule
+   * it fed could never fire. The field stays so a caller that still passes it compiles; no rule
+   * reads it.
    */
   referenceLocked?: boolean;
   /**
    * True when this turn belongs to one segment's thread in the flow (`anchorId !== null`), as
-   * opposed to the room-level stream the pre-pivot chat used. It is what makes
-   * `rule:teacher_answers` safe: in the flow the Q&A thread under a segment **is the Teacher's**
-   * (`pivot-spec.md` §B1, #32), so a learner turn there has exactly one correct answerer and the
-   * model has nothing left to decide.
+   * opposed to the room-level stream the pre-pivot chat used. It is what made `rule:ellie_answers`
+   * (né `rule:teacher_answers`) safe in the flow: a learner turn under a segment has exactly one
+   * correct answerer and the model has nothing left to decide.
+   *
+   * Since #48 `threadKind` is the better-named input and is preferred when it is given; this is
+   * still read for the pre-flow room-level stream, which is the one place a model still decides.
    */
   anchoredThread?: boolean;
+  /**
+   * **Which of the collab doc's three channels this turn is in** (#48, brief §4.1): the doc chat,
+   * a span thread opened with Ctrl+E, or a private thread with Ellie or Max.
+   *
+   * `private` is the one that changes a rule: a private thread never edits the doc, never reaches
+   * the group context, and `rule:ellie_answers` must not fire in it — the private turn is handled
+   * by the whisper path, which does not run the orchestrator at all. It is declared here so that
+   * the gate reads as the brief states it rather than as a null check on an anchor.
+   */
+  threadKind?: ThreadKind | null;
+  /**
+   * **`@Ellie` / `@Max`** (brief §4.2 rows 2–3), parsed off the learner's own row in
+   * `sendMessage` by `shared/doc/mention.parseMention` and carried here. `null` is no mention.
+   *
+   * It is an input to the rules rather than to a prompt because the brief makes it one: a mention
+   * names the answerer, and *"`@Ellie` → Ellie only, no follow-up"* is a statement about which
+   * turns run, not about how they are worded.
+   */
+  mention?: AgentAuthor | null;
   /**
    * **What the last agent said in this thread**, which is what the silence *means* (#37).
    *
@@ -207,18 +249,16 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
     return { ...SILENT, rationale: 'The learner closes the thread; no agent may summarise it.', decidedBy: 'rule:last_word' };
   }
   /**
-   * The REFERENCE gate (pivot-spec.md §B1, flow-build-plan.md §4.3 property 4): while an
-   * `answer` is waiting for "Explain it back", **neither** Ellie nor Max may post into that
-   * thread. This is the line that turns "the AI gave me the answer" from the disease into the
-   * hook, so it is checked before anything else can schedule a turn.
+   * **`rule:reference_locked` is retired here** (#48; `collab-doc.md` §9 retires the REFERENCE
+   * entry card, and #41 had already stopped anything pushing one).
+   *
+   * It used to be checked before every other rule: while an `answer` card waited for "Explain it
+   * back", neither agent could post into that thread. Nothing has inserted such a card since #41
+   * — `actor.#answers` is constructed empty and never appended to — so the branch was unreachable
+   * in the running app and is now unreachable in the rules too. `DecisionInput.referenceLocked`
+   * stays as an accepted-and-ignored field; `flow.handOffDue`'s R4 keeps its own copy, which is
+   * likewise always false and is left alone.
    */
-  if (input.referenceLocked === true) {
-    return {
-      ...SILENT,
-      rationale: 'A REFERENCE answer is waiting for "Explain it back"; the thread is the learner\'s alone until then.',
-      decidedBy: 'rule:reference_locked',
-    };
-  }
   if (input.trigger === 'open') {
     return {
       speak: true,
@@ -258,12 +298,28 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
    */
   const pending = input.pendingQuiz ?? null;
   // `askedHere` is the explain path, and it is the Teacher's whether or not a question is open
-  // (§6, beat 11) — see `DecisionInput.askedHere`.
-  if (pending !== null && quizOpen(pending) && input.askedHere !== true) {
+  // (§6, beat 11) — see `DecisionInput.askedHere`. `@Ellie` is the same exemption said by the
+  // learner rather than by a button (#48, brief §4.2 row 2): they named the Teacher, so the
+  // question they asked her is not an answer to Max's and must not draw a Tester turn.
+  if (pending !== null && quizOpen(pending) && input.askedHere !== true && input.mention !== 'ellie') {
     const quiz = pending;
     const attempts = attemptsOf(quiz);
     const learnerTurn = input.trigger === 'student_message' || input.trigger === 'promote';
-    const answer = (why: string): TurnDecision => ({
+    /**
+     * **The answer is released, at any time, with or without an attempt** (#48, brief §4.4).
+     *
+     * `attempt-first.md` §2.3 withheld it until one attempt (`rule:answer_withheld`), and
+     * `collab-doc.md` §1 retires that knowingly: *"a learner must never see a question they never
+     * get the answer to, and a refused answer teaches less than a lowered question"*. The
+     * transcripts cannot settle which is right — it is A2's first test — so the change is recorded
+     * as a departure rather than as a finding. What replaces the refusal is §4.5's pitch: the next
+     * question on this objective is **easier**, which is R6 L20's own correction made automatic.
+     *
+     * `moveType` stays `quiz_answer`, so `#noteTurnForFlow` closes the question exactly as before
+     * and `classifyAgentTurn` still reads the released answer as teaching rather than as an open
+     * question. Only the rule name and the gate changed.
+     */
+    const release = (why: string): TurnDecision => ({
       speak: true,
       role: 'challenger',
       moveType: 'quiz_answer',
@@ -271,36 +327,25 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
       targetElementId: quiz.elementId,
       challenges: [],
       rationale: why,
-      decidedBy: 'rule:answer_shown',
+      decidedBy: 'rule:answer_released',
       handOffLine: null,
       failure: null,
     });
-    if (input.showAnswer === true && attempts >= 1) {
-      return answer('The learner has attempted once and asked to see the answer; it is theirs to ask for.');
+    if (input.showAnswer === true) {
+      return release(
+        attempts >= 1
+          ? 'The learner passed on the question after attempting it; Max gives the answer in full.'
+          : 'The learner passed on the question; Max gives the answer in full rather than refusing it.',
+      );
     }
-    if (learnerTurn && input.learnerTurn === 'answer_request') {
-      if (attempts >= 1) {
-        return answer(
-          'The learner asked for the answer after attempting it once: the lock is lifted, and the ' +
-            'answer is given with its grounds.',
-        );
-      }
-      return {
-        speak: true,
-        role: 'challenger',
-        moveType: 'quiz_hint',
-        probeType: null,
-        targetElementId: quiz.elementId,
-        // Nothing is put under test by a hint: `challenges` gates the ledger's `defended` state,
-        // and a learner who has not answered has defended nothing.
-        challenges: [],
-        rationale:
-          'The learner asked for the answer before attempting it (R6, twice). One hint, and the ' +
-          'answer stays behind one try.',
-        decidedBy: 'rule:answer_withheld',
-        handOffLine: null,
-        failure: null,
-      };
+    if (learnerTurn && input.learnerTurn === 'give_up') {
+      return release(
+        attempts >= 1
+          ? 'The learner gave up after attempting it: Max gives the answer with its grounds and says ' +
+            'what the attempt already had of it.'
+          : 'The learner gave up before attempting it. The answer is given anyway (collab-doc §4.4) ' +
+            'and the next question on this objective is pitched lower (§4.5).',
+      );
     }
     if (learnerTurn && input.learnerTurn === 'question') {
       return {
@@ -342,7 +387,7 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
    * discards roughly half the effect it exists for, so this is not a decision the model gets to
    * make and it outranks the dog-pile cap: the learner has just spoken, so nothing is piling on.
    */
-  if (feedbackDue(input.pendingQuiz ?? null)) {
+  if (feedbackDue(input.pendingQuiz ?? null) && input.mention !== 'ellie') {
     return {
       speak: true,
       role: 'challenger',
@@ -424,7 +469,79 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
    * The model keeps the room-level stream (`anchoredThread` false), which is the pre-flow chat
    * and the only place a second standing agent could still be in play.
    */
-  if ((input.trigger === 'student_message' || input.trigger === 'promote') && input.anchoredThread === true) {
+  const isLearnerTurn = input.trigger === 'student_message' || input.trigger === 'promote';
+
+  /**
+   * **`@Ellie` and `@Max` name the answerer** (#48, brief §4.2 rows 2–3).
+   *
+   * Checked here rather than at the top of the function, because the two rules above it outrank a
+   * mention and must: a learner who writes *"@Max the Hessian is PSD everywhere"* has answered the
+   * open question, and Rowland's mandatory feedback is owed on it whether or not they addressed
+   * it. What a mention settles is the case the rules below would otherwise settle by default —
+   * `rule:ellie_answers`'s "the thread is the Teacher's".
+   *
+   * `@Ellie` is also an exemption from the quiz block above (see its gate): naming the Teacher
+   * while Max's question is open is the collab-doc's version of "+ Ask here", and it is answered
+   * the same way — Ellie explains, the question stays open, and **no follow-up** runs after it
+   * (§4.2 row 2, in as many words).
+   */
+  if (isLearnerTurn && input.mention === 'ellie') {
+    return {
+      speak: true,
+      role: 'peer',
+      moveType: 'answer_then_teach',
+      probeType: null,
+      targetElementId: input.suggestedTargetElement ?? null,
+      challenges: [],
+      rationale: 'The learner addressed Ellie by name; she answers, and no follow-up runs after it.',
+      decidedBy: 'rule:mention',
+      handOffLine: null,
+      failure: null,
+    };
+  }
+  if (isLearnerTurn && input.mention === 'max') {
+    return {
+      speak: true,
+      role: 'challenger',
+      /**
+       * A move of its own, rather than the Teacher's `answer_then_teach` worn by the Tester: Max
+       * addressed directly is still the Tester, and the directive for this move says so — he
+       * answers what was asked and does not slide into asking a new question, which is what the
+       * Tester's other moves are all for.
+       */
+      moveType: 'mention_reply',
+      probeType: null,
+      targetElementId: input.suggestedTargetElement ?? null,
+      challenges: [],
+      rationale: 'The learner addressed Max by name; he answers, and Ellie stays out of it.',
+      decidedBy: 'rule:mention',
+      handOffLine: null,
+      failure: null,
+    };
+  }
+
+  /**
+   * **A learner turn in the doc chat or a span thread is Ellie's to answer, and no model decides
+   * it** (#48, brief §4.2 row 1; `rule:teacher_answers` renamed).
+   *
+   * The rule is unchanged in substance and in its original justification — it is the fix for the
+   * 2026-09-16 silence, where 20 s of Sonnet bought a move the code could not map, in a thread
+   * whose answerer was already forced. What #48 changes is the gate and the name:
+   *
+   *  - the gate reads the **thread kind** rather than "has an anchor". A private thread is the one
+   *    place this must not fire (brief §4.1: private threads are their own channel and never run
+   *    the orchestrator at all), and naming that is clearer than relying on a private thread never
+   *    reaching here;
+   *  - the name is `rule:ellie_answers`, which is the brief's own name for it, and the turn it
+   *    decides is now **the first of two**: `rule:max_followup` chains one Socratic follow-up
+   *    after it unless a question is already open (§4.2, and `followupDue` below).
+   *
+   * The pre-flow room-level stream (`threadKind` absent, `anchoredThread` false) still goes to the
+   * model, which is the only place a second standing agent could still be in play.
+   */
+  const kind = input.threadKind ?? null;
+  const ellieAnswers = kind === null ? input.anchoredThread === true : kind !== 'private';
+  if (isLearnerTurn && ellieAnswers) {
     return {
       speak: true,
       // `respond` until #36. A move named "respond" is satisfied by any reply, including the six
@@ -435,13 +552,118 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
       probeType: null,
       targetElementId: input.suggestedTargetElement ?? null,
       challenges: [],
-      rationale: 'The learner asked in a segment thread; the thread is the Teacher\'s and she answers it.',
-      decidedBy: 'rule:teacher_answers',
+      rationale: 'The learner asked in the doc chat; the thread is the Teacher\'s and she answers it.',
+      decidedBy: 'rule:ellie_answers',
       handOffLine: null,
       failure: null,
     };
   }
   return null;
+}
+
+// ── the turns the actor writes in code (#48) ───────────────────────────────
+
+/**
+ * **`rule:max_followup`** (brief §4.2 row 1, second turn).
+ *
+ * *"Asks in doc chat, no mention → **Ellie answers in full**, then **Max asks one follow-up** to
+ * the chat."* It is not a `ruleDecision` branch because it is not a decision about *this* turn: it
+ * is a second turn chained after Ellie's, which the actor runs at the end of `#runAgentTurn`. The
+ * rule name and the gate live here anyway, beside the rules they have to agree with.
+ *
+ * **The gate is the brief's own invariant**: *"One open Max question at a time per file.
+ * `rule:max_followup` does not fire while one is open; Ellie's answer to a new learner question
+ * simply stands, and Max's open question stays open."* `PendingQuiz` is per-actor and an actor is
+ * per-room and a room is per-file, so the invariant costs nothing to enforce — but it is stated as
+ * a function so the test can quote it.
+ *
+ * A mention suppresses it too: §4.2 row 2 says `@Ellie` draws no follow-up, and row 3 gives the
+ * whole turn to Max, who does not then follow himself up.
+ */
+export function followupDue(input: {
+  decidedBy: string;
+  pendingQuiz?: PendingQuiz | null;
+  mention?: AgentAuthor | null;
+  threadKind?: ThreadKind | null;
+}): boolean {
+  if (input.decidedBy !== 'rule:ellie_answers') return false;
+  if (input.mention != null) return false;
+  if (input.threadKind === 'private') return false;
+  return !quizOpen(input.pendingQuiz ?? null);
+}
+
+/**
+ * The follow-up turn's decision, written here rather than by a model for the same reason
+ * `rule:try_here` is: the learner's question has already settled that a question is owed, and the
+ * only thing left to choose is the wording, which is the model's job and not the orchestrator's.
+ *
+ * `challenges` carries the objective, because a question is what puts an element under test —
+ * that is the ledger's `defended` gate, and the difference between this and a hint.
+ */
+export function maxFollowupDecision(objectiveId: string | null): TurnDecision {
+  return {
+    speak: true,
+    role: 'challenger',
+    moveType: 'quiz',
+    probeType: null,
+    targetElementId: objectiveId,
+    challenges: objectiveId ? [objectiveId] : [],
+    rationale:
+      'Ellie answered the learner’s question and no question is open, so Max asks one Socratic ' +
+      'follow-up on an objective the answer touched (collab-doc §4.2).',
+    decidedBy: 'rule:max_followup',
+    handOffLine: null,
+    failure: null,
+  };
+}
+
+/**
+ * **`rule:closure`** (brief §4.7): the flow session went idle, or the file is closing, with a Max
+ * question still open. He releases the answer; the doc's Q block resolves as *released*.
+ *
+ * Same shape as `rule:answer_released` — `moveType: 'quiz_answer'`, so everything downstream
+ * closes the question the way it always has — with its own rule name so the log can tell a
+ * learner's give-up apart from a debt the app paid on its own.
+ */
+export function closureDecision(elementId: string): TurnDecision {
+  return {
+    speak: true,
+    role: 'challenger',
+    moveType: 'quiz_answer',
+    probeType: null,
+    targetElementId: elementId,
+    challenges: [],
+    rationale:
+      'The question was still open when the sitting went idle. No question Max asked is left ' +
+      'without its answer (collab-doc §4.7), so he releases it.',
+    decidedBy: 'rule:closure',
+    handOffLine: null,
+    failure: null,
+  };
+}
+
+/**
+ * **`rule:lesson_start`** (brief §6): the lesson card's **Start**.
+ *
+ * *"posts an Ellie message in the doc chat announcing what we need to understand and the
+ * objective; scrolls the doc to the segment that carries it; has Ellie prompt the learner to ask a
+ * question to begin."* The scroll is the renderer's; the two Ellie halves are one turn, and this
+ * is its decision. It reuses `tryHere`'s code path — the learner named the move, so there is
+ * nothing for a model to decide — with the Teacher on the floor instead of the Tester.
+ */
+export function lessonStartDecision(objectiveId: string): TurnDecision {
+  return {
+    speak: true,
+    role: 'peer',
+    moveType: 'lesson_start',
+    probeType: null,
+    targetElementId: objectiveId,
+    challenges: [],
+    rationale: 'The learner pressed Start on a lesson card; Ellie says what it is about and invites the first question.',
+    decidedBy: 'rule:lesson_start',
+    handOffLine: null,
+    failure: null,
+  };
 }
 
 /**
@@ -496,6 +718,76 @@ export function silenceDecision(input: DecisionInput): TurnDecision {
    * and `ruleDecision` settles it before a silence can reach here.
    */
   if (quizOpen(quiz) && !feedbackDue(quiz)) {
+    /**
+     * **Ellie's cue, then Max's prompt** (#48, `collab-doc.md` §4.3).
+     *
+     * This is the design decision the A1 report is built on, and it replaces the content-free
+     * line and the hint **only in the case §4.3 is about**: Max's question has waited past the
+     * reading-time threshold and the learner has **not attempted it**. The evidence is R6 — 5 of 6
+     * questions handed back unattempted before the learner set rules by hand, and both hints
+     * followed by a bare `answer?` (`convergence.md`). A hint into that silence is the app doing
+     * the retrieval; a content-free line into it is the app saying nothing. What Xu et al. (2026)
+     * put there instead is **a peer with something to improve on**, which is what this is.
+     *
+     *  - stage 1 — Ellie offers an unsure, partial take as a peer: ≤ 60 words, hedged, part right,
+     *    possibly with one plausible student mistake, never the full answer, tagged *Ellie's
+     *    guess* in the thread and **never written to the doc**;
+     *  - stage 2 — Max answers her, **aimed at the learner**: ≤ 50 words, neither confirming nor
+     *    correcting yet, naming the part worth looking at and asking them to improve on it or say
+     *    whether she is right.
+     *
+     * **It fires once per question**, which is why the gate is `cueGiven(quiz)` on the question
+     * and not a count on the timer: a question outlives any one silence window, and §4.3 says
+     * *"After it, silence is left alone until the closure rule (§4.7)"*.
+     *
+     * After an attempt the old pair stands unchanged — a learner who has answered and gone quiet
+     * is waiting on feedback or revising, not failing to start, and §4.3's peer take would be
+     * answering a question they have already had a go at.
+     */
+    const noAttemptYet = attemptsOf(quiz) === 0;
+    if (noAttemptYet && cueGiven(quiz)) {
+      return {
+        ...SILENT,
+        rationale:
+          'Ellie has already offered her take on this question and Max has already put it back to ' +
+          'the learner. It fires once per question (collab-doc §4.3); the rest is closure’s.',
+        decidedBy: 'rule:cue_spent',
+      };
+    }
+    if (noAttemptYet && stage === 1) {
+      return {
+        speak: true,
+        role: 'peer',
+        moveType: 'peer_guess',
+        probeType: null,
+        targetElementId: quiz!.elementId,
+        // Nothing is under test: a guess Ellie made is not the learner defending anything, and
+        // `challenges` is the ledger's `defended` gate.
+        challenges: [],
+        rationale:
+          'Max’s question has waited past the reading time with no attempt. Ellie offers an unsure ' +
+          'partial take as a peer — something to improve on, in place of an answer (Xu et al. 2026).',
+        decidedBy: 'rule:ellie_cue',
+        handOffLine: null,
+        failure: null,
+      };
+    }
+    if (noAttemptYet) {
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'max_prompt',
+        probeType: null,
+        targetElementId: quiz!.elementId,
+        challenges: [],
+        rationale:
+          'Max answers Ellie’s guess aimed at the learner: he names the part worth looking at and ' +
+          'asks them to improve on it or say whether she is right.',
+        decidedBy: 'rule:max_prompt',
+        handOffLine: null,
+        failure: null,
+      };
+    }
     if (stage === 1) {
       return {
         speak: true,
@@ -611,6 +903,21 @@ const NON_TEACHING_MOVES = new Set([
   'reexplain_simpler',
   'offer_step_back',
   'quiz_hint',
+  /**
+   * **§4.3's pair is a fill, not new material** (#48). Ellie's guess and Max's prompt are both
+   * answers to a silence on a question that is still open, and the thread is still about that
+   * question after them — so they leave the classification where it was, exactly as the five
+   * fills above do. Without this, Max's prompt (which matches none of the `quiz*` patterns) would
+   * be read as teaching, and the closure rule would then be looking at a thread the app believed
+   * had moved on.
+   */
+  'peer_guess',
+  'max_prompt',
+  /**
+   * The lesson card's opening turn asks the learner to ask (brief §6). It teaches nothing, so the
+   * quiet after it is the quiet before a first question rather than a failed explanation.
+   */
+  'lesson_start',
 ]);
 
 /**

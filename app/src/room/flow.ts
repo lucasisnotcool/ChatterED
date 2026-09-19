@@ -25,6 +25,11 @@
  */
 
 import type { AgentProfile } from '../shared/types.js';
+/**
+ * The collab doc's shared vocabulary (#48). `src/shared/doc/types.ts` imports nothing but types,
+ * so this stays inside the portability rule that keeps `src/room` free of Electron and SQLite.
+ */
+import type { QResolution, QuizVerdict3 } from '../shared/doc/types.js';
 import { testerName } from './agents.js';
 
 /** The tunable set. One object so a demo profile is a substitution, not a scatter of flags. */
@@ -759,6 +764,10 @@ export interface PendingQuiz {
   /**
    * Learner turns classified as an attempt since this question was asked (§2.2). Absent in rows
    * persisted before #47, which `openQuiz` and the actor's restore both read as 0.
+   *
+   * **It no longer gates anything** (#48, `collab-doc.md` §4.4: the answer is released on any
+   * give-up, with or without an attempt). It survives as *data*: the release turn says what the
+   * attempt already had of the answer, and `pitchInputs` reads the verdicts it produced.
    */
   attempts: number;
   /** True once the model answer has been given (§2.3's `rule:answer_shown`). Closes the quiz. */
@@ -768,8 +777,58 @@ export interface PendingQuiz {
    * it opened *"Well done."*, `partial` otherwise — in which case the feedback ended on a follow-up
    * question and the composer is asking for the next attempt. `null` (or absent, in rows persisted
    * before this) until feedback has landed on the latest attempt.
+   *
+   * Two-valued for the composer, which only ever needed "done" or "try again". The three-valued
+   * verdict the outcome ledger records is `verdict3` below — see `feedbackVerdict3`.
    */
   verdict?: QuizVerdict | null;
+  /**
+   * **The three-valued verdict** (#48, brief §4.2: `Well done.` / `Partly there.` / `Not yet.`).
+   * `QuizVerdict` collapses the last two because the composer's copy is the same for both; the
+   * progress bar cannot, because *Partly there* half-fills an objective and *Not yet* fills
+   * nothing (brief §6). Written on every feedback turn, alongside `verdict`.
+   */
+  verdict3?: QuizVerdict3 | null;
+
+  // ── the collab doc's additions (#48) ────────────────────────────────────
+
+  /**
+   * **The question's own id**, minted when it is asked. It is the `q_block`'s `questionId` in the
+   * doc (brief §5.2) and the key the outcome rows are filed under — which is why it is stored
+   * rather than derived from the message id: the Q block outlives the message row's thread, and
+   * `resolve_q` has to be able to find it after a relaunch.
+   */
+  questionId?: string;
+  /** The objective the question is about, when the pack came from a learning-objective tree. */
+  objectiveId?: string | null;
+  /**
+   * The thread the question was asked in (`messages.anchor_id`). Read off the Tester's row by
+   * `#anchorOfQuiz` as before; carried here too so a question can be resolved by `closeOpenQuestion`
+   * after the row's thread has gone out of view.
+   */
+  anchorId?: string | null;
+  /**
+   * **Ellie's cue fires once per question** (brief §4.3). The timestamp it fired at, or null/absent
+   * while it has not. `silenceDecision` reads it, which is what makes "once" a fact about the
+   * question rather than about the timer's fire count.
+   */
+  cueGivenAt?: number | null;
+  /**
+   * **Did the cue contain a plausible student mistake, and what was the claim?** (brief §4.7's
+   * second invariant, architect §E6.) The cue is a *structured* call, so these are facts the
+   * closure rule can check rather than prose a model was asked to self-report in. The resolving
+   * Max turn — feedback, release or closure — must correct `cueClaim` explicitly when
+   * `cueHasMistake` is true.
+   */
+  cueHasMistake?: boolean;
+  cueClaim?: string | null;
+  /**
+   * **How the answer came out**, once it has. `give_up` is a learner phrase (§4.4), `pass` is the
+   * **Pass** control on the open question, `closure` is the flow session going idle or the file
+   * closing with the question still open (§4.7). Null while the question is live or was resolved
+   * by the learner's own correct answer.
+   */
+  releasedBy?: 'give_up' | 'pass' | 'closure' | null;
 }
 
 /**
@@ -791,17 +850,52 @@ export type QuizVerdict = 'complete' | 'partial';
 /** The three openers, in the prompt's own words. `Well done.` is the only `complete`. */
 export const VERDICT_OPENERS = ['Well done.', 'Partly there.', 'Not yet.'] as const;
 
+/** The first line, normalised once: emphasis, a bold marker or a quote character all survive. */
+function firstLine(text: string): string {
+  return text.trim().split(/\r?\n/)[0]?.replace(/^[\s*_>“"'`]+/, '').toLowerCase() ?? '';
+}
+
 export function feedbackVerdict(text: string): QuizVerdict {
-  // Emphasis, a leading bold marker or a quote character all survive a model that "helps".
-  const first = text.trim().split(/\r?\n/)[0]?.replace(/^[\s*_>“"'`]+/, '').toLowerCase() ?? '';
-  return first.startsWith('well done') ? 'complete' : 'partial';
+  return firstLine(text).startsWith('well done') ? 'complete' : 'partial';
+}
+
+/**
+ * **The three-valued verdict** (#48, brief §4.2 and §6).
+ *
+ * `feedbackVerdict` answers the composer's question — try again, or done — and collapses *Partly
+ * there* with *Not yet* because the copy is the same for both. The progress bar's question is
+ * different: *Partly there* half-fills an objective and *Not yet* fills nothing, so it needs all
+ * three. **A missing opener is `partial`**, unchanged and for the unchanged reason: it is the safe
+ * side, because it asks for another try rather than declaring one done — and on the fill it is the
+ * conservative half-mark rather than a completion the learner has not earned.
+ */
+export function feedbackVerdict3(text: string): QuizVerdict3 {
+  const first = firstLine(text);
+  if (first.startsWith('well done')) return 'complete';
+  if (first.startsWith('not yet')) return 'not_yet';
+  return 'partial';
 }
 
 export function verdictOf(quiz: PendingQuiz | null): QuizVerdict | null {
   return quiz?.verdict === 'complete' || quiz?.verdict === 'partial' ? quiz.verdict : null;
 }
 
-export function openQuiz(input: { quizMessageId: string; elementId: string }, now: number): PendingQuiz {
+export function verdict3Of(quiz: PendingQuiz | null): QuizVerdict3 | null {
+  const v = quiz?.verdict3;
+  return v === 'complete' || v === 'partial' || v === 'not_yet' ? v : null;
+}
+
+export function openQuiz(
+  input: {
+    quizMessageId: string;
+    elementId: string;
+    /** #48: minted by the caller so the doc's Q block and the outcome rows share one id. */
+    questionId?: string;
+    objectiveId?: string | null;
+    anchorId?: string | null;
+  },
+  now: number,
+): PendingQuiz {
   return {
     ...input,
     askedAt: now,
@@ -810,6 +904,11 @@ export function openQuiz(input: { quizMessageId: string; elementId: string }, no
     attempts: 0,
     answerShown: false,
     verdict: null,
+    verdict3: null,
+    cueGivenAt: null,
+    cueHasMistake: false,
+    cueClaim: null,
+    releasedBy: null,
   };
 }
 
@@ -838,13 +937,81 @@ export function answerQuiz(quiz: PendingQuiz, answerMessageId: string, opts: { a
  * without the text — the older tests, a restore — leaves it `null`, and the composer then treats
  * the question as answered but unmarked, offering *Try another* and nothing stronger.
  */
-export function markFeedbackGiven(quiz: PendingQuiz, verdict: QuizVerdict | null = null): PendingQuiz {
-  return { ...quiz, feedbackGiven: true, verdict };
+export function markFeedbackGiven(
+  quiz: PendingQuiz,
+  verdict: QuizVerdict | null = null,
+  /** #48: the three-valued verdict, for the outcome row and the progress fill. */
+  verdict3: QuizVerdict3 | null = null,
+): PendingQuiz {
+  return { ...quiz, feedbackGiven: true, verdict, verdict3 };
 }
 
-/** The answer has been given. The question is closed; nothing about it moves the ledger. */
-export function markAnswerShown(quiz: PendingQuiz): PendingQuiz {
-  return { ...quiz, answerShown: true };
+/**
+ * The answer has been given. The question is closed; nothing about it moves the ledger.
+ *
+ * `releasedBy` (#48, brief §4.4 and §4.7) says which of the three doors it came out of, and is
+ * what `resolve_q` writes as the Q block's resolution tag. `null` is the pre-#48 caller and the
+ * one case that is not a release at all — a question closed by a new one taking its place.
+ */
+export function markAnswerShown(
+  quiz: PendingQuiz,
+  releasedBy: 'give_up' | 'pass' | 'closure' | null = null,
+): PendingQuiz {
+  return { ...quiz, answerShown: true, releasedBy };
+}
+
+/**
+ * **Ellie's cue fired** (brief §4.3), with what the structured call reported about it.
+ *
+ * Recorded on the question rather than on the timer, because "once per question" is the rule §4.3
+ * states and a question outlives any one silence window — and because §4.7's second invariant
+ * (*"no mistake Ellie made is left uncorrected"*) needs the claim to still be here when the
+ * question is resolved, however long after.
+ */
+export function markCueGiven(
+  quiz: PendingQuiz,
+  input: { at: number; hasMistake: boolean; claim: string | null },
+): PendingQuiz {
+  return { ...quiz, cueGivenAt: input.at, cueHasMistake: input.hasMistake, cueClaim: input.claim };
+}
+
+/** True once Ellie's peer cue has been given on this question. Tolerates a pre-#48 row. */
+export function cueGiven(quiz: PendingQuiz | null): boolean {
+  return typeof quiz?.cueGivenAt === 'number' && Number.isFinite(quiz.cueGivenAt);
+}
+
+/**
+ * **An uncorrected Ellie mistake** (brief §4.7). True when the cue carried one and the question is
+ * still open, which is the condition the resolving Max turn's directive has to carry. It is read
+ * by the actor when it builds the directive, and asserted in a test — the invariant is "the
+ * resolving turn corrects it", and the only thing code can enforce is that it was *asked to*.
+ */
+export function cueMistakeToCorrect(quiz: PendingQuiz | null): string | null {
+  if (!quiz || quiz.cueHasMistake !== true) return null;
+  const claim = quiz.cueClaim;
+  return typeof claim === 'string' && claim.trim().length > 0 ? claim.trim() : null;
+}
+
+/** How the question ended, as the doc's Q block tags it (brief §5.3). Null while it is open. */
+export function qResolutionOf(quiz: PendingQuiz | null): QResolution | null {
+  if (!quiz) return null;
+  if (quiz.releasedBy === 'give_up' || quiz.releasedBy === 'pass' || quiz.releasedBy === 'closure') {
+    return 'released';
+  }
+  if (!quiz.feedbackGiven) return null;
+  return verdict3Of(quiz) === 'complete' ? 'you_got_this' : 'partly_yours';
+}
+
+/**
+ * **Closure: no question Max asked is left without its answer** (brief §4.7).
+ *
+ * Pure, so the rule is testable without a room: given the open question and whether the session
+ * has gone idle, does Max owe a release? `expireQuizOnClose` used to *expire* the question here
+ * and log it as a debt avoided; the brief inverts that — an unanswered question is the debt, and
+ * the app pays it rather than dropping it.
+ */
+export function closureDue(quiz: PendingQuiz | null): boolean {
+  return quizOpen(quiz);
 }
 
 /** Tolerates a row persisted before #47, where the field did not exist. */
@@ -879,6 +1046,12 @@ export function feedbackDue(quiz: PendingQuiz | null, profile: FlowProfile = FLO
  * A quiz left unanswered when the session closes **expires, and is logged** (§12 q. 6). An
  * unanswered quiz that greets the learner next session is a debt, and `design-brief.md` §E's
  * psychological-safety goal argues against debts.
+ *
+ * **Superseded by `rule:closure`** (#48, brief §4.7): the debt is paid rather than dropped — Max
+ * releases the answer, the Q block in the doc is resolved as *released*, and only then is the
+ * question closed. The brief's reason is the one this function could not give: *"a learner must
+ * never see a question they never get the answer to"*. It stays exported so a caller that has not
+ * moved yet still compiles, and the actor no longer calls it.
  */
 export function expireQuizOnClose(quiz: PendingQuiz | null): { expired: PendingQuiz | null } {
   return { expired: quiz && quiz.answerMessageId === null ? quiz : null };

@@ -119,6 +119,138 @@ export function notePitch(state: PitchState, text: string, now: number): PitchSt
   return { level, signals, updatedAt: now };
 }
 
+// ── how hard the next question is (#48, collab-doc.md §4.5) ────────────────
+
+/**
+ * **No fixed rungs.** `collab-doc.md` §4.5, verbatim: *"Max is given the learner's recent results
+ * on this file (the last few verdicts and releases, and the objective's current fill) and pitches
+ * freely, with two hard instructions: after a `give_up`, the next question on that objective is
+ * **easier** (recall, or one part of the idea); after a *Well done*, the next may be harder
+ * (explain why, apply to a case)."*
+ *
+ * The evidence is R6, twice over: L20 lowered the difficulty in the same message that set
+ * attempt-first, and L34 read *"this query seems too complex"* (`convergence.md`). A give-up is a
+ * statement about the question, not about the learner, and the app's answer to it is a smaller
+ * question rather than a refused answer.
+ *
+ * So this file gets a second pure function beside `pitchSignal`: the *level* stays the learner's
+ * stated preference about **how an explanation is written**, and this is about **how hard the next
+ * question is**. They are deliberately not merged — a learner who asks for the rigorous version
+ * has not asked for a harder quiz, and one who gives up on a question has not asked for simpler
+ * prose. The wording of the question is the model's; the two instructions are not.
+ */
+export type QuestionPitch = 'easier' | 'level' | 'harder';
+
+/** One resolved question on this file, newest last. The only history the pitch reads. */
+export interface PitchOutcome {
+  objectiveId: string | null;
+  /** `verdict` is the learner's own answer being marked; `released` is a give-up, pass or closure. */
+  kind: 'verdict' | 'released';
+  verdict: 'complete' | 'partial' | 'not_yet' | null;
+  releasedBy: 'give_up' | 'pass' | 'closure' | null;
+}
+
+export interface PitchInputsRequest {
+  /** The objective the *next* question is about. The two hard rules are scoped to it. */
+  objectiveId: string | null;
+  /** Every resolved question on this file, oldest first. Only the tail is read. */
+  outcomes: readonly PitchOutcome[];
+  /** The objective's current fill (brief §6): 0, 0.5 or 1. */
+  fill: 0 | 0.5 | 1;
+}
+
+export interface PitchInputs {
+  pitch: QuestionPitch;
+  /** Why, in one clause, for the prompt and for the log. Never the model's guess. */
+  reason: string;
+  /** The last few results on this file, newest first, capped — what §4.5 hands Max. */
+  recent: PitchOutcome[];
+  fill: 0 | 0.5 | 1;
+  /** True when the most recent result **on this objective** was a release. Drives `easier`. */
+  lastWasRelease: boolean;
+  /** True when the most recent result on this objective was a *Well done*. Permits `harder`. */
+  lastWasComplete: boolean;
+}
+
+/** How much history the block carries. Three is enough to show a direction without a wall. */
+const MAX_RECENT = 4;
+
+/**
+ * Pure, and unit-tested against fixed inputs — which is what §4.5 asks for in as many words
+ * (*"The pitch inputs are a pure function (`room/pitch.ts`), unit-tested; the wording is the
+ * model's"*).
+ *
+ * **Precedence: a release beats a completion.** Both can be true of the same objective — a
+ * learner who gave up on question 2 after a *Well done* on question 1 — and the most recent one
+ * wins, because the pitch is about the question being asked *now*. That is the one ordering
+ * decision in here and it is the one §4.5's own evidence is about: R6's give-up is the signal the
+ * next question has to answer.
+ */
+export function pitchInputs(input: PitchInputsRequest): PitchInputs {
+  const recent = [...input.outcomes].reverse().slice(0, MAX_RECENT);
+  // Scoped to the objective: a give-up on *another* objective says nothing about this one.
+  const onObjective = recent.filter(
+    (o) => input.objectiveId === null || o.objectiveId === null || o.objectiveId === input.objectiveId,
+  );
+  const last = onObjective[0] ?? null;
+  const lastWasRelease = last?.kind === 'released';
+  const lastWasComplete = last?.kind === 'verdict' && last.verdict === 'complete';
+
+  const pitch: QuestionPitch = lastWasRelease ? 'easier' : lastWasComplete ? 'harder' : 'level';
+  const reason = lastWasRelease
+    ? `the last question on this objective ended in ${last?.releasedBy === 'pass' ? 'a pass' : last?.releasedBy === 'closure' ? 'a release at closure' : 'a give-up'}`
+    : lastWasComplete
+      ? 'the last answer on this objective was marked Well done'
+      : last === null
+        ? 'nothing has been asked on this objective yet'
+        : `the last answer on this objective was marked ${last.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}`;
+
+  return { pitch, reason, recent, fill: input.fill, lastWasRelease, lastWasComplete };
+}
+
+/**
+ * **What Max is told**, rendered from `pitchInputs`. Facts first, then the one instruction they
+ * add up to — the same shape `pitchLine` uses, and for the same reason.
+ *
+ * The two hard instructions are stated as rules of the app rather than as suggestions, because
+ * §4.5 makes them rules: *"two hard instructions"*. Everything else about the question — its
+ * wording, its angle, whether it uses the objective's seed — stays the model's.
+ */
+export function pitchBlock(inputs: PitchInputs): string {
+  const lines = ['HOW HARD THIS QUESTION SHOULD BE'];
+  if (inputs.recent.length === 0) {
+    lines.push('Nothing has been asked on this file yet. Pitch it where the slide pitches it.');
+  } else {
+    lines.push('Recent results on this file, most recent first:');
+    for (const o of inputs.recent) {
+      lines.push(
+        o.kind === 'released'
+          ? `- answer released (${o.releasedBy ?? 'released'}) — fills nothing`
+          : `- marked ${o.verdict === 'complete' ? 'Well done' : o.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}`,
+      );
+    }
+  }
+  lines.push(
+    `This objective is ${inputs.fill === 1 ? 'complete' : inputs.fill === 0.5 ? 'half filled' : 'not filled yet'}.`,
+  );
+  if (inputs.pitch === 'easier') {
+    lines.push(
+      `**Ask an easier question than the last one** — ${inputs.reason}. Ask for recall, or for one`,
+      'part of the idea on its own: a definition, a single step, the name of the thing. Do not',
+      'reword the question they just gave up on, and do not say it is easier.',
+    );
+  } else if (inputs.pitch === 'harder') {
+    lines.push(
+      `**You may go harder than the last one** — ${inputs.reason}. Ask them to explain why, or to`,
+      'apply it to a case the slide does not work through. Still one question.',
+    );
+  } else {
+    lines.push(`Pitch it at the same level as the last one — ${inputs.reason}.`);
+  }
+  lines.push('There are no fixed difficulty rungs: the wording and the angle are yours.');
+  return lines.join('\n');
+}
+
 /**
  * The sentence the Teacher reads. One line, in the imperative, because the surrounding block is
  * facts and this is the instruction they add up to.

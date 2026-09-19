@@ -33,7 +33,18 @@
  */
 import { isAgreementPhrase } from './ledger.js';
 
-export type LearnerTurnKind = 'attempt' | 'answer_request' | 'question' | 'other';
+/**
+ * **`give_up` replaces `answer_request`** (#48, `collab-doc.md` §4.4).
+ *
+ * `attempt-first.md` §2.3 had two outcomes for an ask: withheld before one attempt, shown after.
+ * The collab-doc brief deletes the first — *"a learner must never see a question they never get
+ * the answer to, and a refused answer teaches less than a lowered question"* — so the class that
+ * used to mean *"they asked for the answer"* now means *"they are done trying"*, and it absorbs
+ * the don't-know and frustration phrasings the brief lists alongside R6's own asks. One class,
+ * because the rule it feeds is one rule: Max releases the answer, and the next question on that
+ * objective is pitched lower (`pitch.ts`).
+ */
+export type LearnerTurnKind = 'attempt' | 'give_up' | 'question' | 'other';
 
 /** Above this a turn is too long to be a bare request or a one-line clarification. */
 export const SHORT_TURN_WORDS = 25;
@@ -77,6 +88,38 @@ export const ANSWER_REQUEST_PHRASES: readonly AnswerRequestPhrase[] = [
   { phrase: 'give up', match: 'whole' },
   { phrase: 'skip', match: 'whole' },
   { phrase: 'skip it', match: 'whole' },
+];
+
+/**
+ * **The give-up phrasings the collab-doc brief adds** (`collab-doc.md` §4.4, verbatim: *"I don't
+ * know"*, *"idk"*, *"no idea"*, *"I give up"*, *"just tell me"*, *"what's the answer"*, *"this is
+ * too hard"*, *"I'm lost"* — the last four already sit in `ANSWER_REQUEST_PHRASES`).
+ *
+ * The line this list draws against `HINT_REQUEST_PHRASES` is deliberate and is the one thing to
+ * argue with here. *"I'm stuck"*, *"hint?"*, *"where do I start"* stay a **hint request** (`other`
+ * → `rule:quiz_nudge`): they are a learner still inside the question asking for a way in. *"I'm
+ * lost"*, *"I don't know"*, *"this is too hard"* are a learner saying the question is beyond them,
+ * which is §4.4's own reading of a give-up (*"a give-up is read as 'too hard': the next question
+ * is pitched lower"*, §4.5) — and the cost of getting it wrong is asymmetric, because a released
+ * answer fills nothing and an easier next question costs the learner nothing either.
+ */
+export const GIVE_UP_PHRASES: readonly AnswerRequestPhrase[] = [
+  ...ANSWER_REQUEST_PHRASES,
+  // §4.4's own list, in its own words.
+  { phrase: 'i dont know', match: 'contains' },
+  { phrase: 'i do not know', match: 'contains' },
+  { phrase: 'dont know', match: 'whole' },
+  { phrase: 'idk', match: 'whole' },
+  { phrase: 'idk sorry', match: 'whole' },
+  { phrase: 'no idea', match: 'contains' },
+  { phrase: 'i have no idea', match: 'contains' },
+  { phrase: 'this is too hard', match: 'contains' },
+  { phrase: 'too hard', match: 'whole' },
+  { phrase: 'thats too hard', match: 'contains' },
+  { phrase: 'im lost', match: 'contains' },
+  { phrase: 'i am lost', match: 'contains' },
+  { phrase: 'i cant do this', match: 'contains' },
+  { phrase: 'i cannot do this', match: 'contains' },
 ];
 
 /**
@@ -167,6 +210,11 @@ export function isAnswerRequest(body: string): boolean {
   return matchesAny(body, ANSWER_REQUEST_PHRASES);
 }
 
+/** §4.4: R6's asks plus the don't-know and frustration phrasings. The superset of the above. */
+export function isGiveUp(body: string): boolean {
+  return matchesAny(body, GIVE_UP_PHRASES);
+}
+
 /**
  * §2.2, to implement literally. Pure, so the rules that read it are testable without a room.
  */
@@ -175,7 +223,10 @@ export function classifyLearnerTurn(body: string): LearnerTurnKind {
   if (trimmed.length === 0) return 'other';
   // Ledger rule 4's own predicate. "ok" is not an attempt, and it is the reply R6 actually gave.
   if (isAgreementPhrase(trimmed)) return 'other';
-  if (isAnswerRequest(trimmed)) return 'answer_request';
+  // §4.4, and it is checked **before** the hint list: a turn that reads both ways ("I don't know,
+  // any hint?") is a learner who has said they cannot answer, and the release is the safe side —
+  // it fills nothing and it lowers the next question rather than refusing anything.
+  if (isGiveUp(trimmed)) return 'give_up';
   // A request for help carries nothing to mark; one hint, no answer (`rule:quiz_nudge`).
   if (isHintRequest(trimmed)) return 'other';
 
@@ -204,7 +255,24 @@ export function classifyLearnerTurn(body: string): LearnerTurnKind {
  * scripted backend's beats are written against exactly these names, which is why they are one
  * pure function rather than six template literals at the call site.
  */
-export type QuizCueKind = 'handoff' | 'try' | 'feedback' | 'hint' | 'clarify' | 'answer';
+export type QuizCueKind =
+  | 'handoff'
+  | 'try'
+  | 'feedback'
+  | 'hint'
+  | 'clarify'
+  | 'answer'
+  /**
+   * The collab-doc loop's own beats (#48). Same rule: every turn that belongs to question *N*
+   * carries `:N`, so `script.notes.ts` can hold the whole loop — answer, follow-up, attempt,
+   * feedback, cue, prompt, give-up, release — as named beats that cannot play out of order.
+   */
+  | 'followup'
+  | 'cue'
+  | 'prompt'
+  | 'release'
+  | 'closure'
+  | 'doctext';
 
 export function quizCue(kind: QuizCueKind, n: number): string {
   return `${kind}:${n}`;

@@ -7,10 +7,10 @@
  * behaviour this rule has to recognise.
  */
 import { describe, expect, it } from 'vitest';
-import { ANSWER_REQUEST_PHRASES, classifyLearnerTurn, quizCue } from './attempt.js';
+import { ANSWER_REQUEST_PHRASES, GIVE_UP_PHRASES, classifyLearnerTurn, quizCue } from './attempt.js';
 
 describe('classifyLearnerTurn', () => {
-  it('reads R6’s own asks as answer requests', () => {
+  it('reads R6’s own asks as a give-up', () => {
     for (const line of [
       'answer?',
       'please solve the question',
@@ -18,14 +18,46 @@ describe('classifyLearnerTurn', () => {
       'send me the answer',
       'how would you do it?',
     ]) {
-      expect(classifyLearnerTurn(line), line).toBe('answer_request');
+      expect(classifyLearnerTurn(line), line).toBe('give_up');
     }
   });
 
   it('reads the other phrasings of the same ask', () => {
     for (const line of ['just tell me', 'I give up', 'skip', 'show me the answer', 'solve it']) {
-      expect(classifyLearnerTurn(line), line).toBe('answer_request');
+      expect(classifyLearnerTurn(line), line).toBe('give_up');
     }
+  });
+
+  /**
+   * **The phrasings `collab-doc.md` §4.4 adds**, quoted from the brief: *"I don't know"*, *"idk"*,
+   * *"no idea"*, *"I give up"*, *"just tell me"*, *"what's the answer"*, *"this is too hard"*,
+   * *"I'm lost"*. The class they join used to be `answer_request` and is now `give_up`, because
+   * the rule it feeds released the answer rather than refusing it — and because §4.5 reads a
+   * give-up as *"too hard"* and pitches the next question lower.
+   */
+  it('reads the brief’s don’t-know and frustration phrasings as a give-up', () => {
+    for (const line of [
+      "I don't know",
+      'idk',
+      'no idea',
+      'I give up',
+      'just tell me',
+      "what's the answer",
+      'this is too hard',
+      "I'm lost",
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('give_up');
+    }
+  });
+
+  /**
+   * The line §4.4 draws against a hint request, and the one thing to argue with in the list. A
+   * learner who is *stuck* is still inside the question; one who is *lost* has said it is beyond
+   * them. The first gets a hint, the second gets the answer and an easier next question.
+   */
+  it('keeps “I’m stuck” a hint request, and “I’m lost” a give-up', () => {
+    expect(classifyLearnerTurn("i'm stuck")).toBe('other');
+    expect(classifyLearnerTurn("i'm lost")).toBe('give_up');
   });
 
   /**
@@ -106,6 +138,11 @@ describe('classifyLearnerTurn', () => {
 
   it('keeps the phrase list exported, so the transcript is the source of the rule', () => {
     expect(ANSWER_REQUEST_PHRASES.some((p) => p.phrase === 'answer' && p.match === 'whole')).toBe(true);
+    // §4.4's list is a superset of R6's, so nothing the attempt loop recognised has been lost.
+    for (const p of ANSWER_REQUEST_PHRASES) {
+      expect(GIVE_UP_PHRASES, p.phrase).toContain(p);
+    }
+    expect(GIVE_UP_PHRASES.some((p) => p.phrase === 'idk' && p.match === 'whole')).toBe(true);
   });
 });
 
@@ -117,5 +154,15 @@ describe('quizCue', () => {
     expect(quizCue('hint', 2)).toBe('hint:2');
     expect(quizCue('clarify', 2)).toBe('clarify:2');
     expect(quizCue('answer', 2)).toBe('answer:2');
+  });
+
+  /** The collab-doc loop's own beats (#48), which `script.notes.ts` is written against. */
+  it('names the collab-doc beats the same way', () => {
+    expect(quizCue('followup', 1)).toBe('followup:1');
+    expect(quizCue('cue', 1)).toBe('cue:1');
+    expect(quizCue('prompt', 1)).toBe('prompt:1');
+    expect(quizCue('release', 1)).toBe('release:1');
+    expect(quizCue('closure', 3)).toBe('closure:3');
+    expect(quizCue('doctext', 2)).toBe('doctext:2');
   });
 });
