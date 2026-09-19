@@ -2246,3 +2246,141 @@ emits `turn.released`, so the poll is correct, and adding an event would be a se
 same fact. If the poll ever proves too coarse, the event belongs next to `ledger.updated`.
 
 Verified after both fixes: **1128 tests green, 65 files.**
+
+## 2026-09-19 — #47 live: the lock holds on a real deck, and the nudge it owes does not
+
+The first live-backend run of the attempt loop. Track A above ends *"No live-backend run… whether Max
+actually quotes `p. N: "…"` is unknown"*; this is that run, and the answer is yes — with one rule that
+does not fire where §5 says it should.
+
+**Build and how it was driven.** `npm run build` from `app/` at **`42372c4`** (no `src/` change
+between it and `cc3cabb`, so this is HEAD's code), launched as
+`env -u ELECTRON_RUN_AS_NODE ./node_modules/.bin/electron . --remote-debugging-port=9471
+--user-data-dir=<scratchpad>/live47/profile` — **own port, own fresh profile**, never the installed
+build (which is still 162, 16 Sep) and never Lucas's profile. Driven over CDP with a 40-line
+`Runtime.evaluate` client (no puppeteer; Node 22's global `WebSocket`); the native folder panel is
+unreachable from CDP, so onboarding's **Open a folder…** was driven with System Events (⌘⇧G, path,
+⏎⏎) exactly as the gate run of 16 Sep did. Onboarding took the **live** door — *"Found Claude Code on
+this Mac, signed in"*, `resolvedBackend: claude_cli`, `agentModel: sonnet`, `flowProfile: default`.
+Vault = `…/OneDrive-NationalUniversityofSingapore/CS4246` (42 files), deck = **`Week 4/Lecture-mdp.pdf`**,
+60 pages, the deck of #36/#41. One card throughout: **p. 13, "Markov Decision Process (MDP)"**,
+`seg_mu88jxddd9rj1`.
+
+**The ingest, for the record.** Tree `pending` on open and **`ready` 56 s later** — 18 objectives,
+4 of them prerequisites the deck assumes, `claude-sonnet-5`, 25k tokens, ≈ $0.115 (the drawer's own
+row: `Objectives · 55670 ms`). Against 16 Sep's 139.6 s on the 58-page `Lecture-complex`; the
+`MAX_THINKING_TOKENS=0` fix is in this build and the deck is smaller. The p. 13 card maps to exactly
+one objective, **`a23e7d3c620e4e16` — *Define an MDP by its (S, A, T, R, gamma) tuple***, and every
+`flow.try` below logged `pick_reason: "taught_here"`.
+
+### The transcript, verbatim, with the clock
+
+| # | Rule | Latency | Turn |
+|---|---|---|---|
+| 1 | `rule:try_here` | **5.5 s** (target 5542 ms) | **Max:** *"Why must the transition probabilities out of a given state-action pair, $\sum_{s'} T(s,a,s')$, sum to exactly 1?"* |
+| 2 | `rule:silence_peer` | 5.1 s, fired at **+120.6 s** | **Ellie:** *"Still turning it over? Happy to wait. Or I can make the question smaller if that helps."* |
+| 3 | learner | — | *what's the answer?* |
+| 4 | `rule:answer_withheld` | **10.5 s** | **Max:** *"One try unlocks it: think about what $T(s,a,s')$ represents once you fix a state $s$ and action $a$ — it's a probability distribution over where you end up next, so ask yourself what property any full probability distribution over outcomes must satisfy."* |
+| 5 | learner (attempt, 46 words) | — | *"Because T(s,a,s') gives the probability of landing in s' from s under a, and the agent must end up in some state, the probabilities over all s' have to add up to one. I think the Markov property on the slide is what guarantees that normalisation."* |
+| 6 | `rule:quiz_feedback` | **9.7 s** | **Max (101 words, ends on a full stop, no question):** *"Your reasoning that the agent must end up in \*some\* state, so probabilities over $s'$ must sum to one, is correct and matches p. 13: "$\sum_{s'\in S} T(s,a,s') = \sum_{s'\in S}P(s'\|s,a) = 1$". One correction: this normalisation is a basic axiom of probability distributions, not something the Markov property gives you. The Markov property is about \*what the distribution depends on\* (only current $s,a$, not history) — p. 14: "Next state depends only on the current state and action — not on full history." It doesn't force the values to sum to 1; any valid probability distribution must do that regardless."* |
+| 7 | `rule:answer_shown` (button) | 9.7 s, 113 words | **Max:** *"The transition probabilities must sum to 1 because $T(s,a,s')$ is defined as a probability distribution over successor states for each fixed $(s,a)$ pair — p. 13: "…= 1". … Your attempt already had the core of this — you correctly said "the agent must end up in some state, the probabilities over all s' have to add up to one," which is exactly right."* |
+| 8 | `rule:try_here` (Try another) | **5.2 s** | **Max:** *"Besides $R(s,a,s')$, the slide gives two other forms the reward function can take — what are they, and what does each one depend on?"* |
+| 9 | learner (Ask, 7 words) | — | *what does the transition function T mean?* |
+| 10 | `rule:teacher_answers` | 4.6 s, 184 words | **Ellie**, plain meaning → grid-world example (p. 9–10, 0.8/0.1/0.1) → $T: S\times A\times S\to[0,1]$ → *"On p. 13, $T(s,a,s')$ is written interchangeably with $P(s'\|s,a)$"* |
+| 11 | `rule:silence_after_explanation` | fired at +120.5 s | **nothing said** — see the seam below |
+
+### Verified on screen
+
+- **The entry.** *+ Try this* on the card → one question, at the **Teacher's band** (5.5 s and 5.2 s
+  against `LATENCY.peer` 4–6 s, §2.1 as reconciled in `4d9a607`), footer
+  `5.5s · claude-sonnet-5 · claude-cli`.
+- **The composer before an attempt** reads **`Your attempt…`** with the one line
+  *"Max won't give the answer until you've tried once."*, and **`Show the answer` is not rendered** —
+  before the first attempt, and again after *Try another* re-opened a question with `attempts: 0`.
+- **The answer lock.** *what's the answer?* drew a hint tagged **`answer withheld until you try`**
+  that narrows without answering (it names the object and asks what property a distribution has),
+  `Show the answer` still absent, `attempts` still 0.
+- **Feedback cites its grounds, and the grounds are real.** Two `p. N: "…"` quotes, both rendered as
+  clickable `p. 13` / `p. 14` chips. **Quote check against the deck's own extracted text:**
+  *"Next state depends only on the current state and action — not on full history"* is a **byte-verbatim
+  substring of page 14**. The p. 13 maths quote is **true of the slide but not a substring of the
+  extraction**: pdf.js reads that line as `7 "#∈% 𝑇 𝑠, 𝑎, 𝑠 # = 7 "#∈% 𝑃(𝑠 # |𝑠, 𝑎) = 1`, and the model
+  re-typeset it as `\sum_{s'\in S} T(s,a,s') = \sum_{s'\in S}P(s'|s,a) = 1`. Both statements are
+  correct about the deck; one of the two would fail an exact-match verifier. **That is the sharpest
+  thing this run has to say to §8's A2 job:** a string-equality gate on quotes would reject the
+  *correct* maths quote on any deck whose formulae come out of pdf.js mangled, which is every maths
+  deck in the vault.
+- **The ledger moved on the attempt, and only on it.** 10:25:57 feedback → 10:26:04.8 the objective
+  goes **level 2 / `justified`**, evidence = the learner's own sentence, `openMisconceptions: ["Attributes
+  the normalization property to the Markov property rather than to T being a probability distribution"]`
+  — and a second misconception landed on the *Markov property* objective, which the learner had not
+  been asked about. Panel: **1 of 18 online**, live region *"Define an MDP … is online — you explained
+  it in your own words."*, card glyph `·` → `◐`.
+- **The answer moves nothing.** *Show the answer* → the turn is tagged **`answer shown · ledger
+  unchanged`**; `lastMovedAt` is **still 10:26:04.811** afterwards and `covered` is still 1. The event
+  row says it too: `quiz.answer_shown {attempts: 1, by: "button", ledger_touched: false}`.
+- **Try another** re-picks and asks a **different** question on the same objective (below), and the
+  composer's pre-attempt state returns intact.
+- **An Ask mid-question is still Ellie's** — the fix in `42372c4`, now seen live: `rule:teacher_answers`,
+  the Teacher's band, `flow.ask {answered_by: "teacher"}`, and the quiz untouched (`attempts: 0`,
+  `feedbackGiven: false`, note still *"Max won't give the answer until you've tried once."*).
+- **The events (⌥⌘D and the `events` table).** `flow.try` ×2 (`door: "try_here"`, `question_number`
+  1 and 2, `pick_reason: "taught_here"`), `quiz.answer_withheld {attempts: 0}`,
+  `quiz.answer_shown {attempts: 1, by: "button", ledger_touched: false}`, `flow.ask {answered_by:
+  "teacher"}`, `silence.timer.fired {stage: 1}` ×2. **`flow.try` is the only one of the three that also
+  reaches `main.log`** — the two `quiz.*` lines are `#event()` rows in the database, not `log().info`,
+  so a researcher asking §2.3's question *"how often was the answer asked for before a try"* queries
+  `events`, not the log. Worth saying in the brief.
+- **The drawer works over a synthetic ⌥⌘D** (`<svelte:window onkeydown>`; dispatch it **once** — two
+  dispatches toggle it shut). Turn log and Last calls both populated; whole sitting ≈ $0.35
+  API-equivalent for the file, of which the ingest is a third.
+
+### Seams
+
+1. **A mid-quiz Ask silences the nudge the open question is owed.** `silenceDecision`
+   (`src/room/orchestrator.ts`) branches on `lastAgentTurn === 'teacher_explanation'` and returns
+   `rule:silence_after_explanation` **without looking at `pendingQuiz`**. Measured: after turn 10,
+   with Max's second question open and `attempts: 0`, stage 1 armed, fired on time at **+120.5 s**
+   (`silence.timer.fired {stage: 1, late_by_ms: 530}`) and **said nothing**, and no stage 2 follows.
+   §5's own sentence is *"the only silence the app fills is the one where the learner owes an
+   answer"* — one was owed. One clause (`quizOpen(input.pendingQuiz)` ahead of the explanation
+   branch) fixes it, but it changes a rule the brief writes down, so it is Lucas's call and not a
+   drive-by edit.
+2. **Stage 1 inside an open quiz is spoken by the Teacher.** `rule:silence_peer` is `role: 'peer'`,
+   so the divider reads *"120s quiet · Ellie stepped in"* and **Ellie** offers *"I can make the
+   question smaller"* about a question **Max** asked and only Max can change. §C5's stage 1 predates
+   the Tester having a door of its own; §5 re-timed it without re-reading who speaks. Same function.
+3. **The same objective is on the card twice.** The p. 13 card now shows **two identical `◐`
+   glyphs** — one from `objectivesForSegment` (*"… — online"*) and one from `claimsForAnchor`
+   (*"a23e7d3c… — justified"*), `FlowCanvas.svelte` lines ~1213 and ~1228. Since #38 made the tree
+   *be* the pack these are the same fact from two projections, and on a card that teaches two
+   objectives it will be four glyphs.
+4. **Objective refs are not clamped to the deck.** `refs()` in `src/main/objectives/repair.ts`
+   rejects `page < 1` and has no upper bound, so on this 60-page deck the tree came back with refs
+   to **p. 68** (*Explain why value iteration converges*) and **p. 61** (*Explain why exact MDP
+   solving is infeasible*). Harmless for the pick, which runs card → objective, but the panel prints
+   a page the document does not have and click-to-scroll has nowhere to go. `pageCount` is on the
+   material the ingest already holds.
+5. **Ellie's explanation ran 184 words** against §4's *"about 120 words, ceiling 180"* — the same
+   overrun #41 recorded at 273–287 and left as prompt-level. Max is inside his: feedback 101 words
+   (§4 asks under 100 — one word over), `quiz_answer` 113 (ceiling 150).
+
+### Confirmed rather than found
+
+**"Try another" on a card that teaches one objective re-asks that objective.** `pickObjectiveForCard`
+picks the lowest level *among the card's own objectives*; p. 13 teaches exactly one, already at level
+2, so question 8 came back on `a23e7d3c620e4e16` — a different and still-grounded question (the three
+forms of $R$), but not a different row. This is precisely what `cc3cabb` had just written into §6
+("two cards in the filmed take… because the pick is scoped to the objectives a card teaches"), landed
+here as live evidence on a second deck.
+
+### Not verified in this run
+
+- **Nothing after `rule:answer_shown` on a *second* attempt**: the run showed the answer once, on the
+  first question, and never re-attempted a question whose answer had been shown.
+- **`rule:quiz_clarify`** — the only clarification typed was sent through *+ Ask here*, which is an
+  Ask and outranks it by design, so the `question` branch of §2.2 still has no live turn behind it.
+- **Stage 2 (`rule:silence_hint`)** never fired: the first silence window was ended by the learner
+  and the second was suppressed by seam 1.
+- **The installed build** (162, `ccc5b9d`-era) is older than all of this; the run was a dev build from
+  `dist/`, and the DMG path is untouched by it.
