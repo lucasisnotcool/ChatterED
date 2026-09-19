@@ -709,6 +709,9 @@ export class RoomActor {
       this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
     });
 
+    // Bringing a document over is not an answer to Max's question, and it is emphatically not a
+    // request for one (#47 §2.2): classify it rather than leave the last typed turn standing.
+    this.#lastLearnerTurn = classifyLearnerTurn(body);
     await this.#runAgentTurn('student_message', { studentBody: body });
   }
 
@@ -1269,6 +1272,13 @@ export class RoomActor {
       return row;
     });
 
+    /**
+     * **The relayed text is classified like any learner turn** (#47 §2.2). It *is* one — R5 only
+     * keeps it out of the ledger — and without this the answer lock would read the stale
+     * classification of whatever the learner last typed in the composer, so a relayed question
+     * could be answered as if it were a second "what's the answer".
+     */
+    this.#lastLearnerTurn = classifyLearnerTurn(input.text);
     // A relayed question is treated as an ordinary group turn from here on — on the segment it
     // was inserted under, so the reply lands in that thread rather than at the room level.
     await this.#runAgentTurn('promote', { anchorId });

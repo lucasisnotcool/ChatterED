@@ -284,3 +284,59 @@ describe('the script cues of one Tester question', () => {
     expect(cues(h)).toEqual(['try:1', 'feedback:1', 'try:2', 'feedback:2']);
   });
 });
+
+/**
+ * **Every path that writes a learner message must say what kind of turn it was** (#47 §2.2).
+ *
+ * The lock reads one field, and a stale value is a wrong verdict: a relayed whisper question, or a
+ * document brought over, arriving while a quiz is open must not be answered as if the learner had
+ * just typed "what's the answer" for the second time.
+ */
+describe('the classification never goes stale', () => {
+  it('re-reads it when a document is brought over mid-question', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.tryHere(TRY));
+    await settle(h.clock, h.actor.sendMessage('The Hessian has to be positive semidefinite everywhere.', SEG));
+    await settle(h.clock, h.actor.sendMessage("what's the answer", SEG));
+    // The answer has been shown, so the question is closed and the lock is out of the picture.
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(true);
+
+    await settle(
+      h.clock,
+      h.actor.showDocument({
+        fileId: 'f1',
+        fileName: 'lecture.pdf',
+        relPath: 'lecture.pdf',
+        kind: 'pdf',
+        pageFrom: 2,
+        pageTo: 2,
+        selection: null,
+        pageText: 'PAGE',
+      }),
+    );
+    // Not a second shown answer: one `quiz.answer_shown` in the whole sitting.
+    expect(h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.answer_shown')).toHaveLength(1);
+  });
+
+  it('classifies a relayed whisper question as the learner turn it is', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.tryHere(TRY));
+    await settle(h.clock, h.actor.sendMessage('answer?', SEG));
+    const whisper = h.actor.openSegmentWhisper(SEG);
+    await settle(h.clock, h.actor.sendWhisper(whisper.threadId, 'is PSD the same as positive definite?'));
+    const turn = h.store.whispers.forThread(whisper.threadId).find((w) => w.sender === 'agent')!;
+
+    await settle(
+      h.clock,
+      h.actor.relay({
+        threadId: whisper.threadId,
+        whisperId: turn.id,
+        attribution: 'own',
+        text: 'Does PSD allow a zero eigenvalue?',
+        anchorId: SEG,
+      }),
+    );
+    // A relayed *question* is a clarification, not a second request for the answer.
+    expect(decisions(h).at(-1)!.decided_by).toBe('rule:quiz_clarify');
+  });
+});
