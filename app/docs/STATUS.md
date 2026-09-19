@@ -2124,3 +2124,91 @@ cold walkthrough has no Ask in front of it. `CRITIQUE1_REFERENCES` becomes the `
   through the preload bridge.
 - **The `answer` kind after migration 019** is unreachable in a vault that has run it; the renderer
   path for a row that escaped the migration is tested only in `messageView`.
+
+## 2026-09-19 — #47 Track A: the answer is withheld until one attempt
+
+`docs/research/attempt-first.md`, decided the same day off the coded study of six real AI study
+sessions (`docs/research/ai-use-transcripts/analysis/findings.md`). **The difficulty is reduced
+persistence.** In five of the six sessions the learner never produced an attempt, the AI never asked
+for one, and every offer to quiz was declined — 0 of 10 in R2, 0 of 3 in R5. R6 became productive
+only after the learner typed the protocol out by hand: *"I will attempt the question"*, *"do not
+send the answer"*; attempts went 4 → 17 and early answer requests 5 → 2. So the app's default
+structure becomes the one that learner imposed, and it is a **rule in the orchestrator, not a
+sentence in Max's prompt** — which is the one important design decision the video and the report
+name.
+
+### What landed
+
+| Commit | |
+|---|---|
+| `4a84681` | `room/attempt.ts`, `PendingQuiz.attempts` / `answerShown`, the four lock rules, §5's silence, `prompts.v0.6`, the actor's two new calls and the cues |
+| `fd57e33` | `shared/objectives-pick.ts`, `flow:tryHere` / `flow:showAnswer` in `main/ipc.ts`, `FlowThreadView.quiz` filled |
+
+**The lock, in one paragraph.** While Max's question is open, what the learner's turn *is*
+(`classifyLearnerTurn`, R6's own phrasings as an exported constant) decides the reply, before the
+mandatory-feedback rule and without a model call: `answer_request` with no attempt →
+`rule:answer_withheld`, one hint and one clause saying a try unlocks it, logged
+`quiz.answer_withheld`; `answer_request` after one attempt, or the **Show the answer** button →
+`rule:answer_shown`, the model answer with its grounds, logged `quiz.answer_shown`, and **the ledger
+is not run on that turn at all**; `question` → `rule:quiz_clarify`; `other` → `rule:quiz_nudge`. A
+two-word answer is an attempt — it lifts the lock and still cannot move the ledger, which is why
+rule 4's eight-word floor and its agreement test are now two functions (`isAgreementPhrase`).
+
+**The question outlives its own feedback.** §2.4 gives the learner three things to do after
+feedback, so the quiz closes only on `answerShown`, on a new question, or at session close;
+`feedbackGiven` is per *latest attempt*, so a second attempt re-opens Rowland's debt. The old
+`flow.test.ts` assertion that only the first answer counted is superseded, and says so where it was.
+
+**Script cues.** One counter of Tester questions across both doors: `handoff:N`, `try:N`,
+`feedback:N`, `hint:N`, `clarify:N`, `answer:N` (`attempt.quizCue`). A Try-this question arrives at
+the **Teacher's** band (4–6 s) because the learner asked for it; feedback keeps the Tester's 9–12 s.
+
+**Silence (§5).** After a Teacher explanation the decision is now SILENT at every stage —
+`rule:silence_reexplain` and `offer_step_back` are retired, their directives deleted, their move
+names kept in `NON_TEACHING_MOVES` and the divider copy so a room recorded before this build still
+renders. Thresholds scale to reading time: `clamp(2 × words / 238 wpm, 120 s, 300 s)`, stage 2 ninety
+seconds later (`timer.silenceStagesMs`). The keystroke pause, the epoch fence and the two-fires cap
+are untouched, and `arm()` now sizes the second window as *what is still owed to stage 2* rather
+than another whole stage-1 wait — with #8's 45/90 those were the same length by coincidence, so
+nothing changes for a room still on them.
+
+### Verified
+
+- **1118 tests green, 65 files** (`npm test` from `app/`), up from 1003 at `7f31dc4`.
+- New: `attempt.test.ts` (17, quoting R6's `answer?`, `please solve the question`, `what's the
+  answer`, `send me the answer`, `how would you do it?`), `actor.attempt.test.ts` (15, end to end on
+  the fake clock: the band, the hint, the answer, the closed question, the cue sequence
+  `try:1 hint:1 clarify:1 feedback:1 answer:1`), `objectives-pick.test.ts` (8), the lock's 11 in
+  `orchestrator.test.ts`, the formula's 7 in `timer.test.ts`, the per-thread `quiz` in
+  `flowroom.test.ts`.
+
+### Not verified
+
+- **Nothing on screen, and nothing over IPC.** `IpcService` has no unit test (it needs Electron's
+  `app`), so `flow:tryHere` and `flow:showAnswer` are covered only by their parts — the pick, the
+  actor, the view. The renderer's half was being built on another track while this landed.
+- **No live-backend run.** Every assertion is on the fake clock against a fake client; the grounds
+  clause has never been read by a real model on a real deck, so whether Max actually quotes
+  `p. N: "…"` is unknown. §3 is prompt-level by Lucas's choice and §8 makes code-side verification
+  A2's first job — that limitation is the one the report states.
+- **Reading-time thresholds are not persisted.** The deadline survives a relaunch (the row is the
+  timer) but the stage pair does not: a window recovered after a quit compares stage 2 against
+  `RoomConfig`'s 90 s. Conservative in the right direction, and cheap to fix with a settings row if
+  it ever matters.
+- **The Demo profile's pacing** was not re-checked against the 120 s floor; a filmed walkthrough
+  never sits still that long, so the nudge simply will not fire in it.
+
+### Brief vs code, and where the brief was not followed
+
+1. **§2.2 says `other` is "`isAgreementOnly` … or empty" and also that "a two-word answer is an
+   attempt".** Those are inconsistent: `isAgreementOnly` returns true for *anything* under eight
+   content words. Resolved in favour of the second — §2.2's own gloss ("it may not move the ledger
+   … but it lifts the answer lock") is the reasoning — by splitting the agreement test out of rule 4
+   as `isAgreementPhrase`. Rule 4 itself is byte-for-byte unchanged.
+2. **§2.1 says the Try-this question uses "the Teacher's 3–6 s" band**; `agents.LATENCY.peer` is
+   4000–6000 ms. The code's own band is used rather than a new constant, so there is one source of
+   the Teacher's pacing. Worth reconciling in the brief.
+3. **§2.1's objective fallback stops at "the nearest objective by page earlier in the deck".** On
+   page 1 of a deck whose first objective is on page 4 that yields nothing, and a dead line on the
+   first slide is a worse reading of §2.1 than looking forward by the same measure — so the pick
+   falls forward as a last resort and `ObjectivePick.reason` records which clause answered.
