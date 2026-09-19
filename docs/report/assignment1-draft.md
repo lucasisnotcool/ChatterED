@@ -1,225 +1,214 @@
-# Assignment 1 — ChatterED: putting the conversation inside the lecture deck
+# Assignment 1: ChatterED, putting the conversation inside the lecture deck
 
-**Body word count: 1,870 / 2,000** as drafted — Steps 1–4 and Limitations only. The title block,
-references, appendices and *Notes for Lucas* are excluded, as the brief allows ("the 2,000-word
-limit covers the core text only, excluding references and optional appendices"). The `[LUCAS: …]`
-brackets are instructions to you, not submission text; replacing them with your participant
-details and quotes will add roughly 150 words, so there is about 130 words of headroom. Re-count
-before you export.
+**Body word count: 1,930 / 2,000** as drafted, counted over Steps 1 to 4 and Limitations only. The
+title block, references, appendices and *Notes for Lucas* are excluded, as the brief allows ("the
+2,000-word limit covers the core text only, excluding references and optional appendices"). The one
+`[LUCAS: …]` bracket is an instruction to you, not submission text, and is not counted: filling it
+with six programme/year/gender triples adds roughly 40 words, which leaves about 30 words of
+headroom. Re-count before you export.
 
-Section budget against `flow-build-plan.md` §6: Step 1 = 340 + your quotes (budget 500),
-Step 2 = 684 (550), Step 3 = 376 (400), Step 4 = 369 (450), Limitations = 101 (100). Step 2 runs
-long and Step 4 short; if you need room, the easiest cut is DG5 or the division-of-labour table.
+Section counts: Step 1 = 696, Step 2 = 593, Step 3 = 315, Step 4 = 258, Limitations = 68. If you need
+room, the easiest cuts are DG5 and the third row of the roles table.
 
-*Draft for Lucas to edit. Every `[LUCAS: …]` marks content only I can supply.*
+*Draft for Lucas to edit. The one `[LUCAS: …]` bracket marks the only content I cannot supply.*
 
 ---
 
-## Step 1 — What remains difficult after AI assistance
+## Step 1: What remains difficult after AI assistance
 
 ### 1.1 Learner and task
 
-I interviewed three NUS undergraduates who already use generative AI weekly or more for one
-task: **[LUCAS: the exact task line you used in every session — e.g. "justifying why a step in
-a constrained-optimisation solution is valid, in your own words"]**. Participants, by the only
-attributes I recorded: **[LUCAS: P1 — programme, year, gender; P2 — …; P3 — …]**. Each session
-ran 35–40 minutes — verbal consent, a 15-minute interview, then a 10-minute think-aloud on a
-real problem they brought themselves. I recorded programme, year and gender; never names,
-student IDs or NUSNET IDs.
+My learner evidence is a coded study of six real AI study sessions, shared by six NUS undergraduates
+through my form, *CS3249: AI for Student Learning and Revision*, with their written answers about
+each. None of it is simulated: these are their own sessions with ChatGPT, Claude or Perplexity, coded
+turn by turn by two independent coders (κ = 0.90 to 1.00 on the dimensions this section uses), and
+the form answers are documented responses beside that observed behaviour. Respondents are R1 to R6 and nothing else:
+**[LUCAS: R1 programme, year, gender; R2 …; R3 …; R4 …; R5 …; R6 …]**.
 
-Their current workflow was the same shape in all three sessions: the lecture PDF open on one
-side of the screen, a chat window on the other, the question or a screenshot pasted across.
-**[LUCAS: two or three sentences on what they actually paste — question only, question plus
-attempt, screenshot, whole PDF — from your §5 observation sheet. Quote one.]**
+The task is studying lecture material with generative AI: understanding slides, building notes,
+practising for a test. The workflow is the deck on one side and a chat on the other, the slide
+carried across as an image.
 
-### 1.2 The difficulty: uncritical use of AI output
+### 1.2 The difficulty: reduced persistence
 
-Of the brief's four categories, the evidence points at **uncritical use of AI output**: the
-learner can obtain a correct, well-written answer, but struggles to explain, question or verify
-it with their own reasoning. In this task it looks like this — the model names the theorem and
-produces the derivation; the student can reproduce it; but asked *why that condition applies
-here and not in the next question*, the explanation stops.
+Of the brief's four categories the evidence points at **reduced persistence**: when the task becomes
+difficult, the learner turns to AI before making a meaningful attempt of their own. Here the
+explanation or the finished notes arrive before the learner has written anything.
 
-> **[LUCAS: the verbatim Block 5 completion — "I can get an answer for ___, but I still can't
-> ___ on my own." This quote is the spine of the whole report.]**
+In five of six sessions, none of 31 learner turns contained the learner's own attempt or explanation,
+and the AI never asked for one; the coders agreed on every turn (κ = 1.00). Offers to test the learner
+were declined in every session that received them, while offers to produce material were accepted.
+R1: "I prompted it quite hard and just ran through the quiz and ask questions when I see a question I
+do not know." R3's goal was "Summarising all my lecture slides into one set of notes"; it "did not go
+in depth enough", and the workaround was "Gave up".
 
-> **[LUCAS: a second quote from Block 3 — the moment something broke in the 30-second
-> explain-with-the-screen-covered attempt.]**
+One session runs the other way, and it is my design hypothesis: where the learner practised by
+attempting (SQL), attempts rose from 4 to 17 and early answer requests fell from 5 to 2, after the
+learner told the AI "I will attempt the question".
 
-Observed behaviours support the self-report: **[LUCAS: from the §5 sheet — time unaided before
-the first query (`t_ai − t_read`), whether an own attempt was typed first, and the verification
-tally. "Across three sessions I counted N verification acts" is worth more than any quote if
-the number is low.]**
+Once that learner produced work, the AI's verdict on their query was wrong in 11 of 21 cases, each
+refuted by running it on PostgreSQL, and nine of those called a correct query wrong. The learner
+challenged one and replied "ok" to others: the missing piece there was not effort but trustworthy
+feedback.
+
+The answers were also not read: turns ran 246 to 1,190 AI words, R2 got 93 AI words per word typed,
+and the next question often came faster than a full read at 238 wpm (median gaps 3 to 6 minutes).
 
 ### 1.3 User needs
 
-- **N1 — Produce a justification, not receive one.** They can get the answer; what they cannot
-  do alone is say why it holds. **[LUCAS: quote]**
-- **N2 — Be pushed without being judged.** **[LUCAS: from §6a — why they do not push back in
-  tutorials, or on the model]**
-- **N3 — A low-cost way to ask the question that looks basic.** **[LUCAS: the §6a probe — what
-  fraction of your questions do you actually post, and what gets DM'd instead?]**
-- **N4 — Keep the answer attached to the material.** *No participant raised the split-screen
-  workflow unprompted; this is a design decision, not an interview finding.* **[LUCAS: upgrade
-  this sentence only if the follow-up (Q1/Q2) came back — if someone described losing track of
-  which answer went with which slide, quote it here and delete this caveat.]**
+- **N1, attempt before answer.** An offer to be tested is declined and an available answer taken, so
+  the activity must require an attempt.
+- **N2, feedback that can be checked.** An unsupported verdict is accepted when wrong ("ok"), and
+  invisible when falsely positive.
+- **N3, answers sized and pitched to the learner.** R2: "It used jargon and pitched content abit too
+  complicatedly, e.g. 'marginalise the probability'", and "I had to ask it a series of followup and
+  ask it to 'explain intuitively', but this was still quite long and not very helpful… I only
+  understood 50% of what I needed to at the end". R5 met "very complicated mathematically heavy
+  notations" and "asked for examples". R1: "The tone and style of notes were not what I expected, and
+  I barely read them in the end". R4: "I had to refeed the files and go through one by one,
+  encouraging it to add on to the original output".
+- **N4, progress by objective.** R6: "some questions were too easy. I could not track my learning
+  progress, so I prompted it to ask questions based on my weaknesses", and "I passed it example
+  questions and asked for more difficult questions."
 
-### 1.4 How a CUI could help
+### 1.4 Potential CUI support
 
-A conversational partner can do what a document cannot: ask the learner to say it, notice what
-was not said, and press on that. It can also withhold — the difficulty is not a shortage of
-explanations, so a system supplying a better one makes it worse. What is missing is an
-interlocutor for whom only the learner's own words count.
+A conversation can do what neither the deck nor the chat window did here: ask first, and withhold. It
+can require an attempt before an answer exists, judge it against the slide, show the page that
+judgement rests on, and pick the next question from what the learner has not shown. That makes what
+R6 negotiated by hand the default.
 
-## Step 2 — The learning goal and the CUI's role
+## Step 2: The learning goal and the CUI's role
 
-### 2.1 Learning goal
+### 2.1 Learning goal and progress
 
-**The learner can defend, in their own words and without reading from the screen, an
-explanation of one concept from their own lecture slide.** Progress is tracked by the
-**Explanation Ledger**: each concept is a row with three states — ○ *stated*, ◐ *justified*
-(they gave the reason it holds), ● *defended* (the justification survived a probe and was not
-retracted). Three rules make it evidence rather than applause: only the learner's verbatim text
-moves a row; agreement ("yes, exactly") is not evidence; and **● is unreachable without a Tester
-probe**.
+**The learner can answer a question about a concept on their own lecture slide in their own words,
+and revise that answer after feedback.**
 
-### 2.2 Division of labour
+Progress is a tree of learning objectives per file, each at one of three levels: ○ *stated*, ◐
+*justified* (they gave the reason it holds), ● *defended* (it survived a Tester question). Four rules
+make a level evidence rather than applause: only the learner's verbatim text moves it, agreement is
+not evidence, a shown answer moves nothing, and ● needs a probe. The panel is a record of the
+learner's own words.
+
+### 2.2 Roles of the learner and the CUI
 
 | The learner does | The CUI does |
 |---|---|
-| Decides where one concept ends and the next begins | Proposes boundaries from page geometry; never cuts on its own |
-| Asks the question, at a place they chose | Answers once, neutrally, in ≤ 120 words, then hands back |
-| Explains the concept back, and answers the quiz in their own words | Teaches from the slide, tracks what it covered, then quizzes one covered concept and gives feedback |
-| Writes the last word of every exchange | Never writes the learner's conclusion |
+| Types an attempt, in their own words, before any answer exists | Asks first; refuses the answer until an attempt is typed |
+| Revises after feedback, and may dispute a verdict | Quotes the page behind each point; a disputed point is dropped, not marked down |
+| Decides when to see the answer, and asks for teaching | Shows the answer only after an attempt, moving no level |
 
-Two agents: **Ellie the Teacher** explains; **Max the Tester** quizzes when handed the floor and
-never answers his own question. This departs deliberately from Xu et al.'s Peer, whose contract
-forbade supplying a complete explanation: I separate teaching from testing and keep
-learning-by-explaining as the *graded* moment rather than the whole session.
+**Ellie** explains from the slide when asked; **Max** asks and assesses. I stop at two agents: Song et
+al. (2025) found normative influence rises with agent count while informational influence does not.
 
 ### 2.3 Why conversational
 
-A quiz app could ask the same question. It could not choose it from what *this* learner was just
-taught, judge whether a free-text answer is a justification or a restatement, or follow up on the
-weak half of it. The ledger's ● is defined as surviving a challenge, and a challenge is a turn.
-Xu et al. (2026) measured the gap: explaining to a responsive agent produced 121–141 cognitive
-acts per session against 61 for a non-responsive control, which logged 49 turn-*closing* acts
-instead.
+A quiz app could ask the same question. It could not judge whether a free-text attempt is a
+justification or a restatement, pick the next question from what it revealed, or withhold an answer
+and reveal it on the learner's call. Xu et al. (2026) measured the gap: explaining to a responsive
+agent produced 121 to 141 cognitive acts per session against 61 for a non-responsive one.
 
 ### 2.4 Design goals
 
-**DG1 — Make the learner produce justification, not answers.** *Theory:* the self-explanation
-effect and learning-by-explaining (Chi et al., via Xu et al., 2026 §2.1). *Need:* N1.
-*Realisation:* agents never state the target explanation; only verbatim learner text moves the
-ledger; the terminal state is *defended*, not *stated*.
+**DG1, attempt before answer.** *Theory:* retrieval practice, where feedback roughly doubles the gain
+(Rowland, 2014: g = 0.73 against 0.39) and the advantage over restudy grows with delay (Roediger &
+Karpicke, 2006); what the learner produces is a self-explanation (Chi et al., 1989). *Need:* N1.
+*Realisation:* a rule withholds the answer until an attempt is typed, and every attempt gets feedback
+carrying no new question.
 
-**DG2 — Inject cognitive conflict without evaluation apprehension.** *Theory:* Piagetian
-cognitive conflict and Socratic questioning; an agent's low social presence strips the evaluation
-apprehension a human tutor carries (Xu et al., 2026 §6.1.3). *Need:* N2. *Realisation:* the
-Tester asks one question, hedges contestable claims, and the learner closes the exchange.
-*Evidence:* Xu et al. report critical thinking 5.62 vs 3.74 control (*p* < .001, η² = 0.29) at a
-*lower* felt pressure than their tutee condition (2.93 vs 4.02).
+**DG2, feedback that shows its grounds.** *Theory:* trust is calibrated only when the basis of a
+judgement is visible (Lee & See, 2004). *Need:* N2, from 11 wrong verdicts in 21. *Realisation:*
+feedback quotes the page that settles each point, says so when the deck does not settle it, and never
+lowers a level on a contested point.
 
-**DG3 — The learner authors the material.** *Theory:* Joshi & Vogel (2026) found readers
-preferred selecting the passage themselves, and that lower AI involvement produced stronger
-ownership. *Need:* N4. *Realisation:* nothing is pre-annotated; geometry proposes cuts as faint
-ticks and only a click splits, so every boundary in the log is the learner's.
+**DG3, replies sized to the reader.** *Theory:* Xu et al. held agent replies near 80 words; adult
+prose reads at about 238 wpm (Brysbaert, 2019); 2-second replies read as less thoughtful, usefulness
+peaking near 9 s (Tan et al., 2026). *Need:* N3. *Realisation:* teaching aims at 120 words and
+feedback under 100, and feedback alone holds 9 to 12 seconds behind a visible counter.
 
-**DG4 — Give the learner a private, low-cost way to participate.** *Theory:* invisible
-whispering — silent, ephemeral side-channels raise participation and politeness (Dennis et al.,
-2010). *Need:* N3. *Realisation:* a whisper popover answered privately by the Teacher, with an
-*insert into the document* escape hatch that is the only path from private to shared. It closes a
-gap I diagnosed in Critique 1: `/btw` claimed it could send a private answer back into the group
-and could not.
+**DG4, the learner authors the material and asks at the segment.** *Theory:* Joshi & Vogel (2026)
+found readers preferred selecting the passage themselves, and that lower AI involvement produced
+stronger ownership. *Evidence:* R2's four bare slide images and R5's slide with "what is I?" make
+asking at the segment observed behaviour. *Realisation:* nothing is pre-annotated; geometry proposes
+cuts as faint ticks and only a click splits.
 
-**DG5 — Buy engagement with pacing, never with pressure.** *Theory:* Song et al. (2025) found
-normative influence rises with agent count while informational influence does not — I cite their
-multi-agent paper as the reason to *stop* at two. Tan et al. (2026) found 2-second replies read
-as less thoughtful, usefulness peaking near 9 s. *Realisation:* two agents; replies held to a
-role band (Teacher 4–6 s, Tester 9–12 s) behind a visible counter, never a hidden delay; the
-Tester can be declined or set quieter.
+**DG5, progress the learner can see.** *Theory:* new knowledge comes from constructive engagement,
+where the learner generates (Chi & Wylie, 2014); no turn in five sessions reached it. *Need:* N4.
+*Realisation:* "Try another" picks the lowest-level objective, which is "questions based on my
+weaknesses" as a button.
 
-## Step 3 — Implementation plan
+## Step 3: Implementation plan
 
-**Form.** A hybrid CUI+GUI desktop app in which the document *is* the conversation surface:
-Electron, Svelte 5 and TypeScript over SQLite, running locally on macOS so lecture files never
-leave the student's machine.
+**Form and stack.** A hybrid CUI+GUI desktop app in which the document *is* the conversation surface:
+Electron, Svelte 5 and TypeScript over SQLite, local on macOS.
 
-**The document format — one decision, one reason.** A segment is a **crop of the pdf.js-rendered
-page**, never re-typeset. Fidelity stops being a quality target and becomes an invariant: there
-is no code path that can alter a slide's pixels, so the lecturer's equations and figures cannot
-be silently corrupted. Splitting a card changes one number in page space, which is why it is
-instant and why "Original pages" is a toggle rather than a re-import. (The four-format
-comparison is in Appendix C.)
+**Rules first, then the model.** The structure the evidence asks for is a contract, so it is code, not
+a prompt: rules decide who speaks and whether an answer is due, and a Sonnet 5 call is consulted only
+where they have not. Houde et al. (2025 §7.2.6) reached the same conclusion: *"its decision-making
+quality was poor. We resorted to using external decision logic."*
 
-**Segmentation has no model in it.** Four local stages — collapse progressive-reveal builds,
-extract text and ink boxes, drop page chrome, propose cut lines — run offline, free, in
-milliseconds; on my seven-page demo deck they propose 4/2/3/0/2/3/4 cuts per page. A ten-line
-genre router opens anything that is not a slide deck as whole pages with a notice, rather than
-guessing.
+**Components I build myself**, each carrying a design decision: (1) the **attempt classifier**
+(`classifyLearnerTurn`, pure and unit-tested), sorting a learner turn into attempt, answer request,
+clarifying question or agreement, on the SQL session's own phrasings ("answer?", "send me the
+answer"); (2) the **answer rules**, `rule:answer_withheld` (a hint, and a clause saying one try
+unlocks the answer) and `rule:answer_shown` (the answer, logged, moving no level); (3) the **objective
+pick**, lowest level first; (4) the **silence threshold**, scaled to the last turn's reading time, and
+the latency bands, every constant in one file; (5) the room actor and the private whisper's scoping
+(Dennis et al., 2010).
 
-**Components I built by hand**, because each carries a design decision: the room actor (one
-writer, serialised mailbox); the silence timer; the latency scheduler; the **rules-then-model
-orchestrator**; the ledger and its evidence rules; the flow-session module (boundary, covered
-set, freshness, hand-off) with every constant in one file; and the whisper's context scoping,
-with a test that walks the import graph for leaks. The orchestrator deserves a note:
-deterministic rules decide first, a Sonnet 5 call is consulted only when they have not, and a
-model that asks for the Tester outside a hand-off is demoted. Houde et al. (2025 §7.2.6) reached
-the same conclusion in deployment: *"its decision-making quality was poor. We resorted to using
-external decision logic."*
+**Where A1 stops.** Feedback grounds are prompt-level: the Tester is told to quote the page, but
+nothing checks the quote against the deck yet; verifying it is A2's first job.
 
-**What leans on an LLM at runtime:** agent turn text (Claude Haiku 4.5, or the local Claude CLI),
-the orchestrator's structured decision and ledger coding (Sonnet 5). **What leaned on an LLM to
-build:** scaffolding, test generation and research synthesis, under my design decisions — every
-prompt, threshold and gate in the list above is mine, and the architecture, the roster and the
-segmentation decision are recorded as dated decisions in the repository's issues.
+**The document format.** A segment is a crop of the pdf.js-rendered page, never re-typeset, so nothing
+can alter a slide's pixels, and segmentation is local geometry with no model in it (Appendix C).
 
-## Step 4 — The prototype
+**LLMs at runtime:** agent turn text, the orchestrator's structured decision, the objective tree and
+ledger coding (Sonnet 5, or the local Claude CLI). **To build:** scaffolding, tests and research
+synthesis, under my decisions; every prompt, threshold and rule above is mine, and dated in the
+issues.
 
-The prototype is a running app, demonstrated on a seven-page deck of my own. One multi-turn
-interaction, end to end:
+## Step 4: The prototype
 
-1. **Open.** The deck opens as a flow of seven cards, each a crop of a rendered page, with faint
-   ticks in the gutter where geometry says a boundary could go.
-2. **Split.** I click a tick on page 3 and the card divides in place; seven cards become eight.
-   Nothing re-rendered — visible proof that nothing was ever converted.
-3. **Ask here.** A faint "+ Ask here" line sits between cards. I click it and type a question.
-4. **REFERENCE.** A neutral grey card inserts into the flow, in the app's UI font so it cannot be
-   mistaken for the slide: 100 words, then a hand-back line. It moves no ledger row — nothing you
-   *read* counts — and both agents are locked out of the thread until I press **Explain it
-   back →**.
-5. **Teach.** I explain it back; Ellie replies after 4–6 s, building on the slide.
-6. **Hand-off.** On my fourth turn, with two concepts covered and the freshest older than three
-   minutes, Ellie posts *"You've covered X and Y — Max, over to you."* That line is written by a
-   rule, not generated, and is labelled **BY RULE** on screen.
-7. **Quiz.** Max's avatar rings amber, a counter climbs to ~10 s, and one question lands — on the
-   concept taught four minutes ago, not the sentence just read.
-8. **Ledger.** My answer moves two rows: one to ● *defended*, one to ◐ *justified*, followed by a
-   mandatory feedback turn.
-9. **Reopen.** Reopening the document restores eight cards, fourteen messages and the ledger.
+The prototype is a running app on a seven-page deck of my own. Cards are crops of rendered pages with
+faint ticks where a boundary could go, and a click splits one in place. The interaction runs:
 
-**What is real and what is scripted.** Real and tested: the segmentation geometry, split/merge,
-persistence, the actor, the timer and latency bands, the flow-session rule and the hand-off
-line, the ledger gates, the REFERENCE truncation and lock, and the whisper's scoping. Scripted:
-the *text* of the agent turns, replayed through the real actor, timer and gates by a scripted
-backend — entering an API key runs the same code path against Haiku 4.5. I say "scripted" once
-on camera and then stop apologising for it. **[LUCAS: confirm on filming day whether the ⌘K
-whisper popover is wired in the flow; if not, demo the whisper in the room view and say so.]**
+1. **Try this.** Each card carries "+ Ask here" (Ellie) and "+ Try this" (Max). I click "+ Try this",
+   and Max asks one question on an objective this card teaches, at the lowest level, labelled **BY
+   RULE**.
+2. **Attempt and feedback.** I type an answer in my own words; Max says what landed and what was
+   missing, citing `p. 3: "…"` in the slide's words. One objective moves ○ to ◐ on my words, naming
+   the message that is the evidence.
+3. **Try another** asks about the objective still at ○, not the one I just showed.
+4. **I ask for the answer** instead of attempting: "what's the answer". Max gives a hint and a clause
+   saying one try unlocks it. That refusal is a rule, not a prompt.
+5. **Attempt, feedback, answer.** I try, Max assesses, and **Show the answer** appears; I take it and
+   no level moves. Reopening restores the cards, the thread and the levels.
+
+**Real and scripted.** Real and tested: the classifier, the answer rules, the objective pick, the
+ledger gates, the timer, segmentation, split and persistence. Scripted: the *words* of the agents'
+turns, replayed through the real actor, rules, timer and gates; an API key runs the same path against
+a live model, and I say so once on camera.
 
 ## Limitations
 
-The evaluation construct is unvalidated. The nearest prior work — Joshi & Vogel (2026) — found
-in-document AI notes were *preferred* and produced more ownership, but had **no measurable effect
-on reading comprehension at a two-hour delay**. My measure is not comprehension but *defended
-explanation*, a different construct that nobody has validated. Second, "flow" here is a
-behavioural proxy for sustained engagement, not flow in Csikszentmihalyi's sense; no shipped
-system triggers a quiz on interaction rate, so the hand-off is a design proposal with a logging
-plan, and its constants are untested. Third, it handles slide decks only. **[LUCAS: if the follow-up came back,
-your participant's own objection belongs here and is worth more than any of the above.]**
+The evidence is six sessions, one contributing 59% of all turns, so figures are per session. The
+second coder is a model, not a human, so the κ values show only that the codebook applies
+consistently. Feedback grounds are asked for, not verified: the SQL session shows why a quote should
+be checked in code. The flow constants are untested, and the app handles slide decks only.
 
 ---
 
 ## References
+
+Brysbaert, M. (2019). How many words do we read per minute? A review and meta-analysis of reading
+rate. *Journal of Memory and Language*, 109, 104047.
+
+Chi, M. T. H., et al. (1989). Self-explanations: How students study and use examples in learning to
+solve problems. *Cognitive Science*, 13(2).
+
+Chi, M. T. H., & Wylie, R. (2014). The ICAP framework: Linking cognitive engagement to active
+learning outcomes. *Educational Psychologist*, 49(4), 219–243.
 
 Dennis, A. R., Rennecker, J. A., & Hansen, S. (2010). Invisible whispering: Restructuring
 collaborative decision making with instant messaging. *Decision Sciences*, 41(4), 845–886.
@@ -230,22 +219,29 @@ arXiv:2501.17258.
 Joshi, A., & Vogel, D. (2026). Designing and evaluating AI margin notes in document reader
 software. *CHI '26*. arXiv:2509.09840.
 
-Rowland, C. A. (2014). The effect of testing versus restudy on retention: A meta-analytic review
-of the testing effect. *Psychological Bulletin*, 140(6), 1432–1463.
+Lee, J. D., & See, K. A. (2004). Trust in automation: Designing for appropriate reliance. *Human
+Factors*, 46(1), 50–80.
+
+Roediger, H. L., & Karpicke, J. D. (2006). Test-enhanced learning: Taking memory tests improves
+long-term retention. *Psychological Science*, 17(3), 249–255.
+
+Rowland, C. A. (2014). The effect of testing versus restudy on retention: A meta-analytic review of
+the testing effect. *Psychological Bulletin*, 140(6), 1432–1463.
 
 Song, T., Tan, Y., Zhu, Z., Feng, Y., & Lee, Y.-C. (2025). Multi-agents are social groups:
 Investigating social influence of multiple agents in human-agent interactions. *Proc. ACM
 Hum.-Comput. Interact.*, 9(7), CSCW452.
 
-Tan, F. F.-Y., Messerschmidt, M. A., Yin, W., & Nov, O. (2026). The impact of response latency
-and task type on human-LLM interaction and perception. *CHI '26*.
+Tan, F. F.-Y., Messerschmidt, M. A., Yin, W., & Nov, O. (2026). The impact of response latency and
+task type on human-LLM interaction and perception. *CHI '26*.
 
-Xu, Z., Zhang, J., Tang, A., & Lee, Y.-C. (2026). Who you explain to matters: Learning by
-explaining to conversational agents with different pedagogical roles. *CHI '26*.
+Xu, Z., Zhang, J., Tang, A., & Lee, Y.-C. (2026). Who you explain to matters: Learning by explaining
+to conversational agents with different pedagogical roles. *CHI '26*.
 
-**Appendices (excluded from the count):** A — the 16-beat demonstration script; B — the segment
-schema and migration; C — the four-approach document-format comparison; D — the interview
-protocol and synthesis sheet.
+**Appendices (excluded from the count):** A, the demonstration script; B, the segment schema and
+migration; C, the four-approach document-format comparison; D, the form wording and consent text;
+E, the transcript study: codebook v1.3, the coded turns, the agreement table, the computed metrics
+and the SQL execution checks, per session (`docs/research/ai-use-transcripts/analysis/`).
 
 ---
 
@@ -253,57 +249,62 @@ protocol and synthesis sheet.
 
 *Not part of the submission. What you must supply, and where every claim above came from.*
 
-### Everything marked `[LUCAS: …]`, in order
+### Everything marked `[LUCAS: …]`
 
 | # | Section | What is needed |
 |---|---|---|
-| 1 | 1.1 | The one-line task wording you actually used in all three sessions (`interview-guide.md` §0 Variant A gives the model wording). |
-| 2 | 1.1 | P1/P2/P3 by programme, year and gender. The 4.0-mark criterion names these three fields explicitly. Nothing else. |
-| 3 | 1.1 | Two or three sentences on what they paste into the chat, from your §5 observation sheet, with one quote. |
-| 4 | 1.2 | The Block 5 completion quote, verbatim. This is the report's spine. |
-| 5 | 1.2 | A second quote from the explain-with-the-screen-covered attempt. |
-| 6 | 1.2 | The observed numbers: `t_ai − t_read`, own attempt Y/N, verification tally. |
-| 7 | 1.3 | Quotes for N1, N2, N3 (Block 5, §6a, §6a). |
-| 8 | 1.3 | **The N4 decision.** I have written it at tier 3 (`pivot-spec.md` §F2) — declared as a design decision, not a finding. If the §F3 follow-up (Q1/Q2) came back and anyone described the answer ending up away from the material, promote it to tier 1, quote them, and delete the caveat sentence. Do **not** promote it on a Q3 answer: Q3 is a reaction to a design I described, which is Step 3 material and must be labelled as such. |
-| 9 | Step 4 | Whether ⌘K/the whisper popover is wired in the flow on filming day. |
-| 10 | Limitations | Your participant's own objection, if the follow-up returned one. |
-| 11 | Everywhere | The word count at the top is my count of this draft; re-count after you paste the quotes in. |
+| 1 | 1.1 | R1 to R6 by programme, year and gender, from the form responses. The 4.0-mark criterion names those three fields explicitly. Nothing else, and no R code tied to a name anywhere in the submission. |
+| 2 | Everywhere | The word count at the top is my count of this draft. Re-count after you paste the six triples in. |
 
-Nothing in the video is drafted here: the 16-beat script with its timestamps is
-`flow-build-plan.md` §2, and beats 1–3 and 16 carry 3 of the video's 5 marks.
+Every other placeholder is gone, because the transcript study answers it. The interview-based ones
+(task wording, the Block 5 quote, the verification tally, the N4 caveat, a participant objection in
+Limitations) are removed: no interviews exist, and the coded study of six shared sessions is the
+evidence instead.
+
+Two things to settle on filming day rather than in the report: whether the whisper popover is wired
+in the flow (if not, demo it in the room view and say so), and whether the `p. N` quote in feedback
+is clickable.
 
 ### Where each claim comes from
 
 | Claim in the draft | Source |
 |---|---|
-| Rubric structure, 2,000 words, references excluded, "programme, gender or year" | `Academia/Sources/_text/assignment1-brief.txt` §3A, §4 |
-| Section-by-section word budget and what each must contain | `flow-build-plan.md` §6 |
-| Interview method, 35–40 min, consent, what was recorded | `interview-guide.md` §2, §3, §5 |
-| The difficulty named as *uncritical use of AI output*; the three quotes to lean on | `pivot-spec.md` §F2 |
-| Tier 1/2/3 honesty rule for the split-screen claim | `pivot-spec.md` §F2 (table) |
-| Ledger states and the four evidence rules; ● needs a Tester probe | `design-brief.md` §F1; `app/docs/STATUS.md` ("Ledger") |
-| Teacher/Tester roster; Peer contract retired; Theo dropped | Issue #32; `STATUS.md` "Teacher + Tester" |
-| Xu et al. numbers (121–141 vs 61 acts; 5.62 vs 3.74; pressure 2.93 vs 4.02) | `design-brief.md` §E (DG1, DG2) |
-| Song et al. as the reason the count stops at two (MASG used *inverted*) | `masg-drop-assessment.md` §D2 point 4 |
-| Tan et al. latency bands and the 9 s usefulness peak | `design-brief.md` §A3, §D4 |
-| Houde et al. "we resorted to using external decision logic" (§7.2.6) | `pivot-spec.md` §F2; `flow-build-plan.md` §6 |
-| Joshi & Vogel: preferred integrated notes, preferred selecting text, ownership, **and the null result at 2 h** | `pivot-integrated-document.md` §C16; `pivot-spec.md` §F2 |
-| Crop-not-re-typeset as an invariant; no model in the segmentation path | `pdf-fidelity-segmentation.md` §C0; issue #25 |
-| Lazy split adopted, vision pass out of A1 | `segmentation-lazy-split.md` §5; issue #25 |
-| Search inside maths is broken; a crop cannot reflow; boundaries have no ground truth | `pdf-fidelity-segmentation.md` §C8 |
-| 4/2/3/0/2/3/4 candidate cuts on the demo deck | `STATUS.md` ("Measured on a real deck") |
-| Flow-session constants (k = 3 in m = 10 min, 20 min gap, 3 min guard, 6 h horizon) and mandatory feedback | `flow-session.md` §8.3; issue #33 |
-| "Flow is an engagement proxy" and "nobody ships an engagement-triggered quiz" | `flow-session.md` §0, §6 |
-| Hand-off line is built by a rule, not generated; the model cannot put the Tester on the floor | `STATUS.md` ("Teacher + Tester"); `src/room/flow.ts` |
-| Every measured number in Step 4 (8 cards, 100 words, ~10 s, 14 messages, two rows moving) | `STATUS.md` "Verified live over CDP" table |
-| Real vs scripted split | `STATUS.md` "Real" / "Scripted" / "Stubbed" sections |
+| Rubric structure, 2,000 words, references excluded, "programme, gender or year" | `assignment1-brief.txt` §3A, §4 |
+| Six sessions, the form title, turn-level coding, 152 turns, two coders, κ, the PostgreSQL 17.3 checks | `findings.md` §2 |
+| R2's four bare slide images, R5's slide plus "what is I?" | `findings.md` RQ1, §5 |
+| "None of 31 learner turns contained an attempt… κ = 1.00"; "offers to test declined in every session that received them" | `findings.md` §7, observations 1 and 2 |
+| R6: attempts 4 to 17, answer requests 5 to 2, "I will attempt the question" | `findings.md` §7, RQ5, §3.0 |
+| 11 of 21 verdicts wrong, 9 false negatives, "ok" to false corrections | `findings.md` §7, RQ4 |
+| 246 to 1,190 AI words per turn; 93:1 in R2; a full read at 238 wpm; median gaps 3 to 6 minutes | `findings.md` RQ5; `attempt-first.md` §1 |
+| Every quoted form response (R1 tone and "prompted it quite hard", R2 jargon and "explain intuitively", R3 "Gave up", R4 "refeed the files", R5 notations, R6 progress and harder questions) | the six form rows behind `findings.md`, quoted verbatim in `attempt-first.md` §1 |
+| **Reduced persistence** as the difficulty, in the brief's own words | `assignment1-brief.txt` Step 1.2; `findings.md` §4; `attempt-first.md` §0 |
+| N1 to N4 | `findings.md` §5; `attempt-first.md` §0, §2 |
+| Learning goal; objective levels; the four evidence rules; ● needs a probe | `attempt-first.md` §6; `learning-objectives.md` §2, §4; `progress-tracking.md` §4.4 |
+| Roles table, the withhold rule, "Show the answer", the lowest-level pick | `attempt-first.md` §2.1 to §2.4 |
+| Xu et al. (121 to 141 against 61 acts; agent replies near 80 words) | `design-brief.md` §E; `attempt-first.md` §4 |
+| Rowland 2014 g = 0.73 against 0.39; Roediger & Karpicke 2006; feedback after every answer | `flow-session.md` §3 table, §8.3 |
+| Lee & See 2004 as the ground for visible grounds | `findings.md` §2 (VERIFY), §5; `attempt-first.md` §3 |
+| Brysbaert 238 wpm; the reading-time silence threshold | `attempt-first.md` §5; `findings.md` §2 |
+| Tan et al.: 2 s reads as less thoughtful, usefulness peaks near 9 s; the long band is for feedback | `design-brief.md` §A3, §D4; `attempt-first.md` §2.1 |
+| Chi & Wylie 2014, and "no Constructive or Interactive turn in R1 to R5" | `findings.md` RQ1 |
+| Chi et al. 1989 self-explanation | `findings.md` §2 and its reference list |
+| Joshi & Vogel: preferred selecting the passage, stronger ownership | `pivot-integrated-document.md` §C16 |
+| Song et al. as the reason the count stops at two | `masg-drop-assessment.md` §D2 point 4 |
+| Houde et al. "we resorted to using external decision logic" (§7.2.6) | `pivot-spec.md` §F2 |
+| Crop-not-re-typeset; no model in segmentation | `pdf-fidelity-segmentation.md` §C0; issue #25 |
+| The classifier, the two answer rules, the objective pick, `p. N` grounds, prompt-level only in A1 | `attempt-first.md` §2.2, §2.3, §3 |
+| The demonstration beats | `attempt-first.md` §6 |
+| Limitations: n = 6, R6 59% of turns, coder B is a model, grounds unverified, constants untested | `findings.md` §6; `attempt-first.md` §6; `flow-session.md` §0 |
+
+Nothing about the video is drafted here; the re-cut storyboard is `attempt-first.md` §6.
 
 ### Two things I deliberately did not do
 
-- **I invented no findings.** No interview transcripts, quotes or participant attributes exist
-  anywhere in this repository, so every one of them is a `[LUCAS]` placeholder. The report reads
-  as complete once you paste them in.
-- **I did not soften the departures from the sources.** The report says the Peer contract was
-  retired for a Teacher (issue #32), and that Song et al. is cited *against* multi-agent
-  enthusiasm rather than for it (`masg-drop-assessment.md` §D2). Both are stronger as stated
-  departures than as quiet omissions.
+- **I invented no findings.** There are no interview transcripts in this repository and none are
+  claimed: the evidence is the coded study of six shared sessions plus the respondents' own form
+  answers. Every number in Step 1 traces to `findings.md`, and the only thing still missing is the
+  six programme/year/gender triples that you hold.
+- **I did not soften the departures from the sources.** The report says Song et al. is cited
+  *against* multi-agent enthusiasm rather than for it, that feedback grounds are asked for and not
+  verified in A1, and that the whisper carries no evidence from this study. All three are stronger
+  as stated departures than as quiet omissions.
