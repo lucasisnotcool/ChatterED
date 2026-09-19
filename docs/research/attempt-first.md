@@ -1,6 +1,6 @@
 # Attempt-first: the learner tries before anyone answers
 
-**Status.** Decision brief, 19 Sep 2026. Decided by Lucas the same day, after the coded study of six
+**Status.** Decision brief, 19 Sep 2026; reconciled with the code the same evening (§2.1 latency band and pick fallback, §2.2 `other`) after Track A of #47 landed. Decided by Lucas the same day, after the coded study of six
 real AI study sessions (`ai-use-transcripts/analysis/findings.md`) and the six form rows behind them.
 This brief is the **source of truth** for the change; the sections it supersedes in older briefs are
 listed in §7. Code that contradicts it is a bug in the code.
@@ -55,7 +55,9 @@ Every segment card carries two faint lines: **"+ Ask here"** (Ellie, unchanged) 
 - **Which objective.** The objectives the card teaches (`objectivesForCard` in
   `renderer/lib/objectives.ts`: a ref with the card's `segmentId`, else the card's page), lowest ledger
   level first, deck order as the tie-break. If the card teaches none, the nearest objective by page
-  earlier in the deck; if the tree is `pending` or `failed`, the line is disabled with the reason
+  earlier in the deck, and failing that the nearest later one (page 1 of a deck whose first objective
+  is on page 4 must still have a question); `ObjectivePick.reason` records which clause answered. If
+  the tree is `pending` or `failed`, the line is disabled with the reason
   ("Ellie is still reading the deck" / "needs a live backend"). The pick is **one pure function**,
   unit-tested, and it lives where both main and renderer can call it (`src/shared/` or `src/room/`).
 - **Which question.** The objective's `quizSeeds`, via the existing `quizBlock`; Max may ask a seed
@@ -65,8 +67,9 @@ Every segment card carries two faint lines: **"+ Ask here"** (Ellie, unchanged) 
   [elementId]`, `openQuiz(...)`. The thread is tagged with the objective (`#objectiveByAnchor`), the
   page travels with it (`whereBlock`), and the request carries `meta.scriptCue = 'try:N'` where N
   counts Try-this questions in the actor's lifetime (the same pattern as `handoff:N`).
-- **Latency.** The *question* uses the short band (the Teacher's 3–6 s): the learner asked for it.
-  The *feedback* keeps the Tester's 9–12 s: that is the considered judgement Tan et al. is about.
+- **Latency.** The *question* uses the short band (the Teacher's, `agents.LATENCY.peer`, 4–6 s):
+  the learner asked for it. The *feedback* keeps the Tester's 9–12 s: that is the considered
+  judgement Tan et al. is about.
 
 ### 2.2 What the learner's next turn is
 
@@ -80,9 +83,10 @@ Every segment card carries two faint lines: **"+ Ask here"** (Ellie, unchanged) 
   (`answer?`, `please solve the question`, `what's the answer`, `send me the answer`).
 - **`question`** — one sentence, at most 25 words, ending in `?`, and not an answer request. A
   clarification ("what does T mean?"), not an attempt.
-- **`other`** — `isAgreementOnly` (ledger rule 4) or empty.
+- **`other`** — empty, or an agreement phrase alone ("ok", "makes sense", "got it": the phrase list
+  behind ledger rule 4, `isAgreementPhrase`, without rule 4's eight-word floor).
 - **`attempt`** — everything else. A two-word answer is an attempt: it may not move the ledger
-  (rule 4's eight-word floor), but it lifts the answer lock.
+  (rule 4's eight-word floor is a separate gate and is unchanged), but it lifts the answer lock.
 
 ### 2.3 The rules, in the orchestrator, checked before `rule:quiz_feedback`
 
