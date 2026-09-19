@@ -468,16 +468,17 @@ export function createMockBridge(): ChatterEdApi {
     'than permission. Name either one and the answer is yours.';
 
   const TRY_FEEDBACK = [
-    'That lands the first half. You have the read-only part, and p. 3: "no tools of its own" is ' +
-      'where the deck settles it.',
+    'Partly there. That lands the first half: you have the read-only part, and p. 3: "no tools of ' +
+      'its own" is where the deck settles it.',
     'What is missing is the second half. p. 3: "nothing carried between calls" — the exchange is ' +
       'not only unable to act, it is not remembered either, and your sentence only rules out the ' +
-      'first. Say what happens to the exchange after the answer and you have the whole of it.',
+      'first. So, in your own words: what happens to the exchange after the answer comes back?',
   ].join('\n\n');
 
   const TRY_CLARIFY =
     'Fair question, and I will answer it without answering mine. "The history" here means the ' +
-    'transcript the main agent goes on to read — not your own scrollback. Now: same question.';
+    'transcript the main agent goes on to read — not your own scrollback. So, once more: which two ' +
+    'things can the side channel not reach? That did not count as a try.';
 
   const TRY_NUDGE = 'Take your time. I am not going anywhere, and a wrong attempt is worth more to me than a right silence.';
 
@@ -520,6 +521,7 @@ export function createMockBridge(): ChatterEdApi {
         attempts: 0,
         feedbackGiven: false,
         answerShown: false,
+        verdict: null,
       });
     });
   }
@@ -530,6 +532,7 @@ export function createMockBridge(): ChatterEdApi {
     if (kind === 'attempt') {
       quiz.attempts += 1;
       quiz.feedbackGiven = false;
+      quiz.verdict = null;
       later(1200, () => {
         // The ledger runs on the attempt, as it does on every learner turn.
         moveLedger([['R1', quiz.attempts > 1 ? 'justified' : 'stated', text.slice(0, 64), null]]);
@@ -537,6 +540,8 @@ export function createMockBridge(): ChatterEdApi {
       });
       think(max, 9000, TRY_FEEDBACK, { anchorId, decidedBy: 'rule:quiz_feedback' }, () => {
         quiz.feedbackGiven = true;
+        // The fixed text opens "Partly there." and ends on a follow-up, as the prompt requires.
+        quiz.verdict = 'partial';
       });
       return;
     }

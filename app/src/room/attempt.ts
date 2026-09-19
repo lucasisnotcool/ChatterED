@@ -21,7 +21,12 @@
  *  - **`answer_request`** — R6's own phrasings, at most 25 words. The list is a constant so the
  *    tests can quote the transcript rather than paraphrase it.
  *  - **`question`** — one short interrogative sentence: a clarification of the question, not an
- *    answer to it. It does not lift the answer lock and it is not an attempt.
+ *    answer to it. It does not lift the answer lock and it is not an attempt. **A hedged answer is
+ *    not a question**: *"is it an action, or a series of actions that lead to the goal?"* opens
+ *    like a question and carries the learner's candidate answer, and Lucas's 2026-09-19 run showed
+ *    what treating it as a clarification does — Max clarified, nothing was marked, and the learner
+ *    did not know whether he had answered. So a sentence that opens *is it / could it be / is the
+ *    answer …* or that offers alternatives (*A, or B?*) is an **attempt**.
  *  - **`attempt`** — everything else. **A two-word answer is an attempt.** It may not move the
  *    ledger (rule 4's eight-word floor stands, untouched) but it lifts the answer lock: the lock
  *    is about having tried, and the ledger is about having explained.
@@ -87,6 +92,22 @@ const INTERROGATIVE =
  */
 const CONFIRMATION_TAG = /\b(is that (right|correct)|right|correct|isn'?t it|no|yes|yeah|ok(ay)?|true)\s*\?\s*$/i;
 
+/**
+ * **A guess phrased as a question is an attempt.** *"is it X?"*, *"could it be X?"*, *"is the answer
+ * X?"* — the learner is putting a candidate up, not asking what the question means. The subject is
+ * deliberately narrow: *"is that the same as the gradient?"* (`is that …`) stays a clarification,
+ * because there the learner is asking about a term rather than offering an answer.
+ */
+const HEDGED_ANSWER = /^(is|isn't|could|would|might|can|should|does|will) (it|the answer|this one)\b/;
+
+/**
+ * **Alternatives are an attempt too.** *"is it an action, or a series of actions?"*,
+ * *"deterministic, or fully observable?"* narrow the answer to candidates the learner has produced;
+ * Max can mark that. It takes a comma before the *or*, or an article after it, so *"what does the
+ * or in step 3 mean?"* is not caught.
+ */
+const OFFERS_ALTERNATIVES = /,\s*or\s+\w|\bor\s+(a|an|the|that|just|only)\s/;
+
 /** Lower case, straight apostrophes, collapsed whitespace. Punctuation survives. */
 function normalise(body: string): string {
   return body.trim().toLowerCase().replace(/[‘’ʼ]/g, "'").replace(/\s+/g, ' ');
@@ -104,15 +125,46 @@ function sentences(body: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-export function isAnswerRequest(body: string): boolean {
+/**
+ * **A request for help is a request for a hint, not an attempt** — Lucas, 2026-09-19, mid-quiz:
+ * *"can you help me out here"*. It carries no candidate answer, so marking it (`attempt`) is
+ * marking nothing, and it is not a request for the answer either. It classifies as `other`, which
+ * `rule:quiz_nudge` turns into one hint and no answer — the same turn a silence draws.
+ */
+export const HINT_REQUEST_PHRASES: readonly AnswerRequestPhrase[] = [
+  { phrase: 'hint', match: 'whole' },
+  { phrase: 'a hint', match: 'whole' },
+  { phrase: 'give me a hint', match: 'contains' },
+  { phrase: 'any hint', match: 'contains' },
+  { phrase: 'help me out', match: 'contains' },
+  { phrase: 'help me', match: 'whole' },
+  { phrase: 'help', match: 'whole' },
+  { phrase: 'can you help', match: 'contains' },
+  { phrase: 'im stuck', match: 'contains' },
+  { phrase: 'i am stuck', match: 'contains' },
+  { phrase: 'not sure where to start', match: 'contains' },
+  { phrase: 'where do i start', match: 'contains' },
+];
+
+function bareWords(body: string): string {
+  return normalise(body).replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function matchesAny(body: string, phrases: readonly AnswerRequestPhrase[]): boolean {
   const normalised = normalise(body);
   if (normalised.length === 0) return false;
   if (contentWords(normalised).length > SHORT_TURN_WORDS) return false;
-  // Apostrophes are dropped too, so "what's the answer" and "whats the answer" are one phrase.
-  const bare = normalised.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-  return ANSWER_REQUEST_PHRASES.some((p) =>
-    p.match === 'whole' ? bare === p.phrase : bare.includes(p.phrase),
-  );
+  const bare = bareWords(normalised);
+  return phrases.some((p) => (p.match === 'whole' ? bare === p.phrase : bare.includes(p.phrase)));
+}
+
+export function isHintRequest(body: string): boolean {
+  return matchesAny(body, HINT_REQUEST_PHRASES);
+}
+
+/** Apostrophes are dropped too (`bareWords`), so "what's the answer" and "whats the answer" are one phrase. */
+export function isAnswerRequest(body: string): boolean {
+  return matchesAny(body, ANSWER_REQUEST_PHRASES);
 }
 
 /**
@@ -124,15 +176,20 @@ export function classifyLearnerTurn(body: string): LearnerTurnKind {
   // Ledger rule 4's own predicate. "ok" is not an attempt, and it is the reply R6 actually gave.
   if (isAgreementPhrase(trimmed)) return 'other';
   if (isAnswerRequest(trimmed)) return 'answer_request';
+  // A request for help carries nothing to mark; one hint, no answer (`rule:quiz_nudge`).
+  if (isHintRequest(trimmed)) return 'other';
 
   const words = contentWords(trimmed);
   const endsInQuestion = /\?\s*$/.test(trimmed);
+  const normalised = normalise(trimmed);
   if (
     endsInQuestion &&
     words.length <= SHORT_TURN_WORDS &&
     sentences(trimmed).length === 1 &&
     !CONFIRMATION_TAG.test(trimmed) &&
-    INTERROGATIVE.test(normalise(trimmed))
+    INTERROGATIVE.test(normalised) &&
+    !HEDGED_ANSWER.test(normalised) &&
+    !OFFERS_ALTERNATIVES.test(normalised)
   ) {
     return 'question';
   }

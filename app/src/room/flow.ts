@@ -763,10 +763,54 @@ export interface PendingQuiz {
   attempts: number;
   /** True once the model answer has been given (§2.3's `rule:answer_shown`). Closes the quiz. */
   answerShown: boolean;
+  /**
+   * **What the last feedback turn said about the last attempt** (§2.4, second cut). `complete` when
+   * it opened *"Well done."*, `partial` otherwise — in which case the feedback ended on a follow-up
+   * question and the composer is asking for the next attempt. `null` (or absent, in rows persisted
+   * before this) until feedback has landed on the latest attempt.
+   */
+  verdict?: QuizVerdict | null;
+}
+
+/**
+ * **The verdict, read off the feedback turn's first line** (§2.4, second cut).
+ *
+ * Lucas's 2026-09-19 run on the MDP deck: a fully correct answer got a paragraph that opened *"All
+ * four properties correctly named"* and went on to *"What's missing: …"* about parts of the objective
+ * the question had not asked for, and a hedged second answer got a clarification. After both he did
+ * not know whether he had answered. So the feedback turn now **opens with one of three fixed
+ * verdicts** (`VERDICT_OPENERS`, required by `prompts.quizBlock`), and — unless it is *Well done* —
+ * **ends on one follow-up question** aimed at the gap, so a second attempt is invited rather than
+ * left to be guessed at. The opener is the one thing code reads off the turn: it decides the
+ * composer's placeholder and note, nothing about the ledger, and a turn that opens with none of the
+ * three is read as `partial`, which is the safe side (it asks for another try rather than declaring
+ * one done).
+ */
+export type QuizVerdict = 'complete' | 'partial';
+
+/** The three openers, in the prompt's own words. `Well done.` is the only `complete`. */
+export const VERDICT_OPENERS = ['Well done.', 'Partly there.', 'Not yet.'] as const;
+
+export function feedbackVerdict(text: string): QuizVerdict {
+  // Emphasis, a leading bold marker or a quote character all survive a model that "helps".
+  const first = text.trim().split(/\r?\n/)[0]?.replace(/^[\s*_>“"'`]+/, '').toLowerCase() ?? '';
+  return first.startsWith('well done') ? 'complete' : 'partial';
+}
+
+export function verdictOf(quiz: PendingQuiz | null): QuizVerdict | null {
+  return quiz?.verdict === 'complete' || quiz?.verdict === 'partial' ? quiz.verdict : null;
 }
 
 export function openQuiz(input: { quizMessageId: string; elementId: string }, now: number): PendingQuiz {
-  return { ...input, askedAt: now, answerMessageId: null, feedbackGiven: false, attempts: 0, answerShown: false };
+  return {
+    ...input,
+    askedAt: now,
+    answerMessageId: null,
+    feedbackGiven: false,
+    attempts: 0,
+    answerShown: false,
+    verdict: null,
+  };
 }
 
 /**
@@ -784,11 +828,18 @@ export function answerQuiz(quiz: PendingQuiz, answerMessageId: string, opts: { a
     answerMessageId,
     feedbackGiven: false,
     attempts: attemptsOf(quiz) + 1,
+    // A new attempt is unmarked until its own feedback lands.
+    verdict: null,
   };
 }
 
-export function markFeedbackGiven(quiz: PendingQuiz): PendingQuiz {
-  return { ...quiz, feedbackGiven: true };
+/**
+ * The feedback turn landed. `verdict` is what its first line said (`feedbackVerdict`); a caller
+ * without the text — the older tests, a restore — leaves it `null`, and the composer then treats
+ * the question as answered but unmarked, offering *Try another* and nothing stronger.
+ */
+export function markFeedbackGiven(quiz: PendingQuiz, verdict: QuizVerdict | null = null): PendingQuiz {
+  return { ...quiz, feedbackGiven: true, verdict };
 }
 
 /** The answer has been given. The question is closed; nothing about it moves the ledger. */

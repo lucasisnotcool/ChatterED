@@ -61,6 +61,8 @@ import {
   handOffLine,
   markAnswerShown,
   markFeedbackGiven,
+  feedbackVerdict,
+  verdictOf,
   quizOpen,
   noteActivity,
   noteHandOff,
@@ -901,6 +903,7 @@ export class RoomActor {
         attempts: attemptsOf(quiz),
         feedbackGiven: quiz.feedbackGiven === true,
         answerShown: quiz.answerShown === true,
+        verdict: verdictOf(quiz),
       },
     };
   }
@@ -2096,7 +2099,7 @@ export class RoomActor {
         totalMs: this.#d.clock.now() - turnStart,
       });
       this.#releaseTurn(pending.id, row.id);
-      this.#noteTurnForFlow(decision, row.id);
+      this.#noteTurnForFlow(decision, row.id, text);
       if (trigger === 'silence') this.#markFirstHelp();
       /**
        * **The offer** (#41, `rule:offer_summary`). After the Teacher's reply, never instead of it,
@@ -2682,7 +2685,7 @@ export class RoomActor {
    * stores `evidence_msg_id` per element and message rows carry timestamps. A re-teach appends
    * rather than resetting, and `flow.quizzable` reads the most recent (§12 q. 7).
    */
-  #noteTurnForFlow(decision: TurnDecision, messageId: string): void {
+  #noteTurnForFlow(decision: TurnDecision, messageId: string, text = ''): void {
     const now = this.#d.clock.now();
     if (decision.role === 'peer' && decision.targetElementId) {
       this.#taught.push({
@@ -2703,7 +2706,9 @@ export class RoomActor {
     if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
       // Rowland 2014's constraint is discharged only when the feedback turn actually landed. It is
       // per *attempt* since #47: a second attempt re-opens it (`flow.answerQuiz`).
-      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz);
+      // And the turn's first line is read once, for the verdict (`flow.feedbackVerdict`): it is
+      // what tells the composer to ask for the next attempt or to say the question is done.
+      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text));
     }
     /**
      * **The answer closes the question** (#47 §2.3), and closes it only once it has actually

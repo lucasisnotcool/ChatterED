@@ -423,12 +423,12 @@ export const CRITIQUE1_QUIZ_TURNS: ScriptedBeat[] = [
     cue: 'feedback:1',
     decision: tester('quiz_feedback', 'C2', 'Nominal: `rule:quiz_feedback` fired — feedback after an attempt is mandatory.'),
     text:
-      'Two things landed. The partner is right: the whisper goes to the agent, and p. 3: "Oops, this will expose ' +
-      'data.." is the catch coming back through it rather than through the main thread. The interruption cost is ' +
-      'real too — p. 3: "*Coding...*" runs straight through your question. What is missing is the property. ' +
-      'Politeness is one of page 4’s *benefits*, not one of its three properties; the one your example needs is ' +
-      'p. 4: "Polychronic — hold conversation in parallel". Whether ephemerality is also doing work here, the deck ' +
-      'does not settle.',
+      'Partly there. The partner is right: the whisper goes to the agent, and p. 3: "Oops, this will expose ' +
+      'data.." is the catch coming back through it, not through the main thread. The interruption cost is real ' +
+      'too — p. 3: "*Coding...*" runs straight through your question. What is missing is the property: politeness ' +
+      'is one of page 4’s *benefits*, not one of its three properties. The one your example needs is p. 4: ' +
+      '"Polychronic — hold conversation in parallel". Whether ephemerality is also at work, the deck does not ' +
+      'settle. So, in your own words: why polychronic rather than polite?',
     ledger: {
       elements: [
         { id: 'C2', level: 2, confidence: 0.86, evidence: 'last_student', misconceptions_present: ['M2a'] },
@@ -505,11 +505,12 @@ export const CRITIQUE1_QUIZ_TURNS: ScriptedBeat[] = [
     cue: 'feedback:2',
     decision: tester('quiz_feedback', 'C1', 'Nominal: `rule:quiz_feedback` — feedback after an attempt is mandatory.'),
     text:
-      'Right row. p. 5: "asked to add a todo to memory → claimed to do so (inaccurate) — bug" — the deck calls it ' +
-      'that too. What you have not said is which half of it is broken: p. 5: "did not actually do so, memory ' +
-      'protected" is the *correct* behaviour, not the failure. The bug is the claim, not the refusal. And the other ' +
-      'two did not simply come back true — one declined and one answered, and p. 5: "context is a strict subset of ' +
-      'the main session" is what the pair of them establishes.',
+      'Partly there. Right row: p. 5: "asked to add a todo to memory → claimed to do so (inaccurate) — bug". ' +
+      'What you have not said is which half is broken: p. 5: "did not actually do so, ' +
+      'memory protected" is the *correct* behaviour, not the failure. The bug is the claim, not the refusal. And ' +
+      'the other two did not simply come back true — one declined, one answered, and p. 5: "context is a strict ' +
+      'subset of the main session" is what they establish. So, in one sentence: what is the bug, if having no ' +
+      'memory is not it?',
     ledger: {
       elements: [
         { id: 'C1', level: 2, confidence: 0.88, evidence: 'last_student', misconceptions_resolved: ['M1a'] },

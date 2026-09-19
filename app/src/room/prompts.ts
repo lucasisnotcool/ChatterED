@@ -11,6 +11,7 @@
  */
 import type { AgentProfile, AgentRole } from '../shared/types.js';
 import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
+import { VERDICT_OPENERS } from './flow.js';
 
 /**
  * v0.2 was the Teacher + Tester reframe (#32, flow-build-plan.md §4.2).
@@ -501,10 +502,33 @@ export function quizBlock(input: {
   if (criteria.length > 0) {
     lines.push('A correct demonstration contains:', ...criteria.map((c) => `- ${c}`));
   }
+  /**
+   * **The feedback turn** (§2.4, second cut — Lucas's 2026-09-19 run on the MDP deck).
+   *
+   * Three things that run went wrong on, each now a sentence here. (1) A complete answer to *"what
+   * four properties…"* was told *"What's missing: you haven't stated what classical planning does"*
+   * — the list above had been read as a checklist for the turn rather than as what the objective
+   * needs in the end, so the verdict is now against **the question asked**. (2) Nothing in the turn
+   * said whether the answer was right, so the learner did not know whether to try again: the first
+   * line is now one of three fixed verdicts, and code reads it (`flow.feedbackVerdict`). (3) A
+   * partial answer got a paragraph and no way on: unless the verdict is *Well done*, the turn ends
+   * on one follow-up question for the gap, and a second attempt gets its own feedback.
+   */
   if (turn === 'feedback') {
+    const [done, partly, notYet] = VERDICT_OPENERS;
     lines.push(
-      'Say what the learner\u2019s answer actually had of that, what was missing, and the correction.',
-      'No new question this turn. Under 100 words.',
+      'Mark the answer against **the question you asked**, not against the whole objective. The list',
+      'above is what the objective needs in the end, not a checklist for this turn: if you asked for',
+      'four properties and got four, the answer is complete, and nothing the question did not ask for',
+      'counts as missing.',
+      `Your first line is exactly one of these three verdicts and nothing else: **${done}** \u2014 the`,
+      `answer to the question is complete and correct; **${partly}** \u2014 right in part, or right but`,
+      `incomplete; **${notYet}** \u2014 wrong, or not an answer to the question.`,
+      'Then say what the learner\u2019s answer had, what was missing or wrong, and the correction.',
+      `Unless the verdict is ${done.replace(/\.$/, '')}, **end on one follow-up question** that asks for the missing or`,
+      'wrong part only \u2014 in their own words, or applied to the case \u2014 so that they can try again; no',
+      `other question anywhere in the turn. After ${done} ask nothing: the next question is theirs to`,
+      'ask for. Under 100 words.',
       ...GROUNDS,
     );
     return lines.join('\n');
@@ -533,7 +557,8 @@ export function quizBlock(input: {
       'clarification \u2014 define the term, expand the notation, say which case you mean \u2014 in two or',
       'three sentences, and then leave the question standing. **Do not answer the question**, do not',
       'give a hint towards it unless the clarification cannot be made without one, and do not ask',
-      'anything new.',
+      'anything new. End with the question again, in one sentence, and say that this did not count',
+      'as a try \u2014 the learner has to be able to tell that nothing was marked.',
     );
     return lines.join('\n');
   }
@@ -713,7 +738,20 @@ export function turnDirective(d: TurnDirective): string {
   if (d.move === 'quiz_clarify') {
     bits.push(
       'They asked what your question means, not for the answer. Clear the question up in two or',
-      'three sentences and leave it standing. **Do not answer it.**',
+      'three sentences and leave it standing. **Do not answer it.** Then ask the question again in',
+      'one sentence, and say that this did not count as a try.',
+    );
+  }
+  /**
+   * **The verdict, restated where the model reads last** (§2.4, second cut). The block above
+   * carries the argument; this is the sentence nearest the generation, and it is the one that
+   * failed on 2026-09-19 — a complete answer marked against the objective's whole list.
+   */
+  if (d.move === 'quiz_feedback') {
+    bits.push(
+      `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
+      'the question you asked, not the whole objective. Unless it is Well done, your last sentence is',
+      'one follow-up question on the gap, and there is no other question in the turn.',
     );
   }
   /**

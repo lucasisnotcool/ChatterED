@@ -35,7 +35,7 @@ import { RoomActor } from '../actor.js';
 import { fillAgentNames, rosterFor } from '../agents.js';
 import { buildGroupContext } from '../context.group.js';
 import { BTW_SIDE_CHANNEL_V1, CRITIQUE1_DECK_TEXT, CRITIQUE1_PAGE_TEXT } from '../concepts/btw-side-channel-v1.js';
-import { DEMO } from '../flow.js';
+import { DEMO, feedbackVerdict } from '../flow.js';
 import { applyLedgerRules, type LedgerProposal } from '../ledger.js';
 import type { LedgerRow } from '../records.js';
 import { segmentContext } from '../reference.js';
@@ -245,9 +245,16 @@ describe('the feedback cites its grounds, and the grounds are the deck’s', () 
     expect(beat('feedback:1').text).toMatch(/does not settle/);
   });
 
-  it('never asks a new question in feedback, and never gives the answer in a hint', () => {
-    // Rowland's constraint, unchanged: the next question is a click ("Try another"), not a clause.
-    for (const cue of ['feedback:1', 'feedback:2']) expect(beat(cue).text, cue).not.toContain('?');
+  it('opens feedback with a verdict, ends it on one follow-up, and never gives the answer in a hint', () => {
+    // §2.4, second cut: both scripted attempts are partly right on purpose, so both feedback turns
+    // open "Partly there." and end on exactly one follow-up question for the gap. "Well done." would
+    // end on none — the next question is then a click ("Try another"), not a clause.
+    for (const cue of ['feedback:1', 'feedback:2']) {
+      expect(beat(cue).text, cue).toMatch(/^Partly there\./);
+      expect(feedbackVerdict(beat(cue).text!), cue).toBe('partial');
+      expect(beat(cue).text!.split('?').length - 1, cue).toBe(1);
+      expect(beat(cue).text!.trim().endsWith('?'), cue).toBe(true);
+    }
     // `rule:answer_withheld`: one hint that narrows, one clause that says a try unlocks the
     // answer, and no answer. The word the answer turns on must not be in it.
     expect(beat('hint:2').text).not.toMatch(/\bmemory\b/);

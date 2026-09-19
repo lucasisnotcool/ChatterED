@@ -24,6 +24,11 @@ export const EXPLAIN_PLACEHOLDER = 'Explain this in your own words…';
  * but it lifts the answer lock. So the word is *attempt*, not *answer*.
  */
 export const ATTEMPT_PLACEHOLDER = 'Your attempt…';
+/**
+ * The placeholder after feedback that was not *Well done*: the Tester's turn ended on a follow-up
+ * question (§2.4, second cut), and the box is asking for the attempt at that.
+ */
+export const NEXT_ATTEMPT_PLACEHOLDER = 'Your next attempt…';
 
 /**
  * The one quiet line under the composer before the first attempt.
@@ -35,6 +40,20 @@ export const ATTEMPT_PLACEHOLDER = 'Your attempt…';
  */
 export function attemptNote(testerName = 'Max'): string {
   return `${testerName} won't give the answer until you've tried once.`;
+}
+
+/**
+ * The line under the composer after feedback, by verdict (§2.4, second cut). Lucas's 2026-09-19 run:
+ * two feedback turns in, he wrote *"It is not very clear to me if I have answered, or if I need to
+ * try again."* These two sentences are the answer to that, drawn from the state rather than left
+ * to the prose.
+ */
+export function followUpNote(testerName = 'Max'): string {
+  return `${testerName} asked a follow-up. Answer it here, or try another question.`;
+}
+
+export function doneNote(testerName = 'Max'): string {
+  return `${testerName} marked that done. Try another for the next question.`;
 }
 
 /** What the thread draws for the quiz it has, if any. Every field is a pure function of it. */
@@ -72,7 +91,9 @@ const CLOSED: QuizControls = {
  *    controls: there is nothing to try another of yet and the answer is locked.
  *  - **feedback given** — **Try another**, and **Show the answer** while `attempts >= 1` and the
  *    answer has not been shown. `attempts >= 1` is implied by feedback existing and is asserted
- *    anyway, because it is the invariant the whole decision rests on.
+ *    anyway, because it is the invariant the whole decision rests on. The composer says which
+ *    way the feedback went: after a `partial` verdict it asks for the next attempt and the note
+ *    says a follow-up was asked; after `complete` the note says the question is done.
  *  - **answer shown** — **Try another** only. The answer cannot be shown twice and §2.3 closes
  *    the quiz on it, so the only way forward is another question.
  *
@@ -83,10 +104,25 @@ const CLOSED: QuizControls = {
 export function quizControls(quiz: FlowQuizView | null | undefined, testerName = 'Max'): QuizControls {
   if (!quiz) return CLOSED;
   const settled = quiz.feedbackGiven || quiz.answerShown;
+  const verdict = quiz.feedbackGiven && !quiz.answerShown ? (quiz.verdict ?? null) : null;
+  const placeholder =
+    quiz.attempts === 0
+      ? ATTEMPT_PLACEHOLDER
+      : verdict === 'partial'
+        ? NEXT_ATTEMPT_PLACEHOLDER
+        : EXPLAIN_PLACEHOLDER;
+  const note =
+    quiz.attempts === 0 && !quiz.answerShown
+      ? attemptNote(testerName)
+      : verdict === 'partial'
+        ? followUpNote(testerName)
+        : verdict === 'complete'
+          ? doneNote(testerName)
+          : null;
   return {
     open: true,
-    placeholder: quiz.attempts === 0 ? ATTEMPT_PLACEHOLDER : EXPLAIN_PLACEHOLDER,
-    note: quiz.attempts === 0 && !quiz.answerShown ? attemptNote(testerName) : null,
+    placeholder,
+    note,
     tryAnother: settled,
     showAnswer: quiz.feedbackGiven && quiz.attempts >= 1 && !quiz.answerShown,
   };

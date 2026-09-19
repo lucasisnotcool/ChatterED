@@ -2384,3 +2384,43 @@ here as live evidence on a second deck.
   and the second was suppressed by seam 1.
 - **The installed build** (162, `ccc5b9d`-era) is older than all of this; the run was a dev build from
   `dist/`, and the DMG path is untouched by it.
+
+## 2026-09-19 — the feedback turn, second cut (#47)
+
+Lucas's own first run of the loop on the MDP deck (claude-cli, Sonnet 5), page 5, *classical
+planning*. Verbatim from his report, two things Max did:
+
+> **You:** It needs to be discrete, deterministic, static and fully observable
+> **Max:** All four properties correctly named — p. 5: "Discrete... Deterministic... Static... Fully
+> observable." That's the full list, no gaps there. What's missing: you haven't yet stated what
+> classical planning actually does with that environment — … or named any of the main challenges
+> the slide lists (representation, search, heuristics, abstraction).
+
+> **You:** is it an action, or a series of actions that lead to the goal state from the current state?
+> **Max:** Both options point at the same thing here — a single action wouldn't get you from I to G on
+> its own, so the question is asking what the whole output of the planner looks like …
+
+Then a 120 s nudge, *"can you help me out here"*, two more hedged tries, *"what are you asking here"*,
+and *"but you asked me …"*. Lucas: *"It is not very clear to me if I have answered, or if I need to
+try again. can we make sure to give feedback to user, and if it is not 'Well done!', then a follow up
+question should be asked."*
+
+### Three seams, and what closed each
+
+| Seam | Where | Fix |
+|---|---|---|
+| A complete answer to *"what four properties"* was marked against the objective's whole criteria list (`demonstration`), so *"what's missing"* named things the question never asked for — and kept naming them for six turns | `prompts.quizBlock({turn:'feedback'})` | The block and the directive now say: mark against **the question you asked**; the criteria are what the objective needs in the end, *not a checklist for this turn*. |
+| No sentence said whether the answer was right, and a partial answer got a paragraph with no way on | same, plus `flow.ts`, `renderer/lib/quiz.ts` | First line is exactly one of **Well done. / Partly there. / Not yet.**; unless *Well done*, the turn **ends on one follow-up question** for the gap. `feedbackVerdict()` reads the opener once → `PendingQuiz.verdict` → `FlowQuizView.verdict` → the composer: *"Your next attempt…"* + *"Max asked a follow-up. Answer it here, or try another question."* after `partial`; *"Max marked that done. Try another for the next question."* after `complete`. A turn without an opener reads as `partial` — the side that asks for another try. |
+| *"is it an action, or a series of actions…?"* classified `question` → `rule:quiz_clarify`, so a candidate answer was clarified rather than marked | `room/attempt.ts` | A hedged answer is an attempt: opens *is it / could it be / is the answer…* (`HEDGED_ANSWER`) or offers alternatives with a comma before or an article after the *or* (`OFFERS_ALTERNATIVES`). *"is that the same as the gradient?"* and *"what are you asking here?"* stay `question`. |
+
+Two smaller ones from the same transcript: *"can you help me out here"* is now `other`
+(`HINT_REQUEST_PHRASES`) and draws `rule:quiz_nudge`'s one hint rather than a mark of nothing; and a
+`quiz_clarify` turn now ends by asking the question again and saying the clarification did not count
+as a try.
+
+**Verified:** 1,143 tests / 65 files green, typecheck and lint clean. The scripted beats `feedback:1`
+and `feedback:2` open *Partly there* and end on one follow-up (99 and 98 words); the mock bridge's
+feedback does the same and sets `verdict: 'partial'`. **Not verified live:** this cut has not been
+driven against the CLI yet — the opener and the "question asked, not the objective" rule are prompt
+instructions, so the next live run should check that Sonnet actually leads with one of the three
+verdicts (a miss is safe: it reads as `partial`).

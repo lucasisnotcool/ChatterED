@@ -82,9 +82,16 @@ Every segment card carries two faint lines: **"+ Ask here"** (Ellie, unchanged) 
   it`, `i give up`, `skip`. The list is a constant, exported, and the tests quote R6's own lines
   (`answer?`, `please solve the question`, `what's the answer`, `send me the answer`).
 - **`question`** — one sentence, at most 25 words, ending in `?`, and not an answer request. A
-  clarification ("what does T mean?"), not an attempt.
+  clarification ("what does T mean?", "what are you asking here?"), not an attempt. **A hedged
+  answer is not a question** (second cut, 2026-09-19): a sentence that opens *is it / could it be /
+  is the answer …* or offers alternatives (*"is it an action, or a series of actions…?"*) carries a
+  candidate answer and is an **`attempt`**. Lucas's own line of that shape drew `rule:quiz_clarify`
+  in the first live run; Max clarified, nothing was marked, and he did not know whether he had
+  answered.
 - **`other`** — empty, or an agreement phrase alone ("ok", "makes sense", "got it": the phrase list
-  behind ledger rule 4, `isAgreementPhrase`, without rule 4's eight-word floor).
+  behind ledger rule 4, `isAgreementPhrase`, without rule 4's eight-word floor), **or a request for
+  help** (*"can you help me out here"*, *"hint?"*, *"i'm stuck"* — `HINT_REQUEST_PHRASES`): nothing
+  to mark and not a request for the answer, so `rule:quiz_nudge` gives one hint.
 - **`attempt`** — everything else. A two-word answer is an attempt: it may not move the ledger
   (rule 4's eight-word floor is a separate gate and is unchanged), but it lifts the answer lock.
 
@@ -95,7 +102,7 @@ is never asked whether to answer its own question.
 
 | Learner turn | Rule | Speaker, move | What happens |
 |---|---|---|---|
-| `attempt` | `rule:quiz_feedback` (existing) | Max, `quiz_feedback` | `pendingQuiz.attempts += 1`. Feedback with grounds (§3). The ledger runs on the attempt as it does on every learner turn. |
+| `attempt` | `rule:quiz_feedback` (existing) | Max, `quiz_feedback` | `pendingQuiz.attempts += 1`. Feedback with grounds (§3), opening on a **verdict** and ending on a **follow-up question** unless the verdict is *Well done* (§2.4). The ledger runs on the attempt as it does on every learner turn. |
 | `answer_request`, attempts = 0 | **`rule:answer_withheld`** | Max, `quiz_hint` | The directive says: the answer is not given before one attempt; give one hint that narrows it; say in one clause that one try unlocks the answer. Logged `quiz.answer_withheld`. |
 | `answer_request`, attempts ≥ 1 | **`rule:answer_shown`** | Max, **`quiz_answer`** | The model answer, with grounds (§3), and what the attempt had of it. Logged `quiz.answer_shown`. The quiz closes; **the ledger is not run on this turn** and never moves on a shown answer. |
 | `question` | **`rule:quiz_clarify`** | Max, **`quiz_clarify`** | Answers the clarification without answering the quiz question. Quiz stays open; not an attempt. |
@@ -104,10 +111,40 @@ is never asked whether to answer its own question.
 `PendingQuiz` gains `attempts: number` and `answerShown: boolean`; `answerQuiz()` increments only on
 an `attempt`. `feedbackDue` is unchanged in meaning: it becomes true only after an `attempt`.
 
-### 2.4 After feedback: the next question is a click
+### 2.4 After feedback: a verdict, then either a follow-up or a click
 
-The feedback turn does **not** ask a new question (Rowland's constraint, unchanged: feedback carries
-no question). The thread then shows two controls:
+**Second cut, 2026-09-19, from Lucas's first run on the MDP deck.** The first cut said feedback
+carries no question. Two turns in, Lucas wrote *"It is not very clear to me if I have answered, or
+if I need to try again"*, and the transcript shows three ways the turn had failed him: a complete
+answer to *"what four properties…"* was told *"What's missing: you haven't yet stated what classical
+planning does"* — marked against the objective's whole criteria list rather than the question asked;
+no sentence in either turn said whether the answer was right; and a partial answer got a paragraph
+with no way on, so the thread drifted for six more turns (*"what are you asking here"*). So the
+feedback turn now has a fixed shape, and code reads the one part of it that decides what happens next:
+
+1. **The first line is a verdict**, exactly one of `Well done.` / `Partly there.` / `Not yet.`
+   (`flow.VERDICT_OPENERS`, demanded by `quizBlock` and restated in the directive). **The verdict is
+   against the question asked**, not the objective: the criteria are what the objective needs in the
+   end, and nothing the question did not ask for counts as missing.
+2. Then what the answer had, what was missing or wrong, and the correction — grounded as §3 says.
+3. **Unless the verdict is *Well done*, the turn ends on one follow-up question** for the gap, in the
+   learner's own words or applied to the case, and nothing else in the turn is a question. After *Well
+   done* it asks nothing: the next question is theirs to ask for.
+
+`flow.feedbackVerdict(text)` reads the first line once — `complete` on *Well done*, `partial` on
+anything else, including a turn that forgot the opener (the safe side: it asks for another try) — and
+stores it as `PendingQuiz.verdict` → `FlowQuizView.verdict`. The composer draws the state from it
+(`renderer/lib/quiz.ts`): after `partial` the placeholder is *"Your next attempt…"* and the line under
+it says *"Max asked a follow-up. Answer it here, or try another question."*; after `complete` it says
+*"Max marked that done. Try another for the next question."* A second attempt is an attempt like the
+first: `attempts += 1`, feedback owed again, ledger run on it. Rowland's constraint survives in the
+one place it was ever about — a *new* question is still a click, never a clause; the follow-up is on
+the same question and the same objective.
+
+The `quiz_clarify` turn, for the same reason, now ends by asking the question again in one sentence
+and saying that the clarification did not count as a try.
+
+The thread then shows two controls:
 
 - **Try another** — `flow:tryHere` on the same segment; the pick in §2.1 chooses the objective with
   the lowest level, so a missed objective comes round again and a landed one gives way to the next.

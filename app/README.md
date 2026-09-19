@@ -10,9 +10,11 @@ ChatterED opens a lecture deck as a **flow**. Each page is a **crop of the pdf.j
 the lecturer's own pixels, never re-typeset — and faint **ticks** mark where the page's own geometry
 says a boundary could go (local; no model, no network); clicking one **splits the crop in place**.
 Under every card sit two faint lines. **+ Try this** asks **Max, the Tester**, for one question on the
-objective that card teaches; the learner attempts; Max gives feedback that cites the slide (`p. N:
-"…"`); **Try another** picks the next question from whatever the learner has shown least, and **Show
-the answer** appears only after one attempt — Max never gives the answer before one try, by a rule in
+objective that card teaches; the learner attempts; Max opens with a verdict — *Well done* / *Partly
+there* / *Not yet* — on the question he asked, cites the slide (`p. N: "…"`) for every point, and
+unless it was *Well done* ends on one follow-up question for the gap, so the next attempt is invited
+rather than guessed at; **Try another** picks the next question from whatever the learner has shown
+least, and **Show the answer** appears only after one attempt — Max never gives the answer before one try, by a rule in
 the orchestrator and not a prompt (issue #47, `docs/research/attempt-first.md`). **+ Ask here** asks
 **Ellie, the Teacher**, who answers first and then teaches, from the slide and beyond it. Only the
 learner's verbatim words move the **Explanation Ledger** ○ → ◐ → ●, and ● is unreachable without a
@@ -48,12 +50,12 @@ Video beats 4–15 of `docs/research/flow-build-plan.md` §2, re-cut for the **a
 | 4 | Open the deck — 7 crop cards and a build-steps chip; on page 3 hover a tick, then click the one at y 0.535 (⌘Z undoes); toggle **Original pages** | `renderer/components/FlowCanvas.svelte`, `shared/segment/cuts.ts`, `shared/segment/ops.ts` |
 | 5 | **+ Try this** under the lower half of page 3 — the Tester asks **one** question, back in 4–6 s because you asked for it | `room/actor.ts` (`tryHere`), `renderer/lib/objectives.ts`, `room/flow.ts` |
 | 6 | Type **attempt:1** below, verbatim. Nothing speaks over you | `components/FlowThread.svelte` |
-| 7 | Feedback after 9–12 s: what landed, what was missing, the correction, each with a `p. 3: "…"` quote of the page | `room/orchestrator.ts` (`rule:quiz_feedback`), `room/prompts.ts` |
+| 7 | Feedback after 9–12 s: **Partly there.** first, then what landed, what was missing, the correction — each with a `p. 3: "…"` quote of the page — and one follow-up question at the end. The composer now reads *Your next attempt…* | `room/orchestrator.ts` (`rule:quiz_feedback`), `room/prompts.ts`, `room/flow.ts` (`feedbackVerdict`) |
 | 8 | The rail moves `○ → ◐` on *why whispering helps*, quoting **your** sentence. *What /btw can and cannot do* stays at ○ | `room/ledger.ts`, `SegmentCard.svelte` |
 | 9 | Scroll one card and press **+ Try this** on page 5 — the pick is the objective still at ○ | `renderer/lib/objectives.ts` |
 | 10 | Type **askanswer:2** (*what's the answer?*). One narrowing hint, one clause saying a try unlocks it, **no answer** | `room/attempt.ts`, `room/orchestrator.ts` (`rule:answer_withheld`) |
 | 11 | **+ Ask here** on the same card and type **ask:1** — the Teacher answers the *prerequisite*, and says she will not answer the quiz | `components/AskHereLine.svelte`, `rule:teacher_answers` |
-| 12 | Type **attempt:2** — feedback grounded on page 5, and `○ → ◐` on *what /btw can and cannot do* | `room/ledger.ts` |
+| 12 | Type **attempt:2** — *Partly there* again, grounded on page 5, ending on a follow-up; and `○ → ◐` on *what /btw can and cannot do* | `room/ledger.ts` |
 | 13 | **Show the answer**, visible only now — the model answer with its grounds, and the rail does not move | `room/orchestrator.ts` (`rule:answer_shown`) |
 | 14 | ⌘K, ask **whisper:1** privately, **Insert into the document** | `components/WhisperPopover.svelte`, `room/context.whisper.ts` |
 | 15 | Hover a page chip; open the 31-page Koala paper | `shared/segment/genre.ts` |
@@ -75,7 +77,8 @@ content words trips the agreement-is-not-evidence rule. They are `CRITIQUE1_LEAR
 > **attempt:2** — I think it is the third one — it was asked to write a todo into memory and said it
 > had, so its answer was false, and that is the bug because the other two tests came back true.
 
-Both attempts are **partly right on purpose**: feedback with nothing to correct is a compliment, and
+Both attempts are **partly right on purpose**, which is why both feedback turns open *Partly there*
+and end on a follow-up question (a *Well done* ends on none): feedback with nothing to correct is a compliment, and
 the coded study (`docs/research/ai-use-transcripts/analysis/findings.md` RQ4) found 11 of 21 verdicts
 wrong in the one session that quizzed at all — 9 of them calling a correct answer wrong — with the
 learner replying "ok". That is why every judgement cites the slide, and why a verdict you can check

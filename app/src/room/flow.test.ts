@@ -15,6 +15,9 @@ import {
   feedbackDue,
   insideHorizon,
   markFeedbackGiven,
+  feedbackVerdict,
+  verdictOf,
+  VERDICT_OPENERS,
   answerQuiz,
   answerShownOf,
   attemptsOf,
@@ -720,5 +723,49 @@ describe('pickTarget and the objective tree', () => {
     const taughtAt = now - 5 * 60_000;
     const items = quizzableAt([item('earlier', taughtAt, 1), item('later', taughtAt, 9)], now);
     expect(pickTarget(items, { earlier: 2, later: 0 })!.elementId).toBe('later');
+  });
+});
+
+/**
+ * §2.4, second cut (Lucas's 2026-09-19 run): the feedback turn's first line is one of three fixed
+ * verdicts, and code reads it once to decide what the composer asks for next.
+ */
+describe('feedbackVerdict', () => {
+  it('reads only "Well done." as complete', () => {
+    expect(feedbackVerdict('Well done. All four named — p. 5: "Discrete…"')).toBe('complete');
+    expect(feedbackVerdict('**Well done.** All four named.')).toBe('complete');
+    expect(feedbackVerdict('  well done — all four.')).toBe('complete');
+    expect(feedbackVerdict('Partly there. Three of four.')).toBe('partial');
+    expect(feedbackVerdict('Not yet. p. 5 says otherwise.')).toBe('partial');
+  });
+
+  it('reads a turn that forgot the opener as partial, the side that asks for another try', () => {
+    expect(feedbackVerdict('All four properties correctly named — p. 5: "Discrete…". What is missing:')).toBe('partial');
+    expect(feedbackVerdict('')).toBe('partial');
+  });
+
+  it('is only ever the first line', () => {
+    expect(feedbackVerdict('Not yet.\nWell done on the first half, though.')).toBe('partial');
+  });
+
+  it('keeps the three openers the prompt names', () => {
+    expect(VERDICT_OPENERS).toEqual(['Well done.', 'Partly there.', 'Not yet.']);
+  });
+
+  it('is stored on the quiz by markFeedbackGiven and cleared by the next attempt', () => {
+    let quiz = openQuiz({ quizMessageId: 'm1', elementId: 'R1' }, 0);
+    expect(verdictOf(quiz)).toBeNull();
+    quiz = answerQuiz(quiz, 'm2', { attempt: true });
+    quiz = markFeedbackGiven(quiz, 'partial');
+    expect(verdictOf(quiz)).toBe('partial');
+    quiz = answerQuiz(quiz, 'm3', { attempt: true });
+    expect(verdictOf(quiz)).toBeNull();
+    expect(feedbackDue(quiz)).toBe(true);
+    quiz = markFeedbackGiven(quiz, 'complete');
+    expect(verdictOf(quiz)).toBe('complete');
+    // A caller without the text leaves it unmarked, never "complete".
+    expect(verdictOf(markFeedbackGiven(quiz))).toBeNull();
+    // A row from before the field is read as unmarked.
+    expect(verdictOf({ ...quiz, verdict: 'done' as never })).toBeNull();
   });
 });

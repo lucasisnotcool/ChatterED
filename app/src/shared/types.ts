@@ -594,6 +594,12 @@ export interface FlowQuizView {
   attempts: number;
   /** True once the Tester's feedback turn has landed for the latest attempt. */
   feedbackGiven: boolean;
+  /**
+   * What that feedback said about the attempt: `complete` (it opened "Well done."), or `partial`
+   * (it ended on a follow-up question, and the composer asks for the next attempt). `null` until
+   * feedback has landed on the latest attempt; absent from a build before this.
+   */
+  verdict?: 'complete' | 'partial' | null;
   /** True once `flow:showAnswer` (or an answer request after one attempt) has been honoured. */
   answerShown: boolean;
 }

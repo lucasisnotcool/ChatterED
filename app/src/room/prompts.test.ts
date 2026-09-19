@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { PROMPT_VERSION, quizBlock, roleBlock, sharedBlock, teachObjectiveBlock, turnDirective } from './prompts.js';
 import type { AgentProfile } from '../shared/types.js';
 import type { ConceptPack, MaterialRow } from './records.js';
+import { VERDICT_OPENERS } from './flow.js';
 
 const ELLIE: AgentProfile = {
   key: 'peer.ellie',
@@ -275,8 +276,13 @@ describe('quizBlock', () => {
     expect(block).toContain('names both halves');
   });
 
-  /** Rowland 2014's constraint: the feedback turn carries no new question. */
-  it('on the feedback turn says what a correct answer contains and asks nothing', () => {
+  /**
+   * §2.4, second cut (Lucas's 2026-09-19 run): the feedback turn opens with one of three fixed
+   * verdicts, marks the answer to the question asked rather than the objective's whole list, and
+   * ends on one follow-up question unless the verdict is "Well done." The seeds are still not
+   * offered: the follow-up is about the gap, not a fresh question.
+   */
+  it('on the feedback turn demands a verdict first, marks the question asked, and ends on a follow-up', () => {
     const block = quizBlock({
       label: 'what /btw can see',
       seeds: ['A question nobody should ask now.'],
@@ -284,8 +290,29 @@ describe('quizBlock', () => {
       feedback: true,
     })!;
     expect(block).toContain('names the missing tools');
-    expect(block).toContain('No new question this turn.');
     expect(block).not.toContain('A question nobody should ask now.');
+    expect(flat(block)).toContain('against **the question you asked**, not against the whole objective');
+    expect(flat(block)).toContain('not a checklist for this turn');
+    for (const v of VERDICT_OPENERS) expect(block).toContain(`**${v}**`);
+    expect(flat(block)).toContain('Your first line is exactly one of these three verdicts');
+    expect(flat(block)).toContain('**end on one follow-up question**');
+    expect(flat(block)).toContain('After Well done. ask nothing');
+    expect(block).not.toContain('No new question this turn.');
+  });
+
+  it('restates the question on the clarify turn and says it was not a try', () => {
+    const block = quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn: 'clarify' })!;
+    expect(flat(block)).toContain('End with the question again, in one sentence');
+    expect(flat(block)).toContain('did not count as a try');
+    const directive = turnDirective({ move: 'quiz_clarify', agentRole: 'challenger' } as never);
+    expect(directive).toContain('did not count as a try');
+  });
+
+  it('puts the verdict rule in the feedback directive, where the model reads last', () => {
+    const directive = turnDirective({ move: 'quiz_feedback', agentRole: 'challenger' } as never);
+    for (const v of VERDICT_OPENERS) expect(directive).toContain(`**${v}**`);
+    expect(directive).toContain('not the whole objective');
+    expect(directive).toContain('one follow-up question on the gap');
   });
 
   /**

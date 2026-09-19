@@ -9,7 +9,10 @@ import type { FlowQuizView } from '../../shared/types.js';
 import {
   ATTEMPT_PLACEHOLDER,
   EXPLAIN_PLACEHOLDER,
+  NEXT_ATTEMPT_PLACEHOLDER,
   attemptNote,
+  doneNote,
+  followUpNote,
   quizControls,
   ruleTag,
   tryHereState,
@@ -63,6 +66,33 @@ describe('quizControls', () => {
     const c = quizControls(quiz({ attempts: 1, feedbackGiven: true }));
     expect(c.tryAnother).toBe(true);
     expect(c.showAnswer).toBe(true);
+  });
+
+  /**
+   * §2.4, second cut (Lucas's 2026-09-19 run: *"not very clear to me if I have answered, or if I
+   * need to try again"*). The verdict the feedback opened with decides what the composer says.
+   */
+  it('asks for the next attempt, and says a follow-up was asked, after a partial verdict', () => {
+    const c = quizControls(quiz({ attempts: 1, feedbackGiven: true, verdict: 'partial' }));
+    expect(c.placeholder).toBe(NEXT_ATTEMPT_PLACEHOLDER);
+    expect(c.note).toBe(followUpNote('Max'));
+    expect(c.tryAnother).toBe(true);
+    expect(c.showAnswer).toBe(true);
+  });
+
+  it('says the question is done after a complete verdict, and offers the next one', () => {
+    const c = quizControls(quiz({ attempts: 1, feedbackGiven: true, verdict: 'complete' }), 'Sam');
+    expect(c.placeholder).toBe(EXPLAIN_PLACEHOLDER);
+    expect(c.note).toBe(doneNote('Sam'));
+    expect(c.tryAnother).toBe(true);
+  });
+
+  it('says nothing about a verdict it does not have, and nothing once the answer is shown', () => {
+    expect(quizControls(quiz({ attempts: 1, feedbackGiven: true, verdict: null })).note).toBeNull();
+    expect(quizControls(quiz({ attempts: 1, feedbackGiven: true })).note).toBeNull();
+    const shown = quizControls(quiz({ attempts: 1, feedbackGiven: true, answerShown: true, verdict: 'partial' }));
+    expect(shown.note).toBeNull();
+    expect(shown.placeholder).toBe(EXPLAIN_PLACEHOLDER);
   });
 
   it('never offers Show the answer with no attempt, whatever else is set', () => {

@@ -115,7 +115,8 @@ agent produced 121 to 141 cognitive acts per session against 61 for a non-respon
 (Rowland, 2014: g = 0.73 against 0.39) and the advantage over restudy grows with delay (Roediger &
 Karpicke, 2006); what the learner produces is a self-explanation (Chi et al., 1989). *Need:* N1.
 *Realisation:* a rule withholds the answer until an attempt is typed, and every attempt gets feedback
-carrying no new question.
+that opens with a verdict on the question asked and, unless the verdict is *Well done*, ends on one
+follow-up question for the gap; a new question is a click, never a clause.
 
 **DG2, feedback that shows its grounds.** *Theory:* trust is calibrated only when the basis of a
 judgement is visible (Lee & See, 2004). *Need:* N2, from 11 wrong verdicts in 21. *Realisation:*

@@ -59,6 +59,42 @@ describe('classifyLearnerTurn', () => {
     expect(classifyLearnerTurn(answer)).toBe('attempt');
   });
 
+  /**
+   * **A guess phrased as a question is an attempt** (Lucas, 2026-09-19, on the MDP deck). This line
+   * drew `rule:quiz_clarify`: Max clarified, nothing was marked, and the learner did not know
+   * whether he had answered. It opens like a question and carries two candidate answers.
+   */
+  it('reads a hedged guess, or a choice between alternatives, as an attempt', () => {
+    expect(
+      classifyLearnerTurn('is it an action, or a series of actions that lead to the goal state from the current state?'),
+    ).toBe('attempt');
+    expect(classifyLearnerTurn('is it trying to find the best possible action from the current state towards the goal?')).toBe(
+      'attempt',
+    );
+    expect(classifyLearnerTurn('The entire output is a list of actions and states from I to G?')).toBe('attempt');
+    expect(classifyLearnerTurn('could it be the transition model?')).toBe('attempt');
+    expect(classifyLearnerTurn('is the answer discrete and deterministic?')).toBe('attempt');
+    expect(classifyLearnerTurn('deterministic, or fully observable?')).toBe('attempt');
+  });
+
+  it('still reads a question about a term, or about the question, as a question', () => {
+    expect(classifyLearnerTurn('what are you asking here?')).toBe('question');
+    expect(classifyLearnerTurn('what does the or in step 3 mean?')).toBe('question');
+    expect(classifyLearnerTurn('do you mean the whole plan?')).toBe('question');
+  });
+
+  /**
+   * *"can you help me out here"* (the same run): nothing to mark, and not a request for the
+   * answer. `other` draws `rule:quiz_nudge` — one hint, no answer — which is the turn it wanted.
+   */
+  it('reads a request for help as other, so it draws a hint and not a mark', () => {
+    for (const line of ['can you help me out here', 'hint?', 'give me a hint', "i'm stuck", 'help']) {
+      expect(classifyLearnerTurn(line), line).toBe('other');
+    }
+    // But an answer that happens to contain "help" is still an answer.
+    expect(classifyLearnerTurn('heuristics help the search by estimating the distance to the goal')).toBe('attempt');
+  });
+
   it('does not read an answer that mentions the word answer as a request for one', () => {
     expect(classifyLearnerTurn('my answer is that the Hessian is positive semidefinite')).toBe('attempt');
   });

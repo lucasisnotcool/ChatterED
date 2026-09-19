@@ -285,12 +285,16 @@ describe('the answer lock (§2.3)', () => {
       expect(feedback.decidedBy).toBe('rule:quiz_feedback');
       // §3: every point says where the deck settles it, as `p. N: "…"`. Item 4 makes it clickable.
       expect(feedback.body).toMatch(/p\. \d+: "/);
-      // Feedback carries no new question (Rowland's constraint) — the next one is a click.
-      expect(feedback.body).not.toContain('?');
+      // §2.4, second cut: a verdict first, and — since it is not "Well done." — one follow-up
+      // question at the end, so the learner knows to try again. The verdict is read into the view.
+      expect(feedback.body).toMatch(/^Partly there\./);
+      expect(feedback.body.split('?').length - 1).toBe(1);
+      expect(feedback.body.trim().endsWith('?')).toBe(true);
 
       const quiz = view!.threads.find((t) => t.anchorId === SEG)!.quiz!;
       expect(quiz.attempts).toBe(1);
       expect(quiz.feedbackGiven).toBe(true);
+      expect(quiz.verdict).toBe('partial');
       // The ledger moved, and on the learner's own words.
       const moved = view!.room.ledger.rows.find((r) => r.elementId === 'R1')!;
       expect(moved.state).not.toBe('not_yet');
