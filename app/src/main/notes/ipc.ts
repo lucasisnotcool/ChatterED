@@ -50,12 +50,6 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
   const roomFor = async (fileId: string): Promise<string | null> =>
     (await host.roomForFile(fileId).catch(() => null))?.roomId ?? null;
 
-  const docFor = (contentSha: string): NotesDocRecord => {
-    const record = repo.byContentSha(contentSha);
-    if (!record) throw new Error('That document has not been ingested.');
-    return record;
-  };
-
   const requireDoc = (docId: string): NotesDocRecord => {
     const record = repo.byId(docId);
     if (!record) throw new Error('That document does not exist.');
@@ -172,10 +166,6 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
       log().info('notes.suggestion.resolved', { doc_id: docId, suggestion_id: suggestionId, status });
     },
   );
-
-  // Referenced so a future reader sees where the by-bytes lookup lives; `notes:get` is the only
-  // channel that resolves a file id, and every other one is already given a doc id.
-  void docFor;
 }
 
 /** The document's title: the file's name without its extension, or a neutral fallback. */
