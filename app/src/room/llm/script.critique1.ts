@@ -33,14 +33,24 @@
  * because it is the honest fallback for a run where the rule did not fire, and because a beat
  * with no decision would make `decisionFor` say "the room stays quiet".
  *
- * **The one thing Track C could not verify.** `actor.ts` at the time this was written cues the
- * *ledger* call with the **learner** cue (`student:N`, `actor.ts` → `#updateLedger(cue, …)`) while
- * cueing the *turn* with `feedback:N`. The attempt loop needs the ledger proposal to travel with
- * the feedback turn — the proposal is a judgement about the attempt, and `feedback:N` is the cue
- * that names the question it answers — so the blocks below live on `feedback:1` / `feedback:2`.
- * Until the actor passes the turn cue to `#updateLedger`, the rail will not move on an attempt.
- * That is a bug in `actor.ts` against `attempt-first.md` §2.3, not in this file; it is the actor
- * side's to fix, and `script.critique1.test.ts` pins the contract so the fix is checkable.
+ * **Two seams the take runs into, both on the other side of the contract.** The actor side landed
+ * while this was being written, so the loop below is driven end to end in the test — and two beats
+ * of §2 do not yet arrive:
+ *
+ *  1. **The rail does not move on an attempt** (§2 beat 8). The ledger blocks are on `feedback:1`
+ *     and `feedback:2`, because a judgement of the attempt belongs to the turn that judges it — but
+ *     `actor.ts` cues the *turn* with `feedback:N` and the *ledger call* with the learner cue
+ *     (`#updateLedger(cue, …)`, `cue` = `student:N`), which reaches the explain beat and proposes
+ *     nothing. The proposal has to travel with the turn it judges.
+ *  2. **An Ask into a card with an open question is given to the Tester** (§2 beat 11). `askHere`
+ *     runs an ordinary learner turn, so §2.2 classifies it; the take's Ask is 39 words, over the
+ *     25-word ceiling on `question`, so it is read as an *attempt* and draws `rule:quiz_feedback`
+ *     — and it unlocks the answer. An Ask is an explicit request for the Teacher and should take
+ *     `rule:teacher_answers` whether or not a quiz is open on that card.
+ *
+ * Both are bugs in `actor.ts` / `orchestrator.ts` against `attempt-first.md` §2.3 and §6, not in
+ * this file, and both are pinned in `script.critique1.test.ts` with the fix named — so they fail
+ * loudly when they are fixed rather than silently staying broken.
  *
  * **The content is Lucas's own critique**, not a story written around it: every claim is on a
  * page of `Academia/Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf`,
