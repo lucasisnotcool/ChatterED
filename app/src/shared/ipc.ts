@@ -25,7 +25,6 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
-import type { AskScope } from './scope.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
   CostAnalytics,
@@ -37,18 +36,7 @@ import type {
   CostSummaryQuery,
   CostUpdate,
 } from './cost.js';
-import type {
-  FlowAnswerView,
-  FlowShowAnswerView,
-  FlowSummaryView,
-  FlowThreadOfView,
-  FlowTryView,
-  FlowRelayView,
-  FlowRoomView,
-  FlowWhisperView,
-  StopTurnResult,
-  TurnTraceView,
-} from './types.js';
+import type { StopTurnResult, TurnTraceView } from './types.js';
 
 import type {
   AgentAuthor,
@@ -117,46 +105,17 @@ export const IPC = {
   segmentsReorder: 'segments:reorder',
   segmentsRename: 'segments:rename',
 
-  // The conversation inside the flow (issue #25, flow-build-plan.md §3.3 track B).
-  flowAskHere: 'flow:askHere',
-  /** "Ask about this deck" — the line at the top of the flow (issue #35, `shared/scope.ts`). */
-  flowAskDeck: 'flow:askDeck',
   /**
-   * **A logged no-op since issue #41**, kept for one release.
+   * Turn status (cui-standards-audit.md §2 / §10, issue #34).
    *
-   * It unlocked a segment's thread after a REFERENCE entry card. The Teacher answers the entry
-   * question now, so there is no card and no lock; calling this logs a deprecation and returns
-   * `{ unlocked: true, anchorId: null }` so an older renderer's button does nothing visible
-   * rather than throwing. Remove it, and this line, in the release after.
+   * The two survivors of the retired crop flow's `flow:*` surface (#48). They keep their channel
+   * names because they are about a **turn**, not about the screen it is drawn on, and renaming a
+   * live channel buys nothing: the chat column's Stop calls the first, the ⌥⌘D drawer the second.
    */
-  flowExplainBack: 'flow:explainBack',
-  /** **Summarise into the document** on a thread → one `summary` card (issue #41). */
-  flowSummarise: 'flow:summarise',
-  /** The source thread behind a summary card, so a click can expand it (issue #41). */
-  flowThreadOf: 'flow:threadOf',
-  /** **"+ Try this"** on a segment: one Tester question on the objective the card teaches (issue #47). */
-  flowTryHere: 'flow:tryHere',
-  /** **Show the answer** after at least one attempt; refused before (issue #47, `rule:answer_shown`). */
-  flowShowAnswer: 'flow:showAnswer',
-  flowSend: 'flow:send',
-  flowMessages: 'flow:messages',
-
-  // The whisper popover on a segment (issue #16 + flow-build-plan.md §3.5).
-  flowWhisperOpen: 'flow:whisperOpen',
-  flowWhisperSend: 'flow:whisperSend',
-  flowWhisperRelay: 'flow:whisperRelay',
-  flowWhisperClose: 'flow:whisperClose',
-  flowSelection: 'flow:selection',
-
-  // Turn status (cui-standards-audit.md §2 / §7 / §10, issue #34).
   /** **Stop** on a generating turn. Refused while the floor is still running. */
   flowStop: 'flow:stop',
   /** One turn's timings for the ⌥⌘D debug drawer. No bodies. */
   flowTurnTrace: 'flow:turnTrace',
-  /** The learner has seen this thread up to `seq`; clears its unread dot. */
-  flowMarkSeen: 'flow:markSeen',
-  /** Per-card `collapsed` / `removed`, persisted so a dismissed card stays dismissed. */
-  flowCardState: 'flow:cardState',
 
   // The learning-objective tree (issue #38, `docs/research/learning-objectives.md` §6).
   objectivesTree: 'objectives:tree',
@@ -354,151 +313,6 @@ export interface ChatterEdApi {
   /** Rename a segment. Labels are the learner's, and the text-layer guess is only a default. */
   renameSegment(input: { fileId: string; segmentId: string; label: string }): Promise<SegmentDocumentView>;
 
-  // ── The conversation inside the flow (issue #25) ────────────────────────
-  /**
-   * "+ Ask here" on one segment.
-   *
-   * **This call is what creates the document's room**, the first time it is made for a file
-   * (`flow-build-plan.md` §3.3): there is no setup screen any more.
-   *
-   * **The Teacher answers it** (issue #41, `conversation-refinement.md` §2). It used to insert a
-   * neutral REFERENCE card and lock Ellie and Max out of the thread until *Explain it back*; all
-   * three of Lucas's #41 transcripts spent their first prompt on that card and their second
-   * getting past it. So this now opens the thread and runs an ordinary Teacher turn on it: it
-   * resolves as soon as the question is written, and the reply arrives on the event stream at its
-   * latency floor, exactly like `flowSend`. Render the reserved slot from `turn.received`.
-   *
-   * Unchanged: the 3–8 s floor-yield, the latency floor, the scope resolution and `scopeShown`,
-   * the flow session, the ledger's verbatim-evidence rule, and the `objectiveId` chip.
-   */
-  flowAskHere(input: {
-    fileId: string;
-    segmentId: string;
-    question: string;
-    /**
-     * What the question is about (issue #35). Omit it and the main process guesses with
-     * `guessScope()` from `shared/scope.ts` — call the same function to render the chip, so the
-     * chip and the answer can never disagree. Passing it is the learner's override, and the log
-     * records that it was one.
-     */
-    scope?: AskScope;
-    /**
-     * The objective this thread is about (issue #38 §5): set when the Ask was opened from a node
-     * in the objectives panel. The main process writes it on every message of the thread
-     * (`messages.objective_id`, migration 016) so an explanation given here is attributable to
-     * the node the learner clicked.
-     */
-    objectiveId?: string;
-  }): Promise<FlowAnswerView>;
-  /**
-   * **"Ask about this deck"** — the line above the first card (issue #35;
-   * `whole-file-context.md` §3: a deck-level question had nowhere to go, so it was answered
-   * from whichever slide happened to be nearest).
-   *
-   * Same return as `flowAskHere`, and since #41 the same answerer: the Teacher, reading the whole
-   * deck instead of one page. The thread is anchored to the synthetic `DECK_ANCHOR_ID`, and
-   * `FlowRoomView.threads` always lists it first.
-   */
-  flowAskDeck(input: { fileId: string; question: string }): Promise<FlowAnswerView>;
-  /**
-   * **Deprecated, a no-op since #41.** See `IPC.flowExplainBack`. Always resolves
-   * `{ unlocked: true, anchorId: null }`; drop the button rather than calling it.
-   */
-  flowExplainBack(input: { answerId: string }): Promise<{ unlocked: boolean; anchorId: string | null }>;
-  /**
-   * **"Summarise into the document"** on a thread (issue #41, `conversation-refinement.md` §5).
-   *
-   * Produces one `summary` card under the segment: the REFERENCE register, a cap applied in code,
-   * maths in `$…$`, and written **from the thread** rather than from the slide — the point is to
-   * carry what *this conversation* taught, so the learner can review without reading it again.
-   *
-   * `threadId` is an `anchorId`. Call it again on the same thread to regenerate: the existing
-   * card is replaced, not duplicated, and `regenerated` says so. The card is offered by
-   * `rule:offer_summary` (a Teacher turn with `byRule: 'offer_summary'`) and is **never inserted
-   * without this call**, which is R1.
-   */
-  flowSummarise(input: { roomId: string; threadId: string }): Promise<FlowSummaryView>;
-  /**
-   * The source thread behind a summary card, for the click that expands it (issue #41).
-   * `null` when `summaryId` is not a summary card. Its composer continues that same thread —
-   * `flowSend({ roomId, segmentId: threadId, text })`.
-   */
-  flowThreadOf(input: { summaryId: string }): Promise<FlowThreadOfView | null>;
-  /**
-   * A learner turn inside one segment's thread. Not awaited for the reply: like `sendMessage`,
-   * the agent's answer arrives on the event stream at its latency floor.
-   */
-  flowSend(input: { roomId: string; segmentId: string; text: string }): Promise<void>;
-  /**
-   * **"+ Try this"** on one segment (issue #47, `docs/research/attempt-first.md` §2.1).
-   *
-   * Creates the document's room if it does not exist, exactly like `flowAskHere`. The main
-   * process picks the objective — the ones the card teaches, lowest level first, deck order as
-   * the tie-break, nearest earlier objective by page as the fallback — unless `objectiveId` is
-   * passed (a click in the objectives panel, or **Try another** on a thread that already has one).
-   * Max's question arrives on the event stream. `refused` is set, and no question is asked, when
-   * the tree is `pending` or `failed`.
-   */
-  flowTryHere(input: { fileId: string; segmentId: string; objectiveId?: string }): Promise<FlowTryView>;
-  /**
-   * **Show the answer** on a thread with an open quiz (issue #47, §2.3 `rule:answer_shown`).
-   * Honoured only after at least one attempt; before that `shown` is false and `refused` says
-   * why. The answer turn is Max's, cites the deck, closes the quiz, and never moves the ledger.
-   */
-  flowShowAnswer(input: { roomId: string; threadId: string }): Promise<FlowShowAnswerView>;
-  /**
-   * The document's room and its threads, grouped by segment. `null` when the document has never
-   * been asked a question — which is the common case, and is why nothing is created here.
-   */
-  flowMessages(input: { fileId: string }): Promise<FlowRoomView | null>;
-
-  // ── The whisper popover on a segment (§3.5) ─────────────────────────────
-  /**
-   * `⌘K` on a focused segment card, or *Ask privately* in its label strip.
-   *
-   * Like `flowAskHere` it **creates the document's room if there isn't one**: a private question
-   * is a learner-authored action on the document, and refusing to open one until a public
-   * question had been asked would make the private channel the second-class one — which is the
-   * opposite of what `design-brief.md` §D5 is for.
-   *
-   * The addressee is not a parameter. Ellie is resolved in `actor.openSegmentWhisper()`, so the
-   * renderer cannot ask for a private channel to the Tester (#32).
-   */
-  flowWhisperOpen(input: { fileId: string; segmentId: string }): Promise<{ roomId: string; whisper: FlowWhisperView }>;
-  /**
-   * A private turn. Not awaited for the reply: Ellie's answer arrives on the `whisper.turn`
-   * event stream at her 1–2 s floor, exactly as in the shipped pane.
-   *
-   * `fileId` + `segmentId` are here so the **main process** resolves the anchored page text —
-   * the same text the REFERENCE call sees. The renderer has no authority to decide what any
-   * agent is told, private or not.
-   */
-  flowWhisperSend(input: {
-    roomId: string;
-    fileId: string;
-    segmentId: string;
-    threadId: string;
-    text: string;
-  }): Promise<void>;
-  /**
-   * **Insert into the document.** The approved relay: a *new shared card* under the segment,
-   * authored as the learner or as Ellie, carrying the text the learner edited and approved.
-   *
-   * It never moves, reveals or links the private turn (`pivot-spec.md` §B5's T4), and it cannot
-   * advance the ledger — `actor.relay()` does not call the ledger, and `flow:whisperRelay` is
-   * the only path from the popover to the document.
-   */
-  flowWhisperRelay(input: {
-    roomId: string;
-    segmentId: string;
-    threadId: string;
-    whisperId: string;
-    attribution: RelayAttribution;
-    text: string;
-  }): Promise<FlowRelayView>;
-  /** `Esc` or click-away. Closes the popover in the main process's model; writes nothing. */
-  flowWhisperClose(input: { roomId: string; threadId: string }): Promise<void>;
-
   // ── Turn status (audit §2 / §7 / §10, issue #34) ────────────────────────
   /**
    * **Stop** a turn that is generating.
@@ -520,24 +334,6 @@ export interface ChatterEdApi {
    * ring (the last 50 turns of the open room). Bodies are never in it.
    */
   flowTurnTrace(input: { roomId: string; turnId?: string | null }): Promise<TurnTraceView[]>;
-  /** The learner has read this thread up to `seq`. Persisted with the sitting. */
-  flowMarkSeen(input: { roomId: string; anchorId: string; seq: number }): Promise<void>;
-  /** Persist a card's `collapsed` / `removed`; either may be omitted to leave it alone. */
-  flowCardState(input: {
-    roomId: string;
-    anchorId: string;
-    collapsed?: boolean;
-    removed?: boolean;
-  }): Promise<void>;
-  /**
-   * A **selection change**: the learner focused a segment card (`pivot-spec.md` §B8).
-   *
-   * The document's analogue of the typing heartbeat, and rate-limited by the renderer the same
-   * way. Scroll, zoom and page navigation are deliberately *not* reported — re-reading a slide
-   * by scrolling is precisely the behaviour the silence timer must not punish.
-   */
-  flowSelection(input: { roomId: string; segmentId: string | null }): Promise<void>;
-
 
   // ── The learning-objective tree (issue #38) ─────────────────────────────
   /**

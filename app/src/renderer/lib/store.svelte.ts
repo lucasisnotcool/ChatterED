@@ -874,9 +874,16 @@ class Store {
     if (this.screen === 'usage') void this.loadAnalytics(this.costAnalyticsQuery);
   }
 
-  /** The ⌥⌘D drawer's rows (audit §10). No bodies are in them, by construction in the actor. */
+  /**
+   * The ⌥⌘D drawer's rows (audit §10). No bodies are in them, by construction in the actor.
+   *
+   * The open **document's** room first, then the room screen's. `this.room` was the only answer
+   * while the flow put its `FlowRoomView` there; on the doc surface it is `chat.roomId` that
+   * knows which room the conversation is in, and a drawer that only ever found traces on the
+   * screen nobody opens is a diagnostic that is never there when it is wanted.
+   */
   async loadTurnTraces(): Promise<void> {
-    const roomId = this.room?.roomId;
+    const roomId = this.chat.roomId ?? this.room?.roomId ?? null;
     if (!roomId || !has('flowTurnTrace')) return;
     const rows = await quiet(() => bridge().flowTurnTrace({ roomId, turnId: null }));
     if (rows) this.turnTraces = rows;

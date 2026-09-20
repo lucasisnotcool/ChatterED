@@ -1527,34 +1527,6 @@ export class AppService {
     // Per-message cost and the Usage page (#42 items B and D) — `src/main/cost/ipc.ts`.
     registerCostIpc({ db: this.#d.db, sessionStart: () => this.#cost.sessionStart, handle });
 
-    handle<{ fileId: string }>(IPC.flowMessages, (input) => this.flowMessages(input.fileId));
-    handle<{ fileId: string; segmentId: string; question: string; scope?: AskScope; objectiveId?: string }>(
-      IPC.flowAskHere,
-      (input) => this.flowAskHere(input),
-    );
-    handle<{ fileId: string; question: string }>(IPC.flowAskDeck, (input) => this.flowAskDeck(input));
-    handle<{ answerId: string }>(IPC.flowExplainBack, (input) => this.flowExplainBack(input.answerId));
-    handle<{ roomId: string; threadId: string }>(IPC.flowSummarise, (input) => this.flowSummarise(input));
-    handle<{ summaryId: string }>(IPC.flowThreadOf, (input) => this.flowThreadOf(input));
-    handle<{ roomId: string; segmentId: string; text: string }>(IPC.flowSend, (input) => this.flowSend(input));
-    // The attempt loop's two doors (issue #47), next to the Ask they are the counterpart of.
-    handle<{ fileId: string; segmentId: string; objectiveId?: string }>(IPC.flowTryHere, (input) =>
-      this.flowTryHere(input),
-    );
-    handle<{ roomId: string; threadId: string }>(IPC.flowShowAnswer, (input) => this.flowShowAnswer(input));
-    handle<{ fileId: string; segmentId: string }>(IPC.flowWhisperOpen, (input) => this.flowWhisperOpen(input));
-    handle<{ roomId: string; fileId: string; segmentId: string; threadId: string; text: string }>(
-      IPC.flowWhisperSend,
-      (input) => this.flowWhisperSend(input),
-    );
-    handle<{
-      roomId: string;
-      segmentId: string;
-      threadId: string;
-      whisperId: string;
-      attribution: RelayAttribution;
-      text: string;
-    }>(IPC.flowWhisperRelay, (input) => this.flowWhisperRelay(input));
     /**
      * Stop. The refusal is the product decision, so it is decided in the actor — which is the
      * only thing that knows whether this turn's floor has elapsed — and not here.
@@ -1565,37 +1537,6 @@ export class AppService {
     handle<{ roomId: string; turnId?: string | null }>(IPC.flowTurnTrace, (input) =>
       this.#requireActor(input.roomId).turnTrace(input.turnId ?? null),
     );
-    /**
-     * The unread dot and the per-card state. Both are written straight through to the sitting's
-     * settings row — they are cheap, they are the learner's own reading, and a sitting that loses
-     * them because the app was force-quit between two writes is a card that comes back.
-     */
-    handle<{ roomId: string; anchorId: string; seq: number }>(IPC.flowMarkSeen, (input) => {
-      this.#requireActor(input.roomId).markSeen(input.anchorId, input.seq);
-      this.#persistFlow();
-    });
-    handle<{ roomId: string; anchorId: string; collapsed?: boolean; removed?: boolean }>(
-      IPC.flowCardState,
-      (input) => {
-        const patch: { collapsed?: boolean; removed?: boolean } = {};
-        if (input.collapsed !== undefined) patch.collapsed = input.collapsed;
-        if (input.removed !== undefined) patch.removed = input.removed;
-        this.#requireActor(input.roomId).setCardState(input.anchorId, patch);
-        this.#persistFlow();
-      },
-    );
-    handle<{ roomId: string; segmentId: string | null }>(IPC.flowSelection, (input) => {
-      // No room, no timer to extend: a document nobody has spoken to has no silence window.
-      this.#actor?.noteSelection(input.segmentId);
-      void input;
-    });
-    handle<{ roomId: string; threadId: string }>(IPC.flowWhisperClose, (input) => {
-      // The popover's turns are dropped by the renderer on this event, exactly as the shipped
-      // pane's "clears at the end of the round" always did. Nothing is deleted: the rows stay
-      // for the research export, and the sitting's thread id is what becomes unreachable.
-      this.#actor?.closeSegmentWhisper();
-      this.emit({ type: 'whisper.cleared', roomId: input.roomId, threadId: input.threadId });
-    });
 
     handle<string>(IPC.openRoom, (roomId) => this.openRoom(roomId));
     handle<{ roomId: string; text: string }>(IPC.sendMessage, (input) =>

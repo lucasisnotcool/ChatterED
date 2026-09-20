@@ -56,27 +56,11 @@ const api: ChatterEdApi = {
   mergeSegments: (input) => ipcRenderer.invoke(IPC.segmentsMerge, input),
   reorderSegments: (input) => ipcRenderer.invoke(IPC.segmentsReorder, input),
   renameSegment: (input) => ipcRenderer.invoke(IPC.segmentsRename, input),
-  flowAskHere: (input) => ipcRenderer.invoke(IPC.flowAskHere, input),
-  flowAskDeck: (input) => ipcRenderer.invoke(IPC.flowAskDeck, input),
-  flowExplainBack: (input) => ipcRenderer.invoke(IPC.flowExplainBack, input),
   // The artefact (issue #41): a thread summarised into the document, and the way back to the
   // conversation it was written from.
-  flowSummarise: (input) => ipcRenderer.invoke(IPC.flowSummarise, input),
-  flowThreadOf: (input) => ipcRenderer.invoke(IPC.flowThreadOf, input),
   // The attempt loop (issue #47): one Tester question on a card, and the answer after one try.
-  flowTryHere: (input) => ipcRenderer.invoke(IPC.flowTryHere, input),
-  flowShowAnswer: (input) => ipcRenderer.invoke(IPC.flowShowAnswer, input),
-  flowSend: (input) => ipcRenderer.invoke(IPC.flowSend, input),
-  flowMessages: (input) => ipcRenderer.invoke(IPC.flowMessages, input),
-  flowWhisperOpen: (input) => ipcRenderer.invoke(IPC.flowWhisperOpen, input),
-  flowWhisperSend: (input) => ipcRenderer.invoke(IPC.flowWhisperSend, input),
-  flowWhisperRelay: (input) => ipcRenderer.invoke(IPC.flowWhisperRelay, input),
-  flowWhisperClose: (input) => ipcRenderer.invoke(IPC.flowWhisperClose, input),
-  flowSelection: (input) => ipcRenderer.invoke(IPC.flowSelection, input),
   flowStop: (input) => ipcRenderer.invoke(IPC.flowStop, input),
   flowTurnTrace: (input) => ipcRenderer.invoke(IPC.flowTurnTrace, input),
-  flowMarkSeen: (input) => ipcRenderer.invoke(IPC.flowMarkSeen, input),
-  flowCardState: (input) => ipcRenderer.invoke(IPC.flowCardState, input),
   // collab-doc (#48)
   notesGet: (input) => ipcRenderer.invoke(IPC.notesGet, input),
   notesIngest: (input) => ipcRenderer.invoke(IPC.notesIngest, input),

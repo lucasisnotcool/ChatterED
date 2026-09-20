@@ -3,6 +3,7 @@
    * ChatterED renderer root. Four destinations, one window, no URLs
    * (architecture-mac.md: the renderer is a plain Svelte 5 SPA).
    */
+  import DebugDrawer from './components/DebugDrawer.svelte';
   import FirstRun from './components/FirstRun.svelte';
   import Library from './components/Library.svelte';
   import NavRail from './components/NavRail.svelte';
@@ -24,7 +25,25 @@
    * at L186. The two scopes cannot overlap, so the binding is made here and simply stands down
    * while a room is open.
    */
+  /**
+   * **⌥⌘D — the researcher's turn log** (cui-standards-audit.md §10).
+   *
+   * It used to be `FlowCanvas`'s keydown, which meant it stopped existing the moment a PDF
+   * opened into the three-column shell instead (#48) — a hidden gesture that answers "hung, or
+   * thinking?" is worth nothing if it only works on a screen the app no longer has. It is
+   * app-level here, which is what it always should have been: it is about the process, not
+   * about one document.
+   */
   function onkeydown(e: KeyboardEvent): void {
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      store.debugOpen = !store.debugOpen;
+      if (store.debugOpen) {
+        void store.loadTurnTraces();
+        void store.loadRecentCalls();
+      }
+      return;
+    }
     if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
     if (store.screen === 'room' || store.screen === 'firstRun') return;
     if (!store.vault?.rootPath) return;
@@ -68,6 +87,10 @@
      router rather than inside one screen. -->
 {#if store.topicSheetOpen}
   <TopicSheet />
+{/if}
+
+{#if store.debugOpen}
+  <DebugDrawer />
 {/if}
 
 <NoticeBanner />
