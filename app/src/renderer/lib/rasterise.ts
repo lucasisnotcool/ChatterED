@@ -11,22 +11,21 @@
  *     which is exactly why `PageImage` exists in the contract.
  *  2. **`SlideSource`** — the carousel's thumbnails, the modal's zoomable page and the inline
  *     `slide_figure` crops. §3's fidelity claim ("a crop of the rendered page: pixels, not a
- *     redraw") is *this*: one `drawImage` out of a real pdf.js canvas, the same mechanism
- *     `SegmentCard.svelte:198` uses, with `flowview.ts`'s `sourceRect` doing the clamped
- *     arithmetic so a sub-pixel overhang cannot draw a hairline of transparent edge.
+ *     redraw") is *this*: one `drawImage` out of a real pdf.js canvas, with `sourceRect()` below
+ *     doing the clamped arithmetic so a sub-pixel overhang cannot draw a hairline of transparent
+ *     edge.
  *
  * **`PdfViewer.svelte` is read-only for every track** (the build contract), and it would be the
  * wrong thing to borrow anyway: it releases any page more than ±3 away from the one being read,
- * and a crop drawn off a released canvas is a blank card — the trap `FlowCanvas` already
- * documented and avoided by owning its own render path. So this module owns its own pdf.js
- * document and its own small LRU, and reuses the *pure* parts (`flowview.ts`, `pdfview.ts`)
- * rather than the stateful ones.
+ * and a crop drawn off a released canvas is a blank card — the trap the retired flow canvas
+ * already documented and avoided by owning its own render path. So this module owns its own
+ * pdf.js document and its own small LRU, and reuses the *pure* parts (`pdfview.ts`) rather than
+ * the stateful ones.
  *
  * **pdf.js is imported lazily**, inside the functions that need it, so the pure arithmetic below
  * can be unit-tested in vitest's node environment without dragging a browser worker in.
  */
 
-import { sourceRect } from './flowview.js';
 import type { PageImage, Rect } from '../../shared/doc/types.js';
 
 // ── the numbers ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +46,42 @@ export const PAGE_IMAGE_BATCH = 8;
 
 /** The widest a thumbnail is ever rendered. Above this the carousel is paying for nothing. */
 export const THUMB_WIDTH = 320;
+
+// ── the clamped crop arithmetic ─────────────────────────────────────────────────────────────
+
+/** A canvas's backing-store size in device pixels. */
+export interface CanvasPx {
+  width: number;
+  height: number;
+}
+
+/** A source rectangle in a page canvas's own device pixels, ready for `drawImage`. */
+export interface SourceRect {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * The crop's rectangle, in the page canvas's device pixels.
+ *
+ * Clamped to the canvas rather than trusted: `drawImage` with a source rectangle that overhangs
+ * the source canvas by a sub-pixel silently draws transparent edges, which on a slide reads as
+ * a hairline of missing pixels along the bottom of every figure. Written for the retired crop
+ * flow and kept here, unchanged, because §3's inline figures are the same `drawImage`.
+ */
+export function sourceRect(rect: Rect, canvas: CanvasPx): SourceRect {
+  const sx = clamp(Math.round(rect.x0 * canvas.width), 0, Math.max(0, canvas.width - 1));
+  const sy = clamp(Math.round(rect.y0 * canvas.height), 0, Math.max(0, canvas.height - 1));
+  const sw = clamp(Math.round((rect.x1 - rect.x0) * canvas.width), 1, canvas.width - sx);
+  const sh = clamp(Math.round((rect.y1 - rect.y0) * canvas.height), 1, canvas.height - sy);
+  return { sx, sy, sw, sh };
+}
 
 /** How many page canvases the slide source keeps. The carousel scrolls; the modal pages. */
 export const SLIDE_CACHE = 10;
@@ -388,8 +423,7 @@ export class SlideSource {
    * A crop of the rendered page, as its own canvas: one `drawImage` with a clamped source rect.
    *
    * `rect` is normalised, y **down** from the page top, as `vault/geometry.ts` and the contract's
-   * `Rect` define it — the same convention `flowview.sourceRect` expects, which is why it can be
-   * reused here unchanged.
+   * `Rect` define it — the same convention `sourceRect()` expects.
    */
   async crop(page: number, rect: Rect | null, width: number, dpr = 1): Promise<HTMLCanvasElement | null> {
     const box = rect ?? { x0: 0, y0: 0, x1: 1, y1: 1 };

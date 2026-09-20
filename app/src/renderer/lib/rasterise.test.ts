@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PAGE_IMAGE_BATCH, batches, cropBox, pageNumbers, rasterSize, releaseDocument } from './rasterise.js';
+import {
+  PAGE_IMAGE_BATCH,
+  batches,
+  cropBox,
+  pageNumbers,
+  rasterSize,
+  releaseDocument,
+  sourceRect,
+} from './rasterise.js';
 
 describe('rasterSize', () => {
   it('hits the target width and keeps the aspect ratio', () => {
@@ -105,5 +113,29 @@ describe('releaseDocument', () => {
     releaseDocument({ numPages: 1, loadingTask: { destroy: () => Promise.reject(new Error('late')) } });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(true).toBe(true);
+  });
+});
+
+/**
+ * Moved here with the function when the crop flow was removed (#48): the inline slide figures
+ * are the one caller left, and these two cases are the whole of what `crop()` relies on.
+ */
+describe('sourceRect', () => {
+  it('multiplies straight into the canvas with no flip — y stays down', () => {
+    const canvas = { width: 1600, height: 900 };
+    expect(sourceRect({ x0: 0, y0: 0.51, x1: 1, y1: 1 }, canvas)).toEqual({
+      sx: 0,
+      sy: 459,
+      sw: 1600,
+      sh: 441,
+    });
+  });
+
+  it('never overhangs the canvas, so a crop cannot draw a transparent hairline', () => {
+    const canvas = { width: 100, height: 100 };
+    const r = sourceRect({ x0: 0.999, y0: 0.999, x1: 1.4, y1: 1.4 }, canvas);
+    expect(r.sx + r.sw).toBeLessThanOrEqual(canvas.width);
+    expect(r.sy + r.sh).toBeLessThanOrEqual(canvas.height);
+    expect(r.sw).toBeGreaterThan(0);
   });
 });

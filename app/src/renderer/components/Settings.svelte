@@ -362,34 +362,6 @@
       </div>
     </section>
 
-    <!--
-      The objectives panel (`learning-objectives.md` §5). The spec says it opens with the file,
-      and this is the learner's say in that: the panel is where "what am I meant to be able to
-      say about this deck" lives, and a learner who wants the deck and nothing else on screen
-      should not have to close it on every open.
-
-      Local rather than a `settings` row, for the reason the flow's zoom is local: `SettingsView`
-      has the main process's schema behind it, and this is a pure view preference nothing outside
-      the panel reads. ⌥⌘L still toggles it either way.
-    -->
-    <section>
-      <h2>Learning objectives</h2>
-      <label class="choice" class:on={store.objectivesOpenWithFile}>
-        <input
-          type="checkbox"
-          checked={store.objectivesOpenWithFile}
-          onchange={(e) => store.setObjectivesOpenWithFile(e.currentTarget.checked)}
-        />
-        <span class="choice-text">
-          <span class="choice-label">Objectives panel opens with a file</span>
-          <span class="quiet">
-            The tree of what this deck asks you to be able to say, beside the document. ⌥⌘L opens
-            and closes it at any time, and its width is remembered.
-          </span>
-        </span>
-      </label>
-    </section>
-
     <!-- §B7's "Sources" group, and the answer to "once a document is open there is no way in the
          entire application to change vault" (ui-review-ux.md M5). -->
     <section>

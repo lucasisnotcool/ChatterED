@@ -20,7 +20,6 @@
 
   /**
    * ⌘K. Inside a room it is the whisper and Room.svelte owns it (product-design.md §C10 L1004);
-   * inside a flow it is **Ask privately** on the focused card and FlowCanvas owns it (§3.5);
    * everywhere else it is the vault finder, which is what §B1's own header already advertises
    * at L186. The two scopes cannot overlap, so the binding is made here and simply stands down
    * while a room is open.
@@ -28,10 +27,6 @@
   function onkeydown(e: KeyboardEvent): void {
     if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
     if (store.screen === 'room' || store.screen === 'firstRun') return;
-    // …and inside a *flow*, ⌘K belongs to the focused segment card: it is **Ask privately**
-    // there (`flow-build-plan.md` §3.5). `FlowCanvas` owns the keydown; this only stands down,
-    // exactly as it does for a room, so the two scopes still cannot overlap.
-    if (store.flowFocus !== null) return;
     if (!store.vault?.rootPath) return;
     e.preventDefault();
     if (store.finderOpen) store.finderOpen = false;

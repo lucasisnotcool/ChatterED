@@ -41,7 +41,7 @@
   whether it is open. `store.docView === 'viewer'` is the one way out of it, and it falls through
   to `DocumentPane` below — the Page viewer, unchanged.
 -->
-{#if store.openDoc && store.openDoc.kind === 'pdf' && store.docView === 'flow' && !inRoom}
+{#if store.openDoc && store.openDoc.kind === 'pdf' && store.docView === 'notes' && !inRoom}
   <ThreeColumn doc={store.openDoc} onclose={() => store.closeDoc()} />
 {:else}
 <div class="browser">

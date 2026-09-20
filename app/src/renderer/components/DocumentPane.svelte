@@ -130,9 +130,9 @@
       </button>
     {/if}
     {#if doc.kind === 'pdf' && !inRoom}
-      <!-- The way back to the flow. The pane is not the default any more, but it is not gone:
-           nothing that shipped on 15 Sep regresses (`flow-build-plan.md` §4.1). -->
-      <button type="button" class="mini" onclick={() => (store.docView = 'flow')}>The flow</button>
+      <!-- The way back to the notes doc. The pane is not the default any more, but it is not
+           gone: nothing that shipped on 15 Sep regresses. -->
+      <button type="button" class="mini" onclick={() => (store.docView = 'notes')}>The notes</button>
     {/if}
     <button type="button" class="mini" onclick={() => void store.revealFile(doc.fileId)}>Reveal in Finder</button>
     <button type="button" class="mini" onclick={onclose} aria-label="Close">Close</button>

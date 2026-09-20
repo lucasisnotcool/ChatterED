@@ -11,8 +11,6 @@ import type {
   CreateSessionInput,
   DocumentView,
   FinderHitView,
-  FlowQuizView,
-  FlowWhisperView,
   RecapView,
   RelayAttribution,
   RoomEvent,
@@ -22,29 +20,15 @@ import type {
   SettingsPatch,
   SettingsView,
   TopicCandidateView,
-  TurnReceivedView,
   TurnTraceView,
   VaultTreeNode,
   VaultView,
   WhisperThreadView,
 } from '../../shared/types.js';
-import type { SegmentDocumentView } from '../../shared/segment/index.js';
 import type { ChatterEdApi } from '../../shared/ipc.js';
 import { bridge } from './bridge.js';
-import {
-  ackIndex,
-  announce,
-  appendDelta,
-  nextSendId,
-  wordCount,
-  type PendingSend,
-  type StreamState,
-} from './flowchat.js';
-import { levelsById, newlyOnline, type LearningObjectiveState, type LearningTree } from './objectives.js';
-import { FIXTURE_SHA, clearFixtureStates, fixtureTree, loadFixtureStates } from './objectivesFixture.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
-import { DECK_ANCHOR_ID, type AskScope } from '../../shared/scope.js';
 import {
   SESSION_WINDOW,
   type CostAnalytics,
@@ -63,41 +47,23 @@ import { ChatStore } from './chatstore.svelte.js';
 import { ProgressStore } from './progressstore.svelte.js';
 
 /**
- * Is a `flow:*` turn-status call actually on the bridge?
+ * Is a channel actually on the bridge?
  *
- * The turn-status surface (`flow:stop`, `flow:turnTrace`, `flow:markSeen`, `flow:cardState`)
- * lands on the main-process track; this one builds against the documented shape and degrades to
- * nothing until it does, rather than throwing an "unknown channel" into the notice banner. The
- * check is on the preload object, so it is true exactly when the channel is reachable.
+ * The check is on the preload object, so it is true exactly when the channel is reachable — a
+ * build (or the dev mock) whose preload predates a channel degrades to doing nothing rather than
+ * throwing an "unknown channel" into the notice banner.
  */
 function has(name: keyof ChatterEdApi): boolean {
   return typeof (bridge() as unknown as Record<string, unknown>)[name] === 'function';
 }
 
 /**
- * `FlowThreadView.quiz`, by anchor (issue #47).
- *
- * Built in one place because it is built from two — `flow:messages` on open and every channel
- * that returns a `FlowRoomView` — and a quiz the renderer forgot to take in is a composer that
- * goes on asking for an attempt after the answer has been shown. Threads without the field come
- * from a main process that predates #47 and map to `null`, which is "no quiz open here".
- */
-function quizMap(
-  threads: readonly { anchorId: string; quiz?: FlowQuizView | null }[],
-): Record<string, FlowQuizView | null> {
-  const out: Record<string, FlowQuizView | null> = {};
-  for (const t of threads) out[t.anchorId] = t.quiz ?? null;
-  return out;
-}
-
-/**
- * Fire a turn-status call and swallow whatever comes back.
+ * Fire a bookkeeping call and swallow whatever comes back.
  *
  * `has()` proves the *channel* is on the preload object; it does not prove the main process has
- * registered a handler for it yet. Until the actor side lands, an unhandled channel rejects with
- * `No handler registered for …`, and routing that through `run()` would put a banner on screen
- * every time a thread scrolls into view. None of these four calls has anything to report to the
- * learner: they are bookkeeping, and bookkeeping that is not yet possible is not an error.
+ * registered a handler for it yet. An unhandled channel rejects with `No handler registered for
+ * …`, and routing that through `run()` would put a banner on screen for a call that has nothing
+ * to report to the learner. Bookkeeping that is not possible is not an error.
  */
 function quiet<T>(fn: () => Promise<T>): Promise<T | null> {
   return fn().catch(() => null);
@@ -132,32 +98,14 @@ function hasCost(name: keyof CostApi): boolean {
 }
 
 /**
- * Are §6's channels actually reachable?
- *
- * `shared/objectives.ts` and the five `objectives:*` channels landed while this panel was being
- * built, so the typed calls below are the real contract. The check stays, because `has()` reads
- * the **preload object**: a build whose preload predates the channels (or the dev mock) still
- * has to draw a panel, and on that path the committed fixture supplies the tree.
+ * A pure view preference, kept in `localStorage` rather than in the settings database:
+ * `SettingsView` is `src/shared`'s, with the main process's schema behind it, and nothing
+ * outside the meter reads this. In an Electron renderer `localStorage` is a file in the same
+ * `userData` directory the settings database is in, so "per install, survives a relaunch" is
+ * the same promise either way.
  */
-function objectivesLanded(): boolean {
-  return has('objectivesTree') && has('objectivesStates');
-}
-
-/**
- * The panel's three local preferences, kept where the flow's zoom is kept and for the same
- * reason (`FlowCanvas.loadZoom`): `SettingsView` is `src/shared`'s, with the main process's
- * schema behind it, and these are pure view preferences nothing outside the panel reads. In an
- * Electron renderer `localStorage` is a file in the same `userData` directory the settings
- * database is in, so "per install, survives a relaunch" is the same promise either way.
- */
-const PANEL_OPEN_KEY = 'chattered.objectives.open';
-const PANEL_WIDTH_KEY = 'chattered.objectives.width';
-const PANEL_AUTO_KEY = 'chattered.objectives.openWithFile';
-/** Per-message meters, on by default (#42 item C). A view preference, so it lives beside those. */
+/** Per-message meters, on by default (#42 item C). */
 const MESSAGE_COST_KEY = 'chattered.cost.perMessage';
-export const DEFAULT_PANEL_WIDTH = 300;
-export const MIN_PANEL_WIDTH = 220;
-export const MAX_PANEL_WIDTH = 520;
 
 function readFlag(key: string, fallback: boolean): boolean {
   try {
@@ -173,16 +121,6 @@ function writeFlag(key: string, value: boolean): void {
     window.localStorage.setItem(key, String(value));
   } catch {
     // A denied or full store is not worth failing a toggle over.
-  }
-}
-
-function readWidth(): number {
-  try {
-    const raw = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
-    if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PANEL_WIDTH;
-    return Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, raw)));
-  } catch {
-    return DEFAULT_PANEL_WIDTH;
   }
 }
 
@@ -278,131 +216,16 @@ class Store {
   /** Set by a search hit so the PDF jumps to the page the snippet came from. */
   pendingPage: number | null = $state(null);
 
-  // ── The flow (issue #25) ───────────────────────────────────────────────
   /**
-   * How an open PDF is shown. `'flow'` is the default and is the product
-   * (`flow-build-plan.md` §1: "ChatterED opens a lecture deck as a *flow*"); `'viewer'` is the
-   * document pane exactly as it shipped on 15 Sep, one click away and not regressed.
+   * How an open PDF is shown (#48).
+   *
+   * `'notes'` is the default and is the product: the three-column shell, *file panel · doc ·
+   * chats* (`collab-doc.md` §0). `'viewer'` is the page viewer — the document pane exactly as it
+   * shipped on 15 Sep, one click away in the doc header and not regressed, because a learner has
+   * to be able to look at the slide itself.
    */
-  docView: 'flow' | 'viewer' = $state('flow');
-  /**
-   * The open document's segments. Everything about them is decided in the main process — the
-   * renderer only draws what `segments:*` returns, and never patches this optimistically, so a
-   * refused gesture cannot leave the flow showing something SQLite does not agree with.
-   */
-  flow: SegmentDocumentView | null = $state(null);
-  flowBusy = $state(false);
-  flowFor: string | null = $state(null);
-  /** Which file the room currently on screen belongs to. `RoomSnapshot` does not carry one. */
-  flowRoomFor: string | null = $state(null);
-  /**
-   * The last refusal, addressed to the card that caused it. `FlowCanvas` shows it inline for
-   * ~2 s and clears it; the sentence is `refusalMessage()`'s, verbatim (SEGMENTS.md §3).
-   */
-  flowRefusal: { segmentId: string; message: string } | null = $state(null);
-  // ── The conversation inside the flow (issue #25, §3.3 track B) ─────────
-  /**
-   * Which segment's "+ Ask here" prompt is open. One at a time, by construction: a second
-   * open closes the first, because two prompts in a document are two places the next keystroke
-   * could go.
-   */
-  askingAt: string | null = $state(null);
-  /** The segment whose question is in flight. The card shows the 2–3 s retrieval hold on it. */
-  askBusy: string | null = $state(null);
-  /** The segment whose thread composer is open — set by **Explain it back →**. */
-  composerAt: string | null = $state(null);
-  /**
-   * Which segment threads are locked to Ellie and Max, and by which REFERENCE card
-   * (`reference.ts` property 4). The main process is the authority; this is its projection, and
-   * it is patched locally on the two actions that change it so the buttons do not lag the fact.
-   */
-  flowLocks: Record<string, string> = $state({});
-  /** Answer cards collapsed to one line by **Explain it back →** (`pivot-spec.md` §B1). */
-  answersCollapsed: Record<string, boolean> = $state({});
-  /** Answer cards the learner dismissed with **✕ Remove**. Local: the transcript is not edited. */
-  answersRemoved: Record<string, boolean> = $state({});
+  docView: 'notes' | 'viewer' = $state('notes');
 
-  // ── Send feedback and turn status (cui-standards-audit.md §1–§3, issue #34) ─────────────
-  /**
-   * The learner's turns between the keystroke and the main process's echo (audit Fact 1).
-   *
-   * `flowSend` used to clear the composer synchronously and return `void`, so the learner's own
-   * words reached the screen only when `message.appended` came back — and if the IPC call
-   * rejected, the text was already gone and all that appeared was a dismissible app-level
-   * banner. iMessage, Slack and Claude.ai all append optimistically and mark state on the block.
-   */
-  pendingSends: PendingSend[] = $state([]);
-  /**
-   * The anchor the learner last sent to. `ThinkingView` carries no anchor of its own, so this is
-   * the fallback `thinkingAnchor()` uses between the send and the first `turn.received` — it is
-   * never allowed to override a turn's real anchor.
-   */
-  lastSendAnchor: string | null = $state(null);
-  /**
-   * The live turn, from `turn.received` — *the room has your message*, emitted before the
-   * floor-yield sleep and before any model call. It is what keeps §C3's deliberately
-   * agent-chrome-free window from being a blank screen.
-   */
-  turnReceived: TurnReceivedView | null = $state(null);
-  /** Local clock at the moment that event arrived, so the neutral line can time out. */
-  turnReceivedAt: number | null = $state(null);
-  /**
-   * The provisional body of the turn currently streaming (audit §2, P1). One at a time by
-   * construction — `pivot-spec.md` §B10 R2 allows one agent turn in flight document-wide.
-   */
-  stream: StreamState | null = $state(null);
-  /** Turn ids the learner stopped, so the finished card can say so. */
-  stoppedTurns: Record<string, boolean> = $state({});
-  /** The single sentence the flow's `aria-live` region is currently announcing (WCAG 4.1.3). */
-  liveMessage = $state('');
-  /** `lastSeenSeq` per thread, from `FlowRoomView.threads`; the unread dot reads it. */
-  threadSeen: Record<string, number> = $state({});
-  /** Threads the learner collapsed, persisted through `flow:cardState`. */
-  threadCollapsed: Record<string, boolean> = $state({});
-
-  // ── The attempt loop (issue #47, `attempt-first.md` §2) ─────────────────
-  /**
-   * **The Tester's open question, per thread**, projected from `FlowThreadView.quiz`.
-   *
-   * The main process owns it: `attempts` is incremented there, by `classifyLearnerTurn`, because
-   * the whole point of §2.3 is that the model is never asked whether to answer its own question
-   * and neither is the renderer. This map is the projection the composer and the two controls
-   * read, and it is refreshed from `flow:messages` after every released turn — the quiz's state
-   * changes on the *agent's* turn (feedback landing, the answer being shown) and there is no
-   * per-quiz event on the stream, so the end of a turn is the moment to re-read it.
-   */
-  flowQuiz: Record<string, FlowQuizView | null> = $state({});
-  /**
-   * The segment whose **"+ Try this"** is in flight. Named, not a boolean, for the same reason
-   * `summarising` is: the card that was clicked is the card that shows it is working.
-   */
-  tryBusy: string | null = $state(null);
-  /** The thread whose **Show the answer** is in flight. */
-  showBusy: string | null = $state(null);
-  /**
-   * A `p. N` citation in a Tester's grounds that the learner clicked (§3, the nice-to-have).
-   *
-   * A request, not a destination: only `FlowCanvas` knows which card a page means and how the
-   * flow scrolls, so this carries the page and a token — the token so clicking the same page
-   * twice scrolls twice, which a bare number would not.
-   */
-  goToPage: { page: number; token: number } | null = $state(null);
-
-  // ── The artefact (issue #41, `conversation-refinement.md` §5) ───────────
-  /**
-   * The thread whose **Summarise into the document** is in flight. One at a time and named, so
-   * the button that was pressed is the button that shows it is working — a global boolean would
-   * spin every thread in a forty-slide deck.
-   */
-  summarising: string | null = $state(null);
-  /**
-   * `flow:threadOf`'s answer, per summary card id: the ids of the conversation behind it.
-   *
-   * Cached rather than re-fetched on every toggle, and *not* the messages themselves — the
-   * bodies live on `room.messages` and two copies could disagree, which is the same argument
-   * `FlowThreadOfView` makes for carrying ids on the wire.
-   */
-  threadOf: Record<string, string[]> = $state({});
   /** The ⌥⌘D debug drawer (audit §10). Closed, and empty, until it is opened. */
   debugOpen = $state(false);
   turnTraces: TurnTraceView[] = $state([]);
@@ -452,32 +275,6 @@ class Store {
    * is a feature that ships dark.
    */
   showMessageCost = $state(readFlag(MESSAGE_COST_KEY, true));
-
-  // ── The whisper popover on a segment (§3.5, issue #16) ─────────────────
-  /**
-   * The segment card that currently has focus. Two jobs, both of them about ⌘K:
-   *
-   *  1. it is what ⌘K acts on — `App.svelte` stands its finder binding down while it is set,
-   *     the same way it already stands down inside a room (product-design.md §C10);
-   *  2. it is the document's analogue of a keystroke (`pivot-spec.md` §B8), which is why
-   *     focusing a card calls `flow:noteSelection`.
-   */
-  flowFocus: string | null = $state(null);
-  /**
-   * The open private thread, or null. **The only place a private turn lives in the renderer**,
-   * and `WhisperPopover.svelte` is the only component that reads it — `context.test.ts`'s walk
-   * over the flow's component graph holds an allowlist of exactly that one file.
-   *
-   * It is not `this.whisper`: that is the shipped room's pane, keyed on the room, and the two
-   * must not be able to show each other's turns.
-   */
-  flowWhisper: FlowWhisperView | null = $state(null);
-  /** A private turn is in flight — Ellie's 1–2 s floor, drawn inside the popover. */
-  flowWhisperThinking = $state(false);
-  /** An approved **Insert into the document** is in flight. */
-  flowWhisperInserting = $state(false);
-  /** Rate limiter for `flow:selection`. Plain, not `$state`: nothing renders off it. */
-  #lastSelectionSent = 0;
 
   /**
    * The document behind the room's source pane — the slide being explained, as a page rather
@@ -590,109 +387,19 @@ class Store {
       return;
     }
     switch (e.type) {
-      case 'message.appended': {
+      case 'message.appended':
         if (room && !room.messages.some((m) => m.id === e.message.id)) room.messages.push(e.message);
-        /**
-         * The ack (audit §1). The optimistic block is dropped the moment its own echo arrives —
-         * matched on the learner's text under the same anchor, not on arrival order, because two
-         * sends can be in flight and greying the wrong bubble is worse than greying none.
-         */
-        const acked = ackIndex(this.pendingSends, e.message);
-        if (acked >= 0) this.pendingSends = this.pendingSends.filter((_, i) => i !== acked);
-        if (e.message.speaker.kind !== 'student') {
-          /**
-           * **A provisional card must never outlive the message it was provisional for.**
-           *
-           * `turn.released` is the designed way to drop it, and it is the one the main process
-           * promises. But one agent turn is in flight document-wide (`pivot-spec.md` §B10 R2),
-           * so an agent turn *landing* ends whatever was streaming — and if a `released` is ever
-           * missed, dropped or carries a turn id the deltas did not, the alternative is a
-           * blinking half-finished duplicate of the card directly above it, which is what a live
-           * run on 2026-09-16 actually showed. Cheap, and it cannot be wrong: nothing else can
-           * be streaming when an agent message arrives.
-           */
-          if (this.stream) this.stream = null;
-          const name = e.message.speaker.kind === 'agent' ? e.message.speaker.displayName : 'The reference';
-          this.liveMessage = announce('replied', {
-            name,
-            label: this.#anchorLabel(e.message.anchorId),
-            words: wordCount(e.message.body),
-          });
-        }
         break;
-      }
       case 'agent.thinking':
         if (room) room.thinking = e.thinking;
         break;
       case 'agent.thinking.cleared':
         if (room) room.thinking = null;
         break;
-      /**
-       * *The room has your message.* Neutral and un-attributed on screen: `product-design.md`
-       * §C3 keeps **agent** chrome out of the floor-yield window, and "the room received this"
-       * is not agent chrome — which is the reconciliation the audit proposes for §C3 against
-       * `design-brief.md` §D4.
-       */
-      case 'turn.received':
-        this.turnReceived = e.received;
-        this.turnReceivedAt = Date.now();
-        this.stream = null;
-        this.liveMessage = announce('received', { label: this.#anchorLabel(e.received.anchorId) });
-        break;
-      /**
-       * One chunk of a reply that is **already past the floor** — the main process buffers
-       * everything the model produced during the hold and flushes it as the first delta, so
-       * nothing here can make a turn visible earlier than the floor allows.
-       */
-      case 'turn.delta':
-        this.stream = appendDelta(this.stream, {
-          turnId: e.turnId,
-          anchorId: e.anchorId,
-          agentKey: e.participant.agentKey,
-          text: e.text,
-        });
-        break;
       /** The provisional block for this turn is now a real message; drop it and keep the row. */
       case 'turn.released':
-        if (e.stopped) this.stoppedTurns = { ...this.stoppedTurns, [e.turnId]: true };
-        if (this.stream?.turnId === e.turnId) this.stream = null;
-        if (this.turnReceived?.turnId === e.turnId) {
-          this.turnReceived = null;
-          this.turnReceivedAt = null;
-        }
-        /**
-         * The ledger's evaluator runs on the learner's turn (`learning-objectives.md` §4), so
-         * the end of a turn is the one moment an objective's level can have moved. Until
-         * `objectives.state` exists this is how the panel hears about it; once it does, this is
-         * a re-read of states that have already been pushed, which is cheap and idempotent.
-         */
-        void this.refreshObjectiveStates();
-        /**
-         * And the same argument for the quiz (issue #47): `feedbackGiven` and `answerShown` move
-         * on the *agent's* turn, so the end of one is when the thread's controls can have
-         * changed. There is no per-quiz event on the stream; this is the re-read.
-         */
-        void this.refreshFlowQuiz();
         // The counters, while the push side is not live yet — see `#costLive`.
         this.#recountAfterTurn();
-        break;
-      /**
-       * A status change on the file's tree (§6): `pending` → `ready` / `failed`, and a
-       * Regenerate going back to `pending`. Ignored for any file but the open one — the ingest
-       * of a deck the learner has since closed is not this panel's business.
-       */
-      case 'objectives.tree':
-        if (e.fileId === this.objectivesFor) {
-          this.objectivesTree = e.tree;
-          void this.refreshObjectiveStates();
-        }
-        break;
-      /** One node moved. Per node, because the panel animates the one that just lit. */
-      case 'objectives.state':
-        if (e.fileId === this.objectivesFor) {
-          const rest = this.objectivesStates.filter((s) => s.objectiveId !== e.state.objectiveId);
-          this.#takeObjectiveStates([...rest, e.state], true);
-        }
         break;
       case 'ledger.updated':
         if (room) {
@@ -716,17 +423,9 @@ class Store {
           && !this.whisper.turns.some((t) => t.id === e.turn.id)) {
           this.whisper.turns.push(e.turn);
         }
-        // The flow's popover. Guarded on the thread id, so the room's pane and the popover can
-        // never draw each other's turns even if both happen to be open.
-        if (this.flowWhisper && this.flowWhisper.threadId === e.threadId
-          && !this.flowWhisper.turns.some((t) => t.id === e.turn.id)) {
-          this.flowWhisper.turns.push(e.turn);
-          if (e.turn.sender === 'agent') this.flowWhisperThinking = false;
-        }
         break;
       case 'whisper.cleared':
         if (this.whisper && this.whisper.threadId === e.threadId) this.whisper.turns = [];
-        if (this.flowWhisper && this.flowWhisper.threadId === e.threadId) this.flowWhisper.turns = [];
         break;
       case 'session.recap':
         this.recap = e.recap;
@@ -740,15 +439,6 @@ class Store {
        */
       case 'turn.failed':
         if (room && !room.failures.some((f) => f.id === e.failure.id)) room.failures.push(e.failure);
-        // A failed turn ends the exchange, so the neutral "the room has it" line must go with it.
-        this.turnReceived = null;
-        this.turnReceivedAt = null;
-        this.stream = null;
-        this.liveMessage = announce('failed', {
-          name: e.failure.displayName ?? 'A reply',
-          label: this.#anchorLabel(e.failure.anchorId),
-          reason: e.failure.reason,
-        });
         break;
       case 'turn.failed.cleared':
         if (room) room.failures = room.failures.filter((f) => f.id !== e.failureId);
@@ -764,7 +454,6 @@ class Store {
        */
       case 'pack.ready':
         if (room) room.ledger = e.ledger;
-        this.liveMessage = `Ready: ${e.elements} concept${e.elements === 1 ? '' : 's'} for ${e.conceptTitle}.`;
         break;
     }
   }
@@ -907,335 +596,17 @@ class Store {
     this.docTo = null;
     this.docPageCount = 0;
     this.pendingPage = null;
-    this.clearFlow();
-  }
-
-  revealFile(fileId: string): Promise<void | null> {
-    return run(this, () => bridge().revealFile({ fileId }));
-  }
-
-  // ── The flow (issue #25) ─────────────────────────────────────────────────
-  /**
-   * Open a document's flow. The first call for these bytes runs stages 0–3 in the main process;
-   * every later one is a SQLite read. **No model call, ever** — so this is fast, free, offline,
-   * and cannot fail on camera.
-   */
-  async loadFlow(fileId: string): Promise<void> {
-    if (this.flowFor === fileId && this.flow) return;
-    this.flowFor = fileId;
-    this.flow = null;
-    /**
-     * **The previous document's conversation must not appear under this one.**
-     *
-     * `flow:messages` returns `null` for a document that has never been asked a question — the
-     * common case — and `loadFlowRoom` then has nothing to take, so the room it was holding
-     * stayed. Opening a second deck from the finder printed the first deck's deck-level thread
-     * above the first card of a document it was never about. Seen on screen while driving the
-     * objectives panel; it is not the room screen's room, which is why the guard is on `screen`.
-     */
-    if (this.flowRoomFor !== fileId && this.screen !== 'room') {
-      this.room = null;
-      this.flowRoomFor = null;
-      this.flowLocks = {};
-      this.threadSeen = {};
-      this.composerAt = null;
-    }
-    this.flowBusy = true;
-    const view = await run(this, () => bridge().getSegments({ fileId }));
-    this.flowBusy = false;
-    // A second document opened while this one was loading wins.
-    if (this.flowFor !== fileId) return;
-    if (view) this.flow = view;
-    // The conversation this document already has, if any. Separate call, and it creates nothing:
-    // most documents have never been asked a question, and opening one must cost no room.
-    await this.loadFlowRoom(fileId);
-    // The objective tree is triggered by the **open**, not by the first Ask (§3), and its
-    // `pending` state has to be visible at once — so it is fetched here and not on a gesture.
-    await this.loadObjectives(fileId);
-  }
-
-  clearFlow(): void {
-    this.flow = null;
-    this.flowFor = null;
-    this.flowRoomFor = null;
-    this.flowRefusal = null;
-    this.askingAt = null;
-    this.askBusy = null;
-    this.composerAt = null;
-    this.flowLocks = {};
-    this.answersCollapsed = {};
-    this.summarising = null;
-    this.threadOf = {};
-    // The attempt loop is the document's: a closed deck has no open quiz.
-    this.flowQuiz = {};
-    this.tryBusy = null;
-    this.showBusy = null;
-    this.goToPage = null;
     // The file and thread counters are the document's. The app's is not, and survives.
     this.costFile = null;
     this.costThread = {};
     this.#costAsked.clear();
-    // Closing the document ends every private thread on it. The popover is not restored on
-    // reopen, and `flow:messages` has nothing to restore it from — that is the point of §3.5.
-    this.flowWhisper = null;
-    this.flowWhisperThinking = false;
-    this.flowWhisperInserting = false;
-    this.flowFocus = null;
-    this.answersRemoved = {};
-    // The tree is the file's, so closing the file drops it. The panel's own open/width
-    // preferences are per install and deliberately survive.
-    this.objectivesTree = null;
-    this.objectivesStates = [];
-    this.objectivesFor = null;
-    this.objectivesAnnounce = '';
-    this.askObjective = null;
     // The room itself is *not* closed: the actor stays on it in the main process, and the
     // transcript is the document's. Only this renderer's view of it is dropped.
     if (this.screen !== 'room') this.room = null;
   }
 
-  /**
-   * The one place a `SegmentDocumentView` is taken in.
-   *
-   * All five channels return a complete view, and a refused operation returns it **unchanged**
-   * with `refused` set rather than throwing (SEGMENTS.md §3) — so there is no try/catch around a
-   * gesture, and the refusal becomes an inline sentence on the card instead of a banner.
-   * Returns true when the view actually changed, which is what the undo stack records.
-   */
-  #applyFlow(view: SegmentDocumentView | null, segmentId: string): boolean {
-    if (!view) return false;
-    this.flow = view;
-    if (view.refused) {
-      this.flowRefusal = { segmentId, message: view.refused.message };
-      return false;
-    }
-    this.flowRefusal = null;
-    return true;
-  }
-
-  async splitSegment(input: {
-    segmentId: string;
-    at: number;
-    axis?: 'horizontal' | 'vertical';
-    free?: boolean;
-  }): Promise<boolean> {
-    const fileId = this.flowFor;
-    if (!fileId) return false;
-    const view = await run(this, () => bridge().splitSegment({ fileId, ...input }));
-    return this.#applyFlow(view, input.segmentId);
-  }
-
-  async mergeSegments(ids: [string, string]): Promise<boolean> {
-    const fileId = this.flowFor;
-    if (!fileId) return false;
-    const view = await run(this, () => bridge().mergeSegments({ fileId, segmentIds: ids }));
-    return this.#applyFlow(view, ids[0]);
-  }
-
-  async reorderSegment(segmentId: string, toIndex: number): Promise<boolean> {
-    const fileId = this.flowFor;
-    if (!fileId) return false;
-    const view = await run(this, () => bridge().reorderSegments({ fileId, segmentId, toIndex }));
-    return this.#applyFlow(view, segmentId);
-  }
-
-  async renameSegment(segmentId: string, label: string): Promise<boolean> {
-    const fileId = this.flowFor;
-    if (!fileId) return false;
-    const view = await run(this, () => bridge().renameSegment({ fileId, segmentId, label }));
-    return this.#applyFlow(view, segmentId);
-  }
-
-  /**
-   * "+ Ask here" opens the prompt at the card. Pre-focused, `Esc` cancels — the Cursor ⌘K
-   * gesture `pivot-spec.md` §B1 asks for, moved from a box-select to a card.
-   */
-  openAsk(segmentId: string): void {
-    this.askingAt = segmentId;
-  }
-
-  cancelAsk(): void {
-    this.askingAt = null;
-    // The `about:` chip belongs to the prompt that was open; it does not outlive it.
-    this.askObjective = null;
-  }
-
-  /**
-   * Ask. **This is what creates the document's room**, the first time (§3.3) — there is no setup
-   * screen.
-   *
-   * **Teacher-first since #41** (`conversation-refinement.md` §2). This used to resolve with a
-   * REFERENCE card in hand, because the entry question was answered inline from the passage; all
-   * three of Lucas's transcripts show what that cost — a title slide answered with *"the passage
-   * contains no further content"*, and two turns spent getting past it to Ellie. The call now
-   * returns as soon as the room has the question, and the Teacher's answer arrives the way every
-   * other Teacher turn arrives: on the event stream, after the yield and her latency floor.
-   *
-   * Which makes `lastSendAnchor` load-bearing rather than incidental. It is what
-   * `thinkingAnchor()` reads to decide *where* the held reply is drawn, and an Ask is now a send
-   * in every respect that matters to the wait chrome — so the thread that was just asked in is
-   * the thread that shows *Ellie is typing…*, the neutral received line, and the stream. Without
-   * this line the answer to a question would appear with no warning under a card the learner was
-   * not looking at.
-   */
-  async askHere(segmentId: string, question: string, scope?: AskScope): Promise<void> {
-    const fileId = this.flowFor;
-    if (!fileId || question.trim().length === 0) return;
-    this.askingAt = null;
-    this.askBusy = segmentId;
-    /**
-     * `objectiveId` is §6's one addition to this channel: the objective the `about:` chip was
-     * showing, so the thread the question opens is tagged with what it is about. It is sent as
-     * an extra field rather than through a widened `ChatterEdApi` because `src/shared/ipc.ts` is
-     * the main side's to widen; a main process that does not read it yet simply ignores it, and
-     * the cast is the one line that has to change when the contract catches up.
-     */
-    const objectiveId = this.askObjective?.id ?? null;
-    const input = {
-      fileId,
-      segmentId,
-      question: question.trim(),
-      ...(scope ? { scope } : {}),
-      ...(objectiveId ? { objectiveId } : {}),
-    };
-    const answer = await run(this, () =>
-      // `scope` is what the chip was showing when Enter was pressed, always sent. The main
-      // process still guesses when it is absent, and `overridden` in the log compares the two —
-      // so sending the agreed guess costs nothing and guarantees the chip and the answer match.
-      bridge().flowAskHere(input as Parameters<ChatterEdApi['flowAskHere']>[0]),
-    );
-    this.askBusy = null;
-    this.askObjective = null;
-    if (!answer) return;
-    this.#takeFlowRoom(answer.flow);
-    // The wait belongs to this thread: the Teacher is about to answer in it (#41).
-    this.lastSendAnchor = segmentId;
-  }
-
-  /**
-   * **"Ask about this deck"** — the line above the first card (issue #35).
-   *
-   * `whole-file-context.md` §3: a deck-level question had nowhere to go, so it was answered from
-   * whichever slide happened to be nearest, which is the whole of "does not have context from
-   * whole file". Its answer is anchored to the synthetic `DECK_ANCHOR_ID` and `flow:messages`
-   * always lists that thread first, so it renders above the deck rather than under a slide.
-   *
-   * Guarded by `has()` like the other late-landing channels: the line is simply not offered on a
-   * build whose preload does not carry it.
-   */
-  get canAskDeck(): boolean {
-    return has('flowAskDeck');
-  }
-
-  async askDeck(question: string): Promise<void> {
-    const fileId = this.flowFor;
-    if (!fileId || question.trim().length === 0 || !has('flowAskDeck')) return;
-    this.askingAt = null;
-    this.askBusy = DECK_ANCHOR_ID;
-    const answer = await run(this, () => bridge().flowAskDeck({ fileId, question: question.trim() }));
-    this.askBusy = null;
-    if (!answer) return;
-    this.#takeFlowRoom(answer.flow);
-    this.lastSendAnchor = DECK_ANCHOR_ID;
-  }
-
-  // ── The attempt loop (issue #47, `attempt-first.md` §2) ─────────────────
-  /**
-   * **"+ Try this"** — the learner asks the Tester for one question (§2.1).
-   *
-   * The mirror of `askHere()` in every respect that matters, and deliberately so: it creates the
-   * document's room if there is none, it resolves as soon as the pick is made rather than when
-   * the question arrives, and it sets `lastSendAnchor` so the wait chrome — *Max is reading…*,
-   * the neutral received line, the counter — draws **in this thread**. Without that last line
-   * Max's question would appear with no warning under a card the learner was not looking at,
-   * which is the bug #41 fixed for the Teacher and would otherwise be re-introduced here.
-   *
-   * What it is *not* is a text box. §2.1's entry is a click: the objective is picked by a pure
-   * function in the main process (the card's objectives, lowest ledger level first, deck order as
-   * the tie-break) precisely so the learner does not have to know what to ask for — five of six
-   * coded sessions never produced an attempt, and every declinable offer of a quiz was declined.
-   *
-   * `objectiveId` is passed by the objectives panel's **Try this** and by nothing else; **Try
-   * another** deliberately omits it so the pick runs again and a missed objective comes round
-   * while a landed one gives way (§2.4, *"questions based on my weaknesses"* as a button).
-   */
-  /**
-   * Is the channel actually reachable? Guarded like `canAskDeck`: a build whose preload does not
-   * carry `flow:tryHere` should say the line is not available, not offer it and do nothing.
-   */
-  get canTryHere(): boolean {
-    return has('flowTryHere');
-  }
-
-  async tryHere(segmentId: string, objectiveId?: string): Promise<void> {
-    const fileId = this.flowFor;
-    if (!fileId || !has('flowTryHere')) return;
-    this.askingAt = null;
-    this.tryBusy = segmentId;
-    const view = await run(this, () =>
-      bridge().flowTryHere({ fileId, segmentId, ...(objectiveId ? { objectiveId } : {}) }),
-    );
-    this.tryBusy = null;
-    if (!view) return;
-    this.#takeFlowRoom(view.flow);
-    if (view.refused) {
-      // Inline on the card that was clicked, for a moment — the refusal channel every other
-      // flow gesture already uses (SEGMENTS.md §3), not a modal. A question that cannot be
-      // asked because the deck has not been read yet is not an error worth a dialog.
-      this.flowRefusal = { segmentId, message: view.refused };
-      return;
-    }
-    this.flowRefusal = null;
-    // The question is about to arrive here, so the wait belongs here.
-    this.lastSendAnchor = segmentId;
-  }
-
-  /**
-   * **Show the answer** (§2.3 `rule:answer_shown`).
-   *
-   * Offered only once `flowQuiz` says an attempt exists, and refused by the main process if the
-   * renderer ever gets that wrong — the lock is the orchestrator's, and this call being the only
-   * door to it is what makes the decision auditable. The answer is logged and **moves nothing**:
-   * the ledger never runs on this turn, which is the sentence the report and the video are about.
-   */
-  async showAnswer(anchorId: string): Promise<void> {
-    const roomId = this.room?.roomId;
-    if (!roomId || !has('flowShowAnswer')) return;
-    this.showBusy = anchorId;
-    const view = await run(this, () => bridge().flowShowAnswer({ roomId, threadId: anchorId }));
-    this.showBusy = null;
-    if (!view) return;
-    this.#takeFlowRoom(view.flow);
-    if (!view.shown) {
-      this.flowRefusal = { segmentId: anchorId, message: view.refused ?? 'Try it once first.' };
-      return;
-    }
-    this.flowRefusal = null;
-    this.lastSendAnchor = anchorId;
-  }
-
-  /**
-   * Re-read the threads' quiz state.
-   *
-   * `flow:messages` is the only channel that carries `FlowThreadView.quiz`, and the quiz moves on
-   * turns the learner did not initiate — the feedback landing sets `feedbackGiven`, and a
-   * `rule:answer_shown` turn sets `answerShown` — so the controls would otherwise be one gesture
-   * behind the transcript. Called on `turn.released`; `quiet()` because a build whose main side
-   * has not landed yet has nothing to report to the learner about it.
-   */
-  async refreshFlowQuiz(): Promise<void> {
-    const fileId = this.flowFor;
-    if (!fileId) return;
-    const view = await quiet(() => bridge().flowMessages({ fileId }));
-    // Only the quiz map: `this.room` is live from the event stream and re-seating a whole
-    // snapshot mid-turn would drop the thinking indicator the learner is looking at.
-    if (!view || this.flowFor !== fileId) return;
-    this.flowQuiz = quizMap(view.threads);
-  }
-
-  /** A `p. N` in a Tester's grounds, clicked. `FlowCanvas` owns where the flow goes (§3). */
-  requestPage(page: number): void {
-    this.goToPage = { page, token: (this.goToPage?.token ?? 0) + 1 };
+  revealFile(fileId: string): Promise<void | null> {
+    return run(this, () => bridge().revealFile({ fileId }));
   }
 
   /**
@@ -1256,174 +627,6 @@ class Store {
    */
   get testerName(): string {
     return this.room?.agents.find((a) => a.role === 'challenger')?.displayName ?? 'Max';
-  }
-
-  /**
-   * **Vestigial since #41** (`conversation-refinement.md` §2, table row 3).
-   *
-   * There is no entry card to be locked behind any more — the Teacher answers the question — so
-   * `lockedByAnswerId` is always null, `flowLocks` is always empty, and nothing in the flow calls
-   * this. It stays for one release because `flow:explainBack` stays for one release: a vault
-   * opened on this build may still hold a legacy REFERENCE card from before the migration, and
-   * an app that throws on one is worse than an app that collapses it.
-   */
-  async explainBack(answerId: string): Promise<void> {
-    const result = await run(this, () => bridge().flowExplainBack({ answerId }));
-    if (!result?.unlocked || result.anchorId === null) return;
-    this.answersCollapsed = { ...this.answersCollapsed, [answerId]: true };
-    const { [result.anchorId]: _gone, ...rest } = this.flowLocks;
-    this.flowLocks = rest;
-    this.composerAt = result.anchorId;
-  }
-
-  /**
-   * **✕ Remove**: the card goes off this learner's screen. The transcript is never edited.
-   *
-   * Persisted through `flow:cardState` on the card's anchor (audit §7): reopening a deck used to
-   * bring back every card the learner had dismissed, which reads as the app overruling them.
-   */
-  removeAnswer(answerId: string, anchorId: string | null = null): void {
-    this.answersRemoved = { ...this.answersRemoved, [answerId]: true };
-    const roomId = this.room?.roomId;
-    const anchor = anchorId ?? this.room?.messages.find((m) => m.id === answerId)?.anchorId ?? null;
-    if (roomId && anchor && has('flowCardState')) {
-      void quiet(() => bridge().flowCardState({ roomId, anchorId: anchor, removed: true }));
-    }
-  }
-
-  /** The label of the segment a turn landed under, for the live region's one sentence. */
-  #anchorLabel(anchorId: string | null): string {
-    if (!anchorId) return '';
-    return this.flow?.segments.find((seg) => seg.id === anchorId)?.label ?? '';
-  }
-
-  /**
-   * A learner turn inside one segment's thread.
-   *
-   * Deliberately not awaited, for the reason `showTheRoom()` gives: the call does not resolve
-   * until the agent that answers has finished its latency floor, which is 9–12 s for the Tester.
-   */
-  flowSend(segmentId: string, text: string): string | null {
-    const roomId = this.room?.roomId;
-    const body = text.trim();
-    if (!roomId || !body) return null;
-    this.lastTypedAt = 0;
-    this.lastSendAnchor = segmentId;
-    const id = nextSendId();
-    this.pendingSends = [
-      ...this.pendingSends,
-      { id, anchorId: segmentId, body, state: 'pending', at: Date.now(), error: null },
-    ];
-    /**
-     * Deliberately **not** funnelled through `run()`: a rejection here belongs on the block the
-     * learner is looking at, not in a global dismissible banner with no anchor and no retry
-     * (audit §3). By the time this promise settles the echo has long since acked and removed the
-     * pending entry, so a late rejection — a turn that failed after the message was accepted —
-     * finds nothing to fail and is left to the failure card, which is where it belongs.
-     */
-    void bridge()
-      .flowSend({ roomId, segmentId, text: body })
-      .catch((err: unknown) => this.failSend(id, message(err)));
-    return id;
-  }
-
-  /** Mark one optimistic block failed, in place, with the sentence that actually broke. */
-  failSend(id: string, reason: string): void {
-    this.pendingSends = this.pendingSends.map((p) =>
-      p.id === id ? { ...p, state: 'failed' as const, error: reason } : p,
-    );
-  }
-
-  /** **Retry** on a failed block: the stored body, re-sent, in the thread it was written in. */
-  retrySend(id: string): void {
-    const entry = this.pendingSends.find((p) => p.id === id);
-    if (!entry) return;
-    this.pendingSends = this.pendingSends.filter((p) => p.id !== id);
-    this.flowSend(entry.anchorId, entry.body);
-  }
-
-  /** **Discard** on a failed block. The text is gone only once the learner says so. */
-  dropSend(id: string): void {
-    this.pendingSends = this.pendingSends.filter((p) => p.id !== id);
-  }
-
-  /**
-   * **Stop** a generating turn (audit §2e, Lucas's 2026-09-16 decision).
-   *
-   * The button is only offered once the floor has elapsed, so a refusal here means the two
-   * clocks disagreed; it is reported as a refusal rather than swallowed, because a Stop that
-   * silently does nothing is the failure mode the button exists to avoid.
-   */
-  async stopTurn(): Promise<void> {
-    const roomId = this.room?.roomId;
-    const turnId = this.stream?.turnId ?? this.turnReceived?.turnId ?? null;
-    if (!roomId || !turnId || !has('flowStop')) return;
-    const result = await quiet(() => bridge().flowStop({ roomId, turnId }));
-    if (result && !result.stopped && result.refused === 'floor') {
-      this.notice = { level: 'info', text: 'The deliberate wait has not finished yet.' };
-    }
-  }
-
-  // ── The artefact (issue #41, `conversation-refinement.md` §5) ─────────────
-
-  /** Is `flow:summarise` on this build? The action is simply not offered when it is not. */
-  get canSummarise(): boolean {
-    return has('flowSummarise');
-  }
-
-  /**
-   * **Summarise into the document.**
-   *
-   * Lucas's item 2, verbatim: *"for artefact creation and generation, this should be provided as
-   * a button, which will create a slide / segment that basically summarises what was taught in
-   * that conversational chain."* Pressed again on the same thread it regenerates — `flow:summarise`
-   * replaces rather than appends, so there is never a stale artefact under a fresh one.
-   *
-   * The conversation is collapsed on success, which is the point of the whole feature: the
-   * artefact is now the face of this thread, and *"these artifacts help the user to review and
-   * recall, without having to go through the conversation again"*. It is one click back —
-   * **Show the conversation** on the card — and the collapse is persisted, so it is the learner's
-   * state rather than a thing the app redecides on every open.
-   *
-   * Routed through `run()` rather than `quiet()`, unlike the bookkeeping calls: this one is a
-   * gesture with a visible result, and a summarise that silently does nothing is exactly the
-   * "the button lies" failure the action is supposed to avoid.
-   */
-  async summarise(threadId: string): Promise<void> {
-    const roomId = this.room?.roomId;
-    if (!roomId || !this.canSummarise || this.summarising !== null) return;
-    this.summarising = threadId;
-    const result = await run(this, () => bridge().flowSummarise({ roomId, threadId }));
-    this.summarising = null;
-    if (!result) return;
-    this.#takeFlowRoom(result.flow);
-    // A regenerated card's conversation is the same conversation; its cached ids are not stale,
-    // but the card's id may have changed, so the entry is re-fetched on the next disclosure.
-    this.setThreadCollapsed(threadId, true);
-    this.liveMessage = result.regenerated
-      ? 'The summary was rewritten from this conversation.'
-      : 'A summary of this conversation is now in the document.';
-  }
-
-  /**
-   * **Show / hide the conversation** behind an artefact.
-   *
-   * Lucas's item 3: *"the conversation summarised to create that artefact should be retrievable,
-   * continuable by the user."* Retrievable is this; continuable is the composer the disclosure
-   * renders, which posts into that same thread and not into a new one.
-   *
-   * The open/closed state **is** `threadCollapsed`, deliberately, rather than a second piece of
-   * state beside it: there is one conversation under this segment and one truth about whether it
-   * is on screen, and `flow:cardState` already persists that one.
-   */
-  async showConversation(summaryId: string, threadId: string, show: boolean): Promise<void> {
-    this.setThreadCollapsed(threadId, !show);
-    if (!show || this.threadOf[summaryId] || !has('flowThreadOf')) return;
-    // Authoritative order, from the side that wrote the card. The fallback while this is in
-    // flight — or on a build without the channel — is the local grouping, which is the same
-    // answer in every case but one the main process does not produce.
-    const view = await quiet(() => bridge().flowThreadOf({ summaryId }));
-    if (view) this.threadOf = { ...this.threadOf, [summaryId]: view.messageIds };
   }
 
   // ── What this has cost (issue #41 item 4) ─────────────────────────────────
@@ -1491,14 +694,14 @@ class Store {
   /**
    * **Which document the counters are about.**
    *
-   * `flowFor` was the only answer while a PDF opened into `FlowCanvas`. Since #48 it opens into
-   * the three-column shell, which sets `openDoc` and may never touch `flowFor` at all — so a
-   * file counter keyed on `flowFor` alone silently stopped existing on the surface the app now
-   * actually has. Both, in the order of specificity, and one getter so no third surface has to
+   * The old flow's `flowFor` was the only answer while a PDF opened into `FlowCanvas`. Since #48
+   * it opens into the three-column shell, which sets `openDoc` and never set `flowFor` at all —
+   * so a file counter keyed on the flow's file silently stopped existing on the surface the app
+   * now actually has. `openDoc` is the whole of it, and one getter so no third surface has to
    * remember the rule.
    */
   get costFileId(): string | null {
-    return this.flowFor ?? this.openDoc?.fileId ?? null;
+    return this.openDoc?.fileId ?? null;
   }
 
   /**
@@ -1523,17 +726,18 @@ class Store {
 
   /**
    * Re-ask for the counters that are on screen, at the end of a turn, **only** while no
-   * `cost.updated` has ever arrived. One query for the file and one for the thread the turn
-   * landed in; nothing for the other thirty-nine threads of a deck, which are not on screen and
-   * will ask for themselves when they are.
+   * `cost.updated` has ever arrived. One query for the file and one for each thread that already
+   * has a counter; nothing for the other thirty-nine threads of a deck, which have never been
+   * asked about and will ask for themselves when they are.
    */
   #recountAfterTurn(): void {
     if (this.#costLive || !this.costOn) return;
     const fileId = this.costFileId;
     if (!fileId) return;
     void this.loadCost({ level: 'file', fileId });
-    const anchorId = this.lastSendAnchor;
-    if (anchorId && this.costThread[anchorId]) void this.loadCost({ level: 'thread', fileId, anchorId });
+    for (const anchorId of Object.keys(this.costThread)) {
+      void this.loadCost({ level: 'thread', fileId, anchorId });
+    }
   }
 
   ensureFileCost(): void {
@@ -1676,397 +880,6 @@ class Store {
     if (!roomId || !has('flowTurnTrace')) return;
     const rows = await quiet(() => bridge().flowTurnTrace({ roomId, turnId: null }));
     if (rows) this.turnTraces = rows;
-  }
-
-  /** The learner has this thread on screen. Clears its unread dot, in main and here. */
-  markSeen(anchorId: string, seq: number): void {
-    const roomId = this.room?.roomId;
-    if (!roomId || seq <= (this.threadSeen[anchorId] ?? 0)) return;
-    this.threadSeen = { ...this.threadSeen, [anchorId]: seq };
-    if (has('flowMarkSeen')) void quiet(() => bridge().flowMarkSeen({ roomId, anchorId, seq }));
-  }
-
-  /** Thread collapse, persisted — a thread the learner folded away stays folded (audit §7). */
-  setThreadCollapsed(anchorId: string, collapsed: boolean): void {
-    this.threadCollapsed = { ...this.threadCollapsed, [anchorId]: collapsed };
-    const roomId = this.room?.roomId;
-    if (roomId && has('flowCardState')) {
-      void quiet(() => bridge().flowCardState({ roomId, anchorId, collapsed }));
-    }
-  }
-
-  /**
-   * A segment card took focus. `pivot-spec.md` §B8's selection change, reported to the silence
-   * timer, and rate-limited to one call per 3 s exactly as the typing heartbeat is — tabbing
-   * through eight cards is one gesture, not eight.
-   */
-  noteFlowSelection(segmentId: string): void {
-    this.flowFocus = segmentId;
-    const roomId = this.room?.roomId;
-    if (!roomId) return;
-    const now = Date.now();
-    if (now - this.#lastSelectionSent < 3_000) return;
-    this.#lastSelectionSent = now;
-    void run(this, () => bridge().flowSelection({ roomId, segmentId }));
-  }
-
-  // ── The learning objectives panel (docs/research/learning-objectives.md) ─
-  /**
-   * The file's tree, its states, and the three local preferences the panel keeps.
-   *
-   * **Two sources, one shape.** `objectivesLive` is true exactly when the main process's §6
-   * channels are on the bridge; until they are, the tree comes from the committed fixture
-   * (`objectivesFixture.ts`) and nothing else about the panel differs. That is the whole of the
-   * seam: every other method here reads `objectivesTree` and `objectivesStates`.
-   */
-  objectivesTree: LearningTree | null = $state(null);
-  objectivesStates: LearningObjectiveState[] = $state([]);
-  objectivesFor: string | null = $state(null);
-  objectivesBusy = $state(false);
-  /**
-   * The nodes that have *just* crossed into online, and a token so the animation fires once per
-   * move rather than once per render — the same device `ledgerPulse` uses for the rail.
-   */
-  objectivesLit: { ids: string[]; token: number } = $state({ ids: [], token: 0 });
-  /** One sentence for the panel's own live region (§5, WCAG 4.1.3). Never the whole tree. */
-  objectivesAnnounce = $state('');
-  /**
-   * The objective the next "+ Ask here" is about — the removable `about: <title>` chip, and the
-   * `objectiveId` that rides along on `flow:askHere` so the thread is tagged with it (§6).
-   */
-  askObjective: { id: string; title: string } | null = $state(null);
-
-  /** Per install, like the flow's zoom: a pure view preference nothing outside the panel reads. */
-  objectivesOpen = $state(readFlag(PANEL_OPEN_KEY, true));
-  objectivesWidth = $state(readWidth());
-  /** Settings ▸ "Objectives panel opens with a file". Default on (§5: "open when a file is opened"). */
-  objectivesOpenWithFile = $state(readFlag(PANEL_AUTO_KEY, true));
-
-  /** True while the tree on screen is the committed fixture rather than a real ingest. */
-  get objectivesFromFixture(): boolean {
-    return this.objectivesTree?.contentSha === FIXTURE_SHA;
-  }
-
-  /** True when §6's channels are actually reachable — the feature check the panel builds behind. */
-  get objectivesLive(): boolean {
-    return objectivesLanded();
-  }
-
-  setObjectivesOpen(open: boolean): void {
-    this.objectivesOpen = open;
-    writeFlag(PANEL_OPEN_KEY, open);
-  }
-
-  setObjectivesWidth(px: number): void {
-    const clamped = Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, px)));
-    this.objectivesWidth = clamped;
-    try {
-      window.localStorage.setItem(PANEL_WIDTH_KEY, String(clamped));
-    } catch {
-      // A denied or full store is not worth failing a drag over.
-    }
-  }
-
-  setObjectivesOpenWithFile(on: boolean): void {
-    this.objectivesOpenWithFile = on;
-    writeFlag(PANEL_AUTO_KEY, on);
-  }
-
-  /**
-   * The tree for the file the flow just opened.
-   *
-   * `learning-objectives.md` §3: ingest is triggered by the **first open**, not the first Ask,
-   * and `pending` is visible at once — so this is called from the flow and never from a gesture.
-   */
-  async loadObjectives(fileId: string): Promise<void> {
-    if (this.objectivesFor === fileId && this.objectivesTree) return;
-    this.objectivesFor = fileId;
-    this.objectivesTree = null;
-    this.objectivesStates = [];
-    this.objectivesLit = { ids: [], token: this.objectivesLit.token };
-    this.objectivesAnnounce = '';
-    this.askObjective = null;
-    if (this.objectivesOpenWithFile) this.setObjectivesOpen(true);
-
-    if (objectivesLanded()) {
-      this.objectivesBusy = true;
-      const tree = await quiet(() => bridge().objectivesTree({ fileId }));
-      const states = await quiet(() => bridge().objectivesStates({ fileId }));
-      this.objectivesBusy = false;
-      if (this.objectivesFor !== fileId) return;
-      if (tree) {
-        this.objectivesTree = tree;
-        this.#takeObjectiveStates(states ?? [], false);
-        return;
-      }
-      /**
-       * `null` means **no ingest was ever asked for this file** (`shared/objectives.ts`,
-       * deviation 1) — and it is also what a channel whose handler has not landed yet comes back
-       * as, because `quiet()` swallows the rejection. Either way there is nothing live to draw,
-       * so the fixture answers if this is the deck it is about, and the panel stays empty if it
-       * is not. Once the ingest is really there it returns a tree and this branch is never taken.
-       */
-    }
-
-    const doc = this.openDoc;
-    const tree = fixtureTree({
-      fileId,
-      ...(doc?.name ? { name: doc.name } : {}),
-      ...(doc?.relPath ? { relPath: doc.relPath } : {}),
-    });
-    this.objectivesTree = tree;
-    this.#takeObjectiveStates(tree ? loadFixtureStates(fileId) : [], false);
-  }
-
-  /**
-   * Take a new set of states, and work out what just happened.
-   *
-   * `animate` is false on the first load: a deck reopened with four objectives already online
-   * must not fire four animations and four announcements at the learner, because nothing moved —
-   * they were already there.
-   */
-  #takeObjectiveStates(next: readonly LearningObjectiveState[], animate: boolean): void {
-    const before = levelsById(this.objectivesStates);
-    const after = levelsById(next);
-    this.objectivesStates = [...next];
-    if (!animate) return;
-    const lit = newlyOnline(before, after);
-    if (lit.length === 0) return;
-    this.objectivesLit = { ids: lit, token: this.objectivesLit.token + 1 };
-    const titles = lit.map((id) => this.objectivesTree?.objectives.find((o) => o.id === id)?.title ?? '');
-    const first = titles.find((t) => t.length > 0) ?? 'An objective';
-    this.objectivesAnnounce =
-      lit.length === 1
-        ? `${first} is online — you explained it in your own words.`
-        : `${first} and ${lit.length - 1} more are online.`;
-  }
-
-  /**
-   * Re-read the states.
-   *
-   * Called on `objectives.state` when that event exists, and after every `turn.released` until
-   * it does — the ledger moves a level as a side effect of a turn, so the end of a turn is the
-   * one moment the states can have changed. A no-op on the fixture path, where nothing but the
-   * learner's own Reset moves a level.
-   */
-  async refreshObjectiveStates(): Promise<void> {
-    const fileId = this.objectivesFor;
-    if (!fileId) return;
-    if (!objectivesLanded() || !this.objectivesTree || this.objectivesTree.contentSha === FIXTURE_SHA) {
-      // The fixture path has its states in `localStorage` and no events; a turn is still the
-      // moment they can have changed, so it is re-read here too — with `animate`, so the panel's
-      // live half (the node that lights, the count, the announcement) is reachable on the
-      // scripted demo rather than only after the ingest lands.
-      if (this.objectivesTree) this.#takeObjectiveStates(loadFixtureStates(fileId), true);
-      return;
-    }
-    const states = await quiet(() => bridge().objectivesStates({ fileId }));
-    if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, true);
-  }
-
-  /** **Regenerate** (§3): explicit, and it keeps the states whose ids still match. */
-  async regenerateObjectives(): Promise<void> {
-    const fileId = this.objectivesFor;
-    if (!fileId) return;
-    if (!has('objectivesRegenerate')) return;
-    this.objectivesBusy = true;
-    const tree = await quiet(() => bridge().objectivesRegenerate({ fileId }));
-    if (tree && this.objectivesFor === fileId) this.objectivesTree = tree;
-    const states = await quiet(() => bridge().objectivesStates({ fileId }));
-    if (states && this.objectivesFor === fileId) this.#takeObjectiveStates(states, false);
-    this.objectivesBusy = false;
-  }
-
-  /**
-   * **Reset** (§4): every state to level 0, evidence cleared, the tree itself untouched. One
-   * confirm, which the panel owns — this is the half that actually forgets.
-   */
-  async resetObjectives(): Promise<void> {
-    const fileId = this.objectivesFor;
-    if (!fileId) return;
-    // Which tree is on screen decides, not which channel exists: a fixture tree's states live in
-    // `localStorage`, and a Reset that called the real channel would empty the panel while
-    // leaving them on disk to come back on the next open.
-    if (this.objectivesFromFixture || !has('objectivesReset')) {
-      clearFixtureStates(fileId);
-      this.#takeObjectiveStates([], false);
-      return;
-    }
-    // It answers with the reset states, so the panel redraws from the answer rather than racing
-    // the per-node events (`shared/objectives.ts`, deviation 2).
-    const states = await quiet(() => bridge().objectivesReset({ fileId }));
-    if (this.objectivesFor === fileId) this.#takeObjectiveStates(states ?? [], false);
-  }
-
-  /**
-   * **Teach me this** on an assumed prerequisite (§5, the #36 contract).
-   *
-   * Returns the anchor the Teacher's turn landed on, so the flow can scroll to it. Null when the
-   * channel is not on this build, or when the main process did not recognise the objective — and
-   * the flow then falls back to opening the Ask composer on the requiring objective's segment
-   * with the question pre-filled, which is the same turn asked for in the learner's own voice.
-   */
-  async teachObjective(objectiveId: string): Promise<string | null> {
-    const fileId = this.objectivesFor;
-    if (!fileId || !has('objectivesTeach')) return null;
-    const landed = await quiet(() => bridge().objectivesTeach({ fileId, objectiveId }));
-    if (!landed) return null;
-    // The turn creates the document's room the first time, exactly as "+ Ask here" does.
-    if (!this.room || this.room.roomId !== landed.roomId) await this.loadFlowRoom(fileId);
-    void this.refreshObjectiveStates();
-    return landed.anchorId;
-  }
-
-  /** The `about:` chip on the composer. Set by a click in the panel, removable by the learner. */
-  setAskObjective(objective: { id: string; title: string } | null): void {
-    this.askObjective = objective;
-  }
-
-  // ── The whisper popover on a segment (§3.5, issue #16) ──────────────────
-
-  /**
-   * ⌘K, or **Ask privately** in the card's label strip.
-   *
-   * Opening it on a second card closes the first, for the same reason two "+ Ask here" prompts
-   * cannot be open at once: two composers in a document are two places the next keystroke could
-   * go. The main process decides whether that is the same private thread or a fresh one — the
-   * key is the **segment sitting** (`actor.openSegmentWhisper`), and the renderer never guesses.
-   */
-  async openFlowWhisper(segmentId: string): Promise<void> {
-    const fileId = this.flowFor;
-    if (!fileId) return;
-    if (this.flowWhisper && this.flowWhisper.anchorId !== segmentId) this.closeFlowWhisper();
-    const opened = await run(this, () => bridge().flowWhisperOpen({ fileId, segmentId }));
-    if (!opened || this.flowFor !== fileId) return;
-    this.flowWhisper = opened.whisper;
-    // `flow:whisperOpen` creates the room on a document whose first act was a private question,
-    // so pick the transcript up the same way "+ Ask here" does.
-    if (!this.room || this.room.roomId !== opened.roomId) await this.loadFlowRoom(fileId);
-  }
-
-  /**
-   * A private turn. Not awaited for the reply: Ellie is held 1–2 s in the main process and her
-   * answer arrives on the `whisper.turn` stream, which is where every whisper turn has always
-   * arrived from.
-   */
-  sendFlowWhisper(text: string): void {
-    const fileId = this.flowFor;
-    const thread = this.flowWhisper;
-    const roomId = this.room?.roomId;
-    if (!fileId || !thread || !roomId || !text.trim()) return;
-    this.flowWhisperThinking = true;
-    void run(this, () =>
-      bridge().flowWhisperSend({
-        roomId,
-        fileId,
-        segmentId: thread.anchorId,
-        threadId: thread.threadId,
-        text: text.trim(),
-      }),
-    ).then((ok) => {
-      if (ok === null) this.flowWhisperThinking = false;
-    });
-  }
-
-  /**
-   * **Insert into the document.** The approved relay: a new *shared* card under the segment.
-   *
-   * The private thread is neither moved nor revealed — `actor.relay()` inserts a new row and
-   * `markPromoted` records the provenance for the export, and that is the whole of the crossing.
-   * The popover stays open, because the learner may well have another private question about the
-   * card they just wrote on.
-   */
-  async insertFlowWhisper(input: { whisperId: string; attribution: RelayAttribution; text: string }): Promise<void> {
-    const thread = this.flowWhisper;
-    const roomId = this.room?.roomId;
-    if (!thread || !roomId || input.text.trim().length === 0) return;
-    this.flowWhisperInserting = true;
-    const result = await run(this, () =>
-      bridge().flowWhisperRelay({
-        roomId,
-        segmentId: thread.anchorId,
-        threadId: thread.threadId,
-        whisperId: input.whisperId,
-        attribution: input.attribution,
-        text: input.text.trim(),
-      }),
-    );
-    this.flowWhisperInserting = false;
-    if (result) this.#takeFlowRoom(result.flow);
-  }
-
-  /** `Esc`, click-away, or leaving the card. Nothing is posted and nothing is kept. */
-  closeFlowWhisper(): void {
-    const thread = this.flowWhisper;
-    const roomId = this.room?.roomId;
-    this.flowWhisper = null;
-    this.flowWhisperThinking = false;
-    this.flowWhisperInserting = false;
-    if (roomId && thread) void run(this, () => bridge().flowWhisperClose({ roomId, threadId: thread.threadId }));
-  }
-
-  /** The document's room, if it has one. Called when a flow opens; creates nothing. */
-  async loadFlowRoom(fileId: string): Promise<void> {
-    const view = await run(this, () => bridge().flowMessages({ fileId }));
-    if (!view || this.flowFor !== fileId) return;
-    this.#takeFlowRoom(view);
-  }
-
-  /**
-   * The one place a `FlowRoomView` is taken in.
-   *
-   * `room` is an ordinary `RoomSnapshot`, and it goes in `this.room` on purpose: every event the
-   * flow needs — `message.appended`, `agent.thinking`, `ledger.updated`, `timer.updated` — is
-   * already applied there by `apply()`, so the flow's threads stay live without a second
-   * subscription and without a second copy of the transcript to keep in step. The screen is not
-   * changed: the flow is the screen.
-   */
-  #takeFlowRoom(view: {
-    room: RoomSnapshot;
-    threads: {
-      anchorId: string;
-      lockedByAnswerId: string | null;
-      lastSeenSeq?: number;
-      collapsed?: boolean;
-      removed?: boolean;
-      /** The Tester's open question here, if any (issue #47). Absent on an older main process. */
-      quiz?: FlowQuizView | null;
-    }[];
-  }): void {
-    this.flowRoomFor = this.flowFor;
-    this.room = view.room;
-    this.timerReceivedAt = Date.now();
-    const locks: Record<string, string> = {};
-    const seen: Record<string, number> = {};
-    const collapsed: Record<string, boolean> = {};
-    // Plain, not reactive: it is a local index built and consumed inside this one call.
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity
-    const removedAnchors = new Set<string>();
-    for (const t of view.threads) {
-      if (t.lockedByAnswerId) locks[t.anchorId] = t.lockedByAnswerId;
-      if (typeof t.lastSeenSeq === 'number') seen[t.anchorId] = t.lastSeenSeq;
-      if (t.collapsed) collapsed[t.anchorId] = true;
-      if (t.removed) removedAnchors.add(t.anchorId);
-    }
-    this.flowLocks = locks;
-    this.threadSeen = seen;
-    this.threadCollapsed = collapsed;
-    this.flowQuiz = quizMap(view.threads);
-    /**
-     * `removed` is persisted per **anchor**, which is the grain `flow:cardState` offers; a
-     * thread holds at most one REFERENCE answer awaiting hand-back at a time, so re-applying it
-     * to the thread's reference cards restores exactly what the learner dismissed. Agent turns
-     * are never removable, so nothing the agents said can be hidden by this.
-     */
-    if (removedAnchors.size > 0) {
-      const removed: Record<string, boolean> = { ...this.answersRemoved };
-      for (const m of view.room.messages) {
-        if (m.speaker.kind === 'reference' && m.anchorId && removedAnchors.has(m.anchorId)) {
-          removed[m.id] = true;
-        }
-      }
-      this.answersRemoved = removed;
-    }
   }
 
   // ── Finding and searching ────────────────────────────────────────────────
