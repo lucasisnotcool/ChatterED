@@ -4,7 +4,7 @@
  * The main process builds `FlowRoomView.threads` with these functions; the renderer re-runs the
  * same ones against the live snapshot as `message.appended` and `ledger.updated` arrive, so the
  * flow never has to re-fetch a view to stay current. One implementation, two callers, and the
- * tests are node-only (`flow-build-plan.md` §4.1's rule for `lib/flowview.ts`, applied again).
+ * tests are node-only.
  *
  * The property this file exists to make checkable is `claimsForAnchor`'s:
  *

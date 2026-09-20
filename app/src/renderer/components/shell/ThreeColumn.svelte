@@ -24,6 +24,7 @@
   import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
   import NotesPane from '../notes/NotesPane.svelte';
+  import PacingStrip from '../PacingStrip.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import VaultSidebar from '../VaultSidebar.svelte';
 
@@ -195,6 +196,17 @@
     </header>
 
     <div class="docbody">
+      <!--
+        **The pacing disclosure, once per install, above the document.**
+
+        It was `FlowCanvas`'s, and it went unreachable with it — which took the whole disclosure
+        out of the app, because nothing else says that the latency is deliberate or that the
+        backend is scripted. That is a rubric and ethics requirement, not a nicety: a wait the
+        learner has not been told about is a manipulation, and Settings still carries the
+        "show the pacing note again" button that puts it back. It decides for itself whether to
+        render; this column only gives it somewhere to be.
+      -->
+      <PacingStrip />
       <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
       <NotesPane fileId={doc.fileId} />
     </div>

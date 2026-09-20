@@ -278,12 +278,11 @@
   /**
    * The canvas one page is rasterised into, or null when that page is not laid out yet.
    *
-   * Exported for the flow (`flow-build-plan.md` §4.1): this component is **modified, not
-   * replaced** — it stays the Original-pages renderer and the compare panel's renderer, and a
-   * caller that wants a page's pixels asks for them here rather than mounting a second viewer.
-   * `FlowCanvas` deliberately does *not* use this: it owns its own render-at-card-scale path
-   * with its own LRU, because this viewer releases a page ±3 away and a crop drawn off a
-   * released canvas is a blank card (risk 3).
+   * Exported so a caller that wants a page's pixels asks for them here rather than mounting a
+   * second viewer. `lib/rasterise.ts` deliberately does *not* use this: the slide figures,
+   * carousel and modal own their own render path with their own LRU, because this viewer
+   * releases a page ±3 away from the one being read and a crop drawn off a released canvas is a
+   * blank card.
    */
   export function canvasFor(pageNumber: number): HTMLCanvasElement | null {
     return scroller?.querySelector<HTMLCanvasElement>(`[data-page="${pageNumber}"] canvas`) ?? null;

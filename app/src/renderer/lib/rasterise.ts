@@ -130,9 +130,9 @@ export function pageNumbers(pageCount: number): number[] {
 /**
  * The CSS box a crop of `rect` wants at `width` px across.
  *
- * The aspect ratio is taken in **points** and not in normalised units, for the reason
- * `flowview.ts` gives: a region that is half the width and half the height of a 16:9 page is
- * itself 16:9, and normalised numbers alone cannot say that.
+ * The aspect ratio is taken in **points** and not in normalised units: a region that is half
+ * the width and half the height of a 16:9 page is itself 16:9, and normalised numbers alone
+ * cannot say that.
  */
 export function cropBox(
   rect: Rect | null,

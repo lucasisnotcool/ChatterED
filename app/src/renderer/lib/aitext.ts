@@ -49,7 +49,7 @@
  * (`pdf-fidelity-segmentation.md` §C4): "Matching Beamer's typeface would make agent-written
  * maths visually indistinguishable from the lecturer's — which is the exact confusion S5 exists
  * to prevent, and in a maths module it is the confusion with the highest cost." KaTeX's own
- * Computer Modern faces are overridden in `AiSegment.svelte` for the same reason.
+ * Computer Modern faces are overridden in `components/notes/notes.css` for the same reason.
  *
  * `$…$` is inline, `$$…$$` is display. A lone `$` is a dollar sign and is left alone — the delimiter
  * has to close on the same line for it to be read as maths at all.
