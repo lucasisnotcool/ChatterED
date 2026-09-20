@@ -186,6 +186,42 @@ const row = (id: string, label: string, learnerLabel: string): LedgerRowView => 
 export function createMockBridge(): ChatterEdApi {
   const listeners = new Set<(e: RoomEvent) => void>();
   const emit = (e: RoomEvent) => listeners.forEach((l) => l(e));
+  /**
+   * **The per-call tick, in `vite dev`.**
+   *
+   * `cost.updated` is not a `RoomEvent` — it rides the same channel and the store picks it out
+   * before the switch — so the cast is the shape of the seam, not a shortcut. Without it the
+   * per-message meters are invisible under the mock: the map is read once when the chat column
+   * opens, which is before any reply exists, and nothing ever asks again. A fixture that cannot
+   * show the feature is a fixture that cannot be used to design it.
+   */
+  const emitCostTick = (messageId: string): void => {
+    const cost = mockMessageCost(messageId, 'message', null);
+    emit({
+      type: 'cost.updated',
+      roomId: ROOM,
+      update: {
+        call: {
+          id: `use_${messageId}`,
+          createdAt: iso(),
+          scope: 'group',
+          model: 'claude-sonnet-5',
+          backend: 'claude-cli',
+          tokens: cost.tokens,
+          estimatedUsd: cost.estimatedUsd,
+          reportedUsd: cost.reportedUsd,
+          durationMs: cost.ms,
+          roomId: ROOM,
+          fileId: null,
+          anchorId: cost.anchorId,
+          turnId: cost.turnId,
+          backfilled: false,
+          outcome: 'ok',
+        },
+        sessionTotals: { tokens: cost.tokens, calls: cost.calls, estimatedUsd: cost.estimatedUsd },
+      },
+    } as unknown as RoomEvent);
+  };
   const later = (ms: number, fn: () => void) => { setTimeout(fn, ms); };
 
   let seq = 0;
@@ -234,6 +270,8 @@ export function createMockBridge(): ChatterEdApi {
     };
     messages.push(m);
     emit({ type: 'message.appended', roomId: ROOM, message: m });
+    // Only an agent turn costs anything. A learner block must stay meterless, here too.
+    if (from) emitCostTick(m.id);
     return m;
   }
 
@@ -1809,6 +1847,7 @@ export function createMockBridge(): ChatterEdApi {
         };
         held.turns.push(reply);
         emit({ type: 'chat.private', roomId: ROOM, threadId, turn: { ...reply } });
+        emitCostTick(reply.id);
       });
     },
     /** The one path from private to shared (§4.1). It is the learner's click, never the agent's. */
@@ -1943,6 +1982,53 @@ export function createMockBridge(): ChatterEdApi {
       const estimatedUsd = Number(((t.input * 2 + t.output * 10 + t.cacheWrite * 2.5 + t.cacheRead * 0.2) / 1e6).toFixed(6));
       const calls = Math.max(1, Math.round(24 * scale));
       const slice = (key: string) => ({ key, calls, tokens: t, estimatedUsd, reportedUsd: null });
+      /**
+       * **The scope breakdown is lopsided on purpose.**
+       *
+       * It used to be a single `group` row, which meant the one thing the document counter exists
+       * to show — that reading the deck cost more than every conversation on it put together —
+       * was invisible in the fixture and could only be checked by unit test. `notes` and
+       * `objectives` are `isIngestScope`; the rest is conversation.
+       */
+      const part = (key: string, fraction: number, take: number) => ({
+        key,
+        calls: take,
+        tokens: {
+          input: Math.round(t.input * fraction),
+          output: Math.round(t.output * fraction),
+          cacheWrite: Math.round(t.cacheWrite * fraction),
+          cacheRead: Math.round(t.cacheRead * fraction),
+        },
+        estimatedUsd: Number((estimatedUsd * fraction).toFixed(6)),
+        reportedUsd: null,
+      });
+      /**
+       * **The parts sum to the whole, exactly.**
+       *
+       * Rounding each slice independently let the breakdown come to fifteen calls under a header
+       * that said fourteen — which real data cannot do, because the summary and the slices are the
+       * same rows counted twice in SQL. A fixture that can disagree with itself teaches whoever is
+       * looking at it to distrust the number, so the last slice takes the remainder.
+       */
+      const split = (shares: [string, number][]) => {
+        let left = calls;
+        return shares.map(([key, fraction], i) => {
+          const take = i === shares.length - 1 ? left : Math.max(1, Math.round(calls * fraction));
+          left -= take;
+          return part(key, fraction, Math.max(0, take));
+        });
+      };
+      const byScope =
+        query.level === 'thread'
+          ? split([['group', 0.78], ['orchestrator', 0.14], ['ledger', 0.08]])
+          : split([
+              ['notes', 0.58],
+              ['group', 0.19],
+              ['docedit', 0.08],
+              ['objectives', 0.07],
+              ['orchestrator', 0.05],
+              ['ledger', 0.03],
+            ]);
       return {
         level: query.level,
         fileId: query.fileId ?? null,
@@ -1953,7 +2039,7 @@ export function createMockBridge(): ChatterEdApi {
         reportedUsd: null,
         reportedCalls: 0,
         byModel: [slice('claude-sonnet-5')],
-        byScope: [slice('group')],
+        byScope,
         byBackend: [slice('claude-cli')],
         windowStart: null,
         firstCallAt: iso(),
@@ -1997,6 +2083,19 @@ export function createMockBridge(): ChatterEdApi {
         if (w.sender !== 'agent') continue;
         if (threadId && w.threadId !== threadId) continue;
         out.push(mockMessageCost(w.id, 'whisper', w.threadId));
+      }
+      /**
+       * The #48 private threads, which are the ones the shell actually renders. The contract says
+       * they join through `whispers.turn_id` like any other whisper, so the fixture has to price
+       * them or the meter in `PrivateThread.svelte` is dead under `vite dev` while being alive in
+       * the app — the worst of the two ways a fixture can be wrong.
+       */
+      for (const [, thread] of privateThreadMap) {
+        if (threadId && thread.threadId !== threadId) continue;
+        for (const t of thread.turns) {
+          if (t.role !== 'agent') continue;
+          out.push(mockMessageCost(t.id, 'whisper', thread.threadId));
+        }
       }
       return out;
     },
