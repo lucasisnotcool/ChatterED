@@ -56,23 +56,28 @@
       nine seconds got the best usefulness ratings.
     </p>
 
-    <p>
-      {tester} is not listening the whole time. He is offered the floor by a rule you can see —
-      <strong>{profile.rule}</strong> — and you can send him away when he arrives.
-    </p>
-
     <!--
-      **The attempt rule, said plainly** (issue #47, `attempt-first.md` §0 and §6).
-      The strip already discloses the two things a learner cannot see — that the wait is deliberate
-      and that the Tester arrives by a rule — and since #47 there is a third: the answer is
-      withheld until one attempt. That is a rule in the orchestrator, not a mood the model is in,
-      and a rule the learner meets without having been told is the same manipulation the latency
-      disclosure exists to avoid. One sentence, in the order it actually happens.
+      **The question rule, said plainly** (#48, `collab-doc.md` §4.2 and §4.4).
+      The strip discloses the things a learner cannot see: that the wait is deliberate, which rule
+      brings the Tester, and what happens to his question. Rewritten from #47's wording, which
+      described a "+ Try this" button that no longer exists and an answer withheld until one
+      attempt — `rule:answer_withheld` is retired (§9), and a disclosure that describes the app as
+      it used to be is worse than none.
+
+      The two doors are named in the order a learner meets them: `rule:max_followup` is the one
+      they will see on every question, and the time-based hand-off (`rule:handoff`, still live in
+      the actor) is the one that arrives out of a silence.
     -->
     <p>
-      When you press <strong>+ Try this</strong> on a slide, {tester} asks; you try; the answer comes
-      after one try. Asking for it earlier gets you a hint instead — and once you have tried, the
-      answer is yours to ask for, and it changes nothing on your progress either way.
+      When you ask something, {teacher} answers and then {tester} asks you one question back. It is
+      yours to answer first — but say <em>I don't know</em>, or press <strong>Pass</strong>, and he
+      gives you the answer straight away and pitches the next one lower. Either way, only words you
+      wrote yourself move your progress.
+    </p>
+
+    <p>
+      {tester} is not listening the whole time. He also lets himself in by a rule you can see —
+      <strong>{profile.rule}</strong> — and you can send him away when he arrives.
     </p>
 
     <p>
