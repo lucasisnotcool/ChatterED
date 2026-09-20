@@ -144,9 +144,36 @@ function hasText(doc: Node, from: number, to: number): boolean {
   return found;
 }
 
+/**
+ * The `at` of the learner's own author mark immediately before this range, if there is one.
+ *
+ * **Why a continuous run has to share one `at`.** A mark is minted per transaction, and typing
+ * is one transaction per keystroke, so a fresh timestamp for every character makes every
+ * character's mark unequal to its neighbour's — ProseMirror cannot merge the text nodes, and the
+ * learner's sentence is stored, serialised and rendered as one node and one `<span>` *per
+ * character*. On screen that is visible: each span is its own inline box, so lines break inside
+ * words ("afterward / s."), which is what the live run of 20 Sep put on camera the moment a
+ * sentence was typed into the notes. It is also what the document is saved as.
+ *
+ * Reusing the neighbour's timestamp costs nothing that is read anywhere: `at` says when the
+ * learner wrote this run, and a run is exactly what it now marks. A range that does not follow
+ * the learner's own text still gets `now` — a new run, and a new timestamp.
+ */
+function learnerRunAt(doc: Node, from: number): number | null {
+  if (from <= 0 || from > doc.content.size) return null;
+  const type = notesSchema.marks.author!;
+  const $from = doc.resolve(from);
+  // `childBefore`, not `$from.marks()`: at a boundary between two text nodes the latter answers
+  // "what would a character typed here inherit", which is not the same question and drops a
+  // non-inclusive mark. This one is exactly "the run this range continues, if any".
+  const before = $from.parent.childBefore($from.parentOffset).node;
+  const mark = before?.marks.find((m) => m.type === type && m.attrs.by === 'user');
+  const at = mark?.attrs.at;
+  return typeof at === 'number' && Number.isFinite(at) ? at : null;
+}
+
 export function stampLearnerText(tr: Transaction, ranges: readonly Range[], now: number): Transaction {
   const type = notesSchema.marks.author!;
-  const mark = authorMark('user', null, now);
   const size = tr.doc.content.size;
   for (const range of ranges) {
     const from = Math.max(0, Math.min(range.from, size));
@@ -155,6 +182,7 @@ export function stampLearnerText(tr: Transaction, ranges: readonly Range[], now:
     // No text in there at all? Then there is no author mark to set and `addMark` would be a
     // no-op step. Cheap to check, and it keeps empty transactions out of the history.
     if (!hasText(tr.doc, from, to)) continue;
+    const mark = authorMark('user', null, learnerRunAt(tr.doc, from) ?? now);
     tr.removeMark(from, to, type);
     tr.addMark(from, to, mark);
   }

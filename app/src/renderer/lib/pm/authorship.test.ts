@@ -112,6 +112,33 @@ describe('the authorship plugin', () => {
     expect(authorAt(after, 18)).toBe('user');
   });
 
+  /**
+   * A sentence typed one keystroke at a time has to end up as **one** text node.
+   *
+   * `now` moves between transactions in a real editor, and a mark whose `at` differs cannot
+   * merge — so before 20 Sep a typed sentence was one node, one `<span data-author="user">` and
+   * one inline box *per character*, which broke lines inside words on screen and saved the
+   * document that way. The stamp reuses the `at` of the learner's own run it continues.
+   */
+  it('keeps a run of typing as one text node, however long the learner takes', () => {
+    let clock = NOW;
+    let state = EditorState.create({
+      doc: notesSchema.node('doc', null, [para('b_a', 'Value iteration.', 'ellie')]),
+      plugins: [authorship({ now: () => clock })],
+    });
+    for (const ch of ' mine.') {
+      clock += 250; // a new millisecond for every keystroke, as a keyboard produces
+      state = state.apply(state.tr.insertText(ch, state.doc.content.size - 1));
+    }
+    expect(textOf(state)).toBe('Value iteration. mine.');
+    const block = state.doc.child(0);
+    // Ellie's run, then the learner's — two nodes, not one per character.
+    expect(block.childCount).toBe(2);
+    const learner = block.child(1);
+    expect(learner.text).toBe(' mine.');
+    expect(learner.marks.find((m) => m.type.name === 'author')!.attrs.by).toBe('user');
+  });
+
   it('stamps a paste that arrives with no author mark of its own', () => {
     const before = stateOf(para('b_a', 'abc', 'ellie'));
     const pasted = Slice.maxOpen(Fragment.from(notesSchema.text('pasted')));
