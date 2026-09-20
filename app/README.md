@@ -116,7 +116,7 @@ question, not by meaning; inline maths is styled, display maths is typeset.
 ## 5. Tests
 
 ```sh
-npm test           # vitest — about 1,760 tests, no network
+npm test           # vitest — about 1,630 tests, no network
 npm run lint       # incl. the src/room portability rules
 npm run typecheck  # tsc --noEmit + svelte-check
 npm run build      # the production build (a different tsconfig from typecheck)

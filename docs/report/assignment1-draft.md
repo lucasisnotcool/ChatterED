@@ -203,7 +203,7 @@ A running app, on CS3249's own Week 4 deck (66 slides). Ingest took six minutes:
    correction arrives as a strikethrough suggestion I accept or reject.
 
 **Real and live.** Nothing is scripted: the rules, the document guard and the progress function are
-tested code (1,779 tests); the model writes the notes and the words.
+tested code (1,628 tests); the model writes the notes and the words.
 
 ## Limitations
 
