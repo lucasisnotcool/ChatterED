@@ -363,7 +363,29 @@ export class DocStore {
     this.#armDocTextTimer();
   }
 
+  /**
+   * **The view's document is the live one; `#docJson` is only where it was when we adopted it.**
+   *
+   * Every ingest window, every agent edit and every keystroke after `#adopt` lands in the
+   * `EditorView` and nowhere else — `#docJson` still holds whatever `notes:get` / `notes:ingest`
+   * returned, which for a deck ingested in *this* session is the empty document the ingest
+   * started from. So the moment the host is torn down and rebuilt on the same file, the new
+   * `EditorState` is created from that stale JSON and the learner's notes vanish off the screen.
+   *
+   * That is exactly what a round trip through the **Page viewer** does: `VaultBrowser` unmounts
+   * the whole shell on `docView === 'viewer'` and mounts it again on the way back, and `open()`
+   * short-circuits because the file and the doc id have not changed, so nothing re-fetches. 63
+   * blocks became 2. Nothing was lost — SQLite still had all 39 KB and a close-and-reopen
+   * brought it back — but the screen said otherwise, which on a deck someone has just spent two
+   * minutes ingesting is the same thing to them.
+   *
+   * Snapshotting here fixes it at the source rather than by ordering: whatever was on screen is
+   * what the next view is built from, however the host came and went. The `epoch` is left alone
+   * — nothing has changed identity, and bumping it during teardown would re-run the very effect
+   * that is being cleaned up.
+   */
   detach(): void {
+    if (this.#view) this.#docJson = this.#view.state.doc.toJSON();
     this.#view = null;
     if (this.#docTextTimer) clearInterval(this.#docTextTimer);
     this.#docTextTimer = null;
