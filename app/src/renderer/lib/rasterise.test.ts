@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PAGE_IMAGE_BATCH, batches, cropBox, pageNumbers, rasterSize } from './rasterise.js';
+import { PAGE_IMAGE_BATCH, batches, cropBox, pageNumbers, rasterSize, releaseDocument } from './rasterise.js';
 
 describe('rasterSize', () => {
   it('hits the target width and keeps the aspect ratio', () => {
@@ -59,5 +59,51 @@ describe('cropBox', () => {
       w: 360,
       h: 1,
     });
+  });
+});
+
+/**
+ * The teardown path, which nothing exercises until a learner opens a **second** deck — and which,
+ * when it threw, stopped that deck opening at all (live run, 20 Sep).
+ */
+describe('releaseDocument', () => {
+  it('prefers the loading task, which is what actually frees the worker', () => {
+    const calls: string[] = [];
+    const doc = {
+      numPages: 3,
+      loadingTask: { destroy: () => { calls.push('task'); return Promise.resolve(); } },
+      destroy: () => { calls.push('doc'); return Promise.resolve(); },
+      cleanup: () => { calls.push('cleanup'); return Promise.resolve(); },
+    };
+    releaseDocument(doc);
+    expect(calls).toEqual(['task']);
+  });
+
+  it('falls back to a document-level destroy, then to cleanup', () => {
+    const older: string[] = [];
+    releaseDocument({ numPages: 1, destroy: () => { older.push('doc'); return Promise.resolve(); } });
+    expect(older).toEqual(['doc']);
+
+    const newer: string[] = [];
+    releaseDocument({ numPages: 1, cleanup: () => { newer.push('cleanup'); return Promise.resolve(); } });
+    expect(newer).toEqual(['cleanup']);
+  });
+
+  /** pdfjs-dist 6: `PDFDocumentProxy` has `cleanup()` and `loadingTask`, and no `destroy()`. */
+  it('does not throw on a document that offers none of them, or on nothing at all', () => {
+    expect(() => releaseDocument({ numPages: 1 })).not.toThrow();
+    expect(() => releaseDocument(null)).not.toThrow();
+    expect(() => releaseDocument(undefined)).not.toThrow();
+  });
+
+  it('swallows a teardown that throws, because the caller is about to open another deck', () => {
+    const doc = { numPages: 1, loadingTask: { destroy: () => { throw new Error('worker gone'); } } };
+    expect(() => releaseDocument(doc)).not.toThrow();
+  });
+
+  it('swallows a rejected teardown promise rather than leaving it unhandled', async () => {
+    releaseDocument({ numPages: 1, loadingTask: { destroy: () => Promise.reject(new Error('late')) } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(true).toBe(true);
   });
 });

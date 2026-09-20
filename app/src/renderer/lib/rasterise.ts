@@ -114,11 +114,20 @@ export function cropBox(
 
 // ── pdf.js ──────────────────────────────────────────────────────────────────────────────────
 
-/** The bits of `PDFDocumentProxy` this module uses. Named so the pure side stays import-free. */
+/**
+ * The bits of `PDFDocumentProxy` this module uses. Named so the pure side stays import-free.
+ *
+ * **Teardown is not `destroy()`.** A `PDFDocumentProxy` in pdfjs-dist 6 offers `cleanup()` and a
+ * `loadingTask`; `destroy()` is the *loading task's*. This interface used to promise `destroy()`
+ * on the document itself, which the `as unknown as PdfDoc` in `openPdf` let through — see
+ * `releaseDocument` for what that cost.
+ */
 interface PdfDoc {
   numPages: number;
   getPage(n: number): Promise<PdfPage>;
-  destroy(): Promise<void>;
+  loadingTask?: { destroy?: () => Promise<void> | void };
+  destroy?: () => Promise<void> | void;
+  cleanup?: () => Promise<unknown>;
 }
 
 interface PdfPage {
@@ -127,6 +136,40 @@ interface PdfPage {
     promise: Promise<void>;
     cancel(): void;
   };
+}
+
+/**
+ * **Let a pdf.js document go, whatever this version of pdf.js calls that.**
+ *
+ * Exported and defensive for one reason, which the live run of 20 Sep paid for: the teardown path
+ * is the *only* path nothing exercises until a learner opens a **second** deck, and when it threw
+ * it took the open with it. `SlideSource.destroy()` called `#doc.destroy()`, pdfjs-dist 6 has no
+ * such method on the document, the `TypeError` came out of `DocStore.#reset()` — the first line
+ * of `open()` — and so the second deck never loaded at all: no ingest, no error on screen, the
+ * first deck still on the page. A release is best-effort by nature; nothing above it may fail
+ * because a worker did not shut down tidily.
+ *
+ * Prefers the loading task (which really does free the worker), falls back to a document-level
+ * `destroy` for older builds, then to `cleanup`, and swallows everything.
+ */
+export function releaseDocument(doc: unknown): void {
+  const it = doc as PdfDoc | null;
+  if (!it) return;
+  const attempt = (fn: (() => Promise<unknown> | unknown) | undefined, on: unknown): boolean => {
+    if (typeof fn !== 'function') return false;
+    try {
+      const out = (fn as () => Promise<unknown> | unknown).call(on);
+      if (out && typeof (out as Promise<unknown>).catch === 'function') {
+        void (out as Promise<unknown>).catch(() => undefined);
+      }
+      return true;
+    } catch {
+      return true; // it was the right method; it simply failed, and that is not ours to fix
+    }
+  };
+  if (attempt(it.loadingTask?.destroy, it.loadingTask)) return;
+  if (attempt(it.destroy, it)) return;
+  attempt(it.cleanup, it);
 }
 
 let workerConfigured = false;
@@ -373,7 +416,7 @@ export class SlideSource {
       entry.canvas.height = 0;
     }
     this.#cache.clear();
-    void this.#doc.destroy().catch(() => undefined);
+    releaseDocument(this.#doc);
   }
 
   #touch(page: number, entry: CachedPage): void {

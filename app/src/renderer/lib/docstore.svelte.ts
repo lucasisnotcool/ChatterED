@@ -237,7 +237,19 @@ export class DocStore {
     if (this.#saveTimer) clearTimeout(this.#saveTimer);
     this.#saveTimer = null;
     this.#savePending = false;
-    this.#slides?.destroy();
+    /**
+     * **Letting the old deck go must never stop the new one opening.** `#reset()` is the first
+     * thing `open()` does, so anything that throws in here takes the whole open with it —
+     * silently, because `open()`'s own `catch` only sets `this.error` after `this.fileId` has
+     * been cleared. That is exactly how a `TypeError` in pdf.js teardown made the second deck a
+     * learner opened do nothing at all (20 Sep). Releasing a document is best-effort by
+     * definition; it is not a reason to refuse to read the next one.
+     */
+    try {
+      this.#slides?.destroy();
+    } catch (err) {
+      console.warn('notes: the previous deck did not close cleanly —', message(err));
+    }
     this.#slides = null;
     this.slidesReady = false;
     this.#docJson = null;
