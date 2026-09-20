@@ -63,8 +63,9 @@ npm run dev     # compiles main + preload, starts Vite, launches Electron
 - **Open folder →** any folder of lecture PDFs. This ZIP carries one small deck of the author's
   own (`Academia/Sources/btw interaction/`, 7 slides). The deck in the video is the module's own
   Week 4 lecture, which is the lecturer's and is not redistributed here.
-- Opening a PDF for the first time ingests it: about **85 s for 7 slides**, about **4 minutes for
-  66**, with the notes appearing section by section while Ellie is still writing. Reopening is
+- Opening a PDF for the first time ingests it: about **85 s for 7 slides**, about **6 minutes for
+  66**, with the notes appearing section by section while Ellie is still writing, and questions
+  answered in the meantime (a learner's turn pre-empts an ingest window, which is re-queued). Reopening is
   instant and never re-ingests.
 - **Settings ▸ Tester pacing = Demo** shortens the silence thresholds so Ellie's guess can be seen without
   waiting minutes. **Study** keeps the thresholds the design argues for.

@@ -6,10 +6,10 @@ previous draft (the attempt loop on slide crops) is in git history at `30f39e8`.
 **Two kinds of bracket, neither is submission text.** `[LUCAS: …]` is yours alone: things only you
 can confirm (consent wording, exact quotes). The interview paragraphs were written from your notes
 *after* the transcript reading was committed, so the two readings were independent; where they
-disagree, Step 1 says so. `[BUILD: …]` is a fact
-the finished build has to supply; I fill those in after the end-to-end run.
+disagree, Step 1 says so. The build facts in Step 4 are measured, from the end-to-end run
+of 20 Sep on the real app.
 
-**Body word count: 1,993 / 2,000**, counted over Steps 1 to 4 and Limitations, with the brackets and
+**Body word count: 2,001 / 2,000**, counted over Steps 1 to 4 and Limitations, with the brackets and
 the architecture figure excluded. The interview material is now in (from `docs/research/interviews/findings.md`);
 if you add exact quotes, the easiest cuts are DG5 and the last row of the roles table.
 
@@ -69,7 +69,7 @@ the phrases in quotation marks are from your notes; replace with exact words if 
 - **N3, feedback I can check, worked through before the next question.** Once that learner
   attempted, 11 of 21 AI verdicts were wrong, nine calling a
   correct answer wrong; the learner replied "ok". 17 of 21 feedback turns also carried the next
-  question, and no later attempt was ever a second try.
+  question.
 - **N4, notes I can trust.** One session's "all lectures" silently became lectures 7 to 13;
   another claimed "97% concept coverage" after its own check failed.
 - **N5, answers sized for reading.** Seven of eight follow-up questions repaired the AI's previous
@@ -85,7 +85,7 @@ went unnoticed, which is why it is a need.
 
 A conversation can hold the shape those two learners built by hand: ask first, wait, offer
 something to improve on instead of the answer, lower the question when it was too hard, and keep
-the result somewhere it can be checked. That is what ChatterED makes the default.
+the result somewhere it can be checked.
 
 ## Step 2: The learning goal and the CUI's role
 
@@ -183,11 +183,10 @@ pure function of recorded verdicts.
 words of each turn, Ellie's cue as a structured reply that declares whether it contains a mistake,
 the doc-edit plan, and the coding of learner evidence. **LLMs to build:** scaffolding, tests and
 research synthesis, under my decisions; every rule and threshold is mine and dated in the issues.
-Against the lecture's fourth trap, the model is pinned and every transcript logged.
 
 ## Step 4: The prototype
 
-A running app, on CS3249's own Week 4 deck (66 slides). **[BUILD: ingest time and block count.]**
+A running app, on CS3249's own Week 4 deck (66 slides). Ingest took six minutes: 171 blocks, each with provenance, and 23 inline figures.
 
 1. **Open.** The deck becomes lecture notes that read without the slides; each block carries a
    `p. N` chip that opens its slide, and diagrams appear inline as crops of the original.
@@ -201,10 +200,10 @@ A running app, on CS3249's own Week 4 deck (66 slides). **[BUILD: ingest time an
    whether she is right. I type "I don't know": Max gives the answer, corrects Ellie, fills
    nothing, and his next question is easier.
 6. **I write.** I add my own sentence to the notes. Max assesses it as an attempt, and his
-   correction arrives as a strikethrough suggestion I accept or reject. Nothing of mine is
-   overwritten.
+   correction arrives as a strikethrough suggestion I accept or reject.
 
-**[BUILD: what is live in the filmed build, and anything that is not.]**
+**Real and live.** Nothing is scripted: the rules, the document guard and the progress function are
+tested code (1,779 tests); the model writes the notes and the words.
 
 ## Limitations
 
