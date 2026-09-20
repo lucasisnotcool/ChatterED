@@ -87,7 +87,16 @@
   /* The strip narrows before anything else does: nine segments of 22 px is 222 px, and a doc
      header in a 1100 px window does not have 222 px to give. They stay equal to each other,
      which is the only thing a countable bar actually promises. */
-  .segments { display: flex; gap: 3px; flex: 0 1 auto; min-width: 0; }
+  .segments {
+    display: flex;
+    gap: 3px;
+    flex: 0 1 auto;
+    min-width: 0;
+    /* Clipped, not overlapping: a strip that shrinks past its own segments used to spill over
+       the count beside it — "●●●●●●●0 of 7", with no gap at all, once the cost chip arrived in
+       the same header (live run, 20 Sep). */
+    overflow: hidden;
+  }
   .seg {
     flex: 1 1 22px;
     min-width: 5px;
@@ -123,13 +132,24 @@
     font-variant-numeric: tabular-nums;
     flex: none;
   }
+  /*
+   * **The prose is what yields.** The dots and `n of m` are the bar; this sentence is a gloss on
+   * them, so it takes a zero basis and gives up its width before the strip does, and disappears
+   * entirely in a narrow window rather than pushing the count into the segments. What it says is
+   * still on the button's `aria-label`, which is where a screen reader reads it from anyway.
+   */
   .status {
     font-size: 11px;
     color: var(--muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1 1 0;
     min-width: 0;
+  }
+
+  @media (max-width: 1400px) {
+    .status { display: none; }
   }
   .twist { font-size: 9px; color: var(--muted); flex: none; }
 
