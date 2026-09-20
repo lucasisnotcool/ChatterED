@@ -50,6 +50,28 @@ describe('buildProgress', () => {
     expect(fx.ensureCalls).toEqual(['f_deck']);
   });
 
+  /**
+   * The bar and the notes ingest share one CLI lane at the same background priority, and the
+   * shell reads the bar the instant a file opens. Asking for the tree here put a whole
+   * objectives pass in front of the first notes window — `llm.queued_ms: 48837` on a seven-page
+   * deck, live, 20 Sep. `notes/ingest.ts` asks for the tree itself once window 1 has landed.
+   */
+  it('does not ask for the tree while the notes ingest is still running', async () => {
+    for (const status of ['pending', 'streaming'] as const) {
+      const fx = fakeHost({ doc: deck() });
+      fx.db.prepare('UPDATE notes_docs SET ingest_status = @s').run({ s: status });
+      await buildProgress(fx.host, 'f_deck');
+      expect(fx.ensureCalls).toEqual([]);
+    }
+  });
+
+  it('asks for it again as soon as the ingest is no longer in flight', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.db.prepare("UPDATE notes_docs SET ingest_status = 'ready'").run();
+    await buildProgress(fx.host, 'f_deck');
+    expect(fx.ensureCalls).toEqual(['f_deck']);
+  });
+
   it('fills 1 on a Well done, 0.5 on a Partly there, and nothing on Not yet', async () => {
     const fx = fakeHost({ doc: deck() });
     fx.setTree([

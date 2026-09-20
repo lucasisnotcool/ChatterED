@@ -18,6 +18,7 @@ import type { ProgressObjectiveView, ProgressView, QuizOutcome } from '../../sha
 import { progressFill } from '../../shared/doc/progress.js';
 import type { LearningObjective } from '../../shared/objectives.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
+import { notesRepo } from '../db/repos/notes.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
 import { threadsRepo } from '../db/repos/threads.js';
 import { docActor, requireActorMethod } from './actorport.js';
@@ -36,14 +37,28 @@ function bestOutcome(outcomes: readonly QuizOutcome[]): QuizOutcome | null {
 }
 
 /**
+ * Is a notes ingest for this deck running right now?
+ *
+ * `pending` counts as running: the row is created before the first window's call is even queued,
+ * and that gap is exactly where the bar's read used to overtake it.
+ */
+export function ingestInFlight(host: Pick<DocHost, 'db'>, contentSha: string | null): boolean {
+  if (!contentSha) return false;
+  try {
+    const status = notesRepo(host.db).byContentSha(contentSha)?.ingestStatus ?? null;
+    return status === 'pending' || status === 'streaming';
+  } catch {
+    // The bar never fails on account of a lookup it only uses to be polite about the lane.
+    return false;
+  }
+}
+
+/**
  * Build the whole view. Exported so `emitProgress` and the handler share one definition, and so
  * the unit tests can drive it with a fake host instead of an IPC round trip.
  */
 export async function buildProgress(host: DocHost, fileId: string): Promise<ProgressView> {
   const tree = host.objectivesTree(fileId);
-  // The tree is what the bar draws; if it is missing or stale, ask for it (self-guarding, never
-  // awaited) and report `none` this time round. The `objectives.tree` event brings the renderer back.
-  if (!tree || tree.status !== 'ready') host.ensureObjectives(fileId);
 
   let contentSha: string | null = null;
   try {
@@ -56,6 +71,22 @@ export async function buildProgress(host: DocHost, fileId: string): Promise<Prog
   const docRow = notesDocRow(host.db, { contentSha, fileId });
   const opened = docRow ? openNotesDoc(host.db, { contentSha: docRow.contentSha }) : null;
   const doc = opened?.doc ?? null;
+
+  /**
+   * The tree is what the bar draws; if it is missing or stale, ask for it (self-guarding, never
+   * awaited) and report `none` this time round. The `objectives.tree` event brings the renderer
+   * back.
+   *
+   * **Unless the notes ingest is still running.** The two share one CLI lane and the same
+   * background priority, so whoever asks first holds it. `notes/ingest.ts` fires the objectives
+   * itself once window 1 has landed, deliberately — the notes are what the learner is looking
+   * at. But the shell reads the bar the moment a file opens, which used to ask for the tree
+   * first, and the notes ingest then queued behind a whole objectives pass: `llm.queued_ms:
+   * 48837` on a seven-page deck, and the 66-page deck's first window behind it. Skipping here
+   * costs nothing — the ingest's own call arrives a window later, and every later read of a
+   * still-unready tree asks again.
+   */
+  if ((!tree || tree.status !== 'ready') && !ingestInFlight(host, contentSha)) host.ensureObjectives(fileId);
 
   const outcomes = contentSha ? outcomesRepo(host.db).forContent(contentSha) : [];
   const byObjective = new Map<string, QuizOutcome[]>();

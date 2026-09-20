@@ -270,7 +270,8 @@ interface Waiter {
   fail: (err: Error) => void;
 }
 
-class CliQueue {
+/** Exported for tests: the lane's ordering is a rule, and a rule is asserted on its own. */
+export class CliQueue {
   #running: { priority: number; preempt: (() => void) | null } | null = null;
   #waiting: Waiter[] = [];
   #seq = 0;
@@ -289,13 +290,30 @@ class CliQueue {
       this.#running = { priority, preempt };
       return Promise.resolve(0);
     }
-    // A learner is waiting on this one, and what holds the lane can be thrown off it.
-    if (priority <= 0 && this.#running.preempt) {
-      const kill = this.#running.preempt;
-      this.#running.preempt = null;
-      kill();
-    }
-    return new Promise<number>((resolve, reject) => {
+    /**
+     * A learner is waiting on this one, and what holds the lane can be thrown off it.
+     *
+     * **`<= 1`, not `<= 0`** (20 Sep). Priority 1 is `orchestrator` and `docedit`, and both are
+     * part of a turn the learner is watching: `docedit`'s own entry in `CLI_PRIORITY` says a
+     * learner "watching Ellie's cursor sit still for a minute behind a notes window has been
+     * lied to by the cursor", and that is precisely what the gate allowed — pre-emption stopped
+     * at priority 0, so a doc edit queued behind the running window instead of taking the lane.
+     * Measured at 8.6 s on a one-window deck; a 66-page deck's windows are ~80 s each.
+     *
+     * It cannot starve the background work: only `ingest` and `notes` are pre-emptible, both
+     * re-queue or are retried by their callers, and nothing at priority 2 can pre-empt anything.
+     */
+    /**
+     * **Taken now, fired after the waiter is on the queue.** `kill()` may release the lane
+     * synchronously — that is the tidiest thing a pre-empted caller can do — and if this call
+     * were still outside the queue at that moment, `release()` would find nothing waiting, drop
+     * the lane, and the caller that did the pre-empting would wait for a wake-up that never
+     * comes. Found by the test below; in production the window is narrow (the notes window
+     * releases when its child exits) but it is the kind of narrow that shows up on camera.
+     */
+    const kill = priority <= 1 ? this.#running.preempt : null;
+    if (kill) this.#running.preempt = null;
+    const queued = new Promise<number>((resolve, reject) => {
       const waiter: Waiter = {
         priority,
         seq: (this.#seq += 1),
@@ -320,6 +338,8 @@ class CliQueue {
       if (onAbort) signal?.addEventListener('abort', onAbort, { once: true });
       this.#waiting.push(waiter);
     });
+    if (kill) kill();
+    return queued;
   }
 
   release(): void {

@@ -23,6 +23,7 @@ import {
   OWN_TURN_PREFIX,
   promptFor,
   cliEnv,
+  CliQueue,
   cliQueue,
   CLI_DEFERRED,
   CLI_DROPPED_ENV,
@@ -632,6 +633,40 @@ describe('the notes lane', () => {
     expect(CLI_PRIORITY.notes).toBe(2);
     expect(CLI_DEFERRED.has('notes')).toBe(true);
     expect(CLI_PREEMPTIBLE.has('notes')).toBe(true);
+  });
+
+  /**
+   * The gate used to stop at priority 0, so a doc edit — the call that writes Ellie's answer
+   * into the notes, with her cursor already blinking at the block — queued behind the running
+   * window instead of taking the lane. 8.6 s on a one-window deck; ~80 s per window on 66 pages.
+   */
+  it('lets a doc edit throw a running notes window off the lane', async () => {
+    let killed = false;
+    const lane = new CliQueue();
+    const held = await lane.acquire(CLI_PRIORITY.notes!, undefined, () => {
+      killed = true;
+      lane.release(); // what `notes/ingest.ts` does on `CliPreemptedError`, then re-queues
+    });
+    expect(held).toBe(0);
+
+    const queued = await lane.acquire(CLI_PRIORITY.docedit!);
+    expect(killed).toBe(true);
+    expect(queued).toBeLessThan(1_000);
+    lane.release();
+  });
+
+  it('does not let one background call throw another off', async () => {
+    let killed = false;
+    const lane = new CliQueue();
+    await lane.acquire(CLI_PRIORITY.notes!, undefined, () => {
+      killed = true;
+    });
+    const waiting = lane.acquire(CLI_PRIORITY.ingest!);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(killed).toBe(false);
+    lane.release();
+    await waiting;
+    lane.release();
   });
 
   it('puts the doc edit above the background lane and below the turn', () => {
