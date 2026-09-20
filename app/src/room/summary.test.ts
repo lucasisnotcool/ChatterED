@@ -1,7 +1,10 @@
 /**
  * **The artefact** (issue #41, `conversation-refinement.md` §5), through the real actor on a fake
- * clock: the card, the cap in code, the thread behind it, Regenerate, and the offer that never
- * inserts anything.
+ * clock: the card, the cap in code, the thread behind it, and Regenerate.
+ *
+ * `rule:offer_summary` — the Teacher's one-line offer — is **retired** (#48 cleanup). It only
+ * ever fired in a room with no notes doc, and the button it advertised went with the crop flow,
+ * so what was left was a Teacher turn promising a control the app no longer has.
  *
  * Lucas's #41 workflow is what is asserted here, in his order: *"for artefact creation and
  * generation, this should be provided as a button, which will create a slide / segment that
@@ -19,14 +22,7 @@ import { RoomActor, type RoomActorDeps } from './actor.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 import { API_PLAN } from './llm/models.js';
 import { segmentContext } from './reference.js';
-import {
-  OFFER_AFTER_TEACHER_TURNS,
-  SUMMARY_OFFER_LINE,
-  SUMMARY_WORD_CAP,
-  composeSummaryBody,
-  renderThread,
-  shouldOfferSummary,
-} from './summary.js';
+import { SUMMARY_WORD_CAP, composeSummaryBody, renderThread } from './summary.js';
 
 const TEACH = 'Positive semidefinite means zᵀHz ≥ 0 for every vector z, not that every entry of H is ≥ 0.';
 const SUMMARY = 'Positive semidefinite is a statement about the quadratic form zᵀHz, not about the entries of H.';
@@ -130,50 +126,6 @@ describe('renderThread', () => {
     expect(out).toContain('Learner: what is PSD?');
     expect(out).toContain('Ellie: It is about zᵀHz.');
     expect(out).not.toContain('An old card.');
-  });
-});
-
-describe('shouldOfferSummary', () => {
-  const teacher = 'p_teacher';
-  const turns = (n: number) =>
-    Array.from({ length: n }, () => ({ participant_id: teacher, kind: 'turn', model: 'm' })) as never[];
-
-  it('waits for two Teacher turns and something taught', () => {
-    expect(
-      shouldOfferSummary({ thread: turns(1), teacherParticipantId: teacher, taughtSomething: true, alreadyOffered: false }),
-    ).toBe(false);
-    expect(
-      shouldOfferSummary({
-        thread: turns(OFFER_AFTER_TEACHER_TURNS),
-        teacherParticipantId: teacher,
-        taughtSomething: true,
-        alreadyOffered: false,
-      }),
-    ).toBe(true);
-    expect(
-      shouldOfferSummary({ thread: turns(4), teacherParticipantId: teacher, taughtSomething: false, alreadyOffered: false }),
-    ).toBe(false);
-  });
-
-  it('never twice, and never on a thread that already has a card', () => {
-    expect(
-      shouldOfferSummary({ thread: turns(4), teacherParticipantId: teacher, taughtSomething: true, alreadyOffered: true }),
-    ).toBe(false);
-    const withCard = [...turns(4), { participant_id: 'p_ref', kind: 'summary' }] as never[];
-    expect(
-      shouldOfferSummary({ thread: withCard, teacherParticipantId: teacher, taughtSomething: true, alreadyOffered: false }),
-    ).toBe(false);
-  });
-
-  /** The offer line is itself a Teacher row; it must not count toward its own threshold. */
-  it('does not count the offer line as a Teacher turn', () => {
-    const withOffer = [
-      { participant_id: teacher, kind: 'turn', model: 'm' },
-      { participant_id: teacher, kind: 'turn', model: 'rule:offer_summary' },
-    ] as never[];
-    expect(
-      shouldOfferSummary({ thread: withOffer, teacherParticipantId: teacher, taughtSomething: true, alreadyOffered: false }),
-    ).toBe(false);
   });
 });
 
@@ -295,36 +247,5 @@ describe('flow:threadOf — the card is a handle on the conversation', () => {
     const turn = h.store.messages.forRoom(h.roomId).at(-1)!;
     expect(h.actor.threadOf(turn.id)).toBeNull();
     expect(h.actor.threadOf('m_nope')).toBeNull();
-  });
-});
-
-describe('rule:offer_summary', () => {
-  it('offers once, after two Teacher turns, and inserts nothing', async () => {
-    const h = build({ flowState: { taught: [{ elementId: 'R1', taughtAt: 1, by: 'teacher', label: 'PSD' }] } });
-    await thread(h);
-
-    const offers = h.store.messages.forRoom(h.roomId).filter((m) => m.model === 'rule:offer_summary');
-    expect(offers).toHaveLength(1);
-    expect(offers[0]!.body).toBe(SUMMARY_OFFER_LINE);
-    expect(offers[0]!.anchor_id).toBe(SEG);
-    // R1: the offer is a sentence. Nothing has been written into the document.
-    expect(h.store.messages.forRoom(h.roomId).some((m) => m.kind === 'summary')).toBe(false);
-
-    // A third and fourth Teacher turn do not offer again.
-    await settle(h.clock, h.actor.sendMessage('and if H is singular?', SEG));
-    expect(h.store.messages.forRoom(h.roomId).filter((m) => m.model === 'rule:offer_summary')).toHaveLength(1);
-  });
-
-  it('does not offer when the sitting has taught nothing', async () => {
-    const h = build();
-    await thread(h);
-    expect(h.store.messages.forRoom(h.roomId).some((m) => m.model === 'rule:offer_summary')).toBe(false);
-  });
-
-  it('remembers across a relaunch that it has already offered', async () => {
-    const h = build({ flowState: { taught: [{ elementId: 'R1', taughtAt: 1, by: 'teacher', label: 'PSD' }] } });
-    await thread(h);
-    const saved = h.actor.flowSnapshot();
-    expect(saved.offeredSummary).toEqual([SEG]);
   });
 });

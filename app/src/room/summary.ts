@@ -38,20 +38,6 @@ import type { CacheableBlock, LlmRequest } from './llm/types.js';
  */
 export const SUMMARY_WORD_CAP = 150;
 
-/**
- * The Teacher's one-line offer.
- *
- * Written here rather than generated, the same treatment `flow.handOffLine()` gets and for the
- * same reason: on camera the difference between a rule the learner can see and turn down and a
- * model's whim is the whole of `flow-build-plan.md` §4.2's argument. It never inserts anything —
- * the button on it does, and only if pressed.
- */
-export const SUMMARY_OFFER_LINE =
-  'Want me to put what we just worked out into the document, under this part? It lands as a short card you can come back to.';
-
-/** How many Teacher turns a thread needs before the offer is worth making. */
-export const OFFER_AFTER_TEACHER_TURNS = 2;
-
 export interface SummaryRequestInput {
   model: string;
   roomId: string;
@@ -133,31 +119,6 @@ export function renderThread(
       return `${who}: ${m.body.trim()}`;
     })
     .join('\n\n');
-}
-
-/**
- * Should the Teacher offer, on this thread, right now?
- *
- * Deliberately a pure function over what the actor already has: the thread's own rows and whether
- * the sitting has taught anything. "At most once per thread" is `alreadyOffered`, and a thread
- * that already carries a card is not offered one again — the learner has the artefact, and the
- * way to refresh it is Regenerate, not a second offer.
- */
-export function shouldOfferSummary(input: {
-  /** Every row in this thread, in order. */
-  thread: readonly MessageRow[];
-  /** Participant ids that belong to the Teacher. */
-  teacherParticipantId: string;
-  /** True when the sitting's taught set is non-empty — the thread taught something. */
-  taughtSomething: boolean;
-  alreadyOffered: boolean;
-}): boolean {
-  if (input.alreadyOffered || !input.taughtSomething) return false;
-  if (input.thread.some((m) => (m.kind ?? 'turn') === 'summary')) return false;
-  const teacherTurns = input.thread.filter(
-    (m) => m.participant_id === input.teacherParticipantId && (m.kind ?? 'turn') === 'turn' && m.model !== 'rule:offer_summary',
-  ).length;
-  return teacherTurns >= OFFER_AFTER_TEACHER_TURNS;
 }
 
 /** The summary card already in a thread, if there is one. `flow:summarise` replaces it. */

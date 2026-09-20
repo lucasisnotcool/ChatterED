@@ -81,11 +81,9 @@ import {
   type ReferenceAnswerState,
 } from './reference.js';
 import {
-  SUMMARY_OFFER_LINE,
   buildSummaryRequest,
   composeSummaryBody,
   renderThread,
-  shouldOfferSummary,
   summaryInThread,
 } from './summary.js';
 import { classifyLearnerTurn, quizCue, type LearnerTurnKind } from './attempt.js';
@@ -862,8 +860,19 @@ export class RoomActor {
        * not about. Inside the question's own thread nothing changes: a clarification there is
        * still Max's (row 5), and `@Ellie` is still the way to reach her from it.
        */
-      // Collab-doc rooms only, like `rule:max_followup`: the old flow's scripted take answers a
-      // hand-off question from a neighbouring card, and keeps working until that UI is removed.
+      /**
+       * **Collab-doc rooms only, and that is not a leftover** (#48 cleanup; removing this
+       * condition was tried and reverted).
+       *
+       * The rule below is *"a turn in another thread is a question for Ellie, not an attempt at
+       * Max's"*, and it reads **anchor inequality**. That only means what it says where every
+       * turn carries the anchor of the thread it was typed in, which is the collab doc. In a
+       * room with no notes document the anchors are not comparable that way: the scripted
+       * Critique 1 take — still live, and still what `scripts.ts` picks for the fixture deck —
+       * sends its attempt with no anchor at all while Max's question is anchored to a card, so
+       * without the gate a real attempt is reclassified as an Ask and `rule:quiz_feedback` never
+       * fires. `script.critique1.test.ts` catches exactly that, which is how this is known.
+       */
       if (
         origin !== 'ask' &&
         this.#docPort.docId() !== null &&
@@ -1384,52 +1393,6 @@ export class RoomActor {
       .sort((a, b) => a.seq - b.seq)
       .map((m) => m.id);
     return { summaryId, threadId, messageIds };
-  }
-
-  /**
-   * **The offer** (`rule:offer_summary`, R1).
-   *
-   * A one-line Teacher turn saying the card is available, posted at most once per thread after
-   * the thread has two Teacher turns in it and the sitting has taught something. Written by
-   * `summary.ts` rather than generated, the same treatment the hand-off line gets and for the
-   * same reason (`flow-build-plan.md` §4.2: "a rule I can see and turn down"), and it **inserts
-   * nothing** — the button on it does, if the learner presses it.
-   */
-  #maybeOfferSummary(anchorId: string | null): void {
-    /**
-     * **Retired where the collab doc exists** (#48, `collab-doc.md` §9: the doc *is* the
-     * artefact now). The offer's whole argument was that a conversation deserves a durable
-     * record in the learner's document — and §5 gives it one without asking, written at the
-     * segment it belongs to. A button offering to summarise into a document that is already
-     * writing itself is the app arguing with its own feature.
-     *
-     * Gated rather than deleted, because the old flow keeps working until the lead removes it in
-     * one commit (COLLAB-CONTRACT rule 3), and `summary.ts` is still what it runs on.
-     */
-    if (this.#docPort.docId() !== null) return;
-    if (anchorId === null || this.#offeredSummary.has(anchorId)) return;
-    const teacher = agentByRole(this.#d.roster, 'peer');
-    const participant = this.#d.store.participants.byAgentKey(this.#d.roomId, teacher.key);
-    if (!participant) return;
-    const thread = this.#d.store.messages
-      .forRoom(this.#d.roomId)
-      .filter((m) => m.anchor_id === anchorId)
-      .sort((a, b) => a.seq - b.seq);
-    const offer = shouldOfferSummary({
-      thread,
-      teacherParticipantId: participant.id,
-      taughtSomething: this.#taught.length > 0,
-      alreadyOffered: false,
-    });
-    if (!offer) return;
-    this.#offeredSummary.add(anchorId);
-    this.#insertMessage({
-      participantId: participant.id,
-      body: SUMMARY_OFFER_LINE,
-      model: 'rule:offer_summary',
-      anchorId,
-    });
-    this.#event('peer', 'agent.turn.dispatched', { move: 'offer_summary', decided_by: 'rule:offer_summary' });
   }
 
   /**
@@ -2719,7 +2682,6 @@ export class RoomActor {
        * and never into a silence — a learner who has gone quiet is not being asked to press a
        * button. It posts one line and inserts nothing; R1 is the whole design.
        */
-      if (decision.role === 'peer' && trigger !== 'silence') this.#maybeOfferSummary(anchorId);
     });
 
     this.#pending = null;
@@ -2763,12 +2725,19 @@ export class RoomActor {
      */
     if (
       /**
-       * **The follow-up needs a doc to be about.** `rule:max_followup` is a collab-doc rule and
-       * it arrives with the collab doc: a room with no notes document (`NO_DOC`) is the old flow,
-       * which `collab-doc.md` §9 supersedes as a *surface* and which the lead removes in one
-       * commit at the end of this build. Until then it keeps behaving as it did, and that is what
-       * this gate buys — one condition rather than thirty rewritten tests asserting a turn the
-       * old surface has no column to draw.
+       * **The follow-up needs a doc to be about**, and `NO_DOC` is a real production state, not
+       * the retired flow (#48 cleanup; it was written as the latter and re-justified here).
+       *
+       * A room reaches `docId() === null` three ways that all still ship: an ingest that failed,
+       * an ingest that has not landed its first window yet, and a PDF with no text layer. In all
+       * three there is no §5.2 Q block for Max's question to be written into and
+       * `recordOutcome` is a no-op, so a follow-up here is a question the document cannot carry
+       * and the progress bar cannot count — and the learner is asked it anyway, with no way to
+       * see it anywhere but in the chat. Ellie's answer stands; Max waits for the doc.
+       *
+       * (The room screen cannot reach this either way: `rule:ellie_answers` needs a thread kind
+       * or an anchored thread, and its room-level stream has neither, so `followupDue` is false
+       * there before this condition is read.)
        */
       this.#docPort.docId() !== null &&
       followupDue({
