@@ -2738,7 +2738,7 @@ export class RoomActor {
      * the fill interrupted, and `#armTimer(true)` therefore leaves the window's thresholds where
      * they were.
      */
-    if (trigger !== 'silence') this.#stages = silenceStagesMs(wordCount(text));
+    if (trigger !== 'silence') this.#stages = silenceStagesMs(wordCount(text), (this.#flow?.profile ?? this.#d.flowProfile ?? FLOW).silenceScale);
     this.#lastFillWasScaffold = trigger === 'silence' && opts.silenceStage === 2;
     if (decision.probeType) this.#lastProbeType = decision.probeType;
     for (const id of decision.challenges) this.#challenged.add(id);

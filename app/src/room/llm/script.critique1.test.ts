@@ -452,8 +452,11 @@ function build() {
     pack: BTW_SIDE_CHANNEL_V1,
     config: { ...DEFAULT_ROOM_CONFIG, mode: 'scripted' },
     appVersion: '0.1.0-test',
-    flowProfile: DEMO,
-    flowState: critique1Sitting(clock.now(), DEMO),
+    // Demo's k-in-m with the **shipped** silence thresholds: these assertions advance the clock
+    // against `clamp(…, 120 s, 300 s)`, and `DEMO.silenceScale` is a walkthrough pacing choice
+    // that `timer.test.ts` owns (added 20 Sep for §4.3's cue).
+    flowProfile: { ...DEMO, silenceScale: 1 },
+    flowState: critique1Sitting(clock.now(), { ...DEMO, silenceScale: 1 }),
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,
   });

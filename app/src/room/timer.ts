@@ -146,11 +146,21 @@ export interface SilenceStages {
   stageTwoMs: number;
 }
 
-export function silenceStagesMs(words: number): SilenceStages {
+/**
+ * `scale` is the pacing profile's `silenceScale` (`flow.ts`): 1 on the shipped profile, which is
+ * the brief's own formula untouched, and a sixth on Demo, where §4.3 says the threshold is
+ * shortened. It scales the floor and the ceiling as well as the reading time — scaling only the
+ * middle term would leave the 120 s floor in charge, which is exactly what made the cue take two
+ * minutes on camera.
+ */
+export function silenceStagesMs(words: number, scale = 1): SilenceStages {
   const safe = Number.isFinite(words) && words > 0 ? words : 0;
+  const factor = Number.isFinite(scale) && scale > 0 ? Math.min(1, scale) : 1;
   const readMs = (READING_MARGIN * safe * 60_000) / READING_WPM;
-  const stageOneMs = Math.round(Math.min(STAGE_ONE_CEILING_MS, Math.max(STAGE_ONE_FLOOR_MS, readMs)));
-  return { stageOneMs, stageTwoMs: stageOneMs + STAGE_TWO_GAP_MS };
+  const floor = STAGE_ONE_FLOOR_MS * factor;
+  const ceiling = STAGE_ONE_CEILING_MS * factor;
+  const stageOneMs = Math.round(Math.min(ceiling, Math.max(floor, readMs * factor)));
+  return { stageOneMs, stageTwoMs: stageOneMs + Math.round(STAGE_TWO_GAP_MS * factor) };
 }
 
 /** Words, the way the threshold counts them: whitespace-separated tokens with a letter or digit. */

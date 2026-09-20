@@ -68,7 +68,14 @@ function build(mode: 'scripted' = 'scripted', flowState?: RoomActorDeps['flowSta
     pack: PSD_HESSIAN_CONVEXITY_V1,
     config: { ...DEFAULT_ROOM_CONFIG, mode },
     appVersion: '0.1.0-test',
-    flowProfile: DEMO,
+    /**
+     * Demo's k-in-m and its UI guard, with the **shipped** silence thresholds. Every timer
+     * assertion below advances the clock against `clamp(…, 120 s, 300 s)`; `DEMO.silenceScale`
+     * (added 20 Sep so §4.3's cue can be filmed in 20 s rather than two minutes) is a pacing
+     * choice for a walkthrough, and pinning it here keeps these tests about the rules they were
+     * written for. `timer.test.ts` owns the scale itself.
+     */
+    flowProfile: { ...DEMO, silenceScale: 1 },
     flowState,
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,

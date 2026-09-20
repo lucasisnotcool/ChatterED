@@ -14,6 +14,7 @@ import {
   wordCount,
   type TimerFire,
 } from './timer.js';
+import { DEMO, FLOW } from './flow.js';
 
 function makeTimer(overrides: Partial<typeof DEFAULT_ROOM_CONFIG> = {}) {
   const clock = new FakeClock();
@@ -261,6 +262,31 @@ describe('the silence thresholds scale to what there was to read', () => {
     // 12 words is ~6 s of reading even doubled; the floor is what stops the timer firing then.
     expect(silenceStagesMs(12).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
     expect(silenceStagesMs(0).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
+  });
+
+  /**
+   * §4.3: "the Demo pacing profile shortens it". Until 20 Sep nothing did, and Ellie's cue sat
+   * on the 120 s floor — two minutes of nothing in the middle of the beat being filmed, twice,
+   * on the live runs. The scale moves the floor and the ceiling too: scaling only the reading
+   * term would leave the floor in charge, which is the whole of the bug.
+   */
+  it('shortens the whole band on the Demo profile, floor included', () => {
+    expect(DEMO.silenceScale).toBe(1 / 6);
+    expect(FLOW.silenceScale).toBe(1);
+
+    const demo = silenceStagesMs(12, DEMO.silenceScale);
+    expect(demo.stageOneMs).toBe(STAGE_ONE_FLOOR_MS / 6); // 20 s, filmable
+    expect(silenceStagesMs(10_000, DEMO.silenceScale).stageOneMs).toBe(STAGE_ONE_CEILING_MS / 6);
+    expect(demo.stageTwoMs).toBe(demo.stageOneMs + STAGE_TWO_GAP_MS / 6);
+
+    // The shipped profile is the brief's formula, untouched.
+    expect(silenceStagesMs(12, FLOW.silenceScale)).toEqual(silenceStagesMs(12));
+  });
+
+  it('never lengthens the wait, whatever a stored profile says', () => {
+    expect(silenceStagesMs(12, 4).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
+    expect(silenceStagesMs(12, 0).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
+    expect(silenceStagesMs(12, Number.NaN).stageOneMs).toBe(STAGE_ONE_FLOOR_MS);
   });
 
   it('scales in the middle: 2 × words / 238 wpm', () => {

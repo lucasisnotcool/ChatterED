@@ -698,7 +698,12 @@ export const CRITIQUE1_SCRIPT: ScriptSource = {
  * should be quizzable seconds later — and it costs the take nothing now that the door it guarded
  * is not the door being used.
  */
-export const CRITIQUE1_TAKE: FlowProfile = { ...DEMO, minAgeMs: MIN_AGE_CAP_MS, turnsK: 5 };
+/**
+ * `silenceScale: 1` with the rest of Demo: the take's beats are timed against the brief's own
+ * `clamp(…, 120 s, 300 s)` — beat 10 says "minutes old, not seconds" on camera — and Demo's
+ * shortened cue (20 Sep, §4.3) is for a *cold* walkthrough, not for the scripted take.
+ */
+export const CRITIQUE1_TAKE: FlowProfile = { ...DEMO, minAgeMs: MIN_AGE_CAP_MS, turnsK: 5, silenceScale: 1 };
 
 /**
  * **The warm-up, as data — simplified, because the hero interaction no longer needs one.**

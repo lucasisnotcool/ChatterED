@@ -60,6 +60,13 @@ export interface FlowProfile {
   readonly minTaught: number;
   /** R4 — the composer must have been idle this long (no keystroke) before a hand-off. */
   readonly composerIdleMs: number;
+  /**
+   * **How much of the reading-time silence threshold this profile waits** (`collab-doc.md` §4.3:
+   * the cue fires at `clamp(2 × words / 238 wpm, 120 s, 300 s)`, "the Demo pacing profile
+   * shortens it"). 1 is the brief's own number; the Demo profile is the only thing that moves
+   * it, and only downwards. Applied in `timer.silenceStagesMs`.
+   */
+  readonly silenceScale: number;
   /** Declines in one session after which the Tester drops to reactive for the rest of it. */
   readonly declineLimit: number;
   /** Rowland 2014: feedback after every quiz answer is required, not optional. */
@@ -125,6 +132,7 @@ export const FLOW: FlowProfile = {
   composerIdleMs: 3_000,
   declineLimit: 3,
   feedbackRequired: true,
+  silenceScale: 1,
 };
 
 /**
@@ -165,6 +173,18 @@ export const DEMO: FlowProfile = {
    * filming ends up cold, beat 10's narration is the line that has to change.
    */
   minAgeMs: 20_000,
+  /**
+   * **A sixth of the wait before Ellie's cue.** §4.3 gives the threshold as reading-time scaled
+   * and says in the same sentence that "the Demo pacing profile shortens it"; until 20 Sep
+   * nothing did, so the cue sat on the 120 s floor — two full minutes of an empty screen in the
+   * middle of the beat that is being filmed, on both live runs.
+   *
+   * A sixth puts the floor at **20 s** and the ceiling at 50 s, which is the same relationship
+   * the other Demo constants have to their shipped values (`windowMs` 10 min → 3 min,
+   * `minAgeMs` 3 min → 20 s) and is still longer than it takes to read Max's question. The
+   * shipped profile keeps the brief's numbers exactly.
+   */
+  silenceScale: 1 / 6,
 };
 
 /**
