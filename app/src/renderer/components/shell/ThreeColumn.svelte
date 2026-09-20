@@ -2,7 +2,7 @@
   /**
    * **The shell** (#48, `docs/research/collab-doc.md` §0): *file panel · doc · chats*.
    *
-   * It replaces `FlowCanvas` as what a PDF opens into. The three columns are the brief's, and
+   * It is what a PDF opens into. The three columns are the brief's, and
    * the proportions say what the app is about: the document is the widest thing on screen and
    * the conversation sits beside it, calm and narrower, because this is a document the agents
    * are writing with you rather than a chat with a file attached.
@@ -11,8 +11,8 @@
    *
    *  - **the doc header**, which carries the progress bar (§6: "shown as a progress bar in the
    *    doc header") and the lesson-card popover it opens;
-   *  - **the two seams with T4** — `store.doc.scrollToBlock` for a lesson's Start and a span
-   *    thread's jump, and the editor pane itself, mounted the moment their file exists;
+   *  - **the two seams with the editor** — `store.doc.scrollToBlock` for a lesson's Start and a
+   *    span thread's jump, and the editor pane itself;
    *  - **the column sizes**, kept per install in `localStorage` the way the flow's zoom and the
    *    objectives panel's width already are.
    */
@@ -20,11 +20,10 @@
   import type { DocumentView } from '../../../shared/types.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
-  import { loadNotesPane, type PaneComponent } from './panes.js';
   import ChatColumn from './ChatColumn.svelte';
   import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
-  import NotesPlaceholder from './NotesPlaceholder.svelte';
+  import NotesPane from '../notes/NotesPane.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import VaultSidebar from '../VaultSidebar.svelte';
 
@@ -66,30 +65,6 @@
   let chatWidth = $state(readNumber(CHAT_WIDTH_KEY, DEFAULT_CHAT, MIN_CHAT, MAX_CHAT));
   let filesOpen = $state(readBool(FILES_OPEN_KEY, true));
   let dragging = $state(false);
-  let Pane = $state<PaneComponent | null>(null);
-  /**
-   * False until `loadNotesPane()` has answered, because **"no pane yet" and "no pane at all" are
-   * not the same thing** and mounting the stand-in for the first is expensive.
-   *
-   * `NotesPlaceholder` starts a *real* ingest if the file has none (it has to: it was the only
-   * notes surface while T4 was building theirs). So while the glob resolved — one microtask, but
-   * a microtask the placeholder's own `$effect` runs inside — the stand-in was calling
-   * `notesIngest` on every fresh deck, seconds before T4's pane could rasterise a single page.
-   * The ingest was then already `pending` when the real pane asked, so it adopted it and never
-   * sent the slides, and §2's refine pass ran text-only on every deck. Found in the live run of
-   * 20 Sep, where it is the whole of `with_images: false`.
-   */
-  let paneResolved = $state(false);
-
-  /** T4's editor, the moment their file exists. Until then, the read-only stand-in. */
-  $effect(() => {
-    void loadNotesPane().then((found) => {
-      untrack(() => {
-        Pane = found;
-        paneResolved = true;
-      });
-    });
-  });
 
   /**
    * The file's surfaces, all opened by the same gesture.
@@ -118,9 +93,9 @@
   );
 
   /**
-   * Where the document goes. T4 owns the scroll; the fallback under it is the stand-in's, and it
-   * goes away with the stand-in — `scrollToBlock` is a no-op until their store lands, and a
-   * lesson's **Start** that silently scrolls nowhere is the one thing it must not be.
+   * Where the document goes. The editor owns the scroll; the query below is the fallback for a
+   * block the editor's own map has not caught up with — a lesson's **Start** that silently
+   * scrolls nowhere is the one thing it must not be.
    */
   function jump(blockId: string): void {
     store.doc.scrollToBlock(blockId);
@@ -220,13 +195,8 @@
     </header>
 
     <div class="docbody">
-      {#if Pane}
-        <!-- T4's editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
-        {@const Editor = Pane as import('svelte').Component<{ fileId: string }>}
-        <Editor fileId={doc.fileId} />
-      {:else if paneResolved}
-        <NotesPlaceholder fileId={doc.fileId} />
-      {/if}
+      <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
+      <NotesPane fileId={doc.fileId} />
     </div>
   </main>
 

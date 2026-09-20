@@ -255,41 +255,46 @@ describe('the whisper invariant', () => {
 });
 
 /**
- * THE SAME CANARY, OVER THE FLOW RENDERER (`flow-build-plan.md` §3.4 gate G3).
+ * THE SAME CANARY, OVER THE SHELL'S COMPONENT GRAPH (`collab-doc.md` §4.1).
  *
  * The test above walks from `context.group.ts`, which is a main-process graph: it proves the
- * *prompt* can never carry a whisper. It says nothing about the screen. The flow moved the
- * conversation into the document, and the whisper popover landed on Friday as a component on
- * the same cards — so there is a second way the invariant could break: a flow **component**
- * naming the whisper layer and drawing a private turn where a shared one goes.
+ * *prompt* can never carry a whisper. It says nothing about the screen. The private threads are
+ * the whisper's successor (§4.1: "one with Ellie, one with Max. Private."), and they are drawn
+ * in the same column as the shared doc chat — so there is a second way the invariant could
+ * break: a **component** in that column reaching for a private turn and drawing it where a
+ * shared one goes.
  *
- * "Extend, never relax" (`flow-build-plan.md` §4.6). The popover has landed, so this is now an
- * **allowlist of what a component may say about the private layer**, which is narrower than the
- * old blanket ban rather than wider:
+ * "Extend, never relax." This is an **allowlist of what a component may say about the private
+ * layer**:
  *
- *  - `WhisperPopover.svelte` is exempt. It *is* the popover; drawing private turns is its job,
- *    and it is the only file in the flow's graph that may read `store.flowWhisper.turns`.
+ *  - `PrivateThread.svelte` is exempt. It *is* the private thread; drawing private turns is its
+ *    job, and it is the only component in the shell's graph that may read a channel's `turns`.
  *  - Everywhere else, a line may name the private layer only if it is (a) mounting or importing
- *    the allowlisted component, (b) a `flowWhisper*` store reference passed straight through, or
- *    (c) `promotedFromWhisper` — which is a field of a **shared** `MessageView`, group scope by
- *    construction (the message is a new row the learner approved), and is the dual attribution
- *    `pivot-spec.md` §B5 asks the document to print.
+ *    the allowlisted component, (b) an `openPrivate` / `sendPrivate` / `privateUnread` store
+ *    reference passed straight through — a tab's label and its unread count, never a body — or
+ *    (c) `promotedFromWhisper`, which is a field of a **shared** `MessageView`, group scope by
+ *    construction: the message is a new row the learner approved.
  *
  * Anything else — a private turn's body, the whispers table, a second component reaching for the
  * thread — is an offender, which is exactly the shape the old assertion had.
  */
-const POPOVER = 'WhisperPopover.svelte';
+const PRIVATE_THREAD = 'PrivateThread.svelte';
 
 /** (a), (b) and (c) above. A line that matches none of these may not name the private layer. */
 function allowedWhisperLine(line: string): boolean {
-  return /WhisperPopover/.test(line) || /[Ff]lowWhisper/.test(line) || /promotedFromWhisper/.test(line);
+  return (
+    /PrivateThread/.test(line) ||
+    /(?:open|send)Private\b/.test(line) ||
+    /privateUnread/.test(line) ||
+    /promotedFromWhisper/.test(line)
+  );
 }
 
-describe('the whisper invariant, over the flow renderer', () => {
-  it('lets only the popover reach the private layer', () => {
-    const components = resolve(HERE, '../renderer/components');
+describe('the whisper invariant, over the shell', () => {
+  it('lets only the private thread reach the private layer', () => {
+    const shell = resolve(HERE, '../renderer/components/shell');
     const seen = new Set<string>();
-    const queue = [resolve(components, 'FlowCanvas.svelte')];
+    const queue = [resolve(shell, 'ThreeColumn.svelte')];
     const offenders: string[] = [];
 
     while (queue.length > 0) {
@@ -299,34 +304,34 @@ describe('the whisper invariant, over the flow renderer', () => {
       const src = readFileSync(file, 'utf8');
 
       // Components only. `lib/` and `shared/` are app-wide and are covered by the walk above.
-      const importRe = /^\s*import\s+(?!type\s)(?:[\s\S]*?)from\s+['"](\.\/[A-Za-z0-9_]+\.svelte)['"]/gm;
+      const importRe = /^\s*import\s+(?!type\s)(?:[\s\S]*?)from\s+['"](\.{1,2}\/[A-Za-z0-9_/]+\.svelte)['"]/gm;
       for (const match of src.matchAll(importRe)) {
         queue.push(resolve(dirname(file), match[1]!));
       }
 
-      if (file.endsWith(POPOVER)) continue;
+      if (file.endsWith(PRIVATE_THREAD)) continue;
       // Strip comments first, so the documentation of the invariant does not trip it.
       const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/<!--[\s\S]*?-->/g, '');
       for (const line of code.split('\n')) {
-        if (!/whisper/i.test(line)) continue;
+        if (!/whisper|private/i.test(line)) continue;
         if (allowedWhisperLine(line)) continue;
         offenders.push(`${file}: ${line.trim()}`);
       }
     }
 
     expect(offenders).toEqual([]);
-    // Sanity: the walk reached the card, the thread, the AI cards and the popover itself.
+    // Sanity: the walk reached the chat column, the doc chat, the span cards and the thread itself.
     expect(seen.size).toBeGreaterThanOrEqual(6);
-    expect([...seen].some((f) => f.endsWith(POPOVER))).toBe(true);
+    expect([...seen].some((f) => f.endsWith(PRIVATE_THREAD))).toBe(true);
   });
 
-  it('keeps the popover the only component that reads a private turn', () => {
-    const components = resolve(HERE, '../renderer/components');
+  it('keeps the private thread the only component that reads a private turn', () => {
+    const shell = resolve(HERE, '../renderer/components/shell');
     const offenders: string[] = [];
-    for (const name of ['FlowCanvas.svelte', 'SegmentCard.svelte', 'FlowThread.svelte', 'AiSegment.svelte']) {
-      const src = readFileSync(resolve(components, name), 'utf8');
-      // `.turns` is how a private thread's content is reached. Only the popover may.
-      if (/[Ff]lowWhisper[^\n]*\.turns/.test(src)) offenders.push(name);
+    for (const name of ['ThreeColumn.svelte', 'ChatColumn.svelte', 'DocChat.svelte', 'SpanThreadCard.svelte']) {
+      const src = readFileSync(resolve(shell, name), 'utf8');
+      // `channel(...).turns` / `chat.ellie.turns` is how a private thread's content is reached.
+      if (/(?:channel\([^)]*\)|\bellie|\bmax)\s*\.turns/.test(src)) offenders.push(name);
     }
     expect(offenders).toEqual([]);
   });

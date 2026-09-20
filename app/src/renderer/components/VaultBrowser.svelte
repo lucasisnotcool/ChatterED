@@ -11,7 +11,6 @@
   import type { SearchHitView, VaultFileView } from '../../shared/types.js';
   import { store } from '../lib/store.svelte.js';
   import DocumentPane from './DocumentPane.svelte';
-  import FlowCanvas from './FlowCanvas.svelte';
   import SearchResults from './SearchResults.svelte';
   import ThreeColumn from './shell/ThreeColumn.svelte';
   import VaultSidebar from './VaultSidebar.svelte';
@@ -39,8 +38,8 @@
 
   The whole window becomes the three-column shell — file panel · doc · chats — rather than the
   sidebar plus a pane, because the file panel is one of the three columns and the shell owns
-  whether it is open. `FlowCanvas` below is untouched and still reachable from the flow's own
-  toggle; the lead removes the old flow UI in one commit at the end of the parallel phase.
+  whether it is open. `store.docView === 'viewer'` is the one way out of it, and it falls through
+  to `DocumentPane` below — the Page viewer, unchanged.
 -->
 {#if store.openDoc && store.openDoc.kind === 'pdf' && store.docView === 'flow' && !inRoom}
   <ThreeColumn doc={store.openDoc} onclose={() => store.closeDoc()} />
@@ -82,12 +81,7 @@
 
     <!-- An open document wins over a live search: clicking a hit is a request to *read* it.
          The query stays in the box, so closing the document lands back on the results. -->
-    <!-- A PDF opens as the flow (`flow-build-plan.md` §1: "ChatterED opens a lecture deck as a
-         *flow*"). The document pane is one click away in the flow's header and is unchanged —
-         nothing that shipped on 15 Sep has been taken away. -->
-    {#if store.openDoc && store.openDoc.kind === 'pdf' && store.openDoc.bytes && store.docView === 'flow' && !inRoom}
-      <FlowCanvas doc={store.openDoc} onclose={() => store.closeDoc()} />
-    {:else if store.openDoc}
+    {#if store.openDoc}
       <DocumentPane doc={store.openDoc} onclose={() => store.closeDoc()} {inRoom} />
     {:else if store.searchQuery.trim().length >= 2}
       <div class="scroll"><SearchResults onopen={openHit} /></div>
