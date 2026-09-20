@@ -1,157 +1,148 @@
 # ChatterED — the Assignment 1 prototype
 
-**Method:** a working macOS app, run from source — Electron + Svelte 5 + TypeScript + SQLite. The
-geometry, rules, timer, latency floor, ledger gates and whisper scoping are real and tested; by
-default only the agents' *words* are replayed (§4).
+**Prototyping method:** a working macOS desktop app, run from source — Electron + Svelte 5 +
+TypeScript + ProseMirror + SQLite. It demonstrates one multi-turn CUI learning interaction end to
+end: *the learner asks about a lecture, is asked a question back, answers in their own words, gets
+grounded feedback, and watches the shared notes and their progress change because of what they
+wrote.* The rules that decide who speaks and whether an answer is due are code, tested, and run
+before any model is called; a model writes the words (§4).
+
+The design is argued in `docs/research/collab-doc.md`, from two evidence write-ups:
+`docs/research/ai-use-transcripts/analysis/convergence.md` (six real AI study sessions, coded) and
+`docs/research/interviews/findings.md` (three interviews). The report is in `docs/report/`.
 
 ## 1. What it is
 
-ChatterED opens a lecture deck as a **flow**. Each page is a **crop of the pdf.js-rendered page** —
-the lecturer's own pixels, never re-typeset — and faint **ticks** mark where the page's own geometry
-says a boundary could go (local; no model, no network); clicking one **splits the crop in place**.
-Under every card sit two faint lines. **+ Try this** asks **Max, the Tester**, for one question on the
-objective that card teaches; the learner attempts; Max opens with a verdict — *Well done* / *Partly
-there* / *Not yet* — on the question he asked, cites the slide (`p. N: "…"`) for every point, and
-unless it was *Well done* ends on one follow-up question for the gap, so the next attempt is invited
-rather than guessed at; **Try another** picks the next question from whatever the learner has shown
-least, and **Show the answer** appears only after one attempt — Max never gives the answer before one try, by a rule in
-the orchestrator and not a prompt (issue #47, `docs/research/attempt-first.md`). **+ Ask here** asks
-**Ellie, the Teacher**, who answers first and then teaches, from the slide and beyond it. Only the
-learner's verbatim words move the **Explanation Ledger** ○ → ◐ → ●, and ● is unreachable without a
-Tester question; a shown answer moves nothing. A rule on a clock can still hand Ellie's thread to Max
-when the learner has been in flow (`flow-session.md`), now the secondary door. **⌘K** opens a
-**whisper popover**: private with Ellie, ephemeral, with **Insert into the document** the only path
-from private to shared.
+A lecture deck (PDF) is **ingested into lecture notes**: an editable document that reads without
+the slides, where every block carries a **provenance chip** (`p. 12`, or `added: …` with the
+reason) that opens the source slide, and diagrams appear inline as **crops of the original page**.
+The window is three columns: **files · notes · chats**.
+
+Two agents work in the notes with the learner, each with a visible cursor:
+
+- **Ellie** (green) wrote the notes. Ask her anything — in the doc chat, or by highlighting a line
+  and pressing **⌘E / Ctrl+E** — and she answers, citing the slide; if the notes did not already
+  say it, she **types it in** at that spot. One click removes it (**Remove · Keep**).
+- **Max** (red) then asks **one follow-up question**, in the chat and as a **question block in the
+  notes**. It is the learner's to answer first. Max replies with a verdict — *Well done* / *Partly
+  there* / *Not yet* — grounds quoted from the slide (`p. N: "…"`), and, unless it was *Well
+  done*, a follow-up on the same question. His corrected answer is written under his question.
+- If the learner **goes quiet**, Ellie offers an unsure, half-right guess as a classmate would
+  (*"Ellie's guess — she might be wrong"*) and Max turns it back to the learner. It fires once per
+  question and is never written into the notes.
+- If the learner **gives up** — "I don't know", "just tell me", or the **Pass** button — Max gives
+  the full answer at once, it fills no progress, and his next question is easier. No question is
+  ever left unanswered.
+- **The learner's own text is never overwritten.** Every span records who wrote it. An agent that
+  needs to change the learner's words can only **suggest**: strikethrough, its colour, Accept ·
+  Reject. What the learner writes in the notes is also assessed as an attempt. **Freeze** stops
+  all agent edits.
+- **Progress** is a bar of learning objectives derived from the slides. An objective fills only on
+  the learner's own words: *Well done* completes it, *Partly there* half-fills it; a released
+  answer, Ellie's help and "ok" fill nothing. Clicking the bar opens the objectives as a path of
+  lessons, each with **Start**.
+- **Private threads** with Ellie and with Max never reach the notes unless the learner clicks
+  **Insert into the document**.
+- **Cost is visible at every level** — per message, per thread, per document (the ingest as its own
+  line) and for the app — and on a **Usage** page.
 
 ## 2. Run it
 
 ```sh
 cd app
 npm install     # also rebuilds better-sqlite3 for Electron's ABI (postinstall)
-npm run dev     # compiles main + preload, Vite on :5273, launches Electron
+npm run dev     # compiles main + preload, starts Vite, launches Electron
 ```
 
-- **Node ≥ 22.12** (`package.json` → `engines`; built on 22.14), npm 10+, Xcode command-line tools.
-- **Settings ▸ Backend = Scripted** (no network calls at all). **Settings ▸ Tester pacing** only
-  affects the secondary, clock-driven hand-off; **+ Try this** needs no warm-up.
-- **Open folder →** this ZIP's `Academia/`, promote **Sources**, open
-  `Sources/btw interaction/A0282987E_LohZhengLucas_Critique1_slides (1).pdf`.
+- **Node ≥ 22.12**, npm 10+, macOS with the Xcode command-line tools.
+- **A live model is needed to ingest a deck.** The app uses, in order: the local **Claude Code
+  CLI** when `claude` is installed and logged in (no key, no per-message charge), or an
+  **Anthropic API key** entered in Settings (stored mode 0600 under
+  `~/Library/Application Support/ChatterED/`, outside the repo). Turns, feedback and edits run on
+  Claude Sonnet 5.
+- **Open folder →** any folder of lecture PDFs. This ZIP carries one small deck of the author's
+  own (`Academia/Sources/btw interaction/`, 7 slides). The deck in the video is the module's own
+  Week 4 lecture, which is the lecturer's and is not redistributed here.
+- Opening a PDF for the first time ingests it: about **85 s for 7 slides**, about **4 minutes for
+  66**, with the notes appearing section by section while Ellie is still writing. Reopening is
+  instant and never re-ingests.
+- **Settings ▸ Tester pacing = Demo** shortens the silence thresholds so Ellie's guess can be seen without
+  waiting minutes. **Study** keeps the thresholds the design argues for.
 
-First open shows the **pacing strip**: the reply hold is deliberate, which profile is live, and that
-the words are replayed while the timer, the rules and the ledger are not.
+## 3. Walk through the interaction
 
-## 3. The twelve in-app beats
+1. Open a deck. Read a section; click a `p. N` chip; open the collapsed slide carousel.
+2. Highlight a sentence, press **⌘E**, ask about it. Ellie answers; her addition is typed into the
+   notes in green at that line.
+3. Max asks a follow-up (chat, and a red question block in the notes). Answer it in your own words.
+4. Read the verdict and its `p. N` quotes; answer the follow-up. On *Well done* a bar segment
+   fills, the lesson card shows *"You wrote: …"*, and Max's version is written under his question.
+5. On the next question, say nothing. Ellie's guess arrives, then Max's prompt. Type **i don't
+   know**: the answer is released, the bar does not move.
+6. Type a sentence of your own into the notes, in a section with a `p. N` chip, and pause. Max
+   assesses it in a thread on that span.
+7. Open **Max**'s private tab, ask something, **Insert into the document**. Click the progress
+   bar, pick the lesson marked **Next up**, press **Start**.
 
-Video beats 4–15 of `docs/research/flow-build-plan.md` §2, re-cut for the **attempt loop**
-(`docs/research/attempt-first.md` §2, §6). Paths under `app/src/`.
+`docs/report/video-storyboard.md` is the same walk-through as filmed.
 
-| # | Do this | Where |
-|---|---|---|
-| 4 | Open the deck — 7 crop cards and a build-steps chip; on page 3 hover a tick, then click the one at y 0.535 (⌘Z undoes); toggle **Original pages** | `renderer/components/FlowCanvas.svelte`, `shared/segment/cuts.ts`, `shared/segment/ops.ts` |
-| 5 | **+ Try this** under the lower half of page 3 — the Tester asks **one** question, back in 4–6 s because you asked for it | `room/actor.ts` (`tryHere`), `renderer/lib/objectives.ts`, `room/flow.ts` |
-| 6 | Type **attempt:1** below, verbatim. Nothing speaks over you | `components/FlowThread.svelte` |
-| 7 | Feedback after 9–12 s: **Partly there.** first, then what landed, what was missing, the correction — each with a `p. 3: "…"` quote of the page — and one follow-up question at the end. The composer now reads *Your next attempt…* | `room/orchestrator.ts` (`rule:quiz_feedback`), `room/prompts.ts`, `room/flow.ts` (`feedbackVerdict`) |
-| 8 | The rail moves `○ → ◐` on *why whispering helps*, quoting **your** sentence. *What /btw can and cannot do* stays at ○ | `room/ledger.ts`, `SegmentCard.svelte` |
-| 9 | Scroll one card and press **+ Try this** on page 5 — the pick is the objective still at ○ | `renderer/lib/objectives.ts` |
-| 10 | Type **askanswer:2** (*what's the answer?*). One narrowing hint, one clause saying a try unlocks it, **no answer** | `room/attempt.ts`, `room/orchestrator.ts` (`rule:answer_withheld`) |
-| 11 | **+ Ask here** on the same card and type **ask:1** — the Teacher answers the *prerequisite*, and says she will not answer the quiz | `components/AskHereLine.svelte`, `rule:teacher_answers` |
-| 12 | Type **attempt:2** — *Partly there* again, grounded on page 5, ending on a follow-up; and `○ → ◐` on *what /btw can and cannot do* | `room/ledger.ts` |
-| 13 | **Show the answer**, visible only now — the model answer with its grounds, and the rail does not move | `room/orchestrator.ts` (`rule:answer_shown`) |
-| 14 | ⌘K, ask **whisper:1** privately, **Insert into the document** | `components/WhisperPopover.svelte`, `room/context.whisper.ts` |
-| 15 | Hover a page chip; open the 31-page Koala paper | `shared/segment/genre.ts` |
+## 4. What is real, and what a model does
 
-**Type these verbatim** — the ledger quotes what is actually in the box, and a line under eight
-content words trips the agreement-is-not-evidence rule. They are `CRITIQUE1_LEARNER_LINES` in
-`room/llm/script.critique1.ts`, with `whisper:1`.
+**Rules, in code, decided before any model call** (`src/room/orchestrator.ts`, `actor.ts`): who
+answers (`rule:ellie_answers`, `rule:mention`), Max's one follow-up and one-open-question-at-a-time
+(`rule:max_followup`), what a learner turn *is* — attempt, clarifying question, give-up
+(`src/room/attempt.ts`), feedback owed after an attempt (`rule:quiz_feedback`), Ellie's cue once per
+question after a reading-time silence (`rule:ellie_cue`, `rule:max_prompt`), release on any give-up
+(`rule:answer_released`), and closure (`rule:closure`). Every agent turn in the chat shows the rule
+that produced it.
 
-> **attempt:1** — The whisper is going to the agent itself rather than to a second person, and I
-> think the property doing the work is politeness, because asking in the main thread would have been
-> a rude interruption while it was still coding.
->
-> **askanswer:2** — what's the answer?
->
-> **ask:1** — before I try that — what does page 5 mean by context being a strict subset of the main
-> session? i keep reading context as the context window and I do not think that is what it is saying
-> here.
->
-> **attempt:2** — I think it is the third one — it was asked to write a todo into memory and said it
-> had, so its answer was false, and that is the bug because the other two tests came back true.
+**The document model, in code** (`src/shared/doc/`): blocks with ids and provenance; a per-span
+author mark; agents address **blocks, never offsets**; and the **guard** that turns any agent
+change to learner-written text into a suggestion, tested against the document model, not a prompt.
+Validation rejects any ingested block with no provenance.
 
-Both attempts are **partly right on purpose**, which is why both feedback turns open *Partly there*
-and end on a follow-up question (a *Well done* ends on none): feedback with nothing to correct is a compliment, and
-the coded study (`docs/research/ai-use-transcripts/analysis/findings.md` RQ4) found 11 of 21 verdicts
-wrong in the one session that quizzed at all — 9 of them calling a correct answer wrong — with the
-learner replying "ok". That is why every judgement cites the slide, and why a verdict you can check
-is the only kind worth giving. `askanswer:2` is R6's own phrasing, asked five times in that session
-before the learner imposed attempt-first by hand; here it is refused by a rule.
+**Progress, in code**: a pure function of recorded verdicts (`src/shared/doc/progress.ts`).
 
-## 4. Real, scripted, stubbed
+**A model writes**: the notes (two passes: extracted slide text and geometry, then a refine pass
+that is shown the slide images), the words of each turn, Ellie's cue (a structured reply that
+declares whether it contains a mistake, so the rule can check it was corrected), the plan for a
+doc edit (given only an outline of nearby blocks), and the coding of learner evidence.
 
-**Real:** segmentation — cuts, split, merge, reorder, undo, Original pages, compare-on-hover, the
-genre notice — **geometry only, no model in the path**; the actor's serialised mailbox; the **attempt
-loop's control flow** — `classifyLearnerTurn`, the answer lock (`attempts`, `answerShown`) and the
-four rules over it, so *no model is ever asked whether to answer its own question*; the objective the
-next question comes from, picked by lowest ledger level as a pure function; the silence timer, with
-its thresholds scaled to the reading time of the last turn and firing only where an answer is owed,
-with quit and sleep recovery; the latency floor, a floor on visible time-to-first-token and not an
-added sleep, short band for a question you asked for and 9–12 s for a judgement; the orchestrator,
-where rules decide first and the model can never put the Tester on the floor; `handOffDue()`, still
-shipped as the secondary door; the ledger's four hard rules and the `defended` gate; whisper scoping
-with a leak canary; persistence — reopen the deck and the cards, messages, glyphs and sitting come
-back.
+**Known limits**, stated in the report: the notes are AI-written, and nothing verifies them or
+Max's quotes against the slide in code; "a question the notes do not already answer" is checked by
+question, not by meaning; inline maths is styled, display maths is typeset.
 
-**Scripted:** the agents' turns, the summary card, the whisper reply and its relay draft — replayed
-through the *same* code paths a live backend uses. Silence nudges come from a fixed pool in **both**
-modes: they are content-free by construction. **Not scripted even here:** the learner's typing, the
-split, the hand-off line (built by `flow.handOffLine()`), the answer lock, the ledger's evidence, the
-timings, every rule.
-
-**One thing to be clear about, because the video says it too:** feedback **grounds are asked for, not
-verified**. The prompt requires a `p. N: "…"` quote of the page's own words; no code checks a live
-model's quote against the deck. What *is* checked is the scripted path — `script.critique1.test.ts`
-asserts every quote in every feedback and answer beat is a verbatim substring of `CRITIQUE1_PAGE_TEXT`
-— so the demo cannot misquote the deck on camera, and a live model still can. Verifying the quote the
-way ledger rule 1 verifies the learner's is the first thing A2 owes (`attempt-first.md` §3, §8).
-
-**Not built:** the Firestore mirror (the `outbox` exists, the drain does not), export, history, the
-consent screen, the vision "suggest cuts" pass (#26), genres beyond the honest labeller (#27–#31) —
-anything that is not a deck opens as whole pages and says so — cross-page merge, reduced motion, full
-keyboard traversal, signing (#17). `docs/STATUS.md` has the measurement behind every claim here.
-
-## 5. Against a live model
-
-Two other backends, tried in order when Settings forces none: **the local Claude Code CLI**, when
-`claude` is installed *and logged in* — no key, no per-message cost, its command line argued atop
-`src/main/llm/claude-cli.ts`; or **an Anthropic API key**, entered in Settings and written to
-`~/Library/Application Support/ChatterED/anthropic-api-key`, mode 0600, outside the repo
-(`src/main/apikey.ts`). Models are per role: turns on Haiku 4.5, orchestration and the ledger on
-Sonnet 5. What changes is that the words are generated, and opening a deck makes a real ingest call,
-so it takes a few seconds.
-
-## 6. Tests
+## 5. Tests
 
 ```sh
-npm test           # vitest — 520 tests, 36 files, no network
-npm run lint       # incl. the whisper-import and src/room portability rules
+npm test           # vitest — about 1,760 tests, no network
+npm run lint       # incl. the src/room portability rules
 npm run typecheck  # tsc --noEmit + svelte-check
+npm run build      # the production build (a different tsconfig from typecheck)
 ```
 
-`src/room/context.test.ts` is the one to read: a whisper-only string never reaches a group prompt, a
-shared card, a snapshot or an export — asserted at runtime *and* over the static import graph.
+Worth reading: `src/shared/doc/guard.test.ts` and `suggest.test.ts` (rejecting a suggestion leaves
+the learner's text byte-identical); `src/room/actor.collabdoc.test.ts` (every rule above, on the
+real actor); `src/room/context.test.ts` (nothing from either private thread reaches a shared
+prompt, a snapshot or an export, or the other private thread); `src/main/cost/attribution.test.ts`
+(every model call is filed under the right document, thread and turn).
 
-## 7. Repo map
+## 6. Repo map
 
 ```
 src/
-  room/      PORTABLE. Actor, orchestrator, timer, flow session, REFERENCE, ledger, whisper,
-             prompts, the LLM clients. No Electron, no SQLite, no DOM. ESLint enforces it.
-  main/      Window, menu, IPC, SQLite, the vault (scan, FTS5, pdf.js geometry, segment cache).
-  renderer/  Svelte 5 SPA: the flow, the vault and viewers, Settings. lib/flowview.ts and
-             lib/pdfview.ts hold every number as a pure function.
-  shared/    The segment pipeline (pure), the IPC contract, thread grouping.
+  room/      PORTABLE. Actor, orchestrator rules, classifier, timer, ledger, pitch, prompts, the
+             doc-edit call, the LLM clients. No Electron, no SQLite, no DOM; ESLint enforces it.
+  shared/    doc/ — the ProseMirror schema, agent ops, the guard, suggestions, validation,
+             progress. The IPC contract and the push events.
+  main/      notes/ — the two-pass ingest and its persistence. docroom/ — chat, private threads,
+             progress. cost/ — the usage ledger and analytics. The vault, pdf.js, SQLite, the CLI
+             and API backends.
+  renderer/  Svelte 5. components/notes/ — the editor, agent cursors, Remove · Keep, suggestions,
+             chips, figures, carousel. components/shell/ — the three columns, chats, progress.
+             components/usage/ — the Usage page.
+docs/COLLAB-CONTRACT.md   the shared shapes the build was split along
 ```
 
-**Design decisions** live in `docs/research/` — `flow-build-plan.md`, `pivot-spec.md`,
-`flow-session.md`, `segmentation-lazy-split.md`, `product-design.md` — and the code is a bug if it
-contradicts one; they were argued on issues **#23**, **#25**, **#32** and **#33**. `docs/SEGMENTS.md`
-is the segment contract.
+Decisions are recorded as GitHub issues and argued in `docs/research/`; the code is a bug if it
+contradicts `collab-doc.md`.
