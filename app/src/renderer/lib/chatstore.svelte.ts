@@ -253,7 +253,37 @@ export class ChatStore {
     this.draft = null;
     this.lastSendAnchor = result.threadId;
     this.focusThread(result.threadId);
+    /**
+     * **Read the thread back, because only main knows what it is.**
+     *
+     * The turn's own messages arrive on the event stream and a thread is synthesised for their
+     * anchor, which is enough to draw the conversation and nothing else: `blockId` and `quote`
+     * live in the registry row `chat:openSpan` has just written. Without this the span card's
+     * header reads "a line in the document" instead of the learner's own words, and — the part
+     * that matters — `store.chat.spanThreads` hands T4 an empty quote, so `spanHighlights` skips
+     * it and §3's "the span keeps a highlight that jumps to its thread" never happens. Found in
+     * the live run of 20 Sep, where the highlight was simply absent.
+     */
+    await this.#refreshThreads();
     return result.threadId;
+  }
+
+  /**
+   * The registry's view of every thread on this file, merged over what is already here.
+   *
+   * Separate from `open()` because `open()` is a *first* load — it clears the column and pulls
+   * the room snapshot — and this is a top-up after something created a thread, with the
+   * transcript already on screen.
+   */
+  async #refreshThreads(): Promise<void> {
+    const fileId = this.fileId;
+    if (!fileId) return;
+    const view = await bridge()
+      .chatThreads({ fileId })
+      .catch(() => null);
+    if (!view || this.fileId !== fileId) return;
+    this.roomId = view.roomId ?? this.roomId;
+    for (const thread of view.threads) this.threads = mergeThread(this.threads, thread);
   }
 
   /** Bring a thread into view — a highlight click in the document, or a card's own header. */
