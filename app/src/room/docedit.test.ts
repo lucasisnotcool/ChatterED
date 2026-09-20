@@ -10,18 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import {
-  blocksFromTurn,
-  buildQuestionEdit,
-  buildResolveEdit,
-  buildSuggestionEdit,
-  buildWhisperInsert,
-  outlineText,
-  pagesCited,
-  planAnswerEdit,
-  provenanceFor,
-  type DocEditDeps,
-} from './docedit.js';
+import { blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, outlineText, pagesCited, planAnswerEdit, planSuggestionEdit, provenanceFor, type DocEditDeps } from './docedit.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 
@@ -273,6 +262,43 @@ describe('buildResolveEdit (§5.3)', () => {
   });
 });
 
+describe('planSuggestionEdit — the three ways it can come back empty', () => {
+  const input = {
+    blockId: 'b_mine',
+    text: 'Manhattan is admissible on the 8-puzzle because it never overestimates.',
+    feedback: 'Not yet. It is admissible because it never overestimates the remaining cost.',
+    threadId: 'span_aaaaaaaaaaaa',
+  };
+
+  it('says which one it was, so a missing suggestion is never silent again', async () => {
+    const declined = await planSuggestionEdit(deps({}, { suggest: false }), input);
+    expect(declined).toMatchObject({ batch: null, reason: 'declined', how: null });
+
+    const unlocatable = await planSuggestionEdit(
+      deps({}, { suggest: true, quote: 'the Hessian is positive semidefinite', replacement: 'x' }),
+      input,
+    );
+    expect(unlocatable).toMatchObject({ batch: null, reason: 'not_located' });
+    expect(unlocatable.quoteChars).toBeGreaterThan(0);
+
+    const empty = await planSuggestionEdit(
+      deps({}, { suggest: true, quote: 'never overestimates', replacement: '   ' }),
+      input,
+    );
+    expect(empty).toMatchObject({ batch: null, reason: 'no_replacement', how: 'verbatim' });
+  });
+
+  it('reports how the quote was found when it does suggest', async () => {
+    const plan = await planSuggestionEdit(
+      deps({}, { suggest: true, quote: 'never overestimates', replacement: 'never overestimates the cost', note: 'n' }),
+      input,
+    );
+    expect(plan.reason).toBe('suggested');
+    expect(plan.how).toBe('verbatim');
+    expect(plan.batch!.suggestion!.quote).toBe('never overestimates');
+  });
+});
+
 describe('buildSuggestionEdit (§6)', () => {
   const base = {
     blockId: 'b_mine',
@@ -304,6 +330,37 @@ describe('buildSuggestionEdit (§6)', () => {
     expect(buildSuggestionEdit(deps(), { ...base, quote: 'never under-estimates' })).toBeNull();
     expect(buildSuggestionEdit(deps(), { ...base, quote: '' })).toBeNull();
     expect(buildSuggestionEdit(deps(), { ...base, quote: 'never overestimates', replacement: '  ' })).toBeNull();
+  });
+
+  /**
+   * The live run of 20 Sep: Max named the correction in the chat ("replace … with …") and the
+   * document got no suggestion at all, because the quote came back reworded. A quote that is
+   * *nearly* theirs is repaired down to the part that really is theirs; one that is not theirs
+   * at all is still refused, which is what the case above asserts.
+   */
+  it('trims a nearly-verbatim quote down to the run the learner actually wrote', () => {
+    const batch = buildSuggestionEdit(deps(), {
+      ...base,
+      // The model extended past the end of their sentence and normalised the full stop away.
+      quote: 'it never overestimates the true distance',
+    })!;
+    expect(batch.suggestion!.quote).toBe('it never overestimates');
+    expect(base.text).toContain(batch.suggestion!.quote);
+  });
+
+  it('falls back to their whole sentence when the model rewrote one sentence of one', () => {
+    const batch = buildSuggestionEdit(deps(), {
+      ...base,
+      quote: 'Manhattan distance is admissible for the eight puzzle since it never overestimates',
+    })!;
+    expect(batch.suggestion!.quote).toBe(base.text);
+  });
+
+  it('never suggests a quote that is not a substring of their text', () => {
+    for (const quote of ['never under-estimates', 'the Hessian is positive semidefinite', 'x']) {
+      const batch = buildSuggestionEdit(deps(), { ...base, quote });
+      if (batch) expect(base.text).toContain(batch.suggestion!.quote);
+    }
   });
 
   /** The lead's note: `suggestion.note` is a required string, never null. */

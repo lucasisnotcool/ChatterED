@@ -431,6 +431,61 @@ export function buildResolveEdit(
  * than hoped for: a suggestion whose quote is a paraphrase cannot be located in the document, so
  * it would silently become nothing. Same discipline as ledger rule 1, and for the same reason.
  */
+/**
+ * **Find the model's quote in the learner's own words, or the nearest thing that is really there.**
+ *
+ * §5.4's suggestion is a *replacement of a range of their text*, so the quote has to be locatable
+ * character for character; the prompt says so twice. Models paraphrase anyway — they normalise a
+ * quote mark, drop a stray space, extend to a clause boundary — and the old behaviour was to
+ * return `null` and say nothing, which is how the live run of 20 Sep produced a correction in the
+ * chat ("replace … with …") and no suggestion in the document at all.
+ *
+ * Three ways, in descending confidence, and never anything that is not a substring of their text:
+ *
+ *  1. `verbatim` — it is there as given.
+ *  2. `trimmed` — the longest run of the model's quote that *is* there, found by walking the ends
+ *     in. Guarded: it has to be at least 12 characters and most of what the model asked for, so a
+ *     shared "the" can never become the suggestion.
+ *  3. `sentence` — the sentence of their text that overlaps the quote most, when the model clearly
+ *     meant one sentence and rewrote it. Only when their text is one or two sentences, where
+ *     "which sentence" is not a guess.
+ */
+export type QuoteMatch = 'verbatim' | 'trimmed' | 'sentence';
+
+export function locateQuote(text: string, raw: string): { quote: string; how: QuoteMatch } | null {
+  const quote = raw.trim();
+  if (quote.length === 0) return null;
+  if (text.includes(quote)) return { quote, how: 'verbatim' };
+
+  // The longest substring of the model's quote that is present, by shrinking from either end.
+  let best = '';
+  for (let start = 0; start < quote.length; start++) {
+    for (let end = quote.length; end > start + best.length; end--) {
+      const run = quote.slice(start, end).trim();
+      if (run.length > best.length && text.includes(run)) best = run;
+    }
+  }
+  if (best.length >= 12 && best.length >= quote.length * 0.4) return { quote: best, how: 'trimmed' };
+
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (sentences.length > 0 && sentences.length <= 2) {
+    const words = new Set(quote.toLowerCase().split(/\W+/).filter((w) => w.length > 3));
+    const scored = sentences
+      .map((sentence) => {
+        const own = sentence.toLowerCase().split(/\W+/).filter((w) => w.length > 3);
+        const hits = own.filter((w) => words.has(w)).length;
+        return { sentence, share: own.length === 0 ? 0 : hits / own.length };
+      })
+      .sort((a, b) => b.share - a.share);
+    const top = scored[0];
+    if (top && top.share >= 0.3) return { quote: top.sentence, how: 'sentence' };
+  }
+  return null;
+}
+
 export function buildSuggestionEdit(
   deps: DocEditDeps,
   input: {
@@ -443,9 +498,10 @@ export function buildSuggestionEdit(
     threadId: string | null;
   },
 ): AgentDocOpBatch | null {
-  const quote = input.quote.trim();
-  if (quote.length === 0 || !input.text.includes(quote)) return null;
+  const located = locateQuote(input.text, input.quote);
+  if (!located) return null;
   if (input.replacement.trim().length === 0) return null;
+  const quote = located.quote;
   return {
     editId: deps.newId('edit'),
     author: 'max',
@@ -523,14 +579,27 @@ export function suggestionPrompt(input: { text: string; feedback: string }): str
 }
 
 /**
- * Plan a correction to the learner's own doc text, or decide there is none. Returns the batch
- * ready to emit; `null` covers "nothing to correct", "the quote was not verbatim" and "the call
- * failed", all of which the caller answers the same way.
+ * Plan a correction to the learner's own doc text, or decide there is none.
+ *
+ * **The reason comes back with it.** `null` used to cover "nothing to correct", "the quote was
+ * not verbatim" and "the call failed" alike — three different facts, indistinguishable in the
+ * log, and the live run of 20 Sep spent its budget finding out which one had happened. The
+ * caller logs `reason`; no learner text goes with it, only lengths.
  */
+export type SuggestionReason = 'suggested' | 'declined' | 'not_located' | 'no_replacement';
+
+export interface SuggestionPlan {
+  batch: AgentDocOpBatch | null;
+  reason: SuggestionReason;
+  /** How the quote was found, when it was. For the log: a run of `sentence` means retune. */
+  how: QuoteMatch | null;
+  quoteChars: number;
+}
+
 export async function planSuggestionEdit(
   deps: DocEditDeps,
   input: { blockId: string; text: string; feedback: string; threadId: string | null },
-): Promise<AgentDocOpBatch | null> {
+): Promise<SuggestionPlan> {
   const request: LlmRequest = {
     model: deps.model,
     max_tokens: 600,
@@ -541,15 +610,29 @@ export async function planSuggestionEdit(
   };
   const result = await deps.llm.complete(request);
   const parsed = JSON.parse(extractJson(result.text)) as Record<string, unknown>;
-  if (parsed.suggest !== true) return null;
-  return buildSuggestionEdit(deps, {
+  if (parsed.suggest !== true) return { batch: null, reason: 'declined', how: null, quoteChars: 0 };
+
+  const quote = typeof parsed.quote === 'string' ? parsed.quote : '';
+  const replacement = typeof parsed.replacement === 'string' ? parsed.replacement : '';
+  const located = locateQuote(input.text, quote);
+  if (!located) return { batch: null, reason: 'not_located', how: null, quoteChars: quote.trim().length };
+  if (replacement.trim().length === 0) {
+    return { batch: null, reason: 'no_replacement', how: located.how, quoteChars: located.quote.length };
+  }
+  const batch = buildSuggestionEdit(deps, {
     blockId: input.blockId,
     text: input.text,
-    quote: typeof parsed.quote === 'string' ? parsed.quote : '',
-    replacement: typeof parsed.replacement === 'string' ? parsed.replacement : '',
+    quote,
+    replacement,
     note: typeof parsed.note === 'string' ? parsed.note : '',
     threadId: input.threadId,
   });
+  return {
+    batch,
+    reason: batch ? 'suggested' : 'not_located',
+    how: located.how,
+    quoteChars: located.quote.length,
+  };
 }
 
 // ── "insert into the document", from a private thread ──────────────────────

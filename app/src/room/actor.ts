@@ -3837,15 +3837,26 @@ export class RoomActor {
        */
       const docText = this.#docTextTarget;
       if (docText !== null && decision.moveType === 'quiz_feedback') {
-        await this.#emitDocEdit(
-          await planSuggestionEdit(deps, {
-            blockId: docText.blockId,
-            text: docText.text,
-            feedback: text,
-            threadId: docText.anchorId,
-          }),
-          { objectiveId: quiz?.objectiveId ?? null, messageId, turnId },
-        );
+        const plan = await planSuggestionEdit(deps, {
+          blockId: docText.blockId,
+          text: docText.text,
+          feedback: text,
+          threadId: docText.anchorId,
+        });
+        /**
+         * **Why there is no suggestion, when there is none.** The three outcomes used to be one
+         * `null`: the model saw nothing wrong, it quoted something that is not in the learner's
+         * text, or it gave no replacement. The live run of 20 Sep could not tell them apart from
+         * the log, and a beat of the video depends on this working. No learner text here — the
+         * reason, how the quote was found, and lengths.
+         */
+        this.#turnLog.event('info', 'doc.suggestion', {
+          reason: plan.reason,
+          how: plan.how,
+          quote_chars: plan.quoteChars,
+          text_chars: docText.text.length,
+        });
+        await this.#emitDocEdit(plan.batch, { objectiveId: quiz?.objectiveId ?? null, messageId, turnId });
         // …and the Q block still resolves below, because the answer was still an answer.
       }
       // 5.3 — a Max question resolved: his correct version goes under the Q block, tagged.
