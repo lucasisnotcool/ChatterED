@@ -121,7 +121,33 @@ Mode 6 is the one to hold longest on screen. Rejecting the suggestion leaving th
 
 ---
 
-## 5. Two things in the report that no longer match the code
+## 5. The narration, timed to the cut
+
+The cut is played while you speak, so this is written to be *said*, not read. **146 words, about
+60 seconds at a comfortable pace.** Two pause points are marked `‖` — the footage holds fine
+there, and they are where to breathe if you are running ahead.
+
+Narrate the **rule**, never the wording: a live model writes different words every take, and the
+rule is what you are demonstrating.
+
+| t | Say |
+|---|---|
+| 0:00 | "The deck, ingested into notes. Every block still points back to its slide." |
+| 0:04 | "I highlight a line and ask. Ellie answers short in the chat — and because the notes didn't already say it, she writes the explanation in. Green is hers." ‖ |
+| 0:13 | "Then the part missing from five of the six sessions I coded: it asks *me*. One question, by rule — and it lands in the document, not just the chat." |
+| 0:19 | "I answer. *Partly there* — with the slide it rests on, quoted. You can't say 'ok' to a quote you can read." ‖ |
+| 0:27 | "I answer again. *Well done*, and the objective fills — because I wrote that sentence, not because Ellie explained it." |
+| 0:35 | "Next question, I stall. After twenty seconds of reading time Ellie guesses — half right, sometimes wrong on purpose. Max turns it back to me." |
+| 0:44 | "I give up. The answer is released at once, by a rule in code. The bar doesn't move." |
+| 0:50 | "And what I write myself, they can't overwrite. Max's correction arrives as a suggestion — I reject it, and my sentence is exactly as I typed it." |
+
+If you want the T6 number in: *"in the session I coded, the AI's verdict was wrong ten times in
+twenty-one, and the learner said 'ok'"* goes at 0:19 and costs about four seconds — hold the
+verdict frame that much longer when you cut.
+
+---
+
+## 6. Two things in the report that no longer match the code
 
 Neither is in the demo's way, but both are in the submitted text.
 
