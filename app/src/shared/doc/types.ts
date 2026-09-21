@@ -10,6 +10,7 @@
  */
 
 import type { FlowQuizView } from '../types.js';
+import type { OwnWordsShares } from './ownwords.js';
 
 // ── who wrote what ──────────────────────────────────────────────────────────────────────────
 
@@ -290,6 +291,20 @@ export interface QuizOutcome {
   /** The learner message (chat, or the synthetic `doc_text` message) the verdict was on. */
   messageId: string | null;
   source: 'chat' | 'doc_text';
+  /**
+   * **Which attempt at this question the verdict marked**, 1-based (migration 022,
+   * `measurement.md` M2). `>= 2` is a revision, which is the second clause of the learning goal
+   * and the one behaviour the observed sessions never produced (0 of 17 attempts was a second
+   * try). `null` on rows written before 022, and on `released`, which marks no attempt.
+   */
+  attemptIndex: number | null;
+  /**
+   * **How much of the answer was the learner's own words** (`shared/doc/ownwords.ts`, M3). Three
+   * shares, against the anchored block, Ellie's cue and Max's question. A flag, never a gate:
+   * `progressFill` does not read it and no fill is withheld on it. `null` where the verdict
+   * marked nothing measurable.
+   */
+  ownWords: OwnWordsShares | null;
   createdAt: string;
 }
 

@@ -17,6 +17,8 @@ function outcome(over: Partial<QuizOutcome> = {}): QuizOutcome {
     releasedBy: null,
     messageId: 'm_7',
     source: 'chat',
+    attemptIndex: 1,
+    ownWords: null,
     createdAt: T0,
     ...over,
   };

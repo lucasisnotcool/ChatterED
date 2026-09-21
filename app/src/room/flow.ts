@@ -779,6 +779,16 @@ export interface PendingQuiz {
   askedAt: number;
   /** The learner message that answered it, once there is one. */
   answerMessageId: string | null;
+  /**
+   * **The text of that answer** (migration 022, `measurement.md` M3). Carried on the question so
+   * the verdict turn can measure how much of the answer was the learner's own words without a
+   * round trip to the message store mid-turn. Absent in rows persisted before 022.
+   */
+  answerText?: string | null;
+  /** The text of the question itself, for the same measure's `question` share. */
+  questionText?: string | null;
+  /** Ellie's cue text, once one has been given, for the `cue` share. The echo guard. */
+  cueText?: string | null;
   /** Set once the Tester's follow-up turn has actually delivered feedback. */
   feedbackGiven: boolean;
   /**
@@ -913,6 +923,8 @@ export function openQuiz(
     questionId?: string;
     objectiveId?: string | null;
     anchorId?: string | null;
+    /** The words Max asked it in, for M3's `question` share (migration 022). */
+    questionText?: string | null;
   },
   now: number,
 ): PendingQuiz {
@@ -920,6 +932,8 @@ export function openQuiz(
     ...input,
     askedAt: now,
     answerMessageId: null,
+    answerText: null,
+    cueText: null,
     feedbackGiven: false,
     attempts: 0,
     answerShown: false,
@@ -940,11 +954,19 @@ export function openQuiz(
  * having tried rather than about them having typed. An attempt also re-opens the feedback debt,
  * because a revision the Tester never answers is the half of retrieval practice Rowland measures.
  */
-export function answerQuiz(quiz: PendingQuiz, answerMessageId: string, opts: { attempt: boolean }): PendingQuiz {
+export function answerQuiz(
+  quiz: PendingQuiz,
+  answerMessageId: string,
+  opts: { attempt: boolean; text?: string },
+): PendingQuiz {
   if (!opts.attempt) return quiz;
   return {
     ...quiz,
     answerMessageId,
+    // The text of *this* attempt, replacing the previous one: the verdict about to land is about
+    // what was just written, and a revision measured against the first attempt's words would
+    // report the wrong overlap for the turn it is filed under.
+    answerText: opts.text ?? null,
     feedbackGiven: false,
     attempts: attemptsOf(quiz) + 1,
     // A new attempt is unmarked until its own feedback lands.
@@ -990,9 +1012,17 @@ export function markAnswerShown(
  */
 export function markCueGiven(
   quiz: PendingQuiz,
-  input: { at: number; hasMistake: boolean; claim: string | null },
+  input: { at: number; hasMistake: boolean; claim: string | null; text?: string },
 ): PendingQuiz {
-  return { ...quiz, cueGivenAt: input.at, cueHasMistake: input.hasMistake, cueClaim: input.claim };
+  return {
+    ...quiz,
+    cueGivenAt: input.at,
+    cueHasMistake: input.hasMistake,
+    cueClaim: input.claim,
+    // Kept for the echo guard (M3's `cue` share). The claim alone is not enough: a learner can
+    // restate the whole of Ellie's take without repeating the one sentence she flagged.
+    cueText: input.text ?? null,
+  };
 }
 
 /** True once Ellie's peer cue has been given on this question. Tolerates a pre-#48 row. */

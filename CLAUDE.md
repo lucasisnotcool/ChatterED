@@ -54,7 +54,10 @@ use `gh api repos/:owner/:repo/issues/N --jq '.title, .body'`.
 - **`docs/research/` is the source of truth for design decisions.** Code that contradicts
   a brief is a bug in one of the two; say which, and say so in the commit or the issue,
   before changing either.
-- **No participant PII, ever.** Participant codes P1…P5 and programme/year/gender only.
+- **No participant PII, ever.** Participant codes P1…P5 and programme/year/gender only, plus a
+  **GPA band** for the A1 interviewees (Lucas, 2026-09-21, reversing the 19 Sep call; bands only,
+  never an exact grade, and nothing is conditioned on them). Study A/B participant records stay
+  programme/year/gender: the band is an A1-sample description, not a variable to collect.
   Never commit names, student IDs, NUSNET IDs, recordings, or raw transcripts.
 - **Scoped commits.** `git add <the exact paths you edited>` — never bare `-A` or `.`.
 

@@ -19,6 +19,17 @@ import { runMigrations } from './migrations.js';
 
 const DIR = fileURLToPath(new URL('./migrations', import.meta.url));
 
+/**
+ * The highest migration on disk, read rather than written down. The assertion below is "the
+ * directory ran to completion", not "the head is 21": hard-coding the number makes every later
+ * migration fail a test about an earlier one, which says nothing about either.
+ */
+const HEAD = Math.max(
+  ...readdirSync(DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .map((f) => Number.parseInt(f.slice(0, 3), 10)),
+);
+
 /** The migrations directory, truncated at `upTo`. 021 has to run *after* the rows exist. */
 function migrateTo(dbPath: string, upTo: number): ReturnType<typeof openTestDatabase> {
   const db = openTestDatabase(dbPath);
@@ -63,7 +74,7 @@ describe('migration 021', () => {
     before.close();
 
     const db = openTestDatabase(path);
-    expect(runMigrations(db, DIR)).toBe(21);
+    expect(runMigrations(db, DIR)).toBe(HEAD);
 
     // The rows survived, and the new columns read as the absence they are.
     expect(db.prepare('SELECT turn_id FROM messages WHERE id = @id').get<{ turn_id: string | null }>({ id: 'm1' })!.turn_id).toBeNull();

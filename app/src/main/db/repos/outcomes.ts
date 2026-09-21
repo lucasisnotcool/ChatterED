@@ -28,6 +28,10 @@ interface OutcomeRow {
   released_by: QuizOutcome['releasedBy'];
   message_id: string | null;
   source: 'chat' | 'doc_text';
+  attempt_index: number | null;
+  own_words_block: number | null;
+  own_words_cue: number | null;
+  own_words_question: number | null;
   created_at: string;
 }
 
@@ -59,6 +63,13 @@ function toOutcome(row: OutcomeRow): QuizOutcome {
     releasedBy: row.released_by,
     messageId: row.message_id,
     source: row.source,
+    attemptIndex: row.attempt_index,
+    // Three nullable columns, one nullable object: a row with no measurable answer has `null`
+    // here rather than three nulls wrapped in a shape that reads as "measured, and all zero".
+    ownWords:
+      row.own_words_block === null && row.own_words_cue === null && row.own_words_question === null
+        ? null
+        : { block: row.own_words_block, cue: row.own_words_cue, question: row.own_words_question },
     createdAt: row.created_at,
   };
 }
@@ -72,9 +83,10 @@ export function outcomesRepo(db: SqlDatabase): OutcomesRepo {
       db.prepare(
         `INSERT INTO quiz_outcomes
            (id, content_sha, room_id, objective_id, question_id, kind, verdict, released_by,
-            message_id, source, created_at)
+            message_id, source, attempt_index, own_words_block, own_words_cue,
+            own_words_question, created_at)
          VALUES (@id, @sha, @room, @objective, @question, @kind, @verdict, @released, @message,
-                 @source, @now)
+                 @source, @attempt, @owBlock, @owCue, @owQuestion, @now)
          ON CONFLICT (id) DO NOTHING`,
       ).run({
         id: outcome.id,
@@ -87,6 +99,10 @@ export function outcomesRepo(db: SqlDatabase): OutcomesRepo {
         released: outcome.releasedBy,
         message: outcome.messageId,
         source: outcome.source,
+        attempt: outcome.attemptIndex,
+        owBlock: outcome.ownWords?.block ?? null,
+        owCue: outcome.ownWords?.cue ?? null,
+        owQuestion: outcome.ownWords?.question ?? null,
         now: outcome.createdAt,
       });
       return outcome;

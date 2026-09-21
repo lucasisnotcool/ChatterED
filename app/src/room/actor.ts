@@ -26,6 +26,7 @@ import {
   type ThreadView,
 } from '../shared/doc/types.js';
 import { parseMention } from '../shared/doc/mention.js';
+import { ownWordsOf } from '../shared/doc/ownwords.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import {
   buildQuestionEdit,
@@ -891,6 +892,7 @@ export class RoomActor {
       if (this.#pendingQuiz && origin !== 'ask') {
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',
+          text: body,
         });
       }
       studentMessageId = row.id;
@@ -1927,7 +1929,10 @@ export class RoomActor {
       this.#lastMention = null;
       this.#mentionRest = null;
       if (this.#pendingQuiz) {
-        this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, { attempt: this.#lastLearnerTurn === 'attempt' });
+        this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
+          attempt: this.#lastLearnerTurn === 'attempt',
+          text: body,
+        });
       }
       this.#event('student', 'flow.doc_text', {
         anchor_id: input.anchorId,
@@ -3415,6 +3420,7 @@ export class RoomActor {
           questionId: this.#nextQuestionId ?? this.#d.newId('q'),
           objectiveId: this.#objectiveOf(decision.targetElementId),
           anchorId: this.#turnAnchorId,
+          questionText: text.trim(),
         },
         now,
       );
@@ -3472,6 +3478,7 @@ export class RoomActor {
         at: now,
         hasMistake: reported?.hasMistake === true,
         claim: reported?.claim ?? null,
+        text,
       });
       this.#pendingCue = null;
       this.#event('peer', 'quiz.cue_given', {
@@ -3629,6 +3636,24 @@ export class RoomActor {
   }): void {
     const quiz = this.#pendingQuiz;
     if (quiz === null) return;
+    /**
+     * **Which attempt this verdict marked, and how much of it was the learner's** (migration 022,
+     * `measurement.md` M2 and M3). Both only mean anything on a verdict: a release marks no
+     * attempt, so `attemptIndex` stays null there rather than claiming the attempt count as the
+     * thing it judged.
+     */
+    const isVerdict = input.kind === 'verdict';
+    const attemptIndex = isVerdict && quiz.attempts > 0 ? quiz.attempts : null;
+    const ownWords = isVerdict
+      ? ownWordsOf({
+          answer: quiz.answerText,
+          // The block the question is anchored to is the one the learner was reading; when the
+          // question is not anchored there is nothing to have read back, and the share is null.
+          block: this.#anchoredBlockText(quiz),
+          cue: quiz.cueText,
+          question: quiz.questionText,
+        })
+      : null;
     const outcome: Omit<QuizOutcome, 'id' | 'contentSha' | 'createdAt'> = {
       roomId: this.#d.roomId,
       objectiveId: quiz.objectiveId ?? null,
@@ -3638,6 +3663,8 @@ export class RoomActor {
       releasedBy: input.releasedBy,
       messageId: input.messageId,
       source: input.source,
+      attemptIndex,
+      ownWords,
     };
     this.#outcomes.push({ ...outcome, id: this.#d.newId('qo'), contentSha: '', createdAt: this.#nowIso() });
     try {
@@ -4094,6 +4121,29 @@ export class RoomActor {
     const mine = outline.filter((e) => e.learnerText && e.text.trim().length > 0);
     if (mine.length === 0) return undefined;
     return learnerNotesBlock(mine.map((e) => ({ blockId: e.blockId, text: e.text, pages: e.pages })));
+  }
+
+  /**
+   * **The notes block the question was anchored to**, for M3's `block` share (migration 022).
+   *
+   * It is the text the learner had on screen when they answered, so it is the one that says
+   * whether an answer was read back off the page. A question with no anchor has nothing to read
+   * back and the share is `null`, which is not the same as zero.
+   */
+  #anchoredBlockText(quiz: PendingQuiz): string | null {
+    const anchorId = quiz.anchorId ?? null;
+    if (anchorId === null) return null;
+    const blockId = this.#threads.get(anchorId)?.blockId ?? null;
+    if (blockId === null) return null;
+    try {
+      const entry = this.#docPort.outlineNear({ blockId }, 0).find((e) => e.blockId === blockId);
+      const text = entry?.text?.trim() ?? '';
+      return text.length === 0 ? null : text;
+    } catch {
+      // The measure never blocks a verdict. An unmeasured share is `null`, and §4.6's rule that
+      // the conversation does not wait on the document applies here too.
+      return null;
+    }
   }
 
   /** Max's open question, verbatim, for the cue that has to guess at it (§4.3). */

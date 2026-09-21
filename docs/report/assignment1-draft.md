@@ -9,9 +9,20 @@ can confirm (consent wording, exact quotes). The interview paragraphs were writt
 disagree, Step 1 says so. The build facts in Step 4 are measured, from the end-to-end run
 of 20 Sep on the real app.
 
-**Body word count: 2,001 / 2,000**, counted over Steps 1 to 4 and Limitations, with the brackets and
-the architecture figure excluded. The interview material is now in (from `docs/research/interviews/findings.md`);
-if you add exact quotes, the easiest cuts are DG5 and the last row of the roles table.
+**Body word count: 2,156 / 2,000**, counted over Steps 1 to 4 and Limitations, with the brackets
+and the architecture figure excluded. By section: Step 1 = 755, Step 2 = 820, Step 3 = 238,
+Step 4 = 229, Limitations = 114. Step 2 grew by 150 on 21 Sep when the measurement and validation
+paragraphs went in (see below); Steps 3, 4 and Limitations were trimmed by 29 to pay for part of
+it. **You are 156 over**, and your rewritten Step 1 will change that number again, so pick the
+cuts after it lands. In order of least loss: DG5 (58 words; its sizes survive in Step 3), the
+Song et al. line under the roles table (25), §1.4 (36, it repeats §2.4's realisations), and the
+"Real and live" line in Step 4 (27, though it is the claim that the demo is not scripted).
+
+**What changed in Step 2, 21 Sep.** §2.1 now measures both clauses of the learning goal rather
+than one: fill, revision rate, and an own-words overlap check. It also states that the bar is a
+model-scored instrument, gives it a validation gate (blind hand-scoring of 20% of verdicts,
+quadratic weighted κ, struck below .60), and names A2's primary outcomes as the Step 1 behaviours
+instead of the bar. The argument for all of it is in `docs/research/measurement.md`.
 
 ---
 
@@ -22,8 +33,8 @@ if you add exact quotes, the easiest cuts are DG5 and the last row of the roles 
 I studied how NUS undergraduates revise lecture material with generative AI. I combined two
 methods, as the Week 4 lecture recommends: interviews for what people *say*, and observation for
 what they *do* (Lee, 2026). I interviewed three final-year students with their consent: **P1**
-(Mechanical Engineering, M), **P2** and **P3** (Computer Science, M and F). **[LUCAS: confirm
-consent wording and interview length.]** For observation, six students shared a
+(Mechanical Engineering, M, GPA 2.5–3.0), **P2** (Computer Science, F, 3.5–4.0) and **P3**
+(Computer Science, M, 4.5–5.0). **[LUCAS: confirm consent wording and interview length.]** For observation, six students shared a
 real study session with ChatGPT, Claude or Perplexity (R1 to R6). I coded all 152 turns with a
 codebook built on ICAP (Chi & Wylie, 2014) and tutorial dialogue moves (Graesser et al., 1995); a
 second, independent coder agreed at κ = 0.90 to 1.00 on the dimensions used here.
@@ -55,8 +66,8 @@ answer.
 The interviews say why. All three described help that outruns them. P1 tried studying with AI and
 "could not keep up": each answer assumed knowledge he lacked, and after rounds of clarification he
 was "so far away from the notes" that he doubted the next answer. He now uses AI mainly to answer
-quizzes. P3 has AI write her notes, but they come out so long that she knows she will not finish
-them, and on hard modules she gives up on them. P2 screenshots slides into a chat that "does not
+quizzes. P2 has AI write her notes, but they come out so long that she knows she will not finish
+them, and on hard modules she gives up on them. P3 screenshots slides into a chat that "does not
 see what he is seeing". One discrepancy is a finding: P1 *does* try a tutorial question before
 asking, so the missing attempt is missing from the conversation, not from the learner. **[LUCAS:
 the phrases in quotation marks are from your notes; replace with exact words if you have them.]**
@@ -74,8 +85,8 @@ the phrases in quotation marks are from your notes; replace with exact words if 
   another claimed "97% concept coverage" after its own check failed.
 - **N5, answers sized for reading.** Seven of eight follow-up questions repaired the AI's previous
   answer ("What does it mean to marginalise a probability?"); replies ran 159 to 1,190 words.
-- **N6, notes that are mine too.** P3 wants to edit the notes with the AI and control where
-  additions go; P2 cannot get what the AI tells him back into his slides, and what he handwrites
+- **N6, notes that are mine too.** P2 wants to edit the notes with the AI and control where
+  additions go; P3 cannot get what the AI tells him back into his slides, and what he handwrites
   the AI never sees.
 
 N2 and N5 were raised by all three interviewees; N3 by none of them: the errors in the transcripts
@@ -94,11 +105,26 @@ the result somewhere it can be checked.
 **The learner can answer a question about the lecture in their own words, and revise that answer
 after feedback.**
 
-Progress is a bar of learning objectives derived from the slides. An objective fills only on the
-learner's own words: Max's verdict *Well done* completes it and *Partly there* half-fills it,
-whether the words were typed in the chat or written into the notes. A released answer, a peer's
-help and "ok, makes sense" fill nothing. Each objective opens as a lesson card with its evidence:
-the learner's own sentence.
+Two clauses, so two measures. Both are computed from the recorded turns, not from a model's
+opinion of the session.
+
+- **Fill.** Progress is a bar of learning objectives taken from the slides. *Well done* completes
+  an objective, *Partly there* half-fills it, whether the learner typed the words in the chat or
+  wrote them into the notes. A released answer, Ellie's help and "ok, makes sense" fill nothing.
+  Each objective opens as a lesson card holding its evidence: the learner's own sentence.
+- **Revision rate.** The share of *Partly there* verdicts the learner answers again on the same
+  question. The bar keeps only the best verdict, so on its own it cannot tell a first try from a
+  recovery. Recovery is the second clause of the goal, and it is the one behaviour the six
+  sessions never produced: 0 of 17 attempts was a second try.
+- **Own words.** How much of an answer repeats the note block above it, or Ellie's cue. Echoing
+  the AI should not read as explaining it.
+
+Max is a model scoring a learner. In these transcripts an AI's verdict on learner work was wrong
+11 times in 21, 9 of them marking a correct answer wrong. So the bar is a new instrument, not
+truth. I hand-score 20% of verdicts blind and report quadratic weighted κ, and below κ = .60 the
+bar is a display only and no number drawn from it is reported (Appendix F). Assignment 2 measures
+the Step 1 behaviours instead: attempt rate, sustained attempt rate and revision rate, recoded
+from ChatterED sessions with the codebook used here, so the two settings compare directly.
 
 ### 2.2 Roles
 
@@ -107,32 +133,31 @@ the learner's own sentence.
 | Asks; answers Max's question first, in their own words | **Ellie** writes the notes from the slides and answers the learner's questions; **Max** asks one follow-up |
 | Improves on a peer's half-right answer | On silence, Ellie offers an unsure, partial take; Max turns it back to the learner |
 | Decides when to give up | Max then gives the full answer, and asks an easier question next |
-| Edits the notes freely | Both agents edit the notes live; the learner's text is never overwritten, only *suggested* against |
+| Edits the notes freely | Both agents edit the notes live, and never over the learner |
 
 I stop at two agents: Song et al. (2025) found that normative pressure rises with agent count while
 informational influence does not.
 
 ### 2.3 Why conversational
 
-A static set of notes, or a quiz app, could hold the same content. Neither can judge a free-text
-answer, choose the next question from what it revealed, offer a half-right answer to improve on, or
-notice that a learner has given up. Xu et al. (2026) measured the difference responsiveness makes:
-121 to 141 cognitive acts per session when explaining to a responsive agent, against 61.
+Static notes or a quiz app could hold the same content. Neither can judge a free-text answer,
+pick the next question from what it revealed, offer a half-right answer to improve on, or notice
+that a learner has given up. Xu et al. (2026) measured what responsiveness buys: 121 to 141
+cognitive acts per session against 61.
 
 ### 2.4 Design goals
 
 **DG1, the learner goes first, and what comes before the answer is a peer.** *Theory:* retrieval
-practice with feedback (Rowland, 2014: g = 0.73 against 0.39 without); self-explanation (Chi et
-al., 1989); explaining to a peer who is *less* sure than you elicits more than explaining to a
-tutor (Xu et al., 2026). *Need:* N1. *Realisation:* Max's question is the learner's to answer;
-after a reading-time silence Ellie gives a hedged, partial take, which may hold one plausible
-mistake, and Max aims it back at the learner.
+practice with feedback (Rowland, 2014: g = 0.73 against 0.39); self-explanation (Chi et al., 1989);
+a peer who is *less* sure than you elicits more than a tutor (Xu et al., 2026). *Need:* N1.
+*Realisation:* Max's question is the learner's to answer. After a reading-time silence Ellie gives
+a hedged, partial take, possibly with one plausible mistake, and Max aims it back at the learner.
 
-**DG2, a give-up lowers the question, never the learner.** *Theory:* contingent tutoring: more
-help after failure, less after success (Wood, Bruner & Ross, 1976); a global escape must be
-reachable from every node of a dialogue (Moore & Arar, 2019). *Need:* N2 (P1: "easier questions first… a progression journey"). *Realisation:* "I don't
-know", in any phrasing, releases Max's full answer at once, fills no progress, and makes the next
-question easier. No question is ever left unanswered.
+**DG2, a give-up lowers the question, never the learner.** *Theory:* contingent tutoring, more
+help after failure and less after success (Wood, Bruner & Ross, 1976); a global escape reachable
+from every node of a dialogue (Moore & Arar, 2019). *Need:* N2 (P1: "easier questions first… a
+progression journey"). *Realisation:* "I don't know", in any phrasing, releases Max's full answer
+at once, fills no progress, and pitches the next question lower. No question is left unanswered.
 
 **DG3, feedback shows its grounds and is finished before the next question.** *Theory:* trust is
 calibrated only when the basis of a judgement is visible (Lee & See, 2004). *Need:* N3.
@@ -141,16 +166,14 @@ calibrated only when the basis of a judgement is visible (Lee & See, 2004). *Nee
 
 **DG4, notes with provenance, and the learner's text is sovereign.** *Theory:* appropriate
 reliance again (Lee & See, 2004); Joshi & Vogel (2026) found lower AI involvement gives stronger
-ownership, which an AI-written document cuts against, so the counterweight is a hard rule.
-*Need:* N4, N6. *Realisation:* every block links to its slides or states why it was added; agents
-address blocks, and a code-side guard turns any change to learner-written text into an
-accept-or-reject suggestion.
+ownership, which an AI-written document cuts against, so the counterweight is a rule. *Need:* N4,
+N6. *Realisation:* every block links to its slides or says why it was added, and a code-side guard
+turns any agent change to learner text into an accept-or-reject suggestion.
 
 **DG5, replies sized for reading; length lives in the document.** *Theory:* Grice's maxim of
-quantity; Xu et al. held replies near 80 words; adults read about 238 wpm (Brysbaert, 2019);
-two-second replies read as less thoughtful (Tan et al., 2026). *Need:* N5. *Realisation:* chat
-turns aim at 120 words, feedback under 100; silence thresholds scale to the last turn's reading
-time.
+quantity; Xu et al. held replies near 80 words; two-second replies read as less thoughtful (Tan et
+al., 2026). *Need:* N5. *Realisation:* chat turns aim at 120 words, feedback under 100; silence
+thresholds scale to reading time at 238 wpm (Brysbaert, 2019).
 
 Each goal names what would falsify it (Lee, 2026); Appendix F lists the A2 tests.
 
@@ -166,39 +189,38 @@ TypeScript, ProseMirror, SQLite, local on macOS.
  renderer: GUARD (learner text?) ─► apply as typing, or as a suggestion ─► save ─► progress bar
 ```
 
-**The rails are code.** The lecture's advice for LLM prototypes is that "the flow becomes the rails
-in your system prompt; the model fills in the language" (Lee, 2026). I go one step further: the
-rails are rules in an orchestrator, checked before any model is called, because the evidence asks
-for a contract and a prompt is not one. Houde et al. (2025) reached the same conclusion for
-multi-agent chat: "we resorted to using external decision logic."
+**The rails are code.** The lecture puts the flow in the system prompt and lets "the model fill
+in the language" (Lee, 2026). I go one step further: the rails are rules in an orchestrator,
+checked before any model is called, because the evidence asks for a contract and a prompt is not
+one. Houde et al. (2025) reached the same conclusion for multi-agent chat: "we resorted to using
+external decision logic."
 
-**What I build**, each carrying a design decision: (1) the turn classifier, including the give-up
-phrases taken from the observed sessions; (2) the rules: who answers, Max's follow-up, Ellie's cue
+**What I build**, each carrying a design decision: (1) the turn classifier, with the give-up
+phrases taken from the observed sessions; (2) the rules — who answers, Max's follow-up, Ellie's cue
 once per question, release, closure; (3) pitch inputs from recent verdicts; (4) the document model:
-blocks with provenance, a per-span author mark, the learner-text guard and suggestions; (5) the
-two-pass ingest and its validation, which rejects any block with no provenance; (6) progress as a
-pure function of recorded verdicts.
+provenance, a per-span author mark, the learner-text guard and suggestions; (5) the two-pass ingest
+and its validation, which rejects any block with no provenance; (6) progress, revision rate and the
+overlap measure as pure functions of the recorded turns.
 
-**LLMs at runtime** (Claude Sonnet 5 through the local Claude CLI, or an API key): the notes, the
-words of each turn, Ellie's cue as a structured reply that declares whether it contains a mistake,
-the doc-edit plan, and the coding of learner evidence. **LLMs to build:** scaffolding, tests and
-research synthesis, under my decisions; every rule and threshold is mine and dated in the issues.
+**LLMs at runtime** (Claude Sonnet 5, local CLI or API key): the notes, the words of each turn,
+Ellie's cue as a structured reply declaring whether it contains a mistake, the doc-edit plan, and
+the coding of learner evidence. **LLMs to build:** scaffolding, tests and research synthesis; every
+rule and threshold is mine and dated in the issues.
 
 ## Step 4: The prototype
 
 A running app, on CS3249's own Week 4 deck (66 slides). Ingest took six minutes: 171 blocks, each with provenance, and 23 inline figures.
 
-1. **Open.** The deck becomes lecture notes that read without the slides; each block carries a
-   `p. N` chip that opens its slide, and diagrams appear inline as crops of the original.
+1. **Open.** The deck becomes notes that read without the slides. Each block's `p. N` chip opens
+   its slide, and diagrams appear inline as crops.
 2. **Ask.** I highlight a sentence, press Ctrl+E and ask. Ellie answers in the chat, and her cursor
    types the missing explanation into the notes in green.
-3. **Max asks.** One follow-up appears in the chat and, in red, as a question block in the notes.
-4. **I try.** Max answers *Partly there*, quotes `p. N`, and asks a follow-up on the gap. I answer
-   again: *Well done*. The objective fills, with my sentence as its evidence, and Max's corrected
-   version is written under his question.
-5. **I stall.** On the next question I say nothing. Ellie offers a half-right guess; Max asks
-   whether she is right. I type "I don't know": Max gives the answer, corrects Ellie, fills
-   nothing, and his next question is easier.
+3. **Max asks.** One follow-up, in the chat and in red as a question block in the notes.
+4. **I try.** Max answers *Partly there*, quotes `p. N`, and follows up on the gap. I answer again:
+   *Well done*. The objective fills, the revision is logged, my sentence is its evidence, and Max's
+   corrected version goes under his question.
+5. **I stall.** I say nothing. Ellie offers a half-right guess; Max asks whether she is right. I
+   type "I don't know": Max answers, corrects Ellie, fills nothing, and pitches lower.
 6. **I write.** I add my own sentence to the notes. Max assesses it as an attempt, and his
    correction arrives as a strikethrough suggestion I accept or reject.
 
@@ -207,12 +229,13 @@ tested code (1,628 tests); the model writes the notes and the words.
 
 ## Limitations
 
-Six observed sessions, one contributing 59% of turns; the second coder is a model. The three interviews are my notes in paraphrase, all
-final-year students, two from computing. The notes are AI-written and re-typeset: provenance makes them checkable, but
-nothing verifies them against the slide in code, and the same holds for feedback quotes. Releasing
-the answer on any give-up is a bet that a lowered question teaches more than a refused answer; no
-evidence here settles it, and it is A2's first test. Ellie's deliberate mistake risks a learner who
-reads it and leaves; a closure rule corrects it, but only inside the app.
+Six sessions, one contributing 59% of turns, and the second coder is a model. Three interviews,
+from my notes in paraphrase, all final-year, two from computing. The notes are AI-written and
+re-typeset: provenance makes them checkable, but nothing verifies them against the slide in code,
+and the same holds for feedback quotes. The own-words measure is lexical, so a good paraphrase
+reads as the learner's. Releasing the answer on any give-up bets that a lowered question teaches
+more than a refused one; nothing here settles it, and it is A2's first test. Ellie's deliberate
+mistake risks a learner who reads it and leaves; a closure rule corrects it, but only in the app.
 
 ---
 

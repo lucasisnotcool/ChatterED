@@ -30,3 +30,51 @@ export function progressFill(outcomes: readonly QuizOutcome[]): ProgressFill {
   }
   return best;
 }
+
+/**
+ * **Revision: the second clause of the learning goal** (`docs/research/measurement.md` M2).
+ *
+ * The goal is *"answer a question about the lecture in their own words, **and revise that answer
+ * after feedback**."* `progressFill` above answers the first clause and cannot answer the second:
+ * it keeps the best verdict, so a learner who is right first try and a learner who recovers from
+ * *Partly there* read identically. Recovery is the behaviour the design exists to produce and the
+ * one the observed sessions never showed — 0 of 17 attempts was a second try at the same question,
+ * and 17 of 21 feedback turns carried the next question in the same message.
+ *
+ * So it is counted separately, and not folded into the fill:
+ *
+ *  - **eligible** — verdicts that left something to revise (`partial` or `not_yet`). A *Well done*
+ *    is not a missed revision; there was nothing to revise.
+ *  - **revised** — of those, the questions that went on to receive a verdict on a *later* attempt.
+ *    Counted per question, not per verdict, so a learner who tries four times on one question is
+ *    one recovery and not three.
+ *
+ * `rate` is `null` when nothing was eligible. A learner who was right every time has no revision
+ * rate, and reporting 0 for them would read as a failure to revise.
+ */
+export interface RevisionStats {
+  eligible: number;
+  revised: number;
+  rate: number | null;
+}
+
+export function revisionStats(outcomes: readonly QuizOutcome[]): RevisionStats {
+  const firstEligibleAttempt = new Map<string, number>();
+  const bestLaterAttempt = new Map<string, number>();
+  for (const o of outcomes) {
+    if (o.kind !== 'verdict' || o.attemptIndex === null) continue;
+    const at = o.attemptIndex;
+    if (o.verdict === 'partial' || o.verdict === 'not_yet') {
+      const seen = firstEligibleAttempt.get(o.questionId);
+      if (seen === undefined || at < seen) firstEligibleAttempt.set(o.questionId, at);
+    }
+    const best = bestLaterAttempt.get(o.questionId);
+    if (best === undefined || at > best) bestLaterAttempt.set(o.questionId, at);
+  }
+  let revised = 0;
+  for (const [questionId, at] of firstEligibleAttempt) {
+    if ((bestLaterAttempt.get(questionId) ?? at) > at) revised += 1;
+  }
+  const eligible = firstEligibleAttempt.size;
+  return { eligible, revised, rate: eligible === 0 ? null : Math.round((revised / eligible) * 100) / 100 };
+}

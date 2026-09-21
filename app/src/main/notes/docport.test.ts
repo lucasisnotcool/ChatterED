@@ -136,6 +136,7 @@ describe('recording', () => {
     port.recordOutcome({
       roomId: 'room_1', objectiveId: 'o_1', questionId: 'q_1', kind: 'verdict',
       verdict: 'complete', releasedBy: null, messageId: 'm_9', source: 'chat',
+      attemptIndex: 1, ownWords: { block: 0.2, cue: null, question: 0.1 },
     });
 
     const stored = outcomesRepo(db).forContent('sha-deck');
@@ -155,6 +156,7 @@ describe('recording', () => {
       port.recordOutcome({
         roomId: 'room_1', objectiveId: null, questionId: 'q_2', kind: 'released',
         verdict: null, releasedBy: 'give_up', messageId: null, source: 'chat',
+        attemptIndex: null, ownWords: null,
       }),
     ).not.toThrow();
     expect(outcomesRepo(db).forContent('sha-deck')).toHaveLength(1);

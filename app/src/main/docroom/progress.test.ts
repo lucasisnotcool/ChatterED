@@ -28,6 +28,8 @@ function outcome(over: Partial<QuizOutcome> = {}): QuizOutcome {
     releasedBy: null,
     messageId: null,
     source: 'chat',
+    attemptIndex: 1,
+    ownWords: null,
     createdAt: T0,
     ...over,
   };
