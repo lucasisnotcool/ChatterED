@@ -84,16 +84,22 @@ echo "    ${COUNT} files"
 
 # ── the figures that carry the user story ───────────────────────────────────
 # Staged at `figures/` at the top of the archive: that is the path the package README's image
-# links use. Tracked-only, enumerated the same way as everything else. Refuse if either is
-# missing — the user story is what B.1's "storyboards" is being answered with, so a package
-# without them is incomplete.
+# links use. Tracked-only, enumerated the same way as everything else. Refuse if any is missing —
+# the user story is what B.1's "storyboards" is being answered with, so a package without them is
+# incomplete. Two diagrams, and six stills from the 2026-09-22 shoot: `shoot-plan.md` §8 says
+# nothing from the shoot is committed, which is a rule about raw takes and repo size (no LFS
+# here). These six are selected stills, as shot, ~1.5 MB in total, and they are the only part of
+# the package that shows the app actually running.
 mkdir -p "$STAGE/figures"
 FIGCOUNT=0
 while IFS= read -r -d '' f; do
   cp "$f" "$STAGE/figures/$(basename "$f")"
   FIGCOUNT=$((FIGCOUNT + 1))
 done < <(git ls-files -z -- "$FIGURES")
-for want in interaction-map.png division-of-labour.png; do
+for want in interaction-map.png division-of-labour.png \
+             shot-1-three-columns.png shot-2-max-asks.png shot-3-verdict-well-done.png \
+             shot-4-learner-text-assessed.png shot-5-question-resolved.png \
+             shot-6-private-insert.png; do
   if [[ ! -s "$STAGE/figures/$want" ]]; then
     echo "refusing: figures/$want is missing, empty or untracked. The package README links it." >&2
     exit 1

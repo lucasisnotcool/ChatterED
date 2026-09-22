@@ -41,14 +41,55 @@ learner asking for them, which is where the design's argument lives.
 
 ![The complete interaction map: asking in the chat, asking from inside the notes, private threads, undoing agent edits, and the four behaviours that fire without being asked](figures/interaction-map.png)
 
-The learner keeps three guarantees, all enforced in code rather than in a prompt:
+### The same story, as it actually ran
 
-1. **Their own words are never overwritten.** An agent that needs to change learner text can only
-   *suggest* — strikethrough, Accept · Reject. Reject leaves the text exactly as it was.
-2. **A question is always theirs first.** On silence Ellie offers a half-right peer's guess, never
-   the answer; any give-up releases the answer at once, fills no progress, and makes the next
-   question easier.
-3. **Nothing is left hanging.** Every question reaches a verdict, a release, or closure.
+These are screenshots of a real session — the module's own Week 4 lecture deck, ingested into the
+notes, with a live model answering. The deck itself is the lecturer's and is not redistributed
+here, so what you see in the document is the AI-written notes, not the slides. Read the six in
+order; each one is a different mechanism.
+
+**1 — The three columns.** Files on the left, the notes in the middle, the chats on the right.
+The `p. 42` chip on the heading opens the slide that block came from. The green bar in the margin
+is an edit Ellie made, with **Remove · Keep** beside it. In the chat, Max has just marked an
+answer *"Not yet."* — the learner asked a new question instead of answering the one that was open.
+
+![The three-column window: files, the lecture notes with a p. 42 provenance chip and a green Ellie edit, and the chat where Max has answered "Not yet."](figures/shot-1-three-columns.png)
+
+**2 — Max asks, and the question lands in the notes.** The same question appears twice: as a red
+block in the document marked `open`, and in the chat carrying its rule tag, `by rule · follow-up`.
+Every agent turn shows the rule that produced it. The composer below reads *"Your answer…"*, and
+offers **Pass**.
+
+![Max's question as a red block in the notes marked "open", and in the chat tagged "by rule · follow-up"](figures/shot-2-max-asks.png)
+
+**3 — The learner answers, and the verdict quotes the slide.** *"Well done."* followed by the
+grounds — `p. 43` and `p. 47`, each a link that opens the slide. The verdict comes first, the
+evidence second, and the evidence is checkable.
+
+![Max's "Well done." verdict quoting p. 43 and p. 47, each a clickable link to the slide](figures/shot-3-verdict-well-done.png)
+
+**4 — Writing into the notes counts as answering.** The learner typed a sentence of their own
+directly into the document (highlighted). Max assessed it as an attempt on the open question —
+*"Partly there"* — and corrected which slide the claim belongs to: `p. 41`, not `p. 42`. The chat
+and the document are two ways into one activity, not two activities.
+
+![The learner's own sentence highlighted in the notes, with Max assessing it and correcting the slide attribution from p. 42 to p. 41](figures/shot-4-learner-text-assessed.png)
+
+**5 — The question closes in the document.** The red block is now marked `partly yours`, and Max's
+completion is written underneath his own question — labelled *"Part of this was the learner's"*,
+with **Remove · Keep**. Nothing overwrote what the learner wrote.
+
+![The question block marked "partly yours" with Max's completion written under it and Remove · Keep controls](figures/shot-5-question-resolved.png)
+
+**6 — Private threads, and the one way out of them.** Ellie's own tab is a read-only side channel;
+Max cannot see it. The reply is marked *"In the document ✓"* because the learner chose to insert
+it, and it appears in the notes as a shared card attributed to Ellie.
+
+![Ellie's private tab, with a reply marked "In the document" and the corresponding inserted card in the notes](figures/shot-6-private-insert.png)
+
+---
+
+The learner keeps three guarantees, all enforced in code rather than in a prompt:
 
 ---
 
@@ -58,7 +99,7 @@ The learner keeps three guarantees, all enforced in code rather than in a prompt
 |---|---|
 | `app/` | The entire application, source only — main process, renderer, the room rules, the prompts, the document model, and the tests. |
 | `app/README.md` | How to install and run it, the walk-through to follow once it is open, and which parts are rules in code versus words from a model. |
-| `figures/` | The two figures above, full resolution. |
+| `figures/` | The two diagrams and the six screenshots above, full resolution. |
 | `Academia/Sources/btw interaction/` | A 7-slide deck of the author's own, so the app has something to ingest on your machine. |
 
 **The prompts and configuration** the criterion asks for are in the source, not in a separate
