@@ -93,31 +93,60 @@ Say the number in your voiceover and the honesty is intact.
 
 ---
 
-## 4. The doc-change modes — B-roll for the explanation
+## 4. The doc-change modes — clip 2, shot 2026-09-22
 
-You asked for footage of the learner editing the document directly, asking the agents about it,
-and the other ways the document changes. **All eight exist and are wired — nothing needs
-building.** Shoot each as a 6–10 s clip on its own; they belong in the eight minutes where you
-talk, not in the 60-second cut, which already carries five of them.
+You asked for a second clip that runs a **loop** of conversation turns rather than one exchange,
+with the document-change modes woven through it. That clip is
+`~/ChatterED-shoot/2026-09-22/demo2-modes.mp4` — **1 m 51 s**, cut from one continuous 5 m 7 s
+take on the live model. The unedited take is `master2.mp4`.
 
-| # | Mode | How you trigger it on camera | Where it lives |
+**The loop it carries.** Four learner turns in the chat, then two more ways into the document:
+
+| # | The learner | What comes back |
+|---|---|---|
+| 1 | Answers Max's open question | **Well done**, resting on `p. 43` and `p. 47` |
+| 2 | Adds the part about latency | **Well done** again, quoting the same two slides |
+| 3 | Selects a line in the notes and asks about it (⌘E) | Ellie answers from `p. 41` and **writes the explanation into the notes**; Max asks one back, as a **red question block in the document** |
+| 4 | Answers the follow-up | **Partly there** — and Max's own answer is written **under his question in the notes**, the block's chip turning `open` → `partly yours` |
+| 5 | Writes their **own** sentence into the notes | It enters the chat as their turn with *Jump to span ↗*; Max marks it against `p. 41` rather than `p. 42` |
+| 6 | Asks Ellie privately, then presses **Insert into the document** | The private answer becomes a green card in the shared notes |
+
+**Be straight about the arc.** Max accepted turns 1 and 2 outright, so clip 2 has no
+*Not yet → revise → Well done* sequence. That arc is in clip 1 (`demo-cut.mp4`). What clip 2
+has instead is the **loop**: four turns that keep handing the question back, a *Partly there*
+that lands in the document rather than only in the chat, and six of the eight document-change
+modes in one continuous take.
+
+**All eight modes exist and are wired — nothing needed building.** Seven of the eight are in
+clip 2; the eighth did not fire and is the one open gap.
+
+| # | Mode | In clip 2 | Where it lives |
 |---|---|---|---|
-| 1 | **Ellie writes an explanation in** — green, with **Remove · Keep** | ⌘E on a sentence, ask something the notes do not already answer | `docstore.applyAgentEdit`, `removeAgentEdit` / `keepAgentEdit` |
-| 2 | **Max's question block** — red, stays until it is dealt with | Let `rule:max_followup` fire | the actor's `doc.edit` batch |
-| 3 | **Max's corrected answer, written under his question** | Any resolution: *Well done*, a release, or closure | the `resolve_q` op |
-| 4 | **The learner types directly into the notes** | Type a sentence in a block with a `p. N` chip, then pause | `#reportDocText` → `docTextGate` |
-| 5 | **That sentence assessed as an attempt** | The gate passes; Max marks it like a chat answer | outcome with `source: 'doc'` |
-| 6 | **An agent tries to change your text → a suggestion** | Let Max correct line 5; strikethrough + **Accept · Reject** | the guard, `applyAgentEdit` → `rejected_guard`, `resolveSuggestion` |
-| 7 | **Freeze** — every agent edit stops | Toggle **Freeze**, then ask something and show nothing lands | `docstore.setFrozen` |
-| 8 | **Insert into the document** — a private turn becomes a shared card | Ask in Max's private tab, press **Insert into the document** | `PrivateThread.svelte` |
+| 1 | **Ellie writes an explanation in** — green, with **Remove · Keep** | **yes** — twice | `docstore.applyAgentEdit`, `removeAgentEdit` / `keepAgentEdit` |
+| 2 | **Max's question block** — red, `open` chip, stays until dealt with | **yes** — and the chat copy is tagged `by rule · follow-up` | the actor's `doc.edit` batch |
+| 3 | **Max's corrected answer, written under his question** | **yes** | the `resolve_q` op |
+| 4 | **The learner types directly into the notes** | **yes** — their sentence carries the learner-text highlight | `#reportDocText` → `docTextGate` |
+| 5 | **That sentence assessed as an attempt** | **yes** — it enters the chat as the learner's turn with *Jump to span ↗*, and Max marks it against `p. 41` vs `p. 42` | outcome with `source: 'doc'` |
+| 6 | **An agent tries to change your text → a suggestion** | **no — see below** | the guard, `applyAgentEdit` → `rejected_guard`, `resolveSuggestion` |
+| 7 | **Freeze** — every agent edit stops | **yes** — on, then off | `docstore.setFrozen` |
+| 8 | **Insert into the document** — a private turn becomes a shared card | **yes** — the card lands in green, credited *"the learner inserted this from…"* | `PrivateThread.svelte` |
 
-Modes 1, 2, 3, 4 and 6 are already in the 60-second cut. **7 and 8 are the two worth shooting
-separately**, because they are the two the report argues for and the cut has no room for: Freeze
-is the blunt version of DG4's guarantee, and Insert is the only way anything private reaches the
-shared document.
+**Mode 6 did not fire, in two attempts.** The guard only produces an Accept · Reject card when an
+agent's edit actually overlaps learner text. Both times — once on a correct sentence, once on a
+sentence deliberately written to contradict `p. 42` — Max corrected the learner **in the chat and
+under his own question** instead of reaching into their paragraph. That is the design working
+(he never needed the guard), but it means the guard's own affordance is not on film. It is
+asserted in `guard.test.ts` and `suggest.test.ts`; on camera it is still owed.
 
-Mode 6 is the one to hold longest on screen. Rejecting the suggestion leaving the learner's text
-*byte-identical* is what `guard.test.ts` and `suggest.test.ts` assert, and it is DG4's whole claim.
+**A free beat worth using.** Once Max's question is open, the composer changes to *"Your answer…"*
+and grows a **Pass** button under the line *"Say I don't know or press Pass and Max will give the
+answer."* That is DG2 stated in the interface, and it is on screen for most of the clip.
+
+**Shoot notes carried forward.** Every scroll in clip 2 leaves ~220 px of the preceding block
+above the target, so a viewer can see what the target is part of — the first clip scrolled the
+target flush to the top and read as contextless. Settings ▸ Tester pacing ▸ **Demo** is set
+before the deck opens (#40). The file panel is collapsed to a tidy CS3249 tree before rolling,
+because expanded it shows a filename carrying a name and a student ID.
 
 ---
 
@@ -157,3 +186,18 @@ Neither is in the demo's way, but both are in the submitted text.
   shoot rather than after it.
 - **"1,628 tests"** (Step 4; `app/README.md` says ~1,630). The suite is at **1,658** as of today,
   including the eight added by the dry-run harness.
+
+---
+
+## 7. Two defects the second shoot turned up
+
+Neither blocks the video; both are real and neither is fixed.
+
+- **The Week 4 notes contain the deck twice.** Every heading from `p. 2` to `p. 55` appears two
+  times in the ingested document (111 headings, 56 distinct) — the ingest windows were written
+  into the same doc on two passes. Clip 2 works around it by staying inside one section and never
+  scrolling across a boundary, but a learner scrolling the deck would see the whole thing repeat.
+  Worth an issue before anyone else ingests a deck.
+- **The guard's Accept · Reject card is still unfilmed.** Two attempts (§4, mode 6). Max corrects
+  in the chat and under his own question rather than reaching into the learner's paragraph, so the
+  guard never has to fire. The behaviour is right; the affordance is not on camera.
