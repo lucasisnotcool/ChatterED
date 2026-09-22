@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 #
-# Build the Assignment 1 submission ZIP: the prototype's source, the briefs it is built against,
-# the report drafts and the storyboard. Gate: the ZIP opens on another machine.
+# Build the Assignment 1 prototype package ZIP: **the app and its code, and nothing else** —
+# plus the two figures that carry the user story and one small deck of Lucas's own so the app has
+# something to open. Gate: the ZIP opens on another machine.
 #
-# Re-pointed 19 Sep 2026 for #48 (`docs/research/collab-doc.md`): the briefs are the collab-doc
-# ones, and the storyboard is `docs/report/video-storyboard.md` itself, no longer an extract of
-# the superseded `flow-build-plan.md` §2.
+# Re-pointed 22 Sep 2026 (Lucas's call) to the assignment's actual B.1 scope. The submission is
+# three artefacts; this is the *prototype* one, so the research briefs, the interview and
+# transcript analysis and the report drafts came out — they are the *report's* material and go in
+# the PDF. The brief's "storyboards" is read as the **user story**, which is told by
+# `docs/report/figures/` and §1 of the package README, not by `docs/report/video-storyboard.md`
+# (a shot list for the video, and the video is its own artefact).
+#
+# **No session or participant data of any kind goes in.** The one recorded sitting stays in the
+# report; the app's own database is 148 MB and caches the extracted text of thousands of files,
+# including other people's papers, so it is not shippable even in principle.
 #
 # **The file list is an allowlist, never an exclude list.** Every path that goes in is named
 # below and enumerated through `git ls-files`, so three things are true by construction rather
@@ -19,10 +27,16 @@
 # people's work and are not ours to redistribute, so exactly one folder goes in: the Critique 1
 # deck, which is Lucas's own and gives the vault something to open. **The filmed demo deck, the
 # CS3249 Week 4 lecture, is the lecturer's and is NOT in the ZIP** (it is not committed either);
-# the README says to open any slide deck. The rest of `docs/research/` — a marker gets the briefs
-# the prototype is built against, not all of them. `.claude/` in full: project policy is not
+# the README says to open any slide deck. All of `docs/research/` and all of `docs/report/` bar
+# the figures: report material, not prototype material. `.claude/` in full: project policy is not
 # submission material. `Academia/Interviews/` and the raw transcripts are git-ignored and so are
 # unreachable by construction.
+#
+# **Why the clean-tree gate is scoped.** Other agents work in this repo concurrently, so the whole
+# tree is almost never clean. The archive is still named after a commit and still built from
+# tracked files, so the guarantee that matters — that the ZIP's contents match the commit it
+# claims — is kept by refusing only when an **allowlisted** path is dirty. A modified report draft
+# elsewhere cannot make this archive lie, because it is not in this archive.
 #
 # Usage:  tools/make-submission-zip.sh
 # Output: dist/ChatterED-A1-<short-sha>.zip  (dist/ is git-ignored)
@@ -31,16 +45,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# ── the tree must be clean ──────────────────────────────────────────────────
-# The archive is named after a commit and is enumerated from the index, so a dirty tree would
-# produce a ZIP that claims to be a commit it is not. Refuse rather than warn.
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "refusing: the working tree is dirty. Commit or stash first — the archive is named" >&2
-  echo "after a commit and built from the index, so it must not claim a state that is not one." >&2
-  git status --short >&2
-  exit 1
-fi
-
 SHA="$(git rev-parse --short HEAD)"
 OUT="dist/ChatterED-A1-${SHA}.zip"
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/chattered-zip.XXXXXX")"
@@ -48,22 +52,26 @@ trap 'rm -rf "$STAGE"' EXIT
 
 # ── the allowlist ───────────────────────────────────────────────────────────
 PATHSPECS=(
-  # The prototype, source only. `git ls-files` is what makes this "source only".
+  # The prototype, source only. `git ls-files` is what makes this "source only". The prompts and
+  # the configuration the criterion asks for are inside it, not in a folder of their own.
   'app'
-  # The briefs the build is against: the collab doc (the source of truth), the two de-identified
-  # evidence write-ups behind it, the transcript study's method files, and the two earlier briefs
-  # whose rules survive into it (the classifier, verdicts and turn sizes; the flow session).
-  'docs/research/collab-doc.md'
-  'docs/research/interviews/findings.md'
-  'docs/research/ai-use-transcripts/README.md'
-  'docs/research/ai-use-transcripts/analysis'
-  'docs/research/attempt-first.md'
-  'docs/research/flow-session.md'
-  # The report and its working drafts.
-  'docs/report'
   # The demo deck, so the vault has something to open on another machine. Lucas's own work.
   'Academia/Sources/btw interaction'
 )
+# The figures ride in separately: they are staged at `figures/` at the top of the archive, which
+# is the path the package README references, not at their repo path under `docs/report/`.
+FIGURES='docs/report/figures'
+
+# ── the allowlisted paths must be clean ─────────────────────────────────────
+# Scoped, not whole-tree: see the header. Anything that actually goes in must match the commit.
+DIRTY="$(git status --porcelain -- "${PATHSPECS[@]}" "$FIGURES" tools/submission-README.md)"
+if [[ -n "$DIRTY" ]]; then
+  echo "refusing: a path that goes into the archive is dirty. Commit or stash these first —" >&2
+  echo "the archive is named after a commit and built from tracked files, so it must not claim" >&2
+  echo "a state that is not one. (Dirt elsewhere in the repo is fine and is ignored.)" >&2
+  echo "$DIRTY" >&2
+  exit 1
+fi
 
 echo "==> staging from ${SHA}"
 COUNT=0
@@ -74,18 +82,48 @@ while IFS= read -r -d '' f; do
 done < <(git ls-files -z -- "${PATHSPECS[@]}")
 echo "    ${COUNT} files"
 
-# ── the README a marker opens the ZIP to ────────────────────────────────────
-# In place under app/ (where the paths in it resolve) *and* at the top of the archive, because
-# the first thing anybody does with a submission ZIP is unzip it and look for a README.
-cp app/README.md "$STAGE/README.md"
+# ── the figures that carry the user story ───────────────────────────────────
+# Staged at `figures/` at the top of the archive: that is the path the package README's image
+# links use. Tracked-only, enumerated the same way as everything else. Refuse if either is
+# missing — the user story is what B.1's "storyboards" is being answered with, so a package
+# without them is incomplete.
+mkdir -p "$STAGE/figures"
+FIGCOUNT=0
+while IFS= read -r -d '' f; do
+  cp "$f" "$STAGE/figures/$(basename "$f")"
+  FIGCOUNT=$((FIGCOUNT + 1))
+done < <(git ls-files -z -- "$FIGURES")
+for want in interaction-map.png division-of-labour.png; do
+  if [[ ! -s "$STAGE/figures/$want" ]]; then
+    echo "refusing: figures/$want is missing, empty or untracked. The package README links it." >&2
+    exit 1
+  fi
+done
+echo "    ${FIGCOUNT} figures"
 
-# ── the video storyboard ────────────────────────────────────────────────────
-# `docs/report/video-storyboard.md` is the source of truth since #48 and rides in with
-# `docs/report` above. Refuse if it is missing: a submission without it is incomplete.
-if [[ ! -s "$STAGE/docs/report/video-storyboard.md" ]]; then
-  echo "refusing: docs/report/video-storyboard.md is missing or empty." >&2
+# ── the README a marker opens the ZIP to ────────────────────────────────────
+# Two different documents, on purpose. At the top of the archive: the *package* README, which
+# answers B.1.2 — the prototyping method, the user story with the figures, and what is and is not
+# in here. Under `app/`: the developer README, which is how to actually run it, and where the
+# paths it cites resolve.
+if [[ ! -s tools/submission-README.md ]]; then
+  echo "refusing: tools/submission-README.md is missing or empty." >&2
   exit 1
 fi
+cp tools/submission-README.md "$STAGE/README.md"
+
+# `app/README.md` cites files under `docs/` that are the report's material and are deliberately
+# not in this package. Say so in the staged copy rather than editing the repo's own README, which
+# is correct as it stands in the repo.
+cat >> "$STAGE/app/README.md" <<'FOOTER'
+
+---
+
+**Note for the submitted package.** This file is the repo's developer README, copied unchanged.
+The paths it cites under `docs/research/` and `docs/report/` are the *report's* material and are
+deliberately not in this ZIP — see §3 of the package README at the top of the archive. Everything
+it says about running the app, and every path it cites under `app/`, is correct here.
+FOOTER
 
 # ── belt and braces ─────────────────────────────────────────────────────────
 # The allowlist already makes these unreachable. This is the check that fails loudly if somebody
