@@ -39,9 +39,25 @@ html, body {
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* The window is an app, not a page: it never scrolls (#43). Every pane that should scroll has
+     its own `overflow-y: auto`; a wheel over anything else (the nav rail, a header, the status
+     bar) used to chain up to the document, which was scrollable, and carried the whole UI up
+     into blank ground. `overscroll-behavior` stops the macOS rubber band on the root too. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
-#app { height: 100%; }
+/*
+  Why the document had anything to scroll (#43): `.sr-only` spans are `position: absolute`, and
+  with no positioned ancestor their containing block is the initial one — so one sitting in a long
+  list inside a scrolling pane (Library's ledger glyphs, the ledger rail, a chat message, the Usage
+  tables) is not clipped by that pane and extends the *document* below the window. `position:
+  relative` makes #app the containing block for every such descendant (it occupies exactly the
+  initial containing block, so nothing moves), and `overflow: clip` clips them without making #app
+  a scroll container — unlike `hidden`, `clip` cannot be scrolled by `focus()` or
+  `scrollIntoView()` either. Fixed-position overlays (banner, sheets, drawer) are unaffected.
+*/
+#app { height: 100%; position: relative; overflow: clip; }
 
 button {
   font: inherit;
