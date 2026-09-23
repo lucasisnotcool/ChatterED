@@ -85,6 +85,10 @@ export class ChatStore {
   /** The private turn whose **Insert into the document** is in flight. */
   inserting: string | null = $state(null);
 
+  /** Rooms this window reset (`reset()`); their late events are dropped in `apply`. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a bookkeeping set, never rendered
+  #retiredRooms = new Set<string>();
+
   ellie: PrivateChannel = $state(emptyChannel());
   max: PrivateChannel = $state(emptyChannel());
 
@@ -156,6 +160,29 @@ export class ChatStore {
     this.messages = [...snapshot.messages];
     this.failures = [...snapshot.failures];
     this.thinking = snapshot.thinking;
+  }
+
+  /**
+   * **New Conversation** (2026-09-23): the doc-chat header button and the File menu item. Main
+   * asks the learner to confirm and retires the room; this then reads the file again, which comes
+   * back with no room — the empty doc chat — until the next message opens a fresh one.
+   * Returns a line for the learner when it failed, or null.
+   */
+  async reset(): Promise<string | null> {
+    const fileId = this.fileId;
+    const roomId = this.roomId;
+    if (!fileId || !roomId) return null;
+    let result;
+    try {
+      result = await bridge().chatReset({ fileId });
+    } catch (err) {
+      return message(err);
+    }
+    if (!result.reset || this.fileId !== fileId) return null;
+    this.#retiredRooms.add(roomId);
+    this.close();
+    await this.open(fileId);
+    return null;
   }
 
   close(): void {
@@ -428,6 +455,9 @@ export class ChatStore {
    * column is the bug `loadFlow` had to be taught to avoid.
    */
   apply(e: RoomEvent): void {
+    // A reset room can still emit on its way down (a cancelled turn clearing its indicator, a
+    // delta already in the pipe). None of it belongs to the conversation on screen now.
+    if ('roomId' in e && typeof e.roomId === 'string' && this.#retiredRooms.has(e.roomId)) return;
     switch (e.type) {
       case 'chat.thread': {
         // A span thread can appear that the learner never opened: `notes:docText` reuses (or

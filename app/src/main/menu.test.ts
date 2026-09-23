@@ -134,10 +134,24 @@ describe('the application menu', () => {
       'Re-scan Vault',
       'Edit Topics…',
       'Find a File…',
+      'Regenerate Notes…',
+      'New Conversation…',
       'close',
     ]);
     click(template, 'File', 'Open Vault…');
     expect(sent).toEqual(['vault.open']);
+  });
+
+  /** 2026-09-23: both destructive, so both confirm in main, and neither has a key chord. */
+  it('offers Regenerate Notes and New Conversation on the File menu, with no accelerator', () => {
+    const { template, sent } = harness(true);
+    const file = template.find((m) => m.label === 'File')!.submenu as MenuItemConstructorOptions[];
+    for (const label of ['Regenerate Notes…', 'New Conversation…']) {
+      expect(file.find((i) => i.label === label)?.accelerator).toBeUndefined();
+    }
+    click(template, 'File', 'Regenerate Notes…');
+    click(template, 'File', 'New Conversation…');
+    expect(sent).toEqual(['notes.regenerate', 'chat.reset']);
   });
 
   it('sends nothing at all when there is no window', () => {
@@ -250,6 +264,8 @@ describe('what the menu is allowed to say', () => {
       'topics.edit',
       'search.files',
       'settings.open',
+      'notes.regenerate',
+      'chat.reset',
     ]);
     for (const menu of ['File', 'View', 'help']) {
       for (const item of submenu(template, menu)) {

@@ -34,6 +34,16 @@
     }),
   );
 
+  /**
+   * **New conversation** (2026-09-23). On the column rather than inside the doc chat because it
+   * clears all three channels. Main asks the learner to confirm; with no room yet there is nothing
+   * to reset, so the button waits for the first message.
+   */
+  async function reset(): Promise<void> {
+    const line = await chat.reset();
+    if (line) store.notice = { level: 'error', text: line };
+  }
+
   function select(key: ChatTab): void {
     if (key === 'doc') chat.tab = 'doc';
     else void chat.openPrivate(key);
@@ -74,6 +84,19 @@
         {/if}
       </button>
     {/each}
+    <span class="spacer"></span>
+    <button
+      type="button"
+      class="reset"
+      aria-label="New conversation"
+      disabled={!chat.roomId}
+      title={chat.roomId
+        ? 'Clear the doc chat and your one-to-one chats with Ellie and Max, and start again. Asks first. Your notes and progress stay.'
+        : 'Nothing to reset yet.'}
+      onclick={() => void reset()}
+    >
+      <span aria-hidden="true">↺</span>
+    </button>
   </header>
 
   <div class="body">
@@ -101,12 +124,14 @@
   .tabs {
     flex: none;
     display: flex;
+    min-width: 0;
     gap: 2px;
     padding: 7px 10px 0;
     border-bottom: 1px solid var(--hairline);
     background: var(--ground);
   }
   .tab {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -138,6 +163,28 @@
     text-align: center;
     font-variant-numeric: tabular-nums;
   }
+
+  /* A glyph, not a label: the tab strip is ~300 px at the default split, and a label was cut to
+     "New…" as soon as an unread badge appeared. The tooltip and the confirm sheet say what it does,
+     as the nav rail's glyphs do. Never wide enough to push the window into a horizontal scroll. */
+  .spacer { flex: 1 1 auto; min-width: 4px; }
+  .reset {
+    flex: none;
+    align-self: center;
+    margin-bottom: 4px;
+    width: 24px;
+    height: 24px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--pane);
+    font-size: 13px;
+    line-height: 1;
+    color: var(--text-2);
+  }
+  .reset:hover:not(:disabled) { color: var(--text); border-color: #d4d4e2; }
+  .reset:disabled { opacity: 0.5; cursor: default; }
 
   .body { flex: 1; min-height: 0; }
 </style>

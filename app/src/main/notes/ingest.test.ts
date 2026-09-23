@@ -12,13 +12,16 @@ import { openTestDb } from '../../test-support/db.js';
 import { notesRepo, type NotesRepo } from '../db/repos/notes.js';
 import type { DocRoomEvent } from '../../shared/docevents.js';
 import type { DocBlockDraft } from '../../shared/doc/types.js';
-import { docFromJson, eachBlock, blockAttrs } from '../../shared/doc/schema.js';
+import { docFromJson, eachBlock, blockAttrs, notesSchema } from '../../shared/doc/schema.js';
 import type { LearningTree } from '../../shared/objectives.js';
 import type { PageGeometry } from '../../shared/segment/types.js';
 import type { LLMClient, LlmRequest, LlmResult } from '../../room/llm/types.js';
 import { EMPTY_USAGE } from '../../room/llm/types.js';
 import { API_PLAN } from '../../room/llm/models.js';
 import { ensureNotes, ingestInFlight, applyWindow, type NotesIngestDeps, type NotesIngestInput } from './ingest.js';
+import { EditorState } from 'prosemirror-state';
+import { Node as PmNode } from 'prosemirror-model';
+import { appendNodes } from '../../shared/doc/ops.js';
 
 const T0 = '2026-09-20T10:00:00.000Z';
 
@@ -374,6 +377,25 @@ describe('applying one window', () => {
 
   it('is a no-op for an empty window, and keeps the anchor for the next one', () => {
     const doc = { type: 'doc', content: [{ type: 'paragraph', attrs: { blockId: 'b_seed', pages: [], reason: null, objectiveIds: [] } }] };
-    expect(applyWindow(doc, 'b_seed', [])).toEqual({ doc, lastBlockId: 'b_seed' });
+    expect(applyWindow(doc, 'b_seed', [])).toEqual({ doc, lastBlockId: 'b_seed', nodes: [] });
+  });
+
+  /**
+   * **A window lands once** (2026-09-23). The renderer used to re-derive the window's nodes from
+   * the drafts and mint its own block ids; its next save then rebased main's copy in beside it.
+   * The nodes handed back here are the ones in the stored document, ids included, and inserting
+   * them into an editor holding the same starting document gives the stored document exactly.
+   */
+  it('hands back the inserted nodes with the stored ids, so the open editor inserts the same blocks', () => {
+    const empty = { type: 'doc', content: [{ type: 'paragraph', attrs: { blockId: 'b_seed', pages: [], reason: null, objectiveIds: [] } }] };
+    const applied = applyWindow(empty, null, blocksFor(1));
+    const storedIds = (applied.doc as { content: { attrs: { blockId: string } }[] }).content.map((n) => n.attrs.blockId);
+    const sentIds = (applied.nodes as { attrs: { blockId: string } }[]).map((n) => n.attrs.blockId);
+    expect(sentIds.length).toBeGreaterThan(0);
+    expect(storedIds).toEqual(expect.arrayContaining(sentIds));
+
+    const editor = EditorState.create({ schema: notesSchema, doc: docFromJson(empty) });
+    const tr = appendNodes(editor, null, applied.nodes.map((json) => PmNode.fromJSON(notesSchema, json)));
+    expect(editor.apply(tr).doc.toJSON()).toEqual(applied.doc);
   });
 });

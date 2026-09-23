@@ -6,19 +6,12 @@
  * on every block, the lecture's own structure as the headings, a figure wherever the layout
  * carries meaning text cannot, and nothing the slides do not support.
  *
- * **What the slides teach, not what they say** (2026-09-23). Version 2 read "without opening the
- * slides" as "everything on the slides", and wrote 2.3–3.0× the slides' own words — about 150
- * words a page against its own 60–90, so Lecture 4 came to ~9,500 words, a 40-minute read against
- * a 31.5-minute mean study session (`reading-time.md`). That is P2's "usually [didn't] read
- * [fully]" rebuilt inside the app. Version 3 asks for the teaching point of each stretch of
- * slides, organised by idea in the deck's order, under a word budget computed in code
- * (`windowWordBudget`) because a model writing twelve slides at once cannot keep a per-slide
- * count.
- *
- * The prompt is deliberately about **what notes are**, not about the JSON: the shape is enforced
- * by `DRAFT_BLOCK_JSON_SCHEMA` and repaired by `validateDrafts`, so spending the prompt on field
- * descriptions would be spending it twice. What a schema cannot say is "not a bullet
- * transcription", and that is the whole difficulty of this call.
+ * **What the slides teach, not what they say** (2026-09-23). Version 3 asks for the teaching point
+ * of each stretch of slides, organised by idea in the deck's order, under a word budget computed
+ * in code (`windowWordBudget`) because a model writing twelve slides at once cannot keep a
+ * per-slide count. The notes were first measured at 2.3–3.0× the slides' words; that turned out to
+ * be every window stored twice (see `ops.ts` `appendNodes`). Deduplicated, v2 ran 1.13–1.47×, so
+ * the gain here is mostly organisation — headings 48 → 25 on Lecture-complex, length 1.14× → 1.08×.
  */
 import type { DocBlockDraft } from '../../shared/doc/types.js';
 import type { NotesPageExtract } from './extract.js';

@@ -16,7 +16,7 @@ import type { LearningObjective, LearningObjectiveState, LearningTree } from '..
 import type { PrivateTurnView, ThreadView } from '../../shared/doc/types.js';
 import type { SqlDatabase } from '../db/driver.js';
 import type { LocalStore } from '../db/store.js';
-import type { DocHost, IpcHandle } from '../dochost.js';
+import type { ConfirmRequest, DocHost, IpcHandle } from '../dochost.js';
 import { openTestDb, seedRoom } from '../../test-support/db.js';
 import type { DocActorMethods } from './actorport.js';
 
@@ -100,6 +100,12 @@ export interface FakeHost {
   setStates(states: LearningObjectiveState[]): void;
   ensureCalls: string[];
   pageText: string;
+  /** What the learner answers the next confirm sheet with. Defaults to yes. */
+  confirmAnswer: boolean;
+  /** Every confirm sheet shown, in order. */
+  confirms: ConfirmRequest[];
+  /** Every `retireFlowRoom` call, in order. */
+  retired: { roomId: string; reason: string }[];
 }
 
 export interface FakeHostOptions {
@@ -142,6 +148,9 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     opened: string[];
     roomExists: boolean;
     pageText: string;
+    confirmAnswer: boolean;
+    confirms: ConfirmRequest[];
+    retired: { roomId: string; reason: string }[];
   } = {
     tree: null,
     states: [],
@@ -149,6 +158,9 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     opened: [],
     roomExists: false,
     pageText: 'The page the block came from.',
+    confirmAnswer: true,
+    confirms: [],
+    retired: [],
   };
 
   const room = { roomId: seeded.roomId, actor: actor as unknown as never };
@@ -184,6 +196,14 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
       state.ensureCalls.push(id);
     },
     fileBytesKey: async () => ({ contentSha, pageCount: 12 }),
+    confirm: async (request: ConfirmRequest) => {
+      state.confirms.push(request);
+      return state.confirmAnswer;
+    },
+    retireFlowRoom: (roomId: string, reason: string) => {
+      state.retired.push({ roomId, reason });
+      state.roomExists = false;
+    },
   } as unknown as DocHost;
 
   return {
@@ -204,6 +224,18 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     },
     get ensureCalls() {
       return state.ensureCalls;
+    },
+    get confirmAnswer() {
+      return state.confirmAnswer;
+    },
+    set confirmAnswer(value: boolean) {
+      state.confirmAnswer = value;
+    },
+    get confirms() {
+      return state.confirms;
+    },
+    get retired() {
+      return state.retired;
     },
     get pageText() {
       return state.pageText;

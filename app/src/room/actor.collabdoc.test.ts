@@ -598,6 +598,24 @@ describe('the doc-edit call', () => {
     expect(system).toContain('Write what the chat left out');
   });
 
+  /**
+   * **New Conversation** (2026-09-23): a retired room posts nothing more and edits nothing more,
+   * even for a reply that was already being generated when the learner reset it.
+   */
+  it('drops the reply in flight and makes no notes edit once the room is retired', async () => {
+    const h = build();
+    const sent = h.actor.sendMessage('what is the side channel?', DOC);
+    await h.clock.run(200);
+    h.actor.retire();
+    await settle(h.clock, sent);
+    const agentRows = h.store.messages
+      .forRoom(h.roomId)
+      .filter((m) => m.participant_id !== h.store.participants.forRoom(h.roomId).find((p) => p.kind === 'student')?.id);
+    expect(agentRows).toEqual([]);
+    expect(h.doc.edits).toEqual([]);
+    expect(h.events.filter((e) => e.type === 'doc.edit')).toEqual([]);
+  });
+
   it('gives the whole answer in the chat when the notes are frozen, since nothing will reach them', async () => {
     const frozen = docPort({ frozen: () => true });
     const h = build({ docPort: frozen.port });

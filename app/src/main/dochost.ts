@@ -56,4 +56,28 @@ export interface DocHost {
 
   /** `{ contentSha, pageCount }` for a vault file, from the segment cache. */
   fileBytesKey(fileId: string): Promise<{ contentSha: string; pageCount: number }>;
+
+  /**
+   * **A native confirm sheet for a destructive learner action** (2026-09-23: Regenerate Notes,
+   * New Conversation). Asked by the handler itself, so every surface — the pane buttons and the
+   * menu — goes through the same question and none can skip it. Cancel is the default button.
+   */
+  confirm(input: ConfirmRequest): Promise<boolean>;
+
+  /**
+   * **Retire a room: the learner reset the conversation.** The actor is retired (a reply in flight
+   * is dropped, nothing new starts), the room is closed and its session ended with `reason`. The
+   * rows stay — the event log is the record — but `roomForFile` no longer finds it, so the next
+   * learner message opens a fresh room.
+   */
+  retireFlowRoom(roomId: string, reason: string): void;
+}
+
+export interface ConfirmRequest {
+  /** The question, in the sheet's bold line. */
+  message: string;
+  /** What will be lost and what will be kept, in plain sentences. */
+  detail: string;
+  /** The destructive button's label, e.g. "Regenerate Notes". */
+  confirmLabel: string;
 }

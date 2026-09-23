@@ -23,7 +23,7 @@
  */
 
 import { DOC_ANCHOR_ID, SPAN_THREAD_PREFIX } from '../../shared/doc/types.js';
-import type { AgentAuthor, ChatView, ThreadView } from '../../shared/doc/types.js';
+import type { AgentAuthor, ChatResetResult, ChatView, ThreadView } from '../../shared/doc/types.js';
 import { referenceContext } from '../flowroom.js';
 import type { ReferenceContext } from '../../room/reference.js';
 import { segmentContext } from '../../room/reference.js';
@@ -396,6 +396,43 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
       return { assessed: true, threadId, reason: null };
     },
   );
+
+  /**
+   * **New Conversation** (2026-09-23): start the file's conversational chain over.
+   *
+   * The confirm is asked here, in main, so the doc-chat button and the menu item cannot differ
+   * and neither can skip it. What goes: the doc chat, the highlight threads, both private threads,
+   * and any open question from Max — **not** released, because the learner is leaving the
+   * conversation rather than going idle in it (`closeFileQuestions` is the idle path). What stays:
+   * the notes, including the Q blocks already written into them, and the progress bar, which is
+   * the learner's own record and has a reset of its own. The old rows stay in the database as the
+   * event log; the room is retired so that nothing reopens it.
+   */
+  handle<{ fileId: string }>('chat:reset', async (input): Promise<ChatResetResult> => {
+    const room = await host.roomForFile(input.fileId);
+    if (!room) return { confirmed: false, reset: false };
+
+    const target = docActor(room.actor);
+    const openQuestion = (actorHas(target, 'docThreads') ? target.docThreads() : []).some((t) => t.quiz?.open === true);
+    const messages = host.store.messages.forRoom(room.roomId).length;
+    const detail = [
+      `The doc chat, the threads on highlighted text and your private chats with Ellie and Max are cleared${
+        messages > 0 ? ` (${messages} message${messages === 1 ? '' : 's'})` : ''
+      }.` + (openQuestion ? ' Max’s open question is dropped without its answer.' : ''),
+      'Your notes and your progress are kept, including the questions already written into the notes.',
+      'You cannot go back to this conversation.',
+    ].join('\n\n');
+
+    const confirmed = await host.confirm({
+      message: 'Start a new conversation?',
+      detail,
+      confirmLabel: 'New Conversation',
+    });
+    if (!confirmed) return { confirmed: false, reset: false };
+
+    host.retireFlowRoom(room.roomId, 'learner_reset');
+    return { confirmed: true, reset: true };
+  });
 }
 
 /**

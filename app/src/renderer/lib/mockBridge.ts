@@ -1330,6 +1330,12 @@ export function createMockBridge(): ChatterEdApi {
       }
       if (suggestion) notes.suggestions.push(suggestion);
     },
+    /** The browser's own confirm stands in for main's native sheet in the dev harness. */
+    async notesRegenerate({ fileId }) {
+      void fileId;
+      const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function' ? window.confirm('Regenerate these notes?') : true;
+      return { confirmed, refused: null, view: null };
+    },
     async notesSuggestionResolved({ suggestionId, status }) {
       const found = notes.suggestions.find((s) => s.suggestionId === suggestionId);
       if (found) {
@@ -1485,6 +1491,11 @@ export function createMockBridge(): ChatterEdApi {
         emit({ type: 'chat.private', roomId: ROOM, threadId, turn: { ...turn } });
       }
       return { editId };
+    },
+    async chatReset({ fileId }) {
+      void fileId;
+      const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function' ? window.confirm('Start a new conversation?') : true;
+      return { confirmed, reset: confirmed };
     },
     /** §4.4's Pass. The same release the give-up phrases get, and it fills nothing either. */
     async quizPass({ threadId }) {

@@ -34,6 +34,13 @@ export type DocRoomEvent =
       docId: string;
       afterBlockId: string | null;
       blocks: DocBlockDraft[];
+      /**
+       * The ProseMirror nodes main inserted for `blocks`, **with their block ids** (2026-09-23).
+       * The renderer inserts these rather than re-deriving nodes from `blocks`, which minted
+       * different ids and made every window land twice. Absent from the scripted fixture's event
+       * and from older emitters; the renderer then falls back to `blocks`.
+       */
+      nodes?: unknown[];
     }
   /** An agent edit, ready to be typed in behind its cursor. The renderer applies it and saves. */
   | { type: 'doc.edit'; roomId: string; docId: string; batch: AgentDocOpBatch }

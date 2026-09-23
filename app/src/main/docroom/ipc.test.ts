@@ -376,3 +376,54 @@ describe('closeFileQuestions', () => {
     expect(fx.actor.calls).toEqual([]);
   });
 });
+
+// ── New Conversation (2026-09-23) ─────────────────────────────────────────
+
+describe('chat:reset', () => {
+  it('does nothing, and asks nothing, when the file has no conversation yet', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const out = await wire(fx).call<{ confirmed: boolean; reset: boolean }>('chat:reset', { fileId: 'f_deck' });
+    expect(out).toEqual({ confirmed: false, reset: false });
+    expect(fx.confirms).toEqual([]);
+    expect(fx.retired).toEqual([]);
+  });
+
+  it('asks first, and a Cancel leaves the room exactly as it was', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.roomExists = true;
+    fx.confirmAnswer = false;
+    const out = await wire(fx).call<{ confirmed: boolean; reset: boolean }>('chat:reset', { fileId: 'f_deck' });
+    expect(out).toEqual({ confirmed: false, reset: false });
+    expect(fx.confirms).toHaveLength(1);
+    expect(fx.confirms[0]!.confirmLabel).toBe('New Conversation');
+    expect(fx.confirms[0]!.detail).toContain('Your notes and your progress are kept');
+    expect(fx.retired).toEqual([]);
+  });
+
+  it('retires the room on a yes, names an open question in the sheet, and the next read finds no room', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.roomExists = true;
+    fx.actor.threads = [
+      {
+        threadId: 'doc',
+        kind: 'doc',
+        blockId: null,
+        quote: null,
+        agentKey: null,
+        messageIds: [],
+        lastSeenSeq: 0,
+        quiz: { open: true } as never,
+        createdAt: 'whenever',
+      },
+    ];
+    const table = wire(fx);
+    const out = await table.call<{ confirmed: boolean; reset: boolean }>('chat:reset', { fileId: 'f_deck' });
+    expect(out).toEqual({ confirmed: true, reset: true });
+    expect(fx.confirms[0]!.detail).toContain('open question is dropped');
+    expect(fx.retired).toEqual([{ roomId: fx.roomId, reason: 'learner_reset' }]);
+    // An open question is dropped, not released: no closure turn is asked for.
+    expect(fx.actor.last('closeOpenQuestion')).toBeUndefined();
+    const view = await table.call<ChatView>('chat:threads', { fileId: 'f_deck' });
+    expect(view.roomId).toBeNull();
+  });
+});

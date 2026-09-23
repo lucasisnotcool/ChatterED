@@ -54,6 +54,17 @@
 
   const status = $derived(doc.ingest.status);
   const ready = $derived(status === 'streaming' || status === 'ready');
+  /**
+   * **Regenerate** (2026-09-23). Offered once the notes are finished (or have failed): regenerating
+   * over a deck that is still being written would be two runs appending to one document, and main
+   * refuses it anyway. The confirm is main's, so this button only asks.
+   */
+  const canRegenerate = $derived(Boolean(doc.docId) && (status === 'ready' || status === 'failed'));
+  async function regenerate(): Promise<void> {
+    const line = await doc.regenerate();
+    if (line) store.notice = { level: 'info', text: line };
+  }
+
   const savedLabel = $derived.by(() => {
     if (doc.saving) return 'Saving…';
     if (doc.savedAt > 0) return 'Saved';
@@ -69,6 +80,17 @@
     {/if}
     <span class="nd-head-spacer"></span>
     {#if savedLabel}<span class="nd-head-meta">{savedLabel}</span>{/if}
+    <button
+      class="nd-toggle"
+      type="button"
+      disabled={!canRegenerate}
+      title={canRegenerate
+        ? 'Rewrite these notes from the slides. Asks first: everything in them is replaced.'
+        : 'Ellie is still writing these notes.'}
+      onclick={() => void regenerate()}
+    >
+      Regenerate…
+    </button>
     <button
       class="nd-toggle"
       type="button"

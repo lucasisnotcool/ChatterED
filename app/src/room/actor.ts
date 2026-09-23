@@ -378,6 +378,8 @@ export class RoomActor {
   readonly #mailbox = new Mailbox();
   readonly #timer: SilenceTimer;
   #pending: PendingTurn | null = null;
+  /** Set by `retire()`: this room's conversation was reset, and nothing it still has in flight may land. */
+  #retired = false;
   #thinking: ThinkingView | null = null;
   #challenged = new Set<string>();
   #studentTurns = 0;
@@ -709,6 +711,22 @@ export class RoomActor {
     this.#timer.stop();
     this.#stopClosureTick?.();
     this.#stopClosureTick = null;
+  }
+
+  /**
+   * **The learner reset this conversation** (2026-09-23). Stronger than `stop()`: a reply still
+   * being generated is cancelled — the ordinary cancel path, so it is dropped at its next check
+   * rather than posted into a room nobody is looking at — and no turn or notes edit from this
+   * actor may start or land afterwards. An open question is **not** released: a reset is the
+   * learner leaving the conversation, not the closure rule's idle sitting (`collab-doc.md` §4.7).
+   */
+  retire(): void {
+    this.#retired = true;
+    if (this.#pending) {
+      this.#pending.cancelled = true;
+      this.#clearThinking();
+    }
+    this.stop();
   }
 
   /**
@@ -2098,6 +2116,8 @@ export class RoomActor {
       lesson?: { objectiveId: string };
     } = {},
   ): Promise<void> {
+    // A reset room starts nothing — not a chained follow-up, not a closure release (`retire()`).
+    if (this.#retired) return;
     /**
      * The segment this turn belongs to. Every message the turn writes carries it — the hand-off
      * line, the agent's reply — so a thread stays a thread and the flow never has to guess where
@@ -3756,8 +3776,9 @@ export class RoomActor {
     const docId = this.#docPort.docId();
     // §3's Freeze: *"Edits that would have happened are dropped, not queued."* Checked here as
     // well as in the renderer (architect §D4) — in both, because a queue in main is the easy
-    // mistake and it makes Freeze a delay rather than a refusal.
-    if (docId === null || this.#docPort.frozen()) return false;
+    // mistake and it makes Freeze a delay rather than a refusal. A retired room's planner call
+    // can still come back after the reset; it is dropped the same way.
+    if (this.#retired || docId === null || this.#docPort.frozen()) return false;
     try {
       this.#d.transport.emit({
         type: 'doc.cursor',
@@ -3806,7 +3827,7 @@ export class RoomActor {
    * that must not become durable notes. And **every private turn**, which is §4.1's whole boundary.
    */
   async #maybeDocEdit(decision: TurnDecision, text: string, messageId: string, turnId: string, anchorId: string | null): Promise<void> {
-    if (this.#docPort.docId() === null || this.#docPort.frozen()) return;
+    if (this.#retired || this.#docPort.docId() === null || this.#docPort.frozen()) return;
     if (decision.moveType === 'peer_guess' || decision.moveType === 'max_prompt') return;
     const deps = this.#docEditDeps(anchorId, turnId);
     const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);

@@ -72,6 +72,8 @@
   gap: 6px;
 }
 .nd-toggle:hover { border-color: #d4d4e2; color: var(--text); }
+.nd-toggle:disabled { opacity: 0.5; cursor: default; }
+.nd-toggle:disabled:hover { border-color: var(--hairline); color: var(--text-2); }
 .nd-toggle[aria-pressed='true'] {
   border-color: #b9c6e8;
   background: #eef2ff;

@@ -15,10 +15,11 @@
  */
 import type { IpcHandle, DocHost } from '../dochost.js';
 import { IPC } from '../../shared/ipc.js';
-import type { DocEditStatus, NotesDocView, PageImage, Suggestion } from '../../shared/doc/types.js';
+import type { DocEditStatus, NotesDocView, NotesRegenerateResult, PageImage, Suggestion } from '../../shared/doc/types.js';
 import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/notes.js';
 import { log } from '../log.js';
-import { ensureNotes, ingestView, mapObjectiveBlocks } from './ingest.js';
+import { docFromJson, learnerSpans } from '../../shared/doc/schema.js';
+import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks } from './ingest.js';
 import { clearPageImages, pageImageDir, storePageImages } from './pageimages.js';
 import { pageGeometry } from '../vault/pagecache.js';
 
@@ -67,11 +68,10 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
     const file = host.vault.fileRow(fileId);
     const backend = host.backend();
 
-    if (force === true) {
-      // A re-render may be at a different width; half a deck at the old one is worse than none.
-      await clearPageImages(pageImageDir(host.userDataDir, contentSha));
-    }
-
+    // No page images are cleared here, even on `force`. The renderer sends them *before* this
+    // call, so clearing here deleted the images it had just sent and every forced ingest ran
+    // text-only (found 2026-09-23). A regenerate clears them in `notes:regenerate`, before the
+    // renderer re-sends; a Retry overwrites them page by page (`p-<n>.<ext>`).
     const record = await ensureNotes(
       {
         repo,
@@ -96,6 +96,59 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
       { force: force === true },
     );
     return view(repo, record);
+  });
+
+  /**
+   * **Regenerate Notes** (2026-09-23): the confirm, and the clearing that has to happen before the
+   * renderer re-sends the page images and calls `notes:ingest` with `force`.
+   *
+   * The confirm is asked **here**, not in the renderer, so the notes-pane button and the menu item
+   * cannot differ and neither can skip it. It names what is lost — the learner's own words first,
+   * because they are the one thing in the document nobody else can write again — and what is kept.
+   * Refused while this deck is still being written: two runs appending to one document is not a
+   * regenerate.
+   */
+  handle<{ fileId: string }>(IPC.notesRegenerate, async ({ fileId }): Promise<NotesRegenerateResult> => {
+    const { contentSha } = await host.fileBytesKey(fileId);
+    const record = repo.byContentSha(contentSha);
+    if (ingestInFlight(contentSha)) {
+      return { confirmed: false, refused: 'busy', view: record ? view(repo, record) : null };
+    }
+
+    const title = record?.title ?? titleFor(host.vault.fileRow(fileId)?.name ?? null);
+    const learnerWords = record ? learnerWordsIn(record.doc) : 0;
+    const agentEdits = record ? repo.edits(record.id, 'applied').length : 0;
+    const lost: string[] = [];
+    if (learnerWords > 0) lost.push(`the ${learnerWords} word${learnerWords === 1 ? '' : 's'} you wrote in them`);
+    if (agentEdits > 0) lost.push(`${agentEdits} addition${agentEdits === 1 ? '' : 's'} from Ellie and Max`);
+    const detail = [
+      'Ellie will rewrite these notes from the slides. Everything in the current notes is replaced' +
+        (lost.length > 0 ? `, including ${lost.join(' and ')}.` : '.'),
+      'Your conversation and your progress are kept. Questions Max wrote into the notes go with them.',
+      'This cannot be undone.',
+    ].join('\n\n');
+
+    const confirmed = await host.confirm({
+      message: `Regenerate the notes for “${title}”?`,
+      detail,
+      confirmLabel: 'Regenerate Notes',
+    });
+    if (!confirmed) {
+      log().info('notes.regenerate.cancelled', { file_id: fileId, learner_words: learnerWords });
+      return { confirmed: false, refused: null, view: record ? view(repo, record) : null };
+    }
+
+    const cleared = record ? repo.clearForRegenerate(record.id) : { edits: 0, suggestions: 0 };
+    // A re-render may be at a different width; half a deck at the old one is worse than none.
+    await clearPageImages(pageImageDir(host.userDataDir, contentSha));
+    log().info('notes.regenerate', {
+      file_id: fileId,
+      doc_id: record?.id ?? null,
+      learner_words: learnerWords,
+      edits_cleared: cleared.edits,
+      suggestions_cleared: cleared.suggestions,
+    });
+    return { confirmed: true, refused: null, view: record ? view(repo, repo.byId(record.id) ?? record) : null };
   });
 
   /**
@@ -166,6 +219,19 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
       log().info('notes.suggestion.resolved', { doc_id: docId, suggestion_id: suggestionId, status });
     },
   );
+}
+
+/** The learner's own words in a stored document — what a regenerate would throw away. */
+export function learnerWordsIn(docJson: unknown): number {
+  if (docJson === null || docJson === undefined) return 0;
+  try {
+    return learnerSpans(docFromJson(docJson)).reduce(
+      (n, span) => n + span.text.split(/\s+/).filter((w) => w.length > 0).length,
+      0,
+    );
+  } catch {
+    return 0;
+  }
 }
 
 /** The document's title: the file's name without its extension, or a neutral fallback. */

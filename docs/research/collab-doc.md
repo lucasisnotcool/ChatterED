@@ -67,16 +67,22 @@ Real on any deck. Two passes.
    text cannot carry) and must be shown inline, or can live in the carousel. It may add bridging
    material and must say so.
 
-   **What the slides teach, not what they say (2026-09-23).** The first live decks came out at
-   2.3–3.0× the slides' own words (~150 words a page; Lecture 4 at ~9,500 words, a 40-minute read
-   against a 31.5-minute mean session, `ai-use-transcripts/analysis/reading-time.md`). That rebuilt
-   P2's *"usually [didn't] read [fully]"* inside the app. So the notes carry **what each stretch of
-   slides is trying to teach**, organised **by idea in the deck's order**: one heading per idea
+   **What the slides teach, not what they say (2026-09-23).** The notes carry **what each stretch
+   of slides is trying to teach**, organised **by idea in the deck's order**: one heading per idea
    rather than per slide, each section opening with its takeaway, with title, agenda, divider and
    admin slides dropped and repeated examples cut to one. Each window gets a word ceiling computed
    in code from its slides' own words (`main/notes/prompts.ts` `windowWordBudget`: ≤ 1.2× a page's
    words, at most 90, nothing for a near-empty page), and `notes.window` logs the words written
    against it.
+
+   *Correction, same day.* The stored notes measured 2.3–3.0× the slides' words (Lecture 4 at
+   ~9,500 words, a 40-minute read), and that was first read as verbosity. It was mostly a bug:
+   **every ingest window was saved twice**. The renderer re-derived each window's nodes with its
+   own block ids, and its next save rebased main's copy in beside them (fixed: `notes.window`
+   now carries main's nodes, `ops.ts` `appendNodes`). With the duplicates removed, the v2 prose
+   was 1.13–1.47× the slides (72–80 words a page, inside v2's own 60–90). What v3 changes is
+   mainly the organisation: on Lecture-complex, regenerated live with page images, headings went
+   48 → 25 and length 1.14× → 1.08× (4,289 words, no duplicates).
 
 **Provenance is mandatory on every block**: either `pages: [n, …]` (where the content came from) or
 `reason: "…"` (why it is here when no slide says it), or both. A block with neither is a bug in the

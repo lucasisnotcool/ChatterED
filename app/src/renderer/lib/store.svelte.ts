@@ -341,6 +341,25 @@ class Store {
       case 'settings.open':
         void this.openSettings();
         break;
+      // The same calls the pane buttons make; the confirm is main's either way (2026-09-23).
+      case 'notes.regenerate':
+        if (!this.doc.fileId) {
+          this.notice = { level: 'info', text: 'Open a file’s notes first.' };
+          break;
+        }
+        void this.doc.regenerate().then((line) => {
+          if (line) this.notice = { level: 'info', text: line };
+        });
+        break;
+      case 'chat.reset':
+        if (!this.chat.roomId) {
+          this.notice = { level: 'info', text: 'There is no conversation on this file to reset yet.' };
+          break;
+        }
+        void this.chat.reset().then((line) => {
+          if (line) this.notice = { level: 'error', text: line };
+        });
+        break;
     }
   }
 

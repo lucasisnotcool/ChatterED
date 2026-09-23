@@ -609,8 +609,21 @@ export function appendWindow(
   afterBlockId: string | null,
   blocks: readonly DocBlockDraft[],
 ): Transaction {
+  return appendNodes(state, afterBlockId, draftToNodes(notesSchema, blocks, 'ingest', null));
+}
+
+/**
+ * **The same append, for nodes that already exist** (2026-09-23).
+ *
+ * `appendWindow` mints fresh block ids every time it runs, and it used to run twice per window —
+ * once in main for the stored document and once in the renderer for the open one — so the two
+ * copies of a window had different ids. The renderer's next save conflicted, `#rebase` appended
+ * the stored blocks it "did not have" by id, and **every window landed twice** (35–45 % of the
+ * blocks in every multi-window deck in the live profile). Main now sends the nodes it inserted,
+ * ids and all, and the renderer inserts exactly those.
+ */
+export function appendNodes(state: EditorState, afterBlockId: string | null, nodes: readonly Node[]): Transaction {
   const tr = state.tr;
-  const nodes = draftToNodes(notesSchema, blocks, 'ingest', null);
   if (nodes.length === 0) return tr;
   const target = afterBlockId ? blockPos(tr.doc, afterBlockId) : null;
   const where = target ? target.pos + target.node.nodeSize : tr.doc.content.size;

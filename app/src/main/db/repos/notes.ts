@@ -188,6 +188,15 @@ export interface NotesRepo {
   /** Replace the whole mapping for a doc. It is a cache of a pure function; a diff would lie. */
   replaceObjectiveBlocks(docId: string, rows: readonly ObjectiveBlockRow[]): void;
   objectiveBlocks(docId: string): ObjectiveBlockRow[];
+
+  /**
+   * **Regenerate Notes** (2026-09-23): the chrome that points into the old document goes with it.
+   * Agent edits still wearing their colour (or never applied) and open suggestions address block
+   * ids the new ingest will not have, so they are deleted; edits and suggestions the learner
+   * already decided are history and stay. The objective→block map is a cache and is emptied.
+   * Returns what was cleared, for the log.
+   */
+  clearForRegenerate(docId: string): { edits: number; suggestions: number };
 }
 
 interface DocRow {
@@ -574,6 +583,24 @@ export function notesRepo(db: SqlDatabase): NotesRepo {
       );
       for (const row of rows) {
         stmt.run(bind({ doc: docId, objective: row.objectiveId, block: row.blockId, ord: row.ord }));
+      }
+    },
+
+    clearForRegenerate(docId) {
+      db.exec('BEGIN');
+      try {
+        const edits = db
+          .prepare(`DELETE FROM notes_doc_edits WHERE doc_id = @doc AND status IN ('pending', 'applied')`)
+          .run({ doc: docId });
+        const suggestions = db
+          .prepare(`DELETE FROM notes_suggestions WHERE doc_id = @doc AND status = 'open'`)
+          .run({ doc: docId });
+        db.prepare('DELETE FROM notes_objective_blocks WHERE doc_id = @doc').run({ doc: docId });
+        db.exec('COMMIT');
+        return { edits: edits.changes, suggestions: suggestions.changes };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
       }
     },
 

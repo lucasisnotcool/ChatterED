@@ -33,7 +33,7 @@ import { EditorState } from 'prosemirror-state';
 import type { DocBlockDraft, NotesIngestStatus } from '../../shared/doc/types.js';
 import type { DocRoomEvent } from '../../shared/docevents.js';
 import { blocksForPages, docFromJson, emptyDoc, notesSchema } from '../../shared/doc/schema.js';
-import { appendWindow } from '../../shared/doc/ops.js';
+import { appendNodes, draftToNodes } from '../../shared/doc/ops.js';
 import { DRAFT_BLOCK_JSON_SCHEMA, draftsToDocJson, validateDrafts } from '../../shared/doc/validate.js';
 import type { LearningTree } from '../../shared/objectives.js';
 import type { PageGeometry } from '../../shared/segment/types.js';
@@ -363,6 +363,7 @@ async function runIngest(deps: NotesIngestDeps, input: NotesIngestInput, docId: 
         docId,
         afterBlockId,
         blocks,
+        nodes: applied.nodes,
       });
       emitStatus(deps, input, record);
 
@@ -486,21 +487,32 @@ async function askWindow(
   }
 }
 
-/** Apply one window to the stored document. No view, no DOM — `prosemirror-state` in main. */
+/**
+ * Apply one window to the stored document. No view, no DOM — `prosemirror-state` in main.
+ *
+ * Returns the **nodes it inserted**, as JSON, so the `notes.window` event can carry them and the
+ * open editor inserts the same blocks with the same ids (`ops.ts` `appendNodes` says why that is
+ * the difference between a window landing once and landing twice).
+ */
 export function applyWindow(
   docJson: unknown,
   afterBlockId: string | null,
   blocks: readonly DocBlockDraft[],
-): { doc: unknown; lastBlockId: string | null } {
+): { doc: unknown; lastBlockId: string | null; nodes: unknown[] } {
   const state = EditorState.create({ schema: notesSchema, doc: docFromJson(docJson) });
-  const tr = appendWindow(state, afterBlockId, blocks);
-  // `appendWindow` always hands back a transaction; an empty one means it had nothing to add.
-  if (tr.steps.length === 0) return { doc: docJson, lastBlockId: afterBlockId };
+  const inserted = draftToNodes(notesSchema, blocks, 'ingest', null);
+  const tr = appendNodes(state, afterBlockId, inserted);
+  // `appendNodes` always hands back a transaction; an empty one means it had nothing to add.
+  if (tr.steps.length === 0) return { doc: docJson, lastBlockId: afterBlockId, nodes: [] };
   const next = state.apply(tr).doc;
   const last = next.lastChild;
   // `blockId` defaults to `''`, which means "not minted" — never a target for the next window.
   const lastBlockId = typeof last?.attrs.blockId === 'string' ? (last.attrs.blockId as string) : '';
-  return { doc: next.toJSON(), lastBlockId: lastBlockId.length > 0 ? lastBlockId : null };
+  return {
+    doc: next.toJSON(),
+    lastBlockId: lastBlockId.length > 0 ? lastBlockId : null,
+    nodes: inserted.map((node) => node.toJSON()),
+  };
 }
 
 /**

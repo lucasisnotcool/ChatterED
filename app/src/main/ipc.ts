@@ -66,7 +66,7 @@ import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
 import { SegmentService, type SplitInput } from './vault/segments.js';
 // collab-doc (#48): the three modules behind the hooks in `register()`, and what they may ask for.
-import type { DocHost } from './dochost.js';
+import type { ConfirmRequest, DocHost } from './dochost.js';
 import { registerNotesIpc } from './notes/ipc.js';
 import { createDocPort } from './notes/docport.js';
 import { registerDocRoomIpc } from './docroom/ipc.js';
@@ -944,7 +944,45 @@ export class AppService {
         const view = await this.#segments.document(fileId);
         return { contentSha: view.contentSha, pageCount: view.pageCount };
       },
+      confirm: (input) => this.#confirm(input),
+      retireFlowRoom: (roomId, reason) => this.#retireRoom(roomId, reason),
     };
+  }
+
+  /** `DocHost.confirm`: a sheet on the main window, Cancel as the default (Return cancels). */
+  async #confirm(input: ConfirmRequest): Promise<boolean> {
+    const win = this.#d.getWindow();
+    const options = {
+      type: 'warning' as const,
+      message: input.message,
+      detail: input.detail,
+      buttons: [input.confirmLabel, 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    };
+    const result = await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+    return result.response === 0;
+  }
+
+  /** `DocHost.retireFlowRoom`. The rows stay; only the lookup that reopens the room stops finding it. */
+  #retireRoom(roomId: string, reason: string): void {
+    const now = new Date().toISOString();
+    if (this.#actor && this.#actor.snapshot().roomId === roomId) {
+      this.#persistFlow();
+      this.#actor.retire();
+      this.#actor = null;
+    }
+    this.#d.store.rooms.update(roomId, {
+      state: 'closed',
+      closed_at: now,
+      pending_turn_id: null,
+      pending_turn_due_ts: null,
+      deadline_ts: null,
+    });
+    const session = this.#d.store.sessions.forRoom(roomId);
+    if (session && !session.ended_at) this.#d.store.sessions.end(session.id, now, reason);
+    log().info('room.retired', { room_id: roomId, reason, session_id: session?.id ?? null });
   }
 
   #requireActor(roomId: string): RoomActor {

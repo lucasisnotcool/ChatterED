@@ -233,6 +233,23 @@ export interface PrivateTurnView {
   insertedEditId: string | null;
 }
 
+/**
+ * **Regenerate Notes** (2026-09-23). `confirmed` is the learner's answer to main's confirm sheet;
+ * only then does the renderer re-send the page images and start the forced ingest. `refused:
+ * 'busy'` is a deck still being written, where no sheet was shown.
+ */
+export interface NotesRegenerateResult {
+  confirmed: boolean;
+  refused: 'busy' | null;
+  view: NotesDocView | null;
+}
+
+/** **New Conversation** (2026-09-23). `reset` is false when there was no room to reset. */
+export interface ChatResetResult {
+  confirmed: boolean;
+  reset: boolean;
+}
+
 export interface ChatView {
   roomId: string | null;
   fileId: string;

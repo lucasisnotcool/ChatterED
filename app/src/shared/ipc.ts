@@ -40,9 +40,11 @@ import type { StopTurnResult, TurnTraceView } from './types.js';
 
 import type {
   AgentAuthor,
+  ChatResetResult,
   ChatView,
   DocEditStatus,
   NotesDocView,
+  NotesRegenerateResult,
   PageImage,
   PrivateTurnView,
   ProgressView,
@@ -144,6 +146,7 @@ export const IPC = {
   notesFreeze: 'notes:freeze',
   notesEditResolved: 'notes:editResolved',
   notesSuggestionResolved: 'notes:suggestionResolved',
+  notesRegenerate: 'notes:regenerate',
   // The chats. Bodies in `src/main/docroom/ipc.ts`.
   notesDocText: 'notes:docText',
   chatThreads: 'chat:threads',
@@ -153,6 +156,7 @@ export const IPC = {
   chatPrivateSend: 'chat:privateSend',
   chatInsertIntoDoc: 'chat:insertIntoDoc',
   quizPass: 'quiz:pass',
+  chatReset: 'chat:reset',
   // Progress. Bodies in `src/main/docroom/progress.ts`.
   progressGet: 'progress:get',
   progressStart: 'progress:start',
@@ -459,6 +463,12 @@ export interface ChatterEdApi {
    */
   notesIngest(input: { fileId: string; force?: boolean }): Promise<NotesDocView>;
   /**
+   * **Regenerate Notes**: main asks the learner to confirm (a native sheet) and clears what points
+   * into the old document. On `confirmed` the renderer re-sends the page images and calls
+   * `notesIngest` with `force`. Refused while the deck is still being written.
+   */
+  notesRegenerate(input: { fileId: string }): Promise<NotesRegenerateResult>;
+  /**
    * Page images for the refine pass, sent in batches **before** `notesIngest`. Optional: with
    * none, the ingest runs on structured text + geometry. Main cannot rasterise a PDF.
    */
@@ -526,6 +536,12 @@ export interface ChatterEdApi {
   }): Promise<{ editId: string | null }>;
   /** The Pass control on Max's open question: releases the answer (brief §4.4). */
   quizPass(input: { roomId: string; threadId: string }): Promise<{ released: boolean; refused: string | null }>;
+  /**
+   * **New Conversation**: main asks the learner to confirm, then retires the file's room — the doc
+   * chat, span threads, private threads and any open question go; the notes and progress stay.
+   * The next message opens a fresh room.
+   */
+  chatReset(input: { fileId: string }): Promise<ChatResetResult>;
 
   progressGet(input: { fileId: string }): Promise<ProgressView>;
   /** A lesson card's Start: Ellie's intro in the doc chat; returns where to scroll (brief §6). */

@@ -357,7 +357,9 @@ export type AppCommand =
   | 'vault.rescan'
   | 'topics.edit'
   | 'search.files'
-  | 'settings.open';
+  | 'settings.open'
+  | 'notes.regenerate'
+  | 'chat.reset';
 
 export interface RecentSession {
   roomId: string;

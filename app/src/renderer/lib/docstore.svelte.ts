@@ -26,14 +26,16 @@ import { EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { RoomEvent } from '../../shared/types.js';
 import type { ChatterEdApi } from '../../shared/ipc.js';
+import { Node as PmNode } from 'prosemirror-model';
 import {
   applyBatch,
+  appendNodes,
   appendWindow,
   keepEdit,
   removeEdit,
 } from '../../shared/doc/ops.js';
 import { acceptSuggestion, rejectSuggestion } from '../../shared/doc/suggest.js';
-import { blockAttrs, blockPos, docFromJson } from '../../shared/doc/schema.js';
+import { blockAttrs, blockPos, docFromJson, notesSchema } from '../../shared/doc/schema.js';
 import type {
   AgentAuthor,
   AgentDocOpBatch,
@@ -221,6 +223,57 @@ export class DocStore {
     } catch (err) {
       this.ingest = { ...this.ingest, status: 'failed', error: message(err) };
     }
+  }
+
+  /**
+   * **Regenerate Notes** (2026-09-23): the notes-pane button and the File menu item.
+   *
+   * Main asks the learner to confirm (`notes:regenerate`) and says what is lost; nothing changes
+   * here until they have said yes. Then the editor is taken down **without saving** — this store
+   * is the live authority on a save conflict (`#rebase` re-saves what is on screen), so an editor
+   * left mounted would write the old notes straight back over the new ones — and the ingest runs
+   * the same way a Retry does: page images first, then `notesIngest` with `force`.
+   *
+   * Returns a line for the learner when it could not start, or null.
+   */
+  async regenerate(): Promise<string | null> {
+    const fileId = this.fileId;
+    if (!fileId || !has('notesRegenerate') || !has('notesIngest')) return null;
+    if (this.ingest.status === 'pending' || this.ingest.status === 'streaming') {
+      return 'Ellie is still writing these notes. Regenerate them once she has finished.';
+    }
+    let result;
+    try {
+      result = await bridge().notesRegenerate({ fileId });
+    } catch (err) {
+      return message(err);
+    }
+    if (fileId !== this.fileId) return null;
+    if (!result.confirmed) {
+      return result.refused === 'busy' ? 'Ellie is still writing these notes. Regenerate them once she has finished.' : null;
+    }
+
+    // Nothing of the old document may be saved from here on.
+    if (this.#saveTimer) clearTimeout(this.#saveTimer);
+    this.#saveTimer = null;
+    this.#savePending = false;
+    this.#cancelAnimations();
+    this.learnerTouched = false;
+    this.error = null;
+    // `pending` unmounts the editor (NotesPane draws the progress state), so no one types into
+    // the old notes while the new ones are being written.
+    this.ingest = { ...this.ingest, status: 'pending', windowsDone: 0, error: null };
+    const token = this.#openToken;
+    try {
+      await this.#sendPageImages(fileId, token);
+      if (token !== this.#openToken) return null;
+      const view = await bridge().notesIngest({ fileId, force: true });
+      if (token !== this.#openToken) return null;
+      this.#adopt(view);
+    } catch (err) {
+      this.ingest = { ...this.ingest, status: 'failed', error: message(err) };
+    }
+    return null;
   }
 
   /** The document JSON the editor host should mount. Plain, never a proxy. */
@@ -475,7 +528,7 @@ export class DocStore {
         return;
       case 'notes.window':
         if (e.docId !== this.docId) return;
-        this.appendIngestWindow(e.afterBlockId, e.blocks);
+        this.appendIngestWindow(e.afterBlockId, e.blocks, e.nodes);
         return;
       case 'doc.edit':
         if (e.docId !== this.docId) return;
@@ -504,8 +557,20 @@ export class DocStore {
    * An ingest window (§2). **Append only** — it never touches an existing block, which is why it
    * cannot collide with a learner who is already typing in the document.
    */
-  appendIngestWindow(afterBlockId: string | null, blocks: readonly DocBlockDraft[]): void {
-    const applied = this.#dispatchAgent((state) => appendWindow(state, afterBlockId, blocks));
+  appendIngestWindow(afterBlockId: string | null, blocks: readonly DocBlockDraft[], nodes?: readonly unknown[]): void {
+    // Main's own nodes when it sent them — the same block ids as the stored document, so the
+    // save that follows cannot rebase a second copy of this window in (`ops.ts` `appendNodes`).
+    let exact: PmNode[] | null = null;
+    if (nodes && nodes.length > 0) {
+      try {
+        exact = nodes.map((json) => PmNode.fromJSON(notesSchema, json));
+      } catch {
+        exact = null;
+      }
+    }
+    const applied = this.#dispatchAgent((state) =>
+      exact ? appendNodes(state, afterBlockId, exact) : appendWindow(state, afterBlockId, blocks),
+    );
     if (applied) {
       this.#bump();
       void this.#save();
