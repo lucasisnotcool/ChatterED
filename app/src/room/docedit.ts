@@ -146,6 +146,15 @@ export const DOC_EDIT_SCHEMA: Record<string, unknown> = {
 export interface AnswerEditInput {
   /** The answer Ellie just gave, verbatim. */
   answer: string;
+  /**
+   * **What the learner asked, and what the slide says** (2026-09-23). Since the doc chat's answer
+   * became the short half (`prompts.doc.ts` `ellieAnswersBlock`), the fuller explanation exists
+   * nowhere yet — this call writes it, and it cannot write it from a 60-word reply. Null on a turn
+   * with no learner question (a lesson Start) or no one page (a deck-scoped ask).
+   */
+  question?: string | null;
+  passage?: string | null;
+  page?: number | null;
   /** The block the thread hangs off, when it has one (a span thread always does). */
   blockId: string | null;
   /**
@@ -177,36 +186,58 @@ export function outlineText(outline: readonly OutlineEntry[]): string {
     .join('\n');
 }
 
+/** How much of the slide the planner is shown. A page, not a deck: the anchor already says where. */
+export const ANSWER_EDIT_PASSAGE_CHARS = 2_500;
+
 export function answerEditPrompt(input: AnswerEditInput): string {
-  return [
-    'You are deciding whether the learner’s lecture notes are missing something that was just',
-    'explained to them in the chat. You answer with the JSON object alone — no prose, no fence.',
+  const lines = [
+    'You are writing into the learner’s lecture notes the fuller explanation of something they just',
+    'asked about. In the chat they were given the short version; the notes are where the rest of it',
+    'lives. You answer with the JSON object alone — no prose, no fence.',
     '',
     'THE NOTES AROUND WHERE THEY ASKED',
     outlineText(input.outline),
+  ];
+  if (input.passage && input.passage.trim().length > 0) {
+    const where = typeof input.page === 'number' ? ` (p. ${input.page})` : '';
+    lines.push('', `THE SLIDE${where}`, '"""', input.passage.trim().slice(0, ANSWER_EDIT_PASSAGE_CHARS), '"""');
+  }
+  if (input.question && input.question.trim().length > 0) {
+    lines.push('', 'WHAT THEY ASKED', '"""', input.question.trim(), '"""');
+  }
+  lines.push(
     '',
-    'WHAT WAS JUST EXPLAINED',
+    'WHAT THE CHAT ALREADY TOLD THEM',
     '"""',
     input.answer,
     '"""',
     '',
-    '**If the notes already say this, answer `{"edit":"none","points_to":"<block id>"}`.** That is the',
-    'common case and it is the right answer: near-duplicate paragraphs are how a set of notes stops',
-    'being readable. "Already says it" means the idea is there, not that the wording matches.',
+    '**Write what the chat left out**: the rigorous version — the formal statement, the conditions,',
+    'the properties that matter — and how this slide uses it, in the slide’s own notation. Do not',
+    'repeat the chat’s plain explanation or its example; the learner has just read them. **40–150',
+    'words**, one or two short paragraphs, or a paragraph and a `math` block. The notes are read',
+    'end to end, so the same rule holds here as everywhere in them: say what it teaches, not',
+    'everything true about it.',
     '',
-    'Otherwise add what is missing, in the notes’ own voice — not a transcript of the chat, no',
-    '"as I explained", no second person. Prefer `insert_after` at the block it belongs beside.',
-    'Use `append_to_block` for one sentence that completes a block, and `replace_block` only when',
-    'the block is actually wrong.',
+    '**If the notes here already carry that fuller explanation, answer',
+    '`{"edit":"none","points_to":"<block id>"}`.** Near-duplicate paragraphs are how a set of notes',
+    'stops being readable. "Already carries it" means the idea is there, not that the wording',
+    'matches — and a block that only states the rule, without the why or the formal version, does',
+    'not carry it.',
+    '',
+    'Write in the notes’ own voice — not a transcript of the chat, no "as I explained", no second',
+    'person. Prefer `insert_after` at the block it belongs beside. Use `append_to_block` for one',
+    'sentence that completes a block, and `replace_block` only when the block is actually wrong.',
     '',
     'A block marked "(the learner wrote in this block)" is **theirs**. You may insert after it; you',
     'may not replace it or append to it — that becomes a suggestion they have to accept, which is',
     'not what this turn is for.',
     '',
-    'Every block you write needs provenance: `prov.pages` for the slides it comes from (use the',
-    '`p. N` citations in the explanation above), or `prov.reason` saying why it is here when no',
+    'Every block you write needs provenance: `prov.pages` for the slides it comes from (the slide',
+    'above, and the `p. N` citations in the chat), or `prov.reason` saying why it is here when no',
     'slide says it. A block with neither is rejected.',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 export interface DocEditDeps {
@@ -249,7 +280,7 @@ export async function planAnswerEdit(
 ): Promise<{ batch: AgentDocOpBatch | null; pointsTo: string | null }> {
   const request: LlmRequest = {
     model: deps.model,
-    max_tokens: 1200,
+    max_tokens: 1600,
     system: [{ type: 'text', text: answerEditPrompt(input) }],
     messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
     jsonSchema: DOC_EDIT_SCHEMA,

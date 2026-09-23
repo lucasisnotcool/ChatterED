@@ -67,6 +67,17 @@ Real on any deck. Two passes.
    text cannot carry) and must be shown inline, or can live in the carousel. It may add bridging
    material and must say so.
 
+   **What the slides teach, not what they say (2026-09-23).** The first live decks came out at
+   2.3–3.0× the slides' own words (~150 words a page; Lecture 4 at ~9,500 words, a 40-minute read
+   against a 31.5-minute mean session, `ai-use-transcripts/analysis/reading-time.md`). That rebuilt
+   P2's *"usually [didn't] read [fully]"* inside the app. So the notes carry **what each stretch of
+   slides is trying to teach**, organised **by idea in the deck's order**: one heading per idea
+   rather than per slide, each section opening with its takeaway, with title, agenda, divider and
+   admin slides dropped and repeated examples cut to one. Each window gets a word ceiling computed
+   in code from its slides' own words (`main/notes/prompts.ts` `windowWordBudget`: ≤ 1.2× a page's
+   words, at most 90, nothing for a near-empty page), and `notes.window` logs the words written
+   against it.
+
 **Provenance is mandatory on every block**: either `pages: [n, …]` (where the content came from) or
 `reason: "…"` (why it is here when no slide says it), or both. A block with neither is a bug in the
 ingest and is rejected by validation.
@@ -156,8 +167,18 @@ pure function (`room/pitch.ts`), unit-tested; the wording is the model's.
 
 ### 4.6 Size
 
-Chat turns stay at the `attempt-first.md` §4 sizes (Ellie ~120 words, ceiling 180; feedback under
-100; released answer under 150). The doc is where length lives.
+Max's turns stay at the `attempt-first.md` §4 sizes (feedback under 100; released answer under 150).
+The doc is where length lives, and since 2026-09-23 that is literal for Ellie too:
+
+**Ellie's doc-chat answer is the short half (~60 words, ceiling 90):** the answer in her first
+sentence, the plain meaning, one example, the page. **The long half** (the rigorous version, the
+conditions, how the slide uses it) is written into the notes by the §5.1 edit. It replaced ~120 /
+ceiling 180 because the live app ran the lengths the wrong way: chat replies at a median of 202
+words (her five-step shape cannot fit 120 and always won), notes additions at ~80, because the edit
+was condensed out of the reply. The A1 report commits to the split (§1.4, DG4: *"Replies in chat
+are kept short while longer explainers are written into notes"*). **When the doc is frozen** no edit
+can land, so she gives the full answer at the old size. Code: `prompts.doc.ts` `ellieAnswersBlock`,
+`prompts.ts` `turnDirective` (`docChat`), `actor.ts` `#answerSplitsIntoNotes`.
 
 ### 4.7 Closure: nothing is left hanging
 
@@ -180,7 +201,7 @@ not typing.
 
 | # | Trigger | Edit |
 |---|---|---|
-| 5.1 | The learner asked, and what Ellie answered is **missing from the doc** | Ellie inserts it, green, at the segment it belongs to, with provenance. If the doc already says it, no edit; she points to the block instead. |
+| 5.1 | The learner asked, and the **fuller explanation is missing from the doc** | Ellie writes the long half of her answer (§4.6), green, at the segment it belongs to, with provenance, 40–150 words. The call is given the learner's question, the page's slide text and her chat reply (as what not to repeat). If the doc already carries it, no edit; she points to the block instead. |
 | 5.2 | Max asks a question the doc **does not already answer** | Max writes the question in as a **Q block** (red, body text) at the segment it is about. |
 | 5.3 | A Max question is resolved: by the learner's answer and Max's feedback, by release, or by closure | **Max's correct version** is written under the Q block, red, tagged with how it was resolved (*you got this* / *partly yours* / *released*). |
 

@@ -690,6 +690,11 @@ export interface TurnDirective {
    * the answer. The rule name is the only thing that distinguishes them.
    */
   byRule?: string;
+  /**
+   * **The Teacher's answer in the doc chat, with the notes open to take the rest** (2026-09-23).
+   * Swaps the five-step shape for the short half of it; see `prompts.doc.ts` `ellieAnswersBlock`.
+   */
+  docChat?: boolean;
 }
 
 /**
@@ -701,7 +706,19 @@ export function turnDirective(d: TurnDirective): string {
   // The answer-first rule restated where the model reads last (#36). It is in the role block
   // too; the failure it fixes was six turns that each opened with a probe, and the turn
   // directive is the sentence nearest the generation.
-  if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
+  if (d.agentRole === 'peer' && d.move === 'answer_then_teach' && d.docChat === true) {
+    /**
+     * **The doc chat's split, restated where the model reads last** (2026-09-23). The five-step
+     * shape below is the sentence nearest the generation, so while it was here it beat every word
+     * count above it; in the doc chat the second half of the shape belongs to the notes
+     * (`prompts.doc.ts` `ellieAnswersBlock`, `docedit.ts` `answerEditPrompt`).
+     */
+    bits.push(
+      'Answer what they asked in your first sentence. No opening question. Then the plain meaning',
+      'and one example, and stop: about 60 words, 90 at most. The rigorous version goes into the',
+      'notes, not here.',
+    );
+  } else if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
     bits.push('Answer what they asked in your first sentence, then teach it. No opening question.');
     /**
      * **The shape, restated where the model reads last** (#41). Same argument as the answer-first

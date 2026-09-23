@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, outlineText, pagesCited, planAnswerEdit, planSuggestionEdit, provenanceFor, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, outlineText, pagesCited, planAnswerEdit, planSuggestionEdit, provenanceFor, type DocEditDeps } from './docedit.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 
@@ -164,6 +164,24 @@ describe('planAnswerEdit (§5.1)', () => {
   it('builds nothing when the model asked for an edit with no content', async () => {
     const d = deps({}, { edit: 'insert_after', anchor_block_id: 'b_2', blocks: [] });
     expect((await planAnswerEdit(d, { answer: 'x', blockId: 'b_2', outline: OUTLINE })).batch).toBeNull();
+  });
+
+  /** 2026-09-23: the chat holds the short half, so this call writes the long half from the slide. */
+  it('is given the question and one page of the slide, and asked for what the chat left out', () => {
+    const passage = 'An admissible heuristic never overestimates. '.repeat(100);
+    const prompt = answerEditPrompt({ answer: 'short reply', question: 'why admissible?', passage, page: 4, blockId: 'b_2', outline: OUTLINE });
+    expect(prompt).toContain('THE SLIDE (p. 4)');
+    expect(prompt).toContain('why admissible?');
+    expect(prompt).toContain('Write what the chat left out');
+    expect(prompt).not.toContain(passage.trim());
+    expect(prompt).toContain(passage.slice(0, ANSWER_EDIT_PASSAGE_CHARS).trim());
+  });
+
+  it('still reads without a question or a slide (a lesson Start, a deck-wide ask)', () => {
+    const prompt = answerEditPrompt({ answer: 'short reply', blockId: 'b_2', outline: OUTLINE });
+    expect(prompt).not.toContain('THE SLIDE');
+    expect(prompt).not.toContain('WHAT THEY ASKED');
+    expect(prompt).toContain('short reply');
   });
 });
 

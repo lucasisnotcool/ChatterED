@@ -26,19 +26,42 @@ import { VERDICT_OPENERS } from './flow.js';
 // ── §4.2 row 1, first turn: Ellie answers ──────────────────────────────────
 
 /**
- * What Ellie's answer owes the doc chat. The size is `attempt-first.md` §4's, which the collab-doc
- * brief keeps in as many words (§4.6: *"Chat turns stay at the `attempt-first.md` §4 sizes"*) and
- * gives a new reason for: **the doc is where length lives**. An answer that runs long in the chat
- * is an answer that will not fit the segment it belongs to.
+ * What Ellie's answer owes the doc chat.
+ *
+ * **The chat holds the short half; the notes hold the long half** (2026-09-23, A1 report §1.4 and
+ * DG4: *"Replies in chat are kept short while longer explainers are written into notes"*). Until
+ * this date the chat was held to `attempt-first.md` §4's ~120 / 180 words and the notes got
+ * whatever `planAnswerEdit` condensed out of the reply — so on the live app the lengths ran the
+ * wrong way: chat replies at a median of 202 words, notes additions at ~80. The five-step shape
+ * the Teacher is given cannot fit 120 words and it won every time.
+ *
+ * So in the doc chat the shape is **split**: the answer, the plain meaning and one example go in
+ * the chat; the rigorous version and how the slide uses it are written into the notes by the
+ * §5.1 edit, which is now given the question and the slide rather than only the reply. When the
+ * notes are **frozen** nothing reaches them, so `notesTakeTheRest: false` gives her the full
+ * answer back.
  */
-export function ellieAnswersBlock(input: { page?: number | null } = {}): string {
-  const lines = [
-    'THIS IS THE DOC CHAT',
-    'Answer what they asked, in full, in your first sentence — then teach it. About 120 words,',
-    'ceiling 180. The document beside you is where length lives: if the answer needs more than',
-    'that, say the shape of the rest and let the notes carry it.',
-    'Do not end on a question. Max asks the next one.',
-  ];
+export function ellieAnswersBlock(input: { page?: number | null; notesTakeTheRest?: boolean } = {}): string {
+  const lines =
+    input.notesTakeTheRest === false
+      ? [
+          'THIS IS THE DOC CHAT',
+          'Answer what they asked, in full, in your first sentence — then teach it. About 120 words,',
+          'ceiling 180. The notes are frozen, so this answer is the whole of it.',
+          'Do not end on a question. Max asks the next one.',
+        ]
+      : [
+          'THIS IS THE DOC CHAT — SHORT HERE, THE REST GOES INTO THE NOTES',
+          '**About 60 words, ceiling 90.** This replaces the lengths in house rule 3 and the five-step',
+          'shape for this turn. Say, in this order and nothing more:',
+          '  1. the answer to what they asked, in your first sentence;',
+          '  2. what it means in plain words, no notation;',
+          '  3. one concrete example or analogy, in a sentence.',
+          'The rigorous version, the conditions and how the slide uses it are written into the notes',
+          'beside where they asked, separately from this reply — **do not write them here**, and do not',
+          'say that you are adding anything to the notes.',
+          'Do not end on a question. Max asks the next one.',
+        ];
   /**
    * **Answers stay anchored** (interview finding, `docs/research/interviews/findings.md` §6). All
    * three interviewees described the same drift: rounds of clarification that end up somewhere

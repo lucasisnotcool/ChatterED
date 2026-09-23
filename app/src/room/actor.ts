@@ -3060,6 +3060,7 @@ export class RoomActor {
         // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
         // clause, and the rule name is what tells them apart.
         byRule: decision.decidedBy,
+        docChat: this.#answerSplitsIntoNotes(decision),
       },
     });
     request.meta.scriptCue = cue;
@@ -3877,13 +3878,19 @@ export class RoomActor {
         // Recorded *before* the plan's model call, because `rule:max_followup` dispatches while
         // that call is still out and his Q block is what needs these pages (see the field).
         this.#lastAnswerPages = pagesCited(text);
-        const pages = this.#askContext.get(anchorId ?? '')?.page;
+        const context = this.#askContext.get(anchorId ?? '');
+        const pages = context?.page;
         const outline = this.#docPort.outlineNear({
           blockId,
           pages: typeof pages === 'number' ? [pages] : undefined,
         });
         const { batch, pointsTo } = await planAnswerEdit(deps, {
           answer: text,
+          // The chat said the short half (`#answerSplitsIntoNotes`); the notes edit writes the rest,
+          // and it cannot from the reply alone — it needs what was asked and what the slide says.
+          question: this.#learnerQuestionIn(anchorId),
+          passage: context?.scope === 'segment' ? context.passageText : null,
+          page: typeof pages === 'number' ? pages : null,
           blockId,
           outline,
           // The learner highlighted this span and asked about it: the answer goes beside it, not
@@ -4054,6 +4061,32 @@ export class RoomActor {
   }
 
   /**
+   * **Ellie's doc-chat answer is the short half, and the notes take the rest** (2026-09-23,
+   * `prompts.doc.ts` `ellieAnswersBlock`). Only while the notes can take it: a frozen doc drops
+   * every edit (§3), and an answer cut short for a notes edit that will never land is an answer
+   * the learner simply did not get.
+   */
+  #answerSplitsIntoNotes(decision: TurnDecision): boolean {
+    return (
+      decision.role === 'peer' &&
+      decision.moveType === 'answer_then_teach' &&
+      (decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention') &&
+      this.#docPort.docId() !== null &&
+      !this.#docPort.frozen()
+    );
+  }
+
+  /** The learner's latest message in this thread: what the §5.1 notes edit is explaining. */
+  #learnerQuestionIn(anchorId: string | null): string | null {
+    const student = this.#studentParticipant().id;
+    const rows = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .filter((m) => m.participant_id === student && (m.anchor_id ?? null) === anchorId)
+      .sort((a, b) => b.seq - a.seq);
+    return rows[0]?.body ?? null;
+  }
+
+  /**
    * **The blocks #48 *adds* to a turn that already existed**, as opposed to the six turns it
    * invented (`#docTurnNote`). Appended to the older assembly rather than replacing it, because
    * everything the Teacher and the Tester were already told — the learner's objective states, the
@@ -4063,7 +4096,7 @@ export class RoomActor {
     const blocks: string[] = [];
     if (decision.moveType === 'answer_then_teach' && (decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention')) {
       const page = this.#turnAnchorId === null ? null : (this.#askContext.get(this.#turnAnchorId)?.page ?? null);
-      blocks.push(ellieAnswersBlock({ page }));
+      blocks.push(ellieAnswersBlock({ page, notesTakeTheRest: this.#answerSplitsIntoNotes(decision) }));
       const mention = this.#mentionNote();
       if (mention) blocks.push(mention);
     }

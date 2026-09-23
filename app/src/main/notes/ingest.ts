@@ -51,7 +51,7 @@ import { log } from '../log.js';
 import { extractNotesPages, type NotesPageExtract } from './extract.js';
 import { critique1Notes, placeholderNotes } from './fixture.js';
 import { countPageImages, pageImageDir, pageImagesFor } from './pageimages.js';
-import { NOTES_PROMPT_VERSION, NOTES_SYSTEM, outlineLines, windowMessage } from './prompts.js';
+import { NOTES_PROMPT_VERSION, NOTES_SYSTEM, draftWords, outlineLines, windowMessage, windowWordBudget } from './prompts.js';
 import { inWindow, planWindows, type PageWindow } from './windows.js';
 
 export { NOTES_PROMPT_VERSION };
@@ -72,7 +72,10 @@ export const WINDOW_REQUEUE_MS = 2_000;
 /** One genuine (non-pre-emption) failure per window is a race; two is a fault. */
 export const WINDOW_ERROR_RETRIES = 1;
 
-/** The ceiling on one window's answer. Notes are long — §2's "length lives here". */
+/**
+ * The ceiling on one window's answer. Generous against the word budget on purpose: the JSON, the
+ * provenance and the figure rects are most of the tokens, and a truncated window is a lost one.
+ */
 export const WINDOW_MAX_TOKENS = 16_000;
 
 export interface NotesIngestDeps {
@@ -311,11 +314,17 @@ async function runIngest(deps: NotesIngestDeps, input: NotesIngestInput, docId: 
       rejectedTotal += rejected;
       figuresTotal += blocks.filter((b) => b.kind === 'figure').length;
 
+      // Words written against what the slides said and what the budget allowed: the ratio a prompt
+      // change has to move, visible per window without re-measuring the database (2026-09-23).
+      const slideWords = windowPages.reduce((n, p) => n + p.words, 0);
       log().info('notes.window', {
         file_id: input.fileId,
         doc_id: docId,
         window: index,
         pages: `${window.from}-${window.to}`,
+        words: draftWords(blocks),
+        slide_words: slideWords,
+        budget_words: windowWordBudget(windowPages),
         ms: Date.now() - windowStartedAt,
         blocks: blocks.length,
         figures: blocks.filter((b) => b.kind === 'figure').length,

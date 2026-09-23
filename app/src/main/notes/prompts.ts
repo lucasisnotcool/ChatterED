@@ -6,6 +6,15 @@
  * on every block, the lecture's own structure as the headings, a figure wherever the layout
  * carries meaning text cannot, and nothing the slides do not support.
  *
+ * **What the slides teach, not what they say** (2026-09-23). Version 2 read "without opening the
+ * slides" as "everything on the slides", and wrote 2.3–3.0× the slides' own words — about 150
+ * words a page against its own 60–90, so Lecture 4 came to ~9,500 words, a 40-minute read against
+ * a 31.5-minute mean study session (`reading-time.md`). That is P2's "usually [didn't] read
+ * [fully]" rebuilt inside the app. Version 3 asks for the teaching point of each stretch of
+ * slides, organised by idea in the deck's order, under a word budget computed in code
+ * (`windowWordBudget`) because a model writing twelve slides at once cannot keep a per-slide
+ * count.
+ *
  * The prompt is deliberately about **what notes are**, not about the JSON: the shape is enforced
  * by `DRAFT_BLOCK_JSON_SCHEMA` and repaired by `validateDrafts`, so spending the prompt on field
  * descriptions would be spending it twice. What a schema cannot say is "not a bullet
@@ -22,47 +31,61 @@ import type { PageWindow } from './windows.js';
  * prompt is re-ingested on next open rather than silently kept — unless the learner has edited
  * it, in which case their words win and it is left exactly as it is.
  */
-export const NOTES_PROMPT_VERSION = 2;
+export const NOTES_PROMPT_VERSION = 3;
 
 export const NOTES_SYSTEM = [
   'You are writing the lecture notes for one lecture, from the lecturer\'s own slides.',
   '',
+  'WHAT THE NOTES ARE FOR. A student opens them to learn what this lecture is trying to teach, and',
+  'comes back to them to find it again. They are not a transcript of the slides and not a textbook',
+  'chapter on the topic. For every stretch of slides, work out what the lecturer is trying to get',
+  'across — the idea, the definition, the method, the result, the reason it matters — and write',
+  'that, organised so a student can take it in.',
+  '',
   'THE TWO TESTS YOUR OUTPUT MUST PASS, and it must pass both.',
   '',
-  '1. **A student who never opens the slides can learn the lecture from your notes.** Not a list',
-  '   of the slide titles — the material. A slide that says only "Bellman equation" and a formula',
-  '   becomes two or three sentences saying what the equation is and what its symbols mean.',
+  '1. **A student who reads only the notes comes away with what the lecture teaches.** The ideas,',
+  '   what their terms mean, how the methods work and why they matter — not every example, aside',
+  '   and bullet the slides happen to carry.',
   '2. **A student actually reads them to the end.** This is the harder test and the one notes',
   '   usually fail. Interviewed students say AI-written help is too long and not pitched at them,',
   '   and that they can tell at a glance they are not going to finish it. A note nobody finishes',
   '   teaches nothing, so length is a cost, not a virtue.',
   '',
-  'CONCRETELY:',
+  'ORGANISE BY IDEA, IN THE DECK\'S ORDER.',
   '',
-  '- **Aim at 60–90 words per content slide.** A dense slide may need more; most need less. Title',
-  '  slides, agenda slides, roadmaps and section dividers usually need *no paragraph at all* —',
-  '  they become a heading and nothing else.',
-  '- **Paragraphs are 2–4 sentences.** Never one long paragraph per slide. If an idea needs more,',
-  '  it needs a second paragraph, not a longer one.',
-  '- **The key idea comes first.** The first sentence of a section says the thing; the sentences',
-  '  after it qualify, explain or give the example. Never build up to the point.',
+  '- **A section is one idea, not one slide.** Several slides that develop one idea are one section',
+  '  with one heading. A slide never gets its own heading just because it is a slide. Keep the',
+  '  deck\'s order, and use the lecturer\'s own words for headings where the deck gives them.',
+  '- **Each section opens with its takeaway**: the one or two sentences a student should leave',
+  '  with. Then only what that takeaway needs — what its terms mean, how it works, one example if',
+  '  the slides give one — and stop. Never build up to the point.',
   '- **Plain words before jargon.** Say what a term means the first time you use it, in ordinary',
   '  language, then use the term. Never use a term the lecture has not defined and you have not.',
-  '- **No padding.** Cut "it is important to note", "as we can see", "this section covers",',
-  '  "in this lecture we will". Do not restate a slide\'s title as a sentence — the heading',
-  '  already says it. Do not write an introduction to a section or a summary of one.',
-  '- **No exam framing.** Never write "you will be tested on", "for the exam", "make sure you',
-  '  remember". These are notes on what the lecture teaches, not advice about assessment.',
   '- **Write prose, not a bullet transcription.** A slide\'s bullets are the lecturer\'s speaking',
-  '  notes; the notes you write are what they said. Use a bullet list only where the content',
-  '  genuinely is a list — named cases, the steps of an algorithm, the parts of a definition —',
-  '  and keep each item to a line.',
-  '- **Follow the lecture\'s own structure.** The headings are the deck\'s sections, in the deck\'s',
-  '  order, in the lecturer\'s own words where the deck gives them. Do not invent a structure the',
-  '  lecture does not have, and do not put a heading on every slide: several slides that develop',
-  '  one idea are one section with one heading.',
-  '- **Do not narrate the deck.** Never write "this slide shows", "the lecturer then explains",',
-  '  "the section opens with", "as we saw on the previous slide". Write the material itself.',
+  '  notes; the notes you write are what they were teaching. Use a bullet list only where the',
+  '  content genuinely is a list — named cases, the steps of an algorithm, the parts of a',
+  '  definition — and keep each item to a line.',
+  '',
+  'WHAT TO LEAVE OUT.',
+  '',
+  '- **Slides that teach nothing**: title, agenda, roadmap, recap, section-divider, "questions?",',
+  '  admin and reading-list slides. A heading at most, and usually not even that.',
+  '- **Repetition.** Several examples of one point: keep the clearest. A point the notes already',
+  '  made on an earlier slide: do not make it again.',
+  '- **What the slides mention without teaching**: a passing name, a teaser for a later lecture.',
+  '- **Padding.** Cut "it is important to note", "as we can see", "this section covers", "in this',
+  '  lecture we will". Do not restate a heading as a sentence. No introduction to a section and no',
+  '  summary of one.',
+  '- **Narrating the deck.** Never write "this slide shows", "the lecturer then explains", "the',
+  '  section opens with", "as we saw on the previous slide". Write the material itself.',
+  '- **Exam framing.** Never write "you will be tested on", "for the exam", "make sure you',
+  '  remember". These are notes on what the lecture teaches, not advice about assessment.',
+  '',
+  'LENGTH. Each window comes with a word budget, worked out from how much its slides actually say.',
+  'It is a **ceiling, not a target**: most windows need less, and a window of mostly title and',
+  'divider slides needs very little. Paragraphs are 2–4 sentences; if an idea needs more, it needs a',
+  'second paragraph, not a longer one.',
   '',
   'PROVENANCE IS MANDATORY ON EVERY BLOCK. Every block carries `prov`, and it must have at least',
   'one of:',
@@ -108,6 +131,50 @@ export const NOTES_SYSTEM = [
   'after it.',
 ].join('\n');
 
+/**
+ * **The most words one page may add to the notes' budget**, and the least a page must say before
+ * it adds any. The ceiling is v2's own "60–90 words per content slide"; the multiplier lets a
+ * terse slide be explained rather than restated; the floor is what makes a title or divider slide
+ * cost nothing.
+ */
+export const PAGE_BUDGET_MAX = 90;
+export const PAGE_BUDGET_PER_SLIDE_WORD = 1.2;
+export const PAGE_BUDGET_MIN_SLIDE_WORDS = 12;
+/** A near-wordless page with a drawn figure still needs a caption and a sentence. */
+export const PAGE_BUDGET_FIGURE_ONLY = 30;
+
+/** One page's share of the budget. Pure, so the arithmetic is testable without a model. */
+export function pageWordBudget(page: Pick<NotesPageExtract, 'words' | 'figures'>): number {
+  if (page.words < PAGE_BUDGET_MIN_SLIDE_WORDS) return page.figures.length > 0 ? PAGE_BUDGET_FIGURE_ONLY : 0;
+  return Math.min(PAGE_BUDGET_MAX, Math.round(page.words * PAGE_BUDGET_PER_SLIDE_WORD));
+}
+
+/** A window's word ceiling: the pages' shares, rounded to ten, and never below one paragraph. */
+export function windowWordBudget(pages: readonly Pick<NotesPageExtract, 'words' | 'figures'>[]): number {
+  const sum = pages.reduce((n, p) => n + pageWordBudget(p), 0);
+  return Math.max(60, Math.round(sum / 10) * 10);
+}
+
+/** Words in a set of drafted blocks — the other half of the `notes.window` log's ratio. */
+export function draftWords(blocks: readonly DocBlockDraft[]): number {
+  const count = (t: string): number => t.split(/\s+/).filter((w) => w.length > 0).length;
+  return blocks.reduce((n, b) => {
+    switch (b.kind) {
+      case 'heading':
+      case 'paragraph':
+      case 'code':
+        return n + count(b.text);
+      case 'bullets':
+      case 'numbers':
+        return n + b.items.reduce((m, i) => m + count(i), 0);
+      case 'figure':
+        return n + count(b.caption);
+      case 'math':
+        return n;
+    }
+  }, 0);
+}
+
 /** What the ingest knows when it asks for one window. */
 export interface WindowPromptInput {
   /** The deck's title, as the flow names it. */
@@ -138,8 +205,8 @@ export function windowMessage(input: WindowPromptInput): string {
     parts.push(
       [
         'THE NOTES SO FAR (the headings you have already written for this lecture). Continue from',
-        'here: do not repeat a section, do not re-introduce the lecture, and keep the same voice',
-        'and the same level of detail.',
+        'here: do not repeat a section, do not re-introduce the lecture, and keep the same voice.',
+        'Keep to this window\'s own budget, however long the earlier windows ran.',
         '',
         input.outlineSoFar.trim(),
       ].join('\n'),
@@ -185,10 +252,14 @@ export function windowMessage(input: WindowPromptInput): string {
     ].join('\n'),
   );
 
+  const budget = windowWordBudget(input.pages);
+  const slideWords = input.pages.reduce((n, p) => n + p.words, 0);
   parts.push(
     `Write the notes for pages ${input.window.from}–${input.window.to} now, as \`blocks\`.` +
-      ' Every block needs its `prov`. Keep paragraphs to 2–4 sentences and let a title, agenda or' +
-      ' section slide be a heading with no paragraph under it.',
+      ` These slides say about ${slideWords} words; **your notes for them are at most ${budget} words**,` +
+      ' headings and captions included, and fewer when the slides teach less.' +
+      ' One heading per idea, not per slide; each section opens with its takeaway.' +
+      ' Every block needs its `prov`.',
   );
 
   return parts.join('\n\n');

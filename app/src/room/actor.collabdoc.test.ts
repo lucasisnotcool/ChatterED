@@ -578,6 +578,35 @@ describe('the doc-edit call', () => {
     expect(call.meta.anchorId).toBe(DOC);
     expect(call.jsonSchema).toBeTypeOf('object');
   });
+
+  /**
+   * **Short in the chat, the rest in the notes** (2026-09-23; A1 report §1.4 and DG4). The chat
+   * turn is told the short half and not the five-step shape, and the notes edit is given what the
+   * learner asked — it has to write the long half, and a 60-word reply is not enough to write it from.
+   */
+  it('splits Ellie’s answer: the short half in the chat, the question handed to the notes edit', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const ellie = prompts(h)[0]!;
+    expect(ellie).toContain('SHORT HERE, THE REST GOES INTO THE NOTES');
+    expect(ellie).toContain('about 60 words, 90 at most');
+    expect(ellie).not.toContain('use the shape');
+    const edit = h.llm.requests.find((r) => r.meta.scope === 'docedit')!;
+    const system = edit.system.map((b) => b.text).join('\n');
+    expect(system).toContain('WHAT THEY ASKED');
+    expect(system).toContain('what is the side channel?');
+    expect(system).toContain('Write what the chat left out');
+  });
+
+  it('gives the whole answer in the chat when the notes are frozen, since nothing will reach them', async () => {
+    const frozen = docPort({ frozen: () => true });
+    const h = build({ docPort: frozen.port });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const ellie = prompts(h)[0]!;
+    expect(ellie).toContain('The notes are frozen, so this answer is the whole of it.');
+    expect(ellie).toContain('use the shape');
+    expect(ellie).not.toContain('SHORT HERE');
+  });
 });
 
 // ── §6: the learner's own doc text, and the lesson card ───────────────────
