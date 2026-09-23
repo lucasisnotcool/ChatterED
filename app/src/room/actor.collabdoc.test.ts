@@ -164,6 +164,46 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
   });
 
   /**
+   * **#49, Lucas's 2026-09-23 run on Lecture 4.** The follow-up to an answer on p. 11 was filed
+   * under the pp. 3–6 objective, because `rule:ellie_answers` names no element and the pick fell
+   * through to deck order's first — so a *Well done* on p. 11's heuristics completed PDDL, and the
+   * p. 11 objective stayed *not started*. The page the learner asked on is what the answer touched.
+   */
+  it('files the follow-up under the objective of the page the learner asked on', async () => {
+    const [a, b, c] = PSD_HESSIAN_CONVEXITY_V1.elements;
+    const objectives = [
+      { e: a!, pages: [3, 4, 5, 6] },
+      { e: b!, pages: [7] },
+      { e: c!, pages: [11, 12] },
+    ].map(({ e, pages }, i) => ({
+      objectiveId: e.id,
+      title: e.learner_label,
+      level: 0 as const,
+      assumedByDeck: false,
+      refs: pages.map((page) => ({ page })),
+      order: i + 1,
+    }));
+    const onPage = (page: number) => ({
+      scope: 'segment' as const,
+      passageText: `the text of p. ${page}`,
+      outline: '',
+      retrievedPages: [],
+      scopeShown: `p. ${page}`,
+      page,
+    });
+
+    const h = build({ learnerObjectives: () => objectives });
+    await settle(h.clock, h.actor.sendMessage('what are some example of problem and heuristic?', DOC, onPage(11)));
+    const quiz = decisions(h).find((d) => d.decided_by === 'rule:max_followup')!;
+    expect(quiz.target_element_id).toBe(c!.id);
+
+    // A page between two objectives' refs takes the nearest earlier one, not deck order's first.
+    const h2 = build({ learnerObjectives: () => objectives });
+    await settle(h2.clock, h2.actor.sendMessage('what is this slide saying?', DOC, onPage(9)));
+    expect(decisions(h2).find((d) => d.decided_by === 'rule:max_followup')!.target_element_id).toBe(b!.id);
+  });
+
+  /**
    * §4.2's own invariant, stated in the brief in as many words: *"One open Max question at a time
    * per file. `rule:max_followup` does not fire while one is open; Ellie's answer to a new learner
    * question simply stands, and Max's open question stays open."*
@@ -815,3 +855,4 @@ describe('private threads with Ellie and Max', () => {
     });
   });
 });
+

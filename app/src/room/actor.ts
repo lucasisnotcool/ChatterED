@@ -155,6 +155,8 @@ import {
   type PitchState,
 } from './pitch.js';
 import { progressFill } from '../shared/doc/progress.js';
+import type { ObjectiveRef } from '../shared/objectives.js';
+import { pickObjectiveForCard } from '../shared/objectives-pick.js';
 import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
@@ -271,6 +273,13 @@ export interface RoomActorDeps {
     title: string;
     level: 0 | 1 | 2 | 3;
     assumedByDeck: boolean;
+    /**
+     * **Where the deck teaches it, and where it falls in the deck** (#49), so Max's follow-up can
+     * be filed under the objective of the page the learner asked on — `#followupTarget`. Optional:
+     * a caller that omits them gets the taught-set pick that came before.
+     */
+    refs?: readonly ObjectiveRef[];
+    order?: number;
   }[];
   /**
    * **The notes doc, as the actor sees it** (collab-doc §5, #48; `docport.ts`). Optional: a room
@@ -2772,7 +2781,7 @@ export class RoomActor {
         threadKind: anchorId === null ? null : this.#threadKindOf(anchorId),
       })
     ) {
-      const target = this.#followupTarget();
+      const target = this.#followupTarget(anchorId);
       this.#nextQuestionId = this.#d.newId('q');
       await this.#runAgentTurn('promote', { anchorId, followup: { objectiveId: target } });
     }
@@ -2782,12 +2791,23 @@ export class RoomActor {
    * **Which objective the follow-up is about** (brief §4.2: *"targets an objective the answer
    * touched that the learner has not yet shown, lowest first"*).
    *
+   * **The page the learner asked on comes first** (#49). The taught set below is fed only by a
+   * Teacher decision that names an element, and `rule:ellie_answers` names none in production, so
+   * in the live app the pool was always empty and every follow-up fell through to "the lowest
+   * level in the pack" — deck order's first objective. Lucas's 2026-09-23 run on Lecture 4 is what
+   * that costs: a question on p. 11's heuristics, answered *Well done*, completed the pp. 3–6 PDDL
+   * objective while the p. 11 one stayed *not started*. The answer the follow-up is about is the
+   * one Ellie just gave, and the page it was asked on is the one fact that says what it touched;
+   * `pickObjectiveForCard` is the pick "+ Try this" used for exactly this question.
+   *
    * The pick is the one `+ Try this` already used — lowest ledger level first, deck order as the
    * tie-break (`flow.pickTarget`) — reused rather than reinvented, because two policies for "what
    * should the Tester ask about" is how the two of them come to disagree. What is narrowed here is
    * the pool: the taught set, which is what the answers in this sitting have actually touched.
    */
-  #followupTarget(): string | null {
+  #followupTarget(anchorId: string | null): string | null {
+    const onPage = this.#objectiveOnPage(anchorId);
+    if (onPage !== null) return onPage;
     const levels = Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level]));
     const taught = latestByElement(this.#taught).map((item) => ({ ...item, ageMs: 0, recency: 1 }));
     const assumed = this.#assumedObjectiveIds();
@@ -2802,6 +2822,29 @@ export class RoomActor {
       .filter((element) => !assumed.has(element.id))
       .sort((a, b) => (levels[a.id] ?? 0) - (levels[b.id] ?? 0));
     return byLevel[0]?.id ?? null;
+  }
+
+  /**
+   * The objective the thread's page teaches (`pickObjectiveForCard`: taught on the page, else the
+   * nearest earlier), or `null` when the thread has no page — a whole-deck question — or the tree
+   * has not landed. An assumed prerequisite has no refs and so is never picked here, and a pick the
+   * concept pack does not carry is dropped rather than filed under an id nothing can count.
+   */
+  #objectiveOnPage(anchorId: string | null): string | null {
+    const page = anchorId === null ? null : (this.#askContext.get(anchorId)?.page ?? null);
+    if (page === null) return null;
+    const objectives = (this.#d.learnerObjectives?.() ?? []).flatMap((o) =>
+      o.objectiveId && !o.assumedByDeck && o.refs && o.refs.length > 0
+        ? [{ id: o.objectiveId, order: o.order ?? 0, refs: [...o.refs], level: o.level }]
+        : [],
+    );
+    const picked = pickObjectiveForCard({
+      objectives,
+      states: objectives.map((o) => ({ objectiveId: o.id, level: o.level })),
+      card: { segmentId: null, page },
+    });
+    if (picked === null || !this.#d.pack.elements.some((e) => e.id === picked.objectiveId)) return null;
+    return picked.objectiveId;
   }
 
   /**
@@ -4215,7 +4258,14 @@ export class RoomActor {
       verdict: o.verdict,
       releasedBy: o.releasedBy,
     }));
-    return pitchInputs({ objectiveId, outcomes, fill: progressFill(this.#outcomes) });
+    /**
+     * **This objective's fill, not the file's** (#49). `progressFill` keeps the best verdict of
+     * whatever it is handed, and it was handed every outcome on the file — so one *Well done*
+     * anywhere told Max that every objective was complete, and a first question on a fresh one
+     * was pitched as though it were a second.
+     */
+    const onObjective = objectiveId === null ? [] : this.#outcomes.filter((o) => o.objectiveId === objectiveId);
+    return pitchInputs({ objectiveId, outcomes, fill: progressFill(onObjective) });
   }
 
   /**

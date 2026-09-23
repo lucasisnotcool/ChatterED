@@ -43,6 +43,19 @@ const TREE = [
 ];
 
 describe('pickObjectiveForCard', () => {
+  /**
+   * **The notes doc has pages and no segments** (#49): Max's follow-up is filed by the page the
+   * learner asked on. A ref's `segmentId` is not a reason to miss the page it sits on.
+   */
+  it('picks by page alone when the card has no segment', () => {
+    expect(pickObjectiveForCard({ objectives: TREE, states: [], card: { segmentId: null, page: 6 } })!.objectiveId).toBe('d');
+    expect(teachesCard(TREE[1]!, { segmentId: null, page: 3 })).toBe(true);
+    // Between refs, the nearest earlier page's objective, not deck order's first.
+    const pick = pickObjectiveForCard({ objectives: TREE, states: [], card: { segmentId: null, page: 5 } })!;
+    expect(pick.objectiveId).toBe('b');
+    expect(pick.reason).toBe('nearest_earlier');
+  });
+
   it('prefers what the card teaches, by segment id when the tree has one', () => {
     const pick = pickObjectiveForCard({ objectives: TREE, states: [], card: { segmentId: 'seg_3a', page: 3 } })!;
     // Both b (by segment) and c (by page) teach this card; deck order breaks the level tie.

@@ -111,6 +111,26 @@ describe('pitchBlock', () => {
     const text = pitchBlock(pitchInputs({ objectiveId: 'obj_1', outcomes: [], fill: 0 }));
     expect(text).toContain('no fixed difficulty rungs');
   });
+
+  /**
+   * **#49.** The first question on p. 7's objective asked the learner to build a CNF encoding the
+   * deck only names. The first question on an objective is the easy end, and a result on
+   * *another* objective does not make this one's first question a second.
+   */
+  it('keeps the first question on an objective to own words, not a construction', () => {
+    const elsewhere: PitchOutcome = { objectiveId: 'obj_other', kind: 'verdict', verdict: 'complete', releasedBy: null };
+    const inputs = pitchInputs({ objectiveId: 'obj_1', outcomes: [elsewhere], fill: 0 });
+    expect(inputs.firstOnObjective).toBe(true);
+    expect(inputs.pitch).toBe('level');
+    const text = pitchBlock(inputs);
+    expect(text).toContain('first question on this objective');
+    expect(text).toContain('Not a construction');
+    expect(text).toContain('not filled yet');
+
+    const again = pitchInputs({ objectiveId: 'obj_1', outcomes: [{ ...elsewhere, objectiveId: 'obj_1', verdict: 'partial' }], fill: 0.5 });
+    expect(again.firstOnObjective).toBe(false);
+    expect(pitchBlock(again)).not.toContain('first question on this objective');
+  });
 });
 
 /**

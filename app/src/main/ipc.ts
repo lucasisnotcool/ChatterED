@@ -60,7 +60,7 @@ import {
   type FlowRoomDeps,
 } from './flowroom.js';
 import type { SegmentDocumentView } from '../shared/segment/types.js';
-import type { LearningObjectiveState, LearningTree } from '../shared/objectives.js';
+import type { LearningObjectiveState, LearningTree, ObjectiveRef } from '../shared/objectives.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import { capText } from './vault/extract.js';
 import { SELECTION_CAP, VaultService } from './vault/service.js';
@@ -730,7 +730,14 @@ export class AppService {
    */
   #learnerObjectives(
     fileId: string | null,
-  ): { objectiveId: string; title: string; level: 0 | 1 | 2 | 3; assumedByDeck: boolean }[] {
+  ): {
+    objectiveId: string;
+    title: string;
+    level: 0 | 1 | 2 | 3;
+    assumedByDeck: boolean;
+    refs: ObjectiveRef[];
+    order: number;
+  }[] {
     if (!fileId) return [];
     const tree = this.#d.store.objectives.tree(fileId);
     if (!tree || tree.status !== 'ready') return [];
@@ -746,6 +753,10 @@ export class AppService {
         title: o.title,
         level: (states.get(o.id)?.level ?? 0) as 0 | 1 | 2 | 3,
         assumedByDeck: o.assumedByDeck,
+        // #49: the pages, so the follow-up is filed under the objective of the page the learner
+        // asked on rather than under deck order's first objective.
+        refs: o.refs,
+        order: o.order,
       }));
   }
 

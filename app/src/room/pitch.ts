@@ -170,6 +170,8 @@ export interface PitchInputs {
   lastWasRelease: boolean;
   /** True when the most recent result on this objective was a *Well done*. Permits `harder`. */
   lastWasComplete: boolean;
+  /** True when nothing has been asked on this objective yet (#49): the question is the easy end. */
+  firstOnObjective: boolean;
 }
 
 /** How much history the block carries. Three is enough to show a direction without a wall. */
@@ -205,7 +207,7 @@ export function pitchInputs(input: PitchInputsRequest): PitchInputs {
         ? 'nothing has been asked on this objective yet'
         : `the last answer on this objective was marked ${last.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}`;
 
-  return { pitch, reason, recent, fill: input.fill, lastWasRelease, lastWasComplete };
+  return { pitch, reason, recent, fill: input.fill, lastWasRelease, lastWasComplete, firstOnObjective: last === null };
 }
 
 /**
@@ -243,6 +245,18 @@ export function pitchBlock(inputs: PitchInputs): string {
     lines.push(
       `**You may go harder than the last one** — ${inputs.reason}. Ask them to explain why, or to`,
       'apply it to a case the slide does not work through. Still one question.',
+    );
+  } else if (inputs.firstOnObjective) {
+    /**
+     * **The first question on an objective is not a construction** (#49). The 2026-09-23 run's
+     * first question on p. 7's objective asked the learner to build a CNF encoding the deck only
+     * names, and "pitch it where the slide pitches it" did nothing to stop it. The slide pitches
+     * p. 7 as a list to distinguish, and the question should ask for that.
+     */
+    lines.push(
+      `This is the first question on this objective — ${inputs.reason}. Ask them to say it in their`,
+      'own words, or to name or tell apart what the page shows. Not a construction, a derivation, or',
+      'a case the page does not work through: that is for after they have got this one.',
     );
   } else {
     lines.push(`Pitch it at the same level as the last one — ${inputs.reason}.`);

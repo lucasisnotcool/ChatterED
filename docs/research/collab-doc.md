@@ -132,6 +132,19 @@ marker.
 **One open Max question at a time per file.** `rule:max_followup` does not fire while one is open;
 Ellie's answer to a new learner question simply stands, and Max's open question stays open.
 
+**Amended 2026-09-23 (#49, Lucas's Lecture 4 run):**
+- **A request for background is a clarifying question.** That includes *"can you give me an
+  example of…"*, *"I'm not familiar with…"*, and *"I don't know what X is"*, however many
+  sentences it runs to. Max gives the idea or format the question assumes, with an example of his
+  own that is not the case asked about. The limit is 80 words, not two or three sentences. He
+  re-asks the question and still says it did not count as a try (kept by Lucas's call). No Max
+  turn comments on how the learner went about it, for example "asking was reasonable".
+- **The follow-up is filed under the objective of the page the learner asked on.** The taught set
+  was empty in the live app, so every follow-up fell to deck order's first objective. A *Well
+  done* on p. 11 filled pp. 3–6. The question must be answerable from the page and Ellie's answer
+  alone. The first question on an objective asks for own words or telling things apart, never a
+  construction the page only names. The pitch's "fill" is that objective's fill, not the file's.
+
 All of the above are rules in the orchestrator, decided in code before any model is consulted, as
 today. The model writes the words of a turn; it never decides whether an answer is due.
 

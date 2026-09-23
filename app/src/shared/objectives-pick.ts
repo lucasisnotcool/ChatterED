@@ -24,15 +24,31 @@
  */
 import type { LearningObjective, LearningObjectiveState, ObjectiveLevel } from './objectives.js';
 
+/**
+ * What the pick reads of an objective. A `Pick` rather than the whole shape since #49, so the
+ * room actor — which is handed the tree's objectives as a callback, not as `LearningObjective`s —
+ * can call the same function rather than keep a second policy for "which objective".
+ */
+export type PickableObjective = Pick<LearningObjective, 'id' | 'order' | 'refs'>;
+
+/**
+ * Where the learner is. `segmentId` is `null` in the notes doc (#48), which has no segments: the
+ * page alone decides, which is what a ref with no `segmentId` already meant.
+ */
+export interface PickCard {
+  segmentId: string | null;
+  page: number;
+}
+
 export interface ObjectivePickInput {
-  objectives: readonly LearningObjective[];
+  objectives: readonly PickableObjective[];
   /** The file's states. A missing state is level 0 — untouched, and therefore first in line. */
-  states: readonly LearningObjectiveState[];
+  states: readonly Pick<LearningObjectiveState, 'objectiveId' | 'level'>[];
   /**
    * The card the learner pressed the line on. `null` for the deck-level line, where nothing is
    * nearer than anything else and the pick is simply the lowest level in the deck.
    */
-  card: { segmentId: string; page: number } | null;
+  card: PickCard | null;
 }
 
 export interface ObjectivePick {
@@ -42,22 +58,21 @@ export interface ObjectivePick {
   reason: 'taught_here' | 'nearest_earlier' | 'nearest' | 'lowest_in_deck';
 }
 
-function levelOf(states: readonly LearningObjectiveState[], id: string): ObjectiveLevel {
+function levelOf(states: ObjectivePickInput['states'], id: string): ObjectiveLevel {
   return states.find((s) => s.objectiveId === id)?.level ?? 0;
 }
 
 /** §2.1's first clause, and `objectivesForSegment`'s filter, written once. */
-export function teachesCard(
-  objective: LearningObjective,
-  card: { segmentId: string; page: number },
-): boolean {
-  return objective.refs.some((r) => (r.segmentId ? r.segmentId === card.segmentId : r.page === card.page));
+export function teachesCard(objective: PickableObjective, card: PickCard): boolean {
+  return objective.refs.some((r) =>
+    r.segmentId && card.segmentId !== null ? r.segmentId === card.segmentId : r.page === card.page,
+  );
 }
 
 /** Lowest level first, then deck order. The whole of clause 2. */
 function byLevelThenOrder(
-  states: readonly LearningObjectiveState[],
-): (a: LearningObjective, b: LearningObjective) => number {
+  states: ObjectivePickInput['states'],
+): (a: PickableObjective, b: PickableObjective) => number {
   return (a, b) => {
     const byLevel = levelOf(states, a.id) - levelOf(states, b.id);
     return byLevel !== 0 ? byLevel : a.order - b.order;
@@ -65,12 +80,12 @@ function byLevelThenOrder(
 }
 
 /** The ref page nearest the card from **before** it, or null when the objective has none. */
-function nearestPageAtOrBefore(objective: LearningObjective, page: number): number | null {
+function nearestPageAtOrBefore(objective: PickableObjective, page: number): number | null {
   const pages = objective.refs.map((r) => r.page).filter((p) => p <= page);
   return pages.length === 0 ? null : Math.max(...pages);
 }
 
-function distanceToCard(objective: LearningObjective, page: number): number {
+function distanceToCard(objective: PickableObjective, page: number): number {
   const distances = objective.refs.map((r) => Math.abs(r.page - page));
   return distances.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...distances);
 }
@@ -79,7 +94,7 @@ export function pickObjectiveForCard(input: ObjectivePickInput): ObjectivePick |
   const objectives = input.objectives.filter((o) => o.id.trim().length > 0);
   if (objectives.length === 0) return null;
   const sort = byLevelThenOrder(input.states);
-  const pick = (o: LearningObjective, reason: ObjectivePick['reason']): ObjectivePick => ({
+  const pick = (o: PickableObjective, reason: ObjectivePick['reason']): ObjectivePick => ({
     objectiveId: o.id,
     level: levelOf(input.states, o.id),
     reason,
@@ -100,7 +115,7 @@ export function pickObjectiveForCard(input: ObjectivePickInput): ObjectivePick |
    */
   const earlier = objectives
     .map((o) => ({ o, page: nearestPageAtOrBefore(o, card.page) }))
-    .filter((e): e is { o: LearningObjective; page: number } => e.page !== null);
+    .filter((e): e is { o: PickableObjective; page: number } => e.page !== null);
   if (earlier.length > 0) {
     const nearestPage = Math.max(...earlier.map((e) => e.page));
     const group = earlier.filter((e) => e.page === nearestPage).map((e) => e.o).sort(sort);

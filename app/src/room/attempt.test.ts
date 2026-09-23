@@ -116,6 +116,35 @@ describe('classifyLearnerTurn', () => {
   });
 
   /**
+   * **#49, Lucas's 2026-09-23 run on Lecture 4.** The first line is two sentences, so it missed
+   * the one-sentence `question` rule and was marked *Not yet* — a learner refused the background
+   * they asked for in order to try. The answers that followed in the same run are still attempts.
+   */
+  it('reads a request for background as a question, however many sentences it runs to', () => {
+    for (const line of [
+      'Can you give me example of how SAT instances are encoded, format for CNF vars and clauses? I am not familiar with SAT format',
+      'what is a sat based planner?',
+      "I don't know what CNF means, can you explain it?",
+      "I'm not familiar with SATPlan. Could you explain what it does first?",
+      'explain the frame axioms please',
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('question');
+    }
+    for (const line of [
+      'It might branch on At(c, a) or At(c, p), since these are possible outcomes depending on which load action is taken',
+      'The search space is infinite? So picking any given fluent is also reversible and h(s) is meaningless',
+      'It only tells the solver the next state to go to',
+      'Oh it can simplify the reduce degrees of freedom of CNF formula',
+      'What does admissible mean? I think it means it never overestimates',
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('attempt');
+    }
+    // A bare don't-know is still a give-up: it asks for nothing.
+    expect(classifyLearnerTurn("I don't know")).toBe('give_up');
+    expect(classifyLearnerTurn('give up')).toBe('give_up');
+  });
+
+  /**
    * *"can you help me out here"* (the same run): nothing to mark, and not a request for the
    * answer. `other` draws `rule:quiz_nudge` — one hint, no answer — which is the turn it wanted.
    */

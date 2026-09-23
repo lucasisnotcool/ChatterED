@@ -495,6 +495,17 @@ const GROUNDS = [
   'verdict, that is not a mark against them.',
 ];
 
+/**
+ * **Talk about the material, not about the learner's conduct** (#49). The 2026-09-23 release
+ * ended *"Asking for the CNF format itself was reasonable — …"*: Max grading the learner's
+ * question rather than teaching, which Lucas flagged as a distraction from the objective. The
+ * release block's "one sentence on what their attempt had" is where it came from — the "attempt"
+ * was that request — so the line goes on every Max turn that responds to the learner.
+ */
+export const NO_REMARKS =
+  'Do not comment on how the learner went about it \u2014 not whether their question was reasonable, ' +
+  'not what they should have asked, not what kind of message it was. Talk about the material.';
+
 /** Which turn of the attempt loop this is (§2.3). `question` is the default. */
 export type QuizTurn = 'question' | 'feedback' | 'answer' | 'clarify' | 'hint_withheld';
 
@@ -542,6 +553,7 @@ export function quizBlock(input: {
       'wrong part only \u2014 in their own words, or applied to the case \u2014 so that they can try again; no',
       `other question anywhere in the turn. After ${done} ask nothing: the next question is theirs to`,
       'ask for. Under 100 words.',
+      NO_REMARKS,
       ...GROUNDS,
     );
     return lines.join('\n');
@@ -556,6 +568,7 @@ export function quizBlock(input: {
       'The learner is not going to answer this one. Give it: the model answer to the question you',
       'asked, in full, and — if they attempted it — one sentence on what their attempt already had',
       'of it. Under 150 words. No new question, and do not withhold any part of it.',
+      NO_REMARKS,
       ...GROUNDS,
     );
     return lines.join('\n');
@@ -564,14 +577,23 @@ export function quizBlock(input: {
    * **A question about the question** (§2.3). The one move that must not leak the answer while
    * still being useful, which is why it is spelled out rather than left to the model's judgement.
    */
+  /**
+   * **Background counts as clarification** (#49). The 2026-09-23 run asked Max for the background
+   * his question needed (*"I am not familiar with SAT format"*); two or three sentences cannot carry
+   * that, so the ceiling is a word count instead, and what may be given is named: the general
+   * idea or format, with a small example of its own that is not the case the question is about.
+   */
   if (turn === 'clarify') {
     lines.push(
-      'The learner asked you what the question means, not for the answer to it. Answer the',
-      'clarification \u2014 define the term, expand the notation, say which case you mean \u2014 in two or',
-      'three sentences, and then leave the question standing. **Do not answer the question**, do not',
-      'give a hint towards it unless the clarification cannot be made without one, and do not ask',
-      'anything new. End with the question again, in one sentence, and say that this did not count',
-      'as a try \u2014 the learner has to be able to tell that nothing was marked.',
+      'The learner asked you what the question means, or for the background they need to try it \u2014',
+      'not for the answer to it. Give them that: define the term, expand the notation, say which case',
+      'you mean, or explain the idea or format the question assumes, with a small example of your own',
+      'that is **not** the case your question is about. At most 80 words; then leave the question standing.',
+      '**Do not answer the question**, do not give a hint towards it unless the clarification cannot',
+      'be made without one, and do not ask anything new. End with the question again, in one',
+      'sentence, and say that this did not count as a try \u2014 the learner has to be able to tell',
+      'that nothing was marked.',
+      NO_REMARKS,
     );
     return lines.join('\n');
   }
@@ -771,7 +793,8 @@ export function turnDirective(d: TurnDirective): string {
   if (d.move === 'quiz' && d.byRule === 'rule:max_followup') {
     bits.push(
       'Ellie has just answered the learner’s question. Ask **one** follow-up that makes them use it',
-      'in their own words. Do not answer it, and do not ask two.',
+      'in their own words. It must be answerable from the page and what Ellie just said — no method',
+      'or format that neither of them gave the learner. Do not answer it, and do not ask two.',
     );
   }
   /**
@@ -803,9 +826,9 @@ export function turnDirective(d: TurnDirective): string {
   }
   if (d.move === 'quiz_clarify') {
     bits.push(
-      'They asked what your question means, not for the answer. Clear the question up in two or',
-      'three sentences and leave it standing. **Do not answer it.** Then ask the question again in',
-      'one sentence, and say that this did not count as a try.',
+      'They asked what your question means, or for the background it needs, not for the answer.',
+      'Give that in at most 80 words and leave the question standing. **Do not answer it.** Then ask',
+      'the question again in one sentence, and say that this did not count as a try.',
     );
   }
   /**

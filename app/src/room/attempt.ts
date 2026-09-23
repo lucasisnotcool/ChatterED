@@ -201,6 +201,50 @@ function matchesAny(body: string, phrases: readonly AnswerRequestPhrase[]): bool
   return phrases.some((p) => (p.match === 'whole' ? bare === p.phrase : bare.includes(p.phrase)));
 }
 
+/**
+ * **A request for background is a question, however many sentences it runs to** (#49).
+ *
+ * Lucas's 2026-09-23 run, with Max's question on the CNF encoding open: *"Can you give me example
+ * of how SAT instances are encoded, format for CNF vars and clauses? I am not familiar with SAT
+ * format"*. Two sentences, so the one-sentence `question` rule missed it and it fell through to
+ * `attempt` — Max marked it **Not yet**, said it was "a request for background, not an attempt",
+ * and the learner, who had asked for exactly what they needed to try, was refused it. The same
+ * learner's *"what is a sat based planner?"*, one sentence, drew `rule:quiz_clarify` and the
+ * background they wanted.
+ *
+ * So a turn that **asks to be told something** — *can you explain / give me an example / show me*,
+ * or *I'm not familiar with / I don't know what X is* — and carries no candidate answer is a
+ * `question`, up to `BACKGROUND_TURN_WORDS`. It is decided before the give-up list, because *"I
+ * don't know what CNF means, can you explain it?"* is a learner asking for a way in, not one saying
+ * they are done; a bare *"I don't know"* still matches neither pattern here and is still a give-up.
+ */
+const BACKGROUND_TURN_WORDS = 45;
+
+/** An opener that asks to be told or shown something. Anchored to a sentence start. */
+const TELL_ME =
+  /^(please |so |ok(ay)? |hmm |sorry |but )?(can|could|would|will) you (please )?(give|show|explain|tell|walk|define|remind|go over|describe|clarify)\b|^(please )?(explain|define|remind me|show me|walk me through|give me an? (example|explanation))\b/;
+
+/** Saying which term they are missing. Anywhere in the turn. */
+const NOT_FAMILIAR =
+  /\b(i'?m|i am) (not familiar|unfamiliar|not sure what)\b|\bi (don'?t|do not) (know|understand) what\b|\bnever (heard|seen|learn(ed|t)) (of |about )?\b|\bwhat (is|are|does) (a |an |the )?[\w-]+( [\w-]+)?( mean)?\s*\?/;
+
+/**
+ * Words that mark a candidate answer rather than a request: the learner is putting something up
+ * to be marked, and that is an attempt however it is phrased.
+ */
+const CANDIDATE = /\b(i think|i guess|i'd say|i would say|my answer|maybe it'?s|probably|because|so it'?s|it'?s like)\b/;
+
+export function isBackgroundRequest(body: string): boolean {
+  const normalised = normalise(body);
+  if (normalised.length === 0) return false;
+  if (contentWords(normalised).length > BACKGROUND_TURN_WORDS) return false;
+  // "show me the answer" asks to be shown something too, and it is still R6's give-up.
+  if (isAnswerRequest(normalised)) return false;
+  if (CANDIDATE.test(normalised) || HEDGED_ANSWER.test(normalised) || OFFERS_ALTERNATIVES.test(normalised)) return false;
+  const opensWithAsk = sentences(normalised).some((sentence) => TELL_ME.test(sentence));
+  return opensWithAsk || NOT_FAMILIAR.test(normalised);
+}
+
 export function isHintRequest(body: string): boolean {
   return matchesAny(body, HINT_REQUEST_PHRASES);
 }
@@ -223,6 +267,8 @@ export function classifyLearnerTurn(body: string): LearnerTurnKind {
   if (trimmed.length === 0) return 'other';
   // Ledger rule 4's own predicate. "ok" is not an attempt, and it is the reply R6 actually gave.
   if (isAgreementPhrase(trimmed)) return 'other';
+  // #49: asking to be told something is not an answer to mark, however many sentences it takes.
+  if (isBackgroundRequest(trimmed)) return 'question';
   // §4.4, and it is checked **before** the hint list: a turn that reads both ways ("I don't know,
   // any hint?") is a learner who has said they cannot answer, and the release is the safe side —
   // it fills nothing and it lowers the next question rather than refusing anything.

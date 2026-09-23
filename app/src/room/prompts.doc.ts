@@ -22,6 +22,7 @@
 import type { AgentProfile } from '../shared/types.js';
 import { teacherName, testerName } from './agents.js';
 import { VERDICT_OPENERS } from './flow.js';
+import { NO_REMARKS } from './prompts.js';
 
 // ── §4.2 row 1, first turn: Ellie answers ──────────────────────────────────
 
@@ -142,6 +143,18 @@ export function maxFollowupBlock(input: {
     'Not a comprehension check on Ellie’s sentence ("what did she mean by X?"), and not two',
     'questions. Two sentences at most, and the last one is the question.',
     'Do not answer it, and do not hint at the answer.',
+    '',
+    /**
+     * **Only what they now have** (#49). The 2026-09-23 run: Ellie answered what separates
+     * search-, SAT- and graph-based planning, the page (p. 7) says only *"Encode as SAT (CNF)"*, and
+     * Max asked the learner to write the CNF variables and clauses for the air-cargo problem — a
+     * construction neither the page nor the answer had given them. The learner had to ask for the
+     * format before they could begin, and then gave up.
+     */
+    '**Answerable from what they now have.** The learner must be able to answer from the page and',
+    'Ellie’s answer alone. If answering needs a method, a notation or a format that neither of them',
+    'gave the learner — building an encoding the page only names, a derivation the slide does not',
+    'show — it is too far: ask about what the page and the answer actually say.',
   ];
   /**
    * **Two interview findings, both about the same decay** (`findings.md` §6). One interviewee said
@@ -302,9 +315,10 @@ export function releaseBlock(input: {
   if (input.attempts > 0) {
     lines.push(
       'They did attempt it. One sentence on what their attempt already had of the answer — what they',
-      'had, not what they missed.',
+      'had, not what they missed. If nothing they wrote was an answer to it, leave that sentence out.',
     );
   }
+  lines.push(NO_REMARKS);
   if (input.cueClaim) lines.push(...cueCorrectionLines(input.cueClaim, ellie));
   lines.push(
     'No reproach, no "as I said", no sigh. A learner who expects to be marked down for giving up',
