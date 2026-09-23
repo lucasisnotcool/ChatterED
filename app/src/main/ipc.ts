@@ -331,9 +331,9 @@ export class AppService {
       set(SETTINGS_KEYS.cliOrchestratorModel, normaliseModelId(patch.orchestratorModel) ?? '');
     }
     if (patch.cliPathOverride !== undefined) set(SETTINGS_KEYS.cliPathOverride, (patch.cliPathOverride ?? '').trim());
-    // The pacing profile takes effect on the **next** room: the actor is handed its profile at
-    // construction, and swapping the rules under a sitting that has already counted turns
-    // against them would be the kind of silent change the pacing strip promises not to make.
+    // The pacing profile reaches the open room through `rebindActor` (#40): the learner choosing
+    // it is not a silent change, and holding it back until the sitting closed meant a switch to
+    // Demo did nothing for up to the inactivity gap, reopen or not.
     if (patch.flowProfile !== undefined) set(FLOW_PROFILE_SETTING, patch.flowProfile);
     if (patch.pacingStripSeen !== undefined) set(PACING_STRIP_SETTING, patch.pacingStripSeen ? '1' : '');
     if (patch.replySpeed !== undefined) set(REPLY_SPEED_SETTING, patch.replySpeed);
@@ -471,7 +471,8 @@ export class AppService {
   }
 
   /**
-   * Push the current Settings into the open actor: backend, models, roster, mode, reply speed.
+   * Push the current Settings into the open actor: backend, models, roster, mode, reply speed,
+   * Tester pacing (#40).
    *
    * Called from `openRoom`'s reuse path and straight after a successful `saveSettings`, so a
    * backend or model change takes effect on the **next turn** rather than on the next reopen.
@@ -488,6 +489,7 @@ export class AppService {
       roster: rosterFor(this.pairing(), resolved.models.agent),
       mode: modeFor(resolved.kind),
       replySpeed: this.replySpeed(),
+      flowProfile: this.flowProfile(),
     });
     // Switching to a live backend on an open room is the moment a `pending` pack becomes
     // draftable — and the moment a wrong `fixed` one can finally be replaced.

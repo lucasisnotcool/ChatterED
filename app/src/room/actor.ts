@@ -3000,8 +3000,20 @@ export class RoomActor {
      * through `this.#d.pack`, so one assignment is the whole swap.
      */
     pack?: ConceptPack;
+    /**
+     * **Settings ▸ Tester pacing, on the room that is open** (#40). The profile was read once, at
+     * construction, and the open sitting kept its own copy — so a switch to Demo mid-sitting did
+     * nothing until the sitting closed, reopen or not (`loadFlowState` restores the old profile
+     * with the sitting). The learner changing a setting is the one change here that is not silent,
+     * so it applies to the open sitting too: its counters are timestamps, not tied to a profile.
+     */
+    flowProfile?: FlowProfile;
   }): void {
     if (next.pack) this.#d.pack = next.pack;
+    if (next.flowProfile) {
+      this.#d.flowProfile = next.flowProfile;
+      if (this.#flow && this.#flow.closedAt === null) this.#flow = { ...this.#flow, profile: next.flowProfile };
+    }
     if (next.llm) this.#d.llm = next.llm;
     if (next.models) this.#d.models = next.models;
     if (next.roster) this.#d.roster = next.roster;
@@ -3013,6 +3025,7 @@ export class RoomActor {
       orchestrator_model: this.#models.orchestrator,
       mode: this.#d.config.mode,
       reply_speed: this.#replySpeed,
+      flow_profile: (this.#flow?.profile ?? this.#d.flowProfile ?? FLOW).name,
     });
   }
 

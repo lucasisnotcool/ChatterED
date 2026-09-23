@@ -26,6 +26,7 @@ import { ScriptedClient } from './llm/scripted.js';
 import { NOTES_SCRIPT } from './llm/script.notes.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 import { API_PLAN } from './llm/models.js';
+import { DEMO, FLOW } from './flow.js';
 
 const DOC = 'doc';
 const SPAN = 'span_0123456789ab';
@@ -856,3 +857,19 @@ describe('private threads with Ellie and Max', () => {
   });
 });
 
+// ── #40: Settings ▸ Tester pacing reaches the room that is open ────────────
+
+describe('rebind with a pacing profile', () => {
+  /**
+   * The profile used to be read at construction only, and the open sitting kept its own copy — so
+   * switching to Demo mid-sitting did nothing until the sitting closed, reopen or not.
+   */
+  it('applies to the open sitting, not only to the next one', async () => {
+    const h = build({ flowProfile: FLOW });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(h.actor.flowSnapshot().session?.profile.name).toBe(FLOW.name);
+
+    h.actor.rebind({ flowProfile: DEMO });
+    expect(h.actor.flowSnapshot().session?.profile.name).toBe(DEMO.name);
+  });
+});
