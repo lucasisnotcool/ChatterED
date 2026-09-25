@@ -332,6 +332,47 @@ describe('notes:docText', () => {
     expect(fx.actor.calls.filter((c) => c.method === 'assessDocText')).toHaveLength(1);
   });
 
+  it('does not assess the same paragraph again after a relaunch, and does assess an edit to it', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o2', { refs: [{ page: 2 }] })]);
+    const table = wire(fx);
+    const first = await table.call<{ assessed: boolean; threadId: string }>('notes:docText', payload);
+    expect(first.assessed).toBe(true);
+    // What the real actor's `assessDocText` leaves behind: the verbatim text as a doc_text message.
+    fx.store.messages.insert({
+      id: 'm_doc_text',
+      room_id: fx.roomId,
+      participant_id: 'p_student',
+      seq: 60,
+      body: CLAIM,
+      turn_decision_id: null,
+      model: null,
+      backend: null,
+      usage: null,
+      latency_target_ms: null,
+      ttft_actual_ms: null,
+      released_at: null,
+      promoted_from_whisper: null,
+      divider_cause: null,
+      disagreement: null,
+      anchor_id: first.threadId,
+      created_at: '2026-09-19T10:00:00.000Z',
+    });
+    fx.db.prepare("UPDATE messages SET kind = 'doc_text' WHERE id = 'm_doc_text'").run({});
+
+    // The relaunch: main's memory is gone, and the renderer reports every learner block again.
+    resetDocTextState();
+    const again = await table.call<{ assessed: boolean; reason: string | null }>('notes:docText', payload);
+    expect(again).toMatchObject({ assessed: false, reason: 'unchanged' });
+    expect(fx.actor.calls.filter((c) => c.method === 'assessDocText')).toHaveLength(1);
+
+    const edited = await table.call<{ assessed: boolean }>('notes:docText', {
+      ...payload,
+      text: `${CLAIM} So a zero eigenvalue still counts.`,
+    });
+    expect(edited.assessed).toBe(true);
+  });
+
   it('refuses a block no objective claims, and never creates a room for it', async () => {
     const fx = fakeHost({ doc: deck() });
     fx.setTree([objective('o1', { refs: [{ page: 1 }] })]);

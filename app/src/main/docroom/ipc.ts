@@ -32,7 +32,7 @@ import type { DocHost, IpcHandle } from '../dochost.js';
 import { threadsRepo, type ThreadRecord } from '../db/repos/threads.js';
 import { actorHas, docActor, requireActorMethod, type DocActor } from './actorport.js';
 import { notesDocRow, objectiveForBlock, openNotesDoc, pagesForBlock } from './doc.js';
-import { docTextGate } from './doctext.js';
+import { docTextGate, docTextHash } from './doctext.js';
 import { emitProgress } from './progress.js';
 
 /** How much of a highlighted span is kept as the thread's label and chip. */
@@ -49,12 +49,36 @@ function cap(text: string, at: number): string {
 /**
  * The state two pauses apart have to share (brief §6's "once they pause").
  *
- * Module level, keyed `docId:blockId`, and deliberately **not** persisted: it exists to stop one
- * paragraph being marked twice in thirty seconds, and after a restart the learner deserves a
- * fresh read of what they wrote. Bounded by the number of blocks in one document.
+ * Module level, keyed `docId:blockId`, and a **cache**, not the record: the record is the block's
+ * last `doc_text` message (`storedDocTextHash`). It used to be the only memory, so a relaunch
+ * forgot it; the renderer's watch reads every learner block as freshly changed on load, and every
+ * paragraph the learner had ever written was marked again — a second verdict, a second outcome
+ * row with a higher `attemptIndex` (read as a revision by `revisionStats`), a second Max turn.
+ * Bounded by the number of blocks in one document.
  */
 const lastAssessed = new Map<string, string>();
 const assessing = new Set<string>();
+
+/**
+ * The hash of the text this block was last marked on, from the database, so it survives a
+ * relaunch. The carrier is the synthetic learner message `assessDocText` writes into the block's
+ * span thread (`kind: 'doc_text'`, body = the verbatim text the gate hashed). Null when the file
+ * has no live room — a New Conversation retires the room, and a fresh read after that is right.
+ */
+async function storedDocTextHash(host: DocHost, fileId: string, blockId: string): Promise<string | null> {
+  const room = await host.roomForFile(fileId).catch(() => null);
+  if (!room) return null;
+  const thread = threadsRepo(host.db).forBlock(room.roomId, blockId);
+  if (!thread) return null;
+  const row = host.db
+    .prepare(
+      `SELECT body FROM messages
+        WHERE room_id = @room AND anchor_id = @anchor AND kind = 'doc_text'
+        ORDER BY seq DESC LIMIT 1`,
+    )
+    .get<{ body: string }>({ room: room.roomId, anchor: thread.threadId });
+  return row ? docTextHash(row.body.trim()) : null;
+}
 
 /** Test seam: forget what has been assessed. */
 export function resetDocTextState(): void {
@@ -348,6 +372,11 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
 
       const objectiveId = objectiveForBlock(host.objectivesTree(input.fileId), opened.doc, input.blockId);
       const key = `${input.docId}:${input.blockId}`;
+      // Only a block that could be marked pays for the lookup, and only once per process.
+      if (objectiveId && !lastAssessed.has(key)) {
+        const stored = await storedDocTextHash(host, input.fileId, input.blockId);
+        if (stored) lastAssessed.set(key, stored);
+      }
       const gate = docTextGate({
         text: input.text,
         objectiveId,
