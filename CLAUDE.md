@@ -46,8 +46,8 @@ use `gh api repos/:owner/:repo/issues/N --jq '.title, .body'`.
   Opus or lower; check `ListAgents` before a large batch so a nested fan-out doesn't
   block the next launch.
 - **Scope adjustments of 2026-09-13 (issues #11–#13).** ChatterED is a **macOS desktop app**
-  (DMG drag-and-drop install) with local file access, Firebase/Firestore (asia-southeast1) as
-  backend; distribution is **NUS-internal under an authorisation Lucas holds** — build to
+  (DMG drag-and-drop install) with local file access and local SQLite storage (Firebase/Firestore
+  dropped 2026-09-25, #10; `mirror.ts` stays a stub); distribution is **NUS-internal under an authorisation Lucas holds** — build to
   industry-grade quality, but do no go-to-market/business-model work. **Compliance, ethics and
   PDPA are handled by Lucas with the prof and TAs** (IRB exemption obtained) — do not spend
   research or design effort on them. Research focus: features and product design.
