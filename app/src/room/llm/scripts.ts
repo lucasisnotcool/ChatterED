@@ -51,7 +51,7 @@ export const SCRIPTS: Record<ScriptName, ScriptSource> = {
  * whichever you have; both are checked against the same set.
  */
 export const CRITIQUE1_FIXTURE = {
-  /** `A0282987E_LohZhengLucas_Critique1_slides (1).pdf`, and any copy of it. */
+  /** The Critique 1 slides PDF under its submitted file name, and any copy of it. */
   fileNamePattern: /critique1[_\s-]*slides/i,
   contentShas: new Set(['ac803b62d7b4d76926eaa1f5c80341a17729ea687a064278a8051a925005ea33']),
   /**

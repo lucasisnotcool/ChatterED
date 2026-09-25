@@ -99,10 +99,11 @@ export const BTW_SIDE_CHANNEL_V1: ConceptPack = {
  * text the learner is looking at.
  *
  * Lifted from `pdftotext -layout` over the committed PDF. It is **the deck's own words**: the
- * script is Lucas's critique replayed, not a story written around it.
+ * script is Lucas's critique replayed, not a story written around it. The author line on page 1
+ * is redacted to `[author]` because this string ships in the app.
  */
 export const CRITIQUE1_PAGE_TEXT: Record<number, string> = {
-  1: '/btw — Whispering with your agent. Collaborating with an agent, behind its back. Text-based · Task-oriented · Agentic. Lucas Loh / A0282987E. CS3249 / AY2627 S1 / Critique 1.',
+  1: '/btw — Whispering with your agent. Collaborating with an agent, behind its back. Text-based · Task-oriented · Agentic. [author]. CS3249 / AY2627 S1 / Critique 1.',
   2:
     'Official Docs. "Use /btw to ask a question about your current work without adding to the conversation history." — Claude Code documentation, ‘Side questions with /btw’ (accessed 31 Aug 2026). ' +
     'Goal: 1. Help users understand what the agent is doing, 2. without interrupting it, or affecting main session context. ' +

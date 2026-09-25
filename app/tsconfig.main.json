@@ -12,6 +12,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "sourceMap": true,
+    // Comments cite research docs and people by name; they stay in the source, not the app.
+    "removeComments": true,
     "outDir": "dist",
     "rootDir": "src",
     "types": ["node"]
