@@ -7,6 +7,7 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 import type { ChatterEdApi } from '../../shared/ipc.js';
+import { createMockTrial } from './mockTrial.js';
 /**
  * **The real classifier, imported and not copied** (issue #47, `attempt-first.md` §2.2).
  *
@@ -1037,6 +1038,7 @@ export function createMockBridge(): ChatterEdApi {
   };
 
   return {
+    trial: createMockTrial(),
     async bootstrap(): Promise<Bootstrap> {
       return {
         appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted',

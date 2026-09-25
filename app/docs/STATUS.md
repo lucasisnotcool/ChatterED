@@ -2424,3 +2424,31 @@ feedback does the same and sets `verdict: 'partial'`. **Not verified live:** thi
 driven against the CLI yet — the opener and the "question asked, not the objective" rule are prompt
 instructions, so the next live run should check that Sonnet actually leads with one of the three
 verdicts (a miss is safe: it reads as `partial`).
+
+## 2026-09-25 — the experimental trial: consent gate and research export
+
+The public DMG is an experimental trial. Everything below is **real, persisted and tested**; the
+consent wording is placeholder copy for Lucas to finalise with the prof and TAs.
+
+| Thing | Where | Notes |
+|---|---|---|
+| The notice, constants and contract | `src/shared/trial.ts` | `TRIAL_CONTACT_EMAIL`, `CONSENT_VERSION` (1), the notice sections, the `mailto:` builder, `TrialApi` and its channels. The one module to edit for wording |
+| Consent gate, renderer | `App.svelte`, `ResearchTrialConsent.svelte`, `lib/trialstore.svelte.ts` | Full window, before first run; `store.init()` does not run until agreed. Checkbox + **Agree and continue** / **Quit**. A bumped version re-prompts and says the notice changed |
+| Consent gate, main | `src/main/research/consent.ts`, one line in `AppService.register()`'s `handle` | Until the current version is agreed, every channel except `trial:status/accept/quit` and `app:logRendererError` throws `ConsentRequiredError`. Stored as three `settings` rows; the participant id (`P-` + 8 hex of a `randomUUID`) survives a re-prompt |
+| "Experimental trial" label | `TrialBadge.svelte` in the title bar | Opens the notice (`ResearchTrialLayer.svelte`) |
+| Settings ▸ Research trial | `ResearchTrialSettings.svelte` | Participant id, consent date and version, **View notice**, live counts of what an export holds, the export button |
+| The export | `src/main/research/export.ts`, `anonymise.ts`, `readable.ts`, `ipc.ts`; File ▸ **Export Research Data…** | Save dialog (default `~/Desktop/ChatterED-research-<id>-<YYYYMMDD>.zip`) → `VACUUM INTO` snapshot → anonymise the copy → readable JSON/JSONL/CSV → scrubbed logs → README + consent notice + manifest (sizes, sha256) → `ditto -c -k --norsrc --noextattr --noacl --keepParent` → temp dir removed. Progress pushed per step; result dialog with **Reveal in Finder** and **Email to the team** (a `mailto:` built in main from the participant id only) |
+| Anonymisation | `anonymise.ts` | Generic over `sqlite_master`, so a future table is covered: home dir → `~`, username (whole word, any case) → `<user>`, key-shaped strings → `[redacted-key]`, in every TEXT value. Secret-named settings rows deleted; every virtual table (the vault FTS index — a full-text copy of every file in the folder) dropped; `materials.extracted_text`, `materials.padding_text`, `message_refs.page_text` replaced with a length marker. One transaction, `secure_delete` on, `VACUUM` at the end; `findLeaks` re-walks the copy and the export aborts if anything trips the scrubber |
+| Excluded by construction | `export.ts` | Only the DB snapshot, `*.log` in the log dir and an allowlist of userData files (`ui-text-scale.json`) are read — PDFs, `notes-pages/` slide images, the API key file(s) and Chromium's caches are never touched |
+
+**Verified:** 1,738 tests (+24: `research/consent.test.ts`, `research/export.test.ts`, two menu
+cases), typecheck and lint clean, `npm run build` clean. The export test seeds a home path and
+username into known tables, an unknown rowid table and an unknown `WITHOUT ROWID` table, the logs and
+settings, then searches **every byte of every exported file** (the SQLite file included) for the
+username, the keys and the FTS text. A synthetic 156 MB database (50k messages, 20k FTS pages, a
+4 MB log) stages in 1.3 s and zips to 2.2 MB in 0.3 s; before the walk was put in one transaction it
+took 13 s.
+
+**Not verified:** the Electron half (`research/ipc.ts`: the save dialog, the progress pushes, Reveal
+in Finder, the `mailto:`) and the Svelte screens have not been driven in a running app — typecheck
+and build only. The export has not been run on a real install's database.

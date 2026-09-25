@@ -126,6 +126,9 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         { label: 'Regenerate Notes…', click: send('notes.regenerate') },
         { label: 'New Conversation…', click: send('chat.reset') },
         { type: 'separator' },
+        // The experimental trial (src/shared/trial.ts): a zip the learner emails, never an upload.
+        { label: 'Export Research Data…', click: send('research.export') },
+        { type: 'separator' },
         { role: 'close' },
       ],
     },

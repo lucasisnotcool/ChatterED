@@ -71,6 +71,8 @@ import { registerNotesIpc } from './notes/ipc.js';
 import { createDocPort } from './notes/docport.js';
 import { registerDocRoomIpc } from './docroom/ipc.js';
 import { registerProgressIpc } from './docroom/progress.js';
+// The experimental trial: consent gate and research export (src/shared/trial.ts).
+import { registerResearchIpc, trialGate } from './research/ipc.js';
 
 export interface IpcDeps {
   store: LocalStore;
@@ -1012,9 +1014,11 @@ export class AppService {
      * class and the stack. `ipc.error` keeps all three on this side. The error is still
      * re-thrown — the renderer's banner is a separate promise to the learner.
      */
+    const gate = trialGate(this.#d.store.settings);
     const handle = <T>(channel: string, fn: (payload: T) => unknown) => {
       ipcMain.handle(channel, async (_event, payload: T) => {
         try {
+          gate.assert(channel); // nothing but the trial's own channels before consent
           return await fn(payload);
         } catch (err) {
           log().error('ipc.error', {
@@ -1190,6 +1194,20 @@ export class AppService {
     });
     // Per-message cost and the Usage page (#42 items B and D) — `src/main/cost/ipc.ts`.
     registerCostIpc({ db: this.#d.db, sessionStart: () => this.#cost.sessionStart, handle });
+    // The experimental trial: consent and File ▸ Export Research Data… (`src/main/research/`).
+    registerResearchIpc({
+      db: this.#d.db,
+      settings: this.#d.store.settings,
+      userDataDir: this.#d.userDataDir,
+      logDir: this.#d.logDir,
+      appVersion: this.#d.appVersion,
+      backendInfo: () => {
+        const resolved = this.backend();
+        return { kind: resolved.kind, models: { ...resolved.models } };
+      },
+      getWindow: this.#d.getWindow,
+      handle,
+    });
 
     /**
      * Stop. The refusal is the product decision, so it is decided in the actor — which is the

@@ -359,7 +359,9 @@ export type AppCommand =
   | 'search.files'
   | 'settings.open'
   | 'notes.regenerate'
-  | 'chat.reset';
+  | 'chat.reset'
+  /** File ▸ Export Research Data… — handled by the trial store, not `store.runCommand`. */
+  | 'research.export';
 
 export interface RecentSession {
   roomId: string;

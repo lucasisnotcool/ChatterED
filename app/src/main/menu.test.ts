@@ -136,10 +136,18 @@ describe('the application menu', () => {
       'Find a File…',
       'Regenerate Notes…',
       'New Conversation…',
+      'Export Research Data…',
       'close',
     ]);
     click(template, 'File', 'Open Vault…');
     expect(sent).toEqual(['vault.open']);
+  });
+
+  /** The experimental trial: the export is a File-menu item, and it only asks the renderer. */
+  it('offers Export Research Data on the File menu', () => {
+    const { template, sent } = harness(true);
+    click(template, 'File', 'Export Research Data…');
+    expect(sent).toEqual(['research.export']);
   });
 
   /** 2026-09-23: both destructive, so both confirm in main, and neither has a key chord. */
@@ -266,6 +274,7 @@ describe('what the menu is allowed to say', () => {
       'settings.open',
       'notes.regenerate',
       'chat.reset',
+      'research.export',
     ]);
     for (const menu of ['File', 'View', 'help']) {
       for (const item of submenu(template, menu)) {

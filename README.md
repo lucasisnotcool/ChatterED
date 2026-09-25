@@ -61,6 +61,35 @@ cd app && npm install && npm run dev
 
 `app/README.md` §1–2 has prerequisites and the fixture deck to open.
 
+## Research trial & your data
+
+The public build is an **experimental trial**. On first launch — before anything else, first-run
+setup included — ChatterED shows a notice and asks you to agree to take part; if the notice changes,
+it asks again. Taking part means agreeing to share your anonymised usage data with the research
+team, but **nothing leaves your Mac on its own**: ChatterED has no server.
+
+- **What is shared, if you send it:** everything you do in the app — everything you type, the AI's
+  replies, the notes, your progress and quiz outcomes, usage and cost, the event log, the app's
+  diagnostic logs, and your settings (never API keys).
+- **What is not:** your lecture PDFs, their text and the slide images made from them (file names are
+  kept), API keys, and anything outside the app.
+- **How:** File ▸ **Export Research Data…** (or Settings ▸ Research trial) saves one `.zip` —
+  `ChatterED-research-<participant id>-<date>.zip`, on the Desktop by default — and **Email to the
+  team** opens a message to `lucasloh@u.nus.edu` (attach the file yourself). The zip is readable
+  JSON, CSV, text and a SQLite database, with a `README.txt` and a `manifest.json`: look through it
+  before you send it.
+- **Anonymisation:** your home folder becomes `~` and your macOS username `<user>`, everywhere;
+  key-shaped strings are redacted; you are identified only by a random participant ID (`P-xxxxxxxx`,
+  shown in Settings). What you type is included as typed.
+- **Separately,** using the app sends lecture content and what you type to the AI provider you pick,
+  under that provider's terms.
+- **Where it lives / deleting it:** `~/Library/Application Support/ChatterED` and
+  `~/Library/Logs/ChatterED`; delete both and the app to remove everything. To have data you have
+  sent deleted, email `lucasloh@u.nus.edu` with your participant ID.
+
+The notice's wording is in one place, `app/src/shared/trial.ts` (bump `CONSENT_VERSION` after any
+material change); the export is `app/src/main/research/`.
+
 ## Where decisions live
 
 Product decisions are argued on GitHub issues (`product`, `research`, milestoned to

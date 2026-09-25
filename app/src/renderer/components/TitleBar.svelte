@@ -15,6 +15,7 @@
   import { bridge } from '../lib/bridge.js';
   import { titleBarInset } from '../lib/chrome.js';
   import CostIndicator from './cost/CostIndicator.svelte';
+  import TrialBadge from './TrialBadge.svelte';
 
   let fullScreen = $state(false);
   $effect(() => bridge().onWindowState((s) => (fullScreen = s.fullScreen)));
@@ -30,6 +31,7 @@
        the only chrome present on every screen; the status bar renders inside the old room only.
        `.no-drag` is not optional — without it the button is part of the window's drag handle and
        never receives the click. -->
+  <TrialBadge />
   <CostIndicator />
 </header>
 

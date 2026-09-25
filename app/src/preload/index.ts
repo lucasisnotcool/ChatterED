@@ -6,8 +6,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
 import type { AppCommand, RoomEvent, VaultView, WindowState } from '../shared/types.js';
 import type { CostUpdate } from '../shared/cost.js';
+import { trialApi } from './trial.js';
 
 const api: ChatterEdApi = {
+  trial: trialApi,
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
   setApiKey: (key) => ipcRenderer.invoke(IPC.setApiKey, key),
   clearApiKey: () => ipcRenderer.invoke(IPC.clearApiKey),

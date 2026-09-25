@@ -16,8 +16,12 @@
   import TitleBar from './components/TitleBar.svelte';
   import Usage from './components/Usage.svelte';
   import { store } from './lib/store.svelte.js';
+  // The experimental trial (src/shared/trial.ts): consent comes before everything, first run too.
+  import ResearchTrialConsent from './components/ResearchTrialConsent.svelte';
+  import ResearchTrialLayer from './components/ResearchTrialLayer.svelte';
+  import { trial } from './lib/trialstore.svelte.js';
 
-  void store.init();
+  void trial.whenOpen().then(() => store.init());
 
   /**
    * ⌘K. Inside a room it is the whisper and Room.svelte owns it (product-design.md §C10 L1004);
@@ -35,6 +39,7 @@
    * about one document.
    */
   function onkeydown(e: KeyboardEvent): void {
+    if (trial.gate !== 'open') return;
     if ((e.metaKey || e.ctrlKey) && e.altKey && e.key.toLowerCase() === 'd') {
       e.preventDefault();
       store.debugOpen = !store.debugOpen;
@@ -55,6 +60,9 @@
 
 <svelte:window onkeydown={onkeydown} />
 
+{#if trial.gate !== 'open'}
+  <ResearchTrialConsent />
+{:else}
 <div class="app">
   <TitleBar />
   {#if store.screen === 'firstRun'}
@@ -94,6 +102,8 @@
 {/if}
 
 <NoticeBanner />
+<ResearchTrialLayer />
+{/if}
 
 <style>
   .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }

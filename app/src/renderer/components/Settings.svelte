@@ -21,6 +21,7 @@
     windowLine,
   } from '../lib/cost.js';
   import { COST_SCOPE_LABEL, totalTokens, type CostScope, type CostSlice } from '../../shared/cost.js';
+  import ResearchTrialSettings from './ResearchTrialSettings.svelte';
 
   const settings = $derived(store.settings);
 
@@ -536,6 +537,8 @@
         </div>
       </section>
     {/if}
+
+    <ResearchTrialSettings />
 
     <!--
       Diagnostics. Not a debug affordance for me: this is the two things a learner can do when
