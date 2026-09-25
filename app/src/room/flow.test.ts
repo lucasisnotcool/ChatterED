@@ -16,7 +16,11 @@ import {
   insideHorizon,
   markFeedbackGiven,
   feedbackVerdict,
+  feedbackUnmarked,
+  unmarkAttempt,
+  UNMARKED_OPENER,
   verdictOf,
+  verdict3Of,
   VERDICT_OPENERS,
   answerQuiz,
   answerShownOf,
@@ -808,5 +812,66 @@ describe('feedbackVerdict', () => {
     expect(verdictOf(markFeedbackGiven(quiz))).toBeNull();
     // A row from before the field is read as unmarked.
     expect(verdictOf({ ...quiz, verdict: 'done' as never })).toBeNull();
+  });});
+
+/**
+ * **#49's fallback.** A request for background that the classifier counted as an attempt gets a
+ * feedback turn opening `Not marked.`; code reads it and puts the question back as it was.
+ */
+describe('Not marked.', () => {
+  it('is read off the first line only, however it is emphasised', () => {
+    expect(UNMARKED_OPENER).toBe('Not marked.');
+    expect(feedbackUnmarked('Not marked. A CNF clause is an OR of literals…')).toBe(true);
+    expect(feedbackUnmarked('**Not marked.**\nA clause is…')).toBe(true);
+    expect(feedbackUnmarked('  not marked — here is the format.')).toBe(true);
+    expect(feedbackUnmarked('Not yet. p. 7 says otherwise.')).toBe(false);
+    expect(feedbackUnmarked('Partly there.\nNot marked as complete yet.')).toBe(false);
+    expect(feedbackUnmarked('')).toBe(false);
+    // Not one of the verdicts: it is not a mark at all.
+    expect(VERDICT_OPENERS).not.toContain(UNMARKED_OPENER);
+  });
+
+  it('un-counts a first attempt: nothing owed, nothing marked, the question still open', () => {
+    const asked = openQuiz({ quizMessageId: 'm1', elementId: 'R1' }, 0);
+    const counted = answerQuiz(asked, 'm2', { attempt: true, text: 'what is CNF? we never covered it' });
+    expect(feedbackDue(counted)).toBe(true);
+    const quiz = unmarkAttempt(counted);
+    expect(attemptsOf(quiz)).toBe(0);
+    expect(quiz.answerMessageId).toBeNull();
+    expect(quiz.answerText).toBeNull();
+    expect(feedbackDue(quiz)).toBe(false);
+    expect(verdictOf(quiz)).toBeNull();
+    expect(verdict3Of(quiz)).toBeNull();
+    expect(quizOpen(quiz)).toBe(true);
+    expect(qResolutionOf(quiz)).toBeNull();
+  });
+
+  it('puts back what the counted turn overwrote, when the caller kept it', () => {
+    let quiz = openQuiz({ quizMessageId: 'm1', elementId: 'R1' }, 0);
+    quiz = answerQuiz(quiz, 'm2', { attempt: true, text: 'the learner pays it' });
+    quiz = markFeedbackGiven(quiz, 'partial', 'partial');
+    const before = { answerMessageId: quiz.answerMessageId, answerText: quiz.answerText, feedbackGiven: quiz.feedbackGiven, verdict: quiz.verdict };
+    quiz = answerQuiz(quiz, 'm3', { attempt: true, text: 'can you show me the format' });
+    quiz = unmarkAttempt(quiz, before);
+    expect(attemptsOf(quiz)).toBe(1);
+    expect(quiz.answerMessageId).toBe('m2');
+    expect(quiz.answerText).toBe('the learner pays it');
+    expect(feedbackDue(quiz)).toBe(false);
+    // The composer is back on "your next attempt", as it was after the Partly there.
+    expect(verdictOf(quiz)).toBe('partial');
+    expect(verdict3Of(quiz)).toBe('partial');
+    expect(quizOpen(quiz)).toBe(true);
+  });
+
+  it('restores the earlier verdict from verdict3 when there is no snapshot, and never goes below zero', () => {
+    let quiz = openQuiz({ quizMessageId: 'm1', elementId: 'R1' }, 0);
+    quiz = answerQuiz(quiz, 'm2', { attempt: true });
+    quiz = markFeedbackGiven(quiz, 'partial', 'not_yet');
+    quiz = answerQuiz(quiz, 'm3', { attempt: true });
+    quiz = unmarkAttempt(quiz);
+    expect(attemptsOf(quiz)).toBe(1);
+    expect(verdictOf(quiz)).toBe('partial');
+    expect(feedbackDue(quiz)).toBe(false);
+    expect(attemptsOf(unmarkAttempt(openQuiz({ quizMessageId: 'm1', elementId: 'R1' }, 0)))).toBe(0);
   });
 });

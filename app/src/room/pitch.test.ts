@@ -104,7 +104,18 @@ describe('pitchBlock', () => {
   it('permits harder after a Well done', () => {
     const text = pitchBlock(pitchInputs({ objectiveId: 'obj_1', outcomes: [verdict('complete')], fill: 1 }));
     expect(text).toContain('You may go harder');
-    expect(text).toContain('apply it to a case');
+    expect(text).toContain('apply it to another case');
+  });
+
+  /**
+   * **#49: "harder" stays inside the deck.** It used to read *"a case the slide does not work
+   * through"*, and on 2026-09-23 that licensed a CNF encoding p. 7 only names.
+   */
+  it('keeps a harder question to what the deck or Ellie’s answer equips them for', () => {
+    const text = pitchBlock(pitchInputs({ objectiveId: 'obj_1', outcomes: [verdict('complete')], fill: 1 }));
+    expect(text).toContain('equip them');
+    expect(text).toContain('no method, notation or format the deck only names');
+    expect(text).not.toContain('does not work through');
   });
 
   it('says there are no fixed rungs, which is §4.5’s own first sentence', () => {

@@ -145,6 +145,11 @@ Ellie's answer to a new learner question simply stands, and Max's open question 
   alone. The first question on an objective asks for own words or telling things apart, never a
   construction the page only names. The pitch's "fill" is that objective's fill, not the file's.
 
+- **Amended 2026-09-25 (#49): a fallback when the classifier misses.** Max's feedback turn may open
+  `Not marked.` instead of a verdict when the learner's turn asked for background and tried no answer.
+  He gives it in at most 80 words and re-asks. Code un-counts the attempt (no outcome, no fill, no
+  notes edit), and the question stays open.
+
 All of the above are rules in the orchestrator, decided in code before any model is consulted, as
 today. The model writes the words of a turn; it never decides whether an answer is due.
 
@@ -183,6 +188,9 @@ releases, and the objective's current fill) and pitches freely, with two hard in
 `give_up`, the next question on that objective is **easier** (recall, or one part of the idea);
 after a *Well done*, the next may be harder (explain why, apply to a case). The pitch inputs are a
 pure function (`room/pitch.ts`), unit-tested; the wording is the model's.
+*Clarified 2026-09-25 (#49):* "harder" stays inside the deck. The case must be one the deck's own
+examples or Ellie's answer equip the learner for, never a method, notation or format the page only
+names.
 
 ### 4.6 Size
 

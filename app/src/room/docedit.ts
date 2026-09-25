@@ -41,7 +41,7 @@ import type {
 } from '../shared/doc/types.js';
 import { DRAFT_BLOCK_JSON_SCHEMA, validateDrafts } from '../shared/doc/validate.js';
 import type { DocPort } from './docport.js';
-import { VERDICT_OPENERS } from './flow.js';
+import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 import { extractJson } from './orchestrator.js';
 import type { LLMClient, LlmRequest } from './llm/types.js';
 
@@ -578,7 +578,8 @@ export function resolveNotesPrompt(input: ResolveNotesInput): string {
 export function notesFromTurn(turn: string | null, names: readonly string[] = ['Ellie', 'Max']): string {
   if (!turn) return '';
   let text = turn.trim();
-  for (const opener of VERDICT_OPENERS) {
+  // `Not marked.` (#49) is never resolved into the notes, but a fallback must not be the one to leak it.
+  for (const opener of [...VERDICT_OPENERS, UNMARKED_OPENER]) {
     const bare = opener.replace(/\.$/, '');
     text = text.replace(new RegExp(`^[\\s*_>]*${bare}\\.?[\\s*_]*`, 'i'), '');
   }
@@ -596,7 +597,7 @@ export function notesFromTurn(turn: string | null, names: readonly string[] = ['
     // visible" is content in a deck about side channels.
     .filter((sentence) => !/\b(attempt|answer(ed)? (it|this)|(fair|good|reasonable|this|that) question|the question (also )?asked)\b/i.test(sentence))
     // Marking, even when it is not addressed to anyone: "is reasonable", "that part is missing".
-    .filter((sentence) => !/\b(reasonable|missing|not quite|close but|correctly|well done|partly there|not yet)\b/i.test(sentence));
+    .filter((sentence) => !/\b(reasonable|missing|not quite|close but|correctly|well done|partly there|not yet|not marked)\b/i.test(sentence));
   const out = kept.join(' ').trim();
   return out.split(/\s+/).filter((w) => w.length > 0).length >= 8 ? out : '';
 }

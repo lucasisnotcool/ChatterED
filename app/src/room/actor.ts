@@ -101,8 +101,10 @@ import {
   markFeedbackGiven,
   cueGiven,
   cueMistakeToCorrect,
+  feedbackUnmarked,
   feedbackVerdict,
   feedbackVerdict3,
+  unmarkAttempt,
   qResolutionOf,
   verdictOf,
   verdict3Of,
@@ -643,6 +645,12 @@ export class RoomActor {
   #nextQuestionId: string | null = null;
   /** Which door the release in flight came through, read by `#noteTurnForFlow` when it lands. */
   #releaseBy: 'give_up' | 'pass' | 'closure' | null = null;
+  /**
+   * **What the last counted attempt overwrote** (#49 fallback). A feedback turn that opens
+   * `Not marked.` puts it back (`flow.unmarkAttempt`), so the question reads as it did before a
+   * request for background was counted as a try.
+   */
+  #beforeAttempt: Pick<PendingQuiz, 'answerMessageId' | 'answerText' | 'feedbackGiven' | 'verdict'> | null = null;
   /** Cancels the closure tick. Null while the actor is stopped. */
   #stopClosureTick: (() => void) | null = null;
   /**
@@ -944,6 +952,7 @@ export class RoomActor {
        * Max's question on the strength of the learner asking something else.
        */
       if (this.#pendingQuiz && origin !== 'ask') {
+        this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',
           text: body,
@@ -1989,6 +1998,7 @@ export class RoomActor {
       this.#lastMention = null;
       this.#mentionRest = null;
       if (this.#pendingQuiz) {
+        this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',
           text: body,
@@ -3551,16 +3561,33 @@ export class RoomActor {
         now,
       );
       this.#nextQuestionId = null;
+      this.#beforeAttempt = null;
       // The list the next question prompt reads, so a session cannot circle (findings.md §6).
       this.#questionsAsked = [...this.#questionsAsked, text.trim()].filter((q) => q.length > 0).slice(-8);
       this.#emitThread(this.#turnAnchorId);
     }
-    if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
+    /**
+     * **`Not marked.` — the learner asked for something rather than answering** (#49 fallback,
+     * `collab-doc.md` §4.2, 2026-09-25). The classifier counted it as an attempt; the model, which
+     * reads the turn, says it was not one. So it is un-counted: no verdict, no outcome row (so no
+     * progress and nothing for the pitch to read as a *Not yet*), nothing to the notes
+     * (`#maybeDocEdit`), and the question stays open for the try that follows the background.
+     */
+    if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz && feedbackUnmarked(text)) {
+      this.#pendingQuiz = unmarkAttempt(this.#pendingQuiz, this.#beforeAttempt);
+      this.#beforeAttempt = null;
+      this.#event('challenger', 'quiz.attempt_unmarked', {
+        element_id: decision.targetElementId,
+        attempts: attemptsOf(this.#pendingQuiz),
+      });
+      this.#emitThread(this.#anchorOfQuiz(this.#pendingQuiz));
+    } else if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz) {
       // Rowland 2014's constraint is discharged only when the feedback turn actually landed. It is
       // per *attempt* since #47: a second attempt re-opens it (`flow.answerQuiz`).
       // And the turn's first line is read once, for the verdict (`flow.feedbackVerdict`): it is
       // what tells the composer to ask for the next attempt or to say the question is done.
       const answered = this.#pendingQuiz.answerMessageId;
+      this.#beforeAttempt = null;
       this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text), feedbackVerdict3(text));
       /**
        * **One outcome row per verdict** (#48, brief §6). The progress bar is a pure function of
@@ -3934,6 +3961,8 @@ export class RoomActor {
   async #maybeDocEdit(decision: TurnDecision, text: string, messageId: string, turnId: string, anchorId: string | null): Promise<void> {
     if (this.#retired || this.#docPort.docId() === null || this.#docPort.frozen()) return;
     if (decision.moveType === 'peer_guess' || decision.moveType === 'max_prompt') return;
+    // #49: a `Not marked.` turn marked nothing — no suggestion on the learner's text, no resolution.
+    if (decision.moveType === 'quiz_feedback' && feedbackUnmarked(text)) return;
     const deps = this.#docEditDeps(anchorId, turnId);
     const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);
     const quiz = this.#pendingQuiz;
@@ -4064,6 +4093,18 @@ export class RoomActor {
     }
   }
 
+  /** Keep what a counted attempt is about to overwrite, for `Not marked.` to put back. */
+  #noteBeforeAttempt(): void {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null || this.#lastLearnerTurn !== 'attempt') return;
+    this.#beforeAttempt = {
+      answerMessageId: quiz.answerMessageId,
+      answerText: quiz.answerText ?? null,
+      feedbackGiven: quiz.feedbackGiven,
+      verdict: quiz.verdict ?? null,
+    };
+  }
+
   /** Mark the open question as resolved in the doc, if it is still the one that was read. */
   #claimResolution(quiz: PendingQuiz): void {
     const live = this.#pendingQuiz;
@@ -4164,7 +4205,7 @@ export class RoomActor {
        * to find the slide in. Same block the Teacher reads, same resolver, so the quote he offers
        * and the slide the learner is looking at are the same text.
        */
-      const where = this.#whereNote();
+      const where = this.#whereNote(decision);
       return (
         [where, quiz, ...this.#docExtras(decision)]
           .filter((b): b is string => typeof b === 'string' && b.length > 0)
@@ -4181,7 +4222,7 @@ export class RoomActor {
     if (decision.moveType === 'teach_objective' && this.#teachTarget) {
       blocks.push(teachObjectiveBlock(this.#teachTarget));
     }
-    const where = this.#whereNote();
+    const where = this.#whereNote(decision);
     if (where) blocks.push(where);
     if (decision.role === 'peer') blocks.push(this.#learnerNote());
     const taught = this.#taughtNote(decision);
@@ -4200,7 +4241,7 @@ export class RoomActor {
    */
   #docTurnNote(decision: TurnDecision): string | undefined {
     const blocks: string[] = [];
-    const where = this.#whereNote();
+    const where = this.#whereNote(decision);
     const mention = this.#mentionNote();
     const notes = this.#learnerNotesNote();
 
@@ -4410,7 +4451,7 @@ export class RoomActor {
   }
 
   /** Which slide this thread is on, for the Teacher (#41). Null when nothing resolved one. */
-  #whereNote(): string | undefined {
+  #whereNote(decision?: TurnDecision): string | undefined {
     const context = this.#turnAnchorId === null ? undefined : this.#askContext.get(this.#turnAnchorId);
     if (!context) return undefined;
     return whereBlock({
@@ -4418,6 +4459,8 @@ export class RoomActor {
       label: context.label ?? null,
       page: context.page ?? null,
       passageText: context.passageText,
+      // #49: Max's question stays inside the deck; his clarification and feedback may reach out.
+      forTester: decision?.role === 'challenger' && decision.moveType === 'quiz',
     });
   }
 

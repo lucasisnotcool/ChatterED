@@ -145,6 +145,69 @@ describe('classifyLearnerTurn', () => {
   });
 
   /**
+   * **#49, widened (2026-09-25).** Replaying realistic phrasings through the first cut found most
+   * still marked *Not yet*, and two worse: *"I don't know how SAT encoding works"* and *"I don't know
+   * SAT format"* were give-ups, so asking for the format released the answer and closed the
+   * question. Read clause by clause, after the fillers, `?` optional.
+   */
+  it('reads the realistic phrasings of a request for background as a question', () => {
+    for (const line of [
+      "What's CNF? We never covered it.",
+      'wait what is a fluent',
+      "I don't know how SAT encoding works",
+      "I don't know SAT format",
+      // The issue's own line, as it was pasted: an ellipsis, not a question mark.
+      'Can you give me example of how SAT instances are encoded… I am not familiar with SAT format',
+      'what do you mean by frame axioms',
+      'Sorry, what do you mean by frame axioms?',
+      'What does that mean',
+      'Before I try, what does a CNF clause look like?',
+      // `because` explains the request; it is not a candidate answer.
+      "I'm not familiar with CNF because we didn't cover it",
+      'how does SAT encoding work',
+      'what is a sat based planner',
+      'could you explain the format first',
+      'idk what a fluent is',
+      "I don't understand the question",
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('question');
+    }
+  });
+
+  it('still reads the give-ups as give-ups, and a hint request as a hint request', () => {
+    for (const line of [
+      "I don't know",
+      'just tell me the answer',
+      'no idea',
+      "I don't know how to do this",
+      'I have no idea how to do this',
+      "I don't know what the answer is",
+      "I'm lost",
+      'idk',
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('give_up');
+    }
+    expect(classifyLearnerTurn('can you give me a hint')).toBe('other');
+    expect(classifyLearnerTurn('can you help me out here')).toBe('other');
+  });
+
+  it('still reads an answer as an attempt, even one that asks something first or says because', () => {
+    for (const line of [
+      "I think it's because the clauses encode preconditions",
+      'Each action at step t implies its preconditions at step t, because the clauses encode them',
+      // A question answered in the same turn is an answer.
+      "What's CNF? It's the clause form, so each action becomes a clause",
+      // A wh- word can open an answer: no verb after it, or a second one.
+      'what the learner gives up is privacy',
+      'what is lost is the privacy of the learner',
+      'is it the transition model',
+      'the learner pays it, when they decide to forward',
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('attempt');
+    }
+  });
+
+  /**
    * *"can you help me out here"* (the same run): nothing to mark, and not a request for the
    * answer. `other` draws `rule:quiz_nudge` — one hint, no answer — which is the turn it wanted.
    */

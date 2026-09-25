@@ -160,10 +160,13 @@ function contentWords(body: string): string[] {
   return body.trim().split(/\s+/).filter((w) => /[a-z0-9]/i.test(w));
 }
 
-/** Sentences, for the "one sentence" half of the `question` rule. */
+/**
+ * Sentences, for the "one sentence" half of the `question` rule. An ellipsis ends one too: the
+ * #49 line was pasted as *"…are encoded… I am not familiar with SAT format"*.
+ */
 function sentences(body: string): string[] {
   return body
-    .split(/[.!?]+/)
+    .split(/[.!?\u2026]+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
@@ -220,19 +223,93 @@ function matchesAny(body: string, phrases: readonly AnswerRequestPhrase[]): bool
  */
 const BACKGROUND_TURN_WORDS = 45;
 
-/** An opener that asks to be told or shown something. Anchored to a sentence start. */
-const TELL_ME =
-  /^(please |so |ok(ay)? |hmm |sorry |but )?(can|could|would|will) you (please )?(give|show|explain|tell|walk|define|remind|go over|describe|clarify)\b|^(please )?(explain|define|remind me|show me|walk me through|give me an? (example|explanation))\b/;
+/**
+ * **What a request for background looks like** (#49, widened 2026-09-25).
+ *
+ * The first cut matched three phrasings, and replaying eighteen realistic ones through it found
+ * thirteen still marked *Not yet* — *"What's CNF? We never covered it."*, *"wait what is a
+ * fluent"*, *"Sorry, what do you mean by frame axioms?"* — and two that were worse: *"I don't know
+ * how SAT encoding works"* and *"I don't know SAT format"* were **give-ups**, so the learner who
+ * asked for the format was handed the answer and the question was closed. So the rule is now read
+ * clause by clause, after the fillers a learner opens with, and in two strengths:
+ *
+ *  - **strong** — a clause that asks to be told or shown something (`TELL_ME`), or a phrase that
+ *    says which idea they are missing (`NOT_FAMILIAR`). Either makes the turn a request, unless it
+ *    also carries a candidate answer.
+ *  - **weak** — *"what is X"*, with or without its `?`. That is a request only when every sentence
+ *    of the turn is asking something: *"What's CNF? It's the clause form, so each action is a
+ *    clause"* is a learner answering their own question, and that is an attempt.
+ *
+ * A bare *"I don't know"*, *"no idea"*, *"I don't know how to do this"* match neither and are
+ * still give-ups: they say the learner is done, not what they are missing.
+ */
 
-/** Saying which term they are missing. Anywhere in the turn. */
-const NOT_FAMILIAR =
-  /\b(i'?m|i am) (not familiar|unfamiliar|not sure what)\b|\bi (don'?t|do not) (know|understand) what\b|\bnever (heard|seen|learn(ed|t)) (of |about )?\b|\bwhat (is|are|does) (a |an |the )?[\w-]+( [\w-]+)?( mean)?\s*\?/;
+/** What a learner opens a clause with before the part that says what they want. Stripped. */
+const FILLER =
+  /^(?:(?:please|pls|so|ok(?:ay)?|hmm+|sorry|but|wait|um+|uh+|oh|and|actually|also|hey|first|quick question|before i (?:try|answer|attempt|start)(?: (?:it|this|that))?)\b[\s,]*)+/;
+
+/** A turn's clauses, fillers stripped: sentences, then commas, semicolons, colons and dashes. */
+function clauses(body: string): string[] {
+  return sentences(body)
+    .flatMap((s) => s.split(/\s*(?:[,;:]|\s-+\s|[—–])\s*/))
+    .map((c) => c.replace(FILLER, '').trim())
+    .filter((c) => c.length > 0);
+}
+
+/** A clause that asks to be told or shown something. Anchored to the clause, after its fillers. */
+const TELL_ME = new RegExp(
+  [
+    // "can you give me example of how…", "could you just explain…", "would you walk me through…"
+    String.raw`^(?:can|could|would|will) you (?:please |pls |just |maybe |quickly |briefly )?(?:give|show|explain|tell|walk|define|remind|go (?:over|through)|describe|clarify|elaborate|expand|unpack|break (?:it |that |this )?down|spell (?:it |that |this )?out)\b`,
+    String.raw`^(?:can|could|may) i (?:get|have|see) (?:an? |some )?(?:example|explanation|definition|refresher|primer|overview|background)`,
+    String.raw`^(?:explain|define|describe|clarify|elaborate|remind me|show me|walk me through|give me (?:an? |some )?(?:example|explanation|definition|quick|brief|refresher|primer|overview|background|idea)|tell me (?:what|how|about|more about))\b`,
+    String.raw`^i(?:'d| would) like (?:an? |some |to (?:see|know|understand) )`,
+    String.raw`^i need (?:an? |some )?(?:example|explanation|refresher|background|definition)`,
+  ].join('|'),
+);
+
+/** Saying which idea they are missing. Anywhere in the turn. */
+const NOT_FAMILIAR: readonly RegExp[] = [
+  /\b(?:not (?:familiar|sure what)|unfamiliar)\b/,
+  // "I don't know how SAT encoding works", "idk what a fluent is" — but not "…how to do this",
+  // "…what it is", "…what the answer is": those are a learner who is done, not one missing a term.
+  /(?:\bi (?:don'?t|dont|do not) (?:know|understand|get|remember|recall)|\bidk) (?:what|how|why|which|where|when)\b(?! (?:to|i|i'm|im|it|it's|its|the answer)\b)/,
+  // "I don't know SAT format", "I don't know anything about CNF"
+  /\bi (?:don'?t|dont|do not) (?:know|remember|recall) (?:(?:anything|much) about (?!(?:this|it|that)\b)|(?:the |this |that )?(?:[\w-]+ ){0,2}(?:format|notation|syntax|encoding|representation|definition|term|terminology|formula)s?\b)/,
+  /\bi (?:don'?t|dont|do not) (?:understand|get) (?:the |your |this |that )?(?:question|term|word|notation|format|syntax|symbol)s?\b/,
+  // "we never covered it", "I haven't seen CNF", "we didn't learn that"
+  /\b(?:never|haven'?t|havent|have not|hasn'?t|didn'?t|didnt|did not) (?:heard|seen|learn(?:ed|t)?|covered?|done|used|studied|come across|taught)\b/,
+  /\b(?:not|wasn'?t|weren'?t|never) (?:covered|taught|explained)\b/,
+  /\bwhat do you mean\b/,
+  /\bwhat (?:does|did) (?:that|this|it|you) mean\b/,
+  /\bwhat are you asking\b/,
+];
+
+/**
+ * *"what is X"*, *"what's X"*, *"what does X look like"* — a short clause, `?` optional. A second
+ * copula after the opener makes it a statement: *"what is lost is the privacy"* is an answer.
+ */
+const WHAT_IS = /^(?:what'?s|whats|what (?:is|are|does|do)|who (?:is|are)) (?:an? |the )?[\w()'-]+(?: [\w()'-]+){0,3}$/;
+const SECOND_COPULA = /^\S+ \S+ .*\b(?:is|are|was|were)\b/;
+
+/** Any clause that opens as a question, for the weak rule's "every sentence is asking". */
+const ASKS = /^(?:what|why|how|which|where|who|when|does|do|is|are|can|could|would)\b/;
 
 /**
  * Words that mark a candidate answer rather than a request: the learner is putting something up
- * to be marked, and that is an attempt however it is phrased.
+ * to be marked, and that is an attempt however it is phrased. **Not `because`** (#49): *"I'm not
+ * familiar with CNF because we didn't cover it"* explains the request, it does not answer anything.
  */
-const CANDIDATE = /\b(i think|i guess|i'd say|i would say|my answer|maybe it'?s|probably|because|so it'?s|it'?s like)\b/;
+const CANDIDATE = /\b(i think|i guess|i'd say|i would say|my answer|maybe it'?s|probably|so it'?s|it'?s like)\b/;
+
+const HINT_WORD = /\b(?:hint|clue|tip)s?\b/;
+
+/** Asking to be told the answer itself is not asking for background. */
+const ASKS_FOR_ANSWER = /\b(?:the|your|model) (?:answer|solution)\b/;
+
+function isWhatIs(clause: string): boolean {
+  return WHAT_IS.test(clause) && !SECOND_COPULA.test(clause);
+}
 
 export function isBackgroundRequest(body: string): boolean {
   const normalised = normalise(body);
@@ -240,9 +317,19 @@ export function isBackgroundRequest(body: string): boolean {
   if (contentWords(normalised).length > BACKGROUND_TURN_WORDS) return false;
   // "show me the answer" asks to be shown something too, and it is still R6's give-up.
   if (isAnswerRequest(normalised)) return false;
-  if (CANDIDATE.test(normalised) || HEDGED_ANSWER.test(normalised) || OFFERS_ALTERNATIVES.test(normalised)) return false;
-  const opensWithAsk = sentences(normalised).some((sentence) => TELL_ME.test(sentence));
-  return opensWithAsk || NOT_FAMILIAR.test(normalised);
+  const parts = clauses(normalised);
+  if (CANDIDATE.test(normalised) || parts.some((c) => HEDGED_ANSWER.test(c))) return false;
+  // "can you give me a hint" asks for a way in, not for background: that is `rule:quiz_nudge`'s.
+  // "could you explain the answer" asks for the answer, however politely: that is a give-up's.
+  const tellMe = parts.some((c) => TELL_ME.test(c) && !HINT_WORD.test(c) && !ASKS_FOR_ANSWER.test(c));
+  if (tellMe || NOT_FAMILIAR.some((re) => re.test(normalised))) return true;
+  // The weak rule: a "what is X" turn in which nothing is anything but a question.
+  if (OFFERS_ALTERNATIVES.test(normalised) || !parts.some(isWhatIs)) return false;
+  return sentences(normalised).every((sentence) => {
+    const own = clauses(sentence);
+    // A sentence that is all filler ("Sorry.") asks nothing and answers nothing.
+    return own.length === 0 || own.some((c) => ASKS.test(c) || isWhatIs(c));
+  });
 }
 
 export function isHintRequest(body: string): boolean {
@@ -257,6 +344,21 @@ export function isAnswerRequest(body: string): boolean {
 /** §4.4: R6's asks plus the don't-know and frustration phrasings. The superset of the above. */
 export function isGiveUp(body: string): boolean {
   return matchesAny(body, GIVE_UP_PHRASES);
+}
+
+/**
+ * **A question typed without its `?`** (#49): *"how does SAT encoding work"*, *"wait why is it
+ * convex"*. Only a *wh-* opener followed by its verb, and only in a short turn, because a *wh-*
+ * word can also open an answer — *"what the learner gives up is privacy"* has no verb after
+ * *what*, and *"what is lost is the privacy"* has a second one — and a yes/no opener without its
+ * `?` is too often a statement to read as one.
+ */
+const WH_ASK =
+  /^(?:what|why|how|which|where|who|when)(?:'s| (?:is|are|was|were|does|do|did|can|could|should|would|will|exactly|about|if|happens|makes))\b/;
+const UNMARKED_QUESTION_WORDS = 12;
+
+function unmarkedQuestion(asked: string, words: number): boolean {
+  return words <= UNMARKED_QUESTION_WORDS && WH_ASK.test(asked) && !SECOND_COPULA.test(asked);
 }
 
 /**
@@ -277,15 +379,17 @@ export function classifyLearnerTurn(body: string): LearnerTurnKind {
   if (isHintRequest(trimmed)) return 'other';
 
   const words = contentWords(trimmed);
-  const endsInQuestion = /\?\s*$/.test(trimmed);
   const normalised = normalise(trimmed);
+  // "wait, what does T mean?" opens on the question once the filler is off.
+  const asked = normalised.replace(FILLER, '').trim();
+  const endsInQuestion = /\?\s*$/.test(trimmed) || unmarkedQuestion(asked, words.length);
   if (
     endsInQuestion &&
     words.length <= SHORT_TURN_WORDS &&
     sentences(trimmed).length === 1 &&
     !CONFIRMATION_TAG.test(trimmed) &&
-    INTERROGATIVE.test(normalised) &&
-    !HEDGED_ANSWER.test(normalised) &&
+    INTERROGATIVE.test(asked) &&
+    !HEDGED_ANSWER.test(asked) &&
     !OFFERS_ALTERNATIVES.test(normalised)
   ) {
     return 'question';

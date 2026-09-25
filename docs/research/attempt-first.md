@@ -108,6 +108,10 @@ is never asked whether to answer its own question.
 | `question` | **`rule:quiz_clarify`** | Max, **`quiz_clarify`** | Answers the clarification without answering the quiz question. Quiz stays open; not an attempt. |
 | `other` | `rule:quiz_nudge` | Max, `quiz_hint` | One content-free line from the pool, or a hint. |
 
+*2026-09-25 (#49):* a turn the classifier counts as an `attempt` but that only asks for background
+can be handed back by the feedback turn's `Not marked.` opener; code then un-counts it
+(`collab-doc.md` §4.2).
+
 `PendingQuiz` gains `attempts: number` and `answerShown: boolean`; `answerQuiz()` increments only on
 an `attempt`. `feedbackDue` is unchanged in meaning: it becomes true only after an `attempt`.
 

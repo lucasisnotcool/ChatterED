@@ -57,8 +57,14 @@ function docPort(over: Partial<DocPort> = {}) {
   return { port, edits, outcomes, outline };
 }
 
+/**
+ * A reply to put in place of the script's for one request, or null to play the script. How a test
+ * gives Max a turn the script does not have — `Not marked.` (#49) — without a network.
+ */
+type Reply = (request: LlmRequest) => string | null;
+
 /** A client that answers the doc-edit schema call, and plays the notes script for everything else. */
-function client(docEdit: Record<string, unknown> | null = null): LLMClient & { requests: LlmRequest[] } {
+function client(docEdit: Record<string, unknown> | null = null, reply: Reply = () => null): LLMClient & { requests: LlmRequest[] } {
   const scripted = new ScriptedClient({ script: NOTES_SCRIPT, roster: rosterFor('ellie_peer') });
   const requests: LlmRequest[] = [];
   return {
@@ -66,6 +72,11 @@ function client(docEdit: Record<string, unknown> | null = null): LLMClient & { r
     requests,
     async complete(request, onDelta, signal) {
       requests.push(request);
+      const own = reply(request);
+      if (own !== null) {
+        onDelta?.(own);
+        return { text: own, model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
+      }
       if (request.meta.scope === 'docedit') {
         const body = JSON.stringify(docEdit ?? { edit: 'none', points_to: 'b_bbb', why: 'the notes already say it' });
         return { text: body, model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
@@ -79,11 +90,11 @@ function client(docEdit: Record<string, unknown> | null = null): LLMClient & { r
   };
 }
 
-function build(over: Partial<RoomActorDeps> = {}, docEdit: Record<string, unknown> | null = null) {
+function build(over: Partial<RoomActorDeps> = {}, docEdit: Record<string, unknown> | null = null, reply?: Reply) {
   const seeded = seedRoom();
   const clock = new FakeClock();
   const events: RoomEvent[] = [];
-  const llm = client(docEdit);
+  const llm = client(docEdit, reply);
   const doc = docPort();
   let n = 0;
   const actor = new RoomActor({
@@ -118,6 +129,7 @@ async function settle<T>(clock: FakeClock, promise: Promise<T>, ms = 120_000): P
 const decisions = (h: ReturnType<typeof build>) => h.store.turnDecisions.forRoom(h.roomId);
 const rules = (h: ReturnType<typeof build>) => decisions(h).map((d) => d.decided_by);
 const bodies = (h: ReturnType<typeof build>) => h.store.messages.forRoom(h.roomId).map((m) => m.body);
+const flat = (text: string) => text.replace(/\s+/g, ' ');
 const prompts = (h: ReturnType<typeof build>) =>
   h.llm.requests.filter((r) => r.meta.scope === 'group').map((r) => r.messages.at(-1)!.content);
 
@@ -283,6 +295,30 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
   });
 
   /** Interview finding (`findings.md` §6): the answer names the slide it is about. */
+  /**
+   * **#49: Max's follow-up stays inside the deck.** The page block Ellie reads lifts the fence
+   * (*"or your own knowledge of the field, use it"*); Max's question gets the fenced variant.
+   */
+  it('gives Max the fenced page block for his follow-up, and Ellie the open one', async () => {
+    const h = build();
+    const onPage7 = {
+      scope: 'segment' as const,
+      passageText: 'Encode as SAT (CNF). Solved by SATPlan and other SAT planners.',
+      outline: '',
+      retrievedPages: [],
+      scopeShown: 'p. 7',
+      page: 7,
+    };
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC, onPage7));
+    expect(rules(h)).toEqual(['rule:ellie_answers', 'rule:max_followup']);
+    const [ellie, max] = prompts(h).map(flat);
+    expect(ellie).toContain('Encode as SAT (CNF)');
+    expect(ellie).toContain('your own knowledge of the field');
+    expect(max).toContain('Encode as SAT (CNF)');
+    expect(max).not.toContain('your own knowledge of the field');
+    expect(max).toContain('your question must be answerable from');
+  });
+
   it('asks Ellie to name the page, so three rounds later it is still anchored', async () => {
     const h = build();
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
@@ -479,6 +515,68 @@ describe('releasing and closing a question', () => {
     expect(verdicts[0]!.verdict).toBe('partial');
     expect(verdicts[0]!.source).toBe('chat');
     expect(verdicts[0]!.messageId).toBeTypeOf('string');
+  });
+
+  /**
+   * **#49: a request for background is not an answer, and not a give-up.** Before the classifier
+   * was widened, *"I don't know how…"* was a give-up — the learner asking for the format was handed
+   * the answer and the question closed.
+   */
+  it('clarifies a request for background, and neither marks it nor releases the answer', async () => {
+    const h = await withOpenQuestion();
+    await settle(h.clock, h.actor.sendMessage("I don't know how forwarding works here, we never covered it", DOC));
+
+    expect(rules(h).at(-1)).toBe('rule:quiz_clarify');
+    expect(rules(h)).not.toContain('rule:answer_released');
+    const quiz = h.actor.pendingQuizView()!.quiz;
+    expect(quiz.attempts).toBe(0);
+    expect(quiz.answerShown).toBe(false);
+    expect(h.doc.outcomes).toEqual([]);
+  });
+
+  /**
+   * **#49's fallback, end to end.** The classifier cannot catch every phrasing, so the feedback
+   * turn may open `Not marked.` when the turn it was asked to mark was a request. Code un-counts
+   * it: no outcome row (no fill, nothing for the pitch to read as *Not yet*), nothing in the
+   * notes, and the question still open — and a later release does not say they attempted it.
+   */
+  it('un-counts an attempt when Max says "Not marked.", and leaves the question open', async () => {
+    const notMarked =
+      'Not marked.\n\nForwarding means copying a private turn into the shared thread, where everyone ' +
+      'can read it — like reposting a DM to a group chat. p. 5 shows the choice being made.\n\n' +
+      'So: who pays the cost of the side channel now, and at what moment?';
+    const h = build({}, null, (request) =>
+      request.meta.scope === 'group' && request.meta.scriptCue === 'feedback:1' ? notMarked : null,
+    );
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const editsBefore = h.doc.edits.length;
+    // Classified as an attempt (a statement), which is exactly the miss the fallback is for.
+    await settle(h.clock, h.actor.sendMessage('the forwarding step from p. 5 is new to me, we skipped it', DOC));
+
+    expect(decisions(h).at(-1)!.move_type).toBe('quiz_feedback');
+    expect(bodies(h).at(-1)).toMatch(/^Not marked\./);
+    const quiz = h.actor.pendingQuizView()!.quiz;
+    expect(quiz.attempts).toBe(0);
+    expect(quiz.feedbackGiven).toBe(false);
+    expect(quiz.verdict).toBeNull();
+    expect(quiz.answerShown).toBe(false);
+    // No verdict row, so no progress, and nothing to the notes: no suggestion, no resolution.
+    expect(h.doc.outcomes).toEqual([]);
+    expect(h.doc.edits.length).toBe(editsBefore);
+    const thread = h.actor.docThreads().find((t) => t.threadId === DOC)!;
+    expect(thread.quiz!.open).toBe(true);
+    expect(thread.quiz!.resolution).toBeNull();
+    const logged = h.store.events.forSession(h.sessionId).filter((e) => e.type === 'quiz.attempt_unmarked');
+    expect(logged).toHaveLength(1);
+    expect(JSON.parse(logged[0]!.payload).attempts).toBe(0);
+
+    // The give-up that follows is released as one with no attempt behind it.
+    await settle(h.clock, h.actor.sendMessage('this is too hard', DOC));
+    expect(rules(h).at(-1)).toBe('rule:answer_released');
+    expect(flat(prompts(h).at(-1)!)).not.toContain('They did attempt it');
+    const released = h.doc.outcomes.filter((o) => o.kind === 'released');
+    expect(released).toHaveLength(1);
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict')).toEqual([]);
   });
 
   /**

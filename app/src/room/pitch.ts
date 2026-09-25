@@ -244,7 +244,8 @@ export function pitchBlock(inputs: PitchInputs): string {
   } else if (inputs.pitch === 'harder') {
     lines.push(
       `**You may go harder than the last one** — ${inputs.reason}. Ask them to explain why, or to`,
-      'apply it to a case the slide does not work through. Still one question.',
+      'apply it to another case — but one the deck’s own examples or Ellie’s answer equip them',
+      'for: no method, notation or format the deck only names. Still one question.',
     );
   } else if (inputs.firstOnObjective) {
     /**

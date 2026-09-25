@@ -11,7 +11,7 @@
  */
 import type { AgentProfile, AgentRole } from '../shared/types.js';
 import type { ConceptPack, MaterialRow, MessageRefRow } from './records.js';
-import { VERDICT_OPENERS } from './flow.js';
+import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 
 /**
  * v0.2 was the Teacher + Tester reframe (#32, flow-build-plan.md §4.2).
@@ -553,6 +553,19 @@ export function quizBlock(input: {
       'wrong part only \u2014 in their own words, or applied to the case \u2014 so that they can try again; no',
       `other question anywhere in the turn. After ${done} ask nothing: the next question is theirs to`,
       'ask for. Under 100 words.',
+      /**
+       * **The one non-verdict exit** (#49 fallback, `collab-doc.md` §4.2, 2026-09-25). The code
+       * that decides a turn is an attempt is a heuristic, and the 2026-09-23 run's request for the
+       * CNF format reached this turn; the model saw it was a request and could only write *Not
+       * yet*. `flow.feedbackUnmarked` reads this opener and un-counts the attempt.
+       */
+      `**One exception.** If the learner's message asks you for something \u2014 what a term means, a`,
+      'format, an example, the background your question assumes \u2014 and offers no answer to your',
+      `question, do not mark it: your first line is exactly **${UNMARKED_OPENER}** and nothing else. Then`,
+      'give what they asked for in at most 80 words, from the deck where it has it, with a small',
+      'example of your own that is not the case your question asks about; then ask your question again',
+      'in one sentence. No verdict, and do not answer your question. Anything that tries an answer,',
+      'however short, hedged or wrong, is marked with one of the three verdicts above.',
       NO_REMARKS,
       ...GROUNDS,
     );
@@ -674,6 +687,14 @@ export function whereBlock(input: {
   page?: number | null;
   /** The segment's own text. Empty is fine — a title slide has almost none, which is the point. */
   passageText: string;
+  /**
+   * **Max asking a question** (#49). The sentence below that lifts the fence — *"or your own
+   * knowledge of the field, use it"* — is right for an answer and wrong for a question: on
+   * 2026-09-23 it was prepended to Max's follow-up too, and he asked for a CNF encoding p. 7 only
+   * names. A question has to be answerable from the page and Ellie's answer, so for him the page
+   * is the fence.
+   */
+  forTester?: boolean;
 }): string {
   if (input.scope === 'deck') {
     return [
@@ -689,6 +710,14 @@ export function whereBlock(input: {
     lines.push('That page reads:', '"""', passage, '"""');
   } else {
     lines.push('That page has almost no text on it \u2014 a title or a section divider.');
+  }
+  if (input.forTester === true) {
+    lines.push(
+      'This is the page your question must be answerable from, together with Ellie\u2019s answer if she',
+      'has just given one. Do not ask for anything that needs knowledge from outside them: no method,',
+      'notation or format the deck only names.',
+    );
+    return lines.join('\n');
   }
   lines.push(
     'This says where they are. It is **not** a limit on what you may use: if the answer needs a',
@@ -841,6 +870,8 @@ export function turnDirective(d: TurnDirective): string {
       `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
       'the question you asked, not the whole objective. Unless it is Well done, your last sentence is',
       'one follow-up question on the gap, and there is no other question in the turn.',
+      `Only if the message asks for background and tries no answer at all: first line **${UNMARKED_OPENER}**,`,
+      'then that background in at most 80 words, then your question again \u2014 and no verdict.',
     );
   }
   /**

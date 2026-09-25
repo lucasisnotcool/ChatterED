@@ -140,7 +140,8 @@ export function maxFollowupBlock(input: {
   const lines = [
     'ASK ONE FOLLOW-UP QUESTION',
     `Ellie has just answered the learner’s question.${about} Ask **one** question that makes them`,
-    'use what they have just read — in their own words, or applied to a case.',
+    'use what they have just read — in their own words, or applied to a case the page or Ellie’s',
+    'answer works through.',
     'Not a comprehension check on Ellie’s sentence ("what did she mean by X?"), and not two',
     'questions. Two sentences at most, and the last one is the question.',
     'Do not answer it, and do not hint at the answer.',

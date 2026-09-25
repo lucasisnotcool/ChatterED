@@ -919,6 +919,47 @@ export function feedbackVerdict3(text: string): QuizVerdict3 {
   return 'partial';
 }
 
+/**
+ * **The model's one non-verdict exit** (#49 fallback, `collab-doc.md` §4.2, 2026-09-25).
+ *
+ * `attempt.ts` decides in code what counts as an attempt, and it is a heuristic: the 2026-09-23
+ * run's *"Can you give me example of how SAT instances are encoded… I am not familiar with SAT
+ * format"* reached the feedback turn, and the model, which could see it was a request for
+ * background, had no legal first line but a verdict — so it wrote *Not yet*. The feedback prompt
+ * now allows one more opener, `Not marked.`, for a turn that asks for something and offers no
+ * answer; Max gives the background and re-asks. Code reads it here and **un-counts the attempt**:
+ * no outcome row, no progress, nothing to the notes, and the question stays open.
+ */
+export const UNMARKED_OPENER = 'Not marked.';
+
+export function feedbackUnmarked(text: string): boolean {
+  return firstLine(text).startsWith('not marked');
+}
+
+/**
+ * The feedback turn said `Not marked.`: put the question back as it was before the turn that was
+ * counted. `before` is what `answerQuiz` overwrote, when the caller kept it; without it the count
+ * still comes down, and a question with no attempt left has no answer on it either.
+ */
+export function unmarkAttempt(
+  quiz: PendingQuiz,
+  before: Pick<PendingQuiz, 'answerMessageId' | 'answerText' | 'feedbackGiven' | 'verdict'> | null = null,
+): PendingQuiz {
+  const attempts = Math.max(0, attemptsOf(quiz) - 1);
+  if (before !== null) return { ...quiz, ...before, attempts };
+  const v3 = verdict3Of(quiz);
+  return {
+    ...quiz,
+    attempts,
+    answerMessageId: attempts > 0 ? quiz.answerMessageId : null,
+    answerText: null,
+    // Nothing is owed: the turn that was counted has had its reply.
+    feedbackGiven: attempts > 0,
+    // `verdict3` survives `answerQuiz`, so the previous attempt's mark is still there to restore.
+    verdict: attempts > 0 && (v3 === 'partial' || v3 === 'not_yet') ? 'partial' : null,
+  };
+}
+
 export function verdictOf(quiz: PendingQuiz | null): QuizVerdict | null {
   return quiz?.verdict === 'complete' || quiz?.verdict === 'partial' ? quiz.verdict : null;
 }

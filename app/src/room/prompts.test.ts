@@ -13,10 +13,10 @@
  * strings, the test is the place to argue about it.
  */
 import { describe, expect, it } from 'vitest';
-import { PROMPT_VERSION, quizBlock, roleBlock, sharedBlock, teachObjectiveBlock, turnDirective } from './prompts.js';
+import { PROMPT_VERSION, quizBlock, roleBlock, sharedBlock, teachObjectiveBlock, turnDirective, whereBlock } from './prompts.js';
 import type { AgentProfile } from '../shared/types.js';
 import type { ConceptPack, MaterialRow } from './records.js';
-import { VERDICT_OPENERS } from './flow.js';
+import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 
 const ELLIE: AgentProfile = {
   key: 'peer.ellie',
@@ -300,6 +300,27 @@ describe('quizBlock', () => {
     expect(block).not.toContain('No new question this turn.');
   });
 
+  /**
+   * **#49's fallback: the one non-verdict exit.** The 2026-09-23 run's request for the CNF format
+   * reached the feedback turn and the model, which saw it was a request, could only write *Not
+   * yet*. Now it may open `Not marked.`, give the background and re-ask; code un-counts the attempt.
+   */
+  it('lets the feedback turn open "Not marked." for a request with no answer in it, and says what then', () => {
+    const block = flat(quizBlock({ label: 'x', seeds: [], demonstration: ['c'], turn: 'feedback' })!);
+    expect(block).toContain(`your first line is exactly **${UNMARKED_OPENER}**`);
+    expect(block).toContain('offers no answer to your question');
+    expect(block).toContain('at most 80 words');
+    expect(block).toContain('not the case your question asks about');
+    expect(block).toContain('ask your question again in one sentence');
+    expect(block).toContain('No verdict, and do not answer your question');
+    // …and it is not a way out of marking an attempt, however weak.
+    expect(block).toContain('Anything that tries an answer, however short, hedged or wrong, is marked');
+    const directive = flat(turnDirective({ move: 'quiz_feedback', agentRole: 'challenger' } as never));
+    expect(directive).toContain(`first line **${UNMARKED_OPENER}**`);
+    expect(directive).toContain('tries no answer at all');
+    expect(directive).toContain('no verdict');
+  });
+
   it('restates the question on the clarify turn and says it was not a try', () => {
     const block = quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn: 'clarify' })!;
     expect(flat(block)).toContain('End with the question again, in one sentence');
@@ -409,5 +430,30 @@ describe('teachObjectiveBlock', () => {
       requiring: null,
     });
     expect(block).not.toContain('general knowledge');
+  });
+});
+
+/**
+ * **#49: Max's question stays inside the deck.** The page block's *"or your own knowledge of the
+ * field, use it"* was written for Ellie's answers and prepended to Max's follow-up too; on
+ * 2026-09-23 he asked for a CNF encoding p. 7 only names.
+ */
+describe('whereBlock', () => {
+  const page = { scope: 'segment' as const, page: 7, label: 'Planning approaches', passageText: 'Encode as SAT (CNF)' };
+
+  it('lifts the fence for an answer', () => {
+    const block = flat(whereBlock(page));
+    expect(block).toContain('your own knowledge of the field');
+    expect(block).toContain('It is **not** a limit on what you may use');
+  });
+
+  it('makes the page the fence for the Tester’s question', () => {
+    const block = flat(whereBlock({ ...page, forTester: true }));
+    expect(block).toContain('p. 7');
+    expect(block).toContain('Encode as SAT (CNF)');
+    expect(block).not.toContain('your own knowledge of the field');
+    expect(block).not.toContain('not** a limit');
+    expect(block).toContain('your question must be answerable from');
+    expect(block).toContain('no method, notation or format the deck only names');
   });
 });
