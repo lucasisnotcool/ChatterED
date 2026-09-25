@@ -859,6 +859,19 @@ export interface PendingQuiz {
    * by the learner's own correct answer.
    */
   releasedBy?: 'give_up' | 'pass' | 'closure' | null;
+  /**
+   * **Some attempt at it was marked *Partly there*** (#49). `verdict3` is only the *latest*
+   * verdict, so a *Partly there* followed by a *Not yet* and a give-up would read as nothing of
+   * theirs; brief §5.3's *partly yours* is about the question as a whole, so it is remembered here.
+   */
+  hadPartial?: boolean;
+  /**
+   * **The doc's Q block has been resolved** (#49). Set when the §5.3 edit is emitted, and kept
+   * with the question so a feedback turn that lands after a release — or after a relaunch — does
+   * not write a second resolution under it. The 2026-09-20 to 09-23 runs wrote 17 of them under 5
+   * questions.
+   */
+  resolvedInDoc?: boolean;
 }
 
 /**
@@ -943,6 +956,8 @@ export function openQuiz(
     cueHasMistake: false,
     cueClaim: null,
     releasedBy: null,
+    hadPartial: false,
+    resolvedInDoc: false,
   };
 }
 
@@ -985,7 +1000,7 @@ export function markFeedbackGiven(
   /** #48: the three-valued verdict, for the outcome row and the progress fill. */
   verdict3: QuizVerdict3 | null = null,
 ): PendingQuiz {
-  return { ...quiz, feedbackGiven: true, verdict, verdict3 };
+  return { ...quiz, feedbackGiven: true, verdict, verdict3, hadPartial: quiz.hadPartial === true || verdict3 === 'partial' };
 }
 
 /**
@@ -1042,14 +1057,23 @@ export function cueMistakeToCorrect(quiz: PendingQuiz | null): string | null {
   return typeof claim === 'string' && claim.trim().length > 0 ? claim.trim() : null;
 }
 
-/** How the question ended, as the doc's Q block tags it (brief §5.3). Null while it is open. */
+/**
+ * How the question ended, as the doc's Q block tags it (brief §5.3). **Null while it is open.**
+ *
+ * It used to answer *partly yours* as soon as any feedback had landed — while `quizOpen` still
+ * said the question was open and Max's feedback was ending on a follow-up for the next try (#49).
+ * The Q block was marked resolved mid-exchange and every attempt wrote another resolution under
+ * it. A question ends in one of two ways: the learner's own *Well done*, or a release; and a
+ * release after a *Partly there* is *partly yours*, which is what the brief's *"closed while
+ * partial"* means.
+ */
 export function qResolutionOf(quiz: PendingQuiz | null): QResolution | null {
   if (!quiz) return null;
+  if (verdict3Of(quiz) === 'complete' && quiz.feedbackGiven) return 'you_got_this';
   if (quiz.releasedBy === 'give_up' || quiz.releasedBy === 'pass' || quiz.releasedBy === 'closure') {
-    return 'released';
+    return quiz.hadPartial === true || verdict3Of(quiz) === 'partial' ? 'partly_yours' : 'released';
   }
-  if (!quiz.feedbackGiven) return null;
-  return verdict3Of(quiz) === 'complete' ? 'you_got_this' : 'partly_yours';
+  return null;
 }
 
 /**

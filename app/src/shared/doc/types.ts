@@ -103,8 +103,22 @@ export type AgentDocOp =
       text: string;
       prov: Provenance;
     }
-  /** Max's correct version, written under the Q block (brief §5.3). The Q block stays. */
-  | { op: 'resolve_q'; questionId: string; resolution: QResolution; blocks: DocBlockDraft[] };
+  /**
+   * The question's answer, written under the Q block (brief §5.3). The Q block stays.
+   *
+   * `learnerAnswer` (#49, additive): on *you got this*, the learner's own answer from the chat,
+   * verbatim. It goes in **authored by them** — it is their words — so the guard protects it like
+   * anything they typed, and it carries no `editId`, so Remove · Keep on Max's edit never touches
+   * it. `blocks` is then at most Max's one-line completion. A second `resolve_q` on a question
+   * already resolved is a no-op.
+   */
+  | {
+      op: 'resolve_q';
+      questionId: string;
+      resolution: QResolution;
+      blocks: DocBlockDraft[];
+      learnerAnswer?: string | null;
+    };
 
 export type DocEditCause =
   | 'answer_missing' // §5.1

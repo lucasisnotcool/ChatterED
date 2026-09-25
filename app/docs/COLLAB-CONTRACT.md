@@ -117,6 +117,8 @@ export function progressFill(outcomes: readonly QuizOutcome[]): ProgressFill;  /
 
 **The guard's contract, as tests:**
 1. `insert_after` / `insert_before` / `insert_q` / `resolve_q` never conflict: they only add.
+   (2026-09-25, #49, additive: `resolve_q` carries an optional `learnerAnswer`, written in the
+   learner's author mark with no edit id, and is a no-op on a Q block already resolved.)
 2. `replace_block`, `remove_block`, `append_to_block` on a block holding any `author.by === 'user'`
    text: `replace_block` → a suggestion (`suggest_del` over the learner text, `suggest_ins` of the
    agent's); `remove_block` → dropped, `rejected_guard`; `append_to_block` → relocated to an

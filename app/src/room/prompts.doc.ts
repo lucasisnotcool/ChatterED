@@ -58,6 +58,7 @@ export function ellieAnswersBlock(input: { page?: number | null; notesTakeTheRes
           '  1. the answer to what they asked, in your first sentence;',
           '  2. what it means in plain words, no notation;',
           '  3. one concrete example or analogy, in a sentence.',
+          'As running prose: no labels on the parts ("Plainly:", "Analogy:"), no headings, no list.',
           'The rigorous version, the conditions and how the slide uses it are written into the notes',
           'beside where they asked, separately from this reply — **do not write them here**, and do not',
           'say that you are adding anything to the notes.',

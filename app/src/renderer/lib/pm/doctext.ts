@@ -63,14 +63,37 @@ export function wordCount(text: string): number {
  * concatenating without a gap would invent a word that nobody typed.
  */
 export function learnerTextByBlock(doc: Node): LearnerBlockText[] {
+  const closed = blocksInResolvedQuestions(doc);
   const byBlock = new Map<string, string[]>();
   for (const span of learnerSpans(doc)) {
-    if (!span.blockId) continue;
+    if (!span.blockId || closed.has(span.blockId)) continue;
     const list = byBlock.get(span.blockId) ?? [];
     list.push(span.text);
     byBlock.set(span.blockId, list);
   }
   return [...byBlock].map(([blockId, parts]) => ({ blockId, text: parts.join(' ').trim() }));
+}
+
+/**
+ * **The blocks inside a resolved Q block** (#49). A question Max has closed is not one the
+ * learner can attempt again, and since #49 the *you got this* resolution files the learner's own
+ * chat answer under the question, in their author mark. Reported as doc text it would be marked a
+ * second time — against whatever question happened to be open next. Structural rather than a
+ * "just inserted" flag, so it still holds when the doc is reopened.
+ */
+function blocksInResolvedQuestions(doc: Node): Set<string> {
+  const ids = new Set<string>();
+  doc.descendants((node) => {
+    if (node.type.name !== 'q_block') return true;
+    if ((node.attrs.status as string) !== 'resolved') return false;
+    node.descendants((child) => {
+      const id = (child.attrs as { blockId?: string }).blockId;
+      if (id) ids.add(id);
+      return true;
+    });
+    return false;
+  });
+  return ids;
 }
 
 export interface DocTextOptions {

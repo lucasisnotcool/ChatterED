@@ -150,6 +150,65 @@ describe('rule 1 — the ops that only add', () => {
     doc.check();
   });
 
+  /** #49: every feedback turn used to resolve again, each one inserted above the last. */
+  it('resolve_q on a question already resolved changes nothing', () => {
+    const asked = run(
+      [{ op: 'insert_q', anchorBlockId: 'b_2', questionId: 'q_1', objectiveId: null, text: 'Why?', prov: { pages: [5], reason: null } }],
+      { author: 'max', cause: 'q_block' },
+    );
+    const once = run(
+      [{ op: 'resolve_q', questionId: 'q_1', resolution: 'released', blocks: [P('Because it contracts.')] }],
+      { author: 'max', cause: 'q_resolved', editId: 'e_2' },
+      asked.doc,
+    );
+    const twice = run(
+      [{ op: 'resolve_q', questionId: 'q_1', resolution: 'you_got_this', blocks: [P('Well done.')] }],
+      { author: 'max', cause: 'q_resolved', editId: 'e_3' },
+      once.doc,
+    );
+    expect(twice.result.status).toBe('no_change');
+    expect(twice.doc.child(4).attrs.resolution).toBe('released');
+    expect(twice.doc.child(4).childCount).toBe(2);
+  });
+
+  /**
+   * #49, Lucas's call: on *you got this* the learner's own answer is the entry. Their words, so
+   * their author mark — and no edit id, so Remove on Max's edit takes his line and leaves theirs.
+   */
+  it('files the learner’s answer under the question as theirs, above Max’s line', () => {
+    const asked = run(
+      [{ op: 'insert_q', anchorBlockId: 'b_2', questionId: 'q_1', objectiveId: null, text: 'Why?', prov: { pages: [5], reason: null } }],
+      { author: 'max', cause: 'q_block' },
+    );
+    const { doc, result } = run(
+      [
+        {
+          op: 'resolve_q',
+          questionId: 'q_1',
+          resolution: 'you_got_this',
+          blocks: [P('The slide calls this a contraction.')],
+          learnerAnswer: 'because each update shrinks the error',
+        },
+      ],
+      { author: 'max', cause: 'q_resolved', editId: 'e_2' },
+      asked.doc,
+    );
+    expect(result.status).toBe('applied');
+    const q = doc.child(4);
+    expect(q.childCount).toBe(3);
+    expect(q.child(1).textContent).toBe('because each update shrinks the error');
+    const mark = q.child(1).firstChild!.marks.find((m) => m.type.name === 'author')!;
+    expect(mark.attrs).toMatchObject({ by: 'user', editId: null });
+    expect(q.child(1).attrs.pages).toEqual([5]);
+    expect(q.child(2).textContent).toBe('The slide calls this a contraction.');
+
+    const removed = removeEdit(stateOf(doc), { editId: 'e_2', blockIds: result.blockIds });
+    expect(removed).not.toBeNull();
+    expect(removed!.doc.textContent).toContain('because each update shrinks the error');
+    expect(removed!.doc.textContent).not.toContain('The slide calls this a contraction.');
+    doc.check();
+  });
+
   it('none of the four conflicts, even aimed at the block the learner wrote in', () => {
     const adds: AgentDocOp[] = [
       { op: 'insert_after', anchorBlockId: 'b_mix', blocks: [P('After.')] },

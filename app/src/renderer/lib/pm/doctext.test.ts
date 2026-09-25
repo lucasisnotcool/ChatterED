@@ -49,6 +49,29 @@ describe('learnerTextByBlock', () => {
   it('is empty when the learner has written nothing', () => {
     expect(learnerTextByBlock(docWith({ text: 'All Ellie.', by: 'ellie' }))).toEqual([]);
   });
+
+  /**
+   * #49: a *you got this* files the learner's chat answer under the question, in their author
+   * mark. Reported as doc text it would be marked a second time, against whatever question was
+   * open next. An open question's block still counts: answering under it in the notes is an attempt.
+   */
+  it('skips learner text inside a resolved Q block, and keeps it inside an open one', () => {
+    const q = (status: 'open' | 'resolved', blockId: string) =>
+      notesSchema.node(
+        'q_block',
+        { blockId: `q_${blockId}`, pages: [3], reason: null, objectiveIds: [], questionId: `q_${blockId}`, status },
+        [
+          notesSchema.node('paragraph', { blockId: `b_q_${blockId}`, pages: [3], reason: null, objectiveIds: [] }, [
+            notesSchema.text('Why does it converge?', [authorMark('max', null, 1)]),
+          ]),
+          notesSchema.node('paragraph', { blockId, pages: [3], reason: null, objectiveIds: [] }, [
+            notesSchema.text(SENTENCE, [authorMark('user', null, 1)]),
+          ]),
+        ],
+      );
+    const doc = notesSchema.node('doc', null, [q('resolved', 'b_closed'), q('open', 'b_live')]);
+    expect(learnerTextByBlock(doc)).toEqual([{ blockId: 'b_live', text: SENTENCE }]);
+  });
 });
 
 describe('DocTextWatch', () => {

@@ -222,7 +222,34 @@ not typing.
 |---|---|---|
 | 5.1 | The learner asked, and the **fuller explanation is missing from the doc** | Ellie writes the long half of her answer (§4.6), green, at the segment it belongs to, with provenance, 40–150 words. The call is given the learner's question, the page's slide text and her chat reply (as what not to repeat). If the doc already carries it, no edit; she points to the block instead. |
 | 5.2 | Max asks a question the doc **does not already answer** | Max writes the question in as a **Q block** (red, body text) at the segment it is about. |
-| 5.3 | A Max question is resolved: by the learner's answer and Max's feedback, by release, or by closure | **Max's correct version** is written under the Q block, red, tagged with how it was resolved (*you got this* / *partly yours* / *released*). |
+| 5.3 | A Max question is resolved: by the learner's answer and Max's feedback, by release, or by closure | **Max's correct version** is written under the Q block, red, tagged with how it was resolved (*you got this* / *partly yours* / *released*). *Amended 2026-09-25, below.* |
+
+**Amended 2026-09-25 (#49): the chat is about the learner, the notes are about the material.**
+5.3 had been built by copying Max's resolving turn into the notes word for word, and it fired on
+every feedback turn. The live runs of 20–23 Sep wrote 17 resolutions under 5 questions: each *Partly
+there* and *Not yet* with its verdict, second-person marking and follow-up question, newest on top,
+with the Q block marked resolved while the question was still open in the chat. What changed:
+
+- **A question resolves once, when it closes**, which means the learner's *Well done* or a release.
+  *Partly there* and *Not yet* write nothing to the notes. *Partly yours* is a release after any
+  *Partly there*. A second resolution on a closed question is a no-op, in the actor and in the op.
+- **On *you got this* the learner's own answer is the entry** (Lucas's call). Their chat answer
+  goes under the question verbatim, in **their** author mark and with no edit id. The guard
+  protects it, and Remove on Max's edit leaves it. Max adds at most one sentence, and only if the
+  answer leaves out or misstates something. Learner text inside a resolved Q block is not reported
+  as a new doc-text attempt.
+- **Otherwise the notes get the correct answer, written as notes**: a structured call
+  (`docedit.planResolveEdit`) given the question, the slide and Max's turn, with no verdict, no
+  second person, no question and no mention of anyone. That is one call per question. If the call
+  fails, a conservative code filter keeps only the sentences of the turn that could stand in notes.
+  If nothing survives, the question closes tag-only.
+- **Closure's criteria fallback no longer writes the criteria.** They are phrased as a rubric ("Lists
+  all four steps in order") and were once written under a question as if they were its answer.
+  They are now input to the same call.
+- **5.2 is filed where the exchange was.** A follow-up that borrows an example from another page
+  anchors at the page the learner asked on, not at the example's pages. Provenance still names
+  what the question cites.
+- **5.1 does not fire on a lesson's Start**, which is told not to teach yet.
 
 - **Q blocks stay** after they are resolved. The learner removes them if they want to.
 - **Every agent edit can be removed or edited in one click** (a small control on the edit: Remove ·

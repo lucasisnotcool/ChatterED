@@ -20,6 +20,7 @@ import {
   type AgentDocOpBatch,
   type DocQuizView,
   type PrivateTurnView,
+  type QResolution,
   type QuizOutcome,
   type QuizVerdict3,
   type ThreadKind,
@@ -30,10 +31,10 @@ import { ownWordsOf } from '../shared/doc/ownwords.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import {
   buildQuestionEdit,
-  buildResolveEdit,
   buildWhisperInsert,
   pagesCited,
   planAnswerEdit,
+  planResolveEdit,
   planSuggestionEdit,
   type DocEditDeps,
 } from './docedit.js';
@@ -380,6 +381,32 @@ interface TurnReplay {
 interface FailureRecord {
   view: TurnFailureView;
   replay: TurnReplay | null;
+}
+
+/**
+ * **The ceiling each short turn is given in its prompt** (`prompts.ts`, `prompts.doc.ts`), for the
+ * over-length log. Null for a turn with no word ceiling. Kept beside the actor rather than in the
+ * prompt files because it is a measurement of them, not an instruction.
+ */
+export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>, docChat: boolean): number | null {
+  switch (decision.moveType) {
+    case 'answer_then_teach':
+      return decision.role === 'peer' ? (docChat ? 90 : 180) : null;
+    case 'quiz_feedback':
+      return 100;
+    case 'quiz_clarify':
+      return 80;
+    case 'quiz_answer':
+      return 150;
+    case 'peer_guess':
+      return 60;
+    case 'max_prompt':
+      return 50;
+    case 'mention_reply':
+      return 120;
+    default:
+      return null;
+  }
 }
 
 export class RoomActor {
@@ -1202,9 +1229,9 @@ export class RoomActor {
 
   /**
    * The fallback half of §4.7: no model answer could be had in time, so the Q block is resolved
-   * from the objective's own criteria — which is what the ingest already wrote as *what a correct
-   * demonstration contains*. It is a worse answer than Max's and it is infinitely better than an
-   * open question the learner never gets back to.
+   * with an answer written from the objective's own criteria — which is what the ingest already
+   * wrote as *what a correct demonstration contains*. It is a worse answer than Max's and it is
+   * infinitely better than an open question the learner never gets back to.
    */
   #resolveFromCriteria(quiz: PendingQuiz): void {
     if (!quizOpen(quiz)) return;
@@ -1222,16 +1249,22 @@ export class RoomActor {
         ? element!.demonstration!
         : [element?.criteria['3'], element?.criteria['4']].filter((c): c is string => typeof c === 'string')
     ).filter((c) => c.trim().length > 0);
-    if (criteria.length === 0) return;
-    const text = [`The answer needed to cover:`, ...criteria.map((c) => `- ${c}`)].join('\n');
-    void this.#emitDocEdit(
-      buildResolveEdit(this.#docEditDeps(quiz.anchorId ?? null, null), {
-        questionId: quiz.questionId ?? quiz.quizMessageId,
-        resolution: 'released',
-        text,
-      }),
-      { objectiveId: quiz.objectiveId ?? null, messageId: null, turnId: null },
-    );
+    /**
+     * **The criteria are what the answer is written from, not the answer** (#49). They are
+     * phrased as a rubric — *"Lists all four steps in order"* — and the live run of 22 Sep put one
+     * under a question as if it were Max's answer. When even the notes call cannot be had, the
+     * question still closes, tag only, rather than saying *open* about a question the app closed.
+     */
+    const closed = this.#pendingQuiz;
+    if (closed === null || closed.resolvedInDoc === true) return;
+    this.#claimResolution(closed);
+    void this.#resolveInDoc(this.#docEditDeps(quiz.anchorId ?? null, null), closed, qResolutionOf(closed) ?? 'released', {
+      turn: null,
+      learnerAnswer: null,
+      criteria,
+      messageId: null,
+      turnId: null,
+    }).catch((err: unknown) => this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: 'closure' }));
   }
 
   /**
@@ -2703,6 +2736,22 @@ export class RoomActor {
         reply_chars: text.length,
         usage,
       });
+      /**
+       * **Over its length** (#49). The prompts set a word ceiling on every short turn, and the
+       * live run of 23 Sep ran over most of them — Ellie's doc-chat answer at 123 against 90, Max's
+       * feedback at 155 against 100, his clarification at 115 against 80. Logged, not cut: a turn
+       * truncated mid-sentence is worse than a long one, and the log is where the prompt gets tuned.
+       */
+      const ceiling = wordCeilingOf(decision, this.#answerSplitsIntoNotes(decision));
+      const words = wordCount(text);
+      if (ceiling !== null && words > ceiling) {
+        turnLog.event('warn', 'turn.over_length', {
+          move_type: decision.moveType,
+          decided_by: decision.decidedBy,
+          words,
+          ceiling,
+        });
+      }
       this.#trace(pending.id, {
         ttftActualMs: visibleTtft,
         totalMs: this.#d.clock.now() - turnStart,
@@ -3888,9 +3937,24 @@ export class RoomActor {
     const deps = this.#docEditDeps(anchorId, turnId);
     const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);
     const quiz = this.#pendingQuiz;
+    /**
+     * **5.3 happens once, when the question closes** (#49), and the claim is taken here, before
+     * the first `await`, so no second turn on the same question can race it to a second
+     * resolution. `qResolutionOf` is null while the question is open, so a *Partly there* or a
+     * *Not yet* writes nothing to the notes: the exchange is the chat's.
+     */
+    const resolution = qResolutionOf(quiz);
+    const resolves =
+      quiz !== null &&
+      resolution !== null &&
+      quiz.resolvedInDoc !== true &&
+      (decision.moveType === 'quiz_answer' || decision.moveType === 'quiz_feedback');
+    if (resolves) this.#claimResolution(quiz);
     try {
       // 5.2 — Max asked a question: it goes in as a Q block at the segment it is about.
       if (decision.moveType === 'quiz' && quiz !== null) {
+        // #49: a follow-up is filed where the exchange was, not under the example it borrowed.
+        const askedOn = this.#askContext.get(anchorId ?? '')?.page;
         await this.#emitDocEdit(
           buildQuestionEdit(deps, {
             questionId: quiz.questionId ?? quiz.quizMessageId,
@@ -3898,6 +3962,12 @@ export class RoomActor {
             text,
             blockId,
             fallbackPages: this.#lastAnswerPages,
+            exchangePages:
+              decision.decidedBy === 'rule:max_followup'
+                ? typeof askedOn === 'number'
+                  ? [askedOn]
+                  : this.#lastAnswerPages
+                : undefined,
           }),
           { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
         );
@@ -3933,25 +4003,24 @@ export class RoomActor {
         await this.#emitDocEdit(plan.batch, { objectiveId: quiz?.objectiveId ?? null, messageId, turnId });
         // …and the Q block still resolves below, because the answer was still an answer.
       }
-      // 5.3 — a Max question resolved: his correct version goes under the Q block, tagged.
-      const resolution = qResolutionOf(quiz);
-      if (
-        quiz !== null &&
-        resolution !== null &&
-        (decision.moveType === 'quiz_answer' || decision.moveType === 'quiz_feedback')
-      ) {
-        await this.#emitDocEdit(
-          buildResolveEdit(deps, {
-            questionId: quiz.questionId ?? quiz.quizMessageId,
-            resolution,
-            text,
-          }),
-          { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
-        );
+      // 5.3 — a Max question closed: its answer goes under the Q block, as notes, tagged.
+      if (resolves && quiz !== null && resolution !== null) {
+        await this.#resolveInDoc(deps, quiz, resolution, {
+          turn: text,
+          // A doc-text answer is already in the notes, in the learner's own block.
+          learnerAnswer: docText === null ? (quiz.answerText ?? null) : null,
+          messageId,
+          turnId,
+        });
         return;
       }
-      // 5.1 — Ellie answered, and the notes may be missing it. The one model call in here.
-      if (decision.role === 'peer' && (decision.moveType === 'answer_then_teach' || decision.moveType === 'lesson_start')) {
+      if (decision.moveType === 'quiz_answer' || decision.moveType === 'quiz_feedback') return;
+      /**
+       * 5.1 — Ellie answered, and the notes may be missing it. Not on a lesson's **Start** (#49):
+       * that turn is told not to teach yet and to have the learner ask, so notes that teach it
+       * before they have asked are the lecture the turn was built not to give.
+       */
+      if (decision.role === 'peer' && decision.moveType === 'answer_then_teach') {
         // Recorded *before* the plan's model call, because `rule:max_followup` dispatches while
         // that call is still out and his Q block is what needs these pages (see the field).
         this.#lastAnswerPages = pagesCited(text);
@@ -3993,6 +4062,51 @@ export class RoomActor {
     } catch (err) {
       this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
     }
+  }
+
+  /** Mark the open question as resolved in the doc, if it is still the one that was read. */
+  #claimResolution(quiz: PendingQuiz): void {
+    const live = this.#pendingQuiz;
+    if (live === null || (live.questionId ?? live.quizMessageId) !== (quiz.questionId ?? quiz.quizMessageId)) return;
+    this.#pendingQuiz = { ...live, resolvedInDoc: true };
+  }
+
+  /**
+   * **§5.3's edit, written as notes** (#49). The question, the page it was about and whatever
+   * closed it go to `planResolveEdit`; what comes back is the answer in the notes' voice, or — on
+   * *you got this* — the learner's own answer, filed as theirs, with at most one line of Max's.
+   */
+  async #resolveInDoc(
+    deps: DocEditDeps,
+    quiz: PendingQuiz,
+    resolution: QResolution,
+    input: {
+      turn: string | null;
+      learnerAnswer: string | null;
+      criteria?: readonly string[];
+      messageId: string | null;
+      turnId: string | null;
+    },
+  ): Promise<void> {
+    // No model call for an edit that would be dropped (§3's Freeze); `#emitDocEdit` checks again.
+    if (this.#retired || this.#docPort.docId() === null || this.#docPort.frozen()) return;
+    const question = quiz.questionText ?? '';
+    const context = this.#askContext.get(quiz.anchorId ?? '');
+    const page = typeof context?.page === 'number' ? context.page : null;
+    const { batch, via } = await planResolveEdit(deps, {
+      questionId: quiz.questionId ?? quiz.quizMessageId,
+      resolution,
+      question,
+      turn: input.turn,
+      learnerAnswer: input.learnerAnswer,
+      criteria: input.criteria,
+      passage: context?.scope === 'segment' ? context.passageText : null,
+      page,
+      pages: page !== null ? [page] : pagesCited(question),
+    });
+    // How the notes text was had, never the text itself.
+    this.#turnLog.event('info', 'doc.resolve', { resolution, via, quoted: input.learnerAnswer !== null });
+    await this.#emitDocEdit(batch, { objectiveId: quiz.objectiveId ?? null, messageId: input.messageId, turnId: input.turnId });
   }
 
   /** Which door a release came through, for the event log and for `markAnswerShown`. */

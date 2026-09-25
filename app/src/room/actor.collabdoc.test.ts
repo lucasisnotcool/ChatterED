@@ -441,6 +441,35 @@ describe('releasing and closing a question', () => {
     expect(released[0]!.questionId).toMatch(/^q_/);
   });
 
+  /**
+   * **#49: the exchange is the chat's; the notes get the answer once.** The live runs of 20–23 Sep
+   * wrote 17 resolutions under 5 questions — every *Partly there* and *Not yet*, verbatim, the
+   * verdict, the marking and the follow-up question included.
+   */
+  it('writes nothing to the notes on a Partly there, and one resolution when the question closes', async () => {
+    const h = await withOpenQuestion();
+    await settle(h.clock, h.actor.sendMessage('the learner pays it, when they decide to forward', DOC));
+    // Partly there: the question is still open, and the notes are left alone.
+    expect(h.doc.edits.filter((e) => e.batch.cause === 'q_resolved')).toEqual([]);
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(false);
+
+    await settle(h.clock, h.actor.sendMessage('this is too hard', DOC));
+    const resolves = h.doc.edits.filter((e) => e.batch.cause === 'q_resolved');
+    expect(resolves).toHaveLength(1);
+    // Released after a Partly there: part of it was theirs (brief §5.3).
+    expect(resolves[0]!.batch.ops[0]).toMatchObject({ op: 'resolve_q', resolution: 'partly_yours', learnerAnswer: null });
+    const written = JSON.stringify(resolves[0]!.batch.ops);
+    expect(written).not.toMatch(/Partly there|Not yet|Well done/);
+    expect(written).not.toMatch(/\byou(r)?\b/i);
+    expect(written).not.toContain('?');
+    expect(written).not.toContain('Fair enough');
+    expect(written).toContain('privacy of having');
+
+    // A further turn on the closed question resolves nothing again.
+    await settle(h.clock, h.actor.closeOpenQuestion('closure'));
+    expect(h.doc.edits.filter((e) => e.batch.cause === 'q_resolved')).toHaveLength(1);
+  });
+
   it('records a three-valued verdict on a feedback turn', async () => {
     const h = await withOpenQuestion();
     await settle(h.clock, h.actor.sendMessage('the learner pays it, when they decide to forward', DOC));
@@ -514,6 +543,9 @@ describe('releasing and closing a question', () => {
     expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(true);
     const resolve = h.doc.edits.filter((e) => e.batch.cause === 'q_resolved').at(-1)!;
     expect(resolve.batch.ops[0]).toMatchObject({ op: 'resolve_q', resolution: 'released' });
+    // #49: the criteria are what an answer is written from, never the answer. The 22 Sep run put
+    // "The answer needed to cover: - Lists all four steps in order" under a question.
+    expect(JSON.stringify(resolve.batch.ops)).not.toContain('The answer needed to cover');
   });
 });
 
@@ -754,6 +786,9 @@ describe('startLesson', () => {
     expect(prompts(h)[0]).toContain('Do not teach it yet');
     // It opens no question, so Max is not waiting on anything.
     expect(h.actor.pendingQuizView()).toBeNull();
+    // #49: the turn is told not to teach yet, so the notes do not teach it either.
+    await h.clock.run(1_000);
+    expect(h.llm.requests.some((r) => r.meta.scope === 'docedit')).toBe(false);
   });
 });
 

@@ -738,7 +738,7 @@ export function turnDirective(d: TurnDirective): string {
     bits.push(
       'Answer what they asked in your first sentence. No opening question. Then the plain meaning',
       'and one example, and stop: about 60 words, 90 at most. The rigorous version goes into the',
-      'notes, not here.',
+      'notes, not here. Plain running prose — no labels such as "Plainly:" or "Analogy:".',
     );
   } else if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
     bits.push('Answer what they asked in your first sentence, then teach it. No opening question.');

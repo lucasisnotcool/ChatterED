@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, outlineText, pagesCited, planAnswerEdit, planSuggestionEdit, provenanceFor, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planAnswerEdit, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, type DocEditDeps } from './docedit.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 
@@ -259,24 +259,163 @@ describe('buildQuestionEdit (§5.2)', () => {
     });
     expect(seen).toEqual([[4]]);
   });
+
+  /**
+   * #49, the 23 Sep run: the SAT follow-up was asked on p. 7 and borrowed *"the air-cargo domain
+   * from p. 4–6"* — and was filed at pp. 4–6, away from where the learner was reading.
+   */
+  it('files a follow-up at the page the exchange was on, ahead of an example it borrowed', () => {
+    const seen: number[][] = [];
+    const d = deps({
+      blocksForPages: (pages) => {
+        seen.push([...pages]);
+        return ['b_p7'];
+      },
+    });
+    const batch = buildQuestionEdit(d, {
+      questionId: 'q_9',
+      objectiveId: null,
+      text: 'Take the air-cargo domain from p. 4–6: what would the CNF variables need to capture?',
+      blockId: null,
+      exchangePages: [7],
+    })!;
+    expect(seen).toEqual([[7]]);
+    expect(batch.ops[0]).toMatchObject({ anchorBlockId: 'b_p7' });
+    // Provenance still says what the question cites.
+    expect(batch.ops[0]).toMatchObject({ prov: { pages: [4, 5, 6] } });
+  });
 });
 
 describe('buildResolveEdit (§5.3)', () => {
-  it('writes Max’s own words under the Q block, tagged with how it ended', () => {
+  it('writes the notes text under the Q block, tagged with how it ended', () => {
     for (const resolution of ['you_got_this', 'partly_yours', 'released'] as const) {
       const batch = buildResolveEdit(deps(), {
         questionId: 'q_9',
         resolution,
         text: 'It matters because A* would expand the wrong node first. p. 4: "never overestimates".',
-      })!;
+      });
       expect(batch.cause).toBe('q_resolved');
       expect(batch.ops[0]).toMatchObject({ op: 'resolve_q', questionId: 'q_9', resolution });
       expect(batch.why.length).toBeGreaterThan(0);
     }
   });
 
-  it('writes nothing from an empty turn, which is what a failed generation leaves', () => {
-    expect(buildResolveEdit(deps(), { questionId: 'q_9', resolution: 'released', text: '   ' })).toBeNull();
+  /** A question the app has closed is closed in the notes too, even with nothing to put under it. */
+  it('still closes the question, tag only, when there is no text', () => {
+    const batch = buildResolveEdit(deps(), { questionId: 'q_9', resolution: 'released', text: '   ' });
+    expect(batch.ops[0]).toMatchObject({ op: 'resolve_q', resolution: 'released', blocks: [], learnerAnswer: null });
+  });
+
+  it('carries the learner’s own answer separately, and a formula as a math block', () => {
+    const batch = buildResolveEdit(deps(), {
+      questionId: 'q_9',
+      resolution: 'you_got_this',
+      text: '',
+      math: 'h(n) \\le h^*(n)',
+      learnerAnswer: '  it never overestimates the remaining cost.  ',
+      pages: [4],
+    });
+    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
+    expect(op.learnerAnswer).toBe('it never overestimates the remaining cost.');
+    expect(op.blocks).toEqual([{ kind: 'math', tex: 'h(n) \\le h^*(n)', prov: { pages: [4], reason: null } }]);
+  });
+});
+
+describe('notesFromTurn — the fallback when the notes call cannot be had', () => {
+  /** The 23 Sep feedback turn that went into the notes verbatim (#49). */
+  const feedback = [
+    '**Partly there.**',
+    'Naming `At(c,a)` as a candidate branching variable is reasonable — it is one of the fluent variables. But the question also asked *why*, and that part is missing: the branch is picked by the solver’s own rule, not by any estimate of distance-to-goal.',
+    'Why would picking `At(c,a)` first *not* count as estimating distance to the goal?',
+  ].join('\n');
+
+  it('keeps none of a feedback turn: the verdict, the marking and the question all go', () => {
+    expect(notesFromTurn(feedback)).toBe('');
+  });
+
+  it('keeps the answer out of a release, without the sentence about the attempt', () => {
+    const release = [
+      'For `Load(C1,P1,SFO)` at time 0 the precondition becomes an implication, and each conjunct becomes its own clause.',
+      'The effects become similar implications, plus frame axioms for every fluent the action leaves alone.',
+      'Your attempt already had the idea that variables are indexed by time.',
+      'Asking for the CNF format itself was reasonable.',
+    ].join(' ');
+    const out = notesFromTurn(release);
+    expect(out).toContain('frame axioms');
+    expect(out).not.toMatch(/attempt|reasonable/);
+  });
+
+  it('gives up rather than keep a scrap', () => {
+    expect(notesFromTurn('**Well done.** You got it.')).toBe('');
+    expect(notesFromTurn('This is a fair question, not an answer to score — let me actually address it.')).toBe('');
+    expect(notesFromTurn(null)).toBe('');
+  });
+
+  it('keeps nothing that talks about Ellie', () => {
+    expect(notesFromTurn('Ellie said the cost moves to the sender, which is wrong on p. 3.')).toBe('');
+  });
+});
+
+describe('planResolveEdit (§5.3, #49)', () => {
+  const base = {
+    questionId: 'q_9',
+    question: 'Why does admissibility matter for A*?',
+    turn: '**Not yet.** You said it makes A* faster. It is what guarantees the path A* returns is optimal. Why would a faster search not be enough?',
+    learnerAnswer: null,
+    pages: [4],
+  };
+
+  it('writes the model’s notes text, never the turn', async () => {
+    const d = deps({}, { text: 'An admissible heuristic guarantees that the first goal A* expands is on an optimal path.', math: null });
+    const { batch, via } = await planResolveEdit(d, { ...base, resolution: 'released' });
+    expect(via).toBe('model');
+    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
+    expect(op.blocks).toHaveLength(1);
+    expect(JSON.stringify(op.blocks)).not.toMatch(/Not yet|You said|\?/);
+    expect(op.blocks[0]).toMatchObject({ prov: { pages: [4] } });
+    expect(d.requests[0]!.meta).toMatchObject({ scope: 'docedit', costScope: 'docedit' });
+  });
+
+  it('files the learner’s answer as theirs on *you got this*, with Max’s line only if he has one', async () => {
+    const d = deps({}, { text: null });
+    const { batch } = await planResolveEdit(d, {
+      ...base,
+      resolution: 'you_got_this',
+      learnerAnswer: 'it never overestimates so the first goal A* pops is optimal',
+    });
+    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
+    expect(op.learnerAnswer).toBe('it never overestimates so the first goal A* pops is optimal');
+    expect(op.blocks).toEqual([]);
+    const prompt = (d.requests[0]!.system as { text: string }[])[0]!.text;
+    expect(prompt).toContain('Their answer is the entry');
+  });
+
+  it('falls back to the cleaned turn when the reply cannot be read', async () => {
+    const d = deps({}, {});
+    const { batch, via } = await planResolveEdit(d, { ...base, resolution: 'released' });
+    expect(via).toBe('fallback');
+    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
+    expect(JSON.stringify(op.blocks)).toContain('guarantees the path A* returns is optimal');
+    expect(JSON.stringify(op.blocks)).not.toMatch(/Not yet|You said/);
+  });
+
+  it('does not put Max’s praise in place of a failed completion line', async () => {
+    const { batch, via } = await planResolveEdit(deps({}, {}), {
+      ...base,
+      resolution: 'you_got_this',
+      turn: '**Well done.** That is exactly the property the slide names on p. 4, and the reason A* can stop at the first goal.',
+      learnerAnswer: 'it never overestimates',
+    });
+    expect(via).toBe('none');
+    expect((batch.ops[0] as { blocks: unknown[] }).blocks).toEqual([]);
+  });
+
+  it('tells the model the notes are not the chat', () => {
+    const prompt = resolveNotesPrompt({ ...base, resolution: 'released' });
+    expect(prompt).toMatch(/No verdict/);
+    expect(prompt).toMatch(/No second person/);
+    expect(prompt).toMatch(/No question/);
+    expect(prompt).toContain(base.question);
   });
 });
 

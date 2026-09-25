@@ -373,6 +373,9 @@ export function applyBatch(
       case 'resolve_q': {
         const target = findQBlock(tr.doc, op.questionId);
         if (!target) return;
+        // **Once** (#49). Every feedback turn used to resolve the question again, each one
+        // inserted above the last, and the notes read as the grading history backwards.
+        if ((target.node.attrs.status as string) === 'resolved') return;
         // The Q block stays (§5): the question and its answer are the record of the exchange, and
         // the learner removes it if they want to.
         tr.setNodeMarkup(target.pos, undefined, {
@@ -381,10 +384,27 @@ export function applyBatch(
           resolution: op.resolution,
         });
         touched.push((target.node.attrs.blockId as string) || '');
-        const nodes = nodesFor(op.blocks);
+        const nodes: Node[] = [];
+        const own = op.learnerAnswer?.trim() ?? '';
+        if (own.length > 0) {
+          // Their words, so their author mark — and no `editId`: this is not Max's edit to
+          // remove or keep, it is what the learner said, filed under the question they said it to.
+          nodes.push(
+            notesSchema.nodes.paragraph!.create(
+              {
+                blockId: newBlockId(),
+                pages: [...((target.node.attrs.pages as number[] | undefined) ?? [])],
+                reason: 'your answer, from the chat',
+                objectiveIds: [...((target.node.attrs.objectiveIds as string[] | undefined) ?? [])],
+              },
+              notesSchema.text(own, [authorMark('user', null, at)]),
+            ),
+          );
+        }
+        nodes.push(...nodesFor(op.blocks));
         if (nodes.length === 0) return;
-        // After the question paragraph — Max's correct version reads under the question it
-        // answers, not at the bottom of whatever else has accumulated in the block.
+        // After the question paragraph — the answer reads under the question it answers, not at
+        // the bottom of whatever else has accumulated in the block.
         const first = target.node.firstChild;
         const insertAt = target.pos + 1 + (first ? first.nodeSize : 0);
         tr.insert(insertAt, Fragment.fromArray(nodes));

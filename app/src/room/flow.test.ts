@@ -703,7 +703,21 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
       const open = markFeedbackGiven(asked, 'partial', verdict);
       expect(quizOpen(open)).toBe(true);
       expect(closureDue(open)).toBe(true);
+      // #49: an open question has no resolution. It used to say *partly yours* here, and the
+      // doc resolved the Q block while Max's feedback was asking for another try.
+      expect(qResolutionOf(open)).toBeNull();
     }
+  });
+
+  /** Brief §5.3: *partly yours* is a question that closed while partial — at any attempt. */
+  it('resolves a release as partly yours when any attempt was Partly there', () => {
+    const asked = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+    expect(qResolutionOf(markAnswerShown(asked, 'give_up'))).toBe('released');
+
+    const partly = markFeedbackGiven(asked, 'partial', 'partial');
+    const thenWrong = markFeedbackGiven(answerQuiz(partly, 'm_12', { attempt: true }), 'partial', 'not_yet');
+    expect(qResolutionOf(markAnswerShown(thenWrong, 'give_up'))).toBe('partly_yours');
+    expect(qResolutionOf(markAnswerShown(thenWrong, 'closure'))).toBe('partly_yours');
   });
 
   it('an unanswered quiz expires at session close rather than becoming a debt', () => {
