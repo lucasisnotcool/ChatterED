@@ -13,6 +13,7 @@
 //     the app by `!**/*.map`). That catches svelte's runtime without its compiler's deps.
 //
 // No dependencies beyond Node. Run after `build:renderer`.
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,6 +121,12 @@ add(productionPackages(), 'main process');
 add(rendererPackages(), 'renderer bundle');
 
 const electronPkg = readJson(join(nodeModules, 'electron/package.json'));
+// Electron 44 has no postinstall: its binary (and the LICENSE files beside it, which
+// electron-builder.yml also copies) arrive on first use. A fresh `npm ci` therefore leaves
+// electron/dist empty, and a release built straight after one would fail here — so fetch it.
+if (!existsSync(join(nodeModules, 'electron/dist/LICENSE'))) {
+  execFileSync(process.execPath, [join(nodeModules, 'electron/install.js')], { stdio: 'inherit' });
+}
 const electronLicence = readFileSync(join(nodeModules, 'electron/dist/LICENSE'), 'utf8').trim();
 
 const rule = '='.repeat(78);
