@@ -310,15 +310,19 @@ describe('quizBlock', () => {
     expect(block).toContain(`your first line is exactly **${UNMARKED_OPENER}**`);
     expect(block).toContain('offers no answer to your question');
     expect(block).toContain('at most 80 words');
-    expect(block).toContain('not the case your question asks about');
-    expect(block).toContain('ask your question again in one sentence');
-    expect(block).toContain('No verdict, and do not answer your question');
+    // Live check, 2026-09-25: without these the model taught its own question's answer on the
+    // question's own case, at 85–103 words.
+    expect(block).toContain('never the case your question asks about');
+    expect(block).toContain('**Do not answer your question** and give no hint towards it');
+    expect(block).toContain('give the general format only and leave applying it to them');
+    expect(block).toContain('ask the same question again in one sentence. No verdict.');
     // …and it is not a way out of marking an attempt, however weak.
     expect(block).toContain('Anything that tries an answer, however short, hedged or wrong, is marked');
     const directive = flat(turnDirective({ move: 'quiz_feedback', agentRole: 'challenger' } as never));
     expect(directive).toContain(`first line **${UNMARKED_OPENER}**`);
     expect(directive).toContain('tries no answer at all');
     expect(directive).toContain('no verdict');
+    expect(directive).toContain('without answering it');
   });
 
   it('restates the question on the clarify turn and says it was not a try', () => {

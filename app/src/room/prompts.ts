@@ -562,9 +562,12 @@ export function quizBlock(input: {
       `**One exception.** If the learner's message asks you for something \u2014 what a term means, a`,
       'format, an example, the background your question assumes \u2014 and offers no answer to your',
       `question, do not mark it: your first line is exactly **${UNMARKED_OPENER}** and nothing else. Then`,
-      'give what they asked for in at most 80 words, from the deck where it has it, with a small',
-      'example of your own that is not the case your question asks about; then ask your question again',
-      'in one sentence. No verdict, and do not answer your question. Anything that tries an answer,',
+      'give what they asked for \u2014 the general idea, term or format \u2014 in at most 80 words (four short',
+      'sentences), from the deck where it has it, with a toy example from outside this problem (two or',
+      'three variables, never the case your question asks about). **Do not answer your question** and',
+      'give no hint towards it: if what they asked for is exactly what your question asks them to work',
+      'out, give the general format only and leave applying it to them. Then ask the same question again',
+      'in one sentence. No verdict. Anything that tries an answer,',
       'however short, hedged or wrong, is marked with one of the three verdicts above.',
       NO_REMARKS,
       ...GROUNDS,
@@ -871,7 +874,8 @@ export function turnDirective(d: TurnDirective): string {
       'the question you asked, not the whole objective. Unless it is Well done, your last sentence is',
       'one follow-up question on the gap, and there is no other question in the turn.',
       `Only if the message asks for background and tries no answer at all: first line **${UNMARKED_OPENER}**,`,
-      'then that background in at most 80 words, then your question again \u2014 and no verdict.',
+      'then that background in at most 80 words, with a toy example that is not your question\u2019s case',
+      'and without answering it, then the same question again \u2014 and no verdict.',
     );
   }
   /**
