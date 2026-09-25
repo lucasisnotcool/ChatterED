@@ -76,6 +76,8 @@ export interface RepairNotes {
   seededQuiz: number;
   /** Prerequisites no objective requires — they render as roots, which §5 does not want. */
   orphanPrerequisites: number;
+  /** Page refs past the deck's last page (#47: p. 61 and p. 68 on a 60-page deck), dropped. */
+  refsOutOfRange: number;
 }
 
 export interface RepairResult {
@@ -114,7 +116,7 @@ function strings(value: unknown, cap: number): string[] {
   return out;
 }
 
-function refs(value: unknown): ObjectiveRef[] {
+function refs(value: unknown, pageCount: number | null, notes: RepairNotes): ObjectiveRef[] {
   if (!Array.isArray(value)) return [];
   const out: ObjectiveRef[] = [];
   for (const item of value) {
@@ -122,6 +124,11 @@ function refs(value: unknown): ObjectiveRef[] {
     const row = item as Record<string, unknown>;
     const page = Number(row.page);
     if (!Number.isFinite(page) || page < 1) continue;
+    // A page the deck does not have is a ref the model made up; clicking it would scroll nowhere.
+    if (pageCount !== null && Math.round(page) > pageCount) {
+      notes.refsOutOfRange += 1;
+      continue;
+    }
     const ref: ObjectiveRef = { page: Math.round(page) };
     const quote = text(row.quote);
     if (quote.length > 0) ref.quote = quote.slice(0, 240);
@@ -144,6 +151,8 @@ export function repairTree(input: {
   fileId: string;
   contentSha: string;
   raw: readonly RawObjective[];
+  /** The deck's page count; refs past it are dropped. Null when unknown: no upper bound. */
+  pageCount?: number | null;
 }): RepairResult {
   const notes: RepairNotes = {
     received: input.raw.length,
@@ -159,6 +168,7 @@ export function repairTree(input: {
     depthClamped: 0,
     seededQuiz: 0,
     orphanPrerequisites: 0,
+    refsOutOfRange: 0,
   };
 
   // ── pass 1: the nodes themselves, and the key → id map the edges are resolved through ──
@@ -187,7 +197,7 @@ export function repairTree(input: {
     }
     seenIds.add(id);
     const key = text(raw.key) || title.toLowerCase();
-    const nodeRefs = refs(raw.refs);
+    const nodeRefs = refs(raw.refs, input.pageCount ?? null, notes);
     const kind = text(raw.kind) === 'prerequisite' ? 'prerequisite' : 'objective';
     const quizSeeds = strings(raw.quiz_seeds, MAX_QUIZ_SEEDS);
     if (quizSeeds.length === 0) {

@@ -34,6 +34,16 @@ describe('the id', () => {
 });
 
 describe('repairing what the model returned', () => {
+  it('drops a ref past the deck\'s last page, and keeps every one when the page count is unknown (#47)', () => {
+    const raw = [node({ key: 'a', title: 'Late thing', refs: [{ page: 58 }, { page: 61 }, { page: 68 }] })];
+    const bounded = repairTree({ fileId: 'f1', contentSha: SHA, raw, pageCount: 60 });
+    expect(bounded.objectives[0]!.refs.map((r) => r.page)).toEqual([58]);
+    expect(bounded.notes.refsOutOfRange).toBe(2);
+    const unbounded = repair(raw);
+    expect(unbounded.objectives[0]!.refs.map((r) => r.page)).toEqual([58, 61, 68]);
+    expect(unbounded.notes.refsOutOfRange).toBe(0);
+  });
+
   it('keeps a clean tree as it is, and numbers it in deck order', () => {
     const { objectives, notes } = repair([
       node({ key: 'b', title: 'Second thing', refs: [{ page: 7 }] }),

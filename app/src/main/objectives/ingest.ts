@@ -175,6 +175,8 @@ export interface IngestInput {
   text: string;
   /** For `matchFixtureDeck` in scripted mode. */
   fileName: string | null;
+  /** The deck's page count, so a ref past the last page is dropped by `repairTree`. */
+  pageCount?: number | null;
 }
 
 /** File ids with an ingest in flight. Module-level: one app, one database, one queue. */
@@ -254,7 +256,7 @@ export async function ensureTree(deps: IngestDeps, input: IngestInput, opts: { f
 
   try {
     const raw = await ask(deps, input);
-    const { objectives, notes } = repairTree({ fileId: input.fileId, contentSha: input.contentSha, raw });
+    const { objectives, notes } = repairTree({ fileId: input.fileId, contentSha: input.contentSha, raw, pageCount: input.pageCount ?? null });
     if (objectives.length === 0) throw new Error('the model returned no usable objectives');
     // Regenerate keeps the states whose ids still match (§3); everything else is about an
     // objective that no longer exists and would otherwise sit in the table forever.
@@ -287,6 +289,7 @@ export async function ensureTree(deps: IngestDeps, input: IngestInput, opts: { f
         depth_clamped: notes.depthClamped,
         seeded_quiz: notes.seededQuiz,
         orphan_prerequisites: notes.orphanPrerequisites,
+        refs_out_of_range: notes.refsOutOfRange,
       },
     });
     if (notes.kept < MIN_OBJECTIVES) {

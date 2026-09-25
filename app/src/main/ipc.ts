@@ -588,6 +588,7 @@ export class AppService {
           outline,
           text,
           fileName: file?.name ?? null,
+          pageCount: view.pageCount,
         },
         opts,
       );
