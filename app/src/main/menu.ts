@@ -35,10 +35,17 @@
  * the distinction is reading the menu, not this file.
  */
 import { app, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AppCommand } from '../shared/types.js';
 import { IPC } from '../shared/ipc.js';
+import { TRIAL_CONTACT_EMAIL } from '../shared/trial.js';
+
+/** Help ▸ How ChatterED Works: the public releases repo's README, which is the user guide. */
+export const HELP_URL = 'https://github.com/lucasisnotcool/ChatterED-releases#readme';
+
+/** Help ▸ Report a Problem…: a new email to the research team, with the subject filled in. */
+export const REPORT_PROBLEM_MAILTO = `mailto:${TRIAL_CONTACT_EMAIL}?subject=${encodeURIComponent('ChatterED problem report')}`;
 
 /**
  * The UI text-size ladder, as Chromium zoom factors. 1 is the size the app ships at, and the
@@ -72,6 +79,11 @@ export interface MenuDeps {
   /** The persisted UI text scale. Injected so the template builds under plain Node. */
   getTextScale?(): number;
   setTextScale?(value: number): void;
+  /**
+   * `Contents/Resources/THIRD_PARTY_NOTICES.txt`, or null when there is none to show (a dev
+   * build, before `npm run notices`). Help ▸ Acknowledgements appears only when it is set.
+   */
+  noticesPath?: string | null;
 }
 
 export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] {
@@ -169,10 +181,16 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
       submenu: [
         { label: 'Settings…', accelerator: 'CommandOrControl+,', click: send('settings.open') },
         { type: 'separator' },
-        {
-          label: 'How ChatterED Works',
-          click: () => void shell.openExternal('https://github.com/lucasisnotcool/ChatterED#readme'),
-        },
+        // Two fixed URLs, never a string from the renderer: the only things this menu hands to
+        // `shell.openExternal`.
+        { label: 'How ChatterED Works', click: () => void shell.openExternal(HELP_URL) },
+        { label: 'Report a Problem…', click: () => void shell.openExternal(REPORT_PROBLEM_MAILTO) },
+        ...(deps.noticesPath
+          ? ([
+              { type: 'separator' },
+              { label: 'Acknowledgements', click: () => void shell.openPath(deps.noticesPath!) },
+            ] satisfies MenuItemConstructorOptions[])
+          : []),
       ],
     },
   ];
@@ -211,9 +229,11 @@ function storeTextScale(value: number): void {
 /** `app` is only touched here so `buildMenuTemplate` stays testable under plain Node. */
 export function installMenuFor(getWindow: () => BrowserWindow | null): void {
   let scale = loadTextScale();
+  const notices = join(process.resourcesPath ?? '', 'THIRD_PARTY_NOTICES.txt');
   installApplicationMenu({
     getWindow,
     isPackaged: app.isPackaged,
+    noticesPath: process.resourcesPath && (app.isPackaged || existsSync(notices)) ? notices : null,
     getTextScale: () => scale,
     setTextScale: (value) => {
       scale = value;

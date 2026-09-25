@@ -3,6 +3,9 @@
    * First run: three cards in the main window (product-design.md §B7, adapted — this build
    * carries a backend card, because the study partners can run on the copy of Claude Code
    * already installed on this Mac and only fall back to a key if it cannot, issue #19).
+   *
+   * Card 1 describes the collaborative notes doc (#48, `docs/research/collab-doc.md` §0 and §6),
+   * not the pre-#48 flow of slide crops it used to describe.
    */
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
@@ -83,18 +86,23 @@
     {#if card === 1}
       <h1>What this is</h1>
       <p>
-        Your own lecture deck opens as a flow of cards — each one a crop of the rendered page, so
-        the figures and the maths stay the lecturer's pixels. Ask on a card and
-        <strong>Ellie</strong> explains it from the slide; once you have covered a couple of
-        things she hands off to <strong>Max</strong>, who asks you one question about one of them
-        and never answers it for you.
+        Open a lecture deck and ChatterED writes it up as <strong>lecture notes</strong> you can read
+        without the slides. Every part of the notes says which slide it came from, and a diagram
+        stays in as the slide's own figure.
       </p>
       <p>
-        Nothing is written where you did not ask. Replies are held for a few seconds on purpose,
-        so the room to think is yours — you can speed that up in Settings.
+        Two study partners work in the notes beside you. <strong>Ellie</strong> explains: ask her
+        about anything and her answer is written into the notes where it belongs.
+        <strong>Max</strong> asks you one question at a time, and it is yours to answer first. Stuck?
+        Say so, and he gives you the answer and makes the next question easier.
+      </p>
+      <p>
+        You can edit anything. Nothing you write is ever overwritten: if Ellie or Max want to change
+        your words, it comes as a suggestion you accept or reject.
       </p>
       <p class="quiet">
-        Only your own words move the ○ ◐ ● beside a card. Agreeing with Max never does.
+        The progress bar fills only on your own words, in the chat or in the notes. Agreeing with Max
+        never moves it.
       </p>
       <div class="acts">
         <button type="button" class="btn-primary" onclick={() => toCard(2)}>Next</button>

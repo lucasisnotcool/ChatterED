@@ -19,7 +19,7 @@ import type { DocEditStatus, NotesDocView, NotesRegenerateResult, PageImage, Sug
 import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/notes.js';
 import { log } from '../log.js';
 import { docFromJson, learnerSpans } from '../../shared/doc/schema.js';
-import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks } from './ingest.js';
+import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks, placeholderSuperseded } from './ingest.js';
 import { clearPageImages, pageImageDir, storePageImages } from './pageimages.js';
 import { pageGeometry } from '../vault/pagecache.js';
 
@@ -60,6 +60,14 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
   handle<{ fileId: string }>(IPC.notesGet, async ({ fileId }) => {
     const { contentSha } = await host.fileBytesKey(fileId);
     const record = repo.byContentSha(contentSha);
+    /**
+     * The placeholder written while no model was set up reads as "nothing yet" once one is
+     * (release review P1-6), so the renderer takes its first-open path — page images, then
+     * `notes:ingest` — and `ensureNotes` writes the real notes over it.
+     */
+    const live = host.backend().kind !== 'scripted';
+    const fileName = host.vault.fileRow(fileId)?.name ?? null;
+    if (placeholderSuperseded(record, { live, fileName, contentSha })) return null;
     return record ? view(repo, record) : null;
   });
 

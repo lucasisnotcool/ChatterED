@@ -18,7 +18,14 @@ import type { PageGeometry } from '../../shared/segment/types.js';
 import type { LLMClient, LlmRequest, LlmResult } from '../../room/llm/types.js';
 import { EMPTY_USAGE } from '../../room/llm/types.js';
 import { API_PLAN } from '../../room/llm/models.js';
-import { ensureNotes, ingestInFlight, applyWindow, type NotesIngestDeps, type NotesIngestInput } from './ingest.js';
+import {
+  ensureNotes,
+  ingestInFlight,
+  applyWindow,
+  placeholderSuperseded,
+  type NotesIngestDeps,
+  type NotesIngestInput,
+} from './ingest.js';
 import { EditorState } from 'prosemirror-state';
 import { Node as PmNode } from 'prosemirror-model';
 import { appendNodes } from '../../shared/doc/ops.js';
@@ -334,6 +341,62 @@ describe('when an ingest may not run', () => {
     expect(blockTexts(done.doc)).toContain('What /btw is');
     expect(h.calls).toHaveLength(0);
     expect(h.events.some((e) => e.type === 'notes.window')).toBe(true);
+  });
+});
+
+/**
+ * Release review P1-6: the placeholder written before a model was set up says the real notes come
+ * once one is. With a live backend, opening the deck again must write them — without touching the
+ * learner's words or the scripted demo's canned notes.
+ */
+describe('placeholder notes, once a model is set up', () => {
+  it('points at Settings and Regenerate, not at "reopen this document"', async () => {
+    const h = harness(twoCleanBlocks, { mode: 'scripted', llm: null });
+    const done = await run(h);
+    const text = blockTexts(done.doc).join(' ');
+    expect(text).toContain('Settings (Claude Code, or an API key)');
+    expect(text).toContain('Regenerate');
+  });
+
+  it('are re-ingested on the next open with a live backend', async () => {
+    const scripted = harness(twoCleanBlocks, { mode: 'scripted', llm: null });
+    const placeholder = await run(scripted);
+    expect(placeholder.model).toBe('fixture');
+    expect(placeholderSuperseded(placeholder, { live: true, fileName: INPUT.fileName, contentSha: INPUT.contentSha })).toBe(true);
+
+    const live = harness(twoCleanBlocks, { repo: scripted.repo });
+    const real = await run(live);
+    expect(live.calls.length).toBeGreaterThan(0);
+    expect(real.id).toBe(placeholder.id);
+    expect(real.model).not.toBe('fixture');
+    expect(real.ingestStatus).toBe('ready');
+    expect(blockTexts(real.doc).join(' ')).not.toContain('placeholder notes');
+  });
+
+  it('stay while there is still no live backend', async () => {
+    const h = harness(twoCleanBlocks, { mode: 'scripted', llm: null });
+    const first = await run(h);
+    expect(placeholderSuperseded(first, { live: false, fileName: INPUT.fileName, contentSha: INPUT.contentSha })).toBe(false);
+  });
+
+  it('are never re-ingested over the learner’s own words', async () => {
+    const scripted = harness(twoCleanBlocks, { mode: 'scripted', llm: null });
+    const placeholder = await run(scripted);
+    scripted.repo.markLearnerTouched(placeholder.id, T0);
+    const live = harness(twoCleanBlocks, { repo: scripted.repo });
+    await run(live);
+    expect(live.calls).toHaveLength(0);
+    expect(scripted.repo.byId(placeholder.id)!.model).toBe('fixture');
+  });
+
+  it('leave the scripted demo’s canned notes for its own deck alone', async () => {
+    const demo = { ...INPUT, fileName: 'A0282987E_LohZhengLucas_Critique1_slides (1).pdf' };
+    const scripted = harness(twoCleanBlocks, { mode: 'scripted', llm: null });
+    const canned = await run(scripted, demo);
+    const live = harness(twoCleanBlocks, { repo: scripted.repo });
+    await run(live, demo);
+    expect(live.calls).toHaveLength(0);
+    expect(blockTexts(scripted.repo.byId(canned.id)!.doc)).toContain('What /btw is');
   });
 });
 

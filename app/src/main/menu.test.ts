@@ -11,14 +11,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MenuItemConstructorOptions } from 'electron';
 
+const shellCalls = vi.hoisted(() => ({ external: [] as string[], paths: [] as string[] }));
+
 vi.mock('electron', () => ({
   app: { isPackaged: false },
   Menu: { setApplicationMenu: () => undefined, buildFromTemplate: (t: unknown) => t },
-  shell: { openExternal: () => Promise.resolve() },
+  shell: {
+    openExternal: (url: string) => {
+      shellCalls.external.push(url);
+      return Promise.resolve();
+    },
+    openPath: (path: string) => {
+      shellCalls.paths.push(path);
+      return Promise.resolve('');
+    },
+  },
 }));
 
-const { buildMenuTemplate, DEFAULT_TEXT_SCALE, TEXT_STEPS, largerText, readTextScale, smallerText } =
-  await import('./menu.js');
+const {
+  buildMenuTemplate,
+  DEFAULT_TEXT_SCALE,
+  HELP_URL,
+  REPORT_PROBLEM_MAILTO,
+  TEXT_STEPS,
+  largerText,
+  readTextScale,
+  smallerText,
+} = await import('./menu.js');
 
 interface Sent {
   command: string;
@@ -253,6 +272,55 @@ describe('the interface text size', () => {
       (i) => i.label === 'Larger Text',
     )!;
     expect(() => (item.click as (...a: never[]) => void)()).not.toThrow();
+  });
+});
+
+describe('the Help menu', () => {
+  const NOTICES = '/Applications/ChatterED.app/Contents/Resources/THIRD_PARTY_NOTICES.txt';
+
+  function helpFor(noticesPath: string | null) {
+    const template = buildMenuTemplate({ getWindow: () => null, isPackaged: true, noticesPath });
+    return { template, labels: items(template, 'help') };
+  }
+
+  it('opens the user guide in the public releases repo', () => {
+    shellCalls.external.length = 0;
+    const { template } = helpFor(null);
+    click(template, 'help', 'How ChatterED Works');
+    expect(shellCalls.external).toEqual(['https://github.com/lucasisnotcool/ChatterED-releases#readme']);
+    expect(HELP_URL).toBe('https://github.com/lucasisnotcool/ChatterED-releases#readme');
+  });
+
+  it('starts a problem report to the research team, with the subject filled in', () => {
+    shellCalls.external.length = 0;
+    const { template } = helpFor(null);
+    click(template, 'help', 'Report a Problem…');
+    expect(shellCalls.external).toEqual(['mailto:lucasloh@u.nus.edu?subject=ChatterED%20problem%20report']);
+    expect(REPORT_PROBLEM_MAILTO).toBe(shellCalls.external[0]);
+  });
+
+  it('opens the licence notices from the app bundle when they are there', () => {
+    shellCalls.paths.length = 0;
+    const { template, labels } = helpFor(NOTICES);
+    expect(labels).toEqual(['Settings…', 'How ChatterED Works', 'Report a Problem…', 'Acknowledgements']);
+    click(template, 'help', 'Acknowledgements');
+    expect(shellCalls.paths).toEqual([NOTICES]);
+  });
+
+  it('has no Acknowledgements when there is no notices file (a dev build)', () => {
+    expect(helpFor(null).labels).toEqual(['Settings…', 'How ChatterED Works', 'Report a Problem…']);
+  });
+
+  it('hands the shell only https and the one mailto, never anything else', () => {
+    shellCalls.external.length = 0;
+    const { template } = helpFor(NOTICES);
+    for (const menu of ['appMenu', 'File', 'View', 'help']) {
+      for (const item of submenu(template, menu)) {
+        if (item.click) (item.click as (...a: never[]) => void)();
+      }
+    }
+    expect(shellCalls.external.length).toBe(2);
+    for (const url of shellCalls.external) expect(/^(https:\/\/|mailto:)/.test(url)).toBe(true);
   });
 });
 

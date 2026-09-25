@@ -91,8 +91,9 @@ export function placeholderNotes(title: string): DocBlockDraft[] {
     {
       kind: 'paragraph',
       text:
-        'The two-pass ingest needs the Claude CLI or an API key. Set one in Settings and reopen this ' +
-        'document, and the real notes are written from the slides.',
+        'Writing the real notes from the slides needs a model. Set one up in Settings (Claude Code, ' +
+        'or an API key), then press **Regenerate** above. They are also written by themselves the ' +
+        'next time you open this document with a model set up.',
       prov: { pages: [], reason: 'written without a model: no live backend is configured' },
     },
   ];

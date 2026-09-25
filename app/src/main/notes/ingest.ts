@@ -133,6 +133,26 @@ export function notesAreCurrent(doc: NotesDocRecord | null, contentSha: string):
 }
 
 /**
+ * True when the stored doc is the **placeholder** written while no model was set up, and a model
+ * now is (release review P1-6). Such a doc is not current: its own text tells the learner the real
+ * notes come once a model is set up, so opening it again must write them. Never over the learner's
+ * own words, and never over the scripted demo's canned notes for its fixture deck.
+ */
+export function placeholderSuperseded(
+  doc: NotesDocRecord | null,
+  opts: { live: boolean; fileName: string | null; contentSha: string },
+): boolean {
+  if (!doc || !opts.live) return false;
+  if (doc.model !== 'fixture' || doc.learnerTouched) return false;
+  return matchFixtureDeck({ fileName: opts.fileName, contentSha: opts.contentSha }) !== 'critique1';
+}
+
+/** A live backend, as `ensureNotes` decides it: not scripted, and a client to call. */
+function isLive(deps: Pick<NotesIngestDeps, 'mode' | 'llm'>): boolean {
+  return deps.mode === 'live' && deps.llm !== null && deps.llm.kind !== 'scripted';
+}
+
+/**
  * Ingest this deck if it needs it. Resolves **as soon as the row exists** — the windows arrive as
  * `notes.window` and `notes.status` events, which is §2's "the doc opens as soon as the first
  * window lands".
@@ -145,20 +165,29 @@ export async function ensureNotes(
   const now = deps.now ?? (() => new Date().toISOString());
   const existing = deps.repo.byContentSha(input.contentSha);
 
+  const superseded = placeholderSuperseded(existing, {
+    live: isLive(deps),
+    fileName: input.fileName,
+    contentSha: input.contentSha,
+  });
+  if (superseded) log().info('notes.placeholder_superseded', { file_id: input.fileId, doc_id: existing!.id });
+
   if (!opts.force) {
-    if (notesAreCurrent(existing, input.contentSha)) return existing!;
-    /**
-     * **The learner's edits win over a better prompt.** A document they have written in is never
-     * re-ingested over: `NOTES_PROMPT_VERSION` moving is not a reason to throw their words away,
-     * and remaining windows on a resumed run still only append.
-     */
-    if (existing?.learnerTouched) return existing;
+    if (!superseded) {
+      if (notesAreCurrent(existing, input.contentSha)) return existing!;
+      /**
+       * **The learner's edits win over a better prompt.** A document they have written in is never
+       * re-ingested over: `NOTES_PROMPT_VERSION` moving is not a reason to throw their words away,
+       * and remaining windows on a resumed run still only append.
+       */
+      if (existing?.learnerTouched) return existing;
+    }
     const running = inFlight.get(input.contentSha);
     if (running && existing) return existing;
   }
 
   // ── no live backend: a document, not an error ──
-  if (deps.mode !== 'live' || !deps.llm || deps.llm.kind === 'scripted') {
+  if (!isLive(deps)) {
     return writeFixture(deps, input, existing, now());
   }
 
