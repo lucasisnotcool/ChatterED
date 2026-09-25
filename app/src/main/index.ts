@@ -5,21 +5,44 @@
  * timer's 1 s tick, the orchestrator, the ledger and the SQLite file. The renderer is a view
  * (architecture-mac.md §B.1, §C.1).
  */
-import { app, BrowserWindow, nativeImage, powerMonitor, powerSaveBlocker } from 'electron';
-import { join } from 'node:path';
+import { app, BrowserWindow, dialog, nativeImage, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
+import { basename, join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { release } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { openDatabase } from './db/driver.js';
 import { runMigrations } from './db/migrations.js';
+import { backupDatabase } from './db/backup.js';
 import { createStore } from './db/store.js';
 import { AppService } from './ipc.js';
 import { installMenuFor } from './menu.js';
 import { IPC } from '../shared/ipc.js';
-import { defaultLogDir, fileSink, initLogger, log, type LogLevel } from './log.js';
+import { defaultLogDir, errorClass, fileSink, initLogger, log, type LogLevel } from './log.js';
+import { appEntryUrl, guardWindow, installAppGuards, isTrustedSender } from './security.js';
+import { CrashBudget, isCrash } from './crash.js';
+import { onIntervalActivity } from './clock.js';
+
+/** Release review P1-11. A constant so `renderer.ready` logs what the window was built with. */
+const RENDERER_SANDBOX = true;
 
 let mainWindow: BrowserWindow | null = null;
 let service: AppService | null = null;
 let powerBlockerId: number | null = null;
+
+/**
+ * The Vite dev server, for `npm run dev` only. **Ignored in a packaged app** (release review
+ * P2-12): honoured there, `launchctl setenv CHATTERED_DEV_SERVER https://…` would load a remote
+ * page into the window that holds the whole `window.chattered` bridge.
+ */
+function devServerUrl(): string | null {
+  if (app.isPackaged) return null;
+  return process.env.CHATTERED_DEV_SERVER || null;
+}
+
+/** The one page the main window may show, and the one IPC senders must be on (`security.ts`). */
+function appUrl(): string {
+  return appEntryUrl(devServerUrl(), pathToFileURL(join(__dirname, '../renderer/index.html')).href);
+}
 
 function dataDir(): string {
   const dir = join(app.getPath('userData'));
@@ -59,10 +82,15 @@ function createWindow(): BrowserWindow {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 13 },
     webPreferences: {
+      // One bundled file (scripts/bundle-preload.mjs): a sandboxed preload can `require` only
+      // `electron` and a few Node built-ins, not its own sibling modules.
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // Release review P1-11. The renderer is a Chromium sandboxed process; the preload is the
+      // only thing with `ipcRenderer`, and it exposes named calls, never the channel itself.
+      sandbox: RENDERER_SANDBOX,
+      webviewTag: false,
       // The countdown hairline and the typing indicator must keep animating when the window
       // is not frontmost — a stalled wait-line reads as a broken app (architecture-mac.md §C.3).
       backgroundThrottling: false,
@@ -109,9 +137,19 @@ function createWindow(): BrowserWindow {
     win.webContents.send(IPC.appCommand, direction === 'left' ? 'page.next' : 'page.prev');
   });
 
-  const devServer = process.env.CHATTERED_DEV_SERVER;
+  // Before the first load, so not even the first navigation is unguarded (release review P0-3).
+  guardWindow(win, appUrl(), { openExternal: (url) => shell.openExternal(url), log: log() });
+  watchRenderer(win);
+
+  const devServer = devServerUrl();
   if (devServer) void win.loadURL(devServer);
   else void win.loadFile(join(__dirname, '../renderer/index.html'));
+
+  // Re-walk the vault when the learner comes back to the window: they may have dropped a new
+  // PDF into it from Finder or from a browser download (issue #22 decision 1). mtime diffing
+  // makes an unchanged vault nearly free, so this does not need to be rate-limited. Here rather
+  // than in boot(), so a window re-created from the Dock gets it too (release review P2-5).
+  win.on('focus', () => service?.refreshVault());
 
   // macOS hides the traffic lights in fullscreen, so the renderer's reserved spacer has to
   // collapse or the title sits 78 px too far right (issue #21). The window is the only thing
@@ -126,9 +164,101 @@ function createWindow(): BrowserWindow {
   win.webContents.on('did-finish-load', pushWindowState);
 
   win.on('closed', () => {
-    mainWindow = null;
+    if (mainWindow === win) mainWindow = null;
   });
   return win;
+}
+
+/**
+ * **A crashed or hung window comes back** (release review P1-13). Everything that matters lives in
+ * this process, so a reload re-bootstraps the page from it with nothing lost; the budget stops a
+ * page that crashes *because* of what it loads from reloading forever (`crash.ts`).
+ */
+function watchRenderer(win: BrowserWindow): void {
+  const budget = new CrashBudget();
+  let asking = false;
+
+  win.webContents.on('preload-error', (_event, _path, error) => {
+    // The renderer would otherwise just find no bridge; say why here, where the log is.
+    log().error('preload.error', { class: error.name, cause: error.message });
+  });
+  win.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+    if (isMainFrame) log().error('renderer.load_failed', { code, cause: description });
+  });
+  // One line per load that says the window is healthy: sandboxed, and the preload's bridge is on
+  // the page. A missing bridge is the renderer's fatal screen (bridge.ts); this is its log half.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents
+      .executeJavaScript("typeof window.chattered === 'object' && window.chattered !== null", true)
+      .then((bridge: unknown) => {
+        const fields = { sandbox: RENDERER_SANDBOX, bridge: bridge === true };
+        if (bridge === true) log().info('renderer.ready', fields);
+        else log().error('renderer.no_bridge', fields);
+      })
+      .catch((err: unknown) => log().warn('renderer.probe_failed', { cause: (err as Error).message }));
+  });
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    log().error('renderer.gone', { reason: details.reason, exit_code: details.exitCode });
+    if (!isCrash(details.reason) || win.isDestroyed()) return;
+    if (budget.record(Date.now())) {
+      log().info('renderer.reload', { reason: details.reason });
+      win.webContents.reload();
+      return;
+    }
+    log().error('renderer.gave_up', { reason: details.reason });
+    void dialog
+      .showMessageBox(win, {
+        type: 'error',
+        message: 'ChatterED’s window keeps closing unexpectedly.',
+        detail:
+          'Your work is saved. Try reopening the window; if it happens again, use Help ▸ Report a ' +
+          `Problem and attach the log folder:\n${logDir()}`,
+        buttons: ['Reload', 'Quit'],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 1) app.quit();
+        else if (!win.isDestroyed()) win.webContents.reload();
+      });
+  });
+
+  win.on('unresponsive', () => {
+    log().warn('renderer.unresponsive', {});
+    if (asking || win.isDestroyed()) return;
+    asking = true;
+    void dialog
+      .showMessageBox(win, {
+        type: 'warning',
+        message: 'ChatterED’s window is not responding.',
+        detail: 'You can wait for it, or reload the window. Your work is saved either way.',
+        buttons: ['Wait', 'Reload'],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      .then(({ response }) => {
+        asking = false;
+        if (response === 1 && !win.isDestroyed()) {
+          // A hung page cannot run a reload itself. Ending its process is what Chrome's "Exit
+          // page" does; `render-process-gone` then reloads it, inside the same budget.
+          log().info('renderer.kill', { reason: 'unresponsive' });
+          win.webContents.forcefullyCrashRenderer();
+        }
+      });
+  });
+  win.on('responsive', () => log().info('renderer.responsive', {}));
+}
+
+/** Focus the window a second launch was trying to open (release review P1-3). */
+function focusMainWindow(): void {
+  if (!app.isReady()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (service) mainWindow = createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 /**
@@ -170,8 +300,24 @@ export function logDir(): string {
 function boot(): void {
   const dir = dataDir();
   const db = openDatabase(join(dir, 'app.db'));
-  runMigrations(db, join(__dirname, 'db/migrations'));
+  // An update's first launch copies the database before it touches the schema (release review
+  // P1-4): a migration that fails on a real learner's rows must never strand their notes.
+  runMigrations(db, join(__dirname, 'db/migrations'), {
+    beforeUpgrade: (from, to) => {
+      const file = backupDatabase(db, dir, from);
+      log().info('db.backup', { from, to, file: basename(file) });
+    },
+  });
   const store = createStore(db);
+
+  // Before any window exists, so its webContents is covered from the first event.
+  const entry = appUrl();
+  installAppGuards({
+    app,
+    session: session.defaultSession,
+    isAppContents: (contents) => contents !== null && contents === mainWindow?.webContents,
+    log: log(),
+  });
 
   service = new AppService({
     store,
@@ -181,6 +327,7 @@ function boot(): void {
     userDataDir: dir,
     logDir: logDir(),
     getWindow: () => mainWindow,
+    isTrustedSender: (event) => isTrustedSender(event, entry),
   });
   service.register();
   // What this install spent before there was a ledger. Once per launch, idempotent, swallowed
@@ -191,18 +338,23 @@ function boot(): void {
   // Reload and DevTools are in this menu only while `app.isPackaged` is false.
   installMenuFor(() => mainWindow);
 
-  // Keep App Nap off while the app is open: a napping process does not tick.
-  powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+  // App Nap off only while a room's ticks are armed — a napping process does not tick — and
+  // back on when none are, so an app left open all day is not kept awake (release review P2-4).
+  onIntervalActivity((active) => {
+    if (active && powerBlockerId === null) {
+      powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+      log().debug('power.blocker', { on: true });
+    } else if (!active && powerBlockerId !== null) {
+      powerSaveBlocker.stop(powerBlockerId);
+      powerBlockerId = null;
+      log().debug('power.blocker', { on: false });
+    }
+  });
 
   // The recovery pass runs on launch and on every resume. It is idempotent — a stale fire is
   // discarded by timerEpoch — so running it twice is harmless (architecture-mac.md §B.4).
   powerMonitor.on('resume', () => service?.recover());
   service.recover();
-
-  // Re-walk the vault when the learner comes back to the window: they may have dropped a new
-  // PDF into it from Finder or from a browser download (issue #22 decision 1). mtime diffing
-  // makes an unchanged vault nearly free, so this does not need to be rate-limited.
-  mainWindow.on('focus', () => service?.refreshVault());
 
   // Warm the Claude CLI detection cache in the background. The probe costs one real Haiku
   // round trip, so it must never sit on the critical path of a launch or a turn (issue #19);
@@ -210,15 +362,63 @@ function boot(): void {
   void service.detectCli().catch(() => undefined);
 }
 
-void app.whenReady().then(() => {
-  bootLog();
-  const icon = devIcon();
-  if (icon && process.platform === 'darwin') app.dock?.setIcon(icon);
-  boot();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+/**
+ * **A boot that fails says so, and exits** (release review P1-4). Without this a throw in
+ * `boot()` — the native SQLite module not loading, a full disk, a migration failing on a real
+ * database — left a Dock icon and no window, and the reason in a log the learner never heard of.
+ */
+function failBoot(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  try {
+    log().error('boot.failed', { class: errorClass(err), cause: message });
+  } catch {
+    /* no log either; the dialog is all there is */
+  }
+  dialog.showErrorBox(
+    'ChatterED could not start',
+    `${message}\n\nNothing has been deleted. The log, which says more, is in:\n${logDir()}\n\n` +
+      'Use it with Help ▸ Report a Problem on the next launch, or send it with a note of what happened.',
+  );
+  app.exit(1);
+}
+
+/**
+ * **One ChatterED at a time** (release review P1-3). Two processes would share one SQLite file and
+ * each run its own room actor, silence timer and ingest — duplicate agent turns, and the same
+ * deck ingested (and billed) twice. A second launch (the Dock and a copy on the mounted DMG are
+ * different paths, so macOS starts both) hands over to the first and quits.
+ */
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => focusMainWindow());
+
+  void app.whenReady().then(() => {
+    try {
+      bootLog();
+      const icon = devIcon();
+      if (icon && process.platform === 'darwin') app.dock?.setIcon(icon);
+      boot();
+    } catch (err) {
+      failBoot(err);
+      return;
+    }
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+    });
   });
-});
+
+  // Chromium's own helpers (GPU, network, utility). The GPU process is restarted by Chromium;
+  // this is so a crash is in the log next to whatever it broke (release review P1-13).
+  app.on('child-process-gone', (_event, details) => {
+    log().error('child.gone', {
+      type: details.type,
+      reason: details.reason,
+      exit_code: details.exitCode,
+      name: details.name ?? null,
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -227,5 +427,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   log().info('app.quit', {});
   service?.dispose();
+  onIntervalActivity(null);
   if (powerBlockerId !== null) powerSaveBlocker.stop(powerBlockerId);
+  powerBlockerId = null;
 });

@@ -11,6 +11,8 @@
 import '../../../styles/app.css';
 import { mount } from 'svelte';
 import DevHarness from './DevHarness.svelte';
+import { prepareBridge } from '../../../lib/bridge.js';
 
+await prepareBridge(); // the mock is loaded on demand now (release review P1-5)
 const target = document.getElementById('app');
 if (target) mount(DevHarness, { target });

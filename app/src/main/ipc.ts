@@ -75,6 +75,7 @@ import { registerDocRoomIpc } from './docroom/ipc.js';
 import { registerProgressIpc } from './docroom/progress.js';
 // The experimental trial: consent gate and research export (src/shared/trial.ts).
 import { registerResearchIpc, trialGate } from './research/ipc.js';
+import { describeUrl, type IpcSenderLike } from './security.js';
 
 export interface IpcDeps {
   store: LocalStore;
@@ -87,6 +88,12 @@ export interface IpcDeps {
   /** `~/Library/Logs/ChatterED`. Behind **Open log folder** and **Copy diagnostics**. */
   logDir: string;
   getWindow(): BrowserWindow | null;
+  /**
+   * True when an IPC call came from the app's own page (`security.ts` `isTrustedSender`, release
+   * review P0-3). **Absent means nothing is trusted**: every handler refuses. Production passes
+   * it from `index.ts`; the unit tests that build an AppService never invoke a handler.
+   */
+  isTrustedSender?(event: IpcSenderLike): boolean;
 }
 
 /**
@@ -1038,9 +1045,21 @@ export class AppService {
      * re-thrown — the renderer's banner is a separate promise to the learner.
      */
     const gate = trialGate(this.#d.store.settings);
+    const trusted = (event: IpcSenderLike): boolean => this.#d.isTrustedSender?.(event) ?? false;
     const handle = <T>(channel: string, fn: (payload: T) => unknown) => {
-      ipcMain.handle(channel, async (_event, payload: T) => {
+      ipcMain.handle(channel, async (event, payload: T) => {
         try {
+          // Who is asking comes before what they may ask: a page that is not the app's own (a
+          // dropped file, a foreign URL) gets nothing, not even the consent channels.
+          if (!trusted(event)) {
+            let from = 'no frame';
+            try {
+              from = describeUrl(event.senderFrame?.url ?? '');
+            } catch {
+              /* a disposed frame */
+            }
+            throw new Error(`Refused: this request did not come from the ChatterED window (${from}).`);
+          }
           gate.assert(channel); // nothing but the trial's own channels before consent
           return await fn(payload);
         } catch (err) {

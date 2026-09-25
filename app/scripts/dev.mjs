@@ -18,6 +18,8 @@ function run(cmd, args, opts = {}) {
 console.log('[dev] compiling main + preload…');
 await run(process.execPath, [resolve(appDir, 'node_modules/typescript/lib/tsc.js'), '-p', 'tsconfig.main.json']);
 await run(process.execPath, [resolve(appDir, 'scripts/copy-assets.mjs')]);
+// The preload is bundled, not compiled by tsc: the window is sandboxed (scripts/bundle-preload.mjs).
+await run(process.execPath, [resolve(appDir, 'scripts/bundle-preload.mjs')]);
 
 const server = await createServer({ configFile: resolve(appDir, 'vite.config.mts') });
 await server.listen();
@@ -30,6 +32,10 @@ const tscWatch = spawn(
   [resolve(appDir, 'node_modules/typescript/lib/tsc.js'), '-p', 'tsconfig.main.json', '--watch', '--preserveWatchOutput'],
   { cwd: appDir, stdio: 'inherit' },
 );
+const preloadWatch = spawn(process.execPath, [resolve(appDir, 'scripts/bundle-preload.mjs'), '--watch'], {
+  cwd: appDir,
+  stdio: 'inherit',
+});
 
 // Some terminals (and agent harnesses) export ELECTRON_RUN_AS_NODE=1, which would start
 // Electron as a bare Node process with no `app` object. Strip it.
@@ -44,6 +50,7 @@ const electron = spawn(electronPath, ['.'], {
 
 const shutdown = async () => {
   tscWatch.kill();
+  preloadWatch.kill();
   await server.close();
   process.exit(0);
 };

@@ -9,16 +9,33 @@ import type { SqlDatabase } from './driver.js';
  * The directory is passed in rather than resolved here so that the same code works from the
  * compiled `dist/` tree, from the source tree under Vitest, and from a packaged `app.asar`.
  */
-export function runMigrations(db: SqlDatabase, migrationsDir: string): number {
+export interface MigrationOptions {
+  /**
+   * Called once, before the first pending migration, **only on a database that already has a
+   * schema** (`from > 0`) — a fresh install has nothing to lose. `index.ts` backs the file up
+   * here (`db/backup.ts`), so a migration that fails on a real learner's populated database (the
+   * 014 incident below) never strands their notes. A throw aborts the upgrade before it starts.
+   */
+  beforeUpgrade?(from: number, to: number): void;
+}
+
+export function runMigrations(db: SqlDatabase, migrationsDir: string, opts: MigrationOptions = {}): number {
   const current = (db.prepare('PRAGMA user_version').get<{ user_version: number }>()?.user_version ?? 0) | 0;
   const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
 
-  let applied = current;
-  for (const file of files) {
+  const versionOf = (file: string): number => {
     const version = Number.parseInt(file.slice(0, 3), 10);
     if (!Number.isFinite(version)) throw new Error(`Migration ${file} must start with a 3-digit version`);
+    return version;
+  };
+  const target = files.reduce((max, f) => Math.max(max, versionOf(f)), current);
+  if (current > 0 && target > current) opts.beforeUpgrade?.(current, target);
+
+  let applied = current;
+  for (const file of files) {
+    const version = versionOf(file);
     if (version <= applied) continue;
     const sql = readFileSync(join(migrationsDir, file), 'utf8');
     /**

@@ -15,7 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "clean": "node scripts/clean.mjs",
     "build": "npm run clean && npm run build:main && npm run build:renderer && npm run notices",
-    "build:main": "tsc -p tsconfig.main.json && node scripts/copy-assets.mjs",
+    "build:main": "tsc -p tsconfig.main.json && node scripts/copy-assets.mjs && node scripts/bundle-preload.mjs",
     "build:renderer": "vite build --sourcemap hidden",
     "notices": "node scripts/third-party-notices.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig tsconfig.json --threshold error",

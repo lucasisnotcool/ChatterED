@@ -6,6 +6,9 @@ import 'highlight.js/styles/github.css';
 import './styles/app.css';
 import App from './App.svelte';
 import { mount } from 'svelte';
+import { bridgeAvailable, prepareBridge } from './lib/bridge.js';
+import { installDropGuard } from './lib/dropguard.js';
+import { TRIAL_CONTACT_EMAIL } from '../shared/trial.js';
 
 /**
  * **Renderer failures go into the same log as everything else.**
@@ -45,5 +48,44 @@ function forwardErrors(): void {
   });
 }
 
-forwardErrors();
-mount(App, { target: document.getElementById('app')! });
+/**
+ * **No bridge, no app** (release review P1-5). In a production build a missing
+ * `window.chattered` means the preload failed; drawing the app on the dev mock would look real
+ * while nothing the learner typed was kept. This screen is plain DOM on purpose — it must not
+ * depend on anything that might be what broke. Main logs the preload's own error (`preload.error`).
+ */
+function fatalScreen(target: HTMLElement): void {
+  const box = document.createElement('div');
+  box.setAttribute('role', 'alert');
+  box.style.cssText =
+    'max-width:520px;margin:18vh auto 0;padding:28px 32px;border:1px solid var(--hairline,#ddd);' +
+    'border-radius:10px;background:var(--pane,#fff);font:13px/1.7 -apple-system,system-ui,sans-serif;';
+  const lines: [string, string][] = [
+    ['h1', 'ChatterED could not start'],
+    ['p', 'The window could not connect to the rest of the app, so nothing you type here would be kept.'],
+    ['p', 'Quit ChatterED (⌘Q) and open it again. Your notes and conversations are safe on this Mac.'],
+    [
+      'p',
+      `If it happens again, use Help ▸ Report a Problem, or email ${TRIAL_CONTACT_EMAIL} and attach ` +
+        'the log folder, ~/Library/Logs/ChatterED.',
+    ],
+  ];
+  for (const [tag, text] of lines) {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    el.style.margin = tag === 'h1' ? '0 0 12px' : '0 0 10px';
+    if (tag === 'h1') el.style.fontSize = '16px';
+    box.appendChild(el);
+  }
+  target.replaceChildren(box);
+}
+
+installDropGuard(window);
+await prepareBridge(); // dev only: the mock, when there is no Electron
+const root = document.getElementById('app')!;
+if (bridgeAvailable()) {
+  forwardErrors();
+  mount(App, { target: root });
+} else {
+  fatalScreen(root);
+}
