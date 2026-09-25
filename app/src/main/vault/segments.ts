@@ -20,6 +20,8 @@ import {
   type StoredSegment,
 } from '../db/repos/segments.js';
 import { extractPageGeometry } from './geometry.js';
+import { adoptOrphanedFileRows } from './adopt.js';
+import { log } from '../log.js';
 import {
   mergeSegments,
   refusalMessage,
@@ -201,6 +203,7 @@ export class SegmentService {
   async #ensure(fileId: string): Promise<{ sha: string }> {
     const absPath = this.#deps.sourcePath(fileId);
     const sha = await this.#shaOf(absPath);
+    this.#adopt(fileId, sha);
 
     const record = this.#repo.get(sha);
     const touched = this.#repo.touched(sha);
@@ -234,6 +237,30 @@ export class SegmentService {
       now,
     );
     return { sha };
+  }
+
+  /**
+   * The moment a file id's bytes are known on an open, which can be before the indexer has
+   * reached a moved file: let it adopt its orphaned predecessor's room, tree and progress
+   * (#39, `adopt.ts`) **before** any caller looks them up by id — otherwise the lookup misses,
+   * a second room is made and the tree is regenerated. Never fatal: a failure here costs the
+   * learner their history on this deck, not the deck.
+   */
+  #adopt(fileId: string, sha: string): void {
+    try {
+      const adopted = adoptOrphanedFileRows(this.#deps.db, fileId, sha);
+      if (adopted.from.length > 0) {
+        log().info('vault.adopt', {
+          file_id: fileId,
+          from: adopted.from,
+          materials: adopted.materials,
+          tree: adopted.tree,
+          states: adopted.states,
+        });
+      }
+    } catch (err) {
+      log().warn('vault.adopt.failed', { file_id: fileId, error: (err as Error).message });
+    }
   }
 
   async #geometryFor(fileId: string, sha: string): Promise<PageGeometry[]> {

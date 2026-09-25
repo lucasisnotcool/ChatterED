@@ -11,6 +11,7 @@ import type { SqlDatabase } from '../db/driver.js';
 import { insert, plain, plainAll, updateById } from '../db/sql.js';
 import type { FileKind } from './kinds.js';
 import type { ScannedFile } from './scan.js';
+import { adoptOrphanedFileRows } from './adopt.js';
 import { SNIPPET_CLOSE, SNIPPET_OPEN } from '../../shared/snippet.js';
 
 export interface VaultRow {
@@ -65,6 +66,8 @@ export interface FtsHit {
 export interface SyncCounts {
   added: number;
   updated: number;
+  /** Renamed or moved on disk and recognised as the same file, so it kept its id (#39). */
+  moved: number;
   removed: number;
   unchanged: number;
 }
@@ -99,6 +102,10 @@ export interface VaultRepo {
     sync(vaultId: string, scanned: ScannedFile[], topicFor: (relPath: string) => string | null, now: string): SyncCounts;
     /** Files that are indexable and whose (size, mtime) no longer match what was indexed. */
     stale(vaultId: string, limit: number): FileRow[];
+    /**
+     * Record a successful index. When it yields a sha, the same transaction lets this id adopt
+     * whatever an orphaned predecessor with those bytes left behind (#39, `adopt.ts`).
+     */
     markIndexed(id: string, patch: { at: string; size: number; mtimeMs: number; pageCount: number | null; sha256: string | null }): void;
     markFailed(id: string, at: string, error: string): void;
     countsByTopic(vaultId: string): Map<string | null, number>;
@@ -119,6 +126,44 @@ export interface VaultRepo {
      */
     searchInFile(fileId: string, query: string, limit: number): TextChunk[];
   };
+}
+
+/**
+ * **A rename or a move keeps the file's id** (#39, fix B). A path that is new this scan is
+ * paired with a row whose path vanished this scan when their size, mtime and extension agree —
+ * and only when that match is one-to-one on both sides, so two identical new copies, or two
+ * identical vanished rows, pair with nothing and fall through to add + remove. A rename keeps
+ * mtime on macOS (Finder and `mv` both), which is what makes this cheap: no hashing in a scan.
+ * It cannot see a vault reopened under a different root, or a file that was missing for one
+ * scan; `adopt.ts` covers those, and this one only saves it the work.
+ *
+ * Returns new rel_path → the vanished row it continues.
+ */
+export function pairMoves(existing: Map<string, FileRow>, scanned: ScannedFile[]): Map<string, FileRow> {
+  const present = new Set(scanned.map((f) => f.relPath));
+  const key = (size: number, mtimeMs: number, ext: string): string => `${size}\u0000${mtimeMs}\u0000${ext}`;
+
+  const vanished = new Map<string, FileRow[]>();
+  for (const row of existing.values()) {
+    if (present.has(row.rel_path)) continue;
+    const k = key(row.size, row.mtime_ms, row.ext);
+    vanished.set(k, [...(vanished.get(k) ?? []), row]);
+  }
+  if (vanished.size === 0) return new Map();
+
+  const fresh = new Map<string, ScannedFile[]>();
+  for (const f of scanned) {
+    if (existing.has(f.relPath)) continue;
+    const k = key(f.size, f.mtimeMs, f.ext);
+    fresh.set(k, [...(fresh.get(k) ?? []), f]);
+  }
+
+  const out = new Map<string, FileRow>();
+  for (const [k, rows] of vanished) {
+    const news = fresh.get(k);
+    if (rows.length === 1 && news?.length === 1) out.set(news[0]!.relPath, rows[0]!);
+  }
+  return out;
 }
 
 /** FTS5 MATCH takes a query language, and a learner types prose. Quote every bare term. */
@@ -188,7 +233,9 @@ export function createVaultRepo(db: SqlDatabase): VaultRepo {
        * rows lose their `indexed_*` stamp and therefore come back round to the indexer.
        *
        * A file whose *topic* changed (the learner promoted a folder) keeps its index: the bytes
-       * did not move, only the label did.
+       * did not move, only the label did. A file renamed or moved on disk keeps its id when
+       * `pairMoves` can recognise it (#39); when it cannot, the new id adopts the old one's rows
+       * once its bytes are known (`adopt.ts`).
        */
       sync(vaultId, scanned, topicFor, now) {
         const existing = new Map(
@@ -197,11 +244,24 @@ export function createVaultRepo(db: SqlDatabase): VaultRepo {
             r,
           ]),
         );
-        const counts: SyncCounts = { added: 0, updated: 0, removed: 0, unchanged: 0 };
+        const counts: SyncCounts = { added: 0, updated: 0, moved: 0, removed: 0, unchanged: 0 };
+        const moves = pairMoves(existing, scanned);
 
         for (const f of scanned) {
           const topicId = topicFor(f.relPath);
           const prev = existing.get(f.relPath);
+          const from = prev ? undefined : moves.get(f.relPath);
+          if (from) {
+            // The same file under a new path: keep its id, and with it its index, its room and
+            // its progress. The bytes did not change, so the `indexed_*` stamp stays valid.
+            updateById(db, 'files', from.id, { rel_path: f.relPath, name: f.name, topic_id: topicId });
+            if (from.name !== f.name) {
+              db.prepare('UPDATE file_text SET name = @n WHERE file_id = @f').run({ n: f.name, f: from.id });
+            }
+            existing.delete(from.rel_path);
+            counts.moved += 1;
+            continue;
+          }
           if (!prev) {
             insert(db, 'files', {
               id: newVaultId('f'),
@@ -266,15 +326,26 @@ export function createVaultRepo(db: SqlDatabase): VaultRepo {
             .all<FileRow>({ v: vaultId, n: limit }),
         ),
 
-      markIndexed: (id, patch) =>
-        updateById(db, 'files', id, {
-          indexed_at: patch.at,
-          indexed_size: patch.size,
-          indexed_mtime_ms: patch.mtimeMs,
-          page_count: patch.pageCount,
-          sha256: patch.sha256,
-          index_error: null,
-        }),
+      markIndexed(id, patch) {
+        // A savepoint rather than BEGIN, so this still nests inside a caller's transaction.
+        db.exec('SAVEPOINT mark_indexed');
+        try {
+          updateById(db, 'files', id, {
+            indexed_at: patch.at,
+            indexed_size: patch.size,
+            indexed_mtime_ms: patch.mtimeMs,
+            page_count: patch.pageCount,
+            sha256: patch.sha256,
+            index_error: null,
+          });
+          if (patch.sha256 !== null) adoptOrphanedFileRows(db, id, patch.sha256);
+          db.exec('RELEASE mark_indexed');
+        } catch (err) {
+          db.exec('ROLLBACK TO mark_indexed');
+          db.exec('RELEASE mark_indexed');
+          throw err;
+        }
+      },
 
       markFailed: (id, at, error) =>
         updateById(db, 'files', id, { indexed_at: at, index_error: error.slice(0, 400) }),
