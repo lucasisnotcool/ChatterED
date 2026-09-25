@@ -33,6 +33,7 @@ import {
   emptyTokens,
   formatTokens,
   formatUsd,
+  isApiBackend,
   isIngestScope,
   totalTokens,
   usdLabel,
@@ -180,10 +181,21 @@ export function compactTokens(tokens: CostTokens): string {
  * on a backend where nobody is billed per token, is forty small claims per session that a student
  * owes money — which is the one failure `shared/cost.ts` note 2 exists to prevent.
  */
-export function meterLine(cost: Pick<CostMessageCost, 'tokens' | 'estimatedUsd' | 'mode'>): string {
+export function meterLine(cost: Pick<CostMessageCost, 'tokens' | 'estimatedUsd' | 'mode' | 'unpricedCalls'>): string {
   const tokens = compactTokens(cost.tokens);
-  const money = usdWithLabel(cost.estimatedUsd, cost.mode);
+  const money = unpricedAware(usdWithLabel(cost.estimatedUsd, cost.mode), cost.estimatedUsd, cost.unpricedCalls ?? 0);
   return money.length === 0 ? tokens : `${tokens} · ${money}`;
+}
+
+/**
+ * A model the rate card has no price for (a BYOK id typed into Settings, anything on an
+ * OpenAI-compatible endpoint) is priced at zero **and flagged**. A zero there means "unknown",
+ * never "free": `$0.00` under a paid call would be the exact misreading rule 2 exists to prevent.
+ */
+export function unpricedAware(money: string, usd: number, unpricedCalls: number): string {
+  if (unpricedCalls <= 0) return money;
+  if (usd <= 0) return 'cost unknown';
+  return `${money} + unpriced`;
 }
 
 /** `1.4 s`, `940 ms`, or null when not one of the calls timed itself. */
@@ -374,7 +386,7 @@ export function applyDelta(summary: CostSummary, update: CostUpdate): CostSummar
 
 /** One call's backend, folded into a mode. Mirrors `modeFor` for the incremental case. */
 function nextMode(mode: CostMode, backend: CostCallView['backend']): CostMode {
-  const arriving: CostMode = backend === 'claude-cli' ? 'subscription' : backend === 'anthropic' ? 'api' : 'none';
+  const arriving: CostMode = backend === 'claude-cli' ? 'subscription' : isApiBackend(backend) ? 'api' : 'none';
   if (arriving === 'none') return mode;
   if (mode === 'none') return arriving;
   if (mode === arriving) return mode;

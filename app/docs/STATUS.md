@@ -32,7 +32,7 @@ committed** while `git` is blocked on this Mac.
 | Scripted transcript player (the A1 video fallback) | `src/room/llm/script.psd-hessian.ts`, `scripted.ts` | Replays design-brief.md §G through the *real* actor, timer, gates and whisper scoping. The ledger's evidence is lifted verbatim from what the learner actually types. `ScriptedClient` now takes a `ScriptSource`, so `script.critique1.ts` drops in without editing it, and answers `scope: 'reference'`; the script carries `handoff:N`, `feedback:N` and `reference:N` beats |
 | Anthropic client: streaming, cache breakpoints, usage persisted | `src/room/llm/anthropic.ts` | `claude-haiku-4-5` for agent turns, `claude-sonnet-5` for orchestrator/ledger/ingest |
 | **Local Claude CLI client** (#19) | `src/main/llm/claude-cli.ts` | Shells out to `claude -p … --output-format stream-json`, parses the deltas and the final `result`, persists the same usage shape. In `src/main`, not `src/room`, because it spawns a process and `src/room` is the portable half. 29 tests against a fake `claude` binary on a temp PATH |
-| **Backend detection and order** (#19) | `src/main/llm/detect.ts`, `backend.ts` | CLI-if-logged-in → API key → scripted, forceable in Settings. The login probe costs one Haiku round trip, so it is cached in the settings table and warmed in the background at launch |
+| **Backend detection and order** (#19; BYOK 25 Sep) | `src/main/llm/detect.ts`, `backend.ts`, `providers.ts` | CLI-if-logged-in → preferred API provider → first configured of Anthropic, OpenAI, Gemini, OpenAI-compatible → scripted, forceable in Settings; a forced provider that is not configured lands on scripted with the reason, never on a different paid provider (see the BYOK section below). The login probe costs one Haiku round trip, so it is cached in the settings table and warmed in the background at launch |
 | **Per-role model selection** (#19) | `src/room/llm/models.ts`, `src/renderer/components/Settings.svelte` | Two dropdowns (agent turns / orchestrator + ledger), haiku·sonnet·opus, default **sonnet** for both on the CLI path; a free-text field takes a full id. Fable is not offered and is rejected if typed |
 | Settings screen | `src/renderer/components/Settings.svelte` | Backend, CLI status and path override, the two model choices. Says which backend is *actually* live and why a forced choice was not honoured |
 | **API key entry, in a 0600 file** (#15, amended 2026-09-14) | `src/main/apikey.ts` | The key is a plain file, `~/Library/Application Support/ChatterED/anthropic-api-key`, mode 0600 inside a 0700 directory. It sits in Application Support, **outside the repo**, so no `.gitignore` rule covers it and none is needed — but it is a live credential: never copy it into the checkout and never commit it. Electron `safeStorage` was removed (the prompt on every launch it caused, and the rule that boot must never touch the login keychain, are argued at the top of `apikey.ts`); migration 004 drops the dead ciphertext row, and `src/main/apikey.test.ts` walks the import graph and sweeps `src/` so it cannot come back. Optional now that the CLI can answer |
@@ -47,6 +47,30 @@ committed** while `git` is blocked on this Mac.
 | **Genre router** (#31) | `src/shared/segment/genre.ts` | The four §H threshold rules; only `slides` produces candidates in A1, everything else opens whole-page with a notice |
 | **Segments persisted, and on the IPC bridge** (#25) | `009_segments.sql`, `src/main/db/repos/segments.ts`, `src/main/vault/segments.ts` | Cached against `content_sha`; `segments_touched` means a learner-edited flow is never recomputed. Five channels (`segments:get/split/merge/reorder/rename`), each returning the whole view, a refusal included. Nothing reflowed is stored — §C3 |
 | **Measured on a real deck** | `src/main/vault/geometry.test.ts` | The 7-page 16:9 critique deck in `Academia/Sources/btw interaction/`: 4/2/3/0/2/3/4 accepted candidates per page (18 total, one empty page), inside `segmentation-genres.md` §D1's 1–5 per page. Page 4 is §C6's figure-beside-bullets case and correctly offers nothing horizontal |
+
+## BYOK providers — OpenAI, Gemini, any OpenAI-compatible endpoint (25 Sep 2026)
+
+The local Claude CLI stays the recommended default; these are what `auto` falls to when it is not
+signed in, or what a learner forces in Settings.
+
+| What | Where | Notes |
+|---|---|---|
+| Resolution order | `src/main/llm/backend.ts` | CLI → preferred provider (Settings) → first configured in `API_PROVIDERS` order (anthropic, openai, gemini, openai_compatible) → scripted. `fellBackBecause` names why a forced choice did not run |
+| OpenAI + compatible client | `src/room/llm/openai.ts` | Fetch-only Chat Completions, SSE streaming with real TTFT. OpenAI flavour: `developer` role, `max_completion_tokens` with reasoning headroom, `reasoning_effort: low`, no `temperature` on reasoning models. Compatible flavour: `system`, `max_tokens`. A 400 naming a parameter is retried once without it; structured output degrades json_schema → json_object → schema-in-prompt, remembered per model |
+| Gemini client | `src/room/llm/gemini.ts` | `streamGenerateContent?alt=sse`, key in `x-goog-api-key` (never the URL), `systemInstruction`, `responseJsonSchema`, `thinkingLevel: LOW` on 3.x, thought parts never shown |
+| Shared HTTP/SSE, images, JSON | `src/room/llm/http.ts`, `images.ts`, `structured.ts` | One error sentence per status (401 key, 403, 404 model, 429 rate limit, 5xx); Stop → `LlmAbortedError`; one image ceiling for all API clients |
+| Keys | `src/main/apikey.ts`, `src/main/llm/providerservice.ts` | One 0600 file per provider; `anthropic-api-key` keeps its name so an upgrade loses nothing. Settings sees `••••1a2b`, never the key |
+| Base URL rule | `src/main/llm/providers.ts` | http(s) only; `http://` only for localhost/127.0.0.1/::1; no credentials, query or fragment in the URL; re-validated on every read |
+| CLI path override | `src/main/llm/claude-cli.ts` `cliOverrideProblem` | Release review: the override is spawned, so it must be absolute, an existing executable regular file named `claude`; refused on save, re-checked on read and before spawn |
+| Log redaction | `src/main/log.ts` | `sk-…`/`sk-proj-…`, `AIza…`, `Bearer …` and `key=`/`x-goog-api-key:` values scrubbed from every string |
+| Cost | `src/main/cost/rates.ts` | OpenAI GPT-6/5.x/4.x and Gemini 3.x/2.5 list prices transcribed 2026-09-25 with their own cached-input rates; an unknown model on these backends is priced at zero with `rate_exact = 0`, and the per-message meter says "cost unknown" |
+| Settings + first run | `components/settings/ProviderKeys.svelte`, `Settings.svelte`, `FirstRun.svelte` | Per-provider key, models (suggestions + free text), preferred radio, base URL, **Test connection** (one tiny call, logged, not in the cost ledger) |
+
+**Not verified against the live APIs** — every client test runs against recorded-shape SSE over a
+fake `fetch`. Known gaps: the Usage page's totals do not yet flag unpriced calls (the per-message
+meter does); OpenAI tool calling and Google's newer Interactions API are not used; Gemini 3.1 Pro
+and 2.5 Pro are priced at their ≤200k-token tier only; Gemini 3.6–3.8 Flash prices double on
+2027-01-01 and the card will need the override or a build then.
 
 ## Scripted — real machinery, scripted content
 

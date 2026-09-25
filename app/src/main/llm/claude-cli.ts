@@ -36,9 +36,9 @@
  *    well past the argv limit.
  */
 import { spawn } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 import type { LLMClient, LlmMessage, LlmRequest, LlmResult, LlmUsage } from '../../room/llm/types.js';
 import { EMPTY_USAGE, LlmAbortedError } from '../../room/llm/types.js';
 import { attachUsageToError, usageFromError } from '../cost/client.js';
@@ -62,13 +62,58 @@ export function buildPath(env: NodeJS.ProcessEnv = process.env): string {
   return out.join(delimiter);
 }
 
+/** A regular file (symlinks followed) this user may execute. A directory with +x is not one. */
 function isExecutable(path: string): boolean {
   try {
+    if (!statSync(path).isFile()) return false;
     accessSync(path, constants.X_OK);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * **What a Settings override may point at** (release review, 2026-09-25).
+ *
+ * The override is a string the renderer sends, and main *spawns* it — so an unchecked value is
+ * "run any executable on this Mac". It is accepted only when it is:
+ *  - absolute (a leading `~/` is expanded against `HOME` first, because that is how the
+ *    placeholder and the install docs write it);
+ *  - an existing **regular file** (symlinks followed — `~/.local/bin/claude` is a symlink into
+ *    `~/.local/share/claude/versions/…`) that this user may execute;
+ *  - named **`claude`**, as the link or file the learner pointed at is named.
+ *
+ * Returns the sentence to show, or null when the path is acceptable. `saveSettings` refuses a
+ * path that fails, and `resolveClaudeBinary` re-checks on every read, so a row written by an
+ * older build (or by hand) that fails is never spawned either.
+ */
+export function cliOverrideProblem(raw: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const path = expandHome(raw.trim(), env);
+  if (path.length === 0) return null;
+  if (!isAbsolute(path)) return 'Give the full path to the claude binary, starting with / (or ~/).';
+  if (basename(path) !== 'claude') return 'The path must point at the Claude Code binary itself — a file named claude.';
+  let st;
+  try {
+    st = statSync(path);
+  } catch {
+    return `There is no file at ${path}.`;
+  }
+  if (!st.isFile()) return `${path} is not a file.`;
+  if (!isExecutable(path)) return `${path} is not executable.`;
+  return null;
+}
+
+/** `~/x` → `$HOME/x`. Anything else unchanged. */
+export function expandHome(path: string, env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.HOME ?? '';
+  if (home && (path === '~' || path.startsWith('~/'))) return join(home, path.slice(1));
+  return path;
+}
+
+/** Whether a resolved binary path is one this app will spawn: see `cliOverrideProblem`. */
+export function isSpawnableClaude(path: string | null | undefined): path is string {
+  return typeof path === 'string' && path.length > 0 && isAbsolute(path) && basename(path) === 'claude' && isExecutable(path);
 }
 
 export interface ResolveOptions {
@@ -84,8 +129,8 @@ export interface ResolveOptions {
  */
 export function resolveClaudeBinary(opts: ResolveOptions = {}): string | null {
   const env = opts.env ?? process.env;
-  const override = (opts.override ?? '').trim();
-  if (override.length > 0) return isExecutable(override) ? override : null;
+  const override = expandHome((opts.override ?? '').trim(), env);
+  if (override.length > 0) return cliOverrideProblem(override, env) === null ? override : null;
 
   const home = env.HOME ?? '';
   const candidates: string[] = [];

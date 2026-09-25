@@ -63,6 +63,35 @@ describe('resolving an id to a rate', () => {
   });
 });
 
+describe('BYOK providers (priced 2026-09-25)', () => {
+  it('prices the verified OpenAI and Gemini ids with their own cached-input rate', () => {
+    expect(rateFor('gpt-6-sol', undefined, 'openai')).toMatchObject({
+      exact: true,
+      rate: { inputPerMTok: 2, cacheReadPerMTok: 0.2, outputPerMTok: 10 },
+    });
+    // A dated snapshot the API reports back is the same model.
+    expect(rateFor('gpt-6-sol-2026-09-01', undefined, 'openai').rate.model).toBe('gpt-6-sol');
+    expect(rateFor('gemini-3.8-flash', undefined, 'gemini')).toMatchObject({ exact: true, rate: { inputPerMTok: 0.75, outputPerMTok: 3.75 } });
+    expect(rateFor('gpt-5.4-mini', undefined, 'openai').rate.model).toBe('gpt-5.4-mini');
+  });
+
+  it('prices an unknown non-Claude model at zero and flags it, rather than inventing a bill', () => {
+    for (const backend of ['openai', 'gemini', 'openai-compatible']) {
+      const r = rateFor('llama3.3:70b', undefined, backend);
+      expect(r.exact).toBe(false);
+      expect(r.rate.inputPerMTok).toBe(0);
+    }
+    expect(estimateUsd('some-router/model', { input: 1e6, output: 1e6, cacheWrite: 0, cacheRead: 0 }, undefined, 'openai-compatible').usd).toBe(0);
+    // An alias spelling is a Claude CLI thing; on another provider it is simply unknown.
+    expect(rateFor('sonnet', undefined, 'openai-compatible').exact).toBe(false);
+  });
+
+  it('leaves the Claude fallback as it was', () => {
+    expect(rateFor('totally-made-up', undefined, 'anthropic').rate.model).toBe('claude-sonnet-5');
+    expect(rateFor('totally-made-up', undefined, 'claude-cli').rate.model).toBe('claude-sonnet-5');
+  });
+});
+
 describe('estimating a call', () => {
   /**
    * The real shape of a CLI call, from `segmentation-cost.md` §1.4's measurement: 540

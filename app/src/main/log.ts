@@ -56,8 +56,28 @@ const MAX_VALUE = 300;
  */
 const KEY_SHAPED = /sk-ant-[A-Za-z0-9_-]{8,}/g;
 
+/**
+ * The other providers' keys (BYOK, 2026-09-25), scrubbed the same way. Order matters: the
+ * Anthropic pattern runs first so its marker survives, and the OpenAI pattern skips anything
+ * already redacted.
+ *  - OpenAI: `sk-…`, including `sk-proj-…` and `sk-svcacct-…`;
+ *  - Google (Gemini / AI Studio): `AIza…`;
+ *  - any `Bearer <token>` — an OpenAI-compatible endpoint's key can be any string at all, and the
+ *    Authorization header is the one place it is guaranteed to be written next to that word;
+ *  - `x-goog-api-key: …` / `api-key=…` / `key=…` in a quoted header or a URL query.
+ */
+const OPENAI_KEY_SHAPED = /\bsk-(?!ant-\[redacted\])[A-Za-z0-9_-]{16,}/g;
+const GOOGLE_KEY_SHAPED = /\bAIza[0-9A-Za-z_-]{20,}/g;
+const BEARER = /\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const KEY_PARAM = /\b(x-goog-api-key|x-api-key|api[_-]?key|key)(["']?\s*[:=]\s*["']?)(?!\[redacted\])[A-Za-z0-9._~+/-]{12,}/gi;
+
 function scrub(value: string): string {
-  const clean = value.replace(KEY_SHAPED, 'sk-ant-[redacted]');
+  const clean = value
+    .replace(KEY_SHAPED, 'sk-ant-[redacted]')
+    .replace(OPENAI_KEY_SHAPED, 'sk-[redacted]')
+    .replace(GOOGLE_KEY_SHAPED, 'AIza[redacted]')
+    .replace(BEARER, '$1 [redacted]')
+    .replace(KEY_PARAM, '$1$2[redacted]');
   return clean.length > MAX_VALUE ? `${clean.slice(0, MAX_VALUE)}…` : clean;
 }
 

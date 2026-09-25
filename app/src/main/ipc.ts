@@ -28,8 +28,10 @@ import type { ConceptPack, LedgerRow, RoomConfig } from '../room/records.js';
 import { systemClock } from './clock.js';
 import type { SqlDatabase } from './db/driver.js';
 import { groupView, type LocalStore } from './db/store.js';
-import { createApiKeyStore, looksLikeAnthropicKey, type ApiKeyStore } from './apikey.js';
+import { looksLikeAnthropicKey, type ApiKeyStore } from './apikey.js';
 import { createClient, modeFor, resolveBackend, type ResolvedBackend } from './llm/backend.js';
+import { ProviderService, registerProviderIpc } from './llm/providerservice.js';
+import { cliOverrideProblem, expandHome } from './llm/claude-cli.js';
 import { detectClaudeCli, NOT_FOUND, SETTINGS_KEYS, type CliDetection } from './llm/detect.js';
 import { createSession, draftConcept, newId } from './sessions.js';
 import { ensurePack } from './pack.js';
@@ -104,6 +106,8 @@ function roomLog(roomId: string): TurnLog {
 export class AppService {
   readonly #d: IpcDeps;
   readonly #apiKey: ApiKeyStore;
+  /** BYOK: every provider's key file, views, patch checks and Test connection. */
+  readonly #providers: ProviderService;
   readonly #vault: VaultService;
   readonly #segments: SegmentService;
   readonly #cost: CostLedger;
@@ -115,7 +119,9 @@ export class AppService {
 
   constructor(deps: IpcDeps) {
     this.#d = deps;
-    this.#apiKey = createApiKeyStore(deps.userDataDir);
+    this.#providers = new ProviderService({ userDataDir: deps.userDataDir, settings: deps.store.settings });
+    // The Anthropic key is the provider service's `anthropic` store — the same file as ever.
+    this.#apiKey = this.#providers.store('anthropic');
     this.#vault = new VaultService({
       db: deps.db,
       settings: deps.store.settings,
@@ -233,7 +239,7 @@ export class AppService {
    * it in Settings between two rooms, and the cached CLI detection can go stale under it.
    */
   backend(): ResolvedBackend {
-    return resolveBackend({ settings: this.#d.store.settings, hasApiKey: this.#apiKey.has() });
+    return resolveBackend(this.#providers.resolveInput());
   }
 
   mode(): 'scripted' | 'live' {
@@ -252,8 +258,10 @@ export class AppService {
     return createClient({
       settings: this.#d.store.settings,
       hasApiKey: this.#apiKey.has(),
+      keys: this.#providers.keyFlags(),
       resolved,
       apiKey: () => this.#apiKey.get(),
+      keyFor: this.#providers.keyFor,
       roster: rosterFor(this.pairing(), resolved.models.agent),
       cost: this.#costSink(),
       ...(material ? { material } : {}),
@@ -278,6 +286,8 @@ export class AppService {
       orchestratorModel: resolved.models.orchestrator,
       modelChoices: [...CLI_MODEL_CHOICES],
       hasApiKey: this.#apiKey.has(),
+      providers: this.#providers.views(),
+      preferredProvider: this.#providers.preferred(),
       vaultRoot: this.#vault.view().rootPath,
       flowProfile: this.flowProfile().name,
       pacingStripSeen: this.#d.store.settings.get(PACING_STRIP_SETTING) === '1',
@@ -327,12 +337,25 @@ export class AppService {
       }
     }
 
+    const providerProblem = this.#providers.checkPatch(patch);
+    if (providerProblem) return { ok: false, error: providerProblem };
+    /**
+     * **The CLI path is spawned, so it is checked** (release review, 2026-09-25): absolute, an
+     * existing regular executable file named `claude` — see `cliOverrideProblem`. A path that
+     * fails is refused here, and `resolveClaudeBinary` re-checks on every read.
+     */
+    if (patch.cliPathOverride !== undefined && patch.cliPathOverride !== null && patch.cliPathOverride.trim() !== '') {
+      const problem = cliOverrideProblem(patch.cliPathOverride);
+      if (problem) return { ok: false, error: problem };
+    }
+
     if (patch.backendChoice !== undefined) set(SETTINGS_KEYS.backend, patch.backendChoice);
+    this.#providers.applyPatch(patch, now());
     if (patch.agentModel !== undefined) set(SETTINGS_KEYS.cliAgentModel, normaliseModelId(patch.agentModel) ?? '');
     if (patch.orchestratorModel !== undefined) {
       set(SETTINGS_KEYS.cliOrchestratorModel, normaliseModelId(patch.orchestratorModel) ?? '');
     }
-    if (patch.cliPathOverride !== undefined) set(SETTINGS_KEYS.cliPathOverride, (patch.cliPathOverride ?? '').trim());
+    if (patch.cliPathOverride !== undefined) set(SETTINGS_KEYS.cliPathOverride, expandHome((patch.cliPathOverride ?? '').trim()));
     // The pacing profile reaches the open room through `rebindActor` (#40): the learner choosing
     // it is not a silent change, and holding it back until the sitting closed meant a switch to
     // Demo did nothing for up to the inactivity gap, reopen or not.
@@ -380,7 +403,7 @@ export class AppService {
     });
     return {
       appVersion: this.#d.appVersion,
-      hasApiKey: this.#apiKey.has(),
+      hasApiKey: this.#providers.anyConfigured(),
       mode: modeFor(resolved.kind),
       backend: resolved.kind,
       backendChoice: resolved.choice,
@@ -1054,6 +1077,10 @@ export class AppService {
     handle(IPC.clearApiKey, () => {
       this.#apiKey.clear();
     });
+
+    // BYOK providers (2026-09-25): keys, and Test connection. A key change re-binds the open room
+    // the same way a Settings change does, so the next turn runs on what Settings now says.
+    registerProviderIpc(this.#providers, handle, () => this.rebindActor());
 
     handle(IPC.completeFirstRun, () => {
       this.#d.store.settings.set('first_run_complete', '1', new Date().toISOString());

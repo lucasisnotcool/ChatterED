@@ -140,7 +140,7 @@ export class CostLedger {
       cacheWrite: int(input.tokens.cacheWrite),
       cacheRead: int(input.tokens.cacheRead),
     };
-    const estimate = estimateUsd(input.model, tokens, this.#card());
+    const estimate = estimateUsd(input.model, tokens, this.#card(), input.backend);
     const roomId = input.roomId ?? null;
     const fileId = input.fileId ?? (roomId ? this.#fileFor(roomId) : null);
     const row: UsageRow = {
@@ -182,7 +182,7 @@ export class CostLedger {
       cacheWrite: int(input.tokens.cacheWrite),
       cacheRead: int(input.tokens.cacheRead),
     };
-    const estimate = estimateUsd(input.model, tokens, this.#card());
+    const estimate = estimateUsd(input.model, tokens, this.#card(), input.backend);
     this.#d.db
       .prepare(
         `INSERT OR IGNORE INTO llm_usage

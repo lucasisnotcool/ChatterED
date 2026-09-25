@@ -82,7 +82,8 @@ export interface MessageView {
    */
   model?: string | null;
   /**
-   * The **client** kind, as the message row stores it: `'claude-cli' | 'anthropic' | 'scripted'`.
+   * The **client** kind, as the message row stores it: `'claude-cli' | 'anthropic' | 'openai' |
+   * 'gemini' | 'openai-compatible' | 'scripted'`.
    * Deliberately not `BackendKind` — that is Settings' vocabulary (`claude_cli`, underscore) and
    * the two must not be silently conflated.
    */
@@ -262,7 +263,7 @@ export interface RoomSnapshot {
   timer: TimerView;
   thinking: ThinkingView | null;
   nudgesPaused: boolean;
-  /** 'scripted' replays design-brief.md §G; 'live' calls the Anthropic API. */
+  /** 'scripted' replays design-brief.md §G; 'live' calls a real model (the CLI or an API provider). */
   mode: 'scripted' | 'live';
   roundCard: { title: string; body: string };
   /** Turns that failed and have not been retried or superseded. Rendered as system cards. */
@@ -378,9 +379,57 @@ export interface RecentSession {
   updatedAt: string;
 }
 
-/** The three live backends, plus 'auto' for "pick the best one available" (issue #19). */
-export type BackendKind = 'claude_cli' | 'anthropic' | 'scripted';
+/**
+ * The API providers a learner can bring their own key for (BYOK, 2026-09-25). `anthropic` was the
+ * first (#15); `openai_compatible` is any endpoint that speaks OpenAI's Chat Completions dialect
+ * at a base URL the learner types — OpenRouter, Ollama, LM Studio, Groq, DeepSeek, vLLM.
+ */
+export type ApiProvider = 'anthropic' | 'openai' | 'gemini' | 'openai_compatible';
+
+/** In the order `auto` tries them when no preferred provider is set, after the Claude CLI. */
+export const API_PROVIDERS: readonly ApiProvider[] = ['anthropic', 'openai', 'gemini', 'openai_compatible'];
+
+/** The live backends, plus 'auto' for "pick the best one available" (issue #19). */
+export type BackendKind = 'claude_cli' | ApiProvider | 'scripted';
 export type BackendChoice = 'auto' | BackendKind;
+
+/**
+ * One API provider, as Settings shows it. Never carries the key: `keyHint` is `••••1a2b`.
+ */
+export interface ProviderView {
+  id: ApiProvider;
+  label: string;
+  /** Whether a key is stored. */
+  hasKey: boolean;
+  keyHint: string | null;
+  /** False only for `openai_compatible`, where a local server may take none. */
+  keyRequired: boolean;
+  /** The file the key lives in, under Application Support, for the copy under the field. */
+  keyFile: string;
+  /** Whether this provider can answer right now: a key (or, for compatible, a URL and a model). */
+  configured: boolean;
+  /** The learner's two model choices, resolved against the provider default. '' when there is none. */
+  agentModel: string;
+  orchestratorModel: string;
+  /** The provider's defaults, for the "(default)" mark in the dropdown. '' for compatible. */
+  defaultAgentModel: string;
+  defaultOrchestratorModel: string;
+  /** Dropdown suggestions. Free text is always allowed too. Fable is never among them. */
+  suggestions: string[];
+  /** `openai_compatible` only: the base URL, or null. */
+  baseUrl: string | null;
+}
+
+/** What Settings ▸ Test connection reports. */
+export interface ProviderTestResult {
+  ok: boolean;
+  provider: ApiProvider;
+  model: string;
+  /** Wall time of the one tiny call. */
+  ms: number;
+  /** On failure: the sentence the client threw. On success: null. */
+  error: string | null;
+}
 
 /** What the last `claude` binary probe found. Cached in settings; see src/main/llm/detect.ts. */
 export interface CliStatus {
@@ -405,7 +454,10 @@ export type ReplySpeed = 'default' | 'faster' | 'off';
 
 export interface SettingsView {
   appVersion: string;
-  /** What the learner chose. 'auto' means CLI → API key → scripted, in that order. */
+  /**
+   * What the learner chose. 'auto' means the Claude CLI, then the preferred API provider, then
+   * the first configured provider (anthropic, openai, gemini, openai_compatible), then scripted.
+   */
   backendChoice: BackendChoice;
   /** What that actually resolved to, once reality was consulted. */
   resolvedBackend: BackendKind;
@@ -418,7 +470,12 @@ export interface SettingsView {
   orchestratorModel: string;
   /** The dropdown options, in order. Fable is deliberately not among them (CLAUDE.md). */
   modelChoices: string[];
+  /** Whether an **Anthropic** key is stored (#15). Every provider's own flag is on `providers`. */
   hasApiKey: boolean;
+  /** Every API provider, in `API_PROVIDERS` order. */
+  providers: ProviderView[];
+  /** The provider `auto` prefers after the Claude CLI, or null for "the first one configured". */
+  preferredProvider: ApiProvider | null;
   /** The vault root, so Settings can offer "Change vault…" without opening the Library. */
   vaultRoot: string | null;
   /**
@@ -456,6 +513,15 @@ export interface SettingsView {
 
 export interface SettingsPatch {
   backendChoice?: BackendChoice;
+  /** Which API provider `auto` tries first after the Claude CLI. null clears it. */
+  preferredProvider?: ApiProvider | null;
+  /**
+   * One API provider's model choices. `''` returns a role to the provider default. A Fable id is
+   * refused, exactly as it is for the CLI's two fields.
+   */
+  providerModels?: { provider: ApiProvider; agent?: string; orchestrator?: string };
+  /** `openai_compatible`'s base URL. http only for localhost; https otherwise. '' clears it. */
+  compatibleBaseUrl?: string;
   cliPathOverride?: string | null;
   agentModel?: string;
   orchestratorModel?: string;
@@ -474,6 +540,7 @@ export interface SettingsPatch {
 
 export interface Bootstrap {
   appVersion: string;
+  /** Whether any API provider is configured (a key, or a compatible endpoint). */
   hasApiKey: boolean;
   mode: 'scripted' | 'live';
   /** Which backend the next room will open on, and why (issue #19). */

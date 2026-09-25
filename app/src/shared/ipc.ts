@@ -3,6 +3,7 @@
  * (architecture-mac.md §C.1: "IPC bridge — contextIsolation, preload allowlist").
  */
 import type {
+  ApiProvider,
   Bootstrap,
   ConceptDraft,
   CreateSessionInput,
@@ -14,6 +15,7 @@ import type {
   RoomSnapshot,
   SearchHitView,
   SessionSeed,
+  ProviderTestResult,
   SettingsPatch,
   SettingsView,
   TeachbackResult,
@@ -59,6 +61,10 @@ export const IPC = {
   getSettings: 'app:getSettings',
   saveSettings: 'app:saveSettings',
   detectCli: 'app:detectCli',
+  // BYOK providers (2026-09-25). Bodies in `src/main/llm/providerservice.ts`.
+  setProviderKey: 'app:setProviderKey',
+  clearProviderKey: 'app:clearProviderKey',
+  testProvider: 'app:testProvider',
   draftConcept: 'session:draftConcept',
   createSession: 'session:create',
   openRoom: 'room:open',
@@ -180,6 +186,14 @@ export interface ChatterEdApi {
    * is cached — `force` is the "Check again" button (issue #19).
    */
   detectCli(input?: { force?: boolean }): Promise<SettingsView>;
+  /**
+   * One provider's key, stored in its own 0600 file under Application Support (`anthropic` is the
+   * same file `setApiKey` writes). The key never comes back across IPC — Settings sees `••••1a2b`.
+   */
+  setProviderKey(input: { provider: ApiProvider; key: string }): Promise<{ ok: boolean; error?: string }>;
+  clearProviderKey(input: { provider: ApiProvider }): Promise<void>;
+  /** Settings ▸ Test connection: one tiny call to that provider on its fast-lane model. */
+  testProvider(input: { provider: ApiProvider }): Promise<ProviderTestResult>;
 
   /** Turns pasted text into a draft concept + 3–5 claim rows the learner then edits. */
   draftConcept(input: { moduleCode: string; title: string; text: string }): Promise<ConceptDraft>;

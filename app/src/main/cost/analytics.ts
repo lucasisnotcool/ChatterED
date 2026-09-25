@@ -170,6 +170,7 @@ function forSurface(deps: AnalyticsDeps, query: CostMessageQuery, kind: 'message
               u.backend           AS backend,
               SUM(u.duration_ms)  AS duration_ms,
               SUM(u.outcome IN ('error','preempted')) AS failed_calls,
+              SUM(u.rate_exact = 0 AND u.backend IN ('openai','gemini','openai-compatible')) AS unpriced_calls,
               ${AGGREGATES}
          FROM ${table} m
          JOIN llm_usage u ON u.turn_id = m.turn_id
@@ -186,6 +187,7 @@ function forSurface(deps: AnalyticsDeps, query: CostMessageQuery, kind: 'message
         backend: string;
         duration_ms: number | null;
         failed_calls: number | null;
+        unpriced_calls: number | null;
       }
     >(params);
 
@@ -212,6 +214,7 @@ function forSurface(deps: AnalyticsDeps, query: CostMessageQuery, kind: 'message
         byScope: [],
         mode: 'none',
         failedCalls: 0,
+        unpricedCalls: 0,
       } satisfies CostMessageCost);
 
     existing.calls += row.calls ?? 0;
@@ -220,6 +223,7 @@ function forSurface(deps: AnalyticsDeps, query: CostMessageQuery, kind: 'message
     if ((row.reported_calls ?? 0) > 0) existing.reportedUsd = round6((existing.reportedUsd ?? 0) + (row.reported_usd ?? 0));
     if (typeof row.duration_ms === 'number') existing.ms = (existing.ms ?? 0) + row.duration_ms;
     existing.failedCalls += row.failed_calls ?? 0;
+    existing.unpricedCalls = (existing.unpricedCalls ?? 0) + (row.unpriced_calls ?? 0);
     byMessage.set(id, existing);
 
     const scopes = scopesOf.get(id) ?? new Map<string, CostSlice>();

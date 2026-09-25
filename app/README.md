@@ -56,10 +56,16 @@ npm run dev     # compiles main + preload, starts Vite, launches Electron
 
 - **Node ≥ 22.12**, npm 10+, macOS with the Xcode command-line tools.
 - **A live model is needed to ingest a deck.** The app uses, in order: the local **Claude Code
-  CLI** when `claude` is installed and logged in (no key, no per-message charge), or an
-  **Anthropic API key** entered in Settings (stored mode 0600 under
-  `~/Library/Application Support/ChatterED/`, outside the repo). Turns, feedback and edits run on
-  Claude Sonnet 5.
+  CLI** when `claude` is installed and logged in (recommended: no key, no per-message charge;
+  turns, feedback and edits run on Claude Sonnet 5); otherwise **your own API key** (BYOK) —
+  the provider you marked preferred in Settings, else the first one configured of **Anthropic**
+  (Haiku 4.5 / Sonnet 5), **OpenAI** (GPT-6 Sol), **Google Gemini** (Gemini 3.8 Flash) and an
+  **OpenAI-compatible endpoint** (OpenRouter, Ollama, LM Studio, Groq, DeepSeek, vLLM — a base URL
+  and model ids you give it; `http://` only for a server on this Mac); otherwise the **scripted**
+  demo. Each key is its own 0600 file under `~/Library/Application Support/ChatterED/`, outside
+  the repo, and goes only to its own provider. Settings says which backend is running and why,
+  lets you set each provider's two models, and has **Test connection**. Dollar figures for a
+  model not on the rate card read "cost unknown", never $0.
 - **Open folder →** any folder of lecture PDFs. This ZIP carries one small deck of the author's
   own (`Academia/Sources/btw interaction/`, 7 slides). The deck in the video is the module's own
   Week 4 lecture, which is the lecturer's and is not redistributed here.

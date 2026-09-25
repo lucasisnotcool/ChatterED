@@ -17,7 +17,7 @@
  */
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { buildPath, looksNotLoggedIn, resolveClaudeBinary } from './claude-cli.js';
+import { buildPath, cliOverrideProblem, looksNotLoggedIn, resolveClaudeBinary } from './claude-cli.js';
 import type { CliStatus } from '../../shared/types.js';
 import type { SettingsRepo } from '../db/repos/core.js';
 
@@ -90,7 +90,7 @@ export async function detectClaudeCli(deps: DetectDeps, force = false): Promise<
       ...NOT_FOUND,
       detail:
         (override ?? '').trim().length > 0
-          ? `The Claude CLI path in Settings (${override}) is not an executable file.`
+          ? `The Claude CLI path in Settings (${override}) is not usable: ${cliOverrideProblem(override ?? '', env) ?? 'not an executable file.'}`
           : NOT_FOUND.detail,
       checkedAt: deps.now(),
     };

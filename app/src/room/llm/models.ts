@@ -65,6 +65,77 @@ export interface ModelPlan {
 
 export const API_PLAN: ModelPlan = { agent: HAIKU_API, orchestrator: SONNET_API, fast: SONNET_API };
 
+// ── BYOK providers (2026-09-25) ─────────────────────────────────────────────
+//
+// Every id below was checked against the provider's own model and pricing pages on 2026-09-25:
+//   OpenAI — developers.openai.com/api/docs/pricing and /guides/latest-model (GPT-6 is the
+//            current flagship family; gpt-6-sol and gpt-6-luna accept Chat Completions).
+//   Gemini — ai.google.dev/gemini-api/docs/models (gemini-3.8-flash is the current stable
+//            Flash; 3.1 Pro is still `-preview`, so it is offered, never defaulted).
+// The Anthropic list is the `claude-api` skill's model table (cached 2026-06-24).
+//
+// **Defaults follow the Claude CLI's reasoning, not the API plan's.** The API plan puts agent
+// turns on Haiku to keep many small turns cheap; for OpenAI and Gemini the mid-tier model is
+// already priced at or below Sonnet 5, and the cheapest tier is built for "focused, high-volume
+// tasks", not for explaining a slide. So both roles default to the mid tier, and the learner
+// can drop the agent role to the cheap tier in Settings. `fast` follows the orchestrator on
+// every provider, for the reason `ModelPlan.fast` records.
+
+/** The API providers a learner can bring a key for. Mirrors `ApiProvider` in `src/shared/types.ts`. */
+export type ApiProviderId = 'anthropic' | 'openai' | 'gemini' | 'openai_compatible';
+
+export const OPENAI_DEFAULT_MODEL = 'gpt-6-sol';
+export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash';
+
+/**
+ * The default plan per provider. `openai_compatible` has none — the endpoint could be anything
+ * from a laptop's Ollama to a router with four hundred models, so the learner names the model and
+ * an empty id means "not configured yet", never a guess.
+ */
+export const PROVIDER_PLANS: Record<ApiProviderId, ModelPlan | null> = {
+  anthropic: API_PLAN,
+  openai: { agent: OPENAI_DEFAULT_MODEL, orchestrator: OPENAI_DEFAULT_MODEL, fast: OPENAI_DEFAULT_MODEL },
+  gemini: { agent: GEMINI_DEFAULT_MODEL, orchestrator: GEMINI_DEFAULT_MODEL, fast: GEMINI_DEFAULT_MODEL },
+  openai_compatible: null,
+};
+
+/** The dropdown suggestions per provider, cheapest-to-strongest. Free text is always allowed too. */
+export const PROVIDER_MODEL_SUGGESTIONS: Record<ApiProviderId, readonly string[]> = {
+  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  openai: ['gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra', 'gpt-5.4-mini', 'gpt-5.4'],
+  gemini: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-pro-preview'],
+  openai_compatible: [],
+};
+
+/**
+ * A provider's plan from the learner's two stored choices, falling back per role to the
+ * provider default. Returns null for a compatible endpoint with no model named.
+ */
+export function providerPlan(
+  provider: ApiProviderId,
+  agent: string | null | undefined,
+  orchestrator: string | null | undefined,
+): ModelPlan | null {
+  const base = PROVIDER_PLANS[provider];
+  const a = normaliseApiModelId(agent) ?? base?.agent ?? null;
+  const o = normaliseApiModelId(orchestrator) ?? base?.orchestrator ?? a;
+  if (!a || !o) return null;
+  return { agent: a, orchestrator: o, fast: o };
+}
+
+/**
+ * The API-path counterpart of `normaliseModelId`: trims, rejects Fable and junk, and **keeps
+ * case and `/` and `:`** — an OpenRouter id is `anthropic/claude-sonnet-5`, an Ollama tag is
+ * `llama3.3:70b`, and neither is an alias to lower-case.
+ */
+export function normaliseApiModelId(raw: string | undefined | null): string | null {
+  const trimmed = (raw ?? '').trim();
+  if (trimmed.length === 0) return null;
+  if (isBlockedModelId(trimmed)) return null;
+  if (!/^[A-Za-z0-9._:/@+-]+$/.test(trimmed) || trimmed.length > 200) return null;
+  return trimmed;
+}
+
 export function cliPlan(agent: string, orchestrator: string): ModelPlan {
   const resolved = normaliseModelId(orchestrator) ?? DEFAULT_CLI_ORCHESTRATOR_MODEL;
   return {

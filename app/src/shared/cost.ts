@@ -109,7 +109,17 @@ export function isIngestScope(scope: CostScope): boolean {
 }
 
 /** Mirrors `LlmBackend`. Repeated rather than imported: `src/shared` may not depend on `src/room`. */
-export type CostBackend = 'anthropic' | 'claude-cli' | 'scripted';
+export type CostBackend = 'anthropic' | 'claude-cli' | 'scripted' | 'openai' | 'gemini' | 'openai-compatible';
+
+/**
+ * The backends that bill the learner's own key per token. Everything except the local CLI (a
+ * subscription) and the script (free). An OpenAI-compatible endpoint is counted here even when it
+ * is a local Ollama that bills nobody: its dollars are shown as unknown rather than zero (see
+ * `rateFor` in `src/main/cost/rates.ts`), and "API" is the safer label than "free".
+ */
+export function isApiBackend(b: CostBackend | string | null | undefined): boolean {
+  return b === 'anthropic' || b === 'openai' || b === 'gemini' || b === 'openai-compatible';
+}
 
 /** app = everything; file = every room on one document; thread = one anchor. */
 export type CostLevel = 'app' | 'file' | 'thread';
@@ -119,7 +129,8 @@ export type CostLevel = 'app' | 'file' | 'thread';
  *
  * - `'subscription'` — every call in it came from the local CLI. Dollars are **API-equivalent**
  *   and must be labelled as such; the headline is tokens.
- * - `'api'` — every call went to api.anthropic.com on the learner's own key. Dollars are a real
+ * - `'api'` — every call went to an API provider on the learner's own key (Anthropic, OpenAI,
+ *   Gemini, or an OpenAI-compatible endpoint; see `isApiBackend`). Dollars are a real
  *   estimate of a real bill (still an estimate: the rate card is cached, not fetched).
  * - `'mixed'` — both, in the same window. Treat it as `'subscription'` for labelling, because
  *   the safe error is under-claiming what was spent.
@@ -359,6 +370,12 @@ export interface CostMessageCost {
   mode: CostMode;
   /** Calls that threw or were pre-empted. Shown, because a retried turn cost twice. */
   failedCalls: number;
+  /**
+   * Calls on a BYOK provider whose model is not on the rate card (`rateFor` → `UNKNOWN_RATE`).
+   * Their dollars are **unknown**, not zero, and the meter says so. Optional so an older main
+   * process (or a mock) that does not send it reads as "all priced".
+   */
+  unpricedCalls?: number;
 }
 
 // ── the analytics page (#42 item D) ─────────────────────────────────────────
@@ -534,7 +551,7 @@ export function modeFor(backends: Iterable<CostBackend>): CostMode {
   let api = false;
   for (const b of backends) {
     if (b === 'claude-cli') cli = true;
-    else if (b === 'anthropic') api = true;
+    else if (isApiBackend(b)) api = true;
   }
   if (cli && api) return 'mixed';
   if (cli) return 'subscription';

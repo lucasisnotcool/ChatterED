@@ -98,15 +98,18 @@ export function queryFor(
   return query;
 }
 
-/** The backends, in the words Settings uses for the same three things. For the filter menu. */
+/** The backends, in the words Settings uses for the same things. For the filter menu. */
 export const BACKEND_LABEL: Record<CostBackend, string> = {
   'claude-cli': 'Claude Code on this Mac',
   anthropic: 'Anthropic API key',
+  openai: 'OpenAI API key',
+  gemini: 'Gemini API key',
+  'openai-compatible': 'OpenAI-compatible endpoint',
   scripted: 'Scripted demo',
 };
 
 /**
- * The same three, short enough for a chart row.
+ * The same backends, short enough for a chart row.
  *
  * A menu has the width to say "Claude Code on this Mac"; a bar chart's label column does not, and
  * `Claude Code on th…` is a label that has stopped being one. Two spellings of the same thing is
@@ -116,6 +119,9 @@ export const BACKEND_LABEL: Record<CostBackend, string> = {
 export const BACKEND_SHORT: Record<CostBackend, string> = {
   'claude-cli': 'Claude Code',
   anthropic: 'Anthropic API',
+  openai: 'OpenAI API',
+  gemini: 'Gemini API',
+  'openai-compatible': 'Compatible API',
   scripted: 'Scripted demo',
 };
 

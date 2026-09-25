@@ -1,7 +1,8 @@
 /**
- * The LLM port. Three implementations ship: `ClaudeCliClient` (the default — the local,
- * logged-in `claude` binary, in src/main/llm because it spawns a process), `AnthropicClient`
- * (per-user API key, streaming, prompt caching) and `ScriptedClient` (replays design-brief.md
+ * The LLM port. The implementations: `ClaudeCliClient` (the default — the local, logged-in
+ * `claude` binary, in src/main/llm because it spawns a process), `AnthropicClient` (per-user API
+ * key, streaming, prompt caching), the fetch-only BYOK clients `OpenAIClient` (OpenAI, and any
+ * OpenAI-compatible endpoint) and `GeminiClient`, and `ScriptedClient` (replays design-brief.md
  * §G — the A1 video fallback, and what every test runs against; no test in this repo makes a
  * network call).
  *
@@ -103,7 +104,12 @@ export interface LlmUsage {
   cache_creation_input_tokens: number;
 }
 
-export type LlmBackend = 'anthropic' | 'scripted' | 'claude-cli';
+/**
+ * The **client** kind, as a message row and a usage row store it. Hyphenated, unlike Settings'
+ * `BackendKind` (`claude_cli`, `openai_compatible`); the two vocabularies are kept apart on
+ * purpose (see `MessageView.backend`).
+ */
+export type LlmBackend = 'anthropic' | 'scripted' | 'claude-cli' | 'openai' | 'gemini' | 'openai-compatible';
 
 export interface LlmResult {
   text: string;

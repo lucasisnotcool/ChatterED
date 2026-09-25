@@ -176,7 +176,7 @@ export interface SessionRow {
   end_reason: string | null;
   summary_text: string | null;
   summary_usage: string | null;
-  /** 'claude_cli' | 'anthropic' | 'scripted' — the backend this session was opened on (#19). */
+  /** A `BackendKind` ('claude_cli' | 'anthropic' | 'openai' | 'gemini' | 'openai_compatible' | 'scripted') — the backend this session was opened on (#19). */
   llm_backend: string | null;
   /** The resolved model ids, recorded per session so a transcript can say what produced it. */
   agent_model: string | null;
@@ -191,7 +191,7 @@ export interface MessageRow {
   body: string;
   turn_decision_id: string | null;
   model: string | null;
-  /** Which backend produced this row: 'claude_cli' | 'anthropic' | 'scripted' | null (#19). */
+  /** Which client produced this row: an `LlmBackend` ('claude-cli' | 'anthropic' | 'openai' | 'gemini' | 'openai-compatible' | 'scripted') or null (#19). */
   backend: string | null;
   usage: string | null;
   latency_target_ms: number | null;

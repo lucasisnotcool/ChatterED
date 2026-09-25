@@ -33,7 +33,9 @@ import {
   CLI_TIMEOUT_MS,
   CliPreemptedError,
   imageDirs,
+  cliOverrideProblem,
   isEmptyExitOne,
+  isSpawnableClaude,
   resolveClaudeBinary,
   systemTextFor,
 } from './claude-cli.js';
@@ -194,6 +196,39 @@ describe('PATH and binary resolution', () => {
 
   it('returns null when there is nothing to find', () => {
     expect(resolveClaudeBinary({ env: { HOME: '/nonexistent', PATH: '/nonexistent' } })).toBeNull();
+  });
+});
+
+/**
+ * **The Settings override is spawned, so it is checked** (release review, 2026-09-25). Before
+ * this, any executable path the renderer sent was run — `/bin/sh`, a script in Downloads.
+ */
+describe('the Claude CLI path override', () => {
+  it('accepts an absolute, executable regular file named claude — and ~/ against HOME', () => {
+    expect(cliOverrideProblem(fakeClaude)).toBeNull();
+    expect(cliOverrideProblem('~/.local/bin/claude', { HOME: join(root, 'home') })).toBeNull();
+    expect(resolveClaudeBinary({ override: '~/.local/bin/claude', env: { HOME: join(root, 'home'), PATH: '' } })).toBe(fakeClaude);
+  });
+
+  it('refuses any other executable, a relative path, a directory, and a non-executable file', () => {
+    expect(cliOverrideProblem('/bin/sh')).toMatch(/named claude/);
+    expect(cliOverrideProblem('claude')).toMatch(/full path/);
+    const dirNamedClaude = join(root, 'd', 'claude');
+    mkdirSync(dirNamedClaude, { recursive: true });
+    expect(cliOverrideProblem(dirNamedClaude)).toMatch(/not a file/);
+    const plain = join(root, 'p', 'claude');
+    mkdirSync(join(root, 'p'), { recursive: true });
+    writeFileSync(plain, '#!/bin/sh\n');
+    chmodSync(plain, 0o644);
+    expect(cliOverrideProblem(plain)).toMatch(/not executable/);
+    expect(cliOverrideProblem(join(root, 'nowhere', 'claude'))).toMatch(/no file/);
+  });
+
+  it('never resolves an override that fails, even when it is already in the settings table', () => {
+    expect(resolveClaudeBinary({ override: '/bin/sh', env: { HOME: join(root, 'home'), PATH: binDir } })).toBeNull();
+    expect(isSpawnableClaude('/bin/sh')).toBe(false);
+    expect(isSpawnableClaude(fakeClaude)).toBe(true);
+    expect(isSpawnableClaude(null)).toBe(false);
   });
 });
 

@@ -31,6 +31,7 @@ import {
 } from './cost.js';
 import {
   emptyTokens,
+  modeFor,
   totalTokens,
   type CliWindowBurn,
   type CostCallView,
@@ -356,6 +357,20 @@ describe('the per-message meter', () => {
   it('drops the money on the API path’s own hedge, and on the scripted path entirely', () => {
     expect(meterLine(messageCost({ mode: 'api', estimatedUsd: 0.023 }))).toBe('7.2k tok · ≈ $0.023');
     expect(meterLine(messageCost({ mode: 'none', estimatedUsd: 0 }))).toBe('7.2k tok');
+  });
+
+  /** BYOK: a model the rate card has no price for is "cost unknown", never "$0.00". */
+  it('says cost unknown for an unpriced BYOK call, and flags a partly-priced one', () => {
+    expect(meterLine(messageCost({ mode: 'api', estimatedUsd: 0, unpricedCalls: 2 }))).toBe('7.2k tok · cost unknown');
+    expect(meterLine(messageCost({ mode: 'api', estimatedUsd: 0.023, unpricedCalls: 1 }))).toBe('7.2k tok · ≈ $0.023 + unpriced');
+    expect(meterLine(messageCost({ mode: 'api', estimatedUsd: 0.023, unpricedCalls: 0 }))).toBe('7.2k tok · ≈ $0.023');
+  });
+
+  it('counts every BYOK provider as the api billing mode', () => {
+    for (const backend of ['openai', 'gemini', 'openai-compatible'] as const) {
+      expect(modeFor([backend])).toBe('api');
+      expect(modeFor([backend, 'claude-cli'])).toBe('mixed');
+    }
   });
 
   it('says calls, model, latency in the tooltip', () => {

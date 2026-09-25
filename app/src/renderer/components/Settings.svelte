@@ -22,21 +22,52 @@
   } from '../lib/cost.js';
   import { COST_SCOPE_LABEL, totalTokens, type CostScope, type CostSlice } from '../../shared/cost.js';
   import ResearchTrialSettings from './ResearchTrialSettings.svelte';
+  import ProviderKeys from './settings/ProviderKeys.svelte';
 
   const settings = $derived(store.settings);
 
   const BACKENDS: { value: BackendChoice; label: string; hint: string }[] = [
-    { value: 'auto', label: 'Automatic', hint: 'Claude Code if it is logged in, then your API key, then the scripted demo.' },
-    { value: 'claude_cli', label: 'Claude Code on this Mac', hint: 'Uses the subscription you are already signed in to. No API key, no per-token cost.' },
-    { value: 'anthropic', label: 'Anthropic API key', hint: 'Your own key, billed to you. Haiku 4.5 for the group, Sonnet 5 for the ledger.' },
+    {
+      value: 'auto',
+      label: 'Automatic (recommended)',
+      hint: 'Claude Code if it is signed in; otherwise your preferred API provider, then the first one with a key; otherwise the scripted demo.',
+    },
+    { value: 'claude_cli', label: 'Claude Code on this Mac', hint: 'Recommended. Uses the subscription you are already signed in to. No API key, no per-token cost.' },
+    { value: 'anthropic', label: 'Anthropic API key', hint: 'Your own key, billed to you. Haiku 4.5 for the group, Sonnet 5 for the ledger, unless you change them below.' },
+    { value: 'openai', label: 'OpenAI API key', hint: 'Your own key, billed to you. Models are set under Your own API keys.' },
+    { value: 'gemini', label: 'Google Gemini API key', hint: 'Your own AI Studio key, billed to you. Models are set under Your own API keys.' },
+    {
+      value: 'openai_compatible',
+      label: 'OpenAI-compatible endpoint',
+      hint: 'OpenRouter, Ollama, LM Studio, Groq, DeepSeek, vLLM… at a base URL you give it.',
+    },
     { value: 'scripted', label: 'Scripted demo', hint: 'Replays a fixed transcript. No network calls at all.' },
   ];
 
   const BACKEND_LABEL: Record<string, string> = {
     claude_cli: 'Claude Code on this Mac',
     anthropic: 'Anthropic API key',
+    openai: 'OpenAI API key',
+    gemini: 'Google Gemini API key',
+    openai_compatible: 'OpenAI-compatible endpoint',
     scripted: 'Scripted demo',
   };
+
+  /**
+   * **Why this backend, in one sentence.** The first line says *what* is running; this says why,
+   * because an Automatic choice that landed on a paid API key is the case a learner must not have
+   * to work out for themselves.
+   */
+  const whyLine = $derived.by(() => {
+    if (!settings) return '';
+    const kind = settings.resolvedBackend;
+    if (kind === 'claude_cli') return 'Claude Code is signed in on this Mac — the recommended default.';
+    if (settings.backendChoice !== 'auto') return settings.fellBackBecause ? '' : 'You chose it above.';
+    const cliState = settings.cli.found ? 'is not signed in' : 'was not found on this Mac';
+    if (kind === 'scripted') return `Claude Code ${cliState} and no API provider is set up, so the scripted demo is running.`;
+    const how = settings.preferredProvider === kind ? 'your preferred API provider' : 'the first API provider with a key';
+    return `Claude Code ${cliState}, so Automatic is using ${how}. Calls are billed to your key.`;
+  });
 
   /** The dropdowns only bind the model when the CLI is the live path; the API path is fixed. */
   const cliPath = $derived(settings?.resolvedBackend === 'claude_cli' || settings?.backendChoice === 'claude_cli');
@@ -138,6 +169,7 @@
           · agents on <code>{settings.agentModel}</code>, ledger on <code>{settings.orchestratorModel}</code>
         {/if}
       </p>
+      {#if whyLine}<p class="quiet">{whyLine}</p>{/if}
       {#if settings.fellBackBecause}
         <p class="warn">{settings.fellBackBecause}</p>
       {/if}
@@ -210,8 +242,8 @@
       <h2>Models</h2>
       {#if !cliPath}
         <p class="quiet">
-          On the API-key path the models are fixed: Haiku 4.5 for the group turns, Sonnet 5 for the
-          orchestrator and the ledger. These two choices apply to Claude Code on this Mac.
+          These two choices apply to Claude Code on this Mac. Each API provider has its own two,
+          under Your own API keys below.
         </p>
       {/if}
 
@@ -391,29 +423,8 @@
       </div>
     </section>
 
-    <section>
-      <h2>Anthropic API key</h2>
-      <p class="quiet">
-        {settings.hasApiKey
-          ? 'A key is stored in a file only your user account can read: ~/Library/Application Support/ChatterED/anthropic-api-key. Not needed if Claude Code is installed.'
-          : 'No key stored. A key you enter is stored in a file only your user account can read: ~/Library/Application Support/ChatterED/anthropic-api-key. Not needed if Claude Code is installed.'}
-      </p>
-      {#if settings.hasApiKey}
-        <div class="acts">
-          <button
-            type="button"
-            class="btn"
-            disabled={store.settingsBusy}
-            onclick={async () => {
-              await store.saveSettings({});
-              await store.loadSettings();
-            }}
-          >
-            Refresh
-          </button>
-        </div>
-      {/if}
-    </section>
+    <!-- BYOK (2026-09-25): every API provider's key, models and Test connection. -->
+    <ProviderKeys {settings} />
 
     <!--
       **Usage** (issue #41 item 4c).

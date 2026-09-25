@@ -13,8 +13,8 @@
  *    duplicated agent message is a worse corruption of the transcript than a missing one
  *    (architecture-mac.md §B.4).
  */
-import { readFileSync } from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
+import { lastUserIndex, loadImages } from './images.js';
 import type { LLMClient, LlmMessage, LlmRequest, LlmResult, LlmUsage } from './types.js';
 
 export interface AnthropicClientOptions {
@@ -90,22 +90,11 @@ export class AnthropicClient implements LLMClient {
 }
 
 /**
- * **Supported image media types** (Messages API vision). `LlmRequest.images` carries whatever
- * mime the writer used; anything outside this list is dropped rather than sent, because a
- * rejected request costs the whole window and a missing slide costs one slide.
+ * The media-type allow-list and the per-request byte ceiling are shared with the fetch-only
+ * clients (`images.ts`), because the rule is the same on every provider: drop what cannot be sent,
+ * stop before a body the API refuses. Re-exported so existing imports keep working.
  */
-const IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
-
-/**
- * **A ceiling on how many bytes of slide go into one call.**
- *
- * The Messages API caps a whole request at 32 MB, and a notes window carries twelve pages plus
- * the extracted text of all of them. The renderer already renders at a modest width, so this is
- * a backstop rather than a budget: it is the difference between a window that drops its last two
- * images and a window that comes back 413 and loses everything. Base64 is 4/3 of the file, which
- * is what the comparison is made against.
- */
-export const IMAGE_BYTES_PER_REQUEST = 20 * 1024 * 1024;
+export { IMAGE_BYTES_PER_REQUEST } from './images.js';
 
 /**
  * The messages, with `request.images` attached to the **last user message** as base64 image
@@ -119,31 +108,15 @@ export const IMAGE_BYTES_PER_REQUEST = 20 * 1024 * 1024;
  */
 export function withImages(request: LlmRequest): Anthropic.MessageParam[] {
   const plain = (m: LlmMessage): Anthropic.MessageParam => ({ role: m.role, content: m.content });
-  const images = request.images ?? [];
-  if (images.length === 0) return request.messages.map(plain);
+  if ((request.images ?? []).length === 0) return request.messages.map(plain);
 
-  const lastUser = request.messages.map((m) => m.role).lastIndexOf('user');
+  const lastUser = lastUserIndex(request);
   if (lastUser < 0) return request.messages.map(plain);
 
-  const blocks: Anthropic.ContentBlockParam[] = [];
-  let bytes = 0;
-  for (const image of images) {
-    if (!IMAGE_MEDIA_TYPES.has(image.mime)) continue;
-    let data: string;
-    try {
-      data = readFileSync(image.path).toString('base64');
-    } catch {
-      // A page the renderer never delivered is a page this window reads as text only. The
-      // ingest's own `withImages` flag records that the run was not a full image run.
-      continue;
-    }
-    bytes += data.length;
-    if (bytes > IMAGE_BYTES_PER_REQUEST) break;
-    blocks.push({
-      type: 'image',
-      source: { type: 'base64', media_type: image.mime as 'image/jpeg' | 'image/png', data },
-    });
-  }
+  const blocks: Anthropic.ContentBlockParam[] = loadImages(request).map((image) => ({
+    type: 'image',
+    source: { type: 'base64', media_type: image.mime as 'image/jpeg' | 'image/png', data: image.data },
+  }));
 
   return request.messages.map((m, i) => {
     if (i !== lastUser || blocks.length === 0) return plain(m);

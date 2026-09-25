@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiKeyPath, createApiKeyStore, looksLikeAnthropicKey } from './apikey.js';
+import { apiKeyPath, createApiKeyStore, createProviderKeyStores, keyShapeProblem, looksLikeAnthropicKey, maskKey, PROVIDER_KEY_FILES } from './apikey.js';
 import { AppService } from './ipc.js';
 import { openTestDb, openTestStore } from '../test-support/db.js';
 
@@ -161,6 +161,52 @@ describe('nothing in the app can reach Electron safe storage', () => {
     };
     walk(SRC);
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('one key file per provider (BYOK)', () => {
+  it('keeps the Anthropic key where it always was, so an upgrade loses nothing', () => {
+    const userData = join(dir, 'ChatterED');
+    createApiKeyStore(userData).set(KEY);
+    const stores = createProviderKeyStores(userData);
+    expect(stores.anthropic.path).toBe(apiKeyPath(userData));
+    expect(stores.anthropic.get()).toBe(KEY);
+    expect(stores.openai.has()).toBe(false);
+  });
+
+  it('writes each provider its own 0600 file and keeps them apart', () => {
+    const userData = join(dir, 'ChatterED');
+    const stores = createProviderKeyStores(userData);
+    stores.openai.set('sk-proj-0123456789abcdefghijklmn');
+    stores.gemini.set('AIzaSyTEST0123456789abcdefghijklmnopq');
+    for (const provider of ['openai', 'gemini'] as const) {
+      expect(stores[provider].path).toBe(join(userData, PROVIDER_KEY_FILES[provider]));
+      expect(statSync(stores[provider].path).mode & 0o777).toBe(0o600);
+    }
+    expect(stores.openai.get()).toBe('sk-proj-0123456789abcdefghijklmn');
+    stores.openai.clear();
+    expect(stores.openai.has()).toBe(false);
+    expect(stores.gemini.has()).toBe(true);
+    expect(createApiKeyStore(userData).has()).toBe(false);
+  });
+
+  it('checks each provider’s key shape, loosely past the prefix', () => {
+    expect(keyShapeProblem('anthropic', KEY)).toBeNull();
+    expect(keyShapeProblem('openai', 'sk-proj-0123456789abcdefghijklmn')).toBeNull();
+    expect(keyShapeProblem('openai', 'sk-svcacct-0123456789abcdefghijklmn')).toBeNull();
+    expect(keyShapeProblem('openai', KEY)).toMatch(/Anthropic key/);
+    expect(keyShapeProblem('openai', 'hunter2')).toMatch(/OpenAI/);
+    expect(keyShapeProblem('gemini', 'AIzaSyTEST0123456789abcdefghijklmnopq')).toBeNull();
+    expect(keyShapeProblem('gemini', 'sk-0123456789abcdefghijk')).toMatch(/AIza/);
+    expect(keyShapeProblem('openai_compatible', 'anything-at-all')).toBeNull();
+    expect(keyShapeProblem('openai_compatible', 'two words')).toMatch(/spaces/);
+    expect(keyShapeProblem('gemini', '   ')).toMatch(/Paste/);
+  });
+
+  it('masks a key down to its last four characters', () => {
+    expect(maskKey('sk-proj-0123456789abcdefghijklmn')).toBe('••••klmn');
+    expect(maskKey('short')).toBe('••••');
+    expect(maskKey(null)).toBeNull();
   });
 });
 

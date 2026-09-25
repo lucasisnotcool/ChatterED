@@ -6,6 +6,7 @@
    */
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
+  import type { ApiProvider } from '../../shared/types.js';
 
   let card = $state(1);
   let key = $state('');
@@ -14,6 +15,17 @@
   let folder = $state<string | null>(null);
   let checking = $state(false);
   let showKeyField = $state(false);
+  /**
+   * BYOK (2026-09-25): which provider the key is for. The compatible endpoint needs a URL and
+   * model ids as well as a key, so it is set up in Settings rather than squeezed onto this card.
+   */
+  let provider = $state<ApiProvider>('anthropic');
+  const KEY_PROVIDERS: { id: ApiProvider; label: string; placeholder: string; file: string }[] = [
+    { id: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-…', file: 'anthropic-api-key' },
+    { id: 'openai', label: 'OpenAI', placeholder: 'sk-… or sk-proj-…', file: 'openai-api-key' },
+    { id: 'gemini', label: 'Google Gemini', placeholder: 'AIza…', file: 'gemini-api-key' },
+  ];
+  const chosen = $derived(KEY_PROVIDERS.find((p) => p.id === provider) ?? KEY_PROVIDERS[0]!);
 
   const cli = $derived(store.settings?.cli ?? store.boot?.cli ?? null);
   const cliReady = $derived(cli?.found === true && cli.loggedIn === true);
@@ -36,7 +48,7 @@
     if (!key.trim()) return;
     saving = true;
     keyError = null;
-    const result = await bridge().setApiKey(key.trim());
+    const result = await bridge().setProviderKey({ provider, key: key.trim() });
     saving = false;
     if (result.ok) {
       key = '';
@@ -104,8 +116,8 @@
         </p>
       {:else}
         <p>
-          Claude Code was not found on this Mac. You can install it, or give ChatterED an
-          Anthropic API key instead.
+          Claude Code was not found on this Mac. You can install it — that is the recommended
+          way — or give ChatterED your own API key (Anthropic, OpenAI or Google Gemini) instead.
         </p>
       {/if}
 
@@ -117,14 +129,21 @@
       {/if}
 
       {#if showKeyField && !cliReady}
+        <label class="field">
+          <span>Provider</span>
+          <select bind:value={provider}>
+            {#each KEY_PROVIDERS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
+          </select>
+        </label>
         <p class="quiet">
           Stored in a file only your user account can read:
-          <code>~/Library/Application&nbsp;Support/ChatterED/anthropic-api-key</code>. Not needed if
-          Claude Code is installed.
+          <code>~/Library/Application&nbsp;Support/ChatterED/{chosen.file}</code>, and sent only to
+          {chosen.label}. Billed to you by {chosen.label}. Not needed if Claude Code is installed. An
+          OpenAI-compatible endpoint (OpenRouter, Ollama, LM Studio…) is set up in Settings.
         </p>
         <label class="field">
           <span>API key</span>
-          <input type="password" bind:value={key} placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+          <input type="password" bind:value={key} placeholder={chosen.placeholder} autocomplete="off" spellcheck="false" />
         </label>
         {#if keyError}<p class="err">{keyError}</p>{/if}
       {/if}
@@ -186,7 +205,8 @@
   .err { color: var(--text-2); font-size: 12px; }
   code { font-size: 11px; background: var(--ground); padding: 1px 5px; border-radius: 4px; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-2); margin: 16px 0 6px; }
-  .field input {
+  .field input,
+  .field select {
     border: 1px solid var(--hairline);
     border-radius: var(--radius);
     padding: 9px 11px;

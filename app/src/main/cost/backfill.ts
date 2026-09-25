@@ -233,9 +233,15 @@ export function backfillUsage(db: SqlDatabase, ledger: CostLedger): BackfillResu
   return { inserted, candidates, byScope, ms: Date.now() - startedAt };
 }
 
-/** `sessions.llm_backend` and `messages.backend` both hold the same three strings, or nothing. */
+/**
+ * `messages.backend` holds the client kind (`claude-cli`, `openai-compatible`); `sessions.llm_backend`
+ * holds Settings' spelling (`claude_cli`, `openai_compatible`). Both are accepted.
+ */
 function backendOf(raw: string | null | undefined): CostBackend {
   if (raw === 'anthropic' || raw === 'scripted' || raw === 'claude-cli') return raw;
+  if (raw === 'openai' || raw === 'gemini' || raw === 'openai-compatible') return raw;
+  if (raw === 'openai_compatible') return 'openai-compatible';
+  if (raw === 'claude_cli') return 'claude-cli';
   // Unknown means old: migration 003 added the column, and before it the only live backend was
   // the API path. Reading a missing value as `claude-cli` would invent a subscription that did
   // not exist and would put those rows into a 5-hour window they were never in.

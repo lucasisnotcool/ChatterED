@@ -64,6 +64,9 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
+  ApiProvider,
+  ProviderTestResult,
+  ProviderView,
   SettingsPatch,
   SettingsView,
   TimerView,
@@ -153,6 +156,15 @@ const AGENTS: AgentProfile[] = [
 const ellie = AGENTS[0]!;
 const max = AGENTS[1]!;
 
+function mockProvider(id: ApiProvider, label: string, agent: string, orchestrator: string, suggestions: string[]): ProviderView {
+  return {
+    id, label, hasKey: false, keyHint: null, keyRequired: id !== 'openai_compatible',
+    keyFile: id === 'openai_compatible' ? 'openai-compatible-api-key' : `${id}-api-key`,
+    configured: false, agentModel: agent, orchestratorModel: orchestrator,
+    defaultAgentModel: agent, defaultOrchestratorModel: orchestrator, suggestions, baseUrl: null,
+  };
+}
+
 const MOCK_CLI = { found: true, path: '/Users/you/.local/bin/claude', loggedIn: true, detail: null, checkedAt: iso() };
 const mockSettings: SettingsView = {
   appVersion: '0.1.0-mock',
@@ -165,6 +177,14 @@ const mockSettings: SettingsView = {
   orchestratorModel: 'sonnet',
   modelChoices: ['haiku', 'sonnet', 'opus'],
   hasApiKey: false,
+  // BYOK: every provider unconfigured, so the Settings section opens in its empty state.
+  providers: [
+    mockProvider('anthropic', 'Anthropic', 'claude-haiku-4-5', 'claude-sonnet-5', ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5']),
+    mockProvider('openai', 'OpenAI', 'gpt-6-sol', 'gpt-6-sol', ['gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra']),
+    mockProvider('gemini', 'Google Gemini', 'gemini-3.8-flash', 'gemini-3.8-flash', ['gemini-3.5-flash-lite', 'gemini-3.8-flash']),
+    mockProvider('openai_compatible', 'OpenAI-compatible endpoint', '', '', []),
+  ],
+  preferredProvider: null,
   vaultRoot: null,
   flowProfile: 'default',
   replySpeed: 'default',
@@ -1052,6 +1072,18 @@ export function createMockBridge(): ChatterEdApi {
     },
     async setApiKey(_key: string) { return { ok: true }; },
     async clearApiKey() { /* no-op */ },
+    async setProviderKey(input: { provider: ApiProvider; key: string }) {
+      const p = mockSettings.providers.find((x) => x.id === input.provider);
+      if (p) Object.assign(p, { hasKey: true, configured: true, keyHint: `••••${input.key.slice(-4)}` });
+      return { ok: true };
+    },
+    async clearProviderKey(input: { provider: ApiProvider }) {
+      const p = mockSettings.providers.find((x) => x.id === input.provider);
+      if (p) Object.assign(p, { hasKey: false, configured: false, keyHint: null });
+    },
+    async testProvider(input: { provider: ApiProvider }): Promise<ProviderTestResult> {
+      return { ok: false, provider: input.provider, model: '', ms: 0, error: 'The mock bridge makes no network calls.' };
+    },
     async completeFirstRun() { /* no-op */ },
 
     async getSettings(): Promise<SettingsView> { return { ...mockSettings }; },

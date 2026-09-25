@@ -59,6 +59,35 @@ describe('the log never carries what the learner or the agents wrote', () => {
     expect(lines[0]!.length).toBeLessThan(600);
   });
 
+  /** BYOK (2026-09-25): every provider's key shape, and the generic places a key is written. */
+  it('scrubs OpenAI, Gemini and bearer-token keys out of any string', () => {
+    const openai = 'sk-proj-AbCdEf0123456789_ghIJklMNopQRstuv';
+    const legacy = 'sk-0123456789abcdefABCDEF0123456789';
+    const gemini = 'AIzaSyD-0123456789abcdefghijklmnopqrstu';
+    const bearer = 'my-local-token.0123456789';
+    const out = redact({
+      cause: `401 for ${openai} and ${legacy}`,
+      detail: `Gemini said: key ${gemini} invalid`,
+      header: `Authorization: Bearer ${bearer}`,
+      url: `https://example.test/v1?key=${bearer}`,
+      header2: `x-goog-api-key: ${bearer}`,
+    });
+    const text = JSON.stringify(out);
+    for (const secret of [openai, legacy, gemini, bearer, 'AbCdEf0123456789', '0123456789abcdefghij']) {
+      expect(text).not.toContain(secret);
+    }
+    expect(out.cause).toBe('401 for sk-[redacted] and sk-[redacted]');
+    expect(out.detail).toBe('Gemini said: key AIza[redacted] invalid');
+    expect(out.header).toBe('Authorization: Bearer [redacted]');
+    expect(out.url).toBe('https://example.test/v1?key=[redacted]');
+    expect(out.header2).toBe('x-goog-api-key: [redacted]');
+  });
+
+  it('still marks an Anthropic key as one, and leaves ordinary text alone', () => {
+    expect(redact({ cause: `bad ${KEY}` }).cause).toBe('bad sk-ant-[redacted]');
+    expect(redact({ cause: 'gpt-6-sol answered in 812 ms; task-skeleton ok' }).cause).toBe('gpt-6-sol answered in 812 ms; task-skeleton ok');
+  });
+
   it('caps any other long string rather than trusting the call site', () => {
     const out = redact({ cause: 'y'.repeat(2_000) });
     expect((out.cause as string).length).toBeLessThanOrEqual(301);
