@@ -762,7 +762,7 @@ export function handOffLine(
  * the learner three things to do *after* feedback — try another, ask a clarification, or ask for
  * the answer — and every one of them needs the question still to be here. So:
  *
- *  - `attempts` counts learner turns classified as an **attempt** (`room/attempt.ts`), and nothing
+ *  - `attempts` counts learner turns classified as an **attempt** (`core/attempt.ts`), and nothing
  *    else. It is what the answer lock reads: zero means the answer is withheld, one or more means
  *    "Show the answer" is available and an answer request is honoured.
  *  - `feedbackGiven` is **per latest attempt**. A second attempt clears it, so Rowland 2014's

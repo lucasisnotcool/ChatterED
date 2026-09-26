@@ -19,7 +19,7 @@ import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js
 import { RoomActor, type RoomActorDeps } from './actor.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 import { API_PLAN } from './llm/models.js';
-import { DEFAULT_PITCH, notePitch, pitchLine, pitchSignal } from './pitch.js';
+import { DEFAULT_PITCH, notePitch, pitchLine, pitchSignal } from '../core/pitch.js';
 import { learnerBlock } from './prompts.js';
 
 const REPLY = 'Positive semidefinite means zᵀHz ≥ 0 for every vector z.';

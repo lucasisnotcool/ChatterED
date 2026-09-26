@@ -27,7 +27,7 @@ import {
   type ThreadView,
 } from '../shared/doc/types.js';
 import { parseMention } from '../shared/doc/mention.js';
-import { ownWordsOf } from '../shared/doc/ownwords.js';
+import { ownWordsOf } from '../core/ownwords.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import {
   buildQuestionEdit,
@@ -88,7 +88,7 @@ import {
   renderThread,
   summaryInThread,
 } from './summary.js';
-import { classifyLearnerTurn, quizCue, type LearnerTurnKind } from './attempt.js';
+import { classifyLearnerTurn, quizCue, type LearnerTurnKind } from '../core/attempt.js';
 import {
   FLOW,
   answerQuiz,
@@ -156,7 +156,7 @@ import {
   type PitchInputs,
   type PitchOutcome,
   type PitchState,
-} from './pitch.js';
+} from '../core/pitch.js';
 import { progressFill } from '../shared/doc/progress.js';
 import type { ObjectiveRef } from '../shared/objectives.js';
 import { pickObjectiveForCard } from '../shared/objectives-pick.js';

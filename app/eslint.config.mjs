@@ -77,4 +77,22 @@ export default tseslint.config(
       }],
     },
   },
+  {
+    // ── The shared core, as a lint rule (SCOPE.md zone 2, #54). ──
+    // src/core is the code the group project takes and a teammate may read, so it imports
+    // nothing outside itself: no room, main, renderer or shared module, and no package. The
+    // app depends on the core, never the other way round. Tests may import vitest.
+    files: ['src/core/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            regex: '^(?!\\./[^/]+$|vitest$)',
+            message:
+              'src/core imports only its own modules (./x.js) — SCOPE.md zone 2. Move the dependency into core, or keep this code out of it.',
+          },
+        ],
+      }],
+    },
+  },
 );

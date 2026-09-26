@@ -98,7 +98,7 @@ npm run dev     # compiles main + preload, starts Vite, launches Electron
 **Rules, in code, decided before any model call** (`src/room/orchestrator.ts`, `actor.ts`): who
 answers (`rule:ellie_answers`, `rule:mention`), Max's one follow-up and one-open-question-at-a-time
 (`rule:max_followup`), what a learner turn *is* — attempt, clarifying question, give-up
-(`src/room/attempt.ts`), feedback owed after an attempt (`rule:quiz_feedback`), Ellie's cue once per
+(`src/core/attempt.ts`), feedback owed after an attempt (`rule:quiz_feedback`), Ellie's cue once per
 question after a reading-time silence (`rule:ellie_cue`, `rule:max_prompt`), release on any give-up
 (`rule:answer_released`), and closure (`rule:closure`). Every agent turn in the chat shows the rule
 that produced it.

@@ -45,7 +45,7 @@
  */
 import type { AgentRole } from '../shared/types.js';
 import type { AgentAuthor, ThreadKind } from '../shared/doc/types.js';
-import type { LearnerTurnKind } from './attempt.js';
+import type { LearnerTurnKind } from '../core/attempt.js';
 import {
   attemptsOf,
   cueGiven,
@@ -88,7 +88,7 @@ export interface DecisionInput {
   /** The Tester's outstanding question, if any. Gates the mandatory feedback rule. */
   pendingQuiz?: PendingQuiz | null;
   /**
-   * **What the learner's turn was** (`room/attempt.ts`, `attempt-first.md` §2.2), computed by the
+   * **What the learner's turn was** (`core/attempt.ts`, `attempt-first.md` §2.2), computed by the
    * actor before anything is decided. It is what the answer lock reads, and the reason the lock is
    * a rule: the model is never asked whether it should answer its own question (§2.3).
    */

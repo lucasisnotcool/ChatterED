@@ -664,7 +664,7 @@ export interface FlowQuizView {
   quizMessageId: string;
   /** The objective / pack element under test. */
   elementId: string;
-  /** Learner turns classified as an attempt since the question was asked (`room/attempt.ts`). */
+  /** Learner turns classified as an attempt since the question was asked (`core/attempt.ts`). */
   attempts: number;
   /** True once the Tester's feedback turn has landed for the latest attempt. */
   feedbackGiven: boolean;

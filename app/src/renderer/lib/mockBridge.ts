@@ -11,14 +11,14 @@ import { createMockTrial } from './mockTrial.js';
 /**
  * **The real classifier, imported and not copied** (issue #47, `attempt-first.md` §2.2).
  *
- * `src/room/attempt.ts` is where the rule lives, because the orchestrator's answer-withholding
- * rules read it. It is pure and its only import is `room/ledger.ts`'s `isAgreementPhrase`, which
- * itself imports nothing but types — so there is no main-process module graph to pull into
- * `vite dev`, and a local copy would only be a second rule to drift from. The mock classifies a
+ * `src/core/attempt.ts` is where the rule lives, because the orchestrator's answer-withholding
+ * rules read it. It is pure and imports nothing (the core's lint boundary, SCOPE.md), so there is
+ * no main-process module graph to pull into `vite dev`, and a local copy would only be a second
+ * rule to drift from. The mock classifies a
  * learner turn with exactly the function the real loop classifies it with; `labels.test.ts` has
  * reached across the same seam, for the same reason, since the room shipped.
  */
-import { classifyLearnerTurn } from '../../room/attempt.js';
+import { classifyLearnerTurn } from '../../core/attempt.js';
 import { DECK_ANCHOR_ID } from '../../shared/scope.js';
 import { refusalMessage, type SegmentDocumentView, type SegmentRefusal } from '../../shared/segment/index.js';
 import type { LearningObjective, LearningObjectiveState, LearningTree } from '../../shared/objectives.js';

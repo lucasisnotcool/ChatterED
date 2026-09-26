@@ -10,7 +10,7 @@
  */
 
 import type { FlowQuizView } from '../types.js';
-import type { OwnWordsShares } from './ownwords.js';
+import type { OwnWordsShares } from '../../core/ownwords.js';
 
 // ── who wrote what ──────────────────────────────────────────────────────────────────────────
 
@@ -330,7 +330,7 @@ export interface QuizOutcome {
    */
   attemptIndex: number | null;
   /**
-   * **How much of the answer was the learner's own words** (`shared/doc/ownwords.ts`, M3). Three
+   * **How much of the answer was the learner's own words** (`core/ownwords.ts`, M3). Three
    * shares, against the anchored block, Ellie's cue and Max's question. A flag, never a gate:
    * `progressFill` does not read it and no fill is withheld on it. `null` where the verdict
    * marked nothing measurable.

@@ -20,6 +20,6 @@
   },
   // src/preload is not here: it is bundled to one file by scripts/bundle-preload.mjs, because a
   // sandboxed preload cannot require its sibling modules. tsconfig.json still type-checks it.
-  "include": ["src/main/**/*.ts", "src/room/**/*.ts", "src/shared/**/*.ts"],
+  "include": ["src/core/**/*.ts", "src/main/**/*.ts", "src/room/**/*.ts", "src/shared/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test-support.ts"]
 }
