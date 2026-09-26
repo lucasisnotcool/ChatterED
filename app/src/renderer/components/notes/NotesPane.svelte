@@ -12,8 +12,20 @@
    *     a highlight click calls `store.chat.focusThread(threadId)`.
    *   - **T5 → T4**: the highlights themselves are drawn from `store.chat.spanThreads`.
    * `store.chat` is T5's and is read defensively until its surface lands.
+   *
+   * **Zoom.** ⌘+ / ⌘− / ⌘0 (View ▸ Zoom, routed through `lib/viewer.ts`), a trackpad pinch over
+   * the notes, and the − 100 % + in the header all set one number, `layout.notesZoom`, which is
+   * CSS `zoom` on the sheet — so the text, the figures and the gutter chips scale together and
+   * the text reflows, and nothing outside the document moves. The paragraph being read stays
+   * where it was on screen: the zoom is anchored to the block under the pointer (a pinch) or at
+   * the top of the pane (the keys), not to a scroll offset that reflow would invalidate.
    */
+  import { flushSync } from 'svelte';
+  import { NOTES_ZOOM, blockAnchorDelta, percent, sheetGutter, zoomIn, zoomOut } from '../../lib/layout.js';
+  import { layout } from '../../lib/layoutstore.svelte.js';
+  import { pinchScale } from '../../lib/pdfview.js';
   import { store } from '../../lib/store.svelte.js';
+  import { registerViewer, type ViewerCommand } from '../../lib/viewer.js';
   import NotesEditor from './NotesEditor.svelte';
   import SlideCarousel from './SlideCarousel.svelte';
   import SlideModal from './SlideModal.svelte';
@@ -65,6 +77,71 @@
     if (line) store.notice = { level: 'info', text: line };
   }
 
+  // ── Zoom ────────────────────────────────────────────────────────────────
+  let scroller = $state<HTMLElement | null>(null);
+  let paneWidth = $state(0);
+  /** The gutters give way to the text when zoomed in a narrow pane (`sheetGutter`). */
+  const gutter = $derived(sheetGutter(paneWidth, layout.notesZoom));
+
+  /** The block under a viewport point, or the first block below it (a gap between two). */
+  function blockAt(x: number, y: number): HTMLElement | null {
+    const hit = document.elementFromPoint(x, y);
+    const block = hit?.closest<HTMLElement>('.ProseMirror > *');
+    if (block) return block;
+    const all = scroller?.querySelectorAll<HTMLElement>('.ProseMirror > *') ?? [];
+    for (const el of all) if (el.getBoundingClientRect().bottom >= y) return el;
+    return null;
+  }
+
+  /**
+   * Set the zoom and keep the block at `(x, y)` where it was. `flushSync` puts the new zoom in
+   * the DOM now, so the second measurement is of the new layout rather than the old one.
+   */
+  function setZoom(next: number, at?: { x: number; y: number }): void {
+    const el = scroller;
+    if (!el) {
+      layout.setNotesZoom(next);
+      return;
+    }
+    const box = el.getBoundingClientRect();
+    const point = at ?? { x: box.left + box.width / 2, y: box.top + Math.min(80, box.height / 3) };
+    const block = blockAt(point.x, point.y);
+    const before = block?.getBoundingClientRect();
+    flushSync(() => layout.setNotesZoom(next));
+    if (block && before) {
+      el.scrollTop += blockAnchorDelta(before, block.getBoundingClientRect(), point.y);
+    }
+  }
+
+  function command(c: ViewerCommand): void {
+    if (c === 'zoom.in') setZoom(zoomIn(layout.notesZoom, NOTES_ZOOM));
+    else if (c === 'zoom.out') setZoom(zoomOut(layout.notesZoom, NOTES_ZOOM));
+    else if (c === 'zoom.reset' || c === 'fit.width' || c === 'fit.page') setZoom(1);
+    // page.next / page.prev: the notes are not paged. The slide modal answers them when it is up.
+  }
+  $effect(() => registerViewer(command));
+
+  /**
+   * A macOS pinch is a `wheel` with `ctrlKey` (measured in PdfViewer.svelte). The events come at
+   * the display's rate and a zoom reflows the whole document, so they are folded into one
+   * change per frame.
+   */
+  let pending: { zoom: number; x: number; y: number } | null = null;
+  function onwheel(e: WheelEvent): void {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const from = pending?.zoom ?? layout.notesZoom;
+    const zoom = Math.min(NOTES_ZOOM.max, Math.max(NOTES_ZOOM.min, pinchScale(from, e.deltaY)));
+    const first = pending === null;
+    pending = { zoom, x: e.clientX, y: e.clientY };
+    if (!first) return;
+    requestAnimationFrame(() => {
+      const p = pending;
+      pending = null;
+      if (p) setZoom(p.zoom, p);
+    });
+  }
+
   const savedLabel = $derived.by(() => {
     if (doc.saving) return 'Saving…';
     if (doc.savedAt > 0) return 'Saved';
@@ -80,6 +157,31 @@
     {/if}
     <span class="nd-head-spacer"></span>
     {#if savedLabel}<span class="nd-head-meta">{savedLabel}</span>{/if}
+    <span class="nd-zoom" role="group" aria-label="Zoom the notes">
+      <button
+        type="button"
+        class="nd-zoom-step"
+        aria-label="Zoom out"
+        title="Zoom out (⌘−, or pinch)"
+        disabled={layout.notesZoom <= NOTES_ZOOM.min}
+        onclick={() => command('zoom.out')}
+      >−</button>
+      <button
+        type="button"
+        class="nd-zoom-level"
+        aria-label={`Zoom ${percent(layout.notesZoom)}. Reset to 100%`}
+        title="Actual size (⌘0)"
+        onclick={() => command('zoom.reset')}
+      >{percent(layout.notesZoom)}</button>
+      <button
+        type="button"
+        class="nd-zoom-step"
+        aria-label="Zoom in"
+        title="Zoom in (⌘+, or pinch)"
+        disabled={layout.notesZoom >= NOTES_ZOOM.max}
+        onclick={() => command('zoom.in')}
+      >+</button>
+    </span>
     <button
       class="nd-toggle"
       type="button"
@@ -105,8 +207,12 @@
     </button>
   </header>
 
-  <div class="nd-scroll">
-    <div class="nd-sheet">
+  <div class="nd-scroll" bind:this={scroller} bind:clientWidth={paneWidth} {onwheel}>
+    <div
+      class="nd-sheet"
+      style:zoom={layout.notesZoom === 1 ? null : String(layout.notesZoom)}
+      style:--nd-gutter={`${gutter}px`}
+    >
       {#if doc.error && !ready}
         <div class="nd-state">
           <div class="nd-state-title">These notes could not be opened</div>

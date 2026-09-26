@@ -21,9 +21,10 @@
  *
  * They are different things and a learner has to be able to tell them apart:
  *
- *   - **Zoom** (⌘+ / ⌘− / ⌘0) is the *document*. It goes to whichever viewer is open over
- *     `app:command`, and it scales the deck — the flow's cards, crops and threads, or the page
- *     viewer's pages. Nothing about the app's own chrome moves.
+ *   - **Zoom** (⌘+ / ⌘− / ⌘0) is the *document*. It goes to whichever viewer is on top over
+ *     `app:command` (`renderer/lib/viewer.ts`), and it scales that — the lecture notes, the
+ *     slide modal open over them, or the page viewer's pages. A trackpad pinch over the same
+ *     surface does the same thing. Nothing about the app's own chrome moves.
  *   - **Text Size** (⌥⌘+ / ⌥⌘− / ⌥⌘0) is the *application*. It is Chromium's page zoom, driven
  *     here through `webContents.setZoomFactor`, and it scales everything — nav rail, sidebar,
  *     composer, menus of the app's own making. This is the accessibility control every desktop
@@ -160,6 +161,9 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         { type: 'separator' },
         { label: 'Next Page', accelerator: 'CommandOrControl+Down', click: send('page.next') },
         { label: 'Previous Page', accelerator: 'CommandOrControl+Up', click: send('page.prev') },
+        { type: 'separator' },
+        // ⌃⌘S is the Mac's own Show/Hide Sidebar chord (Finder, Mail, Notes).
+        { label: 'Show or Hide Files', accelerator: 'Control+Command+S', click: send('files.toggle') },
         { type: 'separator' },
         // The heading is a menu item, not a comment: the person who needs to know that the two
         // zooms are different things is reading the menu. Everything above scales the document;

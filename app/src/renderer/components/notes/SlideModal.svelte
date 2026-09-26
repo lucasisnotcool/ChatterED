@@ -8,9 +8,22 @@
    * figure cropped outlined on it. Everything the ingest re-typeset is checkable here in one
    * gesture — which the brief's own §7 names as the limitation of an AI-written document, and
    * this is the mitigation it names back.
+   *
+   * **Zoom and turn, every way a Mac user reaches for them:** the − / + buttons, the bare `+`
+   * `-` `0` keys, ⌘+ / ⌘− / ⌘0 from the View menu (the modal sits on top of the notes in
+   * `lib/viewer.ts`, and hands the keys back when it closes), a trackpad pinch, a double-click
+   * for smart zoom, the arrow keys, and a two-finger sideways swipe to turn the slide.
+   *
+   * The zoom is continuous so a pinch can drive it. The page box takes its new size at once
+   * (the bitmap already on screen is stretched to fill it), and pdf.js is asked for a sharp one
+   * only once the size has stopped changing — a render per wheel event would be sixty renders a
+   * second of a 2000 px canvas.
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
+  import { SLIDE_ZOOM, clamp, isSideways, percent, zoomIn, zoomOut } from '../../lib/layout.js';
+  import { IDLE_MS, anchorScroll, emptyLatch, pinchScale, pushHorizontal, type LatchState } from '../../lib/pdfview.js';
   import type { SlideSource } from '../../lib/rasterise.js';
+  import { registerViewer, type ViewerCommand } from '../../lib/viewer.js';
   import type { Rect } from '../../../shared/doc/types.js';
 
   let {
@@ -27,16 +40,22 @@
     onclose: () => void;
   } = $props();
 
-  /** The zoom ladder, in units of "fraction of the stage width". */
-  const STEPS = [0.6, 0.8, 1, 1.35, 1.8, 2.4] as const;
+  /** Smart zoom's other end: close enough to read a slide's footnote without panning far. */
+  const SMART_ZOOM = 1.8;
 
   let at = $state(page);
-  let zoomIndex = $state(2);
+  /** In units of "the whole slide, visible" (`SLIDE_ZOOM`). */
+  let zoom = $state(1);
   let stage = $state<HTMLElement | null>(null);
   let holder = $state<HTMLElement | null>(null);
   let outline = $state<Rect | null>(rect);
   let stageWidth = $state(900);
   let stageHeight = $state(700);
+
+  const aspect = $derived.by(() => {
+    const size = source?.size(at) ?? null;
+    return size && size.height > 0 ? size.width / size.height : 4 / 3;
+  });
 
   /**
    * 100 % means **the whole slide, visible** — not "as wide as the stage".
@@ -45,29 +64,70 @@
    * learner who clicked `p. 12` to check one line lands halfway down it and has to scroll to see
    * the slide they asked for. The base width is therefore whichever of width and height binds.
    */
-  const fitWidth = $derived.by(() => {
-    const size = source?.size(at) ?? null;
-    const aspect = size && size.height > 0 ? size.width / size.height : 4 / 3;
-    return Math.max(240, Math.min(stageWidth, (stageHeight - 32) * aspect));
+  const fitWidth = $derived(Math.max(240, Math.min(stageWidth, (stageHeight - 32) * aspect)));
+  const displayWidth = $derived(Math.round(fitWidth * zoom));
+
+  /** The width pdf.js renders at: `displayWidth`, once it has held still for a moment. */
+  let renderWidth = $state(0);
+  $effect(() => {
+    const width = displayWidth;
+    if (untrack(() => renderWidth) === 0) {
+      renderWidth = width;
+      return;
+    }
+    const timer = setTimeout(() => (renderWidth = width), 140);
+    return () => clearTimeout(timer);
   });
+
+  function setZoom(next: number, point?: { x: number; y: number }): void {
+    const to = clamp(next, SLIDE_ZOOM.min, SLIDE_ZOOM.max);
+    const el = stage;
+    if (el && point && zoom > 0) {
+      // Keep the point under the fingers (or the double-click) under them.
+      const box = el.getBoundingClientRect();
+      const left = anchorScroll(el.scrollLeft, point.x - box.left, zoom, to);
+      const top = anchorScroll(el.scrollTop, point.y - box.top, zoom, to);
+      zoom = to;
+      requestAnimationFrame(() => {
+        el.scrollLeft = left;
+        el.scrollTop = top;
+      });
+      return;
+    }
+    zoom = to;
+  }
+
+  function command(c: ViewerCommand): void {
+    if (c === 'zoom.in') setZoom(zoomIn(zoom, SLIDE_ZOOM));
+    else if (c === 'zoom.out') setZoom(zoomOut(zoom, SLIDE_ZOOM));
+    else if (c === 'zoom.reset' || c === 'fit.page' || c === 'fit.width') setZoom(1);
+    else if (c === 'page.next') go(1);
+    else if (c === 'page.prev') go(-1);
+  }
+  $effect(() => registerViewer(command));
 
   onMount(() => {
     const onKey = (event: KeyboardEvent): void => {
+      // ⌘-chords are the menu's, and arrive through `command` above.
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onclose();
-      } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'PageDown') {
         event.preventDefault();
         go(1);
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'PageUp') {
         event.preventDefault();
         go(-1);
       } else if (event.key === '+' || event.key === '=') {
         event.preventDefault();
-        zoomIndex = Math.min(STEPS.length - 1, zoomIndex + 1);
+        command('zoom.in');
       } else if (event.key === '-') {
         event.preventDefault();
-        zoomIndex = Math.max(0, zoomIndex - 1);
+        command('zoom.out');
+      } else if (event.key === '0') {
+        event.preventDefault();
+        command('zoom.reset');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -82,11 +142,37 @@
     outline = next === page ? rect : null;
   }
 
+  // ── Trackpad ──────────────────────────────────────────────────────────────
+  let latch: LatchState = emptyLatch();
+
+  function onwheel(e: WheelEvent): void {
+    const el = stage;
+    if (!el) return;
+    if (e.ctrlKey) {
+      // A pinch (PdfViewer.svelte has the measurements).
+      e.preventDefault();
+      setZoom(pinchScale(zoom, e.deltaY), { x: e.clientX, y: e.clientY });
+      return;
+    }
+    // A sideways swipe turns the slide — unless the slide is zoomed wider than the stage, when
+    // sideways is a pan and the learner is looking for the other half of it.
+    if (!isSideways(e.deltaX, e.deltaY) || el.scrollWidth > el.clientWidth + 1) return;
+    e.preventDefault();
+    const out = pushHorizontal(latch, e.deltaX, e.timeStamp, { idleMs: IDLE_MS });
+    latch = out.state;
+    if (out.turn !== 0) go(out.turn);
+  }
+
+  /** Double-click is the Mac's smart zoom: in to read, and back out to the whole slide. */
+  function ondblclick(e: MouseEvent): void {
+    setZoom(zoom > 1.01 ? 1 : SMART_ZOOM, { x: e.clientX, y: e.clientY });
+  }
+
   $effect(() => {
     const element = holder;
     const from = source;
     const which = at;
-    const width = Math.round(fitWidth * STEPS[zoomIndex]!);
+    const width = renderWidth;
     if (!element || !from || width <= 0) return;
     let live = true;
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
@@ -95,12 +181,11 @@
       .then((canvas) => {
         if (!live || !canvas) return;
         // The source canvas is owned by the cache and may be shared with a thumbnail, so it is
-        // copied into the modal's own element rather than adopted out from under them.
+        // copied into the modal's own element rather than adopted out from under them. Its CSS
+        // size is the page box's (notes.css), so a zoom that has not re-rendered yet stretches it.
         const copy = document.createElement('canvas');
         copy.width = canvas.width;
         copy.height = canvas.height;
-        copy.style.width = `${width}px`;
-        copy.style.height = 'auto';
         copy.getContext('2d')?.drawImage(canvas, 0, 0);
         element.replaceChildren(copy);
       })
@@ -135,26 +220,42 @@
   }}
 >
   <div class="nd-modal-bar">
-    <button type="button" onclick={() => go(-1)} disabled={at <= 1}>‹ Previous</button>
-    <span>Slide {at} of {pageCount}</span>
-    <button type="button" onclick={() => go(1)} disabled={at >= pageCount}>Next ›</button>
+    <button type="button" onclick={() => go(-1)} disabled={at <= 1} title="Previous slide (←, or swipe right)">‹ Previous</button>
+    <span aria-live="polite">Slide {at} of {pageCount}</span>
+    <button type="button" onclick={() => go(1)} disabled={at >= pageCount} title="Next slide (→, or swipe left)">Next ›</button>
     <span class="nd-modal-spacer"></span>
-    <button type="button" onclick={() => (zoomIndex = Math.max(0, zoomIndex - 1))} disabled={zoomIndex === 0}>
-      −
-    </button>
-    <span>{Math.round(STEPS[zoomIndex]! * 100)}%</span>
     <button
       type="button"
-      onclick={() => (zoomIndex = Math.min(STEPS.length - 1, zoomIndex + 1))}
-      disabled={zoomIndex === STEPS.length - 1}
+      aria-label="Zoom out"
+      title="Zoom out (−, ⌘−, or pinch)"
+      onclick={() => command('zoom.out')}
+      disabled={zoom <= SLIDE_ZOOM.min + 0.001}
+    >
+      −
+    </button>
+    <button type="button" class="nd-modal-level" title="Whole slide (0, ⌘0, or double-click)" onclick={() => command('zoom.reset')}>
+      {percent(zoom)}
+    </button>
+    <button
+      type="button"
+      aria-label="Zoom in"
+      title="Zoom in (+, ⌘+, or pinch)"
+      onclick={() => command('zoom.in')}
+      disabled={zoom >= SLIDE_ZOOM.max - 0.001}
     >
       +
     </button>
     <button type="button" onclick={onclose}>Close · Esc</button>
   </div>
 
-  <div class="nd-modal-stage" bind:this={stage}>
-    <div class="nd-modal-page">
+  <div class="nd-modal-stage" bind:this={stage} {onwheel}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="nd-modal-page"
+      style:width={`${displayWidth}px`}
+      style:aspect-ratio={String(aspect)}
+      {ondblclick}
+    >
       <div bind:this={holder}></div>
       {#if outline}
         <div

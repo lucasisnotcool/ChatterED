@@ -181,6 +181,14 @@ describe('the application menu', () => {
     expect(sent).toEqual(['notes.regenerate', 'chat.reset']);
   });
 
+  it('shows and hides the file panel on the Mac sidebar chord, ⌃⌘S', () => {
+    const { template, sent } = harness(true);
+    const item = submenu(template, 'View').find((i) => i.label === 'Show or Hide Files');
+    expect(item?.accelerator).toBe('Control+Command+S');
+    click(template, 'View', 'Show or Hide Files');
+    expect(sent).toEqual(['files.toggle']);
+  });
+
   it('sends nothing at all when there is no window', () => {
     const template = buildMenuTemplate({ getWindow: () => null, isPackaged: true });
     const item = (template.find((m) => m.label === 'View')!.submenu as MenuItemConstructorOptions[]).find(
@@ -342,6 +350,7 @@ describe('what the menu is allowed to say', () => {
       'settings.open',
       'notes.regenerate',
       'chat.reset',
+      'files.toggle',
       'research.export',
     ]);
     for (const menu of ['File', 'View', 'help']) {

@@ -361,6 +361,8 @@ export type AppCommand =
   | 'settings.open'
   | 'notes.regenerate'
   | 'chat.reset'
+  /** View ▸ Show or Hide Files — the shell's file panel (`layoutstore.svelte.ts`). */
+  | 'files.toggle'
   /** File ▸ Export Research Data… — handled by the trial store, not `store.runCommand`. */
   | 'research.export';
 

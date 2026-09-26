@@ -9,8 +9,14 @@
    *
    * The unread dot is a dot *and* a number in its tooltip (colour is never the only signal), and
    * it clears when the thread is actually on screen rather than when the turn arrives.
+   *
+   * The strip is a real tablist: ←/→ (and Home/End) move between the three, and a two-finger
+   * sideways swipe over the column does the same — unless what is under the fingers scrolls
+   * sideways itself (a wide code block), when the swipe is a pan of that and nothing else.
    */
   import { tabs, type ChatTab } from '../../lib/chatview.js';
+  import { canScrollSideways, isSideways, stepTab } from '../../lib/layout.js';
+  import { emptyLatch, pushHorizontal, type LatchState } from '../../lib/pdfview.js';
   import { store } from '../../lib/store.svelte.js';
   import DocChat from './DocChat.svelte';
   import PrivateThread from './PrivateThread.svelte';
@@ -49,6 +55,39 @@
     else void chat.openPrivate(key);
   }
 
+  let tablist = $state<HTMLElement | null>(null);
+
+  function selectAndFocus(key: ChatTab): void {
+    select(key);
+    tablist?.querySelector<HTMLElement>(`[data-tab="${key}"]`)?.focus();
+  }
+
+  function ontabkey(e: KeyboardEvent): void {
+    const keys = strip.map((t) => t.key);
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[role="tab"]');
+    if (!target) return;
+    const current = (target.dataset.tab ?? chat.tab) as ChatTab;
+    let next: ChatTab | null = null;
+    if (e.key === 'ArrowRight') next = stepTab(keys, current, 1);
+    else if (e.key === 'ArrowLeft') next = stepTab(keys, current, -1);
+    else if (e.key === 'Home') next = keys[0] ?? null;
+    else if (e.key === 'End') next = keys[keys.length - 1] ?? null;
+    if (!next) return;
+    e.preventDefault();
+    selectAndFocus(next);
+  }
+
+  /** One tab per flick: the latch holds through the momentum macOS sends after the fingers lift. */
+  let latch: LatchState = emptyLatch();
+  function onwheel(e: WheelEvent): void {
+    if (e.ctrlKey || !isSideways(e.deltaX, e.deltaY)) return;
+    if (canScrollSideways(e.target as Element, e.currentTarget as Element, e.deltaX)) return;
+    e.preventDefault();
+    const out = pushHorizontal(latch, e.deltaX, e.timeStamp);
+    latch = out.state;
+    if (out.turn !== 0) select(stepTab(strip.map((t) => t.key), chat.tab, out.turn));
+  }
+
   /**
    * **The per-message meters for this room, asked for once** (#42 item C).
    *
@@ -62,8 +101,9 @@
   });
 </script>
 
-<section class="column" aria-label="Conversation">
-  <header class="tabs" role="tablist" aria-label="Which conversation">
+<section class="column" aria-label="Conversation" {onwheel}>
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <header class="tabs" role="tablist" aria-label="Which conversation" bind:this={tablist} onkeydown={ontabkey}>
     {#each strip as tab (tab.key)}
       <button
         type="button"
@@ -71,6 +111,9 @@
         class="tab"
         class:on={chat.tab === tab.key}
         aria-selected={chat.tab === tab.key}
+        aria-controls="chat-panel"
+        tabindex={chat.tab === tab.key ? 0 : -1}
+        data-tab={tab.key}
         style={tab.hue ? `--hue: ${tab.hue}` : '--hue: var(--indigo)'}
         title={tab.unread > 0 ? `${tab.unread} new` : tab.label}
         onclick={() => select(tab.key)}
@@ -99,7 +142,7 @@
     </button>
   </header>
 
-  <div class="body">
+  <div class="body" id="chat-panel" role="tabpanel">
     {#if chat.tab === 'doc'}
       <DocChat {pages} {onjump} {onpage} />
     {:else if chat.tab === 'ellie'}

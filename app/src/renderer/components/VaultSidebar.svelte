@@ -7,10 +7,24 @@
    * TOPIC_COLOURS, which deliberately avoids the three agent hues and indigo (rules 2 and 3).
    */
   import type { VaultFileView, VaultTreeNode } from '../../shared/types.js';
+  import { FILES } from '../lib/layout.js';
+  import { layout } from '../lib/layoutstore.svelte.js';
   import { store } from '../lib/store.svelte.js';
   import FileTree from './FileTree.svelte';
+  import PaneSplitter from './PaneSplitter.svelte';
 
-  let { onopen }: { onopen: (file: VaultFileView) => void } = $props();
+  let {
+    onopen,
+    oncollapse,
+  }: {
+    onopen: (file: VaultFileView) => void;
+    /**
+     * Given by the shell, which has a toggle to bring the panel back: dragging the edge all the
+     * way in (or Enter on it) closes the panel. Beside the page viewer there is no such toggle,
+     * so there the edge only resizes.
+     */
+    oncollapse?: () => void;
+  } = $props();
 
   const vault = $derived(store.vault);
   const indexing = $derived(vault?.index.running === true && vault.index.done < vault.index.total);
@@ -23,7 +37,7 @@
   }
 </script>
 
-<aside class="sidebar" aria-label="Vault">
+<aside class="sidebar" id="files-panel" aria-label="Vault" style:width={`${layout.filesWidth}px`}>
   {#if vault?.rootPath}
     <!-- The header used to be one line: a name ellipsed to `OneDrive-NationalUnivers…` with no
          tooltip, and an 11 px `Topics…` link nobody could read as "this is how you choose what a
@@ -102,9 +116,20 @@
   {/if}
 </aside>
 
+<!-- The panel's right edge. Its width is the learner's and is the same wherever the panel is. -->
+<PaneSplitter
+  size={layout.filesWidth}
+  bounds={FILES}
+  sign={1}
+  label="Resize the file panel"
+  controls="files-panel"
+  onsize={(width) => layout.setFilesWidth(width)}
+  {oncollapse}
+/>
+
 <style>
   .sidebar {
-    width: 244px;
+    width: 244px; /* overridden inline by the learner's width */
     flex: none;
     display: flex;
     flex-direction: column;

@@ -13,59 +13,26 @@
    *    doc header") and the lesson-card popover it opens;
    *  - **the two seams with the editor** — `store.doc.scrollToBlock` for a lesson's Start and a
    *    span thread's jump, and the editor pane itself;
-   *  - **the column sizes**, kept per install in `localStorage` the way the flow's zoom and the
-   *    objectives panel's width already are.
+   *  - **the column sizes**, which are `layoutstore.svelte.ts`'s: both edges drag (the file
+   *    panel's is in `VaultSidebar`, so it is the same width beside the page viewer), and the
+   *    file panel closes from its edge, its toggle, or View ▸ Show/Hide Files (⌃⌘S).
    */
   import { untrack } from 'svelte';
   import type { DocumentView } from '../../../shared/types.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
+  import { CHAT } from '../../lib/layout.js';
+  import { layout } from '../../lib/layoutstore.svelte.js';
   import ChatColumn from './ChatColumn.svelte';
   import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
   import NotesPane from '../notes/NotesPane.svelte';
   import PacingStrip from '../PacingStrip.svelte';
+  import PaneSplitter from '../PaneSplitter.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import VaultSidebar from '../VaultSidebar.svelte';
 
   let { doc, onclose }: { doc: DocumentView; onclose: () => void } = $props();
-
-  const CHAT_WIDTH_KEY = 'chattered.chat.width';
-  const FILES_OPEN_KEY = 'chattered.files.open';
-  const MIN_CHAT = 340;
-  const MAX_CHAT = 620;
-  const DEFAULT_CHAT = 396;
-
-  function readNumber(key: string, fallback: number, lo: number, hi: number): number {
-    try {
-      const raw = Number(window.localStorage.getItem(key));
-      if (!Number.isFinite(raw) || raw <= 0) return fallback;
-      return Math.round(Math.min(hi, Math.max(lo, raw)));
-    } catch {
-      return fallback;
-    }
-  }
-
-  function readBool(key: string, fallback: boolean): boolean {
-    try {
-      const raw = window.localStorage.getItem(key);
-      return raw === null ? fallback : raw === 'true';
-    } catch {
-      return fallback;
-    }
-  }
-
-  function write(key: string, value: string): void {
-    try {
-      window.localStorage.setItem(key, value);
-    } catch {
-      // A denied or full store is not worth failing a drag over.
-    }
-  }
-
-  let chatWidth = $state(readNumber(CHAT_WIDTH_KEY, DEFAULT_CHAT, MIN_CHAT, MAX_CHAT));
-  let filesOpen = $state(readBool(FILES_OPEN_KEY, true));
-  let dragging = $state(false);
 
   /**
    * The file's surfaces, all opened by the same gesture.
@@ -120,45 +87,15 @@
     if (result.blockId) jump(result.blockId);
   }
 
-  function onPointerDown(e: PointerEvent): void {
-    e.preventDefault();
-    dragging = true;
-    const move = (ev: PointerEvent): void => {
-      const next = Math.min(MAX_CHAT, Math.max(MIN_CHAT, window.innerWidth - ev.clientX));
-      chatWidth = Math.round(next);
-    };
-    const up = (): void => {
-      dragging = false;
-      write(CHAT_WIDTH_KEY, String(chatWidth));
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  }
-
-  /** The keyboard's half of the drag: a splitter that only a mouse can move is not a control. */
-  function onSplitterKey(e: KeyboardEvent): void {
-    const step = e.shiftKey ? 48 : 16;
-    if (e.key === 'ArrowLeft') chatWidth = Math.min(MAX_CHAT, chatWidth + step);
-    else if (e.key === 'ArrowRight') chatWidth = Math.max(MIN_CHAT, chatWidth - step);
-    else return;
-    e.preventDefault();
-    write(CHAT_WIDTH_KEY, String(chatWidth));
-  }
-
-  function toggleFiles(): void {
-    filesOpen = !filesOpen;
-    write(FILES_OPEN_KEY, String(filesOpen));
-  }
+  const filesOpen = $derived(layout.filesOpen);
 </script>
 
-<div class="shell" class:dragging>
+<div class="shell">
   {#if filesOpen}
     <!-- The file panel is the shipped vault sidebar, re-hosted and not rebuilt: the tree, the
          topics, the re-scan and the search all already work and the learner already knows them. -->
     <div class="files">
-      <VaultSidebar onopen={(file) => void store.openFile(file.id)} />
+      <VaultSidebar onopen={(file) => void store.openFile(file.id)} oncollapse={() => layout.setFilesOpen(false)} />
     </div>
   {/if}
 
@@ -168,8 +105,9 @@
         type="button"
         class="mini"
         aria-pressed={filesOpen}
-        title={filesOpen ? 'Hide your files' : 'Show your files'}
-        onclick={toggleFiles}
+        aria-controls="files-panel"
+        title={filesOpen ? 'Hide your files (⌃⌘S)' : 'Show your files (⌃⌘S)'}
+        onclick={() => layout.toggleFiles()}
       >{filesOpen ? '⟨' : '⟩'}</button>
 
       <span class="name" title={doc.relPath}>{doc.name}</span>
@@ -212,35 +150,33 @@
     </div>
   </main>
 
-  <div
-    class="splitter"
-    role="separator"
-    tabindex="0"
-    aria-label="Resize the conversation"
-    aria-orientation="vertical"
-    aria-valuenow={chatWidth}
-    aria-valuemin={MIN_CHAT}
-    aria-valuemax={MAX_CHAT}
-    onpointerdown={onPointerDown}
-    onkeydown={onSplitterKey}
-  ></div>
+  <PaneSplitter
+    size={layout.chatWidth}
+    bounds={CHAT}
+    sign={-1}
+    label="Resize the conversation"
+    controls="chat-column"
+    onsize={(width) => layout.setChatWidth(width)}
+  />
 
-  <div class="chats" style="width: {chatWidth}px">
+  <div class="chats" id="chat-column" style:width={`${layout.chatWidth}px`}>
     <ChatColumn {pages} onjump={jump} onpage={goToPage} />
   </div>
 </div>
 
 <style>
   .shell { flex: 1; display: flex; min-width: 0; min-height: 0; }
-  /* While the splitter is being dragged, nothing else may take the pointer or the selection. */
-  .shell.dragging { user-select: none; cursor: col-resize; }
 
   .files { flex: none; display: flex; min-height: 0; }
 
   /* The document keeps a floor of its own. It is the widest thing on screen by design, and a
      column narrow enough to break a sentence over three lines is not a document. */
   .doc {
-    flex: 1 1 auto;
+    /* A zero basis: the document takes what the two panels leave, so a panel is the width its
+       splitter says. With `auto`, the sheet's own 984 px max-width made the document a
+       candidate for shrinking alongside the chat, which drew at 329 px while its splitter
+       said 396. The chat still gives ground once the document is at its floor. */
+    flex: 1 1 0;
     display: flex;
     flex-direction: column;
     min-width: 380px;
@@ -283,16 +219,6 @@
   .mini:hover { color: var(--indigo); }
 
   .docbody { flex: 1; overflow-y: auto; min-height: 0; }
-
-  .splitter {
-    flex: none;
-    width: 5px;
-    margin: 0 -2px;
-    z-index: 2;
-    cursor: col-resize;
-    background: transparent;
-  }
-  .splitter:hover, .splitter:focus-visible { background: var(--indigo-tint); }
 
   /* Its width is the learner's, but it yields before the document does: `flex-shrink: 1` with a
      floor, so a narrow window takes it back to 300 px instead of squeezing the doc to nothing. */

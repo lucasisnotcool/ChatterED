@@ -29,6 +29,7 @@ import type { ChatterEdApi } from '../../shared/ipc.js';
 import { bridge } from './bridge.js';
 import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
+import { layout } from './layoutstore.svelte.js';
 import {
   SESSION_WINDOW,
   type CostAnalytics,
@@ -340,6 +341,9 @@ class Store {
         break;
       case 'settings.open':
         void this.openSettings();
+        break;
+      case 'files.toggle':
+        layout.toggleFiles();
         break;
       // The same calls the pane buttons make; the confirm is main's either way (2026-09-23).
       case 'notes.regenerate':

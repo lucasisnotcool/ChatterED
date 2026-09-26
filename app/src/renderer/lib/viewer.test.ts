@@ -38,4 +38,29 @@ describe('the viewer command registry', () => {
     offSecond();
     expect(runViewerCommand('page.next')).toBe(false);
   });
+
+  it('hands the keys back to the notes when the slide modal over them closes', () => {
+    const notes: string[] = [];
+    const modal: string[] = [];
+    const offNotes = registerViewer((c) => notes.push(c));
+    const offModal = registerViewer((c) => modal.push(c));
+    runViewerCommand('zoom.in');
+    offModal();
+    runViewerCommand('zoom.in');
+    expect(modal).toEqual(['zoom.in']);
+    expect(notes).toEqual(['zoom.in']);
+    offNotes();
+    expect(runViewerCommand('zoom.in')).toBe(false);
+  });
+
+  it('lets a middle registration go without disturbing the one above it', () => {
+    const top: string[] = [];
+    const offBottom = registerViewer(() => undefined);
+    const offTop = registerViewer((c) => top.push(c));
+    offBottom();
+    runViewerCommand('zoom.out');
+    expect(top).toEqual(['zoom.out']);
+    offTop();
+    expect(runViewerCommand('zoom.out')).toBe(false);
+  });
 });
