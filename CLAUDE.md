@@ -78,10 +78,11 @@ use `gh api repos/:owner/:repo/issues/N --jq '.title, .body'`.
 
 Follow the owner's other repos: a plain descriptive subject (no `feat:`/`fix:` prefixes),
 then a body that says *why*, what was verified, and what is deliberately left. Reference
-issues as `#N`. Every message ends with:
+issues as `#N`. Every message ends with a `Co-Authored-By` line naming the model that actually
+wrote the commit, for example:
 
 ```
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
 ```
 
 ## Before touching X, read Y
