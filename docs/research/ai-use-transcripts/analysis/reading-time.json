@@ -1,0 +1,2029 @@
+{
+ "method": {
+  "read_wpm": 238.0,
+  "read_wpm_source": "Brysbaert (2019) J. Mem. Lang. 109:104047",
+  "type_wpm": 51.6,
+  "type_wpm_source": "Dhakal et al. (CHI 2018)",
+  "headline_gap_min": 20.0,
+  "gap_sensitivity_min": [
+   15.0,
+   20.0,
+   30.0
+  ],
+  "dwell": "t(next learner turn) - t(AI turn); upper bound on reading time",
+  "demand": "AI prose words (fenced code excluded) / read_wpm",
+  "excluded_sessions": [
+   "R1 (no timestamps in the Claude share)"
+  ],
+  "ai_timestamp_is_generation_start": true
+ },
+ "per_session": {
+  "R2": {
+   "tool": "ChatGPT",
+   "total_dwell_min": 48.9,
+   "total_demand_min": 16.0,
+   "total_demand_all_words_min": 16.1,
+   "timestamps": "per message, UTC",
+   "ai_turns_with_a_following_learner_turn": 9,
+   "away_gaps_excluded": 0,
+   "dwell_min": {
+    "n": 9,
+    "mean": 5.43,
+    "median": 3.36,
+    "min": 0.65,
+    "max": 14.91,
+    "sd": 4.93
+   },
+   "dwell_less_typing_min": {
+    "n": 9,
+    "mean": 5.35,
+    "median": 3.22,
+    "min": 0.55,
+    "max": 14.91,
+    "sd": 4.92
+   },
+   "demand_min": {
+    "n": 9,
+    "mean": 1.59,
+    "median": 1.81,
+    "min": 0.71,
+    "max": 2.19,
+    "sd": 0.48
+   },
+   "read_ratio": {
+    "n": 9,
+    "mean": 4.47,
+    "median": 1.94,
+    "min": 0.35,
+    "max": 15.97,
+    "sd": 5.37
+   },
+   "turns_dwell_below_demand": [
+    "A4",
+    "A8"
+   ],
+   "turns": [
+    {
+     "ai_turn": "A1",
+     "next_learner_turn": "L2",
+     "ai_words": 225,
+     "ai_prose_words": 225,
+     "dwell_min": 2.4,
+     "demand_min": 0.95,
+     "dwell_less_typing_min": 2.33,
+     "demand_all_words_min": 0.95,
+     "read_ratio": 2.54,
+     "wpm_needed": 94
+    },
+    {
+     "ai_turn": "A2",
+     "next_learner_turn": "L3",
+     "ai_words": 168,
+     "ai_prose_words": 168,
+     "dwell_min": 11.27,
+     "demand_min": 0.71,
+     "dwell_less_typing_min": 10.98,
+     "demand_all_words_min": 0.71,
+     "read_ratio": 15.97,
+     "wpm_needed": 15
+    },
+    {
+     "ai_turn": "A3",
+     "next_learner_turn": "L4",
+     "ai_words": 326,
+     "ai_prose_words": 326,
+     "dwell_min": 14.91,
+     "demand_min": 1.37,
+     "dwell_less_typing_min": 14.91,
+     "demand_all_words_min": 1.37,
+     "read_ratio": 10.89,
+     "wpm_needed": 22
+    },
+    {
+     "ai_turn": "A4",
+     "next_learner_turn": "L5",
+     "ai_words": 436,
+     "ai_prose_words": 436,
+     "dwell_min": 1.52,
+     "demand_min": 1.83,
+     "dwell_less_typing_min": 1.38,
+     "demand_all_words_min": 1.83,
+     "read_ratio": 0.83,
+     "wpm_needed": 287
+    },
+    {
+     "ai_turn": "A5",
+     "next_learner_turn": "L6",
+     "ai_words": 428,
+     "ai_prose_words": 412,
+     "dwell_min": 3.36,
+     "demand_min": 1.73,
+     "dwell_less_typing_min": 3.22,
+     "demand_all_words_min": 1.8,
+     "read_ratio": 1.94,
+     "wpm_needed": 123
+    },
+    {
+     "ai_turn": "A6",
+     "next_learner_turn": "L7",
+     "ai_words": 439,
+     "ai_prose_words": 439,
+     "dwell_min": 8.27,
+     "demand_min": 1.84,
+     "dwell_less_typing_min": 8.27,
+     "demand_all_words_min": 1.84,
+     "read_ratio": 4.48,
+     "wpm_needed": 53
+    },
+    {
+     "ai_turn": "A7",
+     "next_learner_turn": "L8",
+     "ai_words": 521,
+     "ai_prose_words": 521,
+     "dwell_min": 3.95,
+     "demand_min": 2.19,
+     "dwell_less_typing_min": 3.95,
+     "demand_all_words_min": 2.19,
+     "read_ratio": 1.8,
+     "wpm_needed": 132
+    },
+    {
+     "ai_turn": "A8",
+     "next_learner_turn": "L9",
+     "ai_words": 442,
+     "ai_prose_words": 442,
+     "dwell_min": 0.65,
+     "demand_min": 1.86,
+     "dwell_less_typing_min": 0.55,
+     "demand_all_words_min": 1.86,
+     "read_ratio": 0.35,
+     "wpm_needed": 678
+    },
+    {
+     "ai_turn": "A9",
+     "next_learner_turn": "L10",
+     "ai_words": 430,
+     "ai_prose_words": 430,
+     "dwell_min": 2.55,
+     "demand_min": 1.81,
+     "dwell_less_typing_min": 2.55,
+     "demand_all_words_min": 1.81,
+     "read_ratio": 1.41,
+     "wpm_needed": 168
+    }
+   ],
+   "sessions": {
+    "gap_15min": {
+     "count": 1,
+     "singletons": 0,
+     "duration_min": {
+      "n": 1,
+      "mean": 49.05,
+      "median": 49.05,
+      "min": 49.05,
+      "max": 49.05,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 50.78,
+      "median": 50.78,
+      "min": 50.78,
+      "max": 50.78,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A10",
+       "turns": 20,
+       "exchanges": 10,
+       "duration_min": 49.05,
+       "tail_unobserved_min": 1.74,
+       "duration_corrected_min": 50.78,
+       "ai_words": 3829
+      }
+     ]
+    },
+    "gap_20min": {
+     "count": 1,
+     "singletons": 0,
+     "duration_min": {
+      "n": 1,
+      "mean": 49.05,
+      "median": 49.05,
+      "min": 49.05,
+      "max": 49.05,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 50.78,
+      "median": 50.78,
+      "min": 50.78,
+      "max": 50.78,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A10",
+       "turns": 20,
+       "exchanges": 10,
+       "duration_min": 49.05,
+       "tail_unobserved_min": 1.74,
+       "duration_corrected_min": 50.78,
+       "ai_words": 3829
+      }
+     ]
+    },
+    "gap_30min": {
+     "count": 1,
+     "singletons": 0,
+     "duration_min": {
+      "n": 1,
+      "mean": 49.05,
+      "median": 49.05,
+      "min": 49.05,
+      "max": 49.05,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 50.78,
+      "median": 50.78,
+      "min": 50.78,
+      "max": 50.78,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A10",
+       "turns": 20,
+       "exchanges": 10,
+       "duration_min": 49.05,
+       "tail_unobserved_min": 1.74,
+       "duration_corrected_min": 50.78,
+       "ai_words": 3829
+      }
+     ]
+    }
+   }
+  },
+  "R3": {
+   "tool": "Perplexity (Spaces, uploaded course files)",
+   "total_dwell_min": 0,
+   "total_demand_min": 5.0,
+   "total_demand_all_words_min": 5.0,
+   "timestamps": "per learner turn (query time), UTC",
+   "ai_turns_with_a_following_learner_turn": 0,
+   "away_gaps_excluded": 0,
+   "dwell_min": null,
+   "dwell_less_typing_min": null,
+   "demand_min": null,
+   "read_ratio": null,
+   "turns_dwell_below_demand": [],
+   "turns": [],
+   "sessions": {
+    "gap_15min": {
+     "count": 1,
+     "singletons": 1,
+     "duration_min": {
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 5.0,
+      "median": 5.0,
+      "min": 5.0,
+      "max": 5.0,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A1",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.0,
+       "tail_unobserved_min": 5.0,
+       "duration_corrected_min": 5.0,
+       "ai_words": 1190
+      }
+     ]
+    },
+    "gap_20min": {
+     "count": 1,
+     "singletons": 1,
+     "duration_min": {
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 5.0,
+      "median": 5.0,
+      "min": 5.0,
+      "max": 5.0,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A1",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.0,
+       "tail_unobserved_min": 5.0,
+       "duration_corrected_min": 5.0,
+       "ai_words": 1190
+      }
+     ]
+    },
+    "gap_30min": {
+     "count": 1,
+     "singletons": 1,
+     "duration_min": {
+      "n": 1,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 5.0,
+      "median": 5.0,
+      "min": 5.0,
+      "max": 5.0,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A1",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.0,
+       "tail_unobserved_min": 5.0,
+       "duration_corrected_min": 5.0,
+       "ai_words": 1190
+      }
+     ]
+    }
+   }
+  },
+  "R4": {
+   "tool": "Perplexity (Spaces, uploaded course files)",
+   "total_dwell_min": 37.1,
+   "total_demand_min": 21.3,
+   "total_demand_all_words_min": 21.3,
+   "timestamps": "per learner turn (query time), UTC",
+   "ai_turns_with_a_following_learner_turn": 9,
+   "away_gaps_excluded": 1,
+   "dwell_min": {
+    "n": 8,
+    "mean": 4.63,
+    "median": 5.69,
+    "min": 1.01,
+    "max": 8.36,
+    "sd": 3.11
+   },
+   "dwell_less_typing_min": {
+    "n": 8,
+    "mean": 3.39,
+    "median": 3.56,
+    "min": 0.86,
+    "max": 7.08,
+    "sd": 2.36
+   },
+   "demand_min": {
+    "n": 8,
+    "mean": 2.4,
+    "median": 0.77,
+    "min": 0.34,
+    "max": 7.83,
+    "sd": 3.32
+   },
+   "read_ratio": {
+    "n": 8,
+    "mean": 8.3,
+    "median": 7.29,
+    "min": 0.13,
+    "max": 21.39,
+    "sd": 8.22
+   },
+   "turns_dwell_below_demand": [
+    "A2",
+    "A3"
+   ],
+   "turns": [
+    {
+     "ai_turn": "A1",
+     "next_learner_turn": "L2",
+     "ai_words": 108,
+     "ai_prose_words": 108,
+     "dwell_min": 1.06,
+     "demand_min": 0.45,
+     "dwell_less_typing_min": 0.91,
+     "demand_all_words_min": 0.45,
+     "read_ratio": 2.34,
+     "wpm_needed": 102
+    },
+    {
+     "ai_turn": "A2",
+     "next_learner_turn": "L3",
+     "ai_words": 1830,
+     "ai_prose_words": 1830,
+     "dwell_min": 1.01,
+     "demand_min": 7.69,
+     "dwell_less_typing_min": 0.86,
+     "demand_all_words_min": 7.69,
+     "read_ratio": 0.13,
+     "wpm_needed": 1805
+    },
+    {
+     "ai_turn": "A3",
+     "next_learner_turn": "L4",
+     "ai_words": 1863,
+     "ai_prose_words": 1863,
+     "dwell_min": 1.01,
+     "demand_min": 7.83,
+     "dwell_less_typing_min": 0.86,
+     "demand_all_words_min": 7.83,
+     "read_ratio": 0.13,
+     "wpm_needed": 1836
+    },
+    {
+     "ai_turn": "A4",
+     "next_learner_turn": "L5",
+     "ai_words": 48,
+     "ai_prose_words": 48,
+     "dwell_min": 3121.4,
+     "demand_min": 0.2,
+     "dwell_less_typing_min": 3119.85,
+     "demand_all_words_min": 0.2,
+     "read_ratio": 15476.95,
+     "wpm_needed": 0
+    },
+    {
+     "ai_turn": "A5",
+     "next_learner_turn": "L6",
+     "ai_words": 218,
+     "ai_prose_words": 218,
+     "dwell_min": 7.04,
+     "demand_min": 0.92,
+     "dwell_less_typing_min": 5.16,
+     "demand_all_words_min": 0.92,
+     "read_ratio": 7.69,
+     "wpm_needed": 31
+    },
+    {
+     "ai_turn": "A6",
+     "next_learner_turn": "L7",
+     "ai_words": 101,
+     "ai_prose_words": 101,
+     "dwell_min": 8.36,
+     "demand_min": 0.42,
+     "dwell_less_typing_min": 7.08,
+     "demand_all_words_min": 0.42,
+     "read_ratio": 19.69,
+     "wpm_needed": 12
+    },
+    {
+     "ai_turn": "A7",
+     "next_learner_turn": "L8",
+     "ai_words": 80,
+     "ai_prose_words": 80,
+     "dwell_min": 7.19,
+     "demand_min": 0.34,
+     "dwell_less_typing_min": 5.15,
+     "demand_all_words_min": 0.34,
+     "read_ratio": 21.39,
+     "wpm_needed": 11
+    },
+    {
+     "ai_turn": "A8",
+     "next_learner_turn": "L9",
+     "ai_words": 171,
+     "ai_prose_words": 171,
+     "dwell_min": 5.82,
+     "demand_min": 0.72,
+     "dwell_less_typing_min": 3.69,
+     "demand_all_words_min": 0.72,
+     "read_ratio": 8.11,
+     "wpm_needed": 29
+    },
+    {
+     "ai_turn": "A9",
+     "next_learner_turn": "L10",
+     "ai_words": 192,
+     "ai_prose_words": 192,
+     "dwell_min": 5.56,
+     "demand_min": 0.81,
+     "dwell_less_typing_min": 3.43,
+     "demand_all_words_min": 0.81,
+     "read_ratio": 6.89,
+     "wpm_needed": 35
+    }
+   ],
+   "sessions": {
+    "gap_15min": {
+     "count": 2,
+     "singletons": 0,
+     "duration_min": {
+      "n": 2,
+      "mean": 18.53,
+      "median": 18.53,
+      "min": 3.09,
+      "max": 33.97,
+      "sd": 21.84
+     },
+     "duration_corrected_min": {
+      "n": 2,
+      "mean": 19.57,
+      "median": 19.57,
+      "min": 3.29,
+      "max": 35.85,
+      "sd": 23.02
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A4",
+       "turns": 8,
+       "exchanges": 4,
+       "duration_min": 3.09,
+       "tail_unobserved_min": 0.2,
+       "duration_corrected_min": 3.29,
+       "ai_words": 3849
+      },
+      {
+       "first_turn": "L5",
+       "last_turn": "A10",
+       "turns": 12,
+       "exchanges": 6,
+       "duration_min": 33.97,
+       "tail_unobserved_min": 1.88,
+       "duration_corrected_min": 35.85,
+       "ai_words": 1209
+      }
+     ]
+    },
+    "gap_20min": {
+     "count": 2,
+     "singletons": 0,
+     "duration_min": {
+      "n": 2,
+      "mean": 18.53,
+      "median": 18.53,
+      "min": 3.09,
+      "max": 33.97,
+      "sd": 21.84
+     },
+     "duration_corrected_min": {
+      "n": 2,
+      "mean": 19.57,
+      "median": 19.57,
+      "min": 3.29,
+      "max": 35.85,
+      "sd": 23.02
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A4",
+       "turns": 8,
+       "exchanges": 4,
+       "duration_min": 3.09,
+       "tail_unobserved_min": 0.2,
+       "duration_corrected_min": 3.29,
+       "ai_words": 3849
+      },
+      {
+       "first_turn": "L5",
+       "last_turn": "A10",
+       "turns": 12,
+       "exchanges": 6,
+       "duration_min": 33.97,
+       "tail_unobserved_min": 1.88,
+       "duration_corrected_min": 35.85,
+       "ai_words": 1209
+      }
+     ]
+    },
+    "gap_30min": {
+     "count": 2,
+     "singletons": 0,
+     "duration_min": {
+      "n": 2,
+      "mean": 18.53,
+      "median": 18.53,
+      "min": 3.09,
+      "max": 33.97,
+      "sd": 21.84
+     },
+     "duration_corrected_min": {
+      "n": 2,
+      "mean": 19.57,
+      "median": 19.57,
+      "min": 3.29,
+      "max": 35.85,
+      "sd": 23.02
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A4",
+       "turns": 8,
+       "exchanges": 4,
+       "duration_min": 3.09,
+       "tail_unobserved_min": 0.2,
+       "duration_corrected_min": 3.29,
+       "ai_words": 3849
+      },
+      {
+       "first_turn": "L5",
+       "last_turn": "A10",
+       "turns": 12,
+       "exchanges": 6,
+       "duration_min": 33.97,
+       "tail_unobserved_min": 1.88,
+       "duration_corrected_min": 35.85,
+       "ai_words": 1209
+      }
+     ]
+    }
+   }
+  },
+  "R5": {
+   "tool": "ChatGPT",
+   "total_dwell_min": 6.4,
+   "total_demand_min": 4.1,
+   "total_demand_all_words_min": 4.1,
+   "timestamps": "per message, UTC",
+   "ai_turns_with_a_following_learner_turn": 3,
+   "away_gaps_excluded": 0,
+   "dwell_min": {
+    "n": 3,
+    "mean": 2.12,
+    "median": 2.83,
+    "min": 0.45,
+    "max": 3.07,
+    "sd": 1.45
+   },
+   "dwell_less_typing_min": {
+    "n": 3,
+    "mean": 1.97,
+    "median": 2.7,
+    "min": 0.28,
+    "max": 2.92,
+    "sd": 1.46
+   },
+   "demand_min": {
+    "n": 3,
+    "mean": 0.98,
+    "median": 1.0,
+    "min": 0.67,
+    "max": 1.27,
+    "sd": 0.3
+   },
+   "read_ratio": {
+    "n": 3,
+    "mean": 2.37,
+    "median": 2.41,
+    "min": 0.45,
+    "max": 4.24,
+    "sd": 1.9
+   },
+   "turns_dwell_below_demand": [
+    "A3"
+   ],
+   "turns": [
+    {
+     "ai_turn": "A1",
+     "next_learner_turn": "L2",
+     "ai_words": 159,
+     "ai_prose_words": 159,
+     "dwell_min": 2.83,
+     "demand_min": 0.67,
+     "dwell_less_typing_min": 2.7,
+     "demand_all_words_min": 0.67,
+     "read_ratio": 4.24,
+     "wpm_needed": 56
+    },
+    {
+     "ai_turn": "A2",
+     "next_learner_turn": "L3",
+     "ai_words": 313,
+     "ai_prose_words": 303,
+     "dwell_min": 3.07,
+     "demand_min": 1.27,
+     "dwell_less_typing_min": 2.92,
+     "demand_all_words_min": 1.32,
+     "read_ratio": 2.41,
+     "wpm_needed": 99
+    },
+    {
+     "ai_turn": "A3",
+     "next_learner_turn": "L4",
+     "ai_words": 238,
+     "ai_prose_words": 238,
+     "dwell_min": 0.45,
+     "demand_min": 1.0,
+     "dwell_less_typing_min": 0.28,
+     "demand_all_words_min": 1.0,
+     "read_ratio": 0.45,
+     "wpm_needed": 525
+    }
+   ],
+   "sessions": {
+    "gap_15min": {
+     "count": 1,
+     "singletons": 0,
+     "duration_min": {
+      "n": 1,
+      "mean": 6.44,
+      "median": 6.44,
+      "min": 6.44,
+      "max": 6.44,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 7.59,
+      "median": 7.59,
+      "min": 7.59,
+      "max": 7.59,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A4",
+       "turns": 8,
+       "exchanges": 4,
+       "duration_min": 6.44,
+       "tail_unobserved_min": 1.14,
+       "duration_corrected_min": 7.59,
+       "ai_words": 982
+      }
+     ]
+    },
+    "gap_20min": {
+     "count": 1,
+     "singletons": 0,
+     "duration_min": {
+      "n": 1,
+      "mean": 6.44,
+      "median": 6.44,
+      "min": 6.44,
+      "max": 6.44,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 7.59,
+      "median": 7.59,
+      "min": 7.59,
+      "max": 7.59,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A4",
+       "turns": 8,
+       "exchanges": 4,
+       "duration_min": 6.44,
+       "tail_unobserved_min": 1.14,
+       "duration_corrected_min": 7.59,
+       "ai_words": 982
+      }
+     ]
+    },
+    "gap_30min": {
+     "count": 1,
+     "singletons": 0,
+     "duration_min": {
+      "n": 1,
+      "mean": 6.44,
+      "median": 6.44,
+      "min": 6.44,
+      "max": 6.44,
+      "sd": null
+     },
+     "duration_corrected_min": {
+      "n": 1,
+      "mean": 7.59,
+      "median": 7.59,
+      "min": 7.59,
+      "max": 7.59,
+      "sd": null
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A4",
+       "turns": 8,
+       "exchanges": 4,
+       "duration_min": 6.44,
+       "tail_unobserved_min": 1.14,
+       "duration_corrected_min": 7.59,
+       "ai_words": 982
+      }
+     ]
+    }
+   }
+  },
+  "R6": {
+   "tool": "ChatGPT",
+   "total_dwell_min": 221.6,
+   "total_demand_min": 42.2,
+   "total_demand_all_words_min": 57.0,
+   "timestamps": "per message, UTC",
+   "ai_turns_with_a_following_learner_turn": 44,
+   "away_gaps_excluded": 8,
+   "dwell_min": {
+    "n": 36,
+    "mean": 6.16,
+    "median": 5.53,
+    "min": 0.28,
+    "max": 19.0,
+    "sd": 4.79
+   },
+   "dwell_less_typing_min": {
+    "n": 36,
+    "mean": 5.5,
+    "median": 4.65,
+    "min": 0.14,
+    "max": 18.92,
+    "sd": 4.6
+   },
+   "demand_min": {
+    "n": 36,
+    "mean": 0.94,
+    "median": 0.95,
+    "min": 0.16,
+    "max": 1.58,
+    "sd": 0.36
+   },
+   "read_ratio": {
+    "n": 36,
+    "mean": 7.96,
+    "median": 6.12,
+    "min": 0.31,
+    "max": 24.38,
+    "sd": 7.12
+   },
+   "turns_dwell_below_demand": [
+    "A10",
+    "A17",
+    "A23",
+    "A34"
+   ],
+   "turns": [
+    {
+     "ai_turn": "A1",
+     "next_learner_turn": "L2",
+     "ai_words": 39,
+     "ai_prose_words": 39,
+     "dwell_min": 0.57,
+     "demand_min": 0.16,
+     "dwell_less_typing_min": 0.44,
+     "demand_all_words_min": 0.16,
+     "read_ratio": 3.49,
+     "wpm_needed": 68
+    },
+    {
+     "ai_turn": "A2",
+     "next_learner_turn": "L3",
+     "ai_words": 461,
+     "ai_prose_words": 213,
+     "dwell_min": 81.99,
+     "demand_min": 0.89,
+     "dwell_less_typing_min": 78.32,
+     "demand_all_words_min": 1.94,
+     "read_ratio": 91.61,
+     "wpm_needed": 3
+    },
+    {
+     "ai_turn": "A3",
+     "next_learner_turn": "L4",
+     "ai_words": 551,
+     "ai_prose_words": 188,
+     "dwell_min": 2.96,
+     "demand_min": 0.79,
+     "dwell_less_typing_min": 2.61,
+     "demand_all_words_min": 2.32,
+     "read_ratio": 3.75,
+     "wpm_needed": 63
+    },
+    {
+     "ai_turn": "A4",
+     "next_learner_turn": "L5",
+     "ai_words": 79,
+     "ai_prose_words": 63,
+     "dwell_min": 32.08,
+     "demand_min": 0.26,
+     "dwell_less_typing_min": 31.98,
+     "demand_all_words_min": 0.33,
+     "read_ratio": 121.17,
+     "wpm_needed": 2
+    },
+    {
+     "ai_turn": "A5",
+     "next_learner_turn": "L6",
+     "ai_words": 272,
+     "ai_prose_words": 143,
+     "dwell_min": 14.65,
+     "demand_min": 0.6,
+     "dwell_less_typing_min": 12.84,
+     "demand_all_words_min": 1.14,
+     "read_ratio": 24.38,
+     "wpm_needed": 10
+    },
+    {
+     "ai_turn": "A6",
+     "next_learner_turn": "L7",
+     "ai_words": 442,
+     "ai_prose_words": 341,
+     "dwell_min": 9.52,
+     "demand_min": 1.43,
+     "dwell_less_typing_min": 7.47,
+     "demand_all_words_min": 1.86,
+     "read_ratio": 6.64,
+     "wpm_needed": 36
+    },
+    {
+     "ai_turn": "A7",
+     "next_learner_turn": "L8",
+     "ai_words": 416,
+     "ai_prose_words": 272,
+     "dwell_min": 2.8,
+     "demand_min": 1.14,
+     "dwell_less_typing_min": 2.72,
+     "demand_all_words_min": 1.75,
+     "read_ratio": 2.45,
+     "wpm_needed": 97
+    },
+    {
+     "ai_turn": "A8",
+     "next_learner_turn": "L9",
+     "ai_words": 95,
+     "ai_prose_words": 66,
+     "dwell_min": 5.87,
+     "demand_min": 0.28,
+     "dwell_less_typing_min": 5.16,
+     "demand_all_words_min": 0.4,
+     "read_ratio": 21.18,
+     "wpm_needed": 11
+    },
+    {
+     "ai_turn": "A9",
+     "next_learner_turn": "L10",
+     "ai_words": 320,
+     "ai_prose_words": 214,
+     "dwell_min": 9.6,
+     "demand_min": 0.9,
+     "dwell_less_typing_min": 7.87,
+     "demand_all_words_min": 1.34,
+     "read_ratio": 10.67,
+     "wpm_needed": 22
+    },
+    {
+     "ai_turn": "A10",
+     "next_learner_turn": "L11",
+     "ai_words": 312,
+     "ai_prose_words": 211,
+     "dwell_min": 0.28,
+     "demand_min": 0.89,
+     "dwell_less_typing_min": 0.14,
+     "demand_all_words_min": 1.31,
+     "read_ratio": 0.31,
+     "wpm_needed": 759
+    },
+    {
+     "ai_turn": "A11",
+     "next_learner_turn": "L12",
+     "ai_words": 141,
+     "ai_prose_words": 98,
+     "dwell_min": 7.36,
+     "demand_min": 0.41,
+     "dwell_less_typing_min": 7.23,
+     "demand_all_words_min": 0.59,
+     "read_ratio": 17.88,
+     "wpm_needed": 13
+    },
+    {
+     "ai_turn": "A12",
+     "next_learner_turn": "L13",
+     "ai_words": 221,
+     "ai_prose_words": 172,
+     "dwell_min": 16.03,
+     "demand_min": 0.72,
+     "dwell_less_typing_min": 15.59,
+     "demand_all_words_min": 0.93,
+     "read_ratio": 22.19,
+     "wpm_needed": 11
+    },
+    {
+     "ai_turn": "A13",
+     "next_learner_turn": "L14",
+     "ai_words": 305,
+     "ai_prose_words": 197,
+     "dwell_min": 8.35,
+     "demand_min": 0.83,
+     "dwell_less_typing_min": 8.29,
+     "demand_all_words_min": 1.28,
+     "read_ratio": 10.09,
+     "wpm_needed": 24
+    },
+    {
+     "ai_turn": "A14",
+     "next_learner_turn": "L15",
+     "ai_words": 122,
+     "ai_prose_words": 110,
+     "dwell_min": 4.13,
+     "demand_min": 0.46,
+     "dwell_less_typing_min": 4.08,
+     "demand_all_words_min": 0.51,
+     "read_ratio": 8.95,
+     "wpm_needed": 27
+    },
+    {
+     "ai_turn": "A15",
+     "next_learner_turn": "L16",
+     "ai_words": 380,
+     "ai_prose_words": 289,
+     "dwell_min": 30.53,
+     "demand_min": 1.21,
+     "dwell_less_typing_min": 30.45,
+     "demand_all_words_min": 1.6,
+     "read_ratio": 25.14,
+     "wpm_needed": 9
+    },
+    {
+     "ai_turn": "A16",
+     "next_learner_turn": "L17",
+     "ai_words": 195,
+     "ai_prose_words": 171,
+     "dwell_min": 6.14,
+     "demand_min": 0.72,
+     "dwell_less_typing_min": 6.12,
+     "demand_all_words_min": 0.82,
+     "read_ratio": 8.54,
+     "wpm_needed": 28
+    },
+    {
+     "ai_turn": "A17",
+     "next_learner_turn": "L18",
+     "ai_words": 432,
+     "ai_prose_words": 274,
+     "dwell_min": 0.83,
+     "demand_min": 1.15,
+     "dwell_less_typing_min": 0.58,
+     "demand_all_words_min": 1.82,
+     "read_ratio": 0.72,
+     "wpm_needed": 330
+    },
+    {
+     "ai_turn": "A18",
+     "next_learner_turn": "L19",
+     "ai_words": 218,
+     "ai_prose_words": 199,
+     "dwell_min": 19.0,
+     "demand_min": 0.84,
+     "dwell_less_typing_min": 18.92,
+     "demand_all_words_min": 0.92,
+     "read_ratio": 22.72,
+     "wpm_needed": 10
+    },
+    {
+     "ai_turn": "A19",
+     "next_learner_turn": "L20",
+     "ai_words": 452,
+     "ai_prose_words": 298,
+     "dwell_min": 1.53,
+     "demand_min": 1.25,
+     "dwell_less_typing_min": 0.64,
+     "demand_all_words_min": 1.9,
+     "read_ratio": 1.22,
+     "wpm_needed": 195
+    },
+    {
+     "ai_turn": "A20",
+     "next_learner_turn": "L21",
+     "ai_words": 154,
+     "ai_prose_words": 135,
+     "dwell_min": 12.42,
+     "demand_min": 0.57,
+     "dwell_less_typing_min": 11.96,
+     "demand_all_words_min": 0.65,
+     "read_ratio": 21.9,
+     "wpm_needed": 11
+    },
+    {
+     "ai_turn": "A21",
+     "next_learner_turn": "L22",
+     "ai_words": 175,
+     "ai_prose_words": 145,
+     "dwell_min": 52.16,
+     "demand_min": 0.61,
+     "dwell_less_typing_min": 52.12,
+     "demand_all_words_min": 0.74,
+     "read_ratio": 85.61,
+     "wpm_needed": 3
+    },
+    {
+     "ai_turn": "A22",
+     "next_learner_turn": "L23",
+     "ai_words": 138,
+     "ai_prose_words": 122,
+     "dwell_min": 2.63,
+     "demand_min": 0.51,
+     "dwell_less_typing_min": 2.3,
+     "demand_all_words_min": 0.58,
+     "read_ratio": 5.13,
+     "wpm_needed": 46
+    },
+    {
+     "ai_turn": "A23",
+     "next_learner_turn": "L24",
+     "ai_words": 291,
+     "ai_prose_words": 252,
+     "dwell_min": 0.56,
+     "demand_min": 1.06,
+     "dwell_less_typing_min": 0.54,
+     "demand_all_words_min": 1.22,
+     "read_ratio": 0.52,
+     "wpm_needed": 453
+    },
+    {
+     "ai_turn": "A24",
+     "next_learner_turn": "L25",
+     "ai_words": 118,
+     "ai_prose_words": 102,
+     "dwell_min": 3.22,
+     "demand_min": 0.43,
+     "dwell_less_typing_min": 2.72,
+     "demand_all_words_min": 0.5,
+     "read_ratio": 7.52,
+     "wpm_needed": 32
+    },
+    {
+     "ai_turn": "A25",
+     "next_learner_turn": "L26",
+     "ai_words": 251,
+     "ai_prose_words": 224,
+     "dwell_min": 11.87,
+     "demand_min": 0.94,
+     "dwell_less_typing_min": 10.24,
+     "demand_all_words_min": 1.05,
+     "read_ratio": 12.61,
+     "wpm_needed": 19
+    },
+    {
+     "ai_turn": "A26",
+     "next_learner_turn": "L27",
+     "ai_words": 397,
+     "ai_prose_words": 272,
+     "dwell_min": 7.49,
+     "demand_min": 1.14,
+     "dwell_less_typing_min": 7.14,
+     "demand_all_words_min": 1.67,
+     "read_ratio": 6.55,
+     "wpm_needed": 36
+    },
+    {
+     "ai_turn": "A27",
+     "next_learner_turn": "L28",
+     "ai_words": 330,
+     "ai_prose_words": 273,
+     "dwell_min": 12.47,
+     "demand_min": 1.15,
+     "dwell_less_typing_min": 11.27,
+     "demand_all_words_min": 1.39,
+     "read_ratio": 10.87,
+     "wpm_needed": 22
+    },
+    {
+     "ai_turn": "A28",
+     "next_learner_turn": "L29",
+     "ai_words": 439,
+     "ai_prose_words": 337,
+     "dwell_min": 1.59,
+     "demand_min": 1.42,
+     "dwell_less_typing_min": 1.57,
+     "demand_all_words_min": 1.84,
+     "read_ratio": 1.12,
+     "wpm_needed": 213
+    },
+    {
+     "ai_turn": "A29",
+     "next_learner_turn": "L30",
+     "ai_words": 193,
+     "ai_prose_words": 158,
+     "dwell_min": 6.68,
+     "demand_min": 0.66,
+     "dwell_less_typing_min": 5.77,
+     "demand_all_words_min": 0.81,
+     "read_ratio": 10.06,
+     "wpm_needed": 24
+    },
+    {
+     "ai_turn": "A30",
+     "next_learner_turn": "L31",
+     "ai_words": 553,
+     "ai_prose_words": 350,
+     "dwell_min": 10.93,
+     "demand_min": 1.47,
+     "dwell_less_typing_min": 9.96,
+     "demand_all_words_min": 2.32,
+     "read_ratio": 7.43,
+     "wpm_needed": 32
+    },
+    {
+     "ai_turn": "A31",
+     "next_learner_turn": "L32",
+     "ai_words": 624,
+     "ai_prose_words": 358,
+     "dwell_min": 3.74,
+     "demand_min": 1.5,
+     "dwell_less_typing_min": 2.59,
+     "demand_all_words_min": 2.62,
+     "read_ratio": 2.48,
+     "wpm_needed": 96
+    },
+    {
+     "ai_turn": "A32",
+     "next_learner_turn": "L33",
+     "ai_words": 189,
+     "ai_prose_words": 167,
+     "dwell_min": 1270.96,
+     "demand_min": 0.7,
+     "dwell_less_typing_min": 1269.91,
+     "demand_all_words_min": 0.79,
+     "read_ratio": 1811.3,
+     "wpm_needed": 0
+    },
+    {
+     "ai_turn": "A33",
+     "next_learner_turn": "L34",
+     "ai_words": 438,
+     "ai_prose_words": 349,
+     "dwell_min": 106.92,
+     "demand_min": 1.47,
+     "dwell_less_typing_min": 106.74,
+     "demand_all_words_min": 1.84,
+     "read_ratio": 72.91,
+     "wpm_needed": 3
+    },
+    {
+     "ai_turn": "A34",
+     "next_learner_turn": "L35",
+     "ai_words": 425,
+     "ai_prose_words": 318,
+     "dwell_min": 1.16,
+     "demand_min": 1.34,
+     "dwell_less_typing_min": 0.58,
+     "demand_all_words_min": 1.79,
+     "read_ratio": 0.87,
+     "wpm_needed": 274
+    },
+    {
+     "ai_turn": "A35",
+     "next_learner_turn": "L36",
+     "ai_words": 325,
+     "ai_prose_words": 299,
+     "dwell_min": 5.42,
+     "demand_min": 1.26,
+     "dwell_less_typing_min": 4.68,
+     "demand_all_words_min": 1.37,
+     "read_ratio": 4.31,
+     "wpm_needed": 55
+    },
+    {
+     "ai_turn": "A36",
+     "next_learner_turn": "L37",
+     "ai_words": 226,
+     "ai_prose_words": 205,
+     "dwell_min": 1.59,
+     "demand_min": 0.86,
+     "dwell_less_typing_min": 1.22,
+     "demand_all_words_min": 0.95,
+     "read_ratio": 1.84,
+     "wpm_needed": 129
+    },
+    {
+     "ai_turn": "A37",
+     "next_learner_turn": "L38",
+     "ai_words": 252,
+     "ai_prose_words": 236,
+     "dwell_min": 5.64,
+     "demand_min": 0.99,
+     "dwell_less_typing_min": 4.63,
+     "demand_all_words_min": 1.06,
+     "read_ratio": 5.68,
+     "wpm_needed": 42
+    },
+    {
+     "ai_turn": "A38",
+     "next_learner_turn": "L39",
+     "ai_words": 257,
+     "ai_prose_words": 236,
+     "dwell_min": 2.18,
+     "demand_min": 0.99,
+     "dwell_less_typing_min": 1.85,
+     "demand_all_words_min": 1.08,
+     "read_ratio": 2.2,
+     "wpm_needed": 108
+    },
+    {
+     "ai_turn": "A39",
+     "next_learner_turn": "L40",
+     "ai_words": 424,
+     "ai_prose_words": 375,
+     "dwell_min": 2.61,
+     "demand_min": 1.58,
+     "dwell_less_typing_min": 1.74,
+     "demand_all_words_min": 1.78,
+     "read_ratio": 1.66,
+     "wpm_needed": 144
+    },
+    {
+     "ai_turn": "A40",
+     "next_learner_turn": "L41",
+     "ai_words": 327,
+     "ai_prose_words": 267,
+     "dwell_min": 6.06,
+     "demand_min": 1.12,
+     "dwell_less_typing_min": 5.3,
+     "demand_all_words_min": 1.37,
+     "read_ratio": 5.4,
+     "wpm_needed": 44
+    },
+    {
+     "ai_turn": "A41",
+     "next_learner_turn": "L42",
+     "ai_words": 254,
+     "ai_prose_words": 232,
+     "dwell_min": 8.65,
+     "demand_min": 0.97,
+     "dwell_less_typing_min": 7.35,
+     "demand_all_words_min": 1.07,
+     "read_ratio": 8.88,
+     "wpm_needed": 27
+    },
+    {
+     "ai_turn": "A42",
+     "next_learner_turn": "L43",
+     "ai_words": 301,
+     "ai_prose_words": 278,
+     "dwell_min": 5.06,
+     "demand_min": 1.17,
+     "dwell_less_typing_min": 4.07,
+     "demand_all_words_min": 1.26,
+     "read_ratio": 4.33,
+     "wpm_needed": 55
+    },
+    {
+     "ai_turn": "A43",
+     "next_learner_turn": "L44",
+     "ai_words": 385,
+     "ai_prose_words": 298,
+     "dwell_min": 656.93,
+     "demand_min": 1.25,
+     "dwell_less_typing_min": 655.96,
+     "demand_all_words_min": 1.62,
+     "read_ratio": 524.66,
+     "wpm_needed": 0
+    },
+    {
+     "ai_turn": "A44",
+     "next_learner_turn": "L45",
+     "ai_words": 410,
+     "ai_prose_words": 329,
+     "dwell_min": 173.4,
+     "demand_min": 1.38,
+     "dwell_less_typing_min": 173.32,
+     "demand_all_words_min": 1.72,
+     "read_ratio": 125.44,
+     "wpm_needed": 2
+    }
+   ],
+   "sessions": {
+    "gap_15min": {
+     "count": 11,
+     "singletons": 3,
+     "duration_min": {
+      "n": 11,
+      "mean": 17.02,
+      "median": 7.0,
+      "min": 0.02,
+      "max": 61.32,
+      "sd": 22.34
+     },
+     "duration_corrected_min": {
+      "n": 11,
+      "mean": 17.93,
+      "median": 7.84,
+      "min": 0.7,
+      "max": 62.02,
+      "sd": 22.29
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A2",
+       "turns": 4,
+       "exchanges": 2,
+       "duration_min": 0.6,
+       "tail_unobserved_min": 0.89,
+       "duration_corrected_min": 1.49,
+       "ai_words": 500
+      },
+      {
+       "first_turn": "L3",
+       "last_turn": "A4",
+       "turns": 4,
+       "exchanges": 2,
+       "duration_min": 3.0,
+       "tail_unobserved_min": 0.26,
+       "duration_corrected_min": 3.26,
+       "ai_words": 630
+      },
+      {
+       "first_turn": "L5",
+       "last_turn": "A12",
+       "turns": 16,
+       "exchanges": 8,
+       "duration_min": 50.21,
+       "tail_unobserved_min": 0.72,
+       "duration_corrected_min": 50.93,
+       "ai_words": 2219
+      },
+      {
+       "first_turn": "L13",
+       "last_turn": "A15",
+       "turns": 6,
+       "exchanges": 3,
+       "duration_min": 12.52,
+       "tail_unobserved_min": 1.21,
+       "duration_corrected_min": 13.74,
+       "ai_words": 807
+      },
+      {
+       "first_turn": "L16",
+       "last_turn": "A18",
+       "turns": 6,
+       "exchanges": 3,
+       "duration_min": 7.0,
+       "tail_unobserved_min": 0.84,
+       "duration_corrected_min": 7.84,
+       "ai_words": 845
+      },
+      {
+       "first_turn": "L19",
+       "last_turn": "A21",
+       "turns": 6,
+       "exchanges": 3,
+       "duration_min": 13.99,
+       "tail_unobserved_min": 0.61,
+       "duration_corrected_min": 14.6,
+       "ai_words": 781
+      },
+      {
+       "first_turn": "L22",
+       "last_turn": "A32",
+       "turns": 22,
+       "exchanges": 11,
+       "duration_min": 61.32,
+       "tail_unobserved_min": 0.7,
+       "duration_corrected_min": 62.02,
+       "ai_words": 3523
+      },
+      {
+       "first_turn": "L33",
+       "last_turn": "A33",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.02,
+       "tail_unobserved_min": 1.47,
+       "duration_corrected_min": 1.48,
+       "ai_words": 438
+      },
+      {
+       "first_turn": "L34",
+       "last_turn": "A43",
+       "turns": 20,
+       "exchanges": 10,
+       "duration_min": 38.55,
+       "tail_unobserved_min": 1.25,
+       "duration_corrected_min": 39.8,
+       "ai_words": 3176
+      },
+      {
+       "first_turn": "L44",
+       "last_turn": "A44",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.04,
+       "tail_unobserved_min": 1.38,
+       "duration_corrected_min": 1.42,
+       "ai_words": 410
+      },
+      {
+       "first_turn": "L45",
+       "last_turn": "A45",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.02,
+       "tail_unobserved_min": 0.68,
+       "duration_corrected_min": 0.7,
+       "ai_words": 227
+      }
+     ]
+    },
+    "gap_20min": {
+     "count": 9,
+     "singletons": 3,
+     "duration_min": {
+      "n": 9,
+      "mean": 24.7,
+      "median": 3.0,
+      "min": 0.02,
+      "max": 78.76,
+      "sd": 30.76
+     },
+     "duration_corrected_min": {
+      "n": 9,
+      "mean": 25.64,
+      "median": 3.26,
+      "min": 0.7,
+      "max": 79.98,
+      "sd": 30.77
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A2",
+       "turns": 4,
+       "exchanges": 2,
+       "duration_min": 0.6,
+       "tail_unobserved_min": 0.89,
+       "duration_corrected_min": 1.49,
+       "ai_words": 500
+      },
+      {
+       "first_turn": "L3",
+       "last_turn": "A4",
+       "turns": 4,
+       "exchanges": 2,
+       "duration_min": 3.0,
+       "tail_unobserved_min": 0.26,
+       "duration_corrected_min": 3.26,
+       "ai_words": 630
+      },
+      {
+       "first_turn": "L5",
+       "last_turn": "A15",
+       "turns": 22,
+       "exchanges": 11,
+       "duration_min": 78.76,
+       "tail_unobserved_min": 1.21,
+       "duration_corrected_min": 79.98,
+       "ai_words": 3026
+      },
+      {
+       "first_turn": "L16",
+       "last_turn": "A21",
+       "turns": 12,
+       "exchanges": 6,
+       "duration_min": 39.99,
+       "tail_unobserved_min": 0.61,
+       "duration_corrected_min": 40.59,
+       "ai_words": 1626
+      },
+      {
+       "first_turn": "L22",
+       "last_turn": "A32",
+       "turns": 22,
+       "exchanges": 11,
+       "duration_min": 61.32,
+       "tail_unobserved_min": 0.7,
+       "duration_corrected_min": 62.02,
+       "ai_words": 3523
+      },
+      {
+       "first_turn": "L33",
+       "last_turn": "A33",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.02,
+       "tail_unobserved_min": 1.47,
+       "duration_corrected_min": 1.48,
+       "ai_words": 438
+      },
+      {
+       "first_turn": "L34",
+       "last_turn": "A43",
+       "turns": 20,
+       "exchanges": 10,
+       "duration_min": 38.55,
+       "tail_unobserved_min": 1.25,
+       "duration_corrected_min": 39.8,
+       "ai_words": 3176
+      },
+      {
+       "first_turn": "L44",
+       "last_turn": "A44",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.04,
+       "tail_unobserved_min": 1.38,
+       "duration_corrected_min": 1.42,
+       "ai_words": 410
+      },
+      {
+       "first_turn": "L45",
+       "last_turn": "A45",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.02,
+       "tail_unobserved_min": 0.68,
+       "duration_corrected_min": 0.7,
+       "ai_words": 227
+      }
+     ]
+    },
+    "gap_30min": {
+     "count": 9,
+     "singletons": 3,
+     "duration_min": {
+      "n": 9,
+      "mean": 24.7,
+      "median": 3.0,
+      "min": 0.02,
+      "max": 78.76,
+      "sd": 30.76
+     },
+     "duration_corrected_min": {
+      "n": 9,
+      "mean": 25.64,
+      "median": 3.26,
+      "min": 0.7,
+      "max": 79.98,
+      "sd": 30.77
+     },
+     "rows": [
+      {
+       "first_turn": "L1",
+       "last_turn": "A2",
+       "turns": 4,
+       "exchanges": 2,
+       "duration_min": 0.6,
+       "tail_unobserved_min": 0.89,
+       "duration_corrected_min": 1.49,
+       "ai_words": 500
+      },
+      {
+       "first_turn": "L3",
+       "last_turn": "A4",
+       "turns": 4,
+       "exchanges": 2,
+       "duration_min": 3.0,
+       "tail_unobserved_min": 0.26,
+       "duration_corrected_min": 3.26,
+       "ai_words": 630
+      },
+      {
+       "first_turn": "L5",
+       "last_turn": "A15",
+       "turns": 22,
+       "exchanges": 11,
+       "duration_min": 78.76,
+       "tail_unobserved_min": 1.21,
+       "duration_corrected_min": 79.98,
+       "ai_words": 3026
+      },
+      {
+       "first_turn": "L16",
+       "last_turn": "A21",
+       "turns": 12,
+       "exchanges": 6,
+       "duration_min": 39.99,
+       "tail_unobserved_min": 0.61,
+       "duration_corrected_min": 40.59,
+       "ai_words": 1626
+      },
+      {
+       "first_turn": "L22",
+       "last_turn": "A32",
+       "turns": 22,
+       "exchanges": 11,
+       "duration_min": 61.32,
+       "tail_unobserved_min": 0.7,
+       "duration_corrected_min": 62.02,
+       "ai_words": 3523
+      },
+      {
+       "first_turn": "L33",
+       "last_turn": "A33",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.02,
+       "tail_unobserved_min": 1.47,
+       "duration_corrected_min": 1.48,
+       "ai_words": 438
+      },
+      {
+       "first_turn": "L34",
+       "last_turn": "A43",
+       "turns": 20,
+       "exchanges": 10,
+       "duration_min": 38.55,
+       "tail_unobserved_min": 1.25,
+       "duration_corrected_min": 39.8,
+       "ai_words": 3176
+      },
+      {
+       "first_turn": "L44",
+       "last_turn": "A44",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.04,
+       "tail_unobserved_min": 1.38,
+       "duration_corrected_min": 1.42,
+       "ai_words": 410
+      },
+      {
+       "first_turn": "L45",
+       "last_turn": "A45",
+       "turns": 2,
+       "exchanges": 1,
+       "duration_min": 0.02,
+       "tail_unobserved_min": 0.68,
+       "duration_corrected_min": 0.7,
+       "ai_words": 227
+      }
+     ]
+    }
+   }
+  }
+ },
+ "away_gaps": [
+  {
+   "session": "R4",
+   "ai_turn": "A4",
+   "dwell_min": 3121.4,
+   "ai_words": 48
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A2",
+   "dwell_min": 81.99,
+   "ai_words": 461
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A4",
+   "dwell_min": 32.08,
+   "ai_words": 79
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A15",
+   "dwell_min": 30.53,
+   "ai_words": 380
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A21",
+   "dwell_min": 52.16,
+   "ai_words": 175
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A32",
+   "dwell_min": 1270.96,
+   "ai_words": 189
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A33",
+   "dwell_min": 106.92,
+   "ai_words": 438
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A43",
+   "dwell_min": 656.93,
+   "ai_words": 385
+  },
+  {
+   "session": "R6",
+   "ai_turn": "A44",
+   "dwell_min": 173.4,
+   "ai_words": 410
+  }
+ ],
+ "corpus": {
+  "pooled_turns": {
+   "dwell_min": {
+    "n": 56,
+    "mean": 5.6,
+    "median": 4.59,
+    "min": 0.28,
+    "max": 19.0,
+    "sd": 4.52
+   },
+   "dwell_less_typing_min": {
+    "n": 56,
+    "mean": 4.99,
+    "median": 3.82,
+    "min": 0.14,
+    "max": 18.92,
+    "sd": 4.34
+   },
+   "demand_min": {
+    "n": 56,
+    "mean": 1.25,
+    "median": 0.98,
+    "min": 0.16,
+    "max": 7.83,
+    "sd": 1.34
+   },
+   "read_ratio": {
+    "n": 56,
+    "mean": 7.15,
+    "median": 4.8,
+    "min": 0.13,
+    "max": 24.38,
+    "sd": 6.94
+   },
+   "share_dwell_below_demand": 0.161
+  },
+  "session_weighted": {
+   "median_dwell_min": {
+    "n": 4,
+    "mean": 4.35,
+    "median": 4.45,
+    "min": 2.83,
+    "max": 5.69,
+    "sd": 1.47
+   },
+   "median_read_ratio": {
+    "n": 4,
+    "mean": 4.44,
+    "median": 4.27,
+    "min": 1.94,
+    "max": 7.29,
+    "sd": 2.67
+   }
+  },
+  "sessions_gap_15min": {
+   "count": 16,
+   "singletons": 4,
+   "duration_min_all": {
+    "n": 16,
+    "mean": 17.49,
+    "median": 6.72,
+    "min": 0.0,
+    "max": 61.32,
+    "sd": 21.44
+   },
+   "duration_min_excluding_singletons": {
+    "n": 12,
+    "mean": 23.31,
+    "median": 13.25,
+    "min": 0.6,
+    "max": 61.32,
+    "sd": 21.88
+   },
+   "duration_corrected_min_all": {
+    "n": 16,
+    "mean": 18.74,
+    "median": 7.71,
+    "min": 0.7,
+    "max": 62.02,
+    "sd": 21.36
+   },
+   "duration_corrected_min_excluding_singletons": {
+    "n": 12,
+    "mean": 24.27,
+    "median": 14.17,
+    "min": 1.49,
+    "max": 62.02,
+    "sd": 22.09
+   },
+   "exchanges": {
+    "n": 16,
+    "mean": 4.4,
+    "median": 3.0,
+    "min": 1,
+    "max": 11,
+    "sd": 3.5
+   }
+  },
+  "sessions_gap_20min": {
+   "count": 14,
+   "singletons": 4,
+   "duration_min_all": {
+    "n": 14,
+    "mean": 22.49,
+    "median": 4.77,
+    "min": 0.0,
+    "max": 78.76,
+    "sd": 27.16
+   },
+   "duration_min_excluding_singletons": {
+    "n": 10,
+    "mean": 31.48,
+    "median": 36.26,
+    "min": 0.6,
+    "max": 78.76,
+    "sd": 27.41
+   },
+   "duration_corrected_min_all": {
+    "n": 14,
+    "mean": 23.8,
+    "median": 6.29,
+    "min": 0.7,
+    "max": 79.98,
+    "sd": 27.06
+   },
+   "duration_corrected_min_excluding_singletons": {
+    "n": 10,
+    "mean": 32.47,
+    "median": 37.83,
+    "min": 1.49,
+    "max": 79.98,
+    "sd": 27.65
+   },
+   "exchanges": {
+    "n": 14,
+    "mean": 5,
+    "median": 4.0,
+    "min": 1,
+    "max": 11,
+    "sd": 4.0
+   }
+  },
+  "sessions_gap_30min": {
+   "count": 14,
+   "singletons": 4,
+   "duration_min_all": {
+    "n": 14,
+    "mean": 22.49,
+    "median": 4.77,
+    "min": 0.0,
+    "max": 78.76,
+    "sd": 27.16
+   },
+   "duration_min_excluding_singletons": {
+    "n": 10,
+    "mean": 31.48,
+    "median": 36.26,
+    "min": 0.6,
+    "max": 78.76,
+    "sd": 27.41
+   },
+   "duration_corrected_min_all": {
+    "n": 14,
+    "mean": 23.8,
+    "median": 6.29,
+    "min": 0.7,
+    "max": 79.98,
+    "sd": 27.06
+   },
+   "duration_corrected_min_excluding_singletons": {
+    "n": 10,
+    "mean": 32.47,
+    "median": 37.83,
+    "min": 1.49,
+    "max": 79.98,
+    "sd": 27.65
+   },
+   "exchanges": {
+    "n": 14,
+    "mean": 5,
+    "median": 4.0,
+    "min": 1,
+    "max": 11,
+    "sd": 4.0
+   }
+  }
+ }
+}

@@ -30,6 +30,8 @@ ai-use-transcripts/
 │   ├── coding-final.jsonl    reconciled per-turn codes (short notes, no transcripts)
 │   ├── agreement.json        percent agreement + Cohen's kappa per dimension
 │   ├── metrics.json          computed measures: volume, pacing, uptake, reuse, format
+│   ├── reading-time.md       dwell vs reading demand at 238 wpm, and session length
+│   ├── reading-time.json     per-turn dwell/demand and per-session segmentation
 │   └── r6-sql-checks.json    R6 AI claims executed on PostgreSQL 17 (turn ids + verdicts)
 ├── scripts/                  committed
 │   ├── fetch.sh              re-download ChatGPT (curl) and Claude (headless Chrome)
@@ -37,6 +39,7 @@ ai-use-transcripts/
 │   ├── sanitise_perplexity.py  reduce a captured thread JSON to the field allowlist
 │   ├── process.py            raw/ -> processed/ (turn-level JSON + readable .md)
 │   ├── metrics.py            processed/ -> analysis/metrics.json
+│   ├── reading_time.py       processed/ -> analysis/reading-time.json
 │   ├── agreement.py          two coding sheets -> analysis/agreement.json
 │   └── verify_r6_sql.py      run R6's disputed SQL on a scratch Postgres
 ├── raw/                      GITIGNORED: sources exactly as obtained
@@ -73,6 +76,7 @@ node scripts/fetch_perplexity.cjs            # R3/R4 metadata; needs playwright-
 # plus: raw/r{3,4}-perplexity/export.md from Perplexity's "Export → Markdown" (supplied separately)
 python3 scripts/process.py                   # -> processed/
 python3 scripts/metrics.py                   # -> analysis/metrics.json
+python3 scripts/reading_time.py              # -> analysis/reading-time.json
 python3 scripts/agreement.py processed/coding/coder-A-all.jsonl processed/coding/coder-B-all.jsonl
 
 # R6 execution checks: a throwaway Postgres (EDB PostgreSQL 17 is at /Library/PostgreSQL/17)

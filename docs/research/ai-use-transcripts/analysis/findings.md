@@ -255,6 +255,9 @@ count distinct pairs", "`= ALL` doesn't work", "`LIMIT` isn't allowed in `IN`".
 
 ### RQ5 — Pacing and persistence
 
+Reading time, reading demand at 238 wpm and session length are worked out in full in
+[`reading-time.md`](reading-time.md).
+
 | | R1 | R2 | R3 | R4 | R5 | R6 |
 |---|---|---|---|---|---|---|
 | Learner words typed | 113 | 41 | 23 | 421 | 28 | 1,318 |
