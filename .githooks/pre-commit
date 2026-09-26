@@ -1,0 +1,26 @@
+#!/bin/sh
+# Refuses a commit that would put Assignment 2 deliverables into this repo (SCOPE.md, "Guards").
+# Enabled per clone: git config core.hooksPath .githooks
+#
+# Two checks on what is staged:
+#   1. a reserved path: a2-private/ or docs/a2/
+#   2. a line that is only the zone-4 marker (A2-PRIVATE, optionally inside a comment)
+# Binary files are skipped by the content check; zone 4 being a separate repo is the real guard.
+
+marker='^[[:space:]]*(<!--|#|//|%|;)?[[:space:]]*A2-PRIVATE[[:space:]]*(-->)?[[:space:]]*$'
+bad=$(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMR | while IFS= read -r p; do
+  case "$p" in
+    (a2-private/*|docs/a2/*) echo "  $p  (reserved path)"; continue ;;
+  esac
+  if git show ":$p" 2>/dev/null | grep -I -q -E "$marker"; then
+    echo "  $p  (carries the A2-PRIVATE marker)"
+  fi
+done)
+
+if [ -n "$bad" ]; then
+  echo "pre-commit: refused — Assignment 2 deliverables never enter this repo (SCOPE.md):
+$bad" >&2
+  echo "They live in ~/ChatterED-A2. Unstage with: git restore --staged <path>" >&2
+  exit 1
+fi
+exit 0

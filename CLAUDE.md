@@ -7,7 +7,9 @@ text is never overwritten; Max's questions are the learner's to answer first, El
 peer's partial take on silence, a give-up releases the answer and lowers the next question; a
 progress bar fills only on the learner's own words. NUS CS3249 research prototype, headed for
 real student use. **Source of truth: `docs/research/collab-doc.md` (#48, the 2026-09-19 pivot).**
-Orientation and the repo map: `README.md`. **Assignment 1 is due 22 Sep 2026.**
+Orientation and the repo map: `README.md`. **Assignment 1 was submitted on 22 Sep 2026** (tag
+`a1-submitted`). **Assignment 2 is individual and in progress.** Which work belongs to A2, the
+shared core, or the later group project is in **`SCOPE.md`**; read it before planning.
 
 ## Start every session here
 
@@ -17,13 +19,24 @@ gh issue list --state open
 
 Issues are the owner's only channel to you. Read them **before** planning, work them in
 milestone/label order, comment on each with what you did, and close it with the commit
-reference. Partially done ⟹ stays open with a comment; never a silent close.
+reference. Partially done ⟹ stays open with a comment; never a silent close. Every open issue
+carries a `scope:` label (`a2`, `core`, `group`, `product`; see `SCOPE.md`). A `scope:product`
+issue is not A2 work, so do not cite it as A2 progress.
 
 `gh issue view` dies on the Projects-classic GraphQL deprecation in this account —
 use `gh api repos/:owner/:repo/issues/N --jq '.title, .body'`.
 
 ## Hard invariants (IMPORTANT — must never drift)
 
+- **A2 deliverables never enter this repo (`SCOPE.md`, 2026-09-26).** Assignment 2 is
+  individual, and its report, video script, Study A data and results, and submission package
+  live in the separate private repo `~/ChatterED-A2`. Nothing from there comes back here: no
+  file, excerpt, number, participant quote or summary, whether in code, docs, issues, commit
+  messages or PRs. A design change prompted by Study A is recorded here as a decision with its
+  design rationale and no results. The teammate's A2 material is never brought in either.
+  `app/src/core/` is the shared zone and imports nothing outside itself. Enforced by
+  `.claude/hooks/guard-a2-private.sh` and `.githooks/pre-commit`; if either refuses, move the
+  content, and do not edit the guard.
 - **`Developer's Original Intent (DO NOT EDIT)` is frozen.** Every
   `Academia/Sources/*/README.md` opens with that section, in the owner's own words and
   spelling. Never edit, reword, tidy, reflow, spell-check or "summarise" it — not even
@@ -75,6 +88,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 
 | Area | Read first |
 |---|---|
+| Which assignment a task belongs to (A2, core, group, product) | `SCOPE.md` |
+| `app/src/core/` (the code shared with the group project) | `app/src/core/README.md` |
+| The A2 report, video or user-test results | Nothing here: open a session in `~/ChatterED-A2` |
 | Anything about the product concept | `README.md`, then the three `Academia/Sources/*/README.md` |
 | Assignment scope, marks, deadlines | `Academia/Assignment 1_ ...pdf` and `Academia/Sources/_text/assignment1-brief.txt` |
 | Interviews, recruitment, consent, observation | `docs/research/interview-guide.md` |

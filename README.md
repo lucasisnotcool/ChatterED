@@ -1,26 +1,26 @@
 # ChatterED
 
-*Working name.* A lecture deck opens as a **flow**: whole-page crops of the pdf.js-rendered
-slide — the lecturer's own pixels, never re-typeset — with faint ticks marking where the
-page's own geometry says a boundary could go; click a tick to split in place. **+ Ask here**
-inserts a neutral **REFERENCE** card, under which **Ellie, the Teacher** explains from the
-slide; once the learner has been in flow long enough, she hands off to **Max, the Tester**,
-who asks one question and never answers it. Only the learner's own verbatim words move the
-**Explanation Ledger** ○ → ◐ → ●. **⌘K** opens a private **whisper popover** with Ellie,
-ephemeral unless "insert into the document" is used.
+*Working name.* A learning CUI built on collaborative editing. A lecture deck is **ingested into
+lecture notes**: an editable document where every block carries provenance back to its slide. The
+window is **files · notes · chats**. **Ellie** (green) answers from the slide and writes what the
+notes were missing into them; **Max** (red) asks one question back, which is the learner's to
+answer first. Both edit the notes live, each with a cursor. The learner's own text is never
+overwritten: an agent's change to it becomes an accept/reject suggestion. If the learner goes
+quiet, Ellie offers a peer's partial take. A give-up releases the answer and pitches the next
+question lower, and the progress bar fills only on the learner's own words.
 
-Built for **NUS CS3249 (Assignment 1, due 22 Sep 2026)**: a working macOS Electron app, run
-from source, NUS-internal distribution.
+Built for **NUS CS3249**: a working macOS Electron app, NUS-internal distribution. **Assignment 1
+was submitted on 22 Sep 2026** (tag `a1-submitted`). **Assignment 2 is individual and in
+progress**, and a group project will later combine this with a teammate's A1. **`SCOPE.md` says
+which work belongs to which, and where A2 deliverables live (not here).**
 
-## The pivot, briefly
+## How the design got here
 
 The project began as a group-chat design (peer + challenger agents, `/whisper`, deliberate
-latency). On 15 Sep 2026 Lucas made a **full pivot**: the conversation now lives *inside* the
-document (#23), segmentation is geometry-only with no model call (#25), and the roster became
-**Teacher + Tester** (#32), governed by a time-boxed **flow session** (#33). The evidence base
-— peer-vs-tutee, agents-as-social-group, whisper/`/btw`, response latency — still motivates
-the design; only its realisation changed. `app/README.md` has what exists today;
-`docs/research/flow-build-plan.md` superseded the original spec.
+latency), became a flow of slide crops with the conversation inside the document (#23, #25, #32,
+#33), and on 19 Sep 2026 made a **full pivot to the collaborative notes doc** (#48). The source of
+truth is `docs/research/collab-doc.md`; its §9 lists the briefs it superseded, which stay in the
+repo as the record. `app/README.md` has what exists today.
 
 ## The three idea threads
 
@@ -46,7 +46,10 @@ owner's own framing:
 | App source, tests; real vs stubbed, day by day | `app/`, `app/docs/STATUS.md` |
 | Assignment brief, source papers, extracted text | `Academia/` |
 | Design briefs, research plans, evaluation plan | `docs/research/` |
-| Assignment 1 report draft | `docs/report/` |
+| Assignment 1 report as submitted, with its claims register | `docs/report/assignment1-final.md` |
+| What belongs to A2, the shared core, the group project, product | `SCOPE.md` |
+| The code shared with the group project | `app/src/core/` |
+| Assignment 2 deliverables | **not here**: the private repo `~/ChatterED-A2` |
 | Agent conventions | `CLAUDE.md` |
 | Subagent model policy | `.claude/settings.json`, `.claude/hooks/guard-agent-model.sh` |
 
