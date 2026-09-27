@@ -217,6 +217,43 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
   });
 
   /**
+   * **#49: a whole-deck question has no page asked on**, and its follow-up fell through to deck
+   * order's first objective, whatever the answer was about. The pages Ellie's answer cited are
+   * what it touched — the same pages §5.2 already anchors that follow-up's Q block at.
+   */
+  it('files a whole-deck follow-up under an objective of the pages Ellie’s answer cited', async () => {
+    const [a, b, c] = PSD_HESSIAN_CONVEXITY_V1.elements;
+    const objectives = [
+      { e: a!, pages: [3, 4, 5, 6] },
+      { e: b!, pages: [7] },
+      { e: c!, pages: [11, 12] },
+    ].map(({ e, pages }, i) => ({
+      objectiveId: e.id,
+      title: e.learner_label,
+      level: 0 as const,
+      assumedByDeck: false,
+      refs: pages.map((page) => ({ page })),
+      order: i + 1,
+    }));
+    const deck = {
+      scope: 'deck' as const,
+      passageText: 'the whole deck',
+      outline: '',
+      retrievedPages: [],
+      scopeShown: 'whole deck',
+    };
+    const answer =
+      'Heuristics estimate the distance to the goal; the deck’s example is the 8-puzzle on p. 11. ' +
+      'A good one never overestimates, which is what makes A* optimal.';
+    const h = build({ learnerObjectives: () => objectives }, null, (request) =>
+      request.meta.scope === 'group' && request.meta.scriptCue === 'student:1' ? answer : null,
+    );
+    await settle(h.clock, h.actor.sendMessage('what is this deck about overall?', DOC, deck));
+    expect(rules(h)).toEqual(['rule:ellie_answers', 'rule:max_followup']);
+    expect(decisions(h).find((d) => d.decided_by === 'rule:max_followup')!.target_element_id).toBe(c!.id);
+  });
+
+  /**
    * **#49: the time-based hand-off is superseded in the doc chat** (brief §9: *"`flow-session.md`
    * §8.2 time-based hand-off as a door to the Tester — Superseded by `rule:max_followup`"*). A
    * sitting that satisfies §8.2 used to give the learner's doc-chat question to Max as a quiz, with

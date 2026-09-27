@@ -2843,7 +2843,7 @@ export class RoomActor {
         threadKind: anchorId === null ? null : this.#threadKindOf(anchorId),
       })
     ) {
-      const target = this.#followupTarget(anchorId);
+      const target = this.#followupTarget(anchorId, pagesCited(text));
       this.#nextQuestionId = this.#d.newId('q');
       await this.#runAgentTurn('promote', { anchorId, followup: { objectiveId: target } });
     }
@@ -2867,9 +2867,17 @@ export class RoomActor {
    * should the Tester ask about" is how the two of them come to disagree. What is narrowed here is
    * the pool: the taught set, which is what the answers in this sitting have actually touched.
    */
-  #followupTarget(anchorId: string | null): string | null {
+  #followupTarget(anchorId: string | null, answerPages: readonly number[] = []): string | null {
     const onPage = this.#objectiveOnPage(anchorId);
     if (onPage !== null) return onPage;
+    /**
+     * **A whole-deck question has no page asked on** (#49). It used to fall through to the pick
+     * below, which in the live app is deck order's first objective whatever the answer was about.
+     * The pages Ellie's answer cited are what it touched, and they are already the exchange pages
+     * §5.2 files this follow-up's Q block at (`#maybeDocEdit`), so the objective follows them.
+     */
+    const cited = this.#objectiveOnCitedPages(anchorId, answerPages);
+    if (cited !== null) return cited;
     const levels = Object.fromEntries(this.#ledgerRows().map((r) => [r.element_id, r.level]));
     const taught = latestByElement(this.#taught).map((item) => ({ ...item, ageMs: 0, recency: 1 }));
     const assumed = this.#assumedObjectiveIds();
@@ -2895,11 +2903,7 @@ export class RoomActor {
   #objectiveOnPage(anchorId: string | null): string | null {
     const page = anchorId === null ? null : (this.#askContext.get(anchorId)?.page ?? null);
     if (page === null) return null;
-    const objectives = (this.#d.learnerObjectives?.() ?? []).flatMap((o) =>
-      o.objectiveId && !o.assumedByDeck && o.refs && o.refs.length > 0
-        ? [{ id: o.objectiveId, order: o.order ?? 0, refs: [...o.refs], level: o.level }]
-        : [],
-    );
+    const objectives = this.#pageObjectives();
     const picked = pickObjectiveForCard({
       objectives,
       states: objectives.map((o) => ({ objectiveId: o.id, level: o.level })),
@@ -2907,6 +2911,36 @@ export class RoomActor {
     });
     if (picked === null || !this.#d.pack.elements.some((e) => e.id === picked.objectiveId)) return null;
     return picked.objectiveId;
+  }
+
+  /**
+   * The objective a page-less question's answer touched: among the objectives taught on the pages
+   * Ellie cited, the lowest level first and deck order as the tie-break (`pickObjectiveForCard`'s
+   * own ordering); when none is taught on them, the pick for the first page she cited. `null` when
+   * the thread has a page (that is `#objectiveOnPage`'s), when she cited none, or the tree has not
+   * landed — which leaves the pick exactly as it was.
+   */
+  #objectiveOnCitedPages(anchorId: string | null, pages: readonly number[]): string | null {
+    if (pages.length === 0) return null;
+    if (anchorId !== null && typeof this.#askContext.get(anchorId)?.page === 'number') return null;
+    const objectives = this.#pageObjectives();
+    const states = objectives.map((o) => ({ objectiveId: o.id, level: o.level }));
+    const onCited = objectives.filter((o) => o.refs.some((r) => pages.includes(r.page)));
+    const picked =
+      onCited.length > 0
+        ? pickObjectiveForCard({ objectives: onCited, states, card: null })
+        : pickObjectiveForCard({ objectives, states, card: { segmentId: null, page: pages[0]! } });
+    if (picked === null || !this.#d.pack.elements.some((e) => e.id === picked.objectiveId)) return null;
+    return picked.objectiveId;
+  }
+
+  /** The tree's taught objectives with page refs, as `pickObjectiveForCard` takes them. */
+  #pageObjectives() {
+    return (this.#d.learnerObjectives?.() ?? []).flatMap((o) =>
+      o.objectiveId && !o.assumedByDeck && o.refs && o.refs.length > 0
+        ? [{ id: o.objectiveId, order: o.order ?? 0, refs: [...o.refs], level: o.level }]
+        : [],
+    );
   }
 
   /**
