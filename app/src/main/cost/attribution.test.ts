@@ -176,10 +176,17 @@ function byTurn(rows: UsageRow[]): Map<string, Set<string>> {
 
 // ── the group chat ──────────────────────────────────────────────────────────
 
+/**
+ * A question long enough to be judged. Ledger rule 4 rejects anything under eight content words
+ * whatever the model says, so since #49 no ledger call is made for one — and the tests below
+ * that follow a ledger row need a message the ledger is actually asked about.
+ */
+const JUDGED = 'what is the side channel here, and why does the learner end up paying for it?';
+
 describe('a learner question in the doc chat', () => {
   it('files every call it caused under the file, the thread and the turn that made it', async () => {
     const h = build();
-    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage(JUDGED, DOC));
 
     const rows = h.rows();
     expect(rows.length).toBeGreaterThan(0);
@@ -223,7 +230,7 @@ describe('a learner question in the doc chat', () => {
    */
   it('gives the generation, the ledger coding and the doc edit the same turn id', async () => {
     const h = build();
-    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage(JUDGED, DOC));
 
     const shared = [...byTurn(h.rows()).values()].filter((s) => s.size > 1);
     expect(shared.length).toBeGreaterThan(0);
@@ -351,7 +358,7 @@ describe('a summary card', () => {
 describe('cost:messages', () => {
   it('prices each agent reply by every call its turn made, and prices no learner message', async () => {
     const h = build();
-    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage(JUDGED, DOC));
 
     const messages = h.store.messages.forRoom(h.roomId);
     const priced = messageCosts({ db: h.db, sessionStart: '2026-09-19T00:00:00.000Z' }, { roomId: h.roomId });

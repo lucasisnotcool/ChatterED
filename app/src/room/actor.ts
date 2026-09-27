@@ -71,8 +71,8 @@ import type {
 import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './agents.js';
 import { buildGroupContext } from './context.group.js';
 import { buildWhisperContext } from './context.whisper.js';
-import { LEDGER_SCHEMA, applyLedgerRules, type LedgerProposal } from './ledger.js';
-import type { LLMClient, LlmBackend } from './llm/types.js';
+import { LEDGER_SCHEMA, applyLedgerRules, isAgreementOnly, type LedgerProposal, type StudentMessage } from './ledger.js';
+import type { LLMClient, LlmBackend, LlmRequest } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
 import {
@@ -664,6 +664,11 @@ export class RoomActor {
   #log: TurnLog;
   /** The current turn's logger, so helpers off the main path (`#failTurn`) share its id. */
   #turnLog: TurnLog;
+  /**
+   * **The learner message the ledger last judged, and whether that judgement landed** (#49).
+   * `#updateLedger` skips a run on the same message once one has succeeded — see there.
+   */
+  #ledgerRun: { triggerId: string; ok: Promise<boolean> } | null = null;
 
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
@@ -3365,42 +3370,85 @@ export class RoomActor {
     // and repairs one bad answer before the caller ever sees it (`claude-cli.ts`).
     request.jsonSchema = LEDGER_SCHEMA;
     request.meta.turnId = this.#pending?.id;
-    const ledgerStartedAt = this.#d.clock.now();
-    turnLog.event('info', 'ledger.request', {
-      model: request.model,
-      backend: this.#d.llm.kind,
-      elements: this.#d.pack.elements.length,
-      student_messages: studentMessages.length,
-    });
 
+    /**
+     * **One judgement per learner message** (#49). A `promote` turn — "+ Try this", Max's
+     * follow-up, a closure — runs the ledger with no new learner message, so it re-judged the one
+     * already judged: 25 such runs in `main.log`, each a paid call competing for the CLI lane with
+     * the turn the learner was watching. If the last run on this message succeeded (waiting for
+     * it when it is still in flight — the chained turn fires milliseconds after the first), there
+     * is nothing new to judge and the rail is already where it belongs. If it failed, this run is
+     * the retry §4.6 asks for, and it goes ahead as before.
+     */
+    const previous = this.#ledgerRun;
+    if (previous !== null && previous.triggerId === trigger.id && (await previous.ok)) {
+      turnLog.event('info', 'ledger.skipped', { reason: 'no_new_message' });
+      return;
+    }
+    const run = this.#judgeLedger(request, trigger, studentMessages, turnLog, turnStart);
+    this.#ledgerRun = { triggerId: trigger.id, ok: run.catch(() => false) };
+    await run;
+  }
+
+  /** The ledger call and the four rules on its answer. True when the rail was updated. */
+  async #judgeLedger(
+    request: LlmRequest,
+    trigger: StudentMessage,
+    studentMessages: StudentMessage[],
+    turnLog: TurnLog,
+    turnStart: number,
+  ): Promise<boolean> {
+    const ledgerStartedAt = this.#d.clock.now();
+    /**
+     * **Rule 4 before the call, not after it** (#49; progress-tracking.md §4.4: "skip the update
+     * entirely"). `applyLedgerRules` rejects every advance on a message `isAgreementOnly` flags,
+     * whatever the model proposed, so asking was paying for an answer that could only be thrown
+     * away — 30 of 124 ledger calls in `main.log`. The rule still decides: it is run on an empty
+     * proposal, so the rows, the `progress.update {skipped: 'agreement_not_evidence'}` event, the
+     * mirror and the rail emit are the ones the rejection always produced. The one thing that
+     * cannot be reproduced is a history row per element the model *would* have tried to advance —
+     * that was the model's proposal, and there is now no proposal to record.
+     */
+    const agreementOnly = isAgreementOnly(trigger.body);
     let proposal: LedgerProposal;
-    try {
-      const result = await this.#d.llm.complete(request);
-      // Same unwrapper as the decision path: a model that wraps the object in prose under a
-      // schema is a known shape, and it is not a reason to throw the turn's progress away.
-      proposal = JSON.parse(extractJsonObject(result.text)) as LedgerProposal;
-    } catch (err) {
-      // The chat never blocks on the ledger (progress-tracking.md §4.6) — but a rail that
-      // silently stopped moving is a lie about the learner's progress, so it says so. This is
-      // the `progress.update {"parse_ok":false}` of 2026-09-16 02:30:38, which until now was
-      // visible only in the events table.
-      this.#event('system', 'progress.update', { parse_ok: false, cause: (err as Error).message });
-      turnLog.event('error', 'ledger.error', {
+    if (agreementOnly) {
+      proposal = { schema: 'ledger.v1', concept_id: this.#d.pack.concept_id, message_id: trigger.id, elements: [] };
+    } else {
+      turnLog.event('info', 'ledger.request', {
         model: request.model,
         backend: this.#d.llm.kind,
-        ms: this.#d.clock.now() - ledgerStartedAt,
-        parse_ok: false,
-        cause: failureReason(err),
+        elements: this.#d.pack.elements.length,
+        student_messages: studentMessages.length,
       });
-      this.#failTurn({
-        kind: 'ledger',
-        anchorId: this.#lastAnchorId,
-        displayName: null,
-        reason: failureReason(err),
-        detail: (err as Error).message,
-        replay: null,
-      });
-      return;
+
+      try {
+        const result = await this.#d.llm.complete(request);
+        // Same unwrapper as the decision path: a model that wraps the object in prose under a
+        // schema is a known shape, and it is not a reason to throw the turn's progress away.
+        proposal = JSON.parse(extractJsonObject(result.text)) as LedgerProposal;
+      } catch (err) {
+        // The chat never blocks on the ledger (progress-tracking.md §4.6) — but a rail that
+        // silently stopped moving is a lie about the learner's progress, so it says so. This is
+        // the `progress.update {"parse_ok":false}` of 2026-09-16 02:30:38, which until now was
+        // visible only in the events table.
+        this.#event('system', 'progress.update', { parse_ok: false, cause: (err as Error).message });
+        turnLog.event('error', 'ledger.error', {
+          model: request.model,
+          backend: this.#d.llm.kind,
+          ms: this.#d.clock.now() - ledgerStartedAt,
+          parse_ok: false,
+          cause: failureReason(err),
+        });
+        this.#failTurn({
+          kind: 'ledger',
+          anchorId: this.#lastAnchorId,
+          displayName: null,
+          reason: failureReason(err),
+          detail: (err as Error).message,
+          replay: null,
+        });
+        return false;
+      }
     }
 
     const current = this.#ledgerRows();
@@ -3433,6 +3481,8 @@ export class RoomActor {
       ms: this.#d.clock.now() - ledgerStartedAt,
       parse_ok: true,
       proposed: proposal.elements?.length ?? 0,
+      // False when rule 4 settled it before any call was made (#49).
+      llm_call: !agreementOnly,
       changed: applied.changed.length,
       // Which of the four hard rules fired. The ids only — never the quote they tested.
       gates: applied.history.map((h) => h.gate).filter(Boolean).join(','),
@@ -3447,6 +3497,7 @@ export class RoomActor {
       ledger: ledgerView(applied.rows, this.#d.pack),
       changed: applied.changed,
     });
+    return true;
   }
 
   /**
