@@ -713,6 +713,26 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     }
   });
 
+  /**
+   * **#49: a question resolves once** (brief §5.3). A turn after a release or a *Well done* used to
+   * re-open the feedback debt on the closed question, so Max marked it again and the verdict filled
+   * progress. A closed question takes no further attempt, and owes no feedback.
+   */
+  it('takes no attempt and owes no feedback once it is closed', () => {
+    const asked = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+
+    const released = markAnswerShown(asked, 'give_up');
+    expect(answerQuiz(released, 'm_11', { attempt: true })).toBe(released);
+    expect(feedbackDue(answerQuiz(released, 'm_11', { attempt: true }))).toBe(false);
+
+    const done = markFeedbackGiven(asked, 'complete', 'complete');
+    expect(answerQuiz(done, 'm_11', { attempt: true })).toBe(done);
+    expect(feedbackDue(answerQuiz(done, 'm_11', { attempt: true }))).toBe(false);
+
+    // A release that lands while an attempt is still unmarked closes the debt with it.
+    expect(feedbackDue(markAnswerShown(asked, 'pass'))).toBe(false);
+  });
+
   /** Brief §5.3: *partly yours* is a question that closed while partial — at any attempt. */
   it('resolves a release as partly yours when any attempt was Partly there', () => {
     const asked = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });

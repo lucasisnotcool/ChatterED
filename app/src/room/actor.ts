@@ -951,7 +951,9 @@ export class RoomActor {
        * the feedback debt: it is a question for Ellie, and counting it would unlock the answer to
        * Max's question on the strength of the learner asking something else.
        */
-      if (this.#pendingQuiz && origin !== 'ask') {
+      // Only an **open** question takes the turn (#49, brief §5.3: a question resolves once). After
+      // a release or a *Well done* the learner's next message follows the ordinary rules.
+      if (this.#pendingQuiz && quizOpen(this.#pendingQuiz) && origin !== 'ask') {
         this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',
@@ -1997,7 +1999,8 @@ export class RoomActor {
       this.#lastLearnerTurn = classifyLearnerTurn(body);
       this.#lastMention = null;
       this.#mentionRest = null;
-      if (this.#pendingQuiz) {
+      // A closed question is not re-opened by doc text either (#49).
+      if (this.#pendingQuiz && quizOpen(this.#pendingQuiz)) {
         this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',

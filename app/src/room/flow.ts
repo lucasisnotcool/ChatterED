@@ -1016,6 +1016,13 @@ export function answerQuiz(
   opts: { attempt: boolean; text?: string },
 ): PendingQuiz {
   if (!opts.attempt) return quiz;
+  /**
+   * **A closed question takes no further attempt** (#49; brief §5.3, *"a question resolves once"*).
+   * After a release or a *Well done* the learner's next turn is a new turn, not a revision: it used
+   * to re-open the feedback debt here, so Max marked the closed question again and the extra
+   * verdicts filled an objective.
+   */
+  if (!quizOpen(quiz)) return quiz;
   return {
     ...quiz,
     answerMessageId,
@@ -1167,7 +1174,9 @@ export function quizOpen(quiz: PendingQuiz | null): boolean {
  */
 export function feedbackDue(quiz: PendingQuiz | null, profile: FlowProfile = FLOW): boolean {
   if (!profile.feedbackRequired) return false;
-  return quiz !== null && quiz.answerMessageId !== null && !quiz.feedbackGiven;
+  // Nothing is owed on a closed question (#49): a release answers any unmarked attempt, and a
+  // *Well done* is the last mark a question gets.
+  return quizOpen(quiz) && quiz!.answerMessageId !== null && !quiz!.feedbackGiven;
 }
 
 /**

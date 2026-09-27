@@ -506,6 +506,59 @@ describe('releasing and closing a question', () => {
     expect(h.doc.edits.filter((e) => e.batch.cause === 'q_resolved')).toHaveLength(1);
   });
 
+  /**
+   * **#49: a question resolves once** (brief §5.3, §4.4). The dogfood logs had the learner's next
+   * message after a release, or after a *Well done*, marked against the closed question: `answerQuiz`
+   * put it back in feedback debt, `rule:quiz_feedback` fired ahead of Ellie, and the extra verdicts
+   * filled an objective. After a question closes, the next message follows the ordinary rules.
+   */
+  it('does not mark the next message against a question the learner gave up on', async () => {
+    const h = await withOpenQuestion();
+    await settle(h.clock, h.actor.sendMessage('this is too hard', DOC));
+    expect(rules(h).at(-1)).toBe('rule:answer_released');
+
+    await settle(h.clock, h.actor.sendMessage('the learner pays it, when they decide to forward', DOC));
+    const after = rules(h).slice(3);
+    expect(after[0]).toBe('rule:ellie_answers');
+    expect(after).not.toContain('rule:quiz_feedback');
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict')).toEqual([]);
+  });
+
+  it('does not mark the next message against a question that drew a Well done', async () => {
+    const wellDone =
+      'Well done. The cost lands on the learner, at the moment they decide whether to forward. ' +
+      'p. 5: "did not actually do so, memory protected".';
+    const h = build({}, null, (request) =>
+      request.meta.scope === 'group' && request.meta.scriptCue === 'feedback:1' ? wellDone : null,
+    );
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('the learner pays it, when they decide to forward', DOC));
+    expect(rules(h).at(-1)).toBe('rule:quiz_feedback');
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict').map((o) => o.verdict)).toEqual(['complete']);
+
+    await settle(h.clock, h.actor.sendMessage('the learner carries it, since only they can forward', DOC));
+    expect(rules(h).slice(3)[0]).toBe('rule:ellie_answers');
+    expect(rules(h).slice(3)).not.toContain('rule:quiz_feedback');
+    // Still one verdict: the closed question is not marked again.
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict')).toHaveLength(1);
+  });
+
+  it('does not mark the learner’s doc text against a closed question', async () => {
+    const h = await withOpenQuestion();
+    await settle(h.clock, h.actor.sendMessage('this is too hard', DOC));
+    await settle(
+      h.clock,
+      h.actor.assessDocText({
+        anchorId: DOC,
+        objectiveId: ELEMENT,
+        blockId: 'b_mine',
+        text: 'The learner carries the forwarding decision, so the cost is theirs.',
+      }),
+    );
+    expect(rules(h).slice(3)).not.toContain('rule:quiz_feedback');
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict')).toEqual([]);
+  });
+
   it('records a three-valued verdict on a feedback turn', async () => {
     const h = await withOpenQuestion();
     await settle(h.clock, h.actor.sendMessage('the learner pays it, when they decide to forward', DOC));
