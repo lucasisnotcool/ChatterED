@@ -16,7 +16,7 @@ piece lives.
 | **2 · Core** | Pure TypeScript learner-turn logic that both A1 designs share | `app/src/core/` | The teammate, at any time. This is the declared shared code. |
 | **3 · The ChatterED app** | Lucas's A2 implementation: all other code, and the design briefs | the rest of `app/`, `docs/research/` | Lucas. It enters the group repo from tag `a2-submitted`. |
 | **4 · A2 deliverables** | Report, video script and storyboard, Study A data, analysis and results, the submission package | `~/ChatterED-A2/`, a **separate private repo** | **Lucas only. Never shared.** |
-| **5 · Group project** | Integration of both A1s, the teammate's planner, joint docs | the group repo (not yet created) | Both. |
+| **5 · Group project** | Integration of both A1s, the teammate's planner, joint docs | `lucasisnotcool/cs3249-group` (private, Lucas owns it; cloned at `~/cs3249-group`). Today it holds a mirror of zone 2 in `core/`, and zone 1 in `docs/evidence/`. Its rules are in its `AGENTS.md`. | Both, once Lucas invites the teammate. |
 | **6 · Product** | ChatterED work outside A2 | here, issues labelled `scope:product` (#27–#31, #50) | Lucas. It is not A2 scope and not A2 evidence. |
 
 ## The one-way rule
@@ -38,7 +38,7 @@ the group repo, an issue, a commit message, a PR, a code comment, or a message t
 |---|---|---|
 | `~/ChatterED` | zones 1, 2, 3, 6 | write zone-4 content here |
 | `~/ChatterED-A2` | zone 4; read `~/ChatterED` | edit `~/ChatterED` (its settings deny it: open a ChatterED session to change code) |
-| the group repo | zone 5 | read `~/ChatterED-A2` at all |
+| `~/cs3249-group` | zone 5; refresh its `core/` from here with its `tools/sync-core.sh` | read `~/ChatterED-A2` at all (its local settings deny it) |
 
 Claude Code keeps memory per checkout path, so each of these gets its own memory. Anything the
 other developer needs has to be in a repo, not in memory.
