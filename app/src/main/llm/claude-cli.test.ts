@@ -23,6 +23,7 @@ import {
   OWN_TURN_PREFIX,
   promptFor,
   cliEnv,
+  CliExitError,
   CliQueue,
   cliQueue,
   CLI_DEFERRED,
@@ -41,6 +42,7 @@ import {
   systemTextFor,
 } from './claude-cli.js';
 import { readProbe } from './detect.js';
+import { errorClass } from '../log.js';
 import { AnthropicClient } from '../../room/llm/anthropic.js';
 import { LlmAbortedError, type LlmRequest } from '../../room/llm/types.js';
 
@@ -120,6 +122,33 @@ case "$MODE" in
     ;;
   hang)
     sleep 30
+    ;;
+  limitexit)
+    # The subscription limit, as the CLI reports it: a synthetic assistant message tagged
+    # error=rate_limit, an is_error result carrying the line, nothing on stderr, and exit 1.
+    COUNT_FILE="$FAKE_COUNT"
+    N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+    echo $((N + 1)) > "$COUNT_FILE"
+    echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"You have hit your limit - resets 3pm"}]},"error":"rate_limit"}'
+    echo '{"type":"result","subtype":"success","is_error":true,"result":"You have hit your limit - resets 3pm","usage":{}}'
+    exit 1
+    ;;
+  apiexit)
+    COUNT_FILE="$FAKE_COUNT"
+    N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+    echo $((N + 1)) > "$COUNT_FILE"
+    echo '{"type":"result","subtype":"success","is_error":true,"result":"API Error: 529 overloaded_error x-api-key: sk-ant-api03-abcdefghijklmnopqrstuvwxyz","usage":{}}'
+    exit 1
+    ;;
+  answerexit)
+    # Exit 1 after a *successful* result: that text is a model answer, not an error, and may
+    # echo the learner - it must never be copied into an error message.
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"LEARNER WORDS ECHOED","usage":{}}'
+    exit 1
+    ;;
+  execerror)
+    echo '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["Stream idle timeout"],"usage":{}}'
+    exit 1
     ;;
 esac
 exit 0
@@ -650,6 +679,50 @@ describe('the empty `exited 1`', () => {
   it('is not retried when the CLI said why it failed', async () => {
     // `fail` exits 3 with a reason on stderr. A real failure is not a race.
     await expect(client('fail').complete(request())).rejects.toThrow(/something went wrong/);
+  });
+
+  /**
+   * The CLI reports its own failures — the usage limit, an API error — in a `result` event on
+   * stdout, not on stderr, so these used to log `exited 1: no output` and were undiagnosable
+   * (15 in main.log up to 25 Sep).
+   */
+  it('says what the CLI reported on stdout when it exits non-zero, and names a limit', async () => {
+    const count = capture();
+    const err = await client('limitexit', { FAKE_COUNT: count }).complete(request()).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(CliExitError);
+    expect((err as Error).message).toBe('The Claude CLI exited 1: You have hit your limit - resets 3pm');
+    expect((err as Error).name).toBe('CliLimitError');
+    expect(errorClass(err)).toBe('CliLimitError');
+    // A limit does not lift in half a second: no second spawn.
+    expect(readFileSync(count, 'utf8').trim()).toBe('1');
+  });
+
+  it('names an API error, scrubs a key out of it, and retries it as before', async () => {
+    const count = capture();
+    const err = await client('apiexit', { FAKE_COUNT: count }).complete(request()).catch((e: Error) => e);
+    expect((err as Error).name).toBe('CliApiError');
+    expect((err as Error).message).toMatch(/^The Claude CLI exited 1: API Error: 529 overloaded_error/);
+    expect((err as Error).message).not.toContain('abcdefghijklmnop');
+    expect((err as Error).message).toContain('[redacted]');
+    // Nothing on stderr and exit 1 was retried once before this change, and still is.
+    expect(readFileSync(count, 'utf8').trim()).toBe('2');
+  });
+
+  it('never copies a successful answer into the error', async () => {
+    const err = await client('answerexit').complete(request()).catch((e: Error) => e);
+    expect((err as Error).message).toBe('The Claude CLI exited 1: no output');
+    expect((err as Error).name).toBe('CliExitError');
+  });
+
+  it('uses the result’s own error list when there is no result text', async () => {
+    const err = await client('execerror').complete(request()).catch((e: Error) => e);
+    expect((err as Error).message).toBe('The Claude CLI exited 1: Stream idle timeout');
+  });
+
+  it('keeps a stderr reason as it was', async () => {
+    const err = await client('fail').complete(request()).catch((e: Error) => e);
+    expect((err as Error).message).toBe('The Claude CLI exited 3: something went wrong deep inside');
+    expect((err as Error).name).toBe('CliExitError');
   });
 
   it('recognises only the empty shape', () => {

@@ -42,6 +42,7 @@ import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 import type { LLMClient, LlmMessage, LlmRequest, LlmResult, LlmUsage } from '../../room/llm/types.js';
 import { EMPTY_USAGE, LlmAbortedError } from '../../room/llm/types.js';
 import { attachUsageToError, usageFromError } from '../cost/client.js';
+import { scrub } from '../log.js';
 
 /**
  * An Electron app launched from Finder inherits launchd's PATH, not the login shell's — so
@@ -158,6 +159,48 @@ export class ClaudeCliNotLoggedInError extends Error {
   }
 }
 
+/**
+ * **A non-zero exit, with what the CLI said about it.**
+ *
+ * The CLI prints its own failures — the subscription limit, an API error — as an `is_error`
+ * `result` event on **stdout**, with stderr empty. Reading stderr alone logged every one of them
+ * as `exited 1: no output` (15 in `main.log` to 25 Sep), which is not a diagnosis. So the reason
+ * is stderr if there is one, else the error result's text (or its `errors` list), passed through
+ * the log's key scrubbing and capped. A result that is *not* an error is a model answer, may echo
+ * the learner, and is never copied in.
+ *
+ * `kind` is what the payload makes clear and nothing more: `limit` when the CLI tagged the
+ * message `rate_limit`/`billing_error` or said "limit" in so many words, `api` for an `API Error`
+ * line or a server/request error tag, `exit` otherwise. The name carries it into `errorClass`, so
+ * `llm.error class=CliLimitError` is one grep. The message still reads `exited N: …`, so the
+ * learner's card (`failureReason`) and `exit_code` are unchanged.
+ */
+export type CliFailureKind = 'exit' | 'limit' | 'api';
+
+export class CliExitError extends Error {
+  readonly code: number | null;
+  readonly kind: CliFailureKind;
+  /** Nothing on stderr — the shape `isEmptyExitOne` retries, whatever stdout said. */
+  readonly quiet: boolean;
+
+  constructor(code: number | null, detail: string, kind: CliFailureKind, quiet: boolean) {
+    super(`The Claude CLI exited ${code}: ${detail || 'no output'}`);
+    this.code = code;
+    this.kind = kind;
+    this.quiet = quiet;
+    this.name = kind === 'limit' ? 'CliLimitError' : kind === 'api' ? 'CliApiError' : 'CliExitError';
+  }
+}
+
+const LIMIT_TAGS: ReadonlySet<string> = new Set(['rate_limit', 'billing_error']);
+const API_TAGS: ReadonlySet<string> = new Set(['server_error', 'invalid_request', 'authentication_failed']);
+
+export function cliFailureKind(detail: string, tag: string | null): CliFailureKind {
+  if ((tag !== null && LIMIT_TAGS.has(tag)) || /hit your (?:\w+ )?limit|usage limit|limit reached|credit balance/i.test(detail)) return 'limit';
+  if ((tag !== null && API_TAGS.has(tag)) || /API Error|overloaded|\b(?:429|5\d\d)\b/i.test(detail)) return 'api';
+  return 'exit';
+}
+
 /** The CLI says this in a few different shapes; one predicate so every call site agrees. */
 export function looksNotLoggedIn(text: string): boolean {
   return /not logged in|please run .?claude.? to log in|invalid api key|authentication_error|oauth token has expired/i.test(text);
@@ -188,6 +231,10 @@ interface CliRun {
   ttftMs: number;
   isError: boolean;
   subtype: string | null;
+  /** `result.errors` on an `error_during_execution` result: the CLI's own words, not the model's. */
+  errors: string[];
+  /** The `error` tag on a synthetic assistant message (`rate_limit`, `server_error`, …). */
+  errorTag: string | null;
 }
 
 
@@ -470,6 +517,15 @@ export function isEmptyExitOne(message: string): boolean {
   return /exited 1: no output/i.test(message);
 }
 
+/**
+ * The retry's own rule, now that the message can carry stdout's reason: exit 1 with **nothing
+ * on stderr**, exactly as before — except a usage limit, which will not lift in half a second.
+ */
+export function isRetryableExit(err: unknown): boolean {
+  if (err instanceof CliExitError) return err.code === 1 && err.quiet && err.kind !== 'limit';
+  return err instanceof Error && isEmptyExitOne(err.message);
+}
+
 export const CLI_RETRY_DELAY_MS = 500;
 
 /**
@@ -725,7 +781,7 @@ export class ClaudeCliClient implements LLMClient {
     try {
       return await this.#spawnOnce(request, systemText, prompt, onDelta, signal);
     } catch (err) {
-      if (err instanceof LlmAbortedError || !isEmptyExitOne((err as Error).message)) throw err;
+      if (err instanceof LlmAbortedError || !isRetryableExit(err)) throw err;
       if (signal?.aborted) throw new LlmAbortedError();
       await new Promise((r) => setTimeout(r, CLI_RETRY_DELAY_MS));
       if (signal?.aborted) throw new LlmAbortedError();
@@ -770,6 +826,8 @@ export class ClaudeCliClient implements LLMClient {
         ttftMs: -1,
         isError: false,
         subtype: null,
+        errors: [],
+        errorTag: null,
       };
       let stderr = '';
       let buffer = '';
@@ -853,7 +911,9 @@ export class ClaudeCliClient implements LLMClient {
           acc.costUsd = typeof event.total_cost_usd === 'number' ? event.total_cost_usd : null;
           acc.model = modelFromResult(event) ?? acc.model;
           if (acc.ttftMs < 0 && typeof event.ttft_ms === 'number') acc.ttftMs = event.ttft_ms;
+          acc.errors = Array.isArray(event.errors) ? event.errors.filter((e): e is string => typeof e === 'string') : [];
         }
+        if (event.type === 'assistant' && typeof event.error === 'string') acc.errorTag = event.error;
         if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') {
           acc.model = event.model;
         }
@@ -887,7 +947,11 @@ export class ClaudeCliClient implements LLMClient {
             return;
           }
           if (code !== 0) {
-            fail(new Error(`The Claude CLI exited ${code}: ${stderr.trim().slice(0, 300) || 'no output'}`));
+            const said = stderr.trim();
+            // Only an error result is the CLI talking; a successful one is the model's answer.
+            const reported = acc.isError ? (acc.resultText ?? '').trim() || acc.errors.join('; ').trim() : '';
+            const detail = scrub((said || reported).slice(0, 300));
+            fail(new CliExitError(code, detail, cliFailureKind(`${said}\n${reported}`, acc.errorTag), said.length === 0));
             return;
           }
           if (!sawResult) {

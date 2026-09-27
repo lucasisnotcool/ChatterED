@@ -71,7 +71,8 @@ const GOOGLE_KEY_SHAPED = /\bAIza[0-9A-Za-z_-]{20,}/g;
 const BEARER = /\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const KEY_PARAM = /\b(x-goog-api-key|x-api-key|api[_-]?key|key)(["']?\s*[:=]\s*["']?)(?!\[redacted\])[A-Za-z0-9._~+/-]{12,}/gi;
 
-function scrub(value: string): string {
+/** Exported for the one other place free text from a child process is put into an error. */
+export function scrub(value: string): string {
   const clean = value
     .replace(KEY_SHAPED, 'sk-ant-[redacted]')
     .replace(OPENAI_KEY_SHAPED, 'sk-[redacted]')
