@@ -1980,6 +1980,13 @@ export class RoomActor {
     this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
     this.#registerThread(input.anchorId, 'span', { blockId: input.blockId, quote: body.slice(0, 90) });
     this.#docTextTarget = { blockId: input.blockId, text: body, anchorId: input.anchorId };
+    /**
+     * **The attempt is on the block's objective** (brief §6, #49). Text under another objective's
+     * block is not an answer to Max's open question, so it neither attempts nor draws a verdict on
+     * it: that filed a paragraph about one objective under another's progress. It goes to Ellie as
+     * a question from another thread does (`sendMessage`'s `ask`), and the question stays open.
+     */
+    const answersQuiz = (this.#pendingQuiz?.objectiveId ?? null) === input.objectiveId;
 
     let messageId: string | null = null;
     await this.#mailbox.enqueue(() => {
@@ -1999,8 +2006,9 @@ export class RoomActor {
       this.#lastLearnerTurn = classifyLearnerTurn(body);
       this.#lastMention = null;
       this.#mentionRest = null;
-      // A closed question is not re-opened by doc text either (#49).
-      if (this.#pendingQuiz && quizOpen(this.#pendingQuiz)) {
+      // A closed question is not re-opened by doc text either (#49), and text under another
+      // objective's block does not answer it.
+      if (this.#pendingQuiz && quizOpen(this.#pendingQuiz) && answersQuiz) {
         this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
           attempt: this.#lastLearnerTurn === 'attempt',
@@ -2021,6 +2029,7 @@ export class RoomActor {
         anchorId: input.anchorId,
         studentBody: body,
         studentMessageId: messageId,
+        askedHere: this.#pendingQuiz !== null && !answersQuiz,
       });
     } finally {
       this.#docTextTarget = null;

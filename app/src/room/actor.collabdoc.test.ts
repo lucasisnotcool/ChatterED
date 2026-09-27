@@ -978,6 +978,39 @@ describe('assessDocText', () => {
     expect(h.doc.edits.some((e) => e.batch.cause === 'suggestion')).toBe(false);
   });
 
+  /**
+   * **§6: the attempt is on the block's objective, not the chat's** (#49). Text written under
+   * another objective's block is not an answer to Max's open question about this one: marking it
+   * against his question filed a repair-strategy paragraph under the HCD-loop objective. It is
+   * recorded under its own block's objective, and Max's question stays open and untouched, as a
+   * question asked in another thread does.
+   */
+  it('does not mark text under another objective’s block as an answer to the open question', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const asked = h.actor.pendingQuizView()!.quiz;
+    // Objective and element share one id space (`objectives/pack.ts`).
+    const other = PSD_HESSIAN_CONVEXITY_V1.elements.find((e) => e.id !== asked.elementId)!.id;
+
+    await settle(
+      h.clock,
+      h.actor.assessDocText({
+        anchorId: SPAN,
+        objectiveId: other,
+        blockId: 'b_mine',
+        text: 'The learner carries the forwarding decision, so the cost is theirs.',
+      }),
+    );
+
+    const row = h.store.messages.forRoom(h.roomId).find((m) => m.kind === 'doc_text')!;
+    expect(row.objective_id).toBe(other);
+    expect(rules(h)).not.toContain('rule:quiz_feedback');
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict')).toEqual([]);
+    const quiz = h.actor.pendingQuizView()!.quiz;
+    expect(quiz.attempts).toBe(0);
+    expect(quiz.answerShown).toBe(false);
+  });
+
   it('tells Max the answer came out of the document, and records the outcome as such', async () => {
     const h = build();
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
