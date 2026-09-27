@@ -671,6 +671,14 @@ export class RoomActor {
     this.#turnLog = this.#log;
     this.#openedAt = deps.clock.now();
     this.#flow = deps.flowState?.session ?? null;
+    /**
+     * **Settings ▸ Tester pacing wins over the stored sitting's copy** (#49), as it does in
+     * `rebind`. The sitting is saved with the profile it opened under, so without this a sitting
+     * first opened under Demo kept Demo's pacing on every reopen after the learner chose Study.
+     */
+    if (this.#flow && this.#flow.closedAt === null && deps.flowProfile) {
+      this.#flow = { ...this.#flow, profile: deps.flowProfile };
+    }
     this.#taught = [...(deps.flowState?.taught ?? [])];
     this.#pendingQuiz = deps.flowState?.pendingQuiz ?? null;
     /**

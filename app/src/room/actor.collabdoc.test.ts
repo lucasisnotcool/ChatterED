@@ -119,6 +119,34 @@ function build(over: Partial<RoomActorDeps> = {}, docEdit: Record<string, unknow
   return { ...seeded, clock, events, actor, llm, doc };
 }
 
+/**
+ * A second actor on the same room, store and clock, as `AppService.openRoom` builds one when the
+ * file is opened again: after a relaunch, or after another file's room was open in between.
+ */
+function relaunch(h: ReturnType<typeof build>, over: Partial<RoomActorDeps> = {}): RoomActor {
+  let n = 1000;
+  const actor = new RoomActor({
+    store: h.store,
+    groupStore: groupView(h.store),
+    clock: h.clock,
+    transport: { emit: (e) => h.events.push(e) },
+    llm: h.llm,
+    roomId: h.roomId,
+    sessionId: h.sessionId,
+    roster: rosterFor('ellie_peer'),
+    pack: PSD_HESSIAN_CONVEXITY_V1,
+    models: API_PLAN,
+    config: { ...DEFAULT_ROOM_CONFIG, mode: 'scripted' },
+    appVersion: '0.1.0-test',
+    newId: (prefix) => `${prefix}_r${(n += 1)}`,
+    random: () => 0.5,
+    docPort: h.doc.port,
+    ...over,
+  });
+  actor.start();
+  return actor;
+}
+
 async function settle<T>(clock: FakeClock, promise: Promise<T>, ms = 120_000): Promise<T> {
   const run = clock.run(ms);
   const out = await promise;
@@ -744,26 +772,7 @@ describe('releasing and closing a question', () => {
     h.actor.stop();
     h.clock.advance(21 * 60_000);
 
-    let n = 1000;
-    const relaunched = new RoomActor({
-      store: h.store,
-      groupStore: groupView(h.store),
-      clock: h.clock,
-      transport: { emit: (e) => h.events.push(e) },
-      llm: h.llm,
-      roomId: h.roomId,
-      sessionId: h.sessionId,
-      roster: rosterFor('ellie_peer'),
-      pack: PSD_HESSIAN_CONVEXITY_V1,
-      models: API_PLAN,
-      config: { ...DEFAULT_ROOM_CONFIG, mode: 'scripted' },
-      appVersion: '0.1.0-test',
-      newId: (prefix) => `${prefix}_r${(n += 1)}`,
-      random: () => 0.5,
-      docPort: h.doc.port,
-      flowState: stored,
-    });
-    relaunched.start();
+    const relaunched = relaunch(h, { flowState: stored });
     // The learner asks something straight away, inside the first tick's 30 s.
     await settle(h.clock, relaunched.sendMessage('what does a strict subset mean here?', DOC));
 
@@ -1195,5 +1204,23 @@ describe('rebind with a pacing profile', () => {
 
     h.actor.rebind({ flowProfile: DEMO });
     expect(h.actor.flowSnapshot().session?.profile.name).toBe(DEMO.name);
+  });
+
+  /**
+   * #49: the same rule when the room is opened again. `openRoom` builds a new actor with the
+   * Settings profile *and* the stored sitting, and the sitting's saved profile won, so a sitting
+   * first opened under Demo kept Demo's pacing (a cue at a sixth of the 120 s floor) after the
+   * learner had switched to Study while that file was not open, or across a relaunch.
+   */
+  it('applies to a sitting restored when the room is opened again', async () => {
+    const h = build({ flowProfile: DEMO });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const stored = h.actor.flowSnapshot();
+    expect(stored.session?.profile.name).toBe(DEMO.name);
+    h.actor.stop();
+
+    const reopened = relaunch(h, { flowState: stored, flowProfile: FLOW });
+    expect(reopened.flowSnapshot().session?.profile.name).toBe(FLOW.name);
+    reopened.stop();
   });
 });
