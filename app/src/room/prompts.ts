@@ -80,7 +80,16 @@ import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
  * release rather than as an unlock), and the deletion of `rule:answer_withheld`'s "one try unlocks
  * it" clause, which no rule can produce any more. The blocks themselves are in `prompts.doc.ts`.
  */
-export const PROMPT_VERSION = 'prompts.v0.7';
+/**
+ * **v0.8 takes the attempt lock out of the Tester's role block (#49).** v0.7 deleted the clause
+ * from the directives but not from `roleBlock`, which still said *"THE ANSWER IS NOT YOURS TO GIVE
+ * UNTIL THEY HAVE TRIED … one try unlocks it"* — and the live run's "One hint, then it's your turn"
+ * refusals followed it. The role block now states `collab-doc.md` §4.2 and §4.4 as the directives
+ * already did: verdict first, grounds, a follow-up unless *Well done*; the answer released on a
+ * give-up or Pass. S7's "never grade" goes with it, since the verdict line is a mark on the answer.
+ * S7 is in `sharedBlock`, so the prefix hash moves once more.
+ */
+export const PROMPT_VERSION = 'prompts.v0.8';
 
 export interface SharedBlockInput {
   material: MaterialRow;
@@ -124,7 +133,8 @@ S5 The slide settles disputes about the slide. Where you go beyond it, say so in
    where you do it ("the slide doesn't say this, but…") — never dress your own knowledge as the
    slide's, and never contradict it. That clause is the whole of the restriction.
 S6 Frame a hard question preemptively: you are testing the statement, not the person.
-S7 Never rate, score or grade the learner, and never mention the ledger.
+S7 Never rate or score the learner, and never mention the ledger. The tester's verdict on an
+   answer marks that answer, not the person.
 S8 If the learner says they disagree and wants to move on, stop probing that claim.`
 
 // S2 — the disagreement quota — is deleted, with the social-group framing it belonged to
@@ -326,11 +336,14 @@ it to a specific case, clarification, probing assumptions, probing reasons and e
 probing implications, or probing alternatives — and do not repeat the previous move.
 
 **Never supply the answer you are fishing for.** A tester that answers its own quiz is useless.
-Never ask two questions at once, and never grade them.
+Never ask two questions at once. (The one time the answer is yours to give is below.)
 
-When the learner has answered, your next turn is **feedback on what they actually said** — what
-landed, what was missing, and the correction. That turn carries no new question. Feedback after
-an answer is required, not optional.
+When the learner has answered, your next turn is **feedback on what they actually said**. Its first
+line is exactly one verdict on the answer to the question you asked — ${VERDICT_OPENERS.join(' / ')}
+— and then what landed, what was missing, and the correction, with grounds. Unless the verdict is
+Well done, it ends on one follow-up question on the gap, and asks nothing else; after Well done it
+asks nothing. The verdict marks the answer, not the person. Feedback after an answer is required,
+not optional.
 
 SHOW YOUR GROUNDS, ALWAYS.
 For each point you make about their answer — what landed, what was missing, the correction — say
@@ -346,11 +359,11 @@ If the learner disputes your verdict, engage with the dispute and drop the point
 ground it (house rule 5). Contesting you never lowers what the learner has shown; nothing about
 this exchange is a score, and you never imply that arguing costs them anything.
 
-THE ANSWER IS NOT YOURS TO GIVE UNTIL THEY HAVE TRIED.
-You will be told when the learner has attempted the question. Until then, if they ask for the
-answer you give **one hint** and say in one clause that one try unlocks it — the app enforces this,
-so there is no version of the conversation where asking twice works. Once they have attempted it,
-the answer is theirs to ask for and you give it in full, with its grounds.
+WHEN THE ANSWER IS RELEASED.
+If the learner gives up — says they don't know, asks for the answer, or presses Pass — the answer
+is released, with or without a try. The app decides that, and you will be told when it is due.
+On that turn you give the answer to the question you asked in full, with its grounds, and ask
+nothing new.
 
 House rule 3's longer lengths are the teacher's. Your question is one or two sentences, your
 feedback is under 100 words, and a model answer is under 150.`;
@@ -513,7 +526,7 @@ export function quizBlock(input: {
   label: string;
   seeds: readonly string[];
   demonstration?: readonly string[];
-  /** True on the feedback turn: no new question, say what landed and what was missing. */
+  /** True on the feedback turn: a verdict, what landed and what was missing, and a follow-up unless Well done. */
   feedback?: boolean;
   /** #47: the rest of the loop. `feedback: true` is the alias this shipped with. */
   turn?: QuizTurn;
@@ -738,10 +751,10 @@ export interface TurnDirective {
   /** Stage-2 silence fills are hedged, incomplete and correctable — never a complete answer. */
   note?: string;
   /**
-   * **Which rule produced this turn** (issue #47). One move, `quiz_hint`, has three different
-   * causes — the answer was asked for too early, the learner said nothing that answers, or the
-   * timer fired — and only the first of them owes the learner the sentence about one try unlocking
-   * the answer. The rule name is the only thing that distinguishes them.
+   * **Which rule produced this turn** (issue #47). One move can have several causes, and the rule
+   * name is the only thing that distinguishes them: `quiz` is `rule:max_followup`'s follow-up or
+   * another door's question. (`rule:answer_withheld`, which once owed the learner a sentence about
+   * one try unlocking the answer, is retired by #48.)
    */
   byRule?: string;
   /**

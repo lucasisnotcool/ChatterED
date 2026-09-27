@@ -17,7 +17,14 @@ import { PROMPT_VERSION, quizBlock, roleBlock, sharedBlock, teachObjectiveBlock,
 import type { AgentProfile } from '../shared/types.js';
 import type { ConceptPack, MaterialRow } from './records.js';
 import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
-import { ellieAnswersBlock } from './prompts.doc.js';
+import {
+  docTextBlock,
+  ellieAnswersBlock,
+  maxFollowupBlock,
+  maxPromptBlock,
+  mentionReplyBlock,
+  releaseBlock,
+} from './prompts.doc.js';
 
 const ELLIE: AgentProfile = {
   key: 'peer.ellie',
@@ -230,12 +237,71 @@ describe('the safeguards that did not change, restated so the model reads them',
     expect(s).toContain('The learner closes a thread.');
   });
 
-  it('keeps the Tester at exactly one question, with feedback owed after the answer', () => {
+  /**
+   * `collab-doc.md` §4.2 row 4: *"verdict first (Well done. / Partly there. / Not yet.), grounds as
+   * p. N: "…", and a follow-up on the same question unless Well done"*. The role block used to say
+   * the feedback turn "carries no new question" (#49), against the feedback block beside it.
+   */
+  it('keeps the Tester at one question, and gives feedback as verdict, grounds and a follow-up', () => {
     const t = tester();
     expect(t).toContain('One question per turn');
     expect(t).toContain('**Never supply the answer you are fishing for.**');
     expect(t).toContain('feedback on what they actually said');
-    expect(t).toContain('That turn carries no new question.');
+    expect(t).not.toContain('That turn carries no new question.');
+    for (const opener of VERDICT_OPENERS) expect(t).toContain(opener);
+    expect(t).toContain('Unless the verdict is Well done, it ends on one follow-up question');
+  });
+
+  /** `collab-doc.md` §4.4: *"On give_up, at any time, with or without an attempt: Max gives the full answer with grounds."* */
+  it('releases the answer on a give-up or a Pass, with or without a try', () => {
+    const t = tester();
+    expect(t).toContain('gives up');
+    expect(t).toContain('presses Pass');
+    expect(t).toContain('with or without a try');
+    expect(t).toContain('in full, with its grounds');
+  });
+
+  it('lets the verdict mark the answer without the safeguards forbidding it', () => {
+    const s = shared();
+    expect(s).not.toContain('grade the learner');
+    expect(s).toContain('S7 Never rate or score the learner, and never mention the ledger.');
+    expect(s).toContain('marks that answer, not the person');
+  });
+});
+
+/**
+ * **No retired rule in any Max prompt** (#49). `collab-doc.md` §4.4 retired the attempt lock
+ * (`rule:answer_withheld`), but the Tester's role block still said *"THE ANSWER IS NOT YOURS TO
+ * GIVE UNTIL THEY HAVE TRIED … one try unlocks it — the app enforces this"*, and the live run's
+ * refusals ("Not yet… One hint, then it's your turn") followed it. Every block Max is built from is
+ * checked here; `actor.attempt.test.ts` checks the requests the real actor sends him.
+ */
+describe('Max’s prompts carry no retired rule', () => {
+  const RETIRED = [/one try unlocks/i, /not yours to give/i, /never grade/i, /grade the learner/i, /carries no new question/i];
+
+  it('in the prefix, the role block, every quiz turn and every Tester directive', () => {
+    const blocks = [
+      shared(),
+      tester(),
+      ...(['question', 'feedback', 'answer', 'clarify', 'hint_withheld'] as const).map(
+        (turn) => quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn })!,
+      ),
+      ...['quiz', 'quiz_hint', 'quiz_answer', 'quiz_clarify', 'quiz_feedback', 'max_prompt', 'mention_reply'].flatMap((move) =>
+        ['rule:max_followup', 'rule:answer_released', 'rule:quiz_nudge', 'rule:answer_withheld'].map((byRule) =>
+          turnDirective({ agentRole: 'challenger', move, byRule }),
+        ),
+      ),
+      maxFollowupBlock({ objectiveLabel: 'x' }),
+      maxPromptBlock({ guess: 'maybe', roster: [ELLIE, MAX] }),
+      ...(['give_up', 'pass', 'closure'] as const).map((releasedBy) =>
+        releaseBlock({ releasedBy, attempts: 1, cueClaim: 'x', roster: [ELLIE, MAX] }),
+      ),
+      mentionReplyBlock(),
+      docTextBlock({ blockQuote: 'x' }),
+    ];
+    for (const block of blocks) {
+      for (const phrase of RETIRED) expect(flat(block), `${phrase} in: ${block.slice(0, 60)}`).not.toMatch(phrase);
+    }
   });
 });
 
@@ -283,7 +349,8 @@ describe('the default explanation shape', () => {
 describe('the version', () => {
   it('is bumped, because the prefix hash moves with the rules', () => {
     // v0.7: #48's six new moves, and the deletion of `rule:answer_withheld`'s unlock clause.
-    expect(PROMPT_VERSION).toBe('prompts.v0.7');
+    // v0.8: the same clause out of the Tester's role block, and S7 aligned with the verdict (#49).
+    expect(PROMPT_VERSION).toBe('prompts.v0.8');
   });
 });
 

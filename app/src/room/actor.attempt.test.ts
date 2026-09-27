@@ -193,6 +193,27 @@ describe('releasing the answer, end to end', () => {
   });
 
   /**
+   * **The system blocks too** (#49). The test above reads only the directive, and the lock
+   * survived in the Tester's role block — *"one try unlocks it — the app enforces this"* — which is
+   * where the live run's "One hint, then it's your turn" refusals came from.
+   */
+  it('sends Max no retired rule anywhere in the request, from question to release', async () => {
+    const h = await asked();
+    await settle(h.clock, h.actor.sendMessage('The Hessian has to be positive semidefinite everywhere.', SEG));
+    await settle(h.clock, h.actor.sendMessage("I don't know", SEG));
+    const maxRequests = h.llm.requests.filter((r) => r.meta.agentKey?.startsWith('challenger'));
+    expect(maxRequests.length).toBeGreaterThanOrEqual(3);
+    for (const request of maxRequests) {
+      const text = [...request.system.map((b) => b.text), ...request.messages.map((m) => m.content)]
+        .join('\n')
+        .replace(/\s+/g, ' ');
+      for (const retired of [/one try unlocks/i, /not yours to give/i, /never grade/i, /grade the learner/i]) {
+        expect(text).not.toMatch(retired);
+      }
+    }
+  });
+
+  /**
    * §4.4's "at any time, **with or without an attempt**", and the phrasings the brief adds to the
    * classifier. Each of these used to draw a hint and now draws the answer.
    */
