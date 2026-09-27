@@ -514,7 +514,7 @@ export function validateRateCard(json: string): { ok: boolean; errors: string[] 
     for (const key of ['input', 'output'] as const) {
       if (!nonNegative(v[key])) errors.push(`${model}: ${key} is required and must be a number ≥ 0`);
     }
-    for (const key of ['cacheWrite', 'cacheRead'] as const) {
+    for (const key of ['cacheWrite', 'cacheWrite1h', 'cacheRead'] as const) {
       if (key in v && !nonNegative(v[key])) errors.push(`${model}: ${key} must be a number ≥ 0`);
     }
   }

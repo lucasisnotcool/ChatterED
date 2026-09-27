@@ -17,9 +17,17 @@
  * a call with the network off.
  *
  * Cache write and cache read are the skill's documented multipliers rather than a second table:
- * **write = 1.25× input** (the 5-minute TTL, which is the only one this app uses — the context
- * builders set `cache_control: {type:'ephemeral'}` and nothing sets `ttl`), **read = 0.1× input**.
- * Derived rather than transcribed so a price change touches one number per model.
+ * **write = 1.25× input** at the 5-minute TTL, **2× input** at the 1-hour TTL, **read = 0.1×
+ * input**. Derived rather than transcribed so a price change touches one number per model.
+ *
+ * **Which write rate depends on the backend** (#49). This app's own API path sets
+ * `cache_control: {type:'ephemeral'}` with no `ttl`, so it writes at 5 minutes. The CLI path does
+ * not use this app's breakpoints at all: Claude Code caches around its own prompt, and for a
+ * logged-in subscriber it asks for the **1-hour** TTL (`reason: "subscriber"` in the CLI's own
+ * TTL choice). This card priced both at 1.25× until 27 Sep, and over 386 Sonnet 5 CLI calls in
+ * `main.log` came out **28% below** the CLI's own `total_cost_usd`, with not one call within 2%;
+ * at 2× the total is 6% below and 24 calls agree to 2%. So `estimateUsd` prices a `claude-cli`
+ * row's cache writes at `cacheWrite1hPerMTok`.
  *
  * ────────────────────────────────────────────────────────────────────────────────────────────
  * THREE THINGS THAT MAKE THESE NUMBERS APPROXIMATE, RECORDED RATHER THAN SMOOTHED OVER
@@ -78,10 +86,17 @@ export interface ModelRate {
   outputPerMTok: number;
   cacheWritePerMTok: number;
   cacheReadPerMTok: number;
+  /**
+   * The 1-hour-TTL write, which is what the CLI path pays (see the header). Absent on the
+   * provider-published rows, which bill no separate write; `cacheWritePerMTok` is used then.
+   */
+  cacheWrite1hPerMTok?: number;
 }
 
-/** 5-minute TTL. The 1-hour TTL is 2×; nothing in this app asks for it. */
+/** 5-minute TTL: this app's own API path. */
 const CACHE_WRITE_MULTIPLIER = 1.25;
+/** 1-hour TTL: what Claude Code asks for on a subscriber's login, i.e. the CLI path. */
+const CACHE_WRITE_1H_MULTIPLIER = 2;
 const CACHE_READ_MULTIPLIER = 0.1;
 
 function rate(model: string, input: number, output: number, readMultiplier = CACHE_READ_MULTIPLIER): ModelRate {
@@ -91,6 +106,7 @@ function rate(model: string, input: number, output: number, readMultiplier = CAC
     outputPerMTok: output,
     cacheWritePerMTok: round6(input * CACHE_WRITE_MULTIPLIER),
     cacheReadPerMTok: round6(input * readMultiplier),
+    cacheWrite1hPerMTok: round6(input * CACHE_WRITE_1H_MULTIPLIER),
   };
 }
 
@@ -230,10 +246,11 @@ export function estimateUsd(
   backend?: string | null,
 ): Estimate {
   const { rate: r, exact } = rateFor(model, card, backend);
+  const writePerMTok = backend === 'claude-cli' ? (r.cacheWrite1hPerMTok ?? r.cacheWritePerMTok) : r.cacheWritePerMTok;
   const usd =
     (tokens.input * r.inputPerMTok +
       tokens.output * r.outputPerMTok +
-      tokens.cacheWrite * r.cacheWritePerMTok +
+      tokens.cacheWrite * writePerMTok +
       tokens.cacheRead * r.cacheReadPerMTok) /
     1_000_000;
   return { usd: round6(usd), rate: r, exact };
@@ -252,8 +269,9 @@ export const RATE_CARD_SETTING = 'cost_rate_card';
  * correct *fallback* is a settings row, so that a number on screen being wrong is something the
  * owner can correct in an afternoon rather than a reason to distrust the whole panel.
  *
- * Shape: `{"claude-sonnet-5": {"input": 2, "output": 10}}`. `cacheWrite` / `cacheRead` are
- * optional and derive from `input` when omitted, the same way the built-in card does. An entry
+ * Shape: `{"claude-sonnet-5": {"input": 2, "output": 10}}`. `cacheWrite` / `cacheWrite1h` /
+ * `cacheRead` are optional and derive from `input` when omitted, the same way the built-in card
+ * does. An entry
  * for a model that is not on the card **adds** it. Anything malformed is ignored entry by entry
  * rather than throwing: a typo in one line must not blank the whole panel.
  */
@@ -288,6 +306,7 @@ export function parseRateCardOverride(json: string | undefined | null): { card: 
       ...base,
       cacheWritePerMTok: num(v.cacheWrite) ?? base.cacheWritePerMTok,
       cacheReadPerMTok: num(v.cacheRead) ?? base.cacheReadPerMTok,
+      cacheWrite1hPerMTok: num(v.cacheWrite1h) ?? base.cacheWrite1hPerMTok,
     });
   }
   return { card: [...merged.values()], errors };

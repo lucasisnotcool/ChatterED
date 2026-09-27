@@ -47,7 +47,9 @@ describe('recording a call', () => {
     });
     expect(view.tokens).toEqual({ input: 2_000, output: 500, cacheWrite: 540, cacheRead: 6_140 });
     expect(view.reportedUsd).toBe(0.0057);
-    expect(view.estimatedUsd).toBeCloseTo(11_578 / 1_000_000, 9);
+    // A CLI row: its cache writes are at the 1-hour rate (2x input, `rates.ts`, #49), so
+    // 2000*2 + 500*10 + 540*4 + 6140*0.2 = 12,388.
+    expect(view.estimatedUsd).toBeCloseTo(12_388 / 1_000_000, 9);
     expect(view.durationMs).toBe(4_060);
     expect(view.backfilled).toBe(false);
 

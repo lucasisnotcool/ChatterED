@@ -108,6 +108,32 @@ describe('estimating a call', () => {
     expect(usd).toBeCloseTo(11_578 / 1_000_000, 9);
   });
 
+  /**
+   * **The CLI writes its cache at the 1-hour TTL** (#49). Claude Code picks `ttl: "1h"` for a
+   * logged-in subscriber (its own `reason: "subscriber"` branch), and the `claude-api` skill
+   * prices a 1-hour write at 2× input, not the 5-minute 1.25×. Checked against the CLI's own
+   * `total_cost_usd` over 386 Sonnet 5 calls in main.log: 1.25× came out 28% low with no call
+   * within 2%; 2× came out 6% low, 24 calls within 2% (the rest is the CLI's auxiliary Haiku
+   * calls, billed in its total but not in `result.usage`).
+   */
+  it('prices a CLI call’s cache writes at the 1-hour rate, and the API path’s at the 5-minute one', () => {
+    const tokens = { input: 2, output: 534, cacheWrite: 2_883, cacheRead: 1_487 };
+    // 2*2 + 534*10 + 2883*4 + 1487*0.2 = 4 + 5340 + 11532 + 297.4
+    expect(estimateUsd('claude-sonnet-5', tokens, RATE_CARD, 'claude-cli').usd).toBeCloseTo(17_173.4 / 1e6, 6);
+    // 2883*2.5 on the API path, which sets `ephemeral` with no ttl.
+    expect(estimateUsd('claude-sonnet-5', tokens, RATE_CARD, 'anthropic').usd).toBeCloseTo(12_848.9 / 1e6, 6);
+    expect(estimateUsd('claude-sonnet-5', tokens).usd).toBeCloseTo(12_848.9 / 1e6, 6);
+    expect(rateFor('claude-sonnet-5').rate.cacheWrite1hPerMTok).toBe(4);
+    expect(rateFor('claude-haiku-4-5').rate.cacheWrite1hPerMTok).toBe(2);
+    expect(rateFor('claude-opus-5').rate.cacheWrite1hPerMTok).toBe(10);
+  });
+
+  it('honours an override’s own 1-hour write price', () => {
+    const { card } = parseRateCardOverride('{"claude-sonnet-5":{"input":2,"output":10,"cacheWrite1h":3}}');
+    const usd = estimateUsd('claude-sonnet-5', { input: 0, output: 0, cacheWrite: 1_000_000, cacheRead: 0 }, card, 'claude-cli').usd;
+    expect(usd).toBe(3);
+  });
+
   it('is zero for a call that reported nothing — the scripted path', () => {
     expect(estimateUsd('claude-sonnet-5', { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }).usd).toBe(0);
   });
