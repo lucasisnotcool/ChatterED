@@ -88,9 +88,15 @@ scratch/
 # records; what is committed is the de-identified analysis (P-codes, programme/year/gender only)
 # in docs/research/interviews/.
 Academia/Interviews/
+Academia/valerie research/
 
 # --- Lecturer's decks: used as the demo deck (#48), never committed ---
 Academia/Sources/CS3249+Lecture+*.pdf
+
+# --- Course and group-project material: local reference only ---
+# Lecture and tutorial decks, class-recording transcripts and reading PDFs. Group-project
+# material belongs in lucasisnotcool/cs3249-group (SCOPE.md zone 5), not in this repo.
+Academia/group project/
 
 # --- Assignment 2 deliverables never live in this repo (SCOPE.md) ---
 # They are in ~/ChatterED-A2. These paths are reserved so a stray copy is never staged;
