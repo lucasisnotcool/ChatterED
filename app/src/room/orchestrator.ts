@@ -431,7 +431,16 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
    * (whispers do not run the orchestrator).
    */
   const handOff = input.handOff ?? null;
+  /**
+   * **Not in the collab doc** (#49). `collab-doc.md` §9 supersedes this time-based hand-off with
+   * `rule:max_followup`: in the doc chat and its span threads Max's only way onto the floor after
+   * a learner question is the follow-up chained after Ellie's answer (§4.2 row 1). Checked here,
+   * before `rule:ellie_answers`, a due hand-off gave the learner's question to Max as a quiz and
+   * Ellie never answered it. The legacy room screen (no thread kind) keeps it unchanged.
+   */
+  const collabChannel = input.threadKind === 'doc' || input.threadKind === 'span';
   if (
+    !collabChannel &&
     handOff?.due === true &&
     handOff.target !== null &&
     (input.trigger === 'student_message' || input.trigger === 'promote')

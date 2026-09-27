@@ -484,9 +484,26 @@ describe('rule:ellie_answers — Ellie answers the doc chat without a model call
     expect(max.moveType).toBe('mention_reply');
   });
 
-  it('does not outrank the hand-off or the dog-pile cap', () => {
-    expect(ruleDecision(input({ threadKind: 'doc', handOff: due() }))!.decidedBy).toBe('rule:handoff');
+  /**
+   * **#49: the hand-off is not a door in the doc chat** (brief §9 supersedes `flow-session.md` §8.2's
+   * time-based hand-off with `rule:max_followup`). This test used to assert the opposite order —
+   * `rule:handoff` ahead of `rule:ellie_answers` — which let a due hand-off give the learner's
+   * question to Max as a quiz with no answer, against §4.2 row 1.
+   */
+  it('outranks the old hand-off in the doc chat and a span thread, and not the dog-pile cap', () => {
+    for (const threadKind of ['doc', 'span'] as const) {
+      const d = ruleDecision(input({ threadKind, handOff: due(), handOffLine: 'Max, over to you.' }))!;
+      expect(d.decidedBy).toBe('rule:ellie_answers');
+      expect(d.role).toBe('peer');
+      expect(d.handOffLine).toBeNull();
+    }
     expect(ruleDecision(input({ threadKind: 'doc', consecutiveAgentTurns: 2 }))!.decidedBy).toBe('rule:no_dogpile');
+  });
+
+  /** The legacy room screen (no collab-doc channel) keeps its hand-off, unchanged. */
+  it('leaves the hand-off in place outside the collab doc', () => {
+    expect(ruleDecision(input({ handOff: due() }))!.decidedBy).toBe('rule:handoff');
+    expect(ruleDecision(input({ anchoredThread: true, handOff: due() }))!.decidedBy).toBe('rule:handoff');
   });
 
   it('still reads the old `anchoredThread` flag when no thread kind is given', () => {

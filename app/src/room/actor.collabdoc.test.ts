@@ -26,7 +26,7 @@ import { ScriptedClient } from './llm/scripted.js';
 import { NOTES_SCRIPT } from './llm/script.notes.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 import { API_PLAN } from './llm/models.js';
-import { DEMO, FLOW } from './flow.js';
+import { DEMO, FLOW, openSession, type TaughtItem } from './flow.js';
 
 const DOC = 'doc';
 const SPAN = 'span_0123456789ab';
@@ -214,6 +214,33 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
     const h2 = build({ learnerObjectives: () => objectives });
     await settle(h2.clock, h2.actor.sendMessage('what is this slide saying?', DOC, onPage(9)));
     expect(decisions(h2).find((d) => d.decided_by === 'rule:max_followup')!.target_element_id).toBe(b!.id);
+  });
+
+  /**
+   * **#49: the time-based hand-off is superseded in the doc chat** (brief §9: *"`flow-session.md`
+   * §8.2 time-based hand-off as a door to the Tester — Superseded by `rule:max_followup`"*). A
+   * sitting that satisfies §8.2 used to give the learner's doc-chat question to Max as a quiz, with
+   * no answer from Ellie, contradicting §4.2 row 1.
+   */
+  it('answers a doc-chat question with Ellie even when the old hand-off is due', async () => {
+    const start = new FakeClock().now();
+    let session = openSession({ id: 'fs_ready', documentId: 'room_test' }, start - 8 * 60_000);
+    session = {
+      ...session,
+      lastActivityAt: start,
+      gapDeadlineTs: start + session.profile.sessionGapMs,
+      learnerTurns: [start - 180_000, start - 120_000, start - 60_000],
+    };
+    const taught: TaughtItem[] = [
+      { elementId: 'R1', taughtAt: start - 7 * 60_000, by: 'teacher', sessionId: 'fs_ready', label: 'the PSD condition' },
+      { elementId: 'R2', taughtAt: start - 6 * 60_000, by: 'teacher', sessionId: 'fs_ready', label: 'the domain' },
+    ];
+    for (const anchor of [DOC, SPAN]) {
+      const h = build({ flowState: { session, taught } });
+      await settle(h.clock, h.actor.sendMessage('what is the side channel?', anchor));
+      expect(rules(h)).toEqual(['rule:ellie_answers', 'rule:max_followup']);
+      expect(h.store.messages.forRoom(h.roomId).some((m) => m.model === 'rule:handoff')).toBe(false);
+    }
   });
 
   /**
