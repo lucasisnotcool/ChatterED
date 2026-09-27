@@ -3,6 +3,17 @@
     "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && [ \"$(git config --get core.hooksPath)\" = .githooks ] || git config core.hooksPath .githooks",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Agent",
