@@ -1,7 +1,7 @@
 /**
  * The chats' IPC bodies (#48). **Track T6 owns this file** — the lead placed only the hook.
  * Channels: `notes:docText`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
- * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`. See `app/docs/COLLAB-CONTRACT.md`.
+ * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`, `chat:closeFile`. See `app/docs/COLLAB-CONTRACT.md`.
  *
  * **Three things these handlers decide, and the renderer does not.**
  *
@@ -24,8 +24,9 @@
 
 import { DOC_ANCHOR_ID, SPAN_THREAD_PREFIX } from '../../shared/doc/types.js';
 import type { AgentAuthor, ChatResetResult, ChatView, ThreadView } from '../../shared/doc/types.js';
-import { referenceContext } from '../flowroom.js';
+import { referenceContext, saveFlowState } from '../flowroom.js';
 import type { ReferenceContext } from '../../room/reference.js';
+import type { RoomActor } from '../../room/actor.js';
 import { segmentContext } from '../../room/reference.js';
 import { newId } from '../sessions.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
@@ -427,6 +428,26 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
   );
 
   /**
+   * **The learner closed the file** (brief §4.7: closure fires when "the file is closed"; #49).
+   *
+   * Sent by the renderer when the three-column view unmounts: the doc header's Close, or opening
+   * another file in its place. Only the room that is open, and only if it is this file's: a
+   * close is never a reason to open a room, and `roomForFile` would. The release is dispatched,
+   * not awaited (`closeFileQuestions`), so the close is never held up by a model turn. A quit
+   * does not come through here: `before-quit` cannot wait for a turn either, so it saves the
+   * sitting with the question open (`AppService.dispose`) and the idle rule releases it when the
+   * file is next opened.
+   */
+  handle<{ fileId: string }>('chat:closeFile', (input): { closing: boolean } => {
+    const current = host.currentActor();
+    if (!current) return { closing: false };
+    const roomId = current.snapshot().roomId;
+    if (host.fileForRoom(roomId) !== input.fileId) return { closing: false };
+    closeFileQuestions(host, roomId);
+    return { closing: true };
+  });
+
+  /**
    * **New Conversation** (2026-09-23): start the file's conversational chain over.
    *
    * The confirm is asked here, in main, so the doc-chat button and the menu item cannot differ
@@ -470,21 +491,33 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
  *
  * Fire-and-forget by design. §E3's rule is that a close is never blocked on a model call — the
  * renderer is unmounting and the actor may be disposed before a 9–12 s Max turn can land — so this
- * dispatches the release and returns. The lead wires it to file close and `app.before-quit`; the
- * inactivity-gap half of §4.7 is the actor's own clock and is T3's.
+ * dispatches the release and returns. Its caller is `chat:closeFile`, the file close. Not
+ * `before-quit`: the process is gone before a dispatched turn could land, so a quit saves the
+ * sitting with the question open and `RoomActor.start` releases it on the next visit, once the
+ * gap has passed (#49). The inactivity-gap half of §4.7 is the actor's own clock.
  */
 export function closeFileQuestions(host: DocHost, roomId: string): void {
-  let target: DocActor;
+  let actor: RoomActor;
   try {
-    target = docActor(host.actorFor(roomId));
+    actor = host.actorFor(roomId);
   } catch {
-    // Not the open room any more: its question was closed when the actor was stopped.
+    // Not the open room any more: its question stays in its stored sitting, and the idle rule
+    // releases it when the file is next opened (`RoomActor.start`).
     return;
   }
+  const target: DocActor = docActor(actor);
   if (!actorHas(target, 'closeOpenQuestion')) return;
   void Promise.resolve(target.closeOpenQuestion('closure'))
     .then(() => {
-      host.persistFlow();
+      /**
+       * **This room's sitting, not the open one's** (#49). Closing a file and opening the next is
+       * one gesture, so by the time the release lands `openRoom` has usually stopped this actor
+       * and put another in its place — and `persistFlow` saves whichever is open. Saved there,
+       * the question this turn closed would be restored as open on the next visit and released
+       * twice.
+       */
+      if (host.currentActor() === actor) host.persistFlow();
+      else saveFlowState(host.store, roomId, actor.flowSnapshot());
       const fileId = host.fileForRoom(roomId);
       if (fileId) void emitProgress(host, fileId);
     })

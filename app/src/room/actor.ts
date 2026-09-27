@@ -749,6 +749,13 @@ export class RoomActor {
      * that elapsed while the app was shut closes on the first tick after it comes back.
      */
     this.#stopClosureTick = this.#d.clock.setInterval(() => this.#tickClosure(), CLOSURE_TICK_MS);
+    /**
+     * …and once now, for a sitting restored from before a quit (#49). A quit records the open
+     * question rather than waiting for a model turn; this is where that debt is paid. Waiting for
+     * the first interval left 30 s in which the learner's first act rolled the stale sitting over
+     * (`#noteLearnerActivity`), after which no tick could see that it had gone idle.
+     */
+    this.#tickClosure();
   }
 
   stop(): void {

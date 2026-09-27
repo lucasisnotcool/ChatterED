@@ -74,6 +74,11 @@ export class FakeActor {
   closeOpenQuestion: DocActorMethods['closeOpenQuestion'] = async (...args) => {
     this.#record('closeOpenQuestion', args);
   };
+  /** The room this actor is on; set by `fakeHost`. */
+  roomId = '';
+  snapshot = (): { roomId: string } => ({ roomId: this.roomId });
+  /** A sitting with nothing in it, so a test can tell it was saved. */
+  flowSnapshot = () => ({ session: null, taught: [], pendingQuiz: null, answers: [] });
 
   /** Drop a method from the object, the way a build where T3 has not landed would have it. */
   omit(...methods: (keyof DocActorMethods)[]): this {
@@ -121,6 +126,7 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
   const { db, store } = openTestDb();
   const seeded = seedRoom(store);
   const actor = new FakeActor();
+  actor.roomId = seeded.roomId;
   const events: RoomEvent[] = [];
   const fileId = opts.fileId ?? FILE_ID;
   const contentSha = opts.contentSha ?? SHA;

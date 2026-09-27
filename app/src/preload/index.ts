@@ -83,6 +83,7 @@ const api: ChatterEdApi = {
   chatPrivateSend: (input) => ipcRenderer.invoke(IPC.chatPrivateSend, input),
   chatInsertIntoDoc: (input) => ipcRenderer.invoke(IPC.chatInsertIntoDoc, input),
   chatReset: (input) => ipcRenderer.invoke(IPC.chatReset, input),
+  chatCloseFile: (input) => ipcRenderer.invoke(IPC.chatCloseFile, input),
   quizPass: (input) => ipcRenderer.invoke(IPC.quizPass, input),
   progressGet: (input) => ipcRenderer.invoke(IPC.progressGet, input),
   progressStart: (input) => ipcRenderer.invoke(IPC.progressStart, input),

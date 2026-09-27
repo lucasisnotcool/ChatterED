@@ -608,10 +608,25 @@ class Store {
     const doc = await run(this, () => bridge().openDocument({ fileId }));
     this.docBusy = false;
     if (!doc) return;
+    const leaving = this.openDoc?.fileId ?? null;
     this.openDoc = doc;
+    // Opening another file in its place closes the one that was open (§4.7).
+    if (leaving !== null && leaving !== doc.fileId) this.#leaveFile(leaving);
+  }
+
+  /**
+   * **The learner closed a file** (brief §4.7: closure fires on idle *or* file close; #49). Main
+   * releases Max's open question on it, if the file's room is the open one, and the close does
+   * not wait for the turn. Only the two gestures that close a file call this: the doc header's
+   * Close and opening another file. Switching to the Page viewer or to Settings is not a close.
+   */
+  #leaveFile(fileId: string): void {
+    if (has('chatCloseFile')) void quiet(() => bridge().chatCloseFile({ fileId }));
   }
 
   closeDoc(): void {
+    const leaving = this.openDoc?.fileId ?? null;
+    if (leaving !== null) this.#leaveFile(leaving);
     this.openDoc = null;
     this.selectedFileId = null;
     this.docSelection = '';

@@ -1531,6 +1531,11 @@ export function createMockBridge(): ChatterEdApi {
       const confirmed = typeof window !== 'undefined' && typeof window.confirm === 'function' ? window.confirm('Start a new conversation?') : true;
       return { confirmed, reset: confirmed };
     },
+    /** §4.7's file close. The mock has no idle clock and no closure turn, so nothing is released. */
+    async chatCloseFile({ fileId }) {
+      void fileId;
+      return { closing: false };
+    },
     /** §4.4's Pass. The same release the give-up phrases get, and it fills nothing either. */
     async quizPass({ threadId }) {
       const t = chatThreadMap.get(threadId);

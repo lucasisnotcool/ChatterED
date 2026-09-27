@@ -4,6 +4,7 @@ import type { ChatView } from '../../shared/doc/types.js';
 import { fakeHost, handlerTable, objective, type FakeHost } from './fakehost.test-support.js';
 import { resetDocCache } from './doc.js';
 import { closeFileQuestions, registerDocRoomIpc, resetDocTextState } from './ipc.js';
+import { loadFlowState } from '../flowroom.js';
 
 const CLAIM = 'A matrix is positive semidefinite when every eigenvalue is at least zero.';
 
@@ -414,6 +415,47 @@ describe('closeFileQuestions', () => {
     const fx = fakeHost({ doc: deck() });
     fx.actor.omit('closeOpenQuestion');
     expect(() => closeFileQuestions(fx.host, fx.roomId)).not.toThrow();
+    expect(fx.actor.calls).toEqual([]);
+  });
+
+  /**
+   * Opening another file stops this room's actor while its closure turn is still out (#49). What
+   * it closed has to be saved as *this* room's sitting: `persistFlow` saves the open actor, which
+   * by then is the other file's, and a relaunch would restore the question as open and release
+   * it a second time.
+   */
+  it('saves the closed room’s own sitting once the release lands, even after another room opened', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const other = { snapshot: () => ({ roomId: 'room_other' }) };
+    closeFileQuestions(fx.host, fx.roomId);
+    Object.assign(fx.host, { currentActor: () => other });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(loadFlowState(fx.store, fx.roomId)).toEqual(fx.actor.flowSnapshot());
+  });
+});
+
+describe('chat:closeFile', () => {
+  it('releases the open question of the file being closed, without waiting for it', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const out = await wire(fx).call<{ closing: boolean }>('chat:closeFile', { fileId: 'f_deck' });
+    expect(out).toEqual({ closing: true });
+    expect(fx.actor.last('closeOpenQuestion')!.args).toEqual(['closure']);
+    // A read path: closing a file never opens a room.
+    expect(fx.opened).toEqual([]);
+  });
+
+  it('leaves the open room alone when it belongs to another file', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const out = await wire(fx).call<{ closing: boolean }>('chat:closeFile', { fileId: 'f_other' });
+    expect(out).toEqual({ closing: false });
+    expect(fx.actor.calls).toEqual([]);
+  });
+
+  it('does nothing when no room is open', async () => {
+    const fx = fakeHost({ doc: deck() });
+    Object.assign(fx.host, { currentActor: () => null });
+    const out = await wire(fx).call<{ closing: boolean }>('chat:closeFile', { fileId: 'f_deck' });
+    expect(out).toEqual({ closing: false });
     expect(fx.actor.calls).toEqual([]);
   });
 });

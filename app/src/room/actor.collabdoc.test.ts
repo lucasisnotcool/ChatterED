@@ -731,6 +731,47 @@ describe('releasing and closing a question', () => {
     expect(h.doc.outcomes.filter((o) => o.releasedBy === 'closure')).toHaveLength(1);
   });
 
+  /**
+   * **A quit records the question; the relaunch pays it** (§4.7, #49). A quit cannot wait for a
+   * model turn, so the open question goes to SQLite with the sitting (`AppService.dispose`). When
+   * the file is next opened after the gap, the debt is paid at once: the first closure tick used
+   * to come 30 s after the room opened, and a learner who typed before it rolled the stale
+   * sitting over into a new one, so the question was never released.
+   */
+  it('releases a question whose sitting went idle while the app was shut, before the learner’s first act', async () => {
+    const h = await withOpenQuestion();
+    const stored = h.actor.flowSnapshot();
+    h.actor.stop();
+    h.clock.advance(21 * 60_000);
+
+    let n = 1000;
+    const relaunched = new RoomActor({
+      store: h.store,
+      groupStore: groupView(h.store),
+      clock: h.clock,
+      transport: { emit: (e) => h.events.push(e) },
+      llm: h.llm,
+      roomId: h.roomId,
+      sessionId: h.sessionId,
+      roster: rosterFor('ellie_peer'),
+      pack: PSD_HESSIAN_CONVEXITY_V1,
+      models: API_PLAN,
+      config: { ...DEFAULT_ROOM_CONFIG, mode: 'scripted' },
+      appVersion: '0.1.0-test',
+      newId: (prefix) => `${prefix}_r${(n += 1)}`,
+      random: () => 0.5,
+      docPort: h.doc.port,
+      flowState: stored,
+    });
+    relaunched.start();
+    // The learner asks something straight away, inside the first tick's 30 s.
+    await settle(h.clock, relaunched.sendMessage('what does a strict subset mean here?', DOC));
+
+    expect(rules(h)).toContain('rule:closure');
+    expect(h.doc.outcomes.filter((o) => o.releasedBy === 'closure')).toHaveLength(1);
+    relaunched.stop();
+  });
+
   it('is a no-op when nothing is open, so a file close is always safe to call', async () => {
     const h = build();
     await expect(h.actor.closeOpenQuestion('closure')).resolves.toBeUndefined();

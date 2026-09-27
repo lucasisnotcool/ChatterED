@@ -426,6 +426,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   log().info('app.quit', {});
+  // An open Max question is saved with the sitting, not released: a quit cannot wait for his turn.
+  // It is released when the file is next opened after the idle gap (`RoomActor.start`, §4.7, #49).
   service?.dispose();
   onIntervalActivity(null);
   if (powerBlockerId !== null) powerSaveBlocker.stop(powerBlockerId);

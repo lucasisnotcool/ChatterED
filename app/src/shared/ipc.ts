@@ -164,6 +164,7 @@ export const IPC = {
   chatInsertIntoDoc: 'chat:insertIntoDoc',
   quizPass: 'quiz:pass',
   chatReset: 'chat:reset',
+  chatCloseFile: 'chat:closeFile',
   // Progress. Bodies in `src/main/docroom/progress.ts`.
   progressGet: 'progress:get',
   progressStart: 'progress:start',
@@ -559,6 +560,11 @@ export interface ChatterEdApi {
    * The next message opens a fresh room.
    */
   chatReset(input: { fileId: string }): Promise<ChatResetResult>;
+  /**
+   * **The learner closed the file** (brief §4.7). Main releases Max's open question on it, if the
+   * file's room is the open one, and does not wait for the turn. Never opens a room.
+   */
+  chatCloseFile(input: { fileId: string }): Promise<{ closing: boolean }>;
 
   progressGet(input: { fileId: string }): Promise<ProgressView>;
   /** A lesson card's Start: Ellie's intro in the doc chat; returns where to scroll (brief §6). */
