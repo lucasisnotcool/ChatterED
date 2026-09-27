@@ -901,17 +901,6 @@ export class RoomActor {
        * sent message is the end of the sentence).
        */
       this.#typingUntil = 0;
-      /**
-       * **"Simpler" is data, not a mood** (#41). Every learner turn is read for a pitch signal
-       * before anything is decided, so the correction the learner makes on turn 2 is in the
-       * prompt on turn 3 — and on every turn after that, on this file. `notePitch` returns the
-       * same object when nothing fired, so an ordinary turn costs a regex sweep and no write.
-       */
-      const pitched = notePitch(this.#pitch, body, this.#d.clock.now());
-      if (pitched !== this.#pitch) {
-        this.#pitch = pitched;
-        this.#event('student', 'flow.pitch', { level: pitched.level, signal: pitched.signals[0] ?? null });
-      }
       this.#noteLearnerActivity('turn', anchorId);
       const row = this.#insertMessage({
         participantId: this.#studentParticipant().id,
@@ -961,6 +950,26 @@ export class RoomActor {
         origin = 'ask';
       }
       this.#lastLearnerTurn = origin === 'ask' ? null : classifyLearnerTurn(body);
+      /**
+       * **"Simpler" is data, not a mood** (#41). Every learner turn is read for a pitch signal
+       * before anything is decided, so the correction the learner makes on turn 2 is in the
+       * prompt on turn 3 — and on every turn after that, on this file. `notePitch` returns the
+       * same object when nothing fired, so an ordinary turn costs a regex sweep and no write.
+       *
+       * **Except an answer to Max** (#49): a turn that counts as an attempt at his open question
+       * is about the material, and a word in it such as *"simplify"* or *"too complex"* describes
+       * the problem, not Ellie's explanation. It is read after the classifier for that reason.
+       */
+      const answersOpenQuiz =
+        origin !== 'ask' &&
+        this.#pendingQuiz !== null &&
+        quizOpen(this.#pendingQuiz) &&
+        this.#lastLearnerTurn === 'attempt';
+      const pitched = answersOpenQuiz ? this.#pitch : notePitch(this.#pitch, body, this.#d.clock.now());
+      if (pitched !== this.#pitch) {
+        this.#pitch = pitched;
+        this.#event('student', 'flow.pitch', { level: pitched.level, signal: pitched.signals[0] ?? null });
+      }
       /**
        * **An Ask never touches the open question.** Not the attempt count, not the answer lock, not
        * the feedback debt: it is a question for Ellie, and counting it would unlock the answer to

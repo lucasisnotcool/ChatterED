@@ -44,14 +44,33 @@ const MAX_SIGNALS = 3;
  * **Lower the pitch.** Read `conversation-refinement.md` §1: every one of these is a phrase a
  * learner used in #36, #37 or #41 to say the answer was above them. "No idea" is here as well as
  * in the Teacher's no-question rule (#36) — it means both things at once.
+ *
+ * **Only the form of a request counts** (#49). A bare `simplify`, `basic`, `from scratch` or
+ * `too much` is as often the content of an answer as a request about the explanation — *"Oh it can
+ * simplify the reduce degrees of freedom of CNF formula"* was an answer to Max, and it lowered the
+ * pitch for the rest of the file. So the words that double as content only count in a request
+ * shape: a verb asking for it (*"explain it simpler"*, *"can you simplify"*), a short message that
+ * is nothing else (*"simpler please"*), or a clause that ends on it (*"slow down."*). The match is
+ * the word the learner used, so the prompt still quotes *"simpler"*, not the sentence around it.
  */
+const TAIL = String.raw`(?=(?: (?:please|pls|for me|a bit|a little))?\W*(?:$|[.,!?;]))`;
 const LOWER: RegExp[] = [
-  /\bsimpl(er|y|est|ify)\b/i,
+  // "explain it simpler", "say that a bit more simply": asked of the explanation, by verb.
+  /(?<=\b(?:explain|say|describe|word|phrase)(?: (?:it|that|this|them))?(?: (?:a bit|a little|much|way|even))?(?: more)? )simpl(?:er|y)\b(?! (?:to|than)\b)/i,
+  // "make it simpler", "put it more simply": only with the object and at the end of a clause.
+  new RegExp(String.raw`(?<=\b(?:put|make|keep) (?:it|that|this|them)(?: (?:a bit|a little|much|way|even))?(?: more)? )simpl(?:er|y)\b${TAIL}`, 'i'),
+  // "simpler", "hmm, simpler?", "simpler please": a message that is nothing but the request.
+  /(?<=^\W*(?:[\w']+\W+){0,2})simpl(?:er|y)(?=\W*(?:please|pls)?\W*$)/i,
+  /\bsimpler(?= (?:please|pls|terms|words|explanation|language)\b)/i,
+  // "can you simplify that", "simplify please".
+  /(?<=\b(?:can|could|would|will) you (?:please |pls |just )?)simplify\b/i,
+  /(?<=^\W*(?:please |pls )?)simplify\b/i,
   /\beli ?5\b/i,
   /\bexplain (it )?like (i'?m|i am) (5|five)\b/i,
   /\bno idea\b/i,
-  /\b(i )?(don'?t|do not|didn'?t) (get|understand|follow)\b/i,
-  /\btoo (complicated|complex|technical|abstract|much|fast)\b/i,
+  /(?:^|\bi (?:still |really |just )?)(?:don'?t|do not|didn'?t|did not) (?:get|understand|follow)\b/i,
+  /\btoo (complicated|complex|technical|abstract)\b/i,
+  new RegExp(String.raw`\btoo (?:much|fast)${TAIL}`, 'i'),
   /\breading the slides? back\b/i,
   /\brepeating the slides?\b/i,
   /\bjust reading\b/i,
@@ -60,10 +79,11 @@ const LOWER: RegExp[] = [
   /\b(in )?plain (english|terms|words)\b/i,
   /\bdumb(ed)? (it )?down\b/i,
   /\blay ?man'?s?\b/i,
-  /\bfrom scratch\b/i,
-  /\bbasics?\b/i,
-  /\bslow(er)? down\b/i,
-  /\bconcrete example\b/i,
+  /\b(?:explain|teach|go through|walk (?:me|us) through)(?: (?:it|that|this|them))? from scratch\b/i,
+  // Plural only: "the basic idea" is content; "back to basics", "the basics first" is a request.
+  /\bbasics\b/i,
+  new RegExp(String.raw`\bslow(?:er)? down${TAIL}`, 'i'),
+  /\b(?:give|show)(?: me| us)?(?: (?:a|an|one|some|another))? concrete examples?\b|\bconcrete examples? (?:please|pls)\b/i,
 ];
 
 /** **Raise it.** The learner who wants the derivation, and says so. */

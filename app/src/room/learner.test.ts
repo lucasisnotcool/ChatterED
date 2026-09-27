@@ -194,6 +194,29 @@ describe('through the real actor', () => {
     expect(h.store.events.forSession(h.sessionId).some((e) => e.type === 'flow.pitch')).toBe(true);
   });
 
+  /**
+   * **An answer to Max is not a request about the explanation** (#49). The words of an attempt
+   * are about the material; *"too complex"* inside one describes the problem, not Ellie's answer.
+   */
+  it('does not read an attempt at Max’s open question for a pitch signal', async () => {
+    const h = build();
+    const objectiveId = PSD_HESSIAN_CONVEXITY_V1.elements[0]!.id;
+    await settle(h.clock, h.actor.tryHere({ anchorId: 'seg_3', objectiveId }));
+    expect(h.actor.pendingQuizView()).not.toBeNull();
+
+    await settle(
+      h.clock,
+      h.actor.sendMessage(
+        'Checking every point directly is too complex, so a Hessian that is PSD everywhere is what shows f is convex',
+        'seg_3',
+      ),
+    );
+
+    expect(h.actor.flowSnapshot().pendingQuiz!.attempts).toBe(1);
+    expect(h.actor.flowSnapshot().pitch.level).toBe(0);
+    expect(h.store.events.forSession(h.sessionId).some((e) => e.type === 'flow.pitch')).toBe(false);
+  });
+
   it('carries the pitch across a quit, and drops it on Reset', async () => {
     const h = build();
     await settle(h.clock, h.actor.sendMessage('no idea, can you say that simpler', 'seg_3'));

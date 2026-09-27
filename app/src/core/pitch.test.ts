@@ -12,7 +12,7 @@
  * statement about the question, not about the learner.
  */
 import { describe, expect, it } from 'vitest';
-import { pitchBlock, pitchInputs, pitchLine, notePitch, DEFAULT_PITCH, type PitchOutcome } from './pitch.js';
+import { pitchBlock, pitchInputs, pitchLine, pitchSignal, notePitch, DEFAULT_PITCH, type PitchOutcome } from './pitch.js';
 
 const verdict = (v: 'complete' | 'partial' | 'not_yet', objectiveId: string | null = 'obj_1'): PitchOutcome => ({
   objectiveId,
@@ -157,5 +157,87 @@ describe('the two pitches are not the same pitch', () => {
     expect(pitchLine(lowered)).toContain('lower than the slide');
     // …and the next question is still pitched by the results, not by that phrase.
     expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [verdict('complete')], fill: 1 }).pitch).toBe('harder');
+  });
+});
+
+/**
+ * **Only a request is a signal** (#49). In Lucas's 2026-09-23 run an answer to Max, *"Oh it can
+ * simplify the reduce degrees of freedom of CNF formula"*, matched a bare `simplify` and lowered
+ * the pitch for the rest of the file. Nothing had been asked for: *simplify* was the content of
+ * the answer. So each lowering pattern needs the form of a request (*"simpler please"*, *"can you
+ * simplify"*, *"explain it more simply"*, *"ELI5"*, *"too complex"*), and a content word on its own
+ * is not one.
+ */
+describe('pitchSignal', () => {
+  it('ignores simpl-, basic and the other content words when nothing is being asked for', () => {
+    for (const line of [
+      'Oh it can simplify the reduce degrees of freedom of CNF formula',
+      'Simply put, the agent picks the action with the highest value',
+      'Relaxation gives a simpler problem, so the heuristic is cheap to compute',
+      'is A* simpler than BFS here?',
+      'the basic idea is that the heuristic never overestimates',
+      'what are the basic operators in STRIPS?',
+      'it rebuilds the plan from scratch every time the goal changes',
+      'a concrete example is the air cargo problem on p. 12',
+      'it will slow down the search because the branching factor is large',
+      'it uses too much memory on large grids',
+      'the planner did not get stuck because the heuristic is admissible',
+    ]) {
+      expect(pitchSignal(line), line).toBeNull();
+    }
+  });
+
+  it('still reads a request for a lower pitch, in the forms learners use', () => {
+    for (const line of [
+      'hmm can you explain it simpler',
+      'simpler please',
+      'simpler?',
+      'can you simplify that?',
+      'could you please simplify',
+      'explain it more simply',
+      'say that a bit more simply please',
+      'in simpler terms please',
+      'can you make it simpler, like for a kid',
+      'ELI5',
+      'explain like I am five',
+      'this is too complex',
+      'that is too much',
+      'can we go back to basics',
+      'explain it from scratch',
+      'slow down please',
+      "I don't get it",
+      'no idea what that means',
+      'can you give me a concrete example?',
+      'you are just reading the slides back to me',
+    ]) {
+      expect(pitchSignal(line)?.direction, line).toBe(-1);
+    }
+  });
+
+  it('quotes the word the learner used for it', () => {
+    expect(pitchSignal('hmm can you explain it simpler')).toEqual({ direction: -1, phrase: 'simpler' });
+    expect(pitchSignal('could you simplify that?')).toEqual({ direction: -1, phrase: 'simplify' });
+  });
+
+  it('reads a raise, and lets a lower win when one message says both', () => {
+    expect(pitchSignal('give me the rigorous version')?.direction).toBe(1);
+    expect(pitchSignal('too complicated, can you explain it as a concept, then the rigorous version')?.direction).toBe(-1);
+    expect(pitchSignal('what is stochastic?')).toBeNull();
+    expect(pitchSignal('   ')).toBeNull();
+  });
+});
+
+describe('notePitch', () => {
+  it('returns the same object when nothing was asked for, so an answer costs no write', () => {
+    const state = notePitch(DEFAULT_PITCH, 'Oh it can simplify the reduce degrees of freedom of CNF formula', 1_000);
+    expect(state).toBe(DEFAULT_PITCH);
+  });
+
+  it('moves one level on a request and records the phrase and the time', () => {
+    expect(notePitch(DEFAULT_PITCH, 'simpler please', 1_000)).toEqual({
+      level: -1,
+      signals: ['simpler'],
+      updatedAt: 1_000,
+    });
   });
 });
