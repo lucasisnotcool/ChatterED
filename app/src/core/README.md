@@ -1,9 +1,12 @@
 # `app/src/core`: the shared core
 
 Pure TypeScript learner-turn logic that ChatterED's A1 design and the teammate's A1 design
-(Nudge: response-contingent help, fading) both need. **This is `SCOPE.md` zone 2**: the code the
-group project takes, and the one part of this repo a teammate may read at any time. Everything
-else in `app/` is the ChatterED app, which is Lucas's individual A2.
+(Nudge: response-contingent help, fading) both need. It lives in two places:
+
+- **In ChatterED** (`app/src/core/`) it is the source, `SCOPE.md` zone 2. Everything else in
+  ChatterED's `app/` is the ChatterED app, which is Lucas's individual A2.
+- **In the group repo** (`core/`) it is a mirror of that source, pinned by `core/SOURCE`, until the
+  group project starts. Paths below such as `room/ledger.ts` are ChatterED files.
 
 ## What is in it (v0, 2026-09-26, #54)
 
