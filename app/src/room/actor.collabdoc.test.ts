@@ -1224,3 +1224,42 @@ describe('rebind with a pacing profile', () => {
     reopened.stop();
   });
 });
+
+// ── progress-tracking.md §1.1: ● needs a reply to Max's question on that element ──
+
+describe('the defended gate', () => {
+  /**
+   * **#49's audit.** The ledger was handed every element Max had ever asked about in the room, so
+   * any later message on one of them could be scored level 3 (● Defended). The brief allows level
+   * 3 only on a message that answers Max's probe on that element.
+   */
+  it('lets level 3 through only on the reply to Max’s question, not on a message in another thread', async () => {
+    let target: string | null = null;
+    const reply: Reply = (request) => {
+      if (request.meta.scope !== 'ledger' || target === null) return null;
+      const said = request.messages.at(-1)!.content;
+      const evidence = [ELSEWHERE, ANSWER].find((t) => said.includes(t)) ?? ANSWER;
+      return JSON.stringify({
+        schema: 'ledger.v1',
+        concept_id: PSD_HESSIAN_CONVEXITY_V1.concept_id,
+        message_id: 'm',
+        elements: [{ id: target, level: 3, evidence, confidence: 0.9 }],
+      });
+    };
+    const ELSEWHERE = 'the side channel lets me ask the agent privately without the whole group reading it';
+    const ANSWER = 'the side channel is a private thread with one agent that the rest of the group never sees';
+    const h = build({}, null, reply);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    target = decisions(h).find((d) => d.decided_by === 'rule:max_followup')!.target_element_id;
+    expect(target).not.toBeNull();
+    const level = () => h.store.ledger.forSession(h.sessionId).find((r) => r.element_id === target)!.level;
+
+    // A long claim about the same element, typed in another thread while Max's question waits.
+    await settle(h.clock, h.actor.sendMessage(ELSEWHERE, SPAN));
+    expect(level()).toBe(2);
+
+    // The answer in the question's own thread is the reply the brief means.
+    await settle(h.clock, h.actor.sendMessage(ANSWER, DOC));
+    expect(level()).toBe(3);
+  });
+});

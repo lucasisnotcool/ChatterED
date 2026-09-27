@@ -419,7 +419,16 @@ export class RoomActor {
   /** Set by `retire()`: this room's conversation was reset, and nothing it still has in flight may land. */
   #retired = false;
   #thinking: ThinkingView | null = null;
-  #challenged = new Set<string>();
+  /**
+   * **Which of Max's questions a learner message answered** (progress-tracking.md §1.1). An
+   * element may reach level 3 only "on a message that answers an Max probe targeting that
+   * element". Until 2026-09-27 the ledger was handed every element Max had *ever* challenged in
+   * the room, so any later message about one of them could be scored ● Defended (#49's audit).
+   * `#openChallenge` is the latest probe not yet replied to; `#answered` maps each learner message
+   * to the elements of the probe or open question it replied to.
+   */
+  #openChallenge: string[] = [];
+  #answered = new Map<string, Set<string>>();
   #studentTurns = 0;
   #silenceFires = 0;
   #whisperTurns = 0;
@@ -741,7 +750,6 @@ export class RoomActor {
         },
       },
     });
-    this.#loadChallenged();
   }
 
   // ── lifecycle ─────────────────────────────────────────────────────────────
@@ -982,6 +990,7 @@ export class RoomActor {
        */
       // Only an **open** question takes the turn (#49, brief §5.3: a question resolves once). After
       // a release or a *Well done* the learner's next message follows the ordinary rules.
+      this.#noteReply(row.id, origin !== 'ask');
       if (this.#pendingQuiz && quizOpen(this.#pendingQuiz) && origin !== 'ask') {
         this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
@@ -2037,6 +2046,7 @@ export class RoomActor {
       this.#mentionRest = null;
       // A closed question is not re-opened by doc text either (#49), and text under another
       // objective's block does not answer it.
+      this.#noteReply(row.id, answersQuiz);
       if (this.#pendingQuiz && quizOpen(this.#pendingQuiz) && answersQuiz) {
         this.#noteBeforeAttempt();
         this.#pendingQuiz = answerQuiz(this.#pendingQuiz, row.id, {
@@ -2837,7 +2847,7 @@ export class RoomActor {
     if (trigger !== 'silence') this.#stages = silenceStagesMs(wordCount(text), (this.#flow?.profile ?? this.#d.flowProfile ?? FLOW).silenceScale);
     this.#lastFillWasScaffold = trigger === 'silence' && opts.silenceStage === 2;
     if (decision.probeType) this.#lastProbeType = decision.probeType;
-    for (const id of decision.challenges) this.#challenged.add(id);
+    if (decision.role === 'challenger' && decision.challenges.length > 0) this.#openChallenge = [...decision.challenges];
     this.#armTimer(trigger === 'silence');
 
     /**
@@ -3457,7 +3467,7 @@ export class RoomActor {
       current,
       studentMessages,
       triggerMessage: trigger,
-      challengedElementIds: this.#challenged,
+      challengedElementIds: this.#answered.get(trigger.id) ?? new Set<string>(),
       defenceLabel: (elementId) => this.#defenceLabel(elementId),
       now: this.#nowIso(),
     });
@@ -4757,14 +4767,16 @@ export class RoomActor {
     });
   }
 
-  #loadChallenged(): void {
-    for (const d of this.#d.store.turnDecisions.forRoom(this.#d.roomId)) {
-      try {
-        for (const id of JSON.parse(d.challenged_element_ids) as string[]) this.#challenged.add(id);
-      } catch {
-        /* a decision row written by an older build */
-      }
-    }
+  /**
+   * Records what learner message `messageId` replied to: the latest unanswered probe, plus the
+   * open question's element when the message is in that question's thread (`inQuizThread`).
+   * A reply consumes the probe, so only the first message after it counts as answering it.
+   */
+  #noteReply(messageId: string, inQuizThread: boolean): void {
+    const ids = new Set(inQuizThread ? this.#openChallenge : []);
+    if (inQuizThread && this.#pendingQuiz && quizOpen(this.#pendingQuiz)) ids.add(this.#pendingQuiz.elementId);
+    if (ids.size > 0) this.#answered.set(messageId, ids);
+    if (inQuizThread) this.#openChallenge = [];
   }
 
   #defenceLabel(elementId: string): string | null {
