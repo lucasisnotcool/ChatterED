@@ -17,6 +17,7 @@ import { PROMPT_VERSION, quizBlock, roleBlock, sharedBlock, teachObjectiveBlock,
 import type { AgentProfile } from '../shared/types.js';
 import type { ConceptPack, MaterialRow } from './records.js';
 import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
+import { ellieAnswersBlock } from './prompts.doc.js';
 
 const ELLIE: AgentProfile = {
   key: 'peer.ellie',
@@ -188,6 +189,33 @@ describe('length fits the job', () => {
     }
     // And it says *why* the list is closed, which is the half a model acts on.
     expect(s).toContain('prints anything else as the literal characters you typed');
+  });
+
+  /**
+   * **House rule 9 bans backtick code, so no chat-turn prompt may show one** (#49). The grounds
+   * format was written as `` `p. N: "…"` `` in the very blocks that ask for it, and a model copies
+   * the format it is shown, backticks included.
+   */
+  it('shows no backtick in any block a chat turn is built from', () => {
+    const blocks = [
+      roleBlock('peer', ELLIE, MAX),
+      roleBlock('challenger', MAX, ELLIE),
+      ...(['question', 'feedback', 'answer', 'clarify'] as const).map(
+        (turn) => quizBlock({ label: 'x', seeds: ['s'], demonstration: ['c'], turn })!,
+      ),
+      ...['answer_then_teach', 'quiz', 'quiz_hint', 'quiz_answer', 'quiz_clarify', 'quiz_feedback', 'peer_guess',
+        'max_prompt', 'lesson_start', 'mention_reply', 'teach_objective'].map((move) =>
+        turnDirective({ agentRole: move === 'answer_then_teach' ? 'peer' : 'challenger', move, byRule: 'rule:max_followup' }),
+      ),
+      turnDirective({ agentRole: 'peer', move: 'answer_then_teach', docChat: true }),
+      ellieAnswersBlock({ page: 4 }),
+      ellieAnswersBlock({}),
+      ellieAnswersBlock({ notesTakeTheRest: false }),
+    ];
+    for (const block of blocks) expect(block, block.slice(0, 80)).not.toContain('`');
+    // The format itself is still asked for, in plain characters.
+    expect(flat(quizBlock({ label: 'x', seeds: [], demonstration: ['c'], turn: 'feedback' })!)).toContain('as p. N: “…”');
+    expect(ellieAnswersBlock({ page: 4 })).toContain('name p. 4 in the answer');
   });
 });
 

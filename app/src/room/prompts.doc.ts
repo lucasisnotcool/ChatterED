@@ -73,12 +73,12 @@ export function ellieAnswersBlock(input: { page?: number | null; notesTakeTheRes
    */
   if (typeof input.page === 'number') {
     lines.push(
-      `**Say which slide this is about**: name \`p. ${input.page}\` in the answer, and if you have to`,
+      `**Say which slide this is about**: name p. ${input.page} in the answer, and if you have to`,
       'reach elsewhere in the deck to explain it, come back and land it there.',
     );
   } else {
     lines.push(
-      '**Say which slide this is about** as `p. N` somewhere in the answer. An answer with no page',
+      '**Say which slide this is about** as p. N somewhere in the answer. An answer with no page',
       'on it is one the learner cannot check, and three rounds later neither of you knows where it',
       'started.',
     );

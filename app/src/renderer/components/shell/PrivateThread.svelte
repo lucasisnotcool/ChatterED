@@ -186,6 +186,13 @@
   .body :global(p:last-child) { margin-bottom: 0; }
   .body :global(strong) { font-weight: 600; }
   .body :global(em) { font-style: italic; }
+  .body :global(code) {
+    font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+    font-size: 0.9em;
+    background: #f1f1f6;
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
   .body :global(.katex) { font-family: inherit; font-size: 1em; }
 
   .acts { margin-top: 9px; }

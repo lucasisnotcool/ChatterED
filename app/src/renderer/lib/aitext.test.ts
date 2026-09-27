@@ -125,14 +125,38 @@ describe('the markdown subset (issue #41)', () => {
 
   it('leaves everything outside the subset as literal text', () => {
     // No headings, no links, no blockquotes, no code fences, no tables.
-    const html = paragraphs('# Heading\n\n[a](http://x)\n\n> quote\n\n`code`');
+    const html = paragraphs('# Heading\n\n[a](http://x)\n\n> quote\n\n```\nfenced\n```');
     expect(html).not.toContain('<h1');
     expect(html).not.toContain('<a ');
     expect(html).not.toContain('href');
     expect(html).not.toContain('<blockquote');
-    expect(html).not.toContain('<code');
+    expect(html).not.toContain('<pre');
     expect(html).toContain('# Heading');
     expect(html).toContain('[a](http://x)');
+  });
+
+  /**
+   * **Inline code** (#49). House rule 9 asks for no backtick code, and some turns use it anyway;
+   * printed raw, the backticks read as noise around the one term that mattered. So a single-line
+   * `` `span` `` is a `<code>`, escaped like everything else, and nothing inside it is emphasis or
+   * maths.
+   */
+  it('renders an inline `code` span as <code>, with its contents escaped and literal', () => {
+    expect(paragraphs('the fluent `At(c, a)` holds')).toBe('<p>the fluent <code>At(c, a)</code> holds</p>');
+    expect(paragraphs('`<img src=x onerror=alert(1)>`')).toBe(
+      '<p><code>&lt;img src=x onerror=alert(1)&gt;</code></p>',
+    );
+    // Code wins over what is inside it: no emphasis and no maths.
+    expect(paragraphs('`a *b* c` and `$x$`')).toBe('<p><code>a *b* c</code> and <code>$x$</code></p>');
+    // A lone or unclosed backtick is a character, and a span does not cross a line.
+    expect(paragraphs('it’s a ` alone')).toBe('<p>it’s a ` alone</p>');
+    expect(paragraphs('`open\nclosed`')).toBe('<p>`open<br>closed`</p>');
+  });
+
+  it('keeps a citation clickable when a model wrote it in backticks', () => {
+    const html = paragraphs('see `p. 3: "no tools"`', { pages: [3] });
+    expect(html).toContain('<code>');
+    expect(html).toContain('data-page="3"');
   });
 
   it('emits no tag a model wrote, however it is dressed up', () => {
@@ -161,7 +185,7 @@ describe('the markdown subset (issue #41)', () => {
     const emitted = new Set([...html.matchAll(/<([a-z][a-z0-9]*)/g)].map((m) => m[1]!));
     for (const tag of emitted) {
       const allowed =
-        ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li'].includes(tag) ||
+        ['p', 'br', 'strong', 'em', 'code', 'ul', 'ol', 'li'].includes(tag) ||
         KATEX.includes(tag) ||
         /^m[a-z]+$/.test(tag); // mi, mo, mn, mspace — MathML leaves.
       expect(allowed, `unexpected tag <${tag}>`).toBe(true);
@@ -187,6 +211,7 @@ describe('plainText', () => {
       'Classical planning handles sequences',
     );
     expect(plainText('1. first\n- second')).toBe('first\nsecond');
+    expect(plainText('the fluent `At(c, a)` holds')).toBe('the fluent At(c, a) holds');
   });
 
   it('is what a collapsed card shows', () => {

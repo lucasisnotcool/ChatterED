@@ -19,13 +19,16 @@
  *   4. numbered lists (`1.`, and the number it actually starts at is kept)
  *   5. bulleted lists (`-`, `*`, `•`)
  *
- * plus inline `$…$` and display `$$…$$` maths, which predate this and are unchanged.
+ * plus inline `$…$` and display `$$…$$` maths, which predate this and are unchanged, and (#49) a
+ * single-line `` `code` `` span as `<code>`: house rule 9 bans it, some turns use it anyway, and
+ * raw backticks on screen are noise.
  *
- * Everything outside that list stays literal text: `# heading`, `> quote`, `[link](url)`,
- * `` `code` ``, a table, and above all raw HTML. There is no configuration and no escape hatch,
+ * Everything outside that list stays literal text: `# heading`, `> quote`, `[link](url)`, a code
+ * fence, a table, and above all raw HTML. There is no configuration and no escape hatch,
  * because the security property this file is here to hold — *no model-written string ever
  * becomes a tag* — is only checkable if the set of tags this file can emit is finite and short.
- * It is: `<p> <br> <strong> <em> <ul> <ol> <li>`, one `<button>` (below), and KaTeX's own output.
+ * It is: `<p> <br> <strong> <em> <code> <ul> <ol> <li>`, one `<button>` (below), and KaTeX's own
+ * output.
  *
  * ## The one added tag: a `p. N` that the deck actually has (issue #47, §3)
  *
@@ -115,6 +118,17 @@ function pageRefs(escaped: string, pages: readonly number[]): string {
 }
 
 /**
+ * **An inline code span** (#49). House rule 9 asks the agents for no backtick code, and some turns
+ * use it anyway — often around the one term that mattered, or around a `p. N` citation copied from
+ * the prompt's own wording. Printed raw, the backticks were noise. The span is escaped like
+ * everything else and gets neither emphasis nor maths, because what is inside it is literal; the
+ * one pass it does get is `pageRefs`, so a citation written in backticks stays clickable.
+ */
+function code(content: string, pages: readonly number[]): string {
+  return `<code>${pageRefs(escapeHtml(content), pages)}</code>`;
+}
+
+/**
  * One block's inline content: escaped text with `$…$` and `$$…$$` typeset and emphasis applied.
  *
  * The escape happens **before** the maths is put back, so a `<` inside a formula reaches KaTeX
@@ -126,12 +140,14 @@ function pageRefs(escaped: string, pages: readonly number[]): string {
  */
 function inline(text: string, pages: readonly number[]): string {
   const parts: string[] = [];
-  const re = /\$\$([^$]+)\$\$|\$([^$\n]+)\$/g;
+  // A code span is tried first at any position, so `$x$` inside backticks stays literal.
+  const re = /`([^`\n]+)`|\$\$([^$]+)\$\$|\$([^$\n]+)\$/g;
   let last = 0;
   for (const match of text.matchAll(re)) {
     const at = match.index;
     parts.push(pageRefs(emphasis(escapeHtml(text.slice(last, at))), pages));
-    parts.push(match[1] !== undefined ? tex(match[1], true) : tex(match[2]!, false));
+    if (match[1] !== undefined) parts.push(code(match[1], pages));
+    else parts.push(match[2] !== undefined ? tex(match[2], true) : tex(match[3]!, false));
     last = at + match[0].length;
   }
   parts.push(pageRefs(emphasis(escapeHtml(text.slice(last))), pages));
@@ -265,6 +281,7 @@ export function paragraphs(text: string, options: AiTextOptions = {}): string {
  */
 export function plainText(text: string): string {
   return text
+    .replace(/`([^`\n]+)`/g, '$1')
     .replace(/\*\*(?!\s)((?:[^*]|\*(?!\*))+?)(?<!\s)\*\*/g, '$1')
     .replace(/(^|[^*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)/g, '$1$2')
     .replace(/^ {0,3}([-*•]|\d{1,3}[.)])\s+/gm, '');

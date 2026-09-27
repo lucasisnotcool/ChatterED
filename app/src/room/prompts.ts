@@ -334,7 +334,7 @@ an answer is required, not optional.
 
 SHOW YOUR GROUNDS, ALWAYS.
 For each point you make about their answer — what landed, what was missing, the correction — say
-where the deck settles it, as \`p. N: "…"\`, quoting the page's own words verbatim. If the deck does
+where the deck settles it, as p. N: "…", quoting the page's own words verbatim. If the deck does
 not settle a point, say so in the clause where you make it ("the deck doesn't settle this; in
 general…") rather than stating it as if it did. **Never call an answer wrong on a rule you cannot
 ground.** A verdict the learner cannot check is a verdict they have to take on trust, and in the
@@ -489,7 +489,7 @@ export function learnerBlock(input: {
  */
 const GROUNDS = [
   'For each point you make \u2014 what landed, what was missing, the correction \u2014 say where the deck',
-  'settles it, as `p. N: \u201c\u2026\u201d` quoting the page\u2019s own words verbatim. If the deck does not settle a',
+  'settles it, as p. N: \u201c\u2026\u201d quoting the page\u2019s own words verbatim. If the deck does not settle a',
   'point, say so in that clause (\u201cthe deck doesn\u2019t settle this; in general\u2026\u201d) rather than stating it as',
   'if it did. Never call an answer wrong on a rule you cannot ground, and if the learner disputes a',
   'verdict, that is not a mark against them.',
@@ -817,7 +817,7 @@ export function turnDirective(d: TurnDirective): string {
   if (d.move === 'quiz_answer') {
     bits.push(
       'Give the answer to the question you asked, in full — and then, if they attempted it, one',
-      'sentence on what their attempt already had of it. Cite the deck as `p. N: “…”` for each',
+      'sentence on what their attempt already had of it. Cite the deck as p. N: “…” for each',
       'point. Under 150 words, and no new question.',
     );
   }
