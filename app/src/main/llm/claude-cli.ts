@@ -299,6 +299,28 @@ export const CLI_DEFERRED: ReadonlySet<string> = new Set(['ingest', 'ledger', 'n
  */
 export const CLI_SINGLE_LANE = true;
 
+/**
+ * **How long the lane stays free after a learner-facing call ends, for that turn's follow-ups.**
+ *
+ * `release()` used to hand the lane over synchronously, to whatever was waiting *at that
+ * instant* — and at the end of a reply that is usually the ledger alone, its grace window long
+ * expired. The same turn's doc edit (priority 1) and Max's chained reply (priority 0) are
+ * dispatched a few milliseconds later, and so found a ledger on the lane and waited the whole of
+ * it: 2026-09-20 02:24:13.538, Ellie's reply released, the doc edit asked at +3 ms and Max at
+ * +7 ms, and they queued 9.5 s and 6.0 s. Across the 24 live turns in the log the gap between a
+ * reply's release and its follow-up was 2–11 ms; after 19 Sep every queued reply over 3 s was
+ * behind a ledger. Priority cannot reorder a call that is already running, so the fix is in the
+ * hand-off: after a priority ≤ 1 call the lane is held this long, a priority-0 call arriving in
+ * the window takes it at once, and when the window closes the best waiter gets it — so Max
+ * goes before the doc edit, and both before the ledger, as `CLI_PRIORITY` already says.
+ *
+ * Not a tick: the follow-ups come after awaited work (the reply's persistence, the next turn's
+ * set-up), not after a microtask. 150 ms is an order of magnitude above the measured gap and
+ * below anything a learner could see on a doc edit; the ledger and the ingests lose at most that.
+ * A priority-0 call already waiting at release is handed the lane with no hold at all.
+ */
+export const CLI_HANDOFF_HOLD_MS = 150;
+
 /** Thrown when a background call was killed to let a learner-facing one through. Not a failure. */
 export class CliPreemptedError extends Error {
   constructor() {
@@ -320,6 +342,8 @@ export class CliQueue {
   #running: { priority: number; preempt: (() => void) | null } | null = null;
   #waiting: Waiter[] = [];
   #seq = 0;
+  /** Set while the lane is kept free for a finished turn's follow-ups (`CLI_HANDOFF_HOLD_MS`). */
+  #hold: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Resolves with the milliseconds spent waiting. The caller must call `release()`.
@@ -331,7 +355,9 @@ export class CliQueue {
    */
   acquire(priority: number, signal?: AbortSignal, preempt: (() => void) | null = null): Promise<number> {
     const queuedAt = Date.now();
-    if (this.#running === null) {
+    // Free, and either not held or held for exactly this: a learner-facing reply.
+    if (this.#running === null && (this.#hold === null || priority === 0)) {
+      this.#endHold();
       this.#running = { priority, preempt };
       return Promise.resolve(0);
     }
@@ -356,8 +382,8 @@ export class CliQueue {
      * comes. Found by the test below; in production the window is narrow (the notes window
      * releases when its child exits) but it is the kind of narrow that shows up on camera.
      */
-    const kill = priority <= 1 ? this.#running.preempt : null;
-    if (kill) this.#running.preempt = null;
+    const kill = priority <= 1 ? (this.#running?.preempt ?? null) : null;
+    if (kill && this.#running) this.#running.preempt = null;
     const queued = new Promise<number>((resolve, reject) => {
       const waiter: Waiter = {
         priority,
@@ -388,20 +414,45 @@ export class CliQueue {
   }
 
   release(): void {
-    const next = this.#waiting.reduce<Waiter | null>(
+    const released = this.#running?.priority ?? Number.POSITIVE_INFINITY;
+    this.#running = null;
+    const next = this.#best();
+    // A learner-facing call just ended and nothing better than its follow-ups is waiting: keep
+    // the lane free for them rather than hand it to the ledger (`CLI_HANDOFF_HOLD_MS`).
+    if (released <= 1 && (next === null || next.priority > 0) && CLI_HANDOFF_HOLD_MS > 0) {
+      this.#endHold();
+      this.#hold = setTimeout(() => {
+        this.#hold = null;
+        if (this.#running === null) this.#handOff();
+      }, CLI_HANDOFF_HOLD_MS);
+      return;
+    }
+    this.#handOff();
+  }
+
+  #best(): Waiter | null {
+    return this.#waiting.reduce<Waiter | null>(
       (best, w) => (best === null || w.priority < best.priority || (w.priority === best.priority && w.seq < best.seq) ? w : best),
       null,
     );
-    if (!next) {
-      this.#running = null;
-      return;
-    }
+  }
+
+  #handOff(): void {
+    const next = this.#best();
+    if (!next) return;
     this.#waiting = this.#waiting.filter((w) => w !== next);
     next.start();
   }
 
+  #endHold(): void {
+    if (this.#hold === null) return;
+    clearTimeout(this.#hold);
+    this.#hold = null;
+  }
+
   /** Tests only. The app has exactly one queue for its whole life. */
   reset(): void {
+    this.#endHold();
     this.#running = null;
     this.#waiting = [];
     this.#seq = 0;

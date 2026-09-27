@@ -27,6 +27,7 @@ import {
   cliQueue,
   CLI_DEFERRED,
   CLI_DROPPED_ENV,
+  CLI_HANDOFF_HOLD_MS,
   CLI_LOW_PRIORITY_GRACE_MS,
   CLI_PREEMPTIBLE,
   CLI_PRIORITY,
@@ -496,6 +497,71 @@ describe('one `claude` at a time (issue #35 item 5c)', () => {
     const reply = c.complete(request({ meta: { scope: 'reference' } })).then(() => order.push('reference'));
     await Promise.all([holding, ledger, reply]);
     expect(order).toEqual(['holding', 'reference', 'ledger']);
+  });
+
+  /**
+   * 2026-09-20 02:24:13.538: Ellie's reply released the lane with the ledger (grace expired) the
+   * only call waiting, so the ledger took it — and the same turn's doc edit (+3 ms) and Max's
+   * chained reply (+7 ms) then queued 9.5 s and 6.0 s behind a call nobody was reading. Live
+   * gaps between a reply's release and its follow-ups were 2–11 ms across 24 turns.
+   */
+  it('keeps the lane for the turn’s follow-ups when a reply ends with only the ledger waiting', async () => {
+    const lane = new CliQueue();
+    const started: string[] = [];
+    const take = (name: string, priority: number): Promise<void> =>
+      lane.acquire(priority).then(() => {
+        started.push(name);
+      });
+
+    await take('ellie', CLI_PRIORITY.group!);
+    const ledger = take('ledger', CLI_PRIORITY.ledger!);
+    lane.release(); // Ellie's reply is done.
+
+    await new Promise((r) => setTimeout(r, 3));
+    const docedit = take('docedit', CLI_PRIORITY.docedit!);
+    await new Promise((r) => setTimeout(r, 4));
+    const max = take('max', CLI_PRIORITY.group!);
+
+    await max;
+    lane.release();
+    await docedit;
+    lane.release();
+    await ledger;
+    lane.release();
+    expect(started).toEqual(['ellie', 'max', 'docedit', 'ledger']);
+  });
+
+  it('hands the lane straight to a reply that is already waiting, with no hold', async () => {
+    const lane = new CliQueue();
+    await lane.acquire(CLI_PRIORITY.group!);
+    const reply = lane.acquire(CLI_PRIORITY.reference!);
+    const t0 = Date.now();
+    lane.release();
+    expect(await reply).toBeGreaterThanOrEqual(0);
+    expect(Date.now() - t0).toBeLessThan(CLI_HANDOFF_HOLD_MS);
+    lane.release();
+  });
+
+  it('still hands the lane to the ledger once the hold is over', async () => {
+    const lane = new CliQueue();
+    await lane.acquire(CLI_PRIORITY.group!);
+    const ledger = lane.acquire(CLI_PRIORITY.ledger!);
+    lane.release();
+    const waited = await ledger;
+    expect(waited).toBeGreaterThanOrEqual(CLI_HANDOFF_HOLD_MS - 5);
+    expect(waited).toBeLessThan(CLI_HANDOFF_HOLD_MS + 200);
+    lane.release();
+  });
+
+  it('does not hold the lane after a background call', async () => {
+    const lane = new CliQueue();
+    await lane.acquire(CLI_PRIORITY.ledger!);
+    const ingest = lane.acquire(CLI_PRIORITY.ingest!);
+    const t0 = Date.now();
+    lane.release();
+    await ingest;
+    expect(Date.now() - t0).toBeLessThan(CLI_HANDOFF_HOLD_MS);
+    lane.release();
   });
 
   it('does not hold the lane for a call that was stopped while queued', async () => {
