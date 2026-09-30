@@ -13,6 +13,8 @@
    *    doc header") and the lesson-card popover it opens;
    *  - **the two seams with the editor** — `store.doc.scrollToBlock` for a lesson's Start and a
    *    span thread's jump, and the editor pane itself;
+   *  - **the map of the notes**, handed to the file panel: it needs the document column to read
+   *    the headings from and `jump` to go to one, and both are this component's;
    *  - **the column sizes**, which are `layoutstore.svelte.ts`'s: both edges drag (the file
    *    panel's is in `VaultSidebar`, so it is the same width beside the page viewer), and the
    *    file panel closes from its edge, its toggle, or View ▸ Show/Hide Files (⌃⌘S).
@@ -26,6 +28,7 @@
   import ChatColumn from './ChatColumn.svelte';
   import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
+  import NotesMap from '../notes/NotesMap.svelte';
   import NotesPane from '../notes/NotesPane.svelte';
   import PacingStrip from '../PacingStrip.svelte';
   import PaneSplitter from '../PaneSplitter.svelte';
@@ -88,6 +91,9 @@
   }
 
   const filesOpen = $derived(layout.filesOpen);
+
+  /** The document column, which the map of the notes reads the headings from. */
+  let docbody = $state<HTMLElement | null>(null);
 </script>
 
 <div class="shell">
@@ -95,7 +101,13 @@
     <!-- The file panel is the shipped vault sidebar, re-hosted and not rebuilt: the tree, the
          topics, the re-scan and the search all already work and the learner already knows them. -->
     <div class="files">
-      <VaultSidebar onopen={(file) => void store.openFile(file.id)} oncollapse={() => layout.setFilesOpen(false)} />
+      <VaultSidebar onopen={(file) => void store.openFile(file.id)} oncollapse={() => layout.setFilesOpen(false)}>
+        {#snippet below()}
+          <!-- The map of the open file's notes, under the tree. Its clicks are the same `jump` a
+               lesson card's Start and a span thread use. -->
+          <NotesMap root={docbody} onjump={jump} />
+        {/snippet}
+      </VaultSidebar>
     </div>
   {/if}
 
@@ -133,7 +145,7 @@
       <button type="button" class="mini" onclick={onclose}>Close</button>
     </header>
 
-    <div class="docbody">
+    <div class="docbody" bind:this={docbody}>
       <!--
         **The pacing disclosure, once per install, above the document.**
 

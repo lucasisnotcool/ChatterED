@@ -15,6 +15,7 @@ const KEYS = {
   filesWidth: 'chattered.files.width',
   chatWidth: 'chattered.chat.width',
   notesZoom: 'chattered.notes.zoom',
+  mapOpen: 'chattered.notesmap.open',
 } as const;
 
 function read(key: string): string | null {
@@ -44,6 +45,8 @@ export class LayoutStore {
   filesWidth = $state(readWidth(KEYS.filesWidth, FILES));
   chatWidth = $state(readWidth(KEYS.chatWidth, CHAT));
   notesZoom = $state(readZoom(read(KEYS.notesZoom), NOTES_ZOOM));
+  /** The map of the notes in the file panel: open until the learner folds it away. */
+  mapOpen = $state(read(KEYS.mapOpen) !== 'false');
 
   setFilesOpen(open: boolean): void {
     this.filesOpen = open;
@@ -62,6 +65,11 @@ export class LayoutStore {
   setChatWidth(width: number): void {
     this.chatWidth = Math.round(clamp(width, CHAT.min, CHAT.max));
     write(KEYS.chatWidth, String(this.chatWidth));
+  }
+
+  setMapOpen(open: boolean): void {
+    this.mapOpen = open;
+    write(KEYS.mapOpen, String(open));
   }
 
   /** Rounded to the percent, so a pinch does not persist `1.3472918`. */

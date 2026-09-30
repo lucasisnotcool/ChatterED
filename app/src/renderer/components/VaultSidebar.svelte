@@ -6,6 +6,7 @@
    * name is always beside it (product-design.md §C2 rule 1) — and its hue comes from
    * TOPIC_COLOURS, which deliberately avoids the three agent hues and indigo (rules 2 and 3).
    */
+  import type { Snippet } from 'svelte';
   import type { VaultFileView, VaultTreeNode } from '../../shared/types.js';
   import { FILES } from '../lib/layout.js';
   import { layout } from '../lib/layoutstore.svelte.js';
@@ -16,6 +17,7 @@
   let {
     onopen,
     oncollapse,
+    below,
   }: {
     onopen: (file: VaultFileView) => void;
     /**
@@ -24,6 +26,11 @@
      * so there the edge only resizes.
      */
     oncollapse?: () => void;
+    /**
+     * Drawn under the file tree: the shell's map of the open file's notes. The panel only gives
+     * it somewhere to be, so beside the page viewer, where there are no notes, there is nothing.
+     */
+    below?: Snippet;
   } = $props();
 
   const vault = $derived(store.vault);
@@ -103,6 +110,8 @@
       {/if}
     </div>
 
+    {@render below?.()}
+
     <footer class="foot">
       <span class="n">{nodeCount(store.vaultTree)} files</span>
       <button type="button" class="mini" onclick={() => void store.rescanVault()} disabled={store.vaultBusy}>
@@ -113,6 +122,7 @@
     <div class="unset">
       <p>No vault yet.</p>
     </div>
+    {@render below?.()}
   {/if}
 </aside>
 
