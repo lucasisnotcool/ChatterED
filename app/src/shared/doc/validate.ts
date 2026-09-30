@@ -22,16 +22,20 @@
  * Pure, no DOM, no schema knowledge beyond `draftToNodes` — `src/main/notes` runs it.
  */
 
-import { notesSchema, newBlockId } from './schema.js';
+import { DIAGRAM_LAYOUTS, isDiagramLayout, notesSchema, newBlockId } from './schema.js';
 import { draftToNodes } from './ops.js';
 import { inlineToNodes } from './inline.js';
-import type { DocBlockDraft, Provenance, Rect } from './types.js';
+import type { DiagramDraft, DocBlockDraft, Provenance, Rect, TableDraft } from './types.js';
 
 export interface ValidationIssue {
   index: number;
   reason: 'no_provenance' | 'bad_page' | 'empty' | 'unknown_kind';
 }
 
+/**
+ * The kinds the *ingest* may write. `table` and `diagram` are deliberately absent: they have their
+ * own validators below, and one arriving here is an `unknown_kind`.
+ */
 const KINDS = new Set(['heading', 'paragraph', 'bullets', 'numbers', 'code', 'math', 'figure']);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -181,6 +185,325 @@ export function validateDrafts(
 
   return { blocks, issues };
 }
+
+// ── the table and the diagram: their own call, their own gate (2026-10-01) ──────────────────
+
+/**
+ * **Why these are not kinds `validateDrafts` accepts.** `validateDrafts` and
+ * `DRAFT_BLOCK_JSON_SCHEMA` are the *ingest's* contract with its model, and the ingest must keep
+ * writing exactly what it writes today. A table or a diagram is asked for by the learner and
+ * produced by a dedicated call, which is bound to one of the two schemas below and checked by one
+ * of the two validators here.
+ *
+ * The reply carries no `prov`. Provenance is the caller's — it knows which block the request was
+ * anchored to — and it is still mandatory (§2): a draft whose `prov` has neither a page of this
+ * deck nor a reason is refused like any other block.
+ *
+ * `problems` is everything that was wrong, in words a log line can carry. **`draft` is `null`
+ * exactly when the reply is not usable**; a non-null draft with problems is one that was repaired
+ * (a page the deck does not have, an edge to a node that is not there), in the same spirit as
+ * "repair before reject" above. What is never repaired is shape: a row with the wrong number of
+ * cells is not padded, because the padding would be a cell of the comparison nobody wrote.
+ */
+export const TABLE_LIMITS = { minColumns: 2, maxColumns: 6, minRows: 1, maxRows: 12 } as const;
+export const DIAGRAM_LIMITS = { minNodes: 2, maxNodes: 12, maxLabel: 80 } as const;
+
+/** Pages of this deck, deduplicated; `dropped` when any was not one. */
+function clampPages(value: unknown, pageCount: number): { pages: number[]; dropped: boolean } {
+  const pages: number[] = [];
+  let dropped = false;
+  for (const page of Array.isArray(value) ? value : []) {
+    const n = typeof page === 'number' ? Math.trunc(page) : Number.NaN;
+    if (Number.isInteger(n) && n >= 1 && n <= pageCount) {
+      if (!pages.includes(n)) pages.push(n);
+    } else {
+      dropped = true;
+    }
+  }
+  return { pages, dropped };
+}
+
+/** The caller's provenance, checked against the deck. `null` when nothing is left of it. */
+function checkedProv(prov: Provenance, pageCount: number, problems: string[]): Provenance | null {
+  const { pages, dropped } = clampPages(prov?.pages, pageCount);
+  if (dropped) problems.push('provenance: a page outside the deck was dropped');
+  const reason = asText(prov?.reason);
+  if (pages.length === 0 && reason.length === 0) {
+    problems.push('no provenance: neither a page of the deck nor a reason');
+    return null;
+  }
+  return { pages, reason: reason.length > 0 ? reason : null };
+}
+
+/** A cell a model wrote: a string, or a bare number (`42`), which is a cell too. */
+function asCell(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : asText(value);
+}
+
+/** `{ table: {…} }` and `{ diagram: {…} }` are the wrappers a model adds; anything else is the thing. */
+function unwrap(raw: unknown, key: string): Record<string, unknown> | null {
+  const record = asRecord(raw);
+  return record ? (asRecord(record[key]) ?? record) : null;
+}
+
+export function validateTableDraft(
+  raw: unknown,
+  pageCount: number,
+  prov: Provenance,
+): { draft: TableDraft | null; problems: string[] } {
+  const problems: string[] = [];
+  const record = unwrap(raw, 'table');
+  if (!record) return { draft: null, problems: ['table: not an object'] };
+  const provenance = checkedProv(prov, pageCount, problems);
+  let usable = provenance !== null;
+
+  const columns = (Array.isArray(record.columns) ? record.columns : []).map((column) => asCell(column));
+  const { minColumns, maxColumns, minRows, maxRows } = TABLE_LIMITS;
+  if (columns.length < minColumns || columns.length > maxColumns) {
+    problems.push(`table: ${String(columns.length)} columns (${String(minColumns)} to ${String(maxColumns)} allowed)`);
+    usable = false;
+  }
+  columns.forEach((column, i) => {
+    if (column.length > 0) return;
+    problems.push(`table: column ${String(i + 1)} has no heading`);
+    usable = false;
+  });
+
+  const rawRows = Array.isArray(record.rows) ? record.rows : [];
+  if (rawRows.length < minRows || rawRows.length > maxRows) {
+    problems.push(`table: ${String(rawRows.length)} rows (${String(minRows)} to ${String(maxRows)} allowed)`);
+    usable = false;
+  }
+  const rows: TableDraft['rows'] = [];
+  rawRows.forEach((rawRow, i) => {
+    // A row is `{ cells, pages }`; a bare array of cells is the same row without pages.
+    const row = asRecord(rawRow);
+    const rawCells = Array.isArray(rawRow) ? rawRow : row && Array.isArray(row.cells) ? row.cells : [];
+    const cells = rawCells.map((cell) => asCell(cell));
+    if (cells.length !== columns.length) {
+      problems.push(
+        `table: row ${String(i + 1)} has ${String(cells.length)} cells, expected ${String(columns.length)}`,
+      );
+      usable = false;
+    }
+    const { pages, dropped } = clampPages(row?.pages, pageCount);
+    if (dropped) problems.push(`table: row ${String(i + 1)} cited a page outside the deck, dropped`);
+    rows.push({ cells, pages });
+  });
+
+  if (!usable || !provenance) return { draft: null, problems };
+  const caption = asText(record.caption);
+  return {
+    draft: { kind: 'table', caption: caption.length > 0 ? caption : null, columns, rows, prov: provenance },
+    problems,
+  };
+}
+
+export function validateDiagramDraft(
+  raw: unknown,
+  pageCount: number,
+  prov: Provenance,
+): { draft: DiagramDraft | null; problems: string[] } {
+  const problems: string[] = [];
+  const record = unwrap(raw, 'diagram');
+  if (!record) return { draft: null, problems: ['diagram: not an object'] };
+  const provenance = checkedProv(prov, pageCount, problems);
+  let usable = provenance !== null;
+
+  const layout = record.layout;
+  if (!isDiagramLayout(layout)) {
+    problems.push(`diagram: layout must be one of ${DIAGRAM_LAYOUTS.join(', ')}`);
+    usable = false;
+  }
+
+  const { minNodes, maxNodes, maxLabel } = DIAGRAM_LIMITS;
+  const rawNodes = Array.isArray(record.nodes) ? record.nodes : [];
+  if (rawNodes.length < minNodes || rawNodes.length > maxNodes) {
+    problems.push(`diagram: ${String(rawNodes.length)} nodes (${String(minNodes)} to ${String(maxNodes)} allowed)`);
+    usable = false;
+  }
+  const nodes: DiagramDraft['nodes'] = [];
+  const ids = new Set<string>();
+  rawNodes.forEach((rawNode, i) => {
+    const node = asRecord(rawNode) ?? {};
+    const id = asText(node.id);
+    const label = asText(node.label);
+    const name = id.length > 0 ? `node "${id}"` : `node ${String(i + 1)}`;
+    if (id.length === 0) {
+      problems.push(`diagram: node ${String(i + 1)} has no id`);
+      usable = false;
+    } else if (ids.has(id)) {
+      problems.push(`diagram: node id "${id}" is used more than once`);
+      usable = false;
+    }
+    ids.add(id);
+    if (label.length === 0) {
+      problems.push(`diagram: ${name} has no label`);
+      usable = false;
+    } else if (label.length > maxLabel) {
+      problems.push(`diagram: ${name} has a label of ${String(label.length)} characters (at most ${String(maxLabel)})`);
+      usable = false;
+    }
+    const parent = asText(node.parent);
+    const group = asText(node.group);
+    const { pages, dropped } = clampPages(node.pages, pageCount);
+    if (dropped) problems.push(`diagram: ${name} cited a page outside the deck, dropped`);
+    nodes.push({
+      id,
+      label,
+      parent: parent.length > 0 ? parent : null,
+      group: group.length > 0 ? group : null,
+      pages,
+    });
+  });
+
+  // A parent has to be a node of this diagram, and following parents has to end.
+  const parentOf = new Map(nodes.map((node) => [node.id, node.parent ?? null]));
+  for (const node of nodes) {
+    if (!node.parent) continue;
+    if (!ids.has(node.parent)) {
+      problems.push(`diagram: node "${node.id}" names a parent "${node.parent}" that is not a node`);
+      usable = false;
+      continue;
+    }
+    const seen = new Set<string>([node.id]);
+    for (let at: string | null = node.parent; at; at = parentOf.get(at) ?? null) {
+      if (seen.has(at)) {
+        problems.push(`diagram: node "${node.id}" is its own ancestor`);
+        usable = false;
+        break;
+      }
+      seen.add(at);
+    }
+  }
+
+  if (layout === 'compare') {
+    for (const node of nodes) {
+      if (node.group) continue;
+      problems.push(`diagram: node "${node.id}" has no group, and a compare layout needs one on every node`);
+      usable = false;
+    }
+  }
+
+  // An edge to a node that is not there is dropped, not fatal: the picture is still true without it.
+  const edges: NonNullable<DiagramDraft['edges']> = [];
+  (Array.isArray(record.edges) ? record.edges : []).forEach((rawEdge, i) => {
+    const edge = asRecord(rawEdge) ?? {};
+    const from = asText(edge.from);
+    const to = asText(edge.to);
+    if (!ids.has(from) || !ids.has(to) || from.length === 0 || to.length === 0) {
+      problems.push(`diagram: edge ${String(i + 1)} ("${from}" -> "${to}") names a node that does not exist, dropped`);
+      return;
+    }
+    const label = asText(edge.label);
+    edges.push({ from, to, label: label.length > 0 ? label : null });
+  });
+
+  if (!usable || !provenance || !isDiagramLayout(layout)) return { draft: null, problems };
+  const title = asText(record.title);
+  return {
+    draft: { kind: 'diagram', layout, title: title.length > 0 ? title : null, nodes, edges, prov: provenance },
+    problems,
+  };
+}
+
+/**
+ * **The JSON Schemas for those two replies**, flat and permissive for the reason
+ * `DRAFT_BLOCK_JSON_SCHEMA` gives below: the caps are in the descriptions, where a model reads
+ * them, and in the validators, where they are enforced. No `prov` — see above.
+ */
+export const TABLE_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['columns', 'rows'],
+  additionalProperties: false,
+  properties: {
+    caption: { type: ['string', 'null'], description: 'Optional: one line saying what is compared.' },
+    columns: {
+      type: 'array',
+      items: { type: 'string' },
+      description: `The column headings, ${String(TABLE_LIMITS.minColumns)} to ${String(TABLE_LIMITS.maxColumns)} of them, none empty.`,
+    },
+    rows: {
+      type: 'array',
+      description: `${String(TABLE_LIMITS.minRows)} to ${String(TABLE_LIMITS.maxRows)} rows.`,
+      items: {
+        type: 'object',
+        required: ['cells'],
+        additionalProperties: false,
+        properties: {
+          cells: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Exactly one cell per column, in column order. Inline markup is **bold**, *italic*, `code` and $tex$ only. An empty string is an empty cell.',
+          },
+          pages: {
+            type: 'array',
+            items: { type: 'integer', minimum: 1 },
+            description: '1-based pages of this deck that this row comes from. Never a page the deck does not have.',
+          },
+        },
+      },
+    },
+  },
+};
+
+export const DIAGRAM_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['layout', 'nodes'],
+  additionalProperties: false,
+  properties: {
+    layout: {
+      type: 'string',
+      enum: [...DIAGRAM_LAYOUTS],
+      description:
+        'flow: steps in order, joined by edges. hierarchy: a tree, by each node\'s parent. compare: nodes in columns, by each node\'s group. cycle: steps that return to the first.',
+    },
+    title: { type: ['string', 'null'], description: 'Optional: one line saying what the diagram shows.' },
+    nodes: {
+      type: 'array',
+      description: `${String(DIAGRAM_LIMITS.minNodes)} to ${String(DIAGRAM_LIMITS.maxNodes)} nodes.`,
+      items: {
+        type: 'object',
+        required: ['id', 'label'],
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', description: 'A short id, unique in this diagram, e.g. "n1". Edges and parents use it.' },
+          label: {
+            type: 'string',
+            description: `The text in the node, at most ${String(DIAGRAM_LIMITS.maxLabel)} characters. Same inline markup as notes text.`,
+          },
+          parent: { type: ['string', 'null'], description: 'hierarchy only: the id of the node this one sits under.' },
+          group: {
+            type: ['string', 'null'],
+            description: 'compare only, and then required on every node: the column heading this node sits under.',
+          },
+          pages: {
+            type: 'array',
+            items: { type: 'integer', minimum: 1 },
+            description: '1-based pages of this deck that this node comes from. Never a page the deck does not have.',
+          },
+        },
+      },
+    },
+    edges: {
+      type: 'array',
+      description: 'Optional: arrows between nodes, by id. Both ends must be ids of nodes above.',
+      items: {
+        type: 'object',
+        required: ['from', 'to'],
+        additionalProperties: false,
+        properties: {
+          from: { type: 'string' },
+          to: { type: 'string' },
+          label: { type: ['string', 'null'], description: 'Optional: a word or two on the arrow.' },
+        },
+      },
+    },
+  },
+};
 
 /**
  * Validated drafts → a whole document, as ProseMirror JSON `docFromJson` accepts.

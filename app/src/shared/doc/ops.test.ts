@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { docOf, fixtureDoc, heading, mixed, para, stateOf } from './fixture.test-support.js';
+import { diagram, docOf, fixtureDoc, heading, mixed, para, stateOf, table } from './fixture.test-support.js';
 import { learnerConflicts } from './guard.js';
 import {
   appendWindow,
@@ -23,7 +23,16 @@ import {
   removeEdit,
   type ApplyResult,
 } from './ops.js';
-import { blockAttrs, blockPos, emptyDoc, learnerSpans, notesSchema } from './schema.js';
+import {
+  blockAttrs,
+  blockPos,
+  diagramSpec,
+  docFromJson,
+  emptyDoc,
+  learnerSpans,
+  notesSchema,
+  tableGrid,
+} from './schema.js';
 import { rejectSuggestion } from './suggest.js';
 import type { AgentDocOp, AgentDocOpBatch, DocBlockDraft } from './types.js';
 
@@ -634,5 +643,243 @@ describe('draftToNodes', () => {
     );
     expect(nodes).toHaveLength(1);
     expect(nodes[0]!.textContent).toBe('a = b ** 2');
+  });
+});
+
+// ── the table and the diagram (2026-10-01) ──────────────────────────────────────────────────
+
+const TABLE: DocBlockDraft = {
+  kind: 'table',
+  caption: 'Planning vs learning',
+  columns: ['Method', 'Needs a model'],
+  rows: [
+    { cells: ['**Value** iteration', 'yes'], pages: [5] },
+    { cells: ['Q-learning', ''] },
+  ],
+  prov: { pages: [5, 9], reason: null },
+};
+
+const DIAGRAM: DocBlockDraft = {
+  kind: 'diagram',
+  layout: 'hierarchy',
+  title: 'What an MDP is made of',
+  nodes: [
+    { id: 'n1', label: 'MDP', pages: [3] },
+    { id: 'n2', label: 'States', parent: 'n1' },
+    { id: 'n3', label: '*Rewards*', parent: 'n1', group: 'signal' },
+  ],
+  edges: [{ from: 'n2', to: 'n3' }],
+  prov: { pages: [], reason: 'asked for in the chat' },
+};
+
+/** Every text node under `node`, as `[text, by, editId]`. */
+function authorsIn(node: ReturnType<typeof fixtureDoc>): [string, unknown, unknown][] {
+  const out: [string, unknown, unknown][] = [];
+  node.descendants((child) => {
+    if (!child.isText) return true;
+    const mark = child.marks.find((m) => m.type.name === 'author');
+    out.push([child.text ?? '', mark?.attrs.by, mark?.attrs.editId]);
+    return false;
+  });
+  return out;
+}
+
+describe('draftToNodes — table and diagram', () => {
+  it('builds a table: a heading row, the rows with their own pages, every span the agent’s', () => {
+    const [node] = draftToNodes(notesSchema, [TABLE], 'ellie', 'e_1', 7);
+    expect(node!.type.name).toBe('table');
+    expect(blockAttrs(node!)).toMatchObject({ pages: [5, 9], reason: null });
+    expect(blockAttrs(node!).blockId).toMatch(/^b_[0-9a-f]{12}$/);
+    expect(tableGrid(node!)).toEqual({
+      caption: 'Planning vs learning',
+      columns: ['Method', 'Needs a model'],
+      rows: [
+        ['Value iteration', 'yes'],
+        ['Q-learning', ''],
+      ],
+    });
+    expect([0, 1, 2].map((i) => node!.child(i).attrs.pages)).toEqual([[], [5], []]);
+    expect(node!.child(0).child(0).attrs.header).toBe(true);
+    expect(node!.child(1).child(0).attrs.header).toBe(false);
+    // The inline subset is parsed in a cell as it is in a paragraph.
+    expect(node!.child(1).child(0).firstChild!.marks.map((m) => m.type.name)).toContain('strong');
+    expect(node!.child(2).child(1).childCount).toBe(0);
+    for (const [, by, editId] of authorsIn(node!)) expect([by, editId]).toEqual(['ellie', 'e_1']);
+    expect(() => docOf(node!).check()).not.toThrow();
+  });
+
+  it('builds a diagram: nodes by id with authored labels, edges normalised onto the block', () => {
+    const [node] = draftToNodes(notesSchema, [DIAGRAM], 'ellie', 'e_1', 7);
+    expect(node!.type.name).toBe('diagram');
+    expect(blockAttrs(node!)).toMatchObject({ pages: [], reason: 'asked for in the chat' });
+    expect(diagramSpec(node!)).toEqual({
+      layout: 'hierarchy',
+      title: 'What an MDP is made of',
+      nodes: [
+        { id: 'n1', label: 'MDP', parent: null, group: null, pages: [3] },
+        { id: 'n2', label: 'States', parent: 'n1', group: null, pages: [] },
+        { id: 'n3', label: 'Rewards', parent: 'n1', group: 'signal', pages: [] },
+      ],
+      edges: [{ from: 'n2', to: 'n3', label: null }],
+    });
+    expect(authorsIn(node!)).toEqual([
+      ['MDP', 'ellie', 'e_1'],
+      ['States', 'ellie', 'e_1'],
+      ['Rewards', 'ellie', 'e_1'],
+    ]);
+    expect(() => docFromJson(docOf(node!).toJSON())).not.toThrow();
+  });
+
+  it('drops a table with no columns and a diagram with no nodes, like an empty list', () => {
+    const nodes = draftToNodes(
+      notesSchema,
+      [
+        { kind: 'table', columns: [], rows: [], prov: { pages: [1], reason: null } },
+        { kind: 'diagram', layout: 'flow', nodes: [], prov: { pages: [1], reason: null } },
+      ],
+      'ellie',
+      null,
+    );
+    expect(nodes).toEqual([]);
+  });
+});
+
+describe('a table or a diagram in a batch', () => {
+  const withBoth = () =>
+    docOf(
+      heading('b_title', 1, 'Planning'),
+      para('b_1', 'Classical planning.', 'ingest', null, [4]),
+      table('b_tab', ['Method', 'Cost'], [['Value iteration', [{ text: 'a sweep per step', by: 'user' }]]]),
+      diagram('b_dia', [
+        { id: 'n1', label: 'Observe' },
+        { id: 'n2', label: [{ text: 'then I act', by: 'user' }] },
+      ]),
+      table('b_agents', ['A', 'B'], [['1', '2']]),
+      para('b_mine', 'My own sentence about planning.', 'user', null, [4]),
+    );
+
+  it('inserts each as one block with one id', () => {
+    const { result, doc } = run([{ op: 'insert_after', anchorBlockId: 'b_1', blocks: [TABLE, DIAGRAM] }]);
+    expect(result.status).toBe('applied');
+    expect(result.blockIds).toHaveLength(2);
+    expect([doc.child(2).type.name, doc.child(3).type.name]).toEqual(['table', 'diagram']);
+    expect(result.blockIds).toEqual([blockAttrs(doc.child(2)).blockId, blockAttrs(doc.child(3)).blockId]);
+  });
+
+  it('holds back a replace_block on a table or a diagram the learner wrote in (rule 2)', () => {
+    for (const blockId of ['b_tab', 'b_dia']) {
+      const { result, doc, state } = run([{ op: 'replace_block', blockId, blocks: [TABLE] }], {}, withBoth());
+      expect(result.status).toBe('rejected_guard');
+      expect(result.tr).toBeNull();
+      expect(result.suggestion).toBeNull();
+      expect(result.conflicts.map((c) => c.blockId)).toEqual([blockId]);
+      expect(doc.toJSON()).toEqual(state.doc.toJSON());
+    }
+  });
+
+  it('drops a remove_block on either, and reports the learner’s words', () => {
+    const { result, doc, state } = run(
+      [
+        { op: 'remove_block', blockId: 'b_tab' },
+        { op: 'remove_block', blockId: 'b_dia' },
+      ],
+      {},
+      withBoth(),
+    );
+    expect(result.status).toBe('rejected_guard');
+    expect(result.conflicts.map((c) => c.text)).toEqual(['a sweep per step', 'then I act']);
+    expect(doc.toJSON()).toEqual(state.doc.toJSON());
+  });
+
+  it('relocates an append_to_block to a paragraph after the block', () => {
+    const { result, doc } = run([{ op: 'append_to_block', blockId: 'b_tab', text: 'One more thing.' }], {}, withBoth());
+    expect(result.status).toBe('applied');
+    expect(doc.child(2).toJSON()).toEqual(withBoth().child(2).toJSON());
+    expect(doc.child(3).type.name).toBe('paragraph');
+    expect(doc.child(3).textContent).toBe('One more thing.');
+  });
+
+  it('lets an agent replace or remove one only the agents wrote (rule 6)', () => {
+    const replaced = run([{ op: 'replace_block', blockId: 'b_agents', blocks: [DIAGRAM] }], {}, withBoth());
+    expect(replaced.result.status).toBe('applied');
+    expect(replaced.result.conflicts).toEqual([]);
+    expect(replaced.doc.child(4).type.name).toBe('diagram');
+
+    const removed = run([{ op: 'remove_block', blockId: 'b_agents' }], {}, withBoth());
+    expect(removed.result.status).toBe('applied');
+    expect(blockPos(removed.doc, 'b_agents')).toBeNull();
+  });
+
+  it('offers a table over a learner paragraph as a suggestion, in words', () => {
+    const { result, doc } = run([{ op: 'replace_block', blockId: 'b_mine', blocks: [TABLE] }], {}, withBoth());
+    expect(result.status).toBe('applied');
+    expect(result.suggestion).toMatchObject({ blockId: 'b_mine' });
+    expect(doc.child(5).type.name).toBe('paragraph');
+    expect(doc.child(5).textContent).toContain('My own sentence about planning.');
+    expect(doc.child(5).textContent).toContain('Method | Needs a model');
+  });
+});
+
+describe('Remove · Keep on a table and a diagram', () => {
+  function inserted() {
+    const state = stateOf(fixtureDoc());
+    const before = JSON.stringify(state.doc.toJSON());
+    const applied = applyBatch(
+      state,
+      batchOf([{ op: 'insert_after', anchorBlockId: 'b_1', blocks: [TABLE, DIAGRAM] }]),
+      OPTS,
+    );
+    return { before, applied, open: state.apply(applied.tr!) };
+  }
+
+  it('Remove deletes the whole table and the whole diagram the edit inserted', () => {
+    const { before, applied, open } = inserted();
+    const back = open.apply(removeEdit(open, { editId: 'e_new', blockIds: applied.blockIds })!);
+    expect(JSON.stringify(back.doc.toJSON())).toBe(before);
+  });
+
+  it('Remove still deletes them whole when the record’s blockIds have drifted', () => {
+    const { before, open } = inserted();
+    const back = open.apply(removeEdit(open, { editId: 'e_new', blockIds: [] })!);
+    expect(JSON.stringify(back.doc.toJSON())).toBe(before);
+  });
+
+  it('Remove keeps a table the learner has typed a cell of, and takes only the agent’s cells', () => {
+    const { applied, open } = inserted();
+    const tableId = applied.blockIds[0]!;
+    // The learner fills the empty cell of the second row.
+    const target = blockPos(open.doc, tableId)!;
+    let emptyCell = -1;
+    target.node.descendants((node, offset) => {
+      if (node.type.name === 'table_cell' && node.childCount === 0) emptyCell = target.pos + 1 + offset + 1;
+      return true;
+    });
+    const mine = notesSchema.text('no model needed', [notesSchema.marks.author!.create({ by: 'user', editId: null, at: 1 })]);
+    const typed = open.apply(open.tr.insert(emptyCell, mine));
+
+    const back = typed.apply(removeEdit(typed, { editId: 'e_new', blockIds: applied.blockIds })!);
+    const kept = blockPos(back.doc, tableId)!.node;
+    expect(kept.type.name).toBe('table');
+    expect(kept.textContent).toBe('no model needed');
+    expect(learnerSpans(back.doc).map((span) => span.text)).toContain('no model needed');
+    // The diagram had nothing of the learner's in it, and went whole.
+    expect(blockPos(back.doc, applied.blockIds[1]!)).toBeNull();
+    expect(() => back.doc.check()).not.toThrow();
+  });
+
+  it('Keep clears the edit id on every cell and label, and changes nothing else', () => {
+    const { applied, open } = inserted();
+    const kept = open.apply(keepEdit(open, { editId: 'e_new', blockIds: applied.blockIds })!);
+    for (const id of applied.blockIds) {
+      const block = blockPos(kept.doc, id)!.node;
+      const spans = authorsIn(block);
+      expect(spans.length).toBeGreaterThan(0);
+      for (const [, by, editId] of spans) expect([by, editId]).toEqual(['ellie', null]);
+      expect(block.textContent).toBe(blockPos(open.doc, id)!.node.textContent);
+      expect(blockAttrs(block)).toEqual(blockAttrs(blockPos(open.doc, id)!.node));
+    }
+    expect(diagramSpec(blockPos(kept.doc, applied.blockIds[1]!)!.node).edges).toEqual([{ from: 'n2', to: 'n3', label: null }]);
+    expect(keepEdit(kept, { editId: 'e_new', blockIds: applied.blockIds })).toBeNull();
+    expect(removeEdit(kept, { editId: 'e_new', blockIds: [] })).toBeNull();
   });
 });

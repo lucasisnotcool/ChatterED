@@ -63,7 +63,60 @@ export type DocBlockDraft =
   | { kind: 'code'; text: string; lang?: string; prov: Provenance }
   | { kind: 'math'; tex: string; prov: Provenance }
   /** An evidentiary slide or region, shown inline as a crop of the rendered page (brief §3). */
-  | { kind: 'figure'; page: number; rect: Rect | null; caption: string; prov: Provenance };
+  | { kind: 'figure'; page: number; rect: Rect | null; caption: string; prov: Provenance }
+  | TableDraft
+  | DiagramDraft;
+
+/**
+ * A comparison table (2026-10-01). `columns` are the headings; every row has one cell per column.
+ * Cell text is the inline subset. Checked by `validateTableDraft`, never by `validateDrafts`: the
+ * ingest does not write tables.
+ */
+export interface TableDraft {
+  kind: 'table';
+  caption?: string | null;
+  columns: string[];
+  rows: { cells: string[]; pages?: number[] }[];
+  prov: Provenance;
+}
+
+export type DiagramLayout = 'flow' | 'hierarchy' | 'compare' | 'cycle';
+
+/** An edge between two diagram nodes, by their ids. Stored on the `diagram` node's `edges` attr. */
+export interface DiagramEdge {
+  from: string;
+  to: string;
+  label: string | null;
+}
+
+/**
+ * An editable diagram (2026-10-01): labelled nodes and optional edges, laid out in code by the
+ * renderer. `parent` is for `hierarchy`, `group` (the column heading a node sits under) for
+ * `compare`. Checked by `validateDiagramDraft`.
+ */
+export interface DiagramDraft {
+  kind: 'diagram';
+  layout: DiagramLayout;
+  title?: string | null;
+  nodes: { id: string; label: string; parent?: string | null; group?: string | null; pages?: number[] }[];
+  edges?: { from: string; to: string; label?: string | null }[];
+  prov: Provenance;
+}
+
+/** A `table` node read back as plain text (`tableGrid`). */
+export interface TableGrid {
+  caption: string | null;
+  columns: string[];
+  rows: string[][];
+}
+
+/** A `diagram` node read back (`diagramSpec`): what a layout needs, with labels as plain text. */
+export interface DiagramSpec {
+  layout: DiagramLayout;
+  title: string | null;
+  nodes: { id: string; label: string; parent: string | null; group: string | null; pages: number[] }[];
+  edges: DiagramEdge[];
+}
 
 /** One line of the document as a prompt sees it. The only view of the doc a model is given. */
 export interface OutlineEntry {

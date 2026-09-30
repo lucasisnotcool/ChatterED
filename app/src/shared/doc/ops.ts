@@ -13,7 +13,7 @@
  *
  * | op on a block holding learner text | what happens |
  * |---|---|
- * | `replace_block` | becomes a **suggestion** — strike the block's text, offer the agent's |
+ * | `replace_block` | becomes a **suggestion** — strike the block's text, offer the agent's (a `table` or a `diagram` is **dropped**, `rejected_guard`: see `applyBatch`) |
  * | `remove_block` | **dropped**, `rejected_guard` — nothing an agent says removes your writing |
  * | `append_to_block` | **relocated** to an `insert_after` of the same block |
  *
@@ -41,6 +41,7 @@ import {
   blockPos,
   eachBlock,
   hasLearnerText,
+  isStructuredBlock,
   newBlockId,
   notesSchema,
   textRuns,
@@ -139,6 +140,43 @@ export function draftToNodes(
           }),
         );
         break;
+      case 'table': {
+        if (draft.columns.length === 0) break;
+        const row = (cells: readonly string[], header: boolean, pages: readonly number[]): Node =>
+          schema.nodes.table_row!.create(
+            { pages: [...pages] },
+            cells.map((cell) => schema.nodes.table_cell!.create({ header }, inline(cell))),
+          );
+        // The headings are the first row. A row with no cells is not a row (`table_cell+`).
+        const rows = draft.rows.filter((r) => r.cells.length > 0).map((r) => row(r.cells, false, r.pages ?? []));
+        out.push(
+          schema.nodes.table!.create({ ...attrs, caption: draft.caption ?? null }, [
+            row(draft.columns, true, []),
+            ...rows,
+          ]),
+        );
+        break;
+      }
+      case 'diagram': {
+        if (draft.nodes.length === 0) break;
+        const nodes = draft.nodes.map((n) =>
+          schema.nodes.diagram_node!.create(
+            {
+              nodeId: n.id,
+              parent: n.parent ?? null,
+              group: n.group ?? null,
+              pages: [...(n.pages ?? [])],
+              reason: null,
+            },
+            inline(n.label),
+          ),
+        );
+        const edges = (draft.edges ?? []).map((e) => ({ from: e.from, to: e.to, label: e.label ?? null }));
+        out.push(
+          schema.nodes.diagram!.create({ ...attrs, layout: draft.layout, title: draft.title ?? null, edges }, nodes),
+        );
+        break;
+      }
       default:
         break;
     }
@@ -175,6 +213,12 @@ function draftsToText(drafts: readonly DocBlockDraft[]): string {
         break;
       case 'figure':
         parts.push(draft.caption);
+        break;
+      case 'table':
+        parts.push(draft.caption ?? '', draft.columns.join(' | '), ...draft.rows.map((r) => r.cells.join(' | ')));
+        break;
+      case 'diagram':
+        parts.push(draft.title ?? '', draft.nodes.map((n) => n.label).join(', '));
         break;
       default:
         break;
@@ -289,6 +333,13 @@ export function applyBatch(
           // Case 2a: the learner wrote here. The rewrite becomes an offer over the block's own
           // words — struck, with the agent's version beside it — and the learner decides.
           conflicts.push(...conflictsInBlock(target.node, target.pos));
+          if (isStructuredBlock(target.node)) {
+            // A table or a diagram the learner wrote in is held back whole. There is no honest
+            // inline offer to make: the struck text would run across cells, and the agent's
+            // version is a grid, not a sentence that fits in one of them.
+            guardBlocked = true;
+            return;
+          }
           const quote = nodesToInline(target.node.content);
           const made = suggest(op.blockId, quote, draftsToText(op.blocks), batch.why || null, null);
           if (!made) guardBlocked = true;

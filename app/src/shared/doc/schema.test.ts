@@ -3,23 +3,31 @@
  * spans by different authors, the outline a prompt is given, and the learner's spans.
  */
 
+import type { Node } from 'prosemirror-model';
 import { describe, expect, it } from 'vitest';
-import { docOf, fixtureDoc, heading, mixed, para, stateOf } from './fixture.test-support.js';
+import { diagram, docOf, fixtureDoc, heading, mixed, para, stateOf, table } from './fixture.test-support.js';
 import { inlineToNodes } from './inline.js';
 import {
   assignMissingBlockIds,
   authorMark,
   blockAttrs,
   blockPos,
+  blockPages,
   blocksForPages,
+  diagramSpec,
+  diagramText,
   docFromJson,
   docOutline,
   docOutlineNear,
   emptyDoc,
   hasLearnerText,
+  isContainerBlock,
+  isStructuredBlock,
   learnerSpans,
   newBlockId,
   notesSchema,
+  tableGrid,
+  tableText,
 } from './schema.js';
 
 describe('newBlockId', () => {
@@ -32,7 +40,7 @@ describe('newBlockId', () => {
 
 describe('the schema', () => {
   it('carries provenance on every block-level node', () => {
-    for (const name of ['paragraph', 'heading', 'bullet_list', 'ordered_list', 'code_block', 'math_block', 'q_block', 'slide_figure']) {
+    for (const name of ['paragraph', 'heading', 'bullet_list', 'ordered_list', 'code_block', 'math_block', 'q_block', 'slide_figure', 'table', 'diagram']) {
       const type = notesSchema.nodes[name]!;
       expect(Object.keys(type.spec.attrs ?? {})).toEqual(
         expect.arrayContaining(['blockId', 'pages', 'reason', 'objectiveIds']),
@@ -323,5 +331,287 @@ describe('assignMissingBlockIds', () => {
 
   it('is null when there is nothing to do', () => {
     expect(assignMissingBlockIds(stateOf(fixtureDoc()).tr)).toBeNull();
+  });
+});
+
+// ── the table and the diagram (2026-10-01) ──────────────────────────────────────────────────
+
+/** Ellie's table, with one cell the learner filled in. */
+function compareTable(): Node {
+  return table(
+    'b_tab',
+    ['Method', 'Needs a model', 'Cost'],
+    [
+      ['Value iteration', 'yes', [{ text: 'one sweep per step', by: 'user' }]],
+      ['Q-learning', 'no', ''],
+    ],
+    { caption: 'Planning vs learning', pages: [5], rowPages: [[5], [9]] },
+  );
+}
+
+function flowDiagram(): Node {
+  return diagram(
+    'b_dia',
+    [
+      { id: 'n1', label: 'Observe', pages: [7] },
+      { id: 'n2', label: 'Act' },
+      { id: 'n3', label: 'Reward', pages: [8] },
+    ],
+    {
+      layout: 'cycle',
+      title: 'The agent loop',
+      edges: [
+        { from: 'n1', to: 'n2', label: null },
+        { from: 'n2', to: 'n3', label: 'environment' },
+      ],
+      pages: [],
+    },
+  );
+}
+
+/** `toDOM` → the attributes it wrote → the matching `parseDOM` rule's `getAttrs`. No DOM needed. */
+function throughDom(node: Node): { tag: string; attrs: Record<string, unknown>; dom: unknown[] } {
+  const dom = node.type.spec.toDOM!(node) as unknown as unknown[];
+  const tag = dom[0] as string;
+  const written = (typeof dom[1] === 'object' && !Array.isArray(dom[1]) ? dom[1] : {}) as Record<string, string>;
+  const source = { getAttribute: (name: string): string | null => written[name] ?? null };
+  const rule = (node.type.spec.parseDOM ?? []).find((r) => {
+    const [ruleTag, attr] = (r.tag ?? '').replace(']', '').split('[');
+    return ruleTag === tag && (attr === undefined || attr in written);
+  });
+  if (!rule) throw new Error(`no parse rule for <${tag}>`);
+  const getAttrs = rule.getAttrs as unknown as (dom: typeof source) => Record<string, unknown>;
+  return { tag, attrs: getAttrs(source), dom };
+}
+
+describe('table and diagram — the schema', () => {
+  it('gives rows, cells and diagram nodes no blockId: only the table or the diagram is addressable', () => {
+    for (const name of ['table_row', 'table_cell', 'diagram_node']) {
+      expect(Object.keys(notesSchema.nodes[name]!.spec.attrs ?? {})).not.toContain('blockId');
+    }
+    expect(Object.keys(notesSchema.nodes.table_row!.spec.attrs ?? {})).toEqual(['pages']);
+    expect(Object.keys(notesSchema.nodes.table_cell!.spec.attrs ?? {})).toEqual(['header']);
+    expect(Object.keys(notesSchema.nodes.diagram_node!.spec.attrs ?? {})).toEqual([
+      'nodeId',
+      'parent',
+      'group',
+      'pages',
+      'reason',
+    ]);
+  });
+
+  it('makes both blocks isolating and defining, and neither a container', () => {
+    for (const node of [compareTable(), flowDiagram()]) {
+      expect(node.type.spec.isolating).toBe(true);
+      expect(node.type.spec.defining).toBe(true);
+      expect(node.type.spec.group).toBe('block');
+      expect(isStructuredBlock(node)).toBe(true);
+      expect(isContainerBlock(node)).toBe(false);
+    }
+    expect(isStructuredBlock(para('b_p', 'Prose.'))).toBe(false);
+  });
+
+  it('writes a real table, and reads every attr back', () => {
+    const node = compareTable();
+    const t = throughDom(node);
+    expect(t.tag).toBe('table');
+    expect(t.dom[2]).toEqual(['tbody', 0]);
+    expect(t.attrs).toEqual(node.attrs);
+
+    const row = throughDom(node.child(1));
+    expect(row.tag).toBe('tr');
+    expect(row.attrs).toEqual({ pages: [5] });
+    expect(throughDom(node.child(0)).attrs).toEqual({ pages: [] });
+
+    const th = throughDom(node.child(0).child(0));
+    expect([th.tag, th.attrs]).toEqual(['th', { header: true }]);
+    const td = throughDom(node.child(1).child(0));
+    expect([td.tag, td.attrs]).toEqual(['td', { header: false }]);
+  });
+
+  it('writes a diagram as figure[data-diagram] with its edges as JSON, and reads every attr back', () => {
+    const node = flowDiagram();
+    const d = throughDom(node);
+    expect(d.tag).toBe('figure');
+    const written = d.dom[1] as Record<string, string>;
+    expect(written['data-diagram']).toBe('');
+    // Never `data-page`: that is the slide figure's parse rule, and a diagram is not a crop.
+    expect(written['data-page']).toBeUndefined();
+    expect(JSON.parse(written['data-edges']!)).toEqual(node.attrs.edges);
+    expect(d.attrs).toEqual(node.attrs);
+
+    const child = notesSchema.nodes.diagram_node!.create(
+      { nodeId: 'n9', parent: 'n1', group: 'Planning', pages: [3, 4], reason: 'from the chat' },
+      inlineToNodes(notesSchema, 'A label', 'ellie', null, 1),
+    );
+    const n = throughDom(child);
+    expect(n.tag).toBe('div');
+    expect((n.dom[1] as Record<string, string>)['data-diagram-node']).toBe('');
+    expect(n.attrs).toEqual(child.attrs);
+    expect(throughDom(node.child(1)).attrs).toEqual(node.child(1).attrs);
+  });
+
+  it('reads a diagram with a damaged layout or edges as a flow with none, not as a throw', () => {
+    const rule = notesSchema.nodes.diagram!.spec.parseDOM![0]!;
+    const getAttrs = rule.getAttrs as unknown as (dom: { getAttribute(n: string): string | null }) => Record<string, unknown>;
+    const attrs = getAttrs({
+      getAttribute: (name) => ({ 'data-layout': 'spiral', 'data-edges': '{not json' })[name] ?? null,
+    });
+    expect(attrs.layout).toBe('flow');
+    expect(attrs.edges).toEqual([]);
+  });
+
+  it('survives JSON, authors and all', () => {
+    const doc = docOf(heading('b_t', 1, 'Planning'), compareTable(), flowDiagram());
+    const back = docFromJson(JSON.parse(JSON.stringify(doc.toJSON())));
+    expect(back.eq(doc)).toBe(true);
+    expect(back.toJSON()).toEqual(doc.toJSON());
+    expect(hasLearnerText(back.child(1))).toBe(true);
+  });
+
+  it('refuses a table with no rows and a diagram with no nodes', () => {
+    const bare = (type: string) => ({
+      type: 'doc',
+      content: [{ type, attrs: { blockId: 'b_x', pages: [1], reason: null, objectiveIds: [] } }],
+    });
+    expect(() => docFromJson(bare('table'))).toThrow(/notes doc|Invalid content/);
+    expect(() => docFromJson(bare('diagram'))).toThrow(/notes doc|Invalid content/);
+  });
+});
+
+describe('tableGrid and diagramSpec', () => {
+  it('reads a table back as its caption, its headings and its rows of plain text', () => {
+    expect(tableGrid(compareTable())).toEqual({
+      caption: 'Planning vs learning',
+      columns: ['Method', 'Needs a model', 'Cost'],
+      rows: [
+        ['Value iteration', 'yes', 'one sweep per step'],
+        ['Q-learning', 'no', ''],
+      ],
+    });
+  });
+
+  it('gives a table with no heading row no columns, and every row as a row', () => {
+    const { table: t, table_row: tr, table_cell: td } = notesSchema.nodes;
+    const cell = (text: string) => td!.create({ header: false }, inlineToNodes(notesSchema, text, 'user', null, 1));
+    const node = t!.create({ blockId: 'b_t', pages: [1] }, [tr!.create(null, [cell('a'), cell('b')])]);
+    expect(tableGrid(node)).toEqual({ caption: null, columns: [], rows: [['a', 'b']] });
+  });
+
+  it('reads a diagram back as what a layout needs', () => {
+    expect(diagramSpec(flowDiagram())).toEqual({
+      layout: 'cycle',
+      title: 'The agent loop',
+      nodes: [
+        { id: 'n1', label: 'Observe', parent: null, group: null, pages: [7] },
+        { id: 'n2', label: 'Act', parent: null, group: null, pages: [] },
+        { id: 'n3', label: 'Reward', parent: null, group: null, pages: [8] },
+      ],
+      edges: [
+        { from: 'n1', to: 'n2', label: null },
+        { from: 'n2', to: 'n3', label: 'environment' },
+      ],
+    });
+  });
+
+  it('hands back copies, never the node’s own arrays', () => {
+    const node = flowDiagram();
+    const spec = diagramSpec(node);
+    spec.nodes[0]!.pages.push(99);
+    spec.edges[0]!.label = 'changed';
+    expect(diagramSpec(node).nodes[0]!.pages).toEqual([7]);
+    expect((node.attrs.edges as { label: string | null }[])[0]!.label).toBeNull();
+  });
+});
+
+describe('table and diagram — walking the document', () => {
+  const doc = () =>
+    docOf(heading('b_t', 1, 'Planning'), para('b_p', 'Before.', 'ingest', null, [4]), compareTable(), flowDiagram());
+
+  it('is one outline line each: rows with " | ", a diagram as title, labels, then edges', () => {
+    const outline = docOutline(doc());
+    expect(outline.map((entry) => entry.kind)).toEqual(['heading', 'paragraph', 'table', 'diagram']);
+
+    const t = outline[2]!;
+    expect(t.text).toBe(
+      'Planning vs learning: Method | Needs a model | Cost || Value iteration | yes | one sweep per step || Q-learning | no |',
+    );
+    expect(t.learnerText).toBe(true);
+    expect(t.path).toEqual(['Planning']);
+
+    const d = outline[3]!;
+    expect(d.text).toBe('The agent loop: Observe, Act, Reward; Observe -> Act, Act -> Reward (environment)');
+    expect(d.learnerText).toBe(false);
+  });
+
+  it('says where a node sits when the layout depends on it', () => {
+    const tree = diagram(
+      'b_tree',
+      [
+        { id: 'a', label: 'MDP' },
+        { id: 'b', label: 'Policy', parent: 'a' },
+        { id: 'c', label: 'Greedy', group: 'Planning' },
+      ],
+      { layout: 'hierarchy' },
+    );
+    expect(diagramText(tree)).toBe('MDP, Policy (under MDP), Greedy [Planning]');
+    expect(tableText(table('b_x', ['A', 'B'], [['1', '2']]))).toBe('A | B || 1 | 2');
+  });
+
+  it('keeps an agent-only table to the short outline and a learner one to the long', () => {
+    const long = Array.from({ length: 12 }, (_, i) => [`row ${String(i)} alpha beta`, 'gamma delta epsilon']);
+    const agents = docOutline(docOf(table('b_a', ['One', 'Two'], long)))[0]!;
+    expect(agents.text.endsWith('…')).toBe(true);
+    const learners = docOutline(docOf(table('b_l', ['One', 'Two'], long, { by: 'user' })))[0]!;
+    expect(learners.text.endsWith('…')).toBe(false);
+    expect(learners.text.length).toBeGreaterThan(agents.text.length);
+  });
+
+  it('reports the pages of its rows and nodes as the block’s own', () => {
+    const outline = docOutline(doc());
+    expect(outline[2]!.pages).toEqual([5, 9]);
+    expect(outline[3]!.pages).toEqual([7, 8]);
+    expect(blockPages(para('b_p', 'x', 'ingest', null, [4]))).toEqual([4]);
+    expect(blocksForPages(doc(), [9])).toEqual(['b_tab']);
+    expect(blocksForPages(doc(), [8])).toEqual(['b_dia']);
+    expect(blocksForPages(doc(), [5, 7])).toEqual(['b_tab', 'b_dia']);
+  });
+
+  it('is in the outline near an anchor like any other block', () => {
+    expect(docOutlineNear(doc(), 'b_tab', 1).map((entry) => entry.blockId)).toEqual(['b_t', 'b_p', 'b_tab', 'b_dia']);
+  });
+
+  it('reports a cell the learner typed as their span, against the table', () => {
+    expect(learnerSpans(doc())).toEqual([
+      expect.objectContaining({ blockId: 'b_tab', text: 'one sweep per step' }),
+    ]);
+    expect(hasLearnerText(compareTable())).toBe(true);
+    expect(hasLearnerText(flowDiagram())).toBe(false);
+  });
+
+  it('does not run two learner cells, or two learner labels, together', () => {
+    const t = table('b_t2', ['A', 'B'], [['mine', 'also mine']], { by: 'user' });
+    expect(learnerSpans(docOf(t)).map((span) => span.text)).toEqual(['A', 'B', 'mine', 'also mine']);
+    const d = diagram('b_d2', [{ id: 'a', label: 'first' }, { id: 'b', label: 'second' }], { by: 'user' });
+    expect(learnerSpans(docOf(d)).map((span) => [span.blockId, span.text])).toEqual([
+      ['b_d2', 'first'],
+      ['b_d2', 'second'],
+    ]);
+  });
+
+  it('finds the block by id, and mints an id for the block only', () => {
+    const d = doc();
+    expect(blockPos(d, 'b_tab')!.node.type.name).toBe('table');
+    expect(blockPos(d, 'b_dia')!.node.type.name).toBe('diagram');
+
+    const unminted = docOf(table('', ['A', 'B'], [['1', '2']]), diagram('', [{ id: 'a', label: 'x' }, { id: 'b', label: 'y' }]));
+    const state = stateOf(unminted);
+    const tr = assignMissingBlockIds(state.tr)!;
+    const after = state.apply(tr).doc;
+    expect(blockAttrs(after.child(0)).blockId).toMatch(/^b_[0-9a-f]{12}$/);
+    expect(blockAttrs(after.child(1)).blockId).toMatch(/^b_[0-9a-f]{12}$/);
+    expect(after.child(0).child(0).attrs).toEqual({ pages: [] });
+    expect(after.child(1).child(0).attrs.nodeId).toBe('a');
+    expect(assignMissingBlockIds(stateOf(after).tr)).toBeNull();
   });
 });

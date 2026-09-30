@@ -10,10 +10,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { docOf, fixtureDoc, mixed, para, stateOf } from './fixture.test-support.js';
+import { diagram, docOf, fixtureDoc, mixed, para, stateOf, table } from './fixture.test-support.js';
 import { isLearnerRange, learnerConflicts } from './guard.js';
 import { inlineToNodes } from './inline.js';
-import { notesSchema } from './schema.js';
+import { blockPos, notesSchema } from './schema.js';
 
 /** The fixture's learner run: "I think it converges because of the contraction." */
 function learnerRange(): { from: number; to: number; doc: ReturnType<typeof fixtureDoc> } {
@@ -146,5 +146,61 @@ describe('learnerConflicts', () => {
     const conflicts = learnerConflicts(state, tr);
     expect(conflicts.map((c) => c.text)).toEqual(['Because of the contraction.']);
     expect(conflicts[0]!.blockId).toBe('b_ans');
+  });
+});
+
+// ── a table and a diagram the learner wrote in (2026-10-01) ─────────────────────────────────
+
+describe('learnerConflicts — tables and diagrams', () => {
+  const doc = () =>
+    docOf(
+      para('b_p', 'Before.', 'ingest', null, [4]),
+      table('b_tab', ['Method', 'Cost'], [['Value iteration', [{ text: 'a sweep per step', by: 'user' }]]]),
+      diagram('b_dia', [
+        { id: 'n1', label: 'Observe' },
+        { id: 'n2', label: [{ text: 'then I act', by: 'user' }] },
+      ]),
+      table('b_agents', ['A', 'B'], [['1', '2']]),
+    );
+
+  it('reports the learner’s cell, against the table, when the whole table would go', () => {
+    const state = stateOf(doc());
+    const target = blockPos(state.doc, 'b_tab')!;
+    const conflicts = learnerConflicts(state, state.tr.delete(target.pos, target.pos + target.node.nodeSize));
+    expect(conflicts).toEqual([expect.objectContaining({ blockId: 'b_tab', text: 'a sweep per step' })]);
+  });
+
+  it('reports the learner’s label when the diagram is replaced by something else', () => {
+    const state = stateOf(doc());
+    const target = blockPos(state.doc, 'b_dia')!;
+    const tr = state.tr.replaceWith(target.pos, target.pos + target.node.nodeSize, para('b_new', 'A sentence instead.', 'ellie', 'e_1'));
+    expect(learnerConflicts(state, tr)).toEqual([expect.objectContaining({ blockId: 'b_dia', text: 'then I act' })]);
+  });
+
+  it('reports a cut inside the learner’s cell, clipped to what was cut', () => {
+    const state = stateOf(doc());
+    let from = -1;
+    state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'a sweep per step') from = pos;
+      return true;
+    });
+    expect(isLearnerRange(state.doc, from, from + 1)).toBe(true);
+    expect(learnerConflicts(state, state.tr.delete(from + 2, from + 7))).toEqual([
+      expect.objectContaining({ blockId: 'b_tab', text: 'sweep' }),
+    ]);
+  });
+
+  it('lets a table only the agents wrote go, and lets an agent write in the cell next to the learner’s', () => {
+    const state = stateOf(doc());
+    const agents = blockPos(state.doc, 'b_agents')!;
+    expect(learnerConflicts(state, state.tr.delete(agents.pos, agents.pos + agents.node.nodeSize))).toEqual([]);
+
+    let at = -1;
+    state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'Value iteration') at = pos + node.nodeSize;
+      return true;
+    });
+    const tr = state.tr.insert(at, inlineToNodes(notesSchema, ' (exact)', 'ellie', 'e_1'));
+    expect(learnerConflicts(state, tr)).toEqual([]);
   });
 });

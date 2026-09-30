@@ -164,6 +164,11 @@ export function draftWords(blocks: readonly DocBlockDraft[]): number {
         return n + count(b.caption);
       case 'math':
         return n;
+      // The ingest writes neither (`validateDrafts` rejects both); counted for completeness.
+      case 'table':
+        return n + b.columns.concat(b.rows.flatMap((r) => r.cells)).reduce((m, c) => m + count(c), 0);
+      case 'diagram':
+        return n + b.nodes.reduce((m, node) => m + count(node.label), 0);
     }
   }, 0);
 }

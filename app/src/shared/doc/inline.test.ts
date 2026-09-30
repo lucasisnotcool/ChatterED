@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { blockToInline, inlineToNodes, nodesToInline } from './inline.js';
+import { draftToNodes } from './ops.js';
 import { notesSchema } from './schema.js';
 import { docOf, para } from './fixture.test-support.js';
 
@@ -113,5 +114,44 @@ describe('nodesToInline', () => {
       ],
     );
     expect(nodesToInline(docOf(list).content)).toBe('One.\nTwo.');
+  });
+});
+
+describe('blockToInline — a table and a diagram', () => {
+  it('puts a table’s row on one line, cells in order, markup kept', () => {
+    const [node] = draftToNodes(
+      notesSchema,
+      [
+        {
+          kind: 'table',
+          columns: ['Method', 'Cost'],
+          rows: [{ cells: ['**Value** iteration', '$O(n^2)$'] }, { cells: ['Q-learning', ''] }],
+          prov: { pages: [5], reason: null },
+        },
+      ],
+      'ellie',
+      null,
+    );
+    expect(blockToInline(node!)).toBe('Method | Cost\n**Value** iteration | $O(n^2)$\nQ-learning | ');
+  });
+
+  it('puts each diagram label on its own line', () => {
+    const [node] = draftToNodes(
+      notesSchema,
+      [
+        {
+          kind: 'diagram',
+          layout: 'flow',
+          nodes: [
+            { id: 'a', label: 'Observe' },
+            { id: 'b', label: '*Act*' },
+          ],
+          prov: { pages: [5], reason: null },
+        },
+      ],
+      'ellie',
+      null,
+    );
+    expect(blockToInline(node!)).toBe('Observe\n*Act*');
   });
 });

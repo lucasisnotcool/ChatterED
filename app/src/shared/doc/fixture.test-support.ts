@@ -14,7 +14,7 @@ import type { Node } from 'prosemirror-model';
 import { EditorState } from 'prosemirror-state';
 import { inlineToNodes } from './inline.js';
 import { authorMark, notesSchema } from './schema.js';
-import type { DocAuthor } from './types.js';
+import type { DiagramEdge, DiagramLayout, DocAuthor } from './types.js';
 
 export const AT = 1_758_000_000_000;
 
@@ -52,6 +52,57 @@ export function heading(blockId: string, level: 1 | 2 | 3, text: string, pages: 
   return notesSchema.nodes.heading!.create(
     { blockId, level, pages, reason: pages.length > 0 ? null : 'title', objectiveIds: [] },
     inlineToNodes(notesSchema, text, 'ingest', null, AT),
+  );
+}
+
+/** Cell or label content: a string in one author's hand, or spans stitched from several. */
+export type Spans = string | { text: string; by: DocAuthor; editId?: string | null }[];
+
+function inlineOf(content: Spans, by: DocAuthor, editId: string | null): Node[] {
+  if (typeof content === 'string') {
+    return content.length > 0 ? inlineToNodes(notesSchema, content, by, editId, AT) : [];
+  }
+  return content.map((part) => notesSchema.text(part.text, [authorMark(part.by, part.editId ?? null, AT)]));
+}
+
+/** A table: a heading row from `columns`, then `rows`. `rowPages[i]` is row i's own provenance. */
+export function table(
+  blockId: string,
+  columns: string[],
+  rows: Spans[][],
+  opts: { by?: DocAuthor; editId?: string | null; pages?: number[]; caption?: string | null; rowPages?: number[][] } = {},
+): Node {
+  const { by = 'ellie', editId = null, pages = [6], caption = null, rowPages = [] } = opts;
+  const { table: t, table_row: tr, table_cell: td } = notesSchema.nodes;
+  const row = (cells: Spans[], header: boolean, own: number[]): Node =>
+    tr!.create({ pages: own }, cells.map((cell) => td!.create({ header }, inlineOf(cell, by, editId))));
+  return t!.create({ blockId, pages, reason: pages.length > 0 ? null : 'asked for', objectiveIds: [], caption }, [
+    row(columns, true, []),
+    ...rows.map((cells, i) => row(cells, false, rowPages[i] ?? [])),
+  ]);
+}
+
+export function diagram(
+  blockId: string,
+  nodes: { id: string; label: Spans; parent?: string | null; group?: string | null; pages?: number[] }[],
+  opts: {
+    layout?: DiagramLayout;
+    title?: string | null;
+    edges?: DiagramEdge[];
+    by?: DocAuthor;
+    editId?: string | null;
+    pages?: number[];
+  } = {},
+): Node {
+  const { layout = 'flow', title = null, edges = [], by = 'ellie', editId = null, pages = [6] } = opts;
+  return notesSchema.nodes.diagram!.create(
+    { blockId, pages, reason: pages.length > 0 ? null : 'asked for', objectiveIds: [], layout, title, edges },
+    nodes.map((n) =>
+      notesSchema.nodes.diagram_node!.create(
+        { nodeId: n.id, parent: n.parent ?? null, group: n.group ?? null, pages: n.pages ?? [], reason: null },
+        inlineOf(n.label, by, editId),
+      ),
+    ),
   );
 }
 

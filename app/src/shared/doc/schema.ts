@@ -36,7 +36,15 @@
 
 import { Fragment, Mark, Node, Schema, type MarkSpec, type NodeSpec } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
-import type { DocAuthor, OutlineEntry, Rect } from './types.js';
+import type {
+  DiagramEdge,
+  DiagramLayout,
+  DiagramSpec,
+  DocAuthor,
+  OutlineEntry,
+  Rect,
+  TableGrid,
+} from './types.js';
 
 /**
  * What a `parseDOM` handler below actually touches: one method.
@@ -109,12 +117,17 @@ function blockDataAttrs(node: Node): Record<string, string> {
   return out;
 }
 
-/** The inverse, for `parseDOM`. Only ever runs inside a view; kept symmetrical so paste works. */
-function readBlockAttrs(dom: AttrSource): Record<string, unknown> {
-  const pages = (dom.getAttribute('data-pages') ?? '')
+/** `data-pages="4,5"` → `[4, 5]`. Shared by the blocks and by the rows and nodes inside them. */
+function readPages(dom: AttrSource): number[] {
+  return (dom.getAttribute('data-pages') ?? '')
     .split(',')
     .map((n) => Number.parseInt(n, 10))
     .filter((n) => Number.isInteger(n));
+}
+
+/** The inverse, for `parseDOM`. Only ever runs inside a view; kept symmetrical so paste works. */
+function readBlockAttrs(dom: AttrSource): Record<string, unknown> {
+  const pages = readPages(dom);
   const objectives = (dom.getAttribute('data-objectives') ?? '').split(',').filter((s) => s.length > 0);
   return {
     blockId: dom.getAttribute('data-block-id') ?? '',
@@ -328,6 +341,197 @@ const slide_figure: NodeSpec = {
   },
 };
 
+/**
+ * **A comparison table** (2026-10-01): Ellie fills one on request, and the learner edits it.
+ *
+ * One addressable block. Its rows and cells are its internals, exactly as a list's items are: they
+ * carry no `blockId`, so no agent op can land on a cell and bypass the table. `isolating` so a
+ * Backspace at the first cell cannot merge the table into the paragraph above it.
+ *
+ * The caption is an attr, not a `<caption>` child: a child would be content, and content here is
+ * rows. The heading row is simply the first row, with `header` on every cell (`tableGrid`).
+ */
+const table: NodeSpec = {
+  content: 'table_row+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: { caption: { default: null as string | null }, ...BLOCK_ATTRS },
+  parseDOM: [
+    {
+      tag: 'table',
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), caption: dom.getAttribute('data-caption') }),
+    },
+  ],
+  toDOM: (node) => {
+    const attrs = blockDataAttrs(node);
+    const caption = node.attrs.caption as string | null;
+    if (caption) attrs['data-caption'] = caption;
+    return ['table', attrs, ['tbody', 0]];
+  },
+};
+
+/** A row has its own `pages`: one row of a comparison often comes from a different slide. */
+const table_row: NodeSpec = {
+  content: 'table_cell+',
+  // There is no place between two cells to stand: a gap cursor there is a caret the learner
+  // cannot see, and typing at it would need a cell that does not exist.
+  allowGapCursor: false,
+  attrs: { pages: { default: [] as number[] } },
+  parseDOM: [{ tag: 'tr', getAttrs: (dom: AttrSource) => ({ pages: readPages(dom) }) }],
+  toDOM: (node) => {
+    const pages = childPages(node);
+    return ['tr', pages.length > 0 ? { 'data-pages': pages.join(',') } : {}, 0];
+  },
+};
+
+/**
+ * `inline*`, so a cell's text wears the author mark like any other text and what the learner types
+ * in a cell is theirs (§5.4). `isolating` keeps an editing gesture inside the cell it started in.
+ */
+const table_cell: NodeSpec = {
+  content: 'inline*',
+  isolating: true,
+  attrs: { header: { default: false } },
+  parseDOM: [
+    { tag: 'td', getAttrs: () => ({ header: false }) },
+    { tag: 'th', getAttrs: () => ({ header: true }) },
+  ],
+  toDOM: (node) => [(node.attrs.header as boolean) ? 'th' : 'td', 0],
+};
+
+export const DIAGRAM_LAYOUTS: readonly DiagramLayout[] = ['flow', 'hierarchy', 'compare', 'cycle'];
+
+export function isDiagramLayout(value: unknown): value is DiagramLayout {
+  return typeof value === 'string' && (DIAGRAM_LAYOUTS as readonly string[]).includes(value);
+}
+
+/** Edges as they are trusted: from an attr, from `data-edges`, or from a draft. Never throws. */
+function asEdges(value: unknown): DiagramEdge[] {
+  if (!Array.isArray(value)) return [];
+  const edges: DiagramEdge[] = [];
+  for (const raw of value as unknown[]) {
+    if (!raw || typeof raw !== 'object') continue;
+    const edge = raw as { from?: unknown; to?: unknown; label?: unknown };
+    if (typeof edge.from !== 'string' || typeof edge.to !== 'string') continue;
+    edges.push({
+      from: edge.from,
+      to: edge.to,
+      label: typeof edge.label === 'string' && edge.label.length > 0 ? edge.label : null,
+    });
+  }
+  return edges;
+}
+
+function parseEdges(value: string | null): DiagramEdge[] {
+  if (!value) return [];
+  try {
+    return asEdges(JSON.parse(value) as unknown);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * **An editable diagram** (2026-10-01): an infographic whose labels are real text.
+ *
+ * The node says *what* is in the picture — the labelled nodes, and the edges between them by
+ * `nodeId` — and the renderer lays it out in code from `layout`. Nothing here is a coordinate, so
+ * a label the learner rewrites reflows instead of overflowing a box somebody drew.
+ *
+ * One addressable block, like the table. The edges are an attr rather than nodes because an edge
+ * has no text of its own to author beyond a short label, and the title is an attr for the reason
+ * the table's caption is.
+ */
+const diagram: NodeSpec = {
+  content: 'diagram_node+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: {
+    layout: { default: 'flow' as DiagramLayout },
+    title: { default: null as string | null },
+    edges: { default: [] as DiagramEdge[] },
+    ...BLOCK_ATTRS,
+  },
+  parseDOM: [
+    {
+      tag: 'figure[data-diagram]',
+      getAttrs: (dom: AttrSource) => {
+        const layout = dom.getAttribute('data-layout');
+        return {
+          ...readBlockAttrs(dom),
+          layout: isDiagramLayout(layout) ? layout : 'flow',
+          title: dom.getAttribute('data-title'),
+          edges: parseEdges(dom.getAttribute('data-edges')),
+        };
+      },
+    },
+  ],
+  toDOM: (node) => {
+    const attrs: Record<string, string> = {
+      ...blockDataAttrs(node),
+      'data-diagram': '',
+      'data-layout': node.attrs.layout as string,
+      'data-edges': JSON.stringify(asEdges(node.attrs.edges)),
+    };
+    const title = node.attrs.title as string | null;
+    if (title) attrs['data-title'] = title;
+    return ['figure', attrs, 0];
+  },
+};
+
+/**
+ * One node of a diagram. The label is its inline content, authored span by span; `nodeId` is what
+ * edges and `parent` name, and is local to the diagram (it is not a `blockId`, and nothing outside
+ * the diagram resolves it). `parent` is read by the `hierarchy` layout and `group` — the column
+ * heading the node sits under — by `compare`.
+ */
+const diagram_node: NodeSpec = {
+  content: 'inline*',
+  isolating: true,
+  attrs: {
+    nodeId: { default: '' },
+    parent: { default: null as string | null },
+    group: { default: null as string | null },
+    pages: { default: [] as number[] },
+    reason: { default: null as string | null },
+  },
+  parseDOM: [
+    {
+      tag: 'div[data-diagram-node]',
+      getAttrs: (dom: AttrSource) => ({
+        nodeId: dom.getAttribute('data-node-id') ?? '',
+        parent: dom.getAttribute('data-parent'),
+        group: dom.getAttribute('data-group'),
+        pages: readPages(dom),
+        reason: dom.getAttribute('data-reason'),
+      }),
+    },
+  ],
+  toDOM: (node) => {
+    const attrs: Record<string, string> = {
+      'data-diagram-node': '',
+      'data-node-id': node.attrs.nodeId as string,
+    };
+    const parent = node.attrs.parent as string | null;
+    if (parent) attrs['data-parent'] = parent;
+    const group = node.attrs.group as string | null;
+    if (group) attrs['data-group'] = group;
+    const pages = childPages(node);
+    if (pages.length > 0) attrs['data-pages'] = pages.join(',');
+    const reason = node.attrs.reason as string | null;
+    if (reason) attrs['data-reason'] = reason;
+    return ['div', attrs, 0];
+  },
+};
+
+/** The `pages` of a row or a diagram node, copied. */
+function childPages(node: Node): number[] {
+  const pages = (node.attrs as { pages?: unknown }).pages;
+  return Array.isArray(pages) ? [...(pages as number[])] : [];
+}
+
 function parseRect(value: string | null): Rect | null {
   if (!value) return null;
   const parts = value.split(',').map((n) => Number.parseFloat(n));
@@ -449,6 +653,11 @@ export const notesSchema = new Schema({
     math_block,
     q_block,
     slide_figure,
+    table,
+    table_row,
+    table_cell,
+    diagram,
+    diagram_node,
     text,
   },
   marks: {
@@ -469,9 +678,81 @@ export const notesSchema = new Schema({
  * (the question paragraph and Max's resolution live inside one and are addressable in their own
  * right). A list is *one* block — its `list_item`s and their paragraphs are its internals, not
  * separate blocks, because an agent op that landed on a bullet's paragraph would be an op that
- * bypassed the list.
+ * bypassed the list. A `table` and a `diagram` are one block each for the same reason.
  */
 const CONTAINERS = new Set(['q_block']);
+
+/**
+ * The blocks that are one addressable unit with structure inside: a `table` and a `diagram`. They
+ * are deliberately *not* containers. Rows, cells and diagram nodes carry no `blockId`, `eachBlock`
+ * does not descend into them, and the text in them is reported against the table or the diagram —
+ * which is what makes one learner-typed cell protect the whole block from an agent's replace.
+ */
+const STRUCTURED = new Set(['table', 'diagram']);
+
+export function isStructuredBlock(node: Node): boolean {
+  return STRUCTURED.has(node.type.name);
+}
+
+// ── reading a table and a diagram back ──────────────────────────────────────────────────────
+
+/**
+ * A `table` node as a grid of plain text. `columns` is the first row when every cell in it is a
+ * header cell, and `rows` is everything after it; a table with no heading row has `columns: []`.
+ */
+export function tableGrid(node: Node): TableGrid {
+  const all: { header: boolean; cells: string[] }[] = [];
+  node.forEach((row) => {
+    const cells: string[] = [];
+    let header = row.childCount > 0;
+    row.forEach((cell) => {
+      cells.push(cell.textContent);
+      if (!(cell.attrs.header as boolean)) header = false;
+    });
+    all.push({ header, cells });
+  });
+  const headed = all.length > 0 && all[0]!.header;
+  return {
+    caption: (node.attrs.caption as string | null) || null,
+    columns: headed ? all[0]!.cells : [],
+    rows: (headed ? all.slice(1) : all).map((row) => row.cells),
+  };
+}
+
+/** A `diagram` node as the renderer's layout input: plain-text labels, and the edges by id. */
+export function diagramSpec(node: Node): DiagramSpec {
+  const nodes: DiagramSpec['nodes'] = [];
+  node.forEach((child) => {
+    nodes.push({
+      id: child.attrs.nodeId as string,
+      label: child.textContent,
+      parent: (child.attrs.parent as string | null) || null,
+      group: (child.attrs.group as string | null) || null,
+      pages: childPages(child),
+    });
+  });
+  const layout = node.attrs.layout as unknown;
+  return {
+    layout: isDiagramLayout(layout) ? layout : 'flow',
+    title: (node.attrs.title as string | null) || null,
+    nodes,
+    edges: asEdges(node.attrs.edges),
+  };
+}
+
+/**
+ * The pages a block came from, **including its rows' or its nodes' own**. For every other block
+ * this is `blockAttrs(node).pages`; a table or a diagram can cite a page on one row only, and the
+ * objective bar and the outline must still find the block from that page.
+ */
+export function blockPages(node: Node): number[] {
+  const pages = blockAttrs(node).pages;
+  if (!STRUCTURED.has(node.type.name)) return pages;
+  node.forEach((child) => {
+    for (const page of childPages(child)) if (!pages.includes(page)) pages.push(page);
+  });
+  return pages;
+}
 
 /**
  * True for a block whose *text* belongs to its children rather than to it — today, only the
@@ -608,21 +889,57 @@ function outlineText(node: Node): string {
     return truncateWords(caption || `slide p. ${String(node.attrs.page as number)}`);
   }
   if (node.type.name === 'math_block') return truncateWords(node.attrs.tex as string);
+  const limit = hasLearnerText(node) ? LEARNER_OUTLINE_WORDS : OUTLINE_WORDS;
+  if (node.type.name === 'table') return truncateWords(tableText(node), limit);
+  if (node.type.name === 'diagram') return truncateWords(diagramText(node), limit);
   // `\n` between a list's items so two bullets do not read as one sentence.
   return truncateWords(
     node.textBetween(0, node.content.size, '\n', ' '),
-    hasLearnerText(node) ? LEARNER_OUTLINE_WORDS : OUTLINE_WORDS,
+    limit,
   );
 }
 
+/**
+ * Between a table's rows in its one-line text. Not `\n`: `truncateWords` folds whitespace, and
+ * `a | b c | d` would then read as one row of three cells.
+ */
+const ROW_SEPARATOR = ' || ';
+
+/** A table on one line: `caption: Col | Col || cell | cell || cell | cell`. */
+export function tableText(node: Node): string {
+  const { caption, columns, rows } = tableGrid(node);
+  const lines = [...(columns.length > 0 ? [columns] : []), ...rows].map((cells) => cells.join(' | '));
+  return `${caption ? `${caption}: ` : ''}${lines.join(ROW_SEPARATOR)}`;
+}
+
+/**
+ * A diagram on one line: the title, its labels, then its edges as `A -> B`, by label.
+ *
+ * A label says where it sits when the layout depends on it — `Child (under Parent)`,
+ * `Label [Group]` — because in a `hierarchy` or a `compare` those are the whole structure and
+ * there are usually no edges to say it.
+ */
+export function diagramText(node: Node): string {
+  const { title, nodes, edges } = diagramSpec(node);
+  const labels = new Map(nodes.map((n) => [n.id, n.label.replace(/\s+/g, ' ').trim() || n.id]));
+  const name = (id: string): string => labels.get(id) ?? id;
+  const listed = nodes.map((n) => {
+    const where = `${n.group ? ` [${n.group}]` : ''}${n.parent ? ` (under ${name(n.parent)})` : ''}`;
+    return `${name(n.id)}${where}`;
+  });
+  const arrows = edges.map((e) => `${name(e.from)} -> ${name(e.to)}${e.label ? ` (${e.label})` : ''}`);
+  const body = [listed.join(', '), arrows.join(', ')].filter((part) => part.length > 0).join('; ');
+  return `${title ? `${title}: ` : ''}${body}`;
+}
+
 function entryFor(node: Node, path: string[]): OutlineEntry {
-  const { blockId, pages } = blockAttrs(node);
+  const { blockId } = blockAttrs(node);
   return {
     blockId,
     kind: node.type.name,
     path: [...path],
     text: outlineText(node),
-    pages,
+    pages: blockPages(node),
     learnerText: hasLearnerText(node),
     questionId: node.type.name === 'q_block' ? ((node.attrs.questionId as string) || null) : null,
   };
@@ -702,13 +1019,14 @@ export function blocksForPages(doc: Node, pages: readonly number[]): string[] {
   const wanted = new Set(pages);
   const ids: string[] = [];
   eachBlock(doc, (node) => {
-    const { blockId, pages: blockPages } = blockAttrs(node);
+    const { blockId } = blockAttrs(node);
     if (!blockId) return;
     if (node.type.name === 'slide_figure' && wanted.has(node.attrs.page as number)) {
       ids.push(blockId);
       return;
     }
-    if (blockPages.some((page) => wanted.has(page))) ids.push(blockId);
+    // A table or a diagram counts through any of its rows or nodes as well as through itself.
+    if (blockPages(node).some((page) => wanted.has(page))) ids.push(blockId);
   });
   return ids;
 }

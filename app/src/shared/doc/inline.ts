@@ -171,8 +171,9 @@ function serialise(tokens: readonly Token[]): string {
 
 /**
  * ProseMirror inline content → the closed subset. A nested block (a list item's paragraph, a
- * q_block's children) is flattened onto its own line: this is text for a prompt or a quote, not
- * a serialisation format, and the document itself is always the JSON.
+ * q_block's children, a diagram's nodes) is flattened onto its own line, and a table's row onto
+ * one line with its cells: this is text for a prompt or a quote, not a serialisation format, and
+ * the document itself is always the JSON.
  */
 export function nodesToInline(fragment: Fragment): string {
   const lines: string[] = [];
@@ -197,6 +198,14 @@ export function nodesToInline(fragment: Fragment): string {
     }
     if (node.type.name === 'math_block') {
       tokens.push({ text: '', strong: false, em: false, code: false, tex: node.attrs.tex as string });
+      return;
+    }
+    if (node.type.name === 'table_row') {
+      // One line per row, cells in the same ` | ` the outline uses; an empty cell keeps its place.
+      flush();
+      const cells: string[] = [];
+      node.forEach((cell) => cells.push(nodesToInline(cell.content)));
+      lines.push(cells.join(' | '));
       return;
     }
     if (node.isBlock) {
