@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planAnswerEdit, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, generateBlockPrompt, notesFromTurn, outlineText, pagesCited, planAnswerEdit, planGeneratedBlock, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, type DocEditDeps } from './docedit.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 
@@ -551,3 +551,118 @@ describe('buildWhisperInsert (§4.1)', () => {
     expect(buildWhisperInsert(d, { author: 'ellie', text: 'A line.', anchorBlockId: null })).toBeNull();
   });
 });
+
+// ── §5.7: a table or a diagram, asked for at a place in the notes ──────────
+
+describe('planGeneratedBlock', () => {
+  const TABLE = {
+    make: true,
+    why: 'Compares the two heuristics the section names.',
+    table: {
+      caption: 'Two heuristics',
+      columns: ['Heuristic', 'Admissible'],
+      rows: [
+        { cells: ['Manhattan', 'yes'], pages: [4] },
+        { cells: ['Misplaced tiles', 'yes'], pages: [4, 99] },
+      ],
+    },
+  };
+  const DIAGRAM = {
+    make: true,
+    why: 'The three steps in order.',
+    diagram: {
+      layout: 'flow',
+      title: 'A* in three steps',
+      nodes: [
+        { id: 'a', label: 'Pick the lowest f', pages: [4] },
+        { id: 'b', label: 'Expand it' },
+        { id: 'c', label: 'Stop at the goal' },
+      ],
+      edges: [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'c' },
+        { from: 'c', to: 'zzz' },
+      ],
+    },
+  };
+  const input = (kind: 'table' | 'diagram') => ({
+    kind,
+    instruction: 'compare the heuristics',
+    anchorBlockId: 'b_2',
+    section: OUTLINE,
+    passage: 'Slide 4: admissible heuristics never overestimate.',
+    pageCount: 10,
+  });
+
+  it('inserts a validated table after the block the learner was in, as Ellie’s edit', async () => {
+    const d = deps({}, TABLE);
+    const { batch, reason } = await planGeneratedBlock(d, input('table'));
+
+    expect(reason).toBe('inserted');
+    expect(batch).toMatchObject({ author: 'ellie', cause: 'answer_missing', focusBlockId: 'b_2', why: TABLE.why });
+    const op = batch!.ops[0]!;
+    expect(op).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_2' });
+    const draft = (op as { blocks: unknown[] }).blocks[0] as { kind: string; columns: string[]; rows: { cells: string[]; pages?: number[] }[]; prov: { pages: number[] } };
+    expect(draft.kind).toBe('table');
+    expect(draft.columns).toEqual(['Heuristic', 'Admissible']);
+    // A page outside the deck is dropped, not trusted; the block's own provenance is the section's.
+    expect(draft.rows[1]!.pages).toEqual([4]);
+    expect(draft.prov.pages).toEqual([4]);
+  });
+
+  it('inserts a validated diagram, dropping an edge to a node that does not exist', async () => {
+    const d = deps({}, DIAGRAM);
+    const { batch, reason, problems } = await planGeneratedBlock(d, input('diagram'));
+
+    expect(reason).toBe('inserted');
+    const draft = (batch!.ops[0] as { blocks: unknown[] }).blocks[0] as { kind: string; layout: string; nodes: unknown[]; edges: unknown[] };
+    expect(draft).toMatchObject({ kind: 'diagram', layout: 'flow' });
+    expect(draft.nodes).toHaveLength(3);
+    expect(draft.edges).toHaveLength(2);
+    expect(problems.length).toBeGreaterThan(0);
+  });
+
+  it('inserts nothing when the model says the section has nothing to show', async () => {
+    const d = deps({}, { make: false, why: 'One idea, nothing to compare.' });
+    expect(await planGeneratedBlock(d, input('table'))).toEqual({ batch: null, reason: 'declined', problems: [] });
+  });
+
+  it('inserts nothing when the reply does not pass validation, and says why', async () => {
+    const ragged = { make: true, why: 'x', table: { columns: ['A', 'B'], rows: [{ cells: ['only one'] }] } };
+    const out = await planGeneratedBlock(deps({}, ragged), input('table'));
+    expect(out.batch).toBeNull();
+    expect(out.reason).toBe('invalid');
+    expect(out.problems.length).toBeGreaterThan(0);
+  });
+
+  it('gives the block a reason when the section has no pages, so it never arrives without provenance', async () => {
+    const d = deps({}, { ...TABLE, table: { ...TABLE.table, rows: [{ cells: ['Manhattan', 'yes'] }] } });
+    const noPages = OUTLINE.map((e) => ({ ...e, pages: [] }));
+    const { batch } = await planGeneratedBlock(d, { ...input('table'), section: noPages });
+    const draft = (batch!.ops[0] as { blocks: { prov: { pages: number[]; reason: string | null } }[] }).blocks[0]!;
+    expect(draft.prov.pages).toEqual([]);
+    expect(draft.prov.reason).toContain('table');
+  });
+
+  it('is a schema-bound docedit call that shows the model the section, the slides and the ask, and nothing else', async () => {
+    const d = deps({}, TABLE);
+    await planGeneratedBlock(d, input('table'));
+    const request = d.requests[0]!;
+    expect(request.meta).toMatchObject({ scope: 'docedit', costScope: 'docedit', fileId: 'f_1' });
+    const schema = request.jsonSchema as { properties: Record<string, unknown>; required: string[] };
+    expect(schema.required).toEqual(['make', 'why']);
+    expect(Object.keys(schema.properties)).toEqual(['make', 'why', 'table']);
+    const prompt = request.system[0]!.text;
+    expect(prompt).toContain('An admissible heuristic never overestimates.');
+    expect(prompt).toContain('Slide 4: admissible heuristics never overestimate.');
+    expect(prompt).toContain('compare the heuristics');
+    expect(prompt).toContain('"make": false');
+  });
+
+  it('describes the four layouts for a diagram, and never general knowledge for a table', () => {
+    const diagram = generateBlockPrompt(input('diagram'));
+    for (const layout of ['`flow`', '`hierarchy`', '`compare`', '`cycle`']) expect(diagram).toContain(layout);
+    expect(generateBlockPrompt(input('table'))).toContain('never fill one from general knowledge');
+  });
+});
+

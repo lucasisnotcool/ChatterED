@@ -26,6 +26,7 @@ import { DOC_ANCHOR_ID, SPAN_THREAD_PREFIX } from '../../shared/doc/types.js';
 import type {
   AgentAuthor,
   AgentDocOpBatch,
+  DiagramDraft,
   DocEditRecord,
   DocQuizView,
   NotesDocView,
@@ -34,6 +35,7 @@ import type {
   ProgressView,
   QResolution,
   Suggestion,
+  TableDraft,
   ThreadView,
 } from '../../shared/doc/types.js';
 import { parseMention } from './chatview.js';
@@ -594,6 +596,40 @@ export function createMockBridge(): ChatterEdApi {
   const hex12 = () => globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12);
   /** Learner-authored questions whose answer Max is still marking (`notesAnswerQuestion`). */
   const answersInFlight = new Set<string>();
+  /** A table or a diagram is being drawn (`notesGenerateBlock`): main allows one per file. */
+  let generating = false;
+
+  /** What Insert ▸ Table draws, from pages the fixture document actually carries. */
+  const MOCK_TABLE: TableDraft = {
+    kind: 'table',
+    caption: 'What each prototype can and cannot tell you',
+    columns: ['Prototype', 'Good for', 'Cannot show'],
+    rows: [
+      { cells: ['Paper prototype', 'Flow and layout, **cheaply**', 'Feel and response time'], pages: [34] },
+      { cells: ['Sample dialogue', 'Wording and turn order', 'How people repair a misunderstanding'], pages: [38] },
+      { cells: ['Wizard of Oz', 'The whole dialogue, with a person behind it', 'What the system can really parse'], pages: [38, 39] },
+    ],
+    prov: { pages: [22, 34, 38], reason: null },
+  };
+
+  /** What Insert ▸ Diagram draws: p. 38's pipeline, as a flow. */
+  const MOCK_DIAGRAM: DiagramDraft = {
+    kind: 'diagram',
+    layout: 'flow',
+    title: 'From a script to a working dialogue',
+    nodes: [
+      { id: 'n1', label: 'Scripts', pages: [38] },
+      { id: 'n2', label: 'Dialogue maps', pages: [38] },
+      { id: 'n3', label: 'Wizard of Oz', pages: [38] },
+      { id: 'n4', label: 'Coded prototype', pages: [39] },
+    ],
+    edges: [
+      { from: 'n1', to: 'n2' },
+      { from: 'n2', to: 'n3' },
+      { from: 'n3', to: 'n4', label: 'once the repairs are known' },
+    ],
+    prov: { pages: [38], reason: null },
+  };
 
   function notesIngestView() {
     return {
@@ -1336,6 +1372,10 @@ export function createMockBridge(): ChatterEdApi {
     async notesPageImages({ images }) {
       return { stored: images.length };
     },
+    /** No PDF behind the mock, so no text geometry: the chip previews a whole page, no hotspots. */
+    async notesPageLines({ page }) {
+      return { page, width: 0, height: 0, lines: [], items: [] };
+    },
     /**
      * Optimistic save. The conflict branch is real — pass a stale `baseVersion` and the stored
      * doc comes back — because a renderer that has never met a conflict has never been tested
@@ -1377,6 +1417,44 @@ export function createMockBridge(): ChatterEdApi {
       if (found) {
         found.status = status;
         found.resolvedAt = iso();
+      }
+    },
+    /**
+     * **Insert ▸ Table / Diagram** (2026-10-01), with main's refusals: frozen, and one at a time.
+     * Otherwise Ellie thinks at the block for a moment and the block arrives as an ordinary
+     * `insert_after` batch of a real `TableDraft` or `DiagramDraft`, so dev mode runs the same
+     * apply path, guard and typing animation a real one does. The call resolves after the edit is
+     * out, as main's does. An instruction with "nothing" in it declines, so that line can be seen.
+     */
+    async notesGenerateBlock({ blockId, kind, instruction }) {
+      if (notes.frozen) return { inserted: false, editId: null, reason: 'frozen' as const };
+      if (generating) return { inserted: false, editId: null, reason: 'in_flight' as const };
+      generating = true;
+      try {
+        emitCursor('ellie', blockId, 'thinking');
+        await new Promise((resolve) => setTimeout(resolve, 2_400));
+        if (/\bnothing\b/i.test(instruction ?? '')) {
+          emitCursor('ellie', null, 'idle');
+          return { inserted: false, editId: null, reason: 'declined' as const };
+        }
+        const editId = emitEdit({
+          author: 'ellie',
+          cause: 'answer_missing',
+          focusBlockId: blockId,
+          why:
+            kind === 'table'
+              ? 'You asked for a table: the section compares three prototypes on what they show.'
+              : 'You asked for a diagram: p. 38 is a pipeline, so it is drawn as a flow.',
+          ops: [{ op: 'insert_after', anchorBlockId: blockId, blocks: [structuredClone(kind === 'table' ? MOCK_TABLE : MOCK_DIAGRAM)] }],
+        });
+        if (!editId) {
+          // Frozen while she was thinking: dropped, not queued (contract D4).
+          emitCursor('ellie', null, 'idle');
+          return { inserted: false, editId: null, reason: 'frozen' as const };
+        }
+        return { inserted: true, editId, reason: null };
+      } finally {
+        generating = false;
       }
     },
     /**

@@ -45,6 +45,14 @@ describe('the fixture notes document', () => {
     expect(figures).toHaveLength(1);
   });
 
+  it('shows one editable diagram, right after the slide it redraws', () => {
+    const doc = docFromJson(mockNotesJson());
+    const kinds: string[] = [];
+    doc.forEach((node) => kinds.push(node.type.name));
+    expect(kinds.filter((kind) => kind === 'diagram')).toHaveLength(1);
+    expect(kinds[kinds.indexOf('diagram') - 1]).toBe('slide_figure');
+  });
+
   it('names blocks the scripted conversation can anchor to', () => {
     expect(mockLastBlockId()).toMatch(/^b_[0-9a-f]{12}$/);
     expect(mockBlockOnPage(22)).toMatch(/^b_[0-9a-f]{12}$/);

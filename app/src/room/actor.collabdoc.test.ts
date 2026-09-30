@@ -1550,3 +1550,70 @@ describe('the focus recap', () => {
     again.stop();
   });
 });
+
+// ── §5.7 (2026-10-01): a table or a diagram, asked for at a block ──────────────────────────
+
+describe('generateBlock', () => {
+  const TABLE = {
+    make: true,
+    why: 'Who sees a private turn.',
+    table: { columns: ['Who', 'Sees it'], rows: [{ cells: ['The agent', 'yes'] }, { cells: ['The group', 'no'] }] },
+  };
+
+  it('emits one agent edit from Ellie after the block, outside any turn', async () => {
+    const h = build({}, TABLE);
+    const out = await h.actor.generateBlock({ blockId: 'b_bbb', kind: 'table', instruction: null });
+
+    expect(out.inserted).toBe(true);
+    expect(out.reason).toBeNull();
+    expect(h.doc.edits).toHaveLength(1);
+    const batch = h.doc.edits[0]!.batch;
+    expect(batch.editId).toBe(out.editId);
+    expect(batch.author).toBe('ellie');
+    expect(batch.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_bbb' });
+    expect(h.events.filter((e) => e.type === 'doc.edit')).toHaveLength(1);
+    // No message, no decision, no outcome: it is the learner's act on the document, not a turn.
+    expect(h.store.messages.forRoom(h.roomId)).toEqual([]);
+    expect(rules(h)).toEqual([]);
+    expect(h.doc.outcomes).toEqual([]);
+  });
+
+  it('shows the model the section the block is in', async () => {
+    const h = build({}, TABLE);
+    await h.actor.generateBlock({ blockId: 'b_bbb', kind: 'table', instruction: 'who can see it', passage: 'SLIDE THREE TEXT' });
+    const prompt = h.llm.requests.find((r) => r.meta.scope === 'docedit')!.system[0]!.text;
+    expect(prompt).toContain('A private turn with one agent.');
+    expect(prompt).toContain('SLIDE THREE TEXT');
+    expect(prompt).toContain('who can see it');
+  });
+
+  it('refuses while the doc is frozen, and makes no call', async () => {
+    const frozen = docPort({ frozen: () => true });
+    const h = build({ docPort: frozen.port }, TABLE);
+    expect(await h.actor.generateBlock({ blockId: 'b_bbb', kind: 'table', instruction: null })).toEqual({
+      inserted: false,
+      editId: null,
+      reason: 'frozen',
+    });
+    expect(h.llm.requests).toEqual([]);
+  });
+
+  it('reports a decline and a bad reply without inserting anything', async () => {
+    const declined = build({}, { make: false, why: 'nothing to compare' });
+    expect((await declined.actor.generateBlock({ blockId: 'b_bbb', kind: 'diagram', instruction: null })).reason).toBe('declined');
+    expect(declined.doc.edits).toEqual([]);
+
+    const bad = build({}, { make: true, why: 'x', diagram: { layout: 'flow', nodes: [{ id: 'a', label: 'only one' }] } });
+    expect((await bad.actor.generateBlock({ blockId: 'b_bbb', kind: 'diagram', instruction: null })).reason).toBe('failed');
+    expect(bad.doc.edits).toEqual([]);
+  });
+
+  it('refuses a second request while one is still out', async () => {
+    const h = build({}, TABLE);
+    const first = h.actor.generateBlock({ blockId: 'b_bbb', kind: 'table', instruction: null });
+    const second = await h.actor.generateBlock({ blockId: 'b_bbb', kind: 'table', instruction: null });
+    expect(second.reason).toBe('in_flight');
+    expect((await first).inserted).toBe(true);
+  });
+});
+

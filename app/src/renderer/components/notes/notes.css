@@ -35,8 +35,12 @@
 
 .nd-head {
   display: flex;
+  /* The controls wrap onto a second line, right-aligned, when the pane is too narrow for them
+     all: on one line they ran off the pane's right edge at the doc column's usual width. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 12px;
+  gap: 6px 12px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--hairline);
   background: var(--pane);
@@ -70,6 +74,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 .nd-toggle:hover { border-color: #d4d4e2; color: var(--text); }
 .nd-toggle:disabled { opacity: 0.5; cursor: default; }
@@ -725,5 +730,408 @@
   border: 2px solid #ffd44d;
   border-radius: 3px;
   box-shadow: 0 0 0 9999px rgb(18 18 30 / 34%);
+  pointer-events: none;
+}
+
+/* ══ THE CITATION PREVIEW AND THE FIGURE'S HOTSPOTS (pm/sourcepop.ts) ═════════════════════
+   One section, appended 2026-10-01. Both popovers are `position: fixed` children of `.nd`, placed
+   in code at the anchor's viewport box: outside the scroller (never clipped) and outside the
+   zoomed sheet (never scaled). */
+
+.nd-pop {
+  position: fixed;
+  /* Over the document's own floating cards (4), under the slide modal (60). */
+  z-index: 40;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: var(--pane);
+  box-shadow: 0 6px 20px rgb(20 20 40 / 9%);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  user-select: none;
+}
+
+/* ── the provenance chip's preview ── */
+
+.nd-cite { width: 286px; }
+.nd-cite-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.nd-cite-where { font-weight: 600; color: var(--text); }
+.nd-cite-count { flex: 1 1 auto; color: var(--muted); font-size: 10.5px; }
+.nd-cite-turn {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 0 7px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.nd-cite-turn:hover { border-color: #c7c7e8; color: var(--indigo); }
+.nd-cite-thumb {
+  display: block;
+  position: relative;
+  width: 100%;
+  /* Holds the box open at a slide's usual shape until the page has rendered. */
+  min-height: 80px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #eef0f5;
+  line-height: 0;
+}
+.nd-cite-thumb.nd-cite-ready { min-height: 0; }
+.nd-cite-thumb:hover { border-color: #c7c7e8; }
+.nd-cite-thumb canvas { display: block; width: 100%; height: auto; }
+/* The modal's outline (`.nd-modal-rect`), at thumbnail weight. */
+.nd-cite-rect {
+  position: absolute;
+  border: 2px solid #ffd44d;
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px rgb(18 18 30 / 22%);
+  pointer-events: none;
+}
+.nd-cite-quote {
+  margin: 8px 0 0;
+  padding: 0 0 0 8px;
+  border-left: 2px solid var(--hairline);
+  color: var(--text-2);
+  white-space: pre-line;
+  /* A few lines at most, whatever the slide's line lengths are. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}
+.nd-cite-quote[hidden] { display: none; }
+.nd-cite-reason { margin-top: 6px; color: var(--muted); font-size: 10.5px; }
+
+/* ── hotspots on an inline figure ── */
+
+.nd-figure-stage { position: relative; }
+/* Inside the frame's 1px border, so 0 to 100 % is the crop itself. */
+.nd-hot-layer { position: absolute; inset: 1px; pointer-events: none; }
+.nd-hot {
+  position: absolute;
+  pointer-events: auto;
+  /* Room around the glyphs, without moving the box the percentages place. */
+  margin: -2px -3px;
+  padding: 2px 3px;
+  box-sizing: content-box;
+  border-radius: 3px;
+  /* At rest: a dotted underline, faint enough to leave the slide readable. */
+  border-bottom: 1px dotted rgb(79 70 229 / 28%);
+  cursor: pointer;
+  transition: outline-color 0.12s ease, background 0.12s ease;
+  outline: 1px solid transparent;
+}
+/* Over the figure: every label shows where it is. */
+.nd-figure-stage:hover .nd-hot { outline-color: rgb(79 70 229 / 30%); border-bottom-color: transparent; }
+.nd-hot:hover,
+.nd-hot:focus-visible,
+.nd-hot.nd-hot-open {
+  outline: 1.5px solid var(--indigo);
+  border-bottom-color: transparent;
+  background: rgb(79 70 229 / 10%);
+}
+.nd-hot-hint {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 1.6;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.nd-figure-stage:hover .nd-hot-hint { opacity: 0.92; }
+
+.nd-hotpop { max-width: 260px; }
+.nd-hotpop-label { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.nd-hotpop-where { color: var(--muted); font-size: 10.5px; }
+.nd-hotpop-ask {
+  margin-top: 8px;
+  border: 1px solid var(--nd-ellie-edge);
+  border-radius: 999px;
+  padding: 3px 11px;
+  background: var(--nd-ellie-tint);
+  color: var(--nd-ellie);
+  font-size: 11px;
+  font-weight: 600;
+}
+.nd-hotpop-ask:hover { border-color: var(--nd-ellie); }
+
+/* ══ THE EDITABLE DIAGRAM (pm/diagram.ts, lib/diagramlayout.ts) ═══════════════════════════════
+   One section, appended 2026-10-01. The boxes are real document text in a CSS grid; the layout
+   code only says which cell each one is in. The edges are an SVG behind the boxes, their labels
+   an SVG above them, and neither takes a pointer event. Everything is in the figure's own CSS px,
+   so the notes' zoom scales it with the text. Colours are the notes' own tokens; the one literal
+   (#c7c7e8) is the indigo hairline used for hover throughout this file. */
+
+.nd-dg {
+  --nd-dg-col-gap: 36px;
+  --nd-dg-row-gap: 32px;
+  position: relative;
+  margin: 24px 0;
+}
+/* Room for a label between two boxes, when an edge has one. */
+.nd-dg[data-labelled='true'] { --nd-dg-col-gap: 64px; }
+.nd-dg[data-layout='hierarchy'] { --nd-dg-col-gap: 14px; --nd-dg-row-gap: 30px; }
+.nd-dg[data-layout='compare'] { --nd-dg-col-gap: 16px; --nd-dg-row-gap: 8px; }
+.nd-dg[data-layout='compare'][data-edges='true'] { --nd-dg-col-gap: 40px; --nd-dg-row-gap: 18px; }
+.nd-dg[data-layout='cycle'] { --nd-dg-row-gap: 40px; }
+.nd-editor .ProseMirror-selectednode.nd-dg {
+  outline: 2px solid var(--indigo-tint);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+
+/* ── the head: the title, and the toolbar on hover or with the caret inside ── */
+
+.nd-dg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 24px;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.nd-dg-title {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  outline: none;
+}
+.nd-dg-title::placeholder { color: var(--muted); font-weight: 500; }
+.nd-dg-title:hover { border-bottom-color: var(--hairline); }
+.nd-dg-title:focus { border-bottom-color: var(--indigo); }
+/* An untitled diagram says "Add a title" only when the learner is at it. */
+.nd-dg:not(:hover):not(.nd-dg-active) .nd-dg-title:placeholder-shown { opacity: 0; }
+
+/* Floats in the figure's top margin, over its right edge, so it takes no room at rest: in the
+   head it wrapped to two invisible lines in a narrow column and pushed the picture down. A
+   column too narrow for it lets it run into the left gutter rather than wrap. */
+.nd-dg-tools {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 2px);
+  z-index: 3;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+.nd-dg:hover .nd-dg-tools,
+.nd-dg.nd-dg-active .nd-dg-tools {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.nd-dg-layouts {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  overflow: hidden;
+}
+.nd-dg-tool {
+  padding: 2px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.nd-dg-layouts .nd-dg-tool { border: 0; border-radius: 0; }
+.nd-dg-layouts .nd-dg-tool + .nd-dg-tool { border-left: 1px solid var(--hairline); }
+.nd-dg-tool:hover { color: var(--indigo); border-color: #c7c7e8; }
+.nd-dg-layout[aria-pressed='true'] { background: var(--indigo-tint); color: var(--indigo); }
+.nd-dg-tool:disabled { opacity: 0.4; cursor: default; color: var(--text-2); border-color: var(--hairline); }
+
+/* ── a comparison's column headings: chrome, above the grid, on the same columns ── */
+
+.nd-dg-groups {
+  display: grid;
+  column-gap: var(--nd-dg-col-gap);
+  margin-bottom: 8px;
+  user-select: none;
+}
+.nd-dg-groups[hidden] { display: none; }
+.nd-dg-group {
+  padding: 0 2px 5px;
+  border-bottom: 2px solid var(--hairline);
+  color: var(--text-2);
+  font-size: 11px;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-weight: 650;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── the grid and its boxes ── */
+
+.nd-dg-grid {
+  display: grid;
+  column-gap: var(--nd-dg-col-gap);
+  row-gap: var(--nd-dg-row-gap);
+  align-items: stretch;
+  /* Half a gap above and below, where an edge that goes over or under a row runs. */
+  padding: calc(var(--nd-dg-row-gap) / 2) 0;
+}
+.nd-dg[data-layout='compare'][data-edges='false'] .nd-dg-grid { padding: 0; }
+
+.nd-dg-node {
+  position: relative;
+  /* Over the edges' layer, under their labels'. A grid item takes a z-index as it is. */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+  box-shadow: 0 1px 2px rgb(20 20 40 / 4%);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+  /* A word longer than a narrow box is broken rather than let out of it. Not `hyphens: auto`:
+     tried, and it hyphenated "peo-ple" in boxes where the plain wrap read better. */
+  overflow-wrap: anywhere;
+  transition: border-color 0.12s ease;
+}
+.nd-dg-node:hover { border-color: #c7c7e8; }
+.nd-dg-label { flex: 1 1 auto; min-width: 0; position: relative; outline: none; }
+/* An empty box still says what it is for. Absolute, so the caret is not pushed past it. */
+.nd-dg-node.nd-dg-empty .nd-dg-label::before {
+  content: 'Label';
+  position: absolute;
+  inset: 0;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* An agent's box whose words are still unkept: the words wear the tint (above), and the box its
+   edge, Ellie solid and Max dashed as everywhere else. Kept, and both go. */
+.nd-dg-node:has([data-author='ellie'][data-edit-id]) { border-color: var(--nd-ellie-edge); }
+.nd-dg-node:has([data-author='max'][data-edit-id]) { border-color: var(--nd-max-edge); border-style: dashed; }
+/* The box the caret is in, over the tint (hence after it, at the same specificity). */
+.nd-dg .nd-dg-node.nd-dg-node-active {
+  border-color: var(--indigo);
+  box-shadow: 0 0 0 2px var(--indigo-tint);
+}
+
+/* A tree: each box as wide as its words, centred over its children; the root heavier. */
+.nd-dg[data-layout='hierarchy'] .nd-dg-node {
+  justify-self: center;
+  width: max-content;
+  max-width: 100%;
+  min-width: min(100%, 88px);
+}
+.nd-dg[data-layout='hierarchy'] .nd-dg-node[data-role='root'] {
+  border: 1.5px solid var(--glyph);
+  font-weight: 640;
+}
+/* Sibling leaves listed under their parent: indented, left-aligned, off a rail. The indent is
+   `STACK_INDENT` in diagramlayout.ts. */
+.nd-dg[data-layout='hierarchy'] .nd-dg-node[data-holds-stack='true'] { justify-self: start; }
+.nd-dg[data-layout='hierarchy'] .nd-dg-node[data-role='stacked'] {
+  justify-self: stretch;
+  width: auto;
+  max-width: none;
+  margin-left: 18px;
+  justify-content: flex-start;
+  text-align: left;
+}
+.nd-dg[data-layout='compare'] .nd-dg-node { justify-content: flex-start; text-align: left; }
+
+/* A box's own pages, on its corner, on hover: the block's provenance chip, box-sized. */
+.nd-dg-pages {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  z-index: 1;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: nowrap;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.nd-dg-node:hover .nd-dg-pages,
+.nd-dg-pages:focus-visible { opacity: 1; }
+.nd-dg-pages:hover { color: var(--indigo); border-color: #c7c7e8; }
+
+/* An agent's cursor parked at the end of the diagram would be a grid item, and take a cell. */
+.nd-dg-grid > .nd-cursor { position: absolute; right: 6px; bottom: 2px; }
+
+/* ── the edges ── */
+
+.nd-dg-lines,
+.nd-dg-labels {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.nd-dg-lines { z-index: 0; }
+.nd-dg-labels { z-index: 2; }
+.nd-dg-edge {
+  fill: none;
+  stroke: var(--glyph);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nd-dg-edge-tree { stroke: var(--muted); stroke-width: 1.2; }
+.nd-dg-arrowhead { fill: var(--glyph); }
+.nd-dg-edge-label {
+  fill: var(--text-2);
+  font-size: 10.5px;
+  /* A halo in the page's colour, so a label reads over a line or a box's border. */
+  paint-order: stroke;
+  stroke: var(--ground);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+/* 100 CSS px, measured to learn what the zoom does to `getBoundingClientRect` (pm/diagram.ts). */
+.nd-dg-probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100px;
+  height: 0;
+  visibility: hidden;
   pointer-events: none;
 }

@@ -54,6 +54,14 @@ export interface DocActorMethods {
     answer: string;
     context?: ReferenceContext | null;
   }): Promise<{ accepted: boolean; reason: 'empty' | 'no_question' | 'in_flight' | null }>;
+  /** A table or diagram the learner asked for at a block (brief §5.7). An ordinary agent edit. */
+  generateBlock(input: {
+    blockId: string;
+    kind: 'table' | 'diagram';
+    instruction: string | null;
+    passage?: string | null;
+    pageCount?: number;
+  }): Promise<{ inserted: boolean; editId: string | null; reason: 'no_doc' | 'frozen' | 'declined' | 'failed' | 'in_flight' | null }>;
   openPrivate(agent: AgentAuthor): { threadId: string; turns: PrivateTurnView[] };
   sendPrivate(threadId: string, text: string): Promise<void>;
   /** The one path from a private thread to the shared document (brief §4.1). */

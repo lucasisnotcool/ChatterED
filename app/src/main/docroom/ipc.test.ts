@@ -365,6 +365,41 @@ describe('notes:answerQuestion', () => {
   });
 });
 
+describe('notes:generateBlock', () => {
+  const base = { fileId: 'f_deck', docId: 'doc_deck', blockId: 'b_2', kind: 'table' as const, instruction: '  by cost  ' };
+  type Out = { inserted: boolean; editId: string | null; reason: string | null };
+
+  it('asks the actor for the block, with the slides of its section resolved here', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.pageText = 'THE PAGES OF THE SECTION';
+    const out = await wire(fx).call<Out>('notes:generateBlock', base);
+
+    expect(out).toEqual({ inserted: true, editId: 'edit_gen', reason: null });
+    expect(fx.actor.last('generateBlock')!.args[0]).toEqual({
+      blockId: 'b_2',
+      kind: 'table',
+      instruction: 'by cost',
+      passage: 'THE PAGES OF THE SECTION',
+    });
+  });
+
+  it('sends no instruction when the learner gave none', async () => {
+    const fx = fakeHost({ doc: deck() });
+    await wire(fx).call<Out>('notes:generateBlock', { ...base, kind: 'diagram', instruction: '   ' });
+    expect(fx.actor.last('generateBlock')!.args[0]).toMatchObject({ kind: 'diagram', instruction: null });
+  });
+
+  it('refuses without a block or a document, before any room is opened', async () => {
+    const fx = fakeHost({ doc: deck() });
+    expect((await wire(fx).call<Out>('notes:generateBlock', { ...base, blockId: '' })).reason).toBe('no_doc');
+    const empty = fakeHost();
+    expect((await wire(empty).call<Out>('notes:generateBlock', base)).reason).toBe('no_doc');
+    expect(fx.opened).toEqual([]);
+    expect(empty.opened).toEqual([]);
+    expect(fx.actor.calls).toEqual([]);
+  });
+});
+
 describe('notes:docText', () => {
   const payload = { fileId: 'f_deck', docId: 'doc_deck', blockId: 'b_2', text: CLAIM };
 

@@ -30,12 +30,13 @@
  * set instead, which is what keeps a 600-block deck typing at speed.
  */
 
-import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 import { Plugin, PluginKey, type EditorState, type Transaction } from 'prosemirror-state';
 import type { Node } from 'prosemirror-model';
 import { blockAttrs, blockPos, eachBlock } from '../../../shared/doc/schema.js';
 import type { AgentAuthor, DocEditRecord, QResolution, Rect, Suggestion } from '../../../shared/doc/types.js';
 import { frontierOf, revealKey } from './reveal.js';
+import { attachCitePreview, closeSourcePopover, type SlideReader } from './sourcepop.js';
 
 export const chromeKey = new PluginKey<DecorationSet>('chattered:chrome');
 
@@ -73,6 +74,11 @@ export interface ChromeContext {
   /** The provenance chip's click: open the slide modal at that page. */
   onOpenSlide: (page: number, rect: Rect | null) => void;
   onFocusThread: (threadId: string) => void;
+  /**
+   * The chip's hover preview reads the slide through this (`sourcepop.ts`). Optional: without it
+   * the chip is what it was before, a click that opens the whole slide.
+   */
+  reader?: SlideReader;
 }
 
 // ── labels (pure — these are the tested part) ───────────────────────────────────────────────
@@ -154,7 +160,7 @@ function button(className: string, text: string, title: string, onClick: () => v
 }
 
 /** A widget that is chrome: never selected, never a drop target, and it eats its own events. */
-function widget(pos: number, key: string, side: number, build: () => HTMLElement): Decoration {
+function widget(pos: number, key: string, side: number, build: (view: EditorView) => HTMLElement): Decoration {
   return Decoration.widget(pos, build, { key, side, ignoreSelection: true, stopEvent: () => true });
 }
 
@@ -170,11 +176,34 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
     const page = pages[0] ?? (node.type.name === 'slide_figure' ? (node.attrs.page as number) : null);
     const rect = node.type.name === 'slide_figure' ? ((node.attrs.rect as Rect | null) ?? null) : null;
     out.push(
-      widget(pos + 1, `prov:${blockId}:${label}`, -1, () => {
+      widget(pos + 1, `prov:${blockId}:${label}`, -1, (view) => {
         const holder = el('span', 'nd-chip-holder');
+        // Assigned below, once the chip exists: with a preview, the click opens the slide on the
+        // region the block was drawn from rather than on the whole page.
+        let openRegion: (() => void) | null = null;
         const chip = button('nd-chip', label, reason ? reason : `Open the source slide (${label})`, () => {
-          if (page !== null) ctx.onOpenSlide(page, rect);
+          if (openRegion) openRegion();
+          else if (page !== null) ctx.onOpenSlide(page, rect);
         });
+        if (page !== null && ctx.reader) {
+          const figure = node.type.name === 'slide_figure' ? { page: node.attrs.page as number, rect } : null;
+          openRegion = attachCitePreview(chip, {
+            pages: pages.length > 0 ? pages : [page],
+            reason,
+            // Read when the pointer arrives, not when the chip was built: a keystroke maps this
+            // widget rather than rebuilding it, so `node` may be an old copy of the block.
+            text: () => {
+              const now = blockPos(view.state.doc, blockId)?.node ?? node;
+              return now.textBetween(0, now.content.size, '\n', ' ');
+            },
+            figure,
+            reader: ctx.reader,
+            onOpenSlide: ctx.onOpenSlide,
+          });
+          // The preview says what the tooltip said, and the two would sit on top of each other.
+          chip.title = '';
+          chip.setAttribute('aria-label', `Open the source slide (${label})`);
+        }
         // A block with a reason and no page is ordinary (§2 allows either); a block with
         // neither is an ingest bug and says so in the one place a reader will see it.
         if (label === 'no source') chip.classList.add('nd-chip-bad');
@@ -369,6 +398,10 @@ export function chromePlugin(context: () => ChromeContext): Plugin<DecorationSet
         if (tr.docChanged) return value.map(tr.mapping, tr.doc);
         return value;
       },
+    },
+    view() {
+      // A preview left open would outlive the editor it points into (a different deck opened).
+      return { destroy: closeSourcePopover };
     },
     props: {
       decorations(state): DecorationSet | undefined {

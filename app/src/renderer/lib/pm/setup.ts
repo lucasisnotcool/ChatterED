@@ -21,6 +21,10 @@ import { keymap } from 'prosemirror-keymap';
 import { liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-list';
 import type { Command, Plugin } from 'prosemirror-state';
 import { notesSchema } from '../../../shared/doc/schema.js';
+import { diagramPlugin } from './diagram.js';
+import { readAloudPlugin } from './readaloud.js';
+import { tableGuard, tableKeymap } from './table.js';
+import { tableChrome } from './tableview.js';
 
 /** `# ` … `### ` at the start of a block. */
 function headingRule() {
@@ -76,6 +80,10 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
   return [
     inputRules({ rules: [headingRule(), bulletRule(), orderedRule(), codeRule()] }),
     history(),
+    // Inside a table cell, first: Tab, Enter, the arrows and the deletes are the table's (`table.ts`).
+    keymap(tableKeymap()),
+    // Inside a diagram node, also first: Enter, Tab and the deletes never split or merge a box (`diagram.ts`).
+    diagramPlugin(),
     keymap({
       'Mod-z': undo,
       'Mod-y': redo,
@@ -100,5 +108,10 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
     keymap(baseKeymap),
     dropCursor({ color: 'var(--indigo)', width: 2 }),
     gapCursor(),
+    // The block being read aloud: a decoration only (`readaloud.ts`).
+    readAloudPlugin(),
+    // Every table stays a rectangle; its row chips and toolbar state (`table.ts`, `tableview.ts`).
+    tableGuard(),
+    tableChrome(),
   ];
 }

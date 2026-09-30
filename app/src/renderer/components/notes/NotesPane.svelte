@@ -26,11 +26,14 @@
   import { pinchScale } from '../../lib/pdfview.js';
   import { store } from '../../lib/store.svelte.js';
   import { registerViewer, type ViewerCommand } from '../../lib/viewer.js';
+  import InsertControl from './InsertControl.svelte';
+  import ListenControl from './ListenControl.svelte';
   import NotesEditor from './NotesEditor.svelte';
   import SlideCarousel from './SlideCarousel.svelte';
   import SlideModal from './SlideModal.svelte';
   import type { SpanThreadView } from '../../lib/pm/chrome.js';
   import './notes.css';
+  import './table.css';
 
   let { fileId }: { fileId: string } = $props();
 
@@ -40,6 +43,7 @@
   interface ChatSurface {
     openSpanThread?: (input: { blockId: string; quote: string }) => void;
     focusThread?: (threadId: string) => void;
+    sendDraft?: (question: string) => Promise<string | null>;
     spanThreads?: readonly SpanThreadView[];
   }
   const chat = (): ChatSurface => store.chat as unknown as ChatSurface;
@@ -47,6 +51,19 @@
   doc.askAboutSpan = (input) => chat().openSpanThread?.(input);
   doc.focusThread = (threadId) => chat().focusThread?.(threadId);
   doc.spanThreads = () => chat().spanThreads ?? [];
+
+  /**
+   * "Ask Ellie about this" on a figure's label: Ctrl+E's own path, with the question already
+   * written. The draft is opened on the figure's block and sent at once, so the thread is created
+   * by `chat:openSpan`, focused and read back exactly as a typed one is. If the send fails, the
+   * draft stays in the chat column with the label quoted, for the learner to ask in their words.
+   */
+  function askAboutFigure(input: { blockId: string; quote: string; question: string }): void {
+    const surface = chat();
+    if (!surface.openSpanThread) return;
+    surface.openSpanThread({ blockId: input.blockId, quote: input.quote });
+    void surface.sendDraft?.(input.question);
+  }
 
   $effect(() => {
     const id = fileId;
@@ -163,6 +180,7 @@
     {/if}
     <span class="nd-head-spacer"></span>
     {#if savedLabel}<span class="nd-head-meta">{savedLabel}</span>{/if}
+    <ListenControl {doc} {scroller} />
     <span class="nd-zoom" role="group" aria-label="Zoom the notes">
       <button
         type="button"
@@ -188,6 +206,7 @@
         onclick={() => command('zoom.in')}
       >+</button>
     </span>
+    <InsertControl {doc} />
     <button
       class="nd-toggle"
       type="button"
@@ -276,7 +295,7 @@
           </p>
         {/if}
 
-        <NotesEditor {doc} />
+        <NotesEditor {doc} onAskAboutFigure={askAboutFigure} />
 
         {#if status === 'streaming'}
           <p class="nd-writing">

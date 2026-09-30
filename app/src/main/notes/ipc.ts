@@ -22,6 +22,7 @@ import { docFromJson, learnerSpans } from '../../shared/doc/schema.js';
 import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks, placeholderSuperseded } from './ingest.js';
 import { clearPageImages, pageImageDir, storePageImages } from './pageimages.js';
 import { pageGeometry } from '../vault/pagecache.js';
+import { registerPageLinesIpc } from './pagelines.js';
 
 /** The document as the renderer sees it. */
 function view(repo: NotesRepo, record: NotesDocRecord): NotesDocView {
@@ -172,6 +173,9 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
       return { stored };
     },
   );
+
+  // `notes:pageLines`: the chip preview's and the figure hotspots' read of pass 1.
+  registerPageLinesIpc(host, handle);
 
   handle<{ docId: string; baseVersion: number; doc: unknown; learnerTouched: boolean }>(
     IPC.notesSave,

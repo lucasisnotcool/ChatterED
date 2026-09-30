@@ -36,7 +36,9 @@ import {
   pagesCited,
   planAnswerEdit,
   buildResolveEdit,
+  planGeneratedBlock,
   planResolveEdit,
+  type GeneratedBlockKind,
   planSuggestionEdit,
   type DocEditDeps,
 } from './docedit.js';
@@ -189,6 +191,8 @@ export const FLOOR_YIELD_AFTER_SCAFFOLD_MS = 16_000;
  * (#48 §4.7). Thirty seconds against a twenty-minute gap — see `start()`.
  */
 export const CLOSURE_TICK_MS = 30_000;
+/** How far either side of the cursor's block §5.7 reads for "the section". */
+export const GENERATE_SECTION_RADIUS = 14;
 
 export const CONTENT_FREE_NUDGES = [
   'Still turning it over? Happy to wait. Or I can make the question smaller if that helps.',
@@ -684,6 +688,8 @@ export class RoomActor {
   #ownMarking = new Set<string>();
   /** The sitting whose recap has been posted (§4.8). One per sitting. */
   #recappedSession: string | null = null;
+  /** A §5.7 table or diagram is being drawn. One at a time. */
+  #generating = false;
   /** Cancels the closure tick. Null while the actor is stopped. */
   #stopClosureTick: (() => void) | null = null;
   /**
@@ -2000,6 +2006,65 @@ export class RoomActor {
       });
     }
     return { editId: emitted ? batch!.editId : null };
+  }
+
+  /**
+   * **A table or a diagram, asked for at a place in the notes** (brief §5.7, 2026-10-01).
+   *
+   * The learner's act, like `insertPrivateIntoDoc`, so it runs outside any turn: no message, no
+   * floor, no timer, no ledger and nothing Max sees. What it shares with every agent edit is the
+   * way out — `#emitDocEdit` — so it is recorded, dropped while frozen, and removable in one click.
+   *
+   * The section is read from the doc port's outline: the blocks that share the anchor's heading
+   * path. One generation at a time per room; a second press while one is out is refused rather
+   * than queued, because two Ellie cursors drawing at once is a race on the insert point.
+   */
+  async generateBlock(input: {
+    blockId: string;
+    kind: GeneratedBlockKind;
+    instruction: string | null;
+    /** The slides the section came from, resolved by main. */
+    passage?: string | null;
+    pageCount?: number;
+  }): Promise<{ inserted: boolean; editId: string | null; reason: 'no_doc' | 'frozen' | 'declined' | 'failed' | 'in_flight' | null }> {
+    const refuse = (reason: 'no_doc' | 'frozen' | 'declined' | 'failed' | 'in_flight') => ({ inserted: false, editId: null, reason });
+    if (this.#retired || this.#docPort.docId() === null || !input.blockId) return refuse('no_doc');
+    if (this.#docPort.frozen()) return refuse('frozen');
+    if (this.#generating) return refuse('in_flight');
+    this.#generating = true;
+    this.#noteLearnerActivity('ask');
+    const log = this.#log;
+    try {
+      const near = this.#docPort.outlineNear({ blockId: input.blockId }, GENERATE_SECTION_RADIUS);
+      const anchor = near.find((e) => e.blockId === input.blockId);
+      const samePath = (e: { path: readonly string[] }): boolean =>
+        anchor !== undefined && e.path.length === anchor.path.length && e.path.every((p, i) => p === anchor.path[i]);
+      const section = anchor === undefined ? near : near.filter(samePath);
+      this.#event('student', 'doc.generate', {
+        kind: input.kind,
+        block_id: input.blockId,
+        instructed: (input.instruction ?? '').trim().length > 0,
+        section_blocks: section.length,
+      });
+      const { batch, reason, problems } = await planGeneratedBlock(this.#docEditDeps(null, null), {
+        kind: input.kind,
+        instruction: input.instruction,
+        anchorBlockId: input.blockId,
+        section,
+        passage: input.passage ?? null,
+        pageCount: input.pageCount,
+      });
+      log.event('info', 'doc.generate', { kind: input.kind, reason, problems: problems.length });
+      if (batch === null) return refuse(reason === 'declined' ? 'declined' : 'failed');
+      // Frozen or retired while the call was out: `#emitDocEdit` drops it, and says so by `false`.
+      const emitted = await this.#emitDocEdit(batch, { objectiveId: null, messageId: null, turnId: null });
+      return emitted ? { inserted: true, editId: batch.editId, reason: null } : refuse('frozen');
+    } catch (err) {
+      log.event('error', 'doc.generate.error', { kind: input.kind, cause: failureReason(err) });
+      return refuse('failed');
+    } finally {
+      this.#generating = false;
+    }
   }
 
   /** Private turns as the chat column renders them. Never `messages`, and never a group surface. */

@@ -107,6 +107,21 @@ marker.
   spot. The span keeps a highlight that jumps to its thread.
 - **Freeze**: a toggle in the doc header. While frozen, no agent edits the doc; agents still talk.
   Edits that would have happened are dropped, not queued.
+- **Provenance preview** (2026-10-01): hovering a provenance chip shows that slide's thumbnail
+  with the region the block was drawn from outlined, and the slide's own words for it. The click
+  opens the modal with the same region outlined. The region is found in code by matching the
+  block's words against the page's extracted text lines; when nothing matches well enough the
+  whole slide is shown with no outline and no quote, never a guessed region. No model call.
+- **Tappable figures** (2026-10-01): on an inline slide figure, the slide's own text labels inside
+  the crop are hotspots. A click on one offers *Ask Ellie about this*, which opens a span thread on
+  the figure's block asking what that label is. The hotspots come from the PDF's text geometry,
+  which is exact, and not from a vision model, which would have to guess at boxes. A figure with
+  no text in its crop has none. A click elsewhere on the figure opens the slide, as before.
+- **Listen** (2026-10-01): a control in the notes header reads the section the cursor is in
+  aloud, one block at a time, with the block being read highlighted by a decoration. It uses the
+  system's built-in speech, so there is no model call, no network and no generated script: it
+  reads the notes as written. Display maths is read as "formula" and slide figures are skipped.
+  It never edits the document.
 - **Notes map** (2026-10-01): the notes' headings as an outline in the file panel, under the file
   tree, each marked by the fill of the objectives its section covers (none, partly, complete; no
   mark when no objective maps to it). A click scrolls the doc to the heading, and the section in
@@ -347,6 +362,30 @@ same block, and submits; Max marks the answer against the deck in a thread ancho
   against is that the learner chooses how hard it is. Until decided, it counts for nothing.
 - Editing the text of one of *Max's* questions in the doc does not change what he marks: he marks
   the question he asked.
+
+### 5.7 Tables and diagrams, on request (2026-10-01)
+
+**Insert** in the notes header asks Ellie for a **table** or a **diagram** at the block the cursor
+is in, with an optional line saying what it should show.
+
+- **Both are ordinary blocks of real text.** A table's cells and a diagram's labels are document
+  text with the author mark, so the learner edits them in place, the critical rule above protects
+  what they typed, and every row and node carries the slide pages it came from. A diagram is
+  labelled nodes and optional arrows in one of four layouts (`flow`, `hierarchy`, `compare`,
+  `cycle`), laid out by the renderer. Nothing is drawn by an image model, so a wrong label is
+  fixed by editing it, not by regenerating a picture.
+- **The model sees the section and its slides, and nothing else.** The section is the blocks under
+  the same heading as the cursor's block; the slides are the pages that section came from, at
+  most ten. It may decline (`make: false`) when the section compares nothing or has one idea in
+  it, and then nothing is inserted.
+- **The reply is validated in code** (`shared/doc/validate.ts`): column, row and node caps, one
+  cell per column, unique node ids, edges and parents that name existing nodes. A reply that does
+  not pass inserts nothing. Provenance is set in code, so a block cannot arrive without it (§2).
+- **It arrives as an agent edit like any other**: green, Remove · Keep, dropped while frozen.
+  It is the learner's act on the document and not a turn: no message, no timer, no ledger.
+- The ingest does not write tables or diagrams; its schema is unchanged.
+
+Code: `room/docedit.ts` (`planGeneratedBlock`), `actor.generateBlock`, `notes:generateBlock`.
 
 ## 6. Progress
 

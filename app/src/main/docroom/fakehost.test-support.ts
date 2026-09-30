@@ -69,6 +69,10 @@ export class FakeActor {
     this.#record('markOwnQuestion', args);
     return { accepted: true, reason: null };
   };
+  generateBlock: DocActorMethods['generateBlock'] = async (...args) => {
+    this.#record('generateBlock', args);
+    return { inserted: true, editId: 'edit_gen', reason: null };
+  };
   openPrivate: DocActorMethods['openPrivate'] = (...args) => {
     this.#record('openPrivate', args);
     return { threadId: 'wthread_1', turns: this.privateTurns };

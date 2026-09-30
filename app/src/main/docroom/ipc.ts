@@ -1,6 +1,6 @@
 /**
  * The chats' IPC bodies (#48). **Track T6 owns this file** — the lead placed only the hook.
- * Channels: `notes:docText`, `notes:answerQuestion`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
+ * Channels: `notes:docText`, `notes:answerQuestion`, `notes:generateBlock`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
  * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`, `chat:closeFile`. See `app/docs/COLLAB-CONTRACT.md`.
  *
  * **Three things these handlers decide, and the renderer does not.**
@@ -24,7 +24,12 @@
 
 import { DOC_ANCHOR_ID, SPAN_THREAD_PREFIX } from '../../shared/doc/types.js';
 import type { AgentAuthor, ChatResetResult, ChatView, ThreadView } from '../../shared/doc/types.js';
-import type { NotesAnswerQuestionInput, NotesAnswerQuestionResult } from '../../shared/ipc.js';
+import type {
+  NotesAnswerQuestionInput,
+  NotesAnswerQuestionResult,
+  NotesGenerateBlockInput,
+  NotesGenerateBlockResult,
+} from '../../shared/ipc.js';
 import { referenceContext, saveFlowState } from '../flowroom.js';
 import type { ReferenceContext } from '../../room/reference.js';
 import type { RoomActor } from '../../room/actor.js';
@@ -33,7 +38,7 @@ import { newId } from '../sessions.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
 import { threadsRepo, type ThreadRecord } from '../db/repos/threads.js';
 import { actorHas, docActor, requireActorMethod, type DocActor } from './actorport.js';
-import { notesDocRow, objectiveForBlock, openNotesDoc, pagesForBlock } from './doc.js';
+import { notesDocRow, objectiveForBlock, openNotesDoc, pagesForBlock, sectionPagesForBlock } from './doc.js';
 import { docTextGate, docTextHash } from './doctext.js';
 import { emitProgress } from './progress.js';
 
@@ -505,6 +510,57 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         context,
       });
       return { accepted: result.accepted, threadId, reason: result.reason };
+    } finally {
+      host.persistFlow();
+    }
+  });
+
+  /**
+   * **A table or a diagram, asked for at a block** (brief §5.7, 2026-10-01).
+   *
+   * Main resolves what the model is shown, as it does for every turn: the slides are the pages
+   * the block's **section** came from (the block's own pages, and those of the heading above it
+   * down to the next heading of that level), read from the vault. The renderer names a block and
+   * a kind and has no say in the rest. A learner action, so it opens the room.
+   */
+  handle<NotesGenerateBlockInput>('notes:generateBlock', async (input): Promise<NotesGenerateBlockResult> => {
+    const refuse = (reason: NotesGenerateBlockResult['reason']): NotesGenerateBlockResult => ({
+      inserted: false,
+      editId: null,
+      reason,
+    });
+    if (!input.blockId) return refuse('no_doc');
+    const contentSha = await host.fileBytesKey(input.fileId).then(
+      (k) => k.contentSha,
+      () => null,
+    );
+    const opened = openNotesDoc(host.db, { contentSha, fileId: input.fileId });
+    if (!opened?.doc) return refuse('no_doc');
+
+    const pages = sectionPagesForBlock(opened.doc, input.blockId);
+    let passage: string | null = null;
+    if (pages.length > 0) {
+      try {
+        passage = await host.vault.textFor({
+          fileId: input.fileId,
+          pageFrom: Math.min(...pages),
+          pageTo: Math.max(...pages),
+        });
+      } catch {
+        // The notes of the section are still a source; losing the slides is not losing the call.
+        passage = null;
+      }
+    }
+
+    const { actor } = await host.openFlowRoom(input.fileId);
+    const target = docActor(actor);
+    try {
+      return await requireActorMethod(target, 'generateBlock').call(target, {
+        blockId: input.blockId,
+        kind: input.kind,
+        instruction: input.instruction?.trim() ? input.instruction.trim() : null,
+        passage,
+      });
     } finally {
       host.persistFlow();
     }

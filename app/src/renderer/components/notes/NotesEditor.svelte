@@ -22,8 +22,19 @@
   import { nodeViews, submitAnswerAtSelection } from '../../lib/pm/nodeviews.js';
   import { revealPlugin } from '../../lib/pm/reveal.js';
   import { editorPlugins } from '../../lib/pm/setup.js';
+  import { pageLinesFor } from '../../lib/pagelines.js';
 
-  let { doc }: { doc: DocStore } = $props();
+  let {
+    doc,
+    onAskAboutFigure,
+  }: {
+    doc: DocStore;
+    /** A figure label's "Ask Ellie about this". Wired in `NotesPane`, beside the other chat calls. */
+    onAskAboutFigure?: (input: { blockId: string; quote: string; question: string }) => void;
+  } = $props();
+
+  /** One slide's text with its boxes, for the chip's preview and a figure's hotspots. */
+  const pageLines = (page: number) => pageLinesFor(doc.fileId, page);
 
   let host = $state<HTMLDivElement | null>(null);
   let failure = $state<string | null>(null);
@@ -44,7 +55,7 @@
           plugins: [
             authorship({ onLearnerEdit: (at) => doc.onLearnerEdit(at) }),
             revealPlugin(),
-            chromePlugin(() => doc.chromeContext()),
+            chromePlugin(() => ({ ...doc.chromeContext(), reader: { slides: () => doc.slides(), pageLines } })),
             ...editorPlugins({
               onAskAboutSelection: () => doc.askAboutSelection(),
               onSaveNow: () => {
@@ -61,6 +72,8 @@
             slides: () => doc.slides(),
             onOpenSlide: (page, rect) => doc.openSlide(page, rect),
             onAnswerQuestion: (answer) => doc.answerQuestion(answer),
+            pageLines,
+            onAskAboutFigure: (input) => onAskAboutFigure?.(input),
           }),
           attributes: { spellcheck: 'true', 'aria-label': 'Lecture notes' },
           dispatchTransaction(tr) {

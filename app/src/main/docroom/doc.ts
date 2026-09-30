@@ -129,6 +129,61 @@ export function pagesForBlock(doc: Node | null, blockId: string): number[] {
   return attrs.pages;
 }
 
+/** How many slides a §5.7 table or diagram is drawn from at most. A section, not a chapter. */
+export const SECTION_PAGES_CAP = 10;
+
+/**
+ * **The pages of the section a block sits in** (brief §5.7): from the heading above it down to the
+ * next heading of that level or higher, every page those top-level blocks came from, ascending.
+ * A block above the first heading gets the blocks up to it. Capped, nearest the block's own pages
+ * first, because a section of a long deck can run to a chapter and the call is shown one passage.
+ */
+export function sectionPagesForBlock(doc: Node | null, blockId: string): number[] {
+  if (!doc) return [];
+  const at = blockPos(doc, blockId);
+  if (!at) return [];
+  const index = doc.resolve(at.pos).index(0);
+  const level = (node: Node): number | null =>
+    node.type.name === 'heading' ? ((node.attrs.level as number | undefined) ?? 1) : null;
+
+  let start = 0;
+  let sectionLevel: number | null = null;
+  for (let i = index; i >= 0; i -= 1) {
+    const l = level(doc.child(i));
+    if (l !== null) {
+      start = i;
+      sectionLevel = l;
+      break;
+    }
+  }
+  let end = doc.childCount;
+  for (let i = Math.max(index, start) + 1; i < doc.childCount; i += 1) {
+    const l = level(doc.child(i));
+    if (l !== null && (sectionLevel === null || l <= sectionLevel)) {
+      end = i;
+      break;
+    }
+  }
+
+  const pages = new Set<number>();
+  for (let i = start; i < end; i += 1) {
+    doc.child(i).descendants((node) => {
+      for (const page of blockAttrs(node).pages) pages.add(page);
+      if (node.type.name === 'slide_figure' && typeof node.attrs.page === 'number') pages.add(node.attrs.page as number);
+      return true;
+    });
+    for (const page of blockAttrs(doc.child(i)).pages) pages.add(page);
+  }
+  const all = [...pages].sort((x, y) => x - y);
+  if (all.length <= SECTION_PAGES_CAP) return all;
+  const own = pagesForBlock(doc, blockId);
+  const centre = own.length > 0 ? own[0]! : all[0]!;
+  return all
+    .sort((x, y) => Math.abs(x - centre) - Math.abs(y - centre) || x - y)
+    .slice(0, SECTION_PAGES_CAP)
+    .sort((x, y) => x - y);
+}
+
 /** The objective ids the ingest stamped on a block — a hint, never the whole answer (§3). */
 export function objectiveHintsOnBlock(doc: Node | null, blockId: string): string[] {
   if (!doc) return [];

@@ -1,0 +1,165 @@
+/**
+ * The table block (2026-10-01): `pm/tableview.ts` draws it, `pm/table.ts` edits it.
+ *
+ * A separate sheet from `notes.css` only so two people can edit the two at once; it is the same
+ * global, `nd-`-prefixed namespace, for the same reason (ProseMirror's DOM never carries Svelte's
+ * scoping class), and it is imported beside `notes.css` in `NotesPane.svelte`.
+ *
+ * **Nothing inside `.nd-table` is positioned but `.nd-table` itself.** The provenance chip and
+ * Remove · Keep (`chrome.ts`) are absolutely positioned widgets that land inside the `<tbody>`;
+ * their containing block has to be this outer box, so they sit in the gutters as they do for any
+ * other block, and are not clipped by the scrolling frame between them.
+ */
+
+.nd-table {
+  position: relative;
+  margin: 8px 0 22px;
+}
+
+/* ── caption and toolbar ───────────────────────────────────────────────── */
+
+.nd-table-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+.nd-table-caption {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-2);
+  cursor: text;
+}
+.nd-table-caption-empty {
+  font-weight: 400;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.nd-table:hover .nd-table-caption-empty,
+.nd-table-active .nd-table-caption-empty { opacity: 1; }
+
+.nd-table-caption-input {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--pane);
+  border: 1px solid #c7c7e8;
+  border-radius: 6px;
+  padding: 1px 6px;
+  outline: none;
+  user-select: text;
+}
+
+/* The same pill as the header's zoom control (`notes.css` `.nd-zoom`), smaller. */
+.nd-table-tools {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin-left: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.nd-table:hover .nd-table-tools,
+.nd-table-active .nd-table-tools,
+.nd-table-tools:focus-within { opacity: 1; }
+.nd-table-tools button {
+  font-size: 10.5px;
+  color: var(--text-2);
+  padding: 2px 9px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.nd-table-tools button + button { border-left: 1px solid var(--hairline); }
+.nd-table-tools button:hover { color: var(--indigo); }
+.nd-table-tools button:disabled { opacity: 0.4; cursor: default; color: var(--text-2); }
+
+/* ── the grid ──────────────────────────────────────────────────────────── */
+
+/* Scrolls sideways inside its own box, so a wide table never widens the notes column. */
+.nd-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+}
+.nd-table.ProseMirror-selectednode .nd-table-scroll { box-shadow: 0 0 0 2px #c7c7e8; }
+
+.nd-table-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.nd-table-grid th,
+.nd-table-grid td {
+  min-width: 7em;
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--hairline);
+}
+.nd-table-grid th + th,
+.nd-table-grid td + td { border-left: 1px solid var(--hairline); }
+.nd-table-grid tr:last-child > td { border-bottom: 0; }
+
+/* The heading row: a quiet band, smaller and heavier than the body. */
+.nd-table-grid th {
+  background: #f6f6fa;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+  border-bottom-color: #dcdce8;
+}
+
+/* The first column names the row. */
+.nd-table-grid td:first-child { font-weight: 560; }
+
+.nd-table-grid tbody tr:hover > td { background: #fbfbfd; }
+
+/* ── row provenance ────────────────────────────────────────────────────── */
+
+/* A float at the end of the row's last cell: the text wraps round it and never runs under it. */
+.nd-rowchip-holder {
+  float: right;
+  margin: 2px 0 0 8px;
+  line-height: 1;
+  user-select: none;
+}
+.nd-rowchip {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.5;
+  opacity: 0.6;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.nd-table-grid tr:hover .nd-rowchip { opacity: 1; }
+.nd-rowchip:hover { color: var(--indigo); border-color: #c7c7e8; }
+
+/*
+ * An agent's cursor with the table as its block is drawn at the table's end, which is inside the
+ * `<tbody>`, after the last row: in flow there it would become a row of its own. Out of flow, it
+ * sits at the table's bottom-left corner instead.
+ */
+.nd-table-grid > tbody > .nd-cursor {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}

@@ -35,6 +35,10 @@ import type { QResolution, Rect } from '../../../shared/doc/types.js';
 import { AGENT_NAME, qStatusLabel } from './chrome.js';
 import { answerTarget, questionParts, startAnswer, type QuestionAnswer } from './qblock.js';
 import type { SlideSource } from '../rasterise.js';
+import { hotspotQuestion, hotspotsIn, type PageLinesView } from '../../../shared/doc/cite.js';
+import { drawHotspots, toLineRect } from './sourcepop.js';
+import { TableView } from './tableview.js';
+import { diagramNodeViews } from './diagram.js';
 
 export interface NodeViewContext {
   /** The open deck, once its bytes have arrived. Null while it is still loading. */
@@ -43,6 +47,10 @@ export interface NodeViewContext {
   onOpenSlide: (page: number, rect: Rect | null) => void;
   /** Submit on a Q block: the learner's answer, in place, goes to main to be marked. */
   onAnswerQuestion: (input: QuestionAnswer) => Promise<NotesAnswerQuestionResult>;
+  /** A slide's own text with its boxes: what a figure's hotspots are built from. Optional. */
+  pageLines?: (page: number) => Promise<PageLinesView | null>;
+  /** "Ask Ellie about this" on a figure's label: a span thread on the figure's block. Optional. */
+  onAskAboutFigure?: (input: { blockId: string; quote: string; question: string }) => void;
 }
 
 /**
@@ -106,6 +114,10 @@ const FIGURE_RETRIES = 75;
 class SlideFigureView implements NodeView {
   readonly dom: HTMLElement;
   #frame: HTMLElement;
+  /** The hotspots, over the frame. It takes no pointer events itself; its buttons do. */
+  #layer: HTMLElement;
+  /** Which page and crop the layer was last built for, so a re-render does not refetch. */
+  #hotKey = '';
   #node: Node;
   #ctx: NodeViewContext;
   #width = 0;
@@ -127,7 +139,14 @@ class SlideFigureView implements NodeView {
       event.preventDefault();
       ctx.onOpenSlide(this.#node.attrs.page as number, (this.#node.attrs.rect as Rect | null) ?? null);
     });
-    this.dom.append(this.#frame);
+    // The frame and the hotspot layer share one box. The layer is a sibling and not a child: a
+    // repaint replaces the frame's children, and a button may not hold buttons.
+    const stage = document.createElement('div');
+    stage.className = 'nd-figure-stage';
+    this.#layer = document.createElement('div');
+    this.#layer.className = 'nd-hot-layer';
+    stage.append(this.#frame, this.#layer);
+    this.dom.append(stage);
 
     const caption = document.createElement('figcaption');
     caption.className = 'nd-figure-caption';
@@ -175,6 +194,45 @@ class SlideFigureView implements NodeView {
         if (!canvas || token !== this.#token) return;
         this.#frame.replaceChildren(canvas);
         this.#frame.classList.add('nd-figure-ready');
+        this.#hotspots();
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * The slide's own text labels inside this crop, as buttons over the pixels.
+   *
+   * From the PDF's text geometry (`notes:pageLines`), so each sits exactly on its label, and a
+   * crop with no text in it has none. A click anywhere else still reaches the frame.
+   */
+  #hotspots(): void {
+    const read = this.#ctx.pageLines;
+    if (!read) return;
+    const page = this.#node.attrs.page as number;
+    const rect = (this.#node.attrs.rect as Rect | null) ?? null;
+    const key = `${String(page)}:${JSON.stringify(rect)}`;
+    if (key === this.#hotKey) return;
+    this.#hotKey = key;
+    void read(page)
+      .then((view) => {
+        if (key !== this.#hotKey) return;
+        if (!view) {
+          // Not known yet (the call failed): the next repaint asks again.
+          this.#hotKey = '';
+          return;
+        }
+        const aspect = view.height > 0 ? view.width / view.height : undefined;
+        const { blockId } = blockAttrs(this.#node);
+        const ask = this.#ctx.onAskAboutFigure;
+        drawHotspots(this.#layer, {
+          page,
+          hotspots: hotspotsIn(view.items, rect ? toLineRect(rect) : null, aspect),
+          // A block with no id yet cannot anchor a thread (`chat:openSpan` refuses it).
+          onAsk:
+            ask && blockId
+              ? (label) => ask({ blockId, quote: label, question: hotspotQuestion(label, page) })
+              : null,
+        });
       })
       .catch(() => undefined);
   }
@@ -189,6 +247,7 @@ class SlideFigureView implements NodeView {
     if (!samePage || !sameRect) {
       this.#width = 0;
       this.#frame.replaceChildren();
+      this.#layer.replaceChildren();
       this.#paint();
     }
     return true;
@@ -514,5 +573,7 @@ export function nodeViews(ctx: NodeViewContext): Record<
     math_block: (node) => new MathBlockView(node),
     slide_figure: (node) => new SlideFigureView(node, ctx),
     q_block: (node, view, getPos) => new QBlockView(node, view, getPos, ctx),
+    table: (node, view, getPos) => new TableView(node, view, getPos, ctx),
+    ...diagramNodeViews(ctx),
   };
 }

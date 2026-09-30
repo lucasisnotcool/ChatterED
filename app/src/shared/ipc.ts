@@ -27,6 +27,7 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
+import type { PageLinesView } from './doc/cite.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
   CostAnalytics,
@@ -154,9 +155,12 @@ export const IPC = {
   notesEditResolved: 'notes:editResolved',
   notesSuggestionResolved: 'notes:suggestionResolved',
   notesRegenerate: 'notes:regenerate',
+  /** One slide's text lines with their boxes. Body in `src/main/notes/pagelines.ts`. */
+  notesPageLines: 'notes:pageLines',
   // The chats. Bodies in `src/main/docroom/ipc.ts`.
   notesDocText: 'notes:docText',
   notesAnswerQuestion: 'notes:answerQuestion',
+  notesGenerateBlock: 'notes:generateBlock',
   chatThreads: 'chat:threads',
   chatSend: 'chat:send',
   chatOpenSpan: 'chat:openSpan',
@@ -493,6 +497,12 @@ export interface ChatterEdApi {
    */
   notesPageImages(input: { fileId: string; images: PageImage[]; done: boolean }): Promise<{ stored: number }>;
   /**
+   * One slide's own text with its boxes, normalised 0 to 1: what the provenance chip's preview
+   * outlines and what an inline figure's hotspots sit on (`shared/doc/cite.ts`). Read from the
+   * ingest's pass 1, cached per file and page.
+   */
+  notesPageLines(input: { fileId: string; page: number }): Promise<PageLinesView>;
+  /**
    * Persist the renderer's doc. Optimistic: `baseVersion` must be the stored version, else the
    * stored doc comes back as a conflict and the renderer rebases.
    */
@@ -540,6 +550,15 @@ export interface ChatterEdApi {
    * in a thread anchored to the Q block, and it fills no progress.
    */
   notesAnswerQuestion(input: NotesAnswerQuestionInput): Promise<NotesAnswerQuestionResult>;
+  /**
+   * **The learner asked for a table or a diagram at a place in the notes** (brief §5.7,
+   * 2026-10-01). Ellie writes it from the section around `blockId` and the slides that section
+   * came from, and it arrives as an ordinary agent edit (`doc.edit`) inserted after that block:
+   * green, with Remove · Keep, under the guard. Nothing is inserted when the doc is frozen, when
+   * the model says the section has nothing to tabulate or draw, or when its reply does not pass
+   * validation; `reason` says which.
+   */
+  notesGenerateBlock(input: NotesGenerateBlockInput): Promise<NotesGenerateBlockResult>;
 
   /** Every thread on the file's room: the doc chat, span threads, and the two private threads. */
   chatThreads(input: { fileId: string }): Promise<ChatView>;
@@ -622,6 +641,34 @@ export interface NotesAnswerQuestionResult {
   /** The thread the feedback lands in, so the renderer can bring it into view. */
   threadId: string | null;
   reason: AnswerQuestionRefusal | null;
+}
+
+export interface NotesGenerateBlockInput {
+  fileId: string;
+  docId: string;
+  /** The block the cursor is in: the section it belongs to is the source, and the insert point. */
+  blockId: string;
+  kind: 'table' | 'diagram';
+  /** What it should show, in the learner's words. Optional: empty means "whatever fits best". */
+  instruction: string | null;
+}
+
+export type GenerateBlockRefusal =
+  /** No notes doc, or the block has no id yet. */
+  | 'no_doc'
+  /** The doc is frozen: no agent edits it (brief §3). */
+  | 'frozen'
+  /** The model judged that this section has nothing to tabulate or draw. */
+  | 'declined'
+  /** The reply did not pass validation, or the call failed. */
+  | 'failed'
+  /** A generation for this file is already running. */
+  | 'in_flight';
+
+export interface NotesGenerateBlockResult {
+  inserted: boolean;
+  editId: string | null;
+  reason: GenerateBlockRefusal | null;
 }
 
 declare global {

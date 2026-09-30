@@ -25,7 +25,12 @@
 import { EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { RoomEvent } from '../../shared/types.js';
-import type { ChatterEdApi, NotesAnswerQuestionResult } from '../../shared/ipc.js';
+import type {
+  ChatterEdApi,
+  GenerateBlockRefusal,
+  NotesAnswerQuestionResult,
+  NotesGenerateBlockResult,
+} from '../../shared/ipc.js';
 import { Node as PmNode } from 'prosemirror-model';
 import {
   applyBatch,
@@ -55,6 +60,8 @@ import { bumpChrome, type AgentCursorView, type ChromeContext, type SpanThreadVi
 import { reveal, revealText } from './pm/reveal.js';
 import { DocTextWatch, learnerTextByBlock } from './pm/doctext.js';
 import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
+import { setReading } from './pm/readaloud.js';
+import { insertTargetId } from './pm/insertat.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
 const SAVE_DEBOUNCE_MS = 800;
@@ -92,6 +99,14 @@ export interface SlideModalTarget {
   page: number;
   rect: Rect | null;
 }
+
+/**
+ * What `generateBlock` says: main's result, or the renderer's own refusal `no_place` — the caret
+ * has not been put anywhere yet, so there is no block to insert after.
+ */
+export type GenerateBlockOutcome = Omit<NotesGenerateBlockResult, 'reason'> & {
+  reason: GenerateBlockRefusal | 'no_place' | null;
+};
 
 export class DocStore {
   // ── what the pane draws ───────────────────────────────────────────────────────────────────
@@ -137,6 +152,8 @@ export class DocStore {
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #animations = new Map<string, ReturnType<typeof setTimeout>>();
   #lastKeyAt = 0;
+  /** The learner has put the caret somewhere in this view: Insert has a place to go (`insertTarget`). */
+  #placed = false;
   #openToken = 0;
 
   // ── wiring set by `NotesPane` from `store.chat` (T5), so neither store imports the other ──
@@ -415,6 +432,15 @@ export class DocStore {
 
   attach(view: EditorView): void {
     this.#view = view;
+    // A new view starts with its caret at the top of the notes, which is not a place anyone chose.
+    this.#placed = view.hasFocus();
+    view.dom.addEventListener(
+      'focus',
+      () => {
+        if (this.#view === view) this.#placed = true;
+      },
+      { once: true },
+    );
     this.#docText.observe(learnerTextByBlock(view.state.doc), Date.now());
     this.#armDocTextTimer();
   }
@@ -817,6 +843,29 @@ export class DocStore {
     return null;
   }
 
+  // ── read aloud (`readaloud.ts`, 2026-10-01): read-only, and never a change to the doc ─────
+
+  /** The live document and where the cursor is, for Listen to find its section. Null unmounted. */
+  readingSource(): { doc: PmNode; pos: number } | null {
+    const view = this.#view;
+    return view ? { doc: view.state.doc, pos: view.state.selection.from } : null;
+  }
+
+  /**
+   * Highlight the block being read, or clear it with null. A decoration set by a transaction
+   * with no steps: `onTransaction` sees `docChanged` false, so nothing is saved and nothing is
+   * undoable (`pm/readaloud.ts`).
+   */
+  markReading(blockId: string | null): void {
+    const view = this.#view;
+    if (view) view.dispatch(setReading(view.state.tr, blockId));
+  }
+
+  /** The same test `#followAgent` uses: a reading does not move the page under a typing learner. */
+  learnerTyping(): boolean {
+    return learnerIsTyping(this.#lastKeyAt, Date.now());
+  }
+
   /** Ctrl+E / ⌘E: hand the selected span to the chat column (T5 opens the draft thread). */
   askAboutSelection(): boolean {
     const view = this.#view;
@@ -964,6 +1013,41 @@ export class DocStore {
     // The feedback lands in a thread, which for a question of the learner's own is a new one.
     if (result.accepted && result.threadId && this.fileId === fileId) this.focusThread?.(result.threadId);
     return result;
+  }
+
+  // ── Insert ▸ Table / Diagram (2026-10-01) ─────────────────────────────────────────────────
+
+  /**
+   * The block an Insert would go after: the top-level block holding the caret (`pm/insertat.ts`).
+   * Null until the learner has put the caret somewhere, because a view's first caret is at the
+   * top of the notes and Ellie's table would land under the title for no reason anyone gave.
+   */
+  insertTarget(): string | null {
+    const view = this.#view;
+    if (!view || !this.#placed) return null;
+    return insertTargetId(view.state);
+  }
+
+  /**
+   * **Insert ▸ Table or Diagram**: ask main for Ellie's block after the one the caret is in, and
+   * say what main said. On success the block itself arrives on its own, as Ellie's edit on the
+   * ordinary `doc.edit` path, so nothing here touches the document.
+   *
+   * **Saved first**, as `answerQuestion` is: main reads the section from the *stored* document,
+   * and the caret's block may be one the learner made within the save debounce.
+   */
+  async generateBlock(kind: 'table' | 'diagram', instruction: string | null): Promise<GenerateBlockOutcome> {
+    const fileId = this.fileId;
+    const docId = this.docId;
+    if (!fileId || !docId || !this.#view || !has('notesGenerateBlock')) {
+      return { inserted: false, editId: null, reason: 'no_doc' };
+    }
+    if (this.frozen) return { inserted: false, editId: null, reason: 'frozen' };
+    const blockId = this.insertTarget();
+    if (!blockId) return { inserted: false, editId: null, reason: 'no_place' };
+    await this.#flushSave();
+    const text = instruction?.trim() ?? '';
+    return bridge().notesGenerateBlock({ fileId, docId, blockId, kind, instruction: text.length > 0 ? text : null });
   }
 
   // ── saving (§D5: optimistic, `baseVersion`) ───────────────────────────────────────────────

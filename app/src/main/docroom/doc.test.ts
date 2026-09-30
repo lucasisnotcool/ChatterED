@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { docOf, para } from '../../shared/doc/fixture.test-support.js';
+import { notesSchema } from '../../shared/doc/schema.js';
 import { fakeHost, objective } from './fakehost.test-support.js';
 import {
   blockIdsForObjective,
@@ -8,6 +9,8 @@ import {
   pagesForBlock,
   pagesOfObjective,
   resetDocCache,
+  SECTION_PAGES_CAP,
+  sectionPagesForBlock,
 } from './doc.js';
 
 function deck() {
@@ -63,6 +66,50 @@ describe('pagesForBlock', () => {
     expect(pagesForBlock(doc, 'b_3')).toEqual([]);
     expect(pagesForBlock(doc, 'b_missing')).toEqual([]);
     expect(pagesForBlock(null, 'b_1')).toEqual([]);
+  });
+});
+
+/** §5.7: a table or diagram is drawn from the slides of the section the cursor is in. */
+describe('sectionPagesForBlock', () => {
+  const head = (id: string, level: number, pages: number[] = []) =>
+    notesSchema.nodes.heading!.create({ level, blockId: id, pages, reason: pages.length > 0 ? null : 'heading', objectiveIds: [] }, notesSchema.text(id));
+  const sectioned = () =>
+    docOf(
+      head('h_title', 1),
+      para('b_intro', 'Before any section.', 'ingest', null, [1]),
+      head('h_a', 2, [2]),
+      para('b_a1', 'First idea.', 'ingest', null, [2, 3]),
+      head('h_a_sub', 3, [4]),
+      para('b_a2', 'A detail under it.', 'ingest', null, [4]),
+      head('h_b', 2, [7]),
+      para('b_b1', 'Second idea.', 'ingest', null, [7, 8]),
+    );
+
+  it('takes the pages from the heading above the block down to the next heading of that level', () => {
+    const doc = sectioned();
+    // In section A: its sub-heading's blocks are inside it, section B is not.
+    expect(sectionPagesForBlock(doc, 'b_a1')).toEqual([2, 3, 4]);
+    expect(sectionPagesForBlock(doc, 'h_a')).toEqual([2, 3, 4]);
+    // In the sub-section: only down to the next heading at or above its own level.
+    expect(sectionPagesForBlock(doc, 'b_a2')).toEqual([4]);
+    expect(sectionPagesForBlock(doc, 'b_b1')).toEqual([7, 8]);
+  });
+
+  it('gives nothing for an unknown block or no document', () => {
+    expect(sectionPagesForBlock(sectioned(), 'b_missing')).toEqual([]);
+    expect(sectionPagesForBlock(null, 'b_a1')).toEqual([]);
+  });
+
+  it('caps a long section at the pages nearest the block’s own', () => {
+    const doc = docOf(
+      head('h_long', 2),
+      ...Array.from({ length: 30 }, (_, i) => para(`b_${String(i)}`, `Block ${String(i)}.`, 'ingest', null, [i + 1])),
+    );
+    const pages = sectionPagesForBlock(doc, 'b_19');
+    expect(pages).toHaveLength(SECTION_PAGES_CAP);
+    expect(pages).toContain(20);
+    expect(Math.min(...pages)).toBeGreaterThanOrEqual(15);
+    expect(Math.max(...pages)).toBeLessThanOrEqual(25);
   });
 });
 

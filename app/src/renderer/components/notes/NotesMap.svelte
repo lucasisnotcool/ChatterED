@@ -43,8 +43,13 @@
     onjump: (blockId: string) => void;
   } = $props();
 
-  /** Where a heading counts as "being read": this far below the top of the scrolling pane. */
+  /**
+   * Where a heading counts as "being read": the upper part of the scrolling pane, down to just past
+   * its middle and never less than this far from the top. The middle, because the shell's `jump`
+   * centres the heading it scrolls to, and a click on an entry must mark that entry.
+   */
   const READING_LINE_PX = 96;
+  const READING_LINE_SHARE = 0.55;
   /** Typing is a burst of mutations; one reading per this long is enough for an outline. */
   const READ_DELAY_MS = 120;
 
@@ -60,6 +65,18 @@
     return [...host.querySelectorAll<HTMLElement>('.nd-editor .ProseMirror :is(h1, h2, h3)[data-block-id]')];
   }
 
+  /**
+   * A heading's own words. The chrome ProseMirror hangs inside a block — the provenance chip,
+   * Remove · Keep, an agent's cursor — is a widget in the same element, and `textContent` alone
+   * put "p. 11" in front of every title on the map.
+   */
+  function ownText(el: HTMLElement): string {
+    if (!el.querySelector('.ProseMirror-widget')) return el.textContent ?? '';
+    const copy = el.cloneNode(true) as HTMLElement;
+    for (const widget of copy.querySelectorAll('.ProseMirror-widget')) widget.remove();
+    return copy.textContent ?? '';
+  }
+
   function read(host: HTMLElement): void {
     const next: MapBlock[] = [];
     for (const el of host.querySelectorAll<HTMLElement>('.nd-editor .ProseMirror [data-block-id]')) {
@@ -68,7 +85,7 @@
         blockId: el.dataset.blockId ?? '',
         level,
         // Only a heading's text is on the map, so only a heading's text can change it.
-        text: level === null ? '' : (el.textContent ?? ''),
+        text: level === null ? '' : ownText(el),
         pages: pagesFromAttr(el.dataset.pages),
       });
     }
@@ -78,7 +95,7 @@
 
   function locate(host: HTMLElement): void {
     const pane = host.querySelector<HTMLElement>('.nd-scroll') ?? host;
-    const line = pane.getBoundingClientRect().top + READING_LINE_PX;
+    const line = pane.getBoundingClientRect().top + Math.max(READING_LINE_PX, pane.clientHeight * READING_LINE_SHARE);
     const tops = headings(host).map((el) => ({
       blockId: el.dataset.blockId ?? '',
       top: el.getBoundingClientRect().top,

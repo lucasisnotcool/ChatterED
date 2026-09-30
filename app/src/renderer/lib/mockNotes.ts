@@ -25,7 +25,7 @@
  */
 
 import { blocksForPages, docFromJson } from '../../shared/doc/schema.js';
-import { draftsToDocJson, validateDrafts } from '../../shared/doc/validate.js';
+import { draftsToDocJson, validateDiagramDraft, validateDrafts } from '../../shared/doc/validate.js';
 import type { DocBlockDraft, ProgressObjectiveView } from '../../shared/doc/types.js';
 
 export const MOCK_FILE_ID = 'mock-file-1';
@@ -257,6 +257,29 @@ const WINDOW_3: DocBlockDraft[] = [
 ];
 
 /**
+ * **One diagram**, so the editable-diagram renderer has something to draw under `vite dev`: slide
+ * 12's loop, as Ellie would be asked for it ("draw the HCD loop"). The ingest never writes one, so
+ * it goes through the diagram's own gate, `validateDiagramDraft`, as the reply to that request
+ * does, and is placed after the slide it redraws. Its labels are the deck's four steps.
+ */
+const HCD_LOOP_REPLY = {
+  layout: 'cycle',
+  title: 'The Human-Centred Design loop',
+  nodes: [
+    { id: 'understand', label: 'Understand context and users', pages: [12] },
+    { id: 'design', label: 'Design and prototype', pages: [12] },
+    { id: 'build', label: 'System development', pages: [12] },
+    { id: 'evaluate', label: 'System evaluation', pages: [12] },
+  ],
+  edges: [
+    { from: 'understand', to: 'design' },
+    { from: 'design', to: 'build' },
+    { from: 'build', to: 'evaluate' },
+    { from: 'evaluate', to: 'understand', label: 'next turn' },
+  ],
+};
+
+/**
  * The fixture, built once.
  *
  * Everything downstream — the mock's `notesGet`, the two window events, the progress objectives
@@ -271,8 +294,14 @@ function build() {
    * `mockNotes.test.ts`.
    */
   const checked = validateDrafts(WINDOW_1, MOCK_PAGE_COUNT);
-  FIXTURE_ISSUES = checked.issues.length;
-  const json = draftsToDocJson(MOCK_TITLE, checked.blocks);
+  const loop = validateDiagramDraft(HCD_LOOP_REPLY, MOCK_PAGE_COUNT, { pages: [12], reason: null });
+  FIXTURE_ISSUES = checked.issues.length + loop.problems.length + (loop.draft ? 0 : 1);
+  const blocks = [...checked.blocks];
+  if (loop.draft) {
+    const figure = blocks.findIndex((block) => block.kind === 'figure' && block.page === 12);
+    blocks.splice(figure >= 0 ? figure + 1 : blocks.length, 0, loop.draft);
+  }
+  const json = draftsToDocJson(MOCK_TITLE, blocks);
   const doc = docFromJson(json);
   const ids: string[] = [];
   const pagesOf = new Map<string, number[]>();
