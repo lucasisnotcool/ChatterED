@@ -592,6 +592,8 @@ export function createMockBridge(): ChatterEdApi {
   const MOCK_SILENCE_MS = 18_000;
 
   const hex12 = () => globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  /** Learner-authored questions whose answer Max is still marking (`notesAnswerQuestion`). */
+  const answersInFlight = new Set<string>();
 
   function notesIngestView() {
     return {
@@ -1430,6 +1432,52 @@ export function createMockBridge(): ChatterEdApi {
         },
       );
       return { assessed: true, threadId, reason: null };
+    },
+
+    /**
+     * **Submit answer on a Q block** (2026-10-01). The two cases main tells apart:
+     *
+     *  - Max's question: the answer is a turn into the thread he asked it in, so the whole of the
+     *    attempt loop runs exactly as it does for a chat answer. Refused when that question is
+     *    not the open one.
+     *  - The learner's own question: a thread anchored to the Q block, Max's feedback in it, and
+     *    an ordinary `resolve_q` batch for that question. No objective moves.
+     */
+    async notesAnswerQuestion({ questionId, qBlockId, askedBy, question, answer }) {
+      if (answer.trim().length === 0) return { accepted: false, threadId: null, reason: 'empty' };
+      if (answersInFlight.has(questionId)) return { accepted: false, threadId: null, reason: 'in_flight' };
+
+      if (askedBy === 'max') {
+        const asked = [...chatThreadMap.values()].find((t) => t.quiz?.open && t.quiz.questionId === questionId);
+        if (!asked) return { accepted: false, threadId: null, reason: 'not_open' };
+        docChatTurn(asked.threadId, answer);
+        return { accepted: true, threadId: asked.threadId, reason: null };
+      }
+
+      if (question.trim().length === 0) return { accepted: false, threadId: null, reason: 'no_question' };
+      const threadId = `${SPAN_THREAD_PREFIX}${hex12()}`;
+      const t = thread(threadId, { kind: 'span', blockId: qBlockId, quote: question.slice(0, 120) });
+      post(answer, null, { anchorId: threadId, kind: 'answer' });
+      pushThread(t);
+      answersInFlight.add(questionId);
+      think(
+        max,
+        9000,
+        'Well done. That answers the question you set yourself, and it is in your own words. ' +
+          'It is your question, so it moves no objective; it stays in the notes as yours.',
+        { anchorId: threadId, decidedBy: 'rule:quiz_feedback' },
+        () => {
+          answersInFlight.delete(questionId);
+          emitEdit({
+            author: 'max',
+            cause: 'q_resolved',
+            focusBlockId: qBlockId,
+            why: 'You answered your own question, so it is closed as yours.',
+            ops: [{ op: 'resolve_q', questionId, resolution: 'you_got_this', blocks: [] }],
+          });
+        },
+      );
+      return { accepted: true, threadId, reason: null };
     },
 
     async chatThreads({ fileId }) {

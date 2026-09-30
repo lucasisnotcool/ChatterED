@@ -107,6 +107,10 @@ marker.
   spot. The span keeps a highlight that jumps to its thread.
 - **Freeze**: a toggle in the doc header. While frozen, no agent edits the doc; agents still talk.
   Edits that would have happened are dropped, not queued.
+- **Notes map** (2026-10-01): the notes' headings as an outline in the file panel, under the file
+  tree, each marked by the fill of the objectives its section covers (none, partly, complete; no
+  mark when no objective maps to it). A click scrolls the doc to the heading, and the section in
+  view is marked. It is a view over the headings and the progress view, and generates nothing.
 
 ## 4. The conversation
 
@@ -192,6 +196,28 @@ pure function (`room/pitch.ts`), unit-tested; the wording is the model's.
 examples or Ellie's answer equip the learner for, never a method, notation or format the page only
 names.
 
+**Amended 2026-10-01: the easier question is a fill-in-the-blank.** "Easier (recall, or one part of
+the idea)" was left to the model, and a recall question in prose is still a question to compose an
+answer to. After a release, the next question on that objective is now one sentence from the page
+with one key term replaced by `____`. The design reasons:
+
+- **It is the smallest thing that can be asked.** A learner who has just given up is asked for one
+  term, not for a paragraph.
+- **A correct blank fills nothing.** One recalled term is not the learner's own words about the
+  objective (§6), so its verdict is recorded with `form: 'cloze'`, `progressFill` skips it, and the
+  ledger is not run on the answer.
+- **It does not license a harder question.** After a filled blank the next question on that
+  objective is the own-words one a first question would have been.
+- **Code reads the form off the question.** The pitch asks for a blank; a question that comes back
+  without one is an open question and is marked and counted as one, so a fill is never withheld
+  because Max ignored the instruction.
+- **Marking.** *Well done* or *Not yet*, no *Partly there*. A wrong term gets where on the page to
+  look and the sentence again, not the term.
+
+Code: `core/pitch.ts` (`QuestionForm`, `questionForm`, `pitchBlock`), `prompts.doc.ts`
+(`maxFollowupBlock`, `clozeFeedbackBlock`), migration 023. Only `rule:max_followup` is pitched, so
+only the follow-up can be a blank.
+
 ### 4.6 Size
 
 Max's turns stay at the `attempt-first.md` §4 sizes (feedback under 100; released answer under 150).
@@ -217,6 +243,21 @@ Two invariants, enforced by rule, not by prompt:
 - **No mistake Ellie made is left uncorrected.** If Ellie's cue contained a mistake and the thread
   ends by any path, the resolving Max turn corrects it explicitly. The cue turn records
   `hasMistake` and the claim, so the rule can check that the correction happened.
+
+### 4.8 Where to look next (2026-10-01)
+
+When a sitting goes idle (the inactivity gap, after any closure release), **Ellie posts one message
+in the doc chat that says where the file stands**: how many objectives are complete, then up to
+three each of *answer shown, worth another try*, *partly there* and *not started*, each with its
+pages as `p. N`, which the chat already links into the notes.
+
+- **Written in code, from the outcome rows, with no model call** (`room/focusrecap.ts`). The same
+  rows draw the bar, so the message and the bar cannot disagree, and a model asked to summarise a
+  learner's record can misstate it. It also means the closure tick never waits on a call.
+- **Once per sitting**, and not again when the file is reopened with that sitting still closed.
+- **Nothing is posted for a sitting in which no question was resolved.** A list of everything
+  undone, sent to someone who only read, is a nag.
+- *Answer shown* means the last thing that happened on that objective this sitting was a release.
 
 ## 5. Live agent editing
 
@@ -274,6 +315,38 @@ the addition, and an accept / reject control. Rejecting leaves the learner's tex
 The guard is code: an agent transaction that touches a learner-authored range is rejected before it
 is applied, and re-expressed as a suggestion. It is unit-tested against the editor's document model,
 not against a prompt.
+
+### 5.5 Answering in place (2026-10-01)
+
+An open Q block carries **Answer here**, which opens a paragraph under the question, and **Submit
+answer** (⌘↩) once the learner has written in it.
+
+- **It is the same attempt a chat answer is.** Max marks it in the thread he asked in, so the
+  exchange stays in one place. The verdict is filed as `doc_text`, a correction to the learner's
+  wording is offered as a suggestion (the critical rule above), and a *you got this* does not copy
+  in an answer that is already there.
+- **A Submit is an attempt whatever its length.** §6's pause and length floor guess whether a pause
+  was an attempt; a button says so. A give-up phrase still releases the answer (§4.4).
+- **The pause watcher no longer reports text inside any Q block.** An answer there is marked on
+  Submit only, so it cannot be marked twice, once by the pause and once by the button.
+- An answer to a question that is no longer the open one is refused, and the block says so.
+
+### 5.6 The learner's own questions (2026-10-01)
+
+**Add a question** in the notes header inserts a Q block marked *You asked*, after the block the
+cursor is in and carrying that block's pages. The learner writes the question, answers it in the
+same block, and submits; Max marks the answer against the deck in a thread anchored to the block.
+
+- **It fills no progress, and that is structural.** The question is never Max's open question: no
+  outcome row is written, the pitch does not read it, the ledger is not run on it, and the thread
+  is filed under no objective. A *Well done* resolves the learner's Q block as *you got this* and
+  does nothing else.
+- **It is independent of Max's open question.** "One open Max question at a time" is about
+  questions he asks; marking a self-set one leaves his open and unmarked.
+- **Open decision:** whether a self-set question should ever count toward an objective. The case
+  against is that the learner chooses how hard it is. Until decided, it counts for nothing.
+- Editing the text of one of *Max's* questions in the doc does not change what he marks: he marks
+  the question he asked.
 
 ## 6. Progress
 

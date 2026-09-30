@@ -14,7 +14,9 @@
  *    from `rasterise.ts`'s `SlideSource`, the same canvases the carousel and the modal use.
  *  - **`q_block`** — Max's question, with its red rail, its name, its status tag and the learner's
  *    one-click remove. Its body is real editable content (`contentDOM`), because §5.3 writes the
- *    resolution *inside* the block and the learner may edit that like anything else.
+ *    resolution *inside* the block and the learner may edit that like anything else. Since
+ *    2026-10-01 it is also where the learner answers (a footer with Answer here and Submit), and
+ *    a question may be the learner's own (`askedBy: 'user'`, "You asked").
  *
  * **`math_inline` is a mark, not a node**, so it cannot have a node view at all; it is styled as
  * maths (KaTeX's own italic face) and left editable, which is the honest trade — a mark view that
@@ -25,9 +27,13 @@
 
 import katex from 'katex';
 import type { Node } from 'prosemirror-model';
+import type { Command } from 'prosemirror-state';
 import type { EditorView, NodeView, ViewMutationRecord } from 'prosemirror-view';
+import type { AnswerQuestionRefusal, NotesAnswerQuestionResult } from '../../../shared/ipc.js';
+import { blockAttrs } from '../../../shared/doc/schema.js';
 import type { QResolution, Rect } from '../../../shared/doc/types.js';
 import { AGENT_NAME, qStatusLabel } from './chrome.js';
+import { answerTarget, questionParts, startAnswer, type QuestionAnswer } from './qblock.js';
 import type { SlideSource } from '../rasterise.js';
 
 export interface NodeViewContext {
@@ -35,6 +41,8 @@ export interface NodeViewContext {
   slides: () => SlideSource | null;
   /** A figure's click: open the in-doc modal at that page, outlining the rect. */
   onOpenSlide: (page: number, rect: Rect | null) => void;
+  /** Submit on a Q block: the learner's answer, in place, goes to main to be marked. */
+  onAnswerQuestion: (input: QuestionAnswer) => Promise<NotesAnswerQuestionResult>;
 }
 
 /**
@@ -197,24 +205,64 @@ class SlideFigureView implements NodeView {
   }
 }
 
-/** Max's question in the document (§5.2), with its status tag and the learner's remove. */
+/** Why an in-place answer was not marked, in the learner's words. */
+const REFUSAL_LINE: Record<AnswerQuestionRefusal, string> = {
+  not_open: 'This question is closed. Ask Max for another in the chat.',
+  in_flight: 'Still marking your last answer.',
+  empty: 'Write an answer first.',
+  no_question: 'Write the question first.',
+  no_doc: 'The notes are not ready yet.',
+};
+
+/** The call itself failed. Not one of main's refusals, so it has its own line. */
+const FAILED_LINE = 'That did not reach Max. Try again.';
+
+/**
+ * Where a Submit stands. `idle` is the resting state; `marking` is the call being out; the rest
+ * are a line under the block that stays until the learner changes what it was said about.
+ */
+type SubmitPhase = 'idle' | 'marking' | 'sent' | 'failed' | AnswerQuestionRefusal;
+
+/** The Q block view behind each root element, so ⌘↩ can reach the one the cursor is in. */
+const Q_VIEWS = new WeakMap<HTMLElement, QBlockView>();
+
+/**
+ * A question in the document (§5.2): Max's, or since 2026-10-01 the learner's own. Its status tag,
+ * the learner's remove, and the footer where an answer written in place is submitted.
+ */
 class QBlockView implements NodeView {
   readonly dom: HTMLElement;
   readonly contentDOM: HTMLElement;
+  #who: HTMLElement;
   #tag: HTMLElement;
+  #foot: HTMLElement;
+  #act: HTMLButtonElement;
+  #note: HTMLElement;
   #node: Node;
+  #view: EditorView;
+  #getPos: () => number | undefined;
+  #ctx: NodeViewContext;
+  /** What the footer's one button does right now. */
+  #mode: 'start' | 'submit' = 'start';
+  #phase: SubmitPhase = 'idle';
+  /** The question and answer the current `#phase` is about. A change to either clears it. */
+  #about = '';
+  #destroyed = false;
 
-  constructor(node: Node, view: EditorView, getPos: () => number | undefined) {
+  constructor(node: Node, view: EditorView, getPos: () => number | undefined, ctx: NodeViewContext) {
     this.#node = node;
+    this.#view = view;
+    this.#getPos = getPos;
+    this.#ctx = ctx;
     this.dom = document.createElement('section');
     this.dom.className = 'nd-q';
+    Q_VIEWS.set(this.dom, this);
 
     const head = document.createElement('div');
     head.className = 'nd-q-head';
 
-    const who = document.createElement('span');
-    who.className = 'nd-q-who';
-    who.textContent = `${AGENT_NAME[(node.attrs.askedBy as 'ellie' | 'max') ?? 'max']} asked`;
+    this.#who = document.createElement('span');
+    this.#who.className = 'nd-q-who';
 
     this.#tag = document.createElement('span');
     this.#tag.className = 'nd-q-tag';
@@ -236,13 +284,52 @@ class QBlockView implements NodeView {
       view.focus();
     });
 
-    head.append(who, this.#tag, remove);
+    head.append(this.#who, this.#tag, remove);
     this.dom.append(head);
 
     this.contentDOM = document.createElement('div');
     this.contentDOM.className = 'nd-q-body';
     this.dom.append(this.contentDOM);
+
+    // The footer is chrome like the head: outside `contentDOM`, not editable, and its events are
+    // its own (`stopEvent`), so a press on Submit is never a click in the document.
+    this.#foot = document.createElement('div');
+    this.#foot.className = 'nd-q-foot';
+    this.#foot.contentEditable = 'false';
+
+    this.#act = document.createElement('button');
+    this.#act.type = 'button';
+    this.#act.className = 'nd-q-act';
+    // Keeps the caret where it is: the press must not blur the answer being submitted.
+    this.#act.addEventListener('mousedown', (event) => event.preventDefault());
+    this.#act.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (this.#mode === 'submit') this.submit();
+      else this.#startAnswer();
+    });
+
+    this.#note = document.createElement('span');
+    this.#note.className = 'nd-q-note';
+    this.#note.setAttribute('role', 'status');
+
+    this.#foot.append(this.#act, this.#note);
+    this.dom.append(this.#foot);
+
+    this.#paintHead();
     this.#paintTag();
+    this.#paintFoot();
+  }
+
+  #own(): boolean {
+    return (this.#node.attrs.askedBy as string) === 'user';
+  }
+
+  #paintHead(): void {
+    const askedBy = (this.#node.attrs.askedBy as string) || 'max';
+    // On the root, so the CSS can give the learner's own question its own rail.
+    this.dom.dataset.askedBy = askedBy;
+    const name = askedBy === 'user' ? 'You' : AGENT_NAME[askedBy === 'ellie' ? 'ellie' : 'max'];
+    this.#who.textContent = `${name} asked`;
   }
 
   #paintTag(): void {
@@ -252,18 +339,172 @@ class QBlockView implements NodeView {
     this.#tag.dataset.status = status === 'resolved' ? (resolution ?? 'resolved') : 'open';
   }
 
+  /**
+   * The footer, from the node and the phase. Called on every `update`, which is every keystroke
+   * inside the block, so it only writes to the DOM what has actually changed.
+   */
+  #paintFoot(): void {
+    const open = ((this.#node.attrs.status as string) ?? 'open') === 'open';
+    if (this.#foot.hidden === open) this.#foot.hidden = !open;
+    if (!open) return;
+
+    const parts = questionParts(this.#node);
+    // A line about an answer stays until that answer changes ("Sent to Max" until they revise
+    // it). The call being out is not cleared by typing: its result is still on its way.
+    if (this.#phase !== 'idle' && this.#phase !== 'marking' && this.#about !== `${parts.question}\n\n${parts.answer}`) {
+      this.#phase = 'idle';
+    }
+
+    let label: string | null;
+    let note = '';
+    let kind = 'refused';
+    if (this.#phase === 'marking') {
+      this.#mode = 'submit';
+      label = 'Submit answer';
+      note = 'Max is marking…';
+      kind = 'busy';
+    } else if (this.#phase === 'sent') {
+      // No button: the same words are already with Max. Revising them brings Submit back.
+      label = null;
+      note = 'Sent to Max. His feedback is in the chat.';
+      kind = 'sent';
+    } else if (parts.answer.length > 0) {
+      this.#mode = 'submit';
+      label = 'Submit answer';
+    } else if (this.#own() && parts.question.length === 0) {
+      label = null;
+      if (this.#phase === 'idle') {
+        note = 'Write your question, then your answer on the next line';
+        kind = 'hint';
+      }
+    } else {
+      this.#mode = 'start';
+      label = 'Answer here';
+    }
+    if (this.#phase === 'failed') note = FAILED_LINE;
+    else if (this.#phase !== 'idle' && this.#phase !== 'marking' && this.#phase !== 'sent') {
+      note = REFUSAL_LINE[this.#phase];
+    }
+
+    const hidden = label === null;
+    if (this.#act.hidden !== hidden) this.#act.hidden = hidden;
+    if (label !== null && this.#act.textContent !== label) {
+      this.#act.textContent = label;
+      this.#act.title =
+        this.#mode === 'submit' ? 'Send your answer to Max to be marked (⌘↩)' : 'Write your answer under the question';
+    }
+    const busy = this.#phase === 'marking';
+    if (this.#act.disabled !== busy) this.#act.disabled = busy;
+    if (this.#note.textContent !== note) this.#note.textContent = note;
+    if (this.#note.dataset.kind !== kind) this.#note.dataset.kind = kind;
+  }
+
+  /** **Answer here**: open a line under the question and put the caret in it. */
+  #startAnswer(): void {
+    const pos = this.#getPos();
+    if (pos === undefined) return;
+    const tr = startAnswer(this.#view.state, pos);
+    if (!tr) return;
+    // The learner's own gesture, like Remove: in the history, and what they type there is theirs.
+    this.#view.dispatch(tr.scrollIntoView());
+    this.#view.focus();
+  }
+
+  /**
+   * **Submit answer**, from the button or from ⌘↩.
+   *
+   * The two refusals the block can see for itself are said without a round trip; main checks
+   * them again. Everything else is main's to decide, and the view only reports what it said.
+   */
+  submit(): void {
+    const node = this.#node;
+    if (this.#phase === 'marking' || (node.attrs.status as string) !== 'open') return;
+    const parts = questionParts(node);
+    this.#about = `${parts.question}\n\n${parts.answer}`;
+    const own = this.#own();
+    if (parts.answer.length === 0 || parts.answerBlockId === null) {
+      this.#settle('empty');
+      return;
+    }
+    if (own && parts.question.length === 0) {
+      this.#settle('no_question');
+      return;
+    }
+    const about = this.#about;
+    this.#settle('marking');
+    this.#ctx
+      .onAnswerQuestion({
+        questionId: (node.attrs.questionId as string) || '',
+        qBlockId: blockAttrs(node).blockId,
+        askedBy: own ? 'user' : 'max',
+        question: parts.question,
+        answerBlockId: parts.answerBlockId,
+        answer: parts.answer,
+      })
+      .then(
+        (result) => (result.accepted ? 'sent' : (result.reason ?? 'failed')),
+        () => 'failed' as const,
+      )
+      .then((phase: SubmitPhase) => {
+        if (this.#destroyed) return;
+        // The line is about the answer that was sent. `#paintFoot` drops it at once if the
+        // learner has already written past that answer while it was out.
+        this.#about = about;
+        this.#settle(phase);
+      });
+  }
+
+  #settle(phase: SubmitPhase): void {
+    this.#phase = phase;
+    this.#paintFoot();
+  }
+
   update(node: Node): boolean {
     if (node.type.name !== 'q_block') return false;
+    // ProseMirror may hand a view the *next* Q block when the one it drew is removed. A line
+    // about one question must not follow the view onto another; a call still out for the old
+    // one is left to land, and `#about` will not match it.
+    if (node.attrs.questionId !== this.#node.attrs.questionId && this.#phase !== 'marking') this.#phase = 'idle';
     this.#node = node;
+    this.#paintHead();
     this.#paintTag();
+    this.#paintFoot();
     return true;
   }
 
-  /** The head is chrome; a mutation there is ours, not the learner's. */
+  /** The footer's events are the footer's: ProseMirror must not read a press there as a click. */
+  stopEvent(event: Event): boolean {
+    return event.target instanceof globalThis.Node && this.#foot.contains(event.target);
+  }
+
+  /** The head and the footer are chrome; a mutation there is ours, not the learner's. */
   ignoreMutation(mutation: ViewMutationRecord): boolean {
     return !this.contentDOM.contains(mutation.target);
   }
+
+  destroy(): void {
+    this.#destroyed = true;
+    Q_VIEWS.delete(this.dom);
+  }
 }
+
+/**
+ * ⌘↩ with the cursor in the answer of an open Q block: the same as pressing Submit answer.
+ *
+ * False anywhere else, so the key falls through to whatever else binds it (`exitCode`, in a code
+ * block). It goes through the node view rather than around it because the view owns the "Max is
+ * marking…" state, and two ways to submit must not mean two calls.
+ */
+export const submitAnswerAtSelection: Command = (state, _dispatch, view) => {
+  if (!view) return false;
+  const target = answerTarget(state);
+  if (!target) return false;
+  const dom = view.nodeDOM(target.pos);
+  const q = dom instanceof HTMLElement ? Q_VIEWS.get(dom) : undefined;
+  if (!q) return false;
+  q.submit();
+  return true;
+};
 
 export function nodeViews(ctx: NodeViewContext): Record<
   string,
@@ -272,6 +513,6 @@ export function nodeViews(ctx: NodeViewContext): Record<
   return {
     math_block: (node) => new MathBlockView(node),
     slide_figure: (node) => new SlideFigureView(node, ctx),
-    q_block: (node, view, getPos) => new QBlockView(node, view, getPos),
+    q_block: (node, view, getPos) => new QBlockView(node, view, getPos, ctx),
   };
 }

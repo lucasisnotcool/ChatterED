@@ -53,9 +53,10 @@ describe('learnerTextByBlock', () => {
   /**
    * #49: a *you got this* files the learner's chat answer under the question, in their author
    * mark. Reported as doc text it would be marked a second time, against whatever question was
-   * open next. An open question's block still counts: answering under it in the notes is an attempt.
+   * open next. Since 2026-10-01 an open question's block is skipped as well: an answer written
+   * under the question is marked on Submit, not on a pause.
    */
-  it('skips learner text inside a resolved Q block, and keeps it inside an open one', () => {
+  it('skips learner text inside any Q block, resolved or open', () => {
     const q = (status: 'open' | 'resolved', blockId: string) =>
       notesSchema.node(
         'q_block',
@@ -69,8 +70,28 @@ describe('learnerTextByBlock', () => {
           ]),
         ],
       );
-    const doc = notesSchema.node('doc', null, [q('resolved', 'b_closed'), q('open', 'b_live')]);
-    expect(learnerTextByBlock(doc)).toEqual([{ blockId: 'b_live', text: SENTENCE }]);
+    const outside = notesSchema.node('paragraph', { blockId: 'b_out', pages: [3], reason: null, objectiveIds: [] }, [
+      notesSchema.text(SENTENCE, [authorMark('user', null, 1)]),
+    ]);
+    const doc = notesSchema.node('doc', null, [q('resolved', 'b_closed'), q('open', 'b_live'), outside]);
+    expect(learnerTextByBlock(doc)).toEqual([{ blockId: 'b_out', text: SENTENCE }]);
+  });
+
+  /** The text of a question the learner wrote is not an attempt, and neither is its answer yet. */
+  it("skips a learner's own question and the answer under it", () => {
+    const own = notesSchema.node(
+      'q_block',
+      { blockId: 'b_own', pages: [3], reason: 'your own question', objectiveIds: [], questionId: 'q_own', askedBy: 'user' },
+      [
+        notesSchema.node('paragraph', { blockId: 'b_own_q', pages: [3], reason: null, objectiveIds: [] }, [
+          notesSchema.text('Why does value iteration sweep every state on every single pass?', [authorMark('user', null, 1)]),
+        ]),
+        notesSchema.node('paragraph', { blockId: 'b_own_a', pages: [3], reason: null, objectiveIds: [] }, [
+          notesSchema.text(SENTENCE, [authorMark('user', null, 1)]),
+        ]),
+      ],
+    );
+    expect(learnerTextByBlock(notesSchema.node('doc', null, [own]))).toEqual([]);
   });
 });
 

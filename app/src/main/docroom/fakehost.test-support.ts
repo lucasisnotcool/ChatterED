@@ -59,6 +59,16 @@ export class FakeActor {
   assessDocText: DocActorMethods['assessDocText'] = async (...args) => {
     this.#record('assessDocText', args);
   };
+  /** What `answerInPlace` answers with. A test sets it to a refusal to drive that path. */
+  inPlaceResult: Awaited<ReturnType<DocActorMethods['answerInPlace']>> = { accepted: true, threadId: 'doc', reason: null };
+  answerInPlace: DocActorMethods['answerInPlace'] = async (...args) => {
+    this.#record('answerInPlace', args);
+    return this.inPlaceResult;
+  };
+  markOwnQuestion: DocActorMethods['markOwnQuestion'] = async (...args) => {
+    this.#record('markOwnQuestion', args);
+    return { accepted: true, reason: null };
+  };
   openPrivate: DocActorMethods['openPrivate'] = (...args) => {
     this.#record('openPrivate', args);
     return { threadId: 'wthread_1', turns: this.privateTurns };

@@ -762,6 +762,12 @@ export interface TurnDirective {
    * Swaps the five-step shape for the short half of it; see `prompts.doc.ts` `ellieAnswersBlock`.
    */
   docChat?: boolean;
+  /**
+   * **This turn asks, or marks, a fill-in-the-blank** (`collab-doc.md` §4.5, amended 2026-10-01).
+   * The directive is the sentence nearest the generation, and both of the sentences it would
+   * otherwise say (own words; a follow-up on the gap) are wrong for a blank.
+   */
+  cloze?: boolean;
 }
 
 /**
@@ -835,7 +841,14 @@ export function turnDirective(d: TurnDirective): string {
     );
   }
   /** §4.2 row 1, second turn: one Socratic follow-up, pitched by `pitchBlock` in the note. */
-  if (d.move === 'quiz' && d.byRule === 'rule:max_followup') {
+  if (d.move === 'quiz' && d.byRule === 'rule:max_followup' && d.cloze === true) {
+    // §4.5, amended 2026-10-01: after a release the follow-up is one blank, not an own-words question.
+    bits.push(
+      'Ellie has just answered the learner’s question. Ask **one** fill-in-the-blank: "Fill in the',
+      'blank:" and then one sentence from the page with one key term replaced by ____. One blank,',
+      'nothing after the sentence, and do not give the term or a hint at it.',
+    );
+  } else if (d.move === 'quiz' && d.byRule === 'rule:max_followup') {
     bits.push(
       'Ellie has just answered the learner’s question. Ask **one** follow-up that makes them use it',
       'in their own words. It must be answerable from the page and what Ellie just said — no method',
@@ -881,7 +894,20 @@ export function turnDirective(d: TurnDirective): string {
    * carries the argument; this is the sentence nearest the generation, and it is the one that
    * failed on 2026-09-19 — a complete answer marked against the objective's whole list.
    */
-  if (d.move === 'quiz_feedback') {
+  if (d.move === 'own_question_feedback') {
+    bits.push(
+      `The learner answered a question they wrote themselves. First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}.`,
+      'Then what their answer had and what it lacked, grounded in the deck. No question of your own.',
+      'Under 100 words.',
+    );
+  }
+  if (d.move === 'quiz_feedback' && d.cloze === true) {
+    bits.push(
+      `First line: exactly **${VERDICT_OPENERS[0]}** or **${VERDICT_OPENERS[2]}**. It was a fill-in-the-blank: mark the`,
+      'term. After Well done, the completed sentence and its page. After Not yet, where on the page to',
+      'look and the sentence with its blank again, without the term. Under 60 words.',
+    );
+  } else if (d.move === 'quiz_feedback') {
     bits.push(
       `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
       'the question you asked, not the whole objective. Unless it is Well done, your last sentence is',

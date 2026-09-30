@@ -39,6 +39,21 @@ export interface DocActorMethods {
     blockId: string;
     text: string;
   }): Promise<void>;
+  /** An answer typed inside Max's Q block and submitted (brief §5.5). Marked in his thread. */
+  answerInPlace(input: {
+    questionId: string;
+    blockId: string;
+    text: string;
+  }): Promise<{ accepted: boolean; threadId: string | null; reason: 'not_open' | 'empty' | 'in_flight' | null }>;
+  /** The learner's own question, answered in its Q block (brief §5.6). Fills no progress. */
+  markOwnQuestion(input: {
+    anchorId: string;
+    questionId: string;
+    blockId: string;
+    question: string;
+    answer: string;
+    context?: ReferenceContext | null;
+  }): Promise<{ accepted: boolean; reason: 'empty' | 'no_question' | 'in_flight' | null }>;
   openPrivate(agent: AgentAuthor): { threadId: string; turns: PrivateTurnView[] };
   sendPrivate(threadId: string, text: string): Promise<void>;
   /** The one path from a private thread to the shared document (brief §4.1). */

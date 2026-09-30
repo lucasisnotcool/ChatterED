@@ -30,6 +30,7 @@ import type { AgentProfile } from '../shared/types.js';
  * so this stays inside the portability rule that keeps `src/room` free of Electron and SQLite.
  */
 import type { QResolution, QuizVerdict3 } from '../shared/doc/types.js';
+import type { QuestionForm } from '../core/pitch.js';
 import { testerName } from './agents.js';
 
 /** The tunable set. One object so a demo profile is a substitution, not a scatter of flags. */
@@ -872,6 +873,13 @@ export interface PendingQuiz {
    * questions.
    */
   resolvedInDoc?: boolean;
+  /**
+   * **A fill-in-the-blank** (brief §4.5, amended 2026-10-01): the easier question after a release.
+   * Read off the question Max actually wrote (`core/pitch.questionForm`). Its verdicts are
+   * recorded with the form, so they fill no progress, and the ledger is not run on its one-word
+   * answer. Absent on every question asked before this build, which were all `open`.
+   */
+  form?: QuestionForm;
 }
 
 /**
@@ -979,6 +987,8 @@ export function openQuiz(
     anchorId?: string | null;
     /** The words Max asked it in, for M3's `question` share (migration 022). */
     questionText?: string | null;
+    /** `cloze` for a fill-in-the-blank (§4.5). Left out for an open question. */
+    form?: QuestionForm;
   },
   now: number,
 ): PendingQuiz {

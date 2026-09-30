@@ -12,7 +12,18 @@
  * statement about the question, not about the learner.
  */
 import { describe, expect, it } from 'vitest';
-import { pitchBlock, pitchInputs, pitchLine, pitchSignal, notePitch, DEFAULT_PITCH, type PitchOutcome } from './pitch.js';
+import {
+  CLOZE_BLANK,
+  DEFAULT_PITCH,
+  hasBlank,
+  notePitch,
+  pitchBlock,
+  pitchInputs,
+  pitchLine,
+  pitchSignal,
+  questionForm,
+  type PitchOutcome,
+} from './pitch.js';
 
 const verdict = (v: 'complete' | 'partial' | 'not_yet', objectiveId: string | null = 'obj_1'): PitchOutcome => ({
   objectiveId,
@@ -99,6 +110,26 @@ describe('pitchBlock', () => {
     expect(text).toContain('recall');
     expect(text).toContain('do not say it is easier');
     expect(text).toContain('fills nothing');
+  });
+
+  /**
+   * **The easier question is a fill-in-the-blank** (`collab-doc.md` §4.5, amended 2026-10-01).
+   * One sentence from the page with one term blanked, which is the smallest thing that can be asked.
+   */
+  it('asks for the easier question as a fill-in-the-blank, with one blank', () => {
+    const text = pitchBlock(pitchInputs({ objectiveId: 'obj_1', outcomes: [released('give_up')], fill: 0 }));
+    expect(text).toContain('fill-in-the-blank');
+    expect(text).toContain(CLOZE_BLANK);
+    expect(text).toContain('One blank only');
+  });
+
+  it('asks for own words after a filled blank, not another blank and not a harder case', () => {
+    const cloze: PitchOutcome = { ...verdict('complete'), form: 'cloze' };
+    const text = pitchBlock(pitchInputs({ objectiveId: 'obj_1', outcomes: [released('give_up'), cloze], fill: 0 }));
+    expect(text).toContain('in their own words');
+    expect(text).toContain('Not another blank');
+    expect(text).not.toContain('You may go harder');
+    expect(text).toContain('on a fill-in-the-blank — fills nothing');
   });
 
   it('permits harder after a Well done', () => {
@@ -239,5 +270,53 @@ describe('notePitch', () => {
       signals: ['simpler'],
       updatedAt: 1_000,
     });
+  });
+});
+
+/**
+ * **The cloze form** (`collab-doc.md` §4.5, amended 2026-10-01). After a release the next question
+ * is a fill-in-the-blank; a correct one fills nothing and does not license a harder question.
+ */
+describe('the cloze form', () => {
+  it('asks for a cloze exactly when the pitch is easier', () => {
+    expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [released('give_up')], fill: 0 }).form).toBe('cloze');
+    expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [], fill: 0 }).form).toBe('open');
+    expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [verdict('complete')], fill: 1 }).form).toBe('open');
+    expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [verdict('partial')], fill: 0.5 }).form).toBe('open');
+  });
+
+  it('does not go harder on a filled blank: the learner is back at the start of the objective', () => {
+    const cloze: PitchOutcome = { ...verdict('complete'), form: 'cloze' };
+    const p = pitchInputs({ objectiveId: 'obj_1', outcomes: [released('give_up'), cloze], fill: 0 });
+    expect(p.pitch).toBe('level');
+    expect(p.lastWasComplete).toBe(false);
+    expect(p.lastWasCloze).toBe(true);
+    expect(p.form).toBe('open');
+    expect(p.reason).toContain('filled a blank');
+  });
+
+  it('asks for another blank after a give-up on a blank', () => {
+    const p = pitchInputs({ objectiveId: 'obj_1', outcomes: [released('give_up'), released('give_up')], fill: 0 });
+    expect(p.form).toBe('cloze');
+  });
+
+  it('still goes harder on an open Well done, with or without the field', () => {
+    const open: PitchOutcome = { ...verdict('complete'), form: 'open' };
+    expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [open], fill: 1 }).pitch).toBe('harder');
+    expect(pitchInputs({ objectiveId: 'obj_1', outcomes: [{ ...verdict('complete'), form: null }], fill: 1 }).pitch).toBe('harder');
+  });
+
+  it('reads a blank off the question, three underscores or more', () => {
+    expect(hasBlank('Fill in the blank: a ____ is admissible.')).toBe(true);
+    expect(hasBlank('a ___ is admissible')).toBe(true);
+    expect(hasBlank('a _______ is admissible')).toBe(true);
+    expect(hasBlank('snake_case and __init__ are not blanks')).toBe(false);
+  });
+
+  /** A question with no blank is an open question, whatever it was asked to be. */
+  it('takes the form from what was actually asked', () => {
+    expect(questionForm('cloze', 'Fill in the blank: a ____ never overestimates.')).toBe('cloze');
+    expect(questionForm('cloze', 'In one sentence, what is a heuristic?')).toBe('open');
+    expect(questionForm('open', 'What goes in ____ here?')).toBe('open');
   });
 });

@@ -25,7 +25,7 @@
 import { EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { RoomEvent } from '../../shared/types.js';
-import type { ChatterEdApi } from '../../shared/ipc.js';
+import type { ChatterEdApi, NotesAnswerQuestionResult } from '../../shared/ipc.js';
 import { Node as PmNode } from 'prosemirror-model';
 import {
   applyBatch,
@@ -54,6 +54,7 @@ import { AGENT_TR, type Range, insertedRanges } from './pm/authorship.js';
 import { bumpChrome, type AgentCursorView, type ChromeContext, type SpanThreadView } from './pm/chrome.js';
 import { reveal, revealText } from './pm/reveal.js';
 import { DocTextWatch, learnerTextByBlock } from './pm/doctext.js';
+import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
 const SAVE_DEBOUNCE_MS = 800;
@@ -127,6 +128,8 @@ export class DocStore {
   #slides: SlideSource | null = null;
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   #savePending = false;
+  /** Settles when the save now in flight has finished. Null when none is. */
+  #saveSettled: Promise<void> | null = null;
   #docText = new DocTextWatch();
   #docTextTimer: ReturnType<typeof setInterval> | null = null;
   // A plain Map on purpose: these are timer handles, nothing renders them, and making them
@@ -925,6 +928,44 @@ export class DocStore {
     }
   }
 
+  // ── questions in the notes: answer in place, and the learner's own (2026-10-01) ───────────
+
+  /**
+   * **Add a question**: the header's button. An empty Q block of the learner's own after the
+   * block their cursor is in, with the caret in it. Their gesture, so it is in the undo history.
+   */
+  addOwnQuestion(): boolean {
+    const view = this.#view;
+    if (!view) return false;
+    const done = insertOwnQuestion(view.state, (tr) => view.dispatch(tr));
+    if (done) view.focus();
+    return done;
+  }
+
+  /**
+   * **Submit answer** on a Q block (`pm/nodeviews.ts`): hand the learner's answer to main to be
+   * marked, and say what main said.
+   *
+   * **Saved first.** Main marks against the *stored* document (it is where a suggestion on the
+   * answer would land, and where it reads the question from), and the answer was typed within
+   * the save debounce more often than not, so the pending save is flushed before the call.
+   *
+   * Unlike `#reportDocText` this is the learner's explicit gesture, so nothing is swallowed: a
+   * refusal is returned for the block to say, and a failed call rejects for the block to say too.
+   */
+  async answerQuestion(parts: QuestionAnswer): Promise<NotesAnswerQuestionResult> {
+    const fileId = this.fileId;
+    const docId = this.docId;
+    if (!fileId || !docId || !has('notesAnswerQuestion')) {
+      return { accepted: false, threadId: null, reason: 'no_doc' };
+    }
+    await this.#flushSave();
+    const result = await bridge().notesAnswerQuestion({ fileId, docId, ...parts });
+    // The feedback lands in a thread, which for a question of the learner's own is a new one.
+    if (result.accepted && result.threadId && this.fileId === fileId) this.focusThread?.(result.threadId);
+    return result;
+  }
+
   // ── saving (§D5: optimistic, `baseVersion`) ───────────────────────────────────────────────
 
   #scheduleSave(): void {
@@ -942,6 +983,30 @@ export class DocStore {
     await this.#save();
   }
 
+  /**
+   * Put what is on screen into main's hands **now**, and wait until it is there.
+   *
+   * `saveNow()` is not this: `#save` returns at once when a save is already in flight and leaves
+   * the tail to a follow-up on the debounce. A caller that is about to have main *read* the
+   * stored document needs the tail written, so this waits out the save in flight and then writes
+   * whatever was still pending. It saves nothing when nothing was pending.
+   */
+  async #flushSave(): Promise<void> {
+    // A bound, not a pacing knob: a conflict re-saves (`#rebase`), and that must end.
+    for (let round = 0; round < 4; round++) {
+      const waiting = this.#saveSettled;
+      if (waiting) await waiting;
+      if (!this.#saveTimer && !this.#savePending) {
+        if (this.#saveSettled) continue;
+        return;
+      }
+      if (this.#saveTimer) clearTimeout(this.#saveTimer);
+      this.#saveTimer = null;
+      this.#savePending = false;
+      await this.#save();
+    }
+  }
+
   async #save(): Promise<void> {
     const view = this.#view;
     if (!view || !this.docId || !has('notesSave')) return;
@@ -951,6 +1016,10 @@ export class DocStore {
       return;
     }
     this.saving = true;
+    let settle = (): void => undefined;
+    this.#saveSettled = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
     try {
       const result = await bridge().notesSave({
         docId: this.docId,
@@ -968,10 +1037,12 @@ export class DocStore {
       this.error = message(err);
     } finally {
       this.saving = false;
+      this.#saveSettled = null;
       if (this.#savePending) {
         this.#savePending = false;
         this.#scheduleSave();
       }
+      settle();
     }
   }
 

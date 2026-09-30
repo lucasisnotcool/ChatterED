@@ -156,6 +156,7 @@ export const IPC = {
   notesRegenerate: 'notes:regenerate',
   // The chats. Bodies in `src/main/docroom/ipc.ts`.
   notesDocText: 'notes:docText',
+  notesAnswerQuestion: 'notes:answerQuestion',
   chatThreads: 'chat:threads',
   chatSend: 'chat:send',
   chatOpenSpan: 'chat:openSpan',
@@ -528,6 +529,17 @@ export interface ChatterEdApi {
     blockId: string;
     text: string;
   }): Promise<{ assessed: boolean; threadId: string | null; reason: string | null }>;
+  /**
+   * **The learner answered a question where it sits, inside its Q block** (brief §5.5, §5.6;
+   * 2026-10-01). An explicit Submit, so none of `notesDocText`'s pause and length rules apply: a
+   * one-word answer to a fill-in-the-blank is an answer.
+   *
+   * `askedBy: 'max'` is an attempt on Max's open question and is marked exactly as a chat answer
+   * is, in the thread he asked it in; it is refused (`not_open`) when that question is not the
+   * open one. `askedBy: 'user'` is a question the learner wrote themselves: Max marks the answer
+   * in a thread anchored to the Q block, and it fills no progress.
+   */
+  notesAnswerQuestion(input: NotesAnswerQuestionInput): Promise<NotesAnswerQuestionResult>;
 
   /** Every thread on the file's room: the doc chat, span threads, and the two private threads. */
   chatThreads(input: { fileId: string }): Promise<ChatView>;
@@ -572,6 +584,44 @@ export interface ChatterEdApi {
     fileId: string;
     objectiveId: string;
   }): Promise<{ roomId: string; threadId: string; blockId: string | null }>;
+}
+
+export interface NotesAnswerQuestionInput {
+  fileId: string;
+  docId: string;
+  /** The Q block's `questionId` and its own `blockId`. */
+  questionId: string;
+  qBlockId: string;
+  askedBy: 'max' | 'user';
+  /** The question as the document carries it: the text of the Q block's first child. */
+  question: string;
+  /** The first block after the question that holds learner text: where a suggestion would land. */
+  answerBlockId: string;
+  /** The learner's own text in the Q block after the question, blocks joined by a newline. */
+  answer: string;
+}
+
+/**
+ * Why an in-place answer was not marked. The renderer says it under the Q block; nothing else
+ * happens.
+ */
+export type AnswerQuestionRefusal =
+  /** The file has no notes doc, or the Q block has no id yet. */
+  | 'no_doc'
+  /** Nothing of the learner's to mark. */
+  | 'empty'
+  /** A question of the learner's own with no question text. */
+  | 'no_question'
+  /** Max's question, and it is not the open one: resolved, released, or replaced. */
+  | 'not_open'
+  /** The previous answer to this question is still being marked. */
+  | 'in_flight';
+
+export interface NotesAnswerQuestionResult {
+  accepted: boolean;
+  /** The thread the feedback lands in, so the renderer can bring it into view. */
+  threadId: string | null;
+  reason: AnswerQuestionRefusal | null;
 }
 
 declare global {

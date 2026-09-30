@@ -76,6 +76,7 @@ const api: ChatterEdApi = {
   notesSuggestionResolved: (input) => ipcRenderer.invoke(IPC.notesSuggestionResolved, input),
   notesRegenerate: (input) => ipcRenderer.invoke(IPC.notesRegenerate, input),
   notesDocText: (input) => ipcRenderer.invoke(IPC.notesDocText, input),
+  notesAnswerQuestion: (input) => ipcRenderer.invoke(IPC.notesAnswerQuestion, input),
   chatThreads: (input) => ipcRenderer.invoke(IPC.chatThreads, input),
   chatSend: (input) => ipcRenderer.invoke(IPC.chatSend, input),
   chatOpenSpan: (input) => ipcRenderer.invoke(IPC.chatOpenSpan, input),

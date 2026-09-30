@@ -19,6 +19,7 @@ function outcome(over: Partial<QuizOutcome> = {}): QuizOutcome {
     source: 'chat',
     attemptIndex: 1,
     ownWords: null,
+    form: 'open',
     createdAt: T0,
     ...over,
   };
@@ -87,5 +88,15 @@ describe('outcomesRepo', () => {
     const r = repo();
     r.insert(outcome({ source: 'doc_text', messageId: 'm_doc' }));
     expect(r.forContent('sha-a')[0]!.source).toBe('doc_text');
+  });
+
+  /** Migration 023: the form is stored, and a row from before it reads as an open question. */
+  it('round-trips a fill-in-the-blank, and reads a row with no form as open', () => {
+    const db = openTestDb().db;
+    const r = outcomesRepo(db);
+    r.insert(outcome({ id: 'qo_c', form: 'cloze' }));
+    expect(r.forContent('sha-a')[0]!.form).toBe('cloze');
+    db.prepare("UPDATE quiz_outcomes SET form = NULL WHERE id = 'qo_c'").run({});
+    expect(r.forContent('sha-a')[0]!.form).toBe('open');
   });
 });

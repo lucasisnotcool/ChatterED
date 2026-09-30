@@ -1,6 +1,6 @@
 /**
  * The chats' IPC bodies (#48). **Track T6 owns this file** — the lead placed only the hook.
- * Channels: `notes:docText`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
+ * Channels: `notes:docText`, `notes:answerQuestion`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
  * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`, `chat:closeFile`. See `app/docs/COLLAB-CONTRACT.md`.
  *
  * **Three things these handlers decide, and the renderer does not.**
@@ -24,6 +24,7 @@
 
 import { DOC_ANCHOR_ID, SPAN_THREAD_PREFIX } from '../../shared/doc/types.js';
 import type { AgentAuthor, ChatResetResult, ChatView, ThreadView } from '../../shared/doc/types.js';
+import type { NotesAnswerQuestionInput, NotesAnswerQuestionResult } from '../../shared/ipc.js';
 import { referenceContext, saveFlowState } from '../flowroom.js';
 import type { ReferenceContext } from '../../room/reference.js';
 import type { RoomActor } from '../../room/actor.js';
@@ -426,6 +427,88 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
       return { assessed: true, threadId, reason: null };
     },
   );
+
+  /**
+   * **An answer submitted from inside a Q block** (brief §5.5 and §5.6, 2026-10-01).
+   *
+   * Two questions come through here and they are kept apart by who asked. **Max's** is an attempt
+   * on his open question: the actor marks it in the thread he asked it in, and refuses it when
+   * that question is not the open one, because marking a closed question again is how a resolved
+   * objective used to be filled twice (#49). **The learner's own** is marked in a span thread
+   * anchored to its Q block, created here on the first answer and reused after; nothing about it
+   * reaches the bar, which the actor guarantees by never treating it as a question of Max's.
+   *
+   * None of `notes:docText`'s gate applies. That gate guesses whether a pause was an attempt; a
+   * Submit says so.
+   */
+  handle<NotesAnswerQuestionInput>('notes:answerQuestion', async (input): Promise<NotesAnswerQuestionResult> => {
+    const refuse = (reason: NotesAnswerQuestionResult['reason'], threadId: string | null = null): NotesAnswerQuestionResult => ({
+      accepted: false,
+      threadId,
+      reason,
+    });
+    if (!input.questionId || !input.qBlockId) return refuse('no_doc');
+    if (input.answer.trim().length === 0) return refuse('empty');
+
+    if (input.askedBy === 'max') {
+      // Never opens a room: Max's question can only be open in one that exists.
+      const room = await host.roomForFile(input.fileId).catch(() => null);
+      if (!room) return refuse('not_open');
+      const target = docActor(room.actor);
+      try {
+        const result = await requireActorMethod(target, 'answerInPlace').call(target, {
+          questionId: input.questionId,
+          blockId: input.answerBlockId || input.qBlockId,
+          text: input.answer,
+        });
+        return { accepted: result.accepted, threadId: result.threadId, reason: result.reason };
+      } finally {
+        host.persistFlow();
+        void emitProgress(host, input.fileId);
+      }
+    }
+
+    if (input.question.trim().length === 0) return refuse('no_question');
+    const contentSha = await host.fileBytesKey(input.fileId).then(
+      (k) => k.contentSha,
+      () => null,
+    );
+    const opened = openNotesDoc(host.db, { contentSha, fileId: input.fileId });
+    if (!opened?.doc) return refuse('no_doc');
+
+    const { roomId, actor } = await host.openFlowRoom(input.fileId);
+    const repo = threads();
+    // One thread per Q block: a revised answer is marked beside the first one.
+    const existing = repo.forBlock(roomId, input.qBlockId);
+    const threadId = existing?.threadId ?? newId(SPAN_THREAD_PREFIX.replace(/_$/, ''));
+    const thread =
+      existing ??
+      repo.createSpanThread({
+        roomId,
+        docId: opened.row.docId,
+        threadId,
+        blockId: input.qBlockId,
+        quote: cap(input.question, QUOTE_CAP),
+        // Deliberately none: a self-set question is filed under no objective (§5.6).
+        objectiveId: null,
+        now: now(),
+      });
+    const context = await contextFor(host, { roomId, fileId: input.fileId, thread, question: input.question });
+    const target = docActor(actor);
+    try {
+      const result = await requireActorMethod(target, 'markOwnQuestion').call(target, {
+        anchorId: threadId,
+        questionId: input.questionId,
+        blockId: input.qBlockId,
+        question: input.question,
+        answer: input.answer,
+        context,
+      });
+      return { accepted: result.accepted, threadId, reason: result.reason };
+    } finally {
+      host.persistFlow();
+    }
+  });
 
   /**
    * **The learner closed the file** (brief §4.7: closure fires when "the file is closed"; #49).

@@ -284,6 +284,87 @@ describe('quiz:pass', () => {
   });
 });
 
+describe('notes:answerQuestion', () => {
+  const base = {
+    fileId: 'f_deck',
+    docId: 'doc_deck',
+    questionId: 'q_1',
+    qBlockId: 'b_2',
+    question: 'Why is the Hessian test sufficient?',
+    answerBlockId: 'b_ans',
+    answer: 'PSD',
+  };
+  type Out = { accepted: boolean; threadId: string | null; reason: string | null };
+
+  it('hands an answer to Max’s question to the actor, with no gate on its length', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.roomExists = true;
+    const out = await wire(fx).call<Out>('notes:answerQuestion', { ...base, askedBy: 'max' });
+
+    expect(out).toEqual({ accepted: true, threadId: 'doc', reason: null });
+    expect(fx.actor.last('answerInPlace')!.args[0]).toEqual({ questionId: 'q_1', blockId: 'b_ans', text: 'PSD' });
+    expect(fx.actor.last('markOwnQuestion')).toBeUndefined();
+  });
+
+  it('passes the actor’s refusal back, so the Q block can say the question is closed', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.roomExists = true;
+    fx.actor.inPlaceResult = { accepted: false, threadId: null, reason: 'not_open' };
+    const out = await wire(fx).call<Out>('notes:answerQuestion', { ...base, askedBy: 'max' });
+    expect(out).toEqual({ accepted: false, threadId: null, reason: 'not_open' });
+  });
+
+  it('never opens a room for an answer to Max: his question can only be open in one that exists', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.roomExists = false;
+    const out = await wire(fx).call<Out>('notes:answerQuestion', { ...base, askedBy: 'max' });
+    expect(out.reason).toBe('not_open');
+    expect(fx.opened).toEqual([]);
+    expect(fx.actor.calls).toEqual([]);
+  });
+
+  it('marks the learner’s own question in a span thread on its Q block, filed under no objective', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o2', { refs: [{ page: 2 }] })]);
+    const out = await wire(fx).call<Out>('notes:answerQuestion', { ...base, askedBy: 'user' });
+
+    expect(out.accepted).toBe(true);
+    expect(out.threadId).toMatch(/^span_/);
+    expect(fx.actor.last('markOwnQuestion')!.args[0]).toMatchObject({
+      anchorId: out.threadId,
+      questionId: 'q_1',
+      blockId: 'b_2',
+      question: base.question,
+      answer: 'PSD',
+    });
+    expect(fx.actor.last('answerInPlace')).toBeUndefined();
+    const row = fx.db
+      .prepare("SELECT objective_id AS objectiveId FROM notes_threads WHERE kind = 'span'")
+      .get<{ objectiveId: string | null }>({})!;
+    expect(row.objectiveId).toBeNull();
+  });
+
+  it('marks a revised answer in the same thread', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const table = wire(fx);
+    const first = await table.call<Out>('notes:answerQuestion', { ...base, askedBy: 'user' });
+    const second = await table.call<Out>('notes:answerQuestion', { ...base, askedBy: 'user', answer: 'positive semidefinite' });
+    expect(second.threadId).toBe(first.threadId);
+  });
+
+  it('refuses an empty answer, and an own question with no question, before any room or call', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const table = wire(fx);
+    expect((await table.call<Out>('notes:answerQuestion', { ...base, askedBy: 'max', answer: '  ' })).reason).toBe('empty');
+    expect((await table.call<Out>('notes:answerQuestion', { ...base, askedBy: 'user', question: ' ' })).reason).toBe(
+      'no_question',
+    );
+    expect((await table.call<Out>('notes:answerQuestion', { ...base, askedBy: 'user', qBlockId: '' })).reason).toBe('no_doc');
+    expect(fx.opened).toEqual([]);
+    expect(fx.actor.calls).toEqual([]);
+  });
+});
+
 describe('notes:docText', () => {
   const payload = { fileId: 'f_deck', docId: 'doc_deck', blockId: 'b_2', text: CLAIM };
 

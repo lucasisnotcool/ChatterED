@@ -11,6 +11,7 @@
 
 import type { FlowQuizView } from '../types.js';
 import type { OwnWordsShares } from '../../core/ownwords.js';
+import type { QuestionForm } from '../../core/pitch.js';
 
 // ── who wrote what ──────────────────────────────────────────────────────────────────────────
 
@@ -234,6 +235,8 @@ export interface DocQuizView extends FlowQuizView {
   /** How it ended, or null while open. */
   resolution: QResolution | null;
   open: boolean;
+  /** `cloze` when the open question is a fill-in-the-blank (§4.5). Absent on an `open` one. */
+  form?: QuestionForm;
 }
 
 /** One private turn. Private threads live in the `whispers` table, not in `messages`. */
@@ -336,6 +339,13 @@ export interface QuizOutcome {
    * marked nothing measurable.
    */
   ownWords: OwnWordsShares | null;
+  /**
+   * **The form of the question the row is about** (migration 023, brief §4.5 as amended
+   * 2026-10-01). `cloze` is a fill-in-the-blank, asked after a release; its verdicts are recorded
+   * and `progressFill` skips them, because one recalled term is not the learner's own words about
+   * the objective. Absent or `null` on rows written before 023, which were all `open`.
+   */
+  form?: QuestionForm | null;
   createdAt: string;
 }
 

@@ -487,6 +487,50 @@
 .nd-q-remove:hover { color: var(--nd-max); border-bottom-color: var(--nd-max-edge); }
 .nd-q-body > p:last-child { margin-bottom: 10px; }
 
+/* The footer: where an answer written under the question is submitted (2026-10-01). Chrome,
+   like the head, and only there while the question is open. `[hidden]` is restated because
+   `display: flex` would otherwise win over the attribute. */
+.nd-q-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  user-select: none;
+}
+.nd-q-foot[hidden],
+.nd-q-act[hidden] { display: none; }
+.nd-q-act {
+  border: 1px solid var(--nd-max-edge);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 11px;
+  background: #fff;
+  color: var(--nd-max);
+}
+.nd-q-act:hover { border-color: var(--nd-max); }
+.nd-q-act:disabled { opacity: 0.5; cursor: default; border-color: var(--nd-max-edge); }
+.nd-q-note { color: var(--text-2); }
+.nd-q-note:empty { display: none; }
+.nd-q-note[data-kind='hint'] { color: var(--muted); }
+.nd-q-note[data-kind='busy'] { animation: nd-shimmer 1.4s ease-in-out infinite; }
+
+/* A question the learner added themselves. The learner's colour is the app's `--indigo`, and
+   the rail is dotted: a third shape beside Ellie's solid and Max's dashed, so colour is still
+   not the only signal, and "You asked" says it in words. */
+.nd-q[data-asked-by='user'] {
+  border-left: 3px dotted var(--indigo);
+  background: var(--indigo-tint);
+}
+.nd-q[data-asked-by='user'] .nd-q-who { color: var(--indigo); }
+.nd-q[data-asked-by='user'] .nd-q-tag[data-status='open'] { border-color: #c7c7e8; color: var(--indigo); }
+.nd-q[data-asked-by='user'] .nd-q-remove:hover { color: var(--indigo); border-bottom-color: #c7c7e8; }
+.nd-q[data-asked-by='user'] .nd-q-act { border-color: #c7c7e8; color: var(--indigo); }
+.nd-q[data-asked-by='user'] .nd-q-act:hover { border-color: var(--indigo); }
+.nd-q[data-asked-by='user'] .nd-q-act:disabled { border-color: #c7c7e8; }
+
 /* ── inline slide figures (§3) ──────────────────────────────────────────── */
 
 .nd-figure { margin: 22px 0; }

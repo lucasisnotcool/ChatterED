@@ -13,7 +13,7 @@ Pure TypeScript learner-turn logic that ChatterED's A1 design and the teammate's
 | File | What it decides | The same idea in Nudge |
 |---|---|---|
 | `attempt.ts` | What a learner turn is: `attempt`, `give_up`, `question` or `other` (`classifyLearnerTurn`), plus what counts as bare agreement (`isAgreementPhrase`, which the ledger also uses) | Its input classes: partial reasoning, "give me the proof", stuck |
-| `pitch.ts` | The level the learner has asked for (−1/0/+1, clamped, quoting their own phrase), and how the next question is pitched from recent results | Contingent help that fades after a strong response |
+| `pitch.ts` | The level the learner has asked for (−1/0/+1, clamped, quoting their own phrase), how the next question is pitched from recent results, and its form: after a release it is a fill-in-the-blank (`QuestionForm`), which fills nothing and does not license a harder question | Contingent help that fades after a strong response |
 | `ownwords.ts` | How much of an answer is the learner's own words, against the source, the cue and the question | A claim becomes Done only when the learner states it |
 
 `attempt.ts` and `pitch.ts` still carry ChatterED's cue and prompt wording (`quizCue`,

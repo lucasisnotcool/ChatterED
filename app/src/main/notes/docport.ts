@@ -182,6 +182,8 @@ export function createDocPort(host: DocHost, file: DocPortFile): DocPort {
     recordOutcome(outcome) {
       const stored: QuizOutcome = {
         ...outcome,
+        // Said on every row from migration 023 on, so a reader never has to infer it (§4.5).
+        form: outcome.form ?? 'open',
         id: mintId('qo'),
         contentSha,
         createdAt: new Date().toISOString(),

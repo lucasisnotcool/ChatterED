@@ -72,7 +72,8 @@ import type { ConfirmRequest, DocHost } from './dochost.js';
 import { registerNotesIpc } from './notes/ipc.js';
 import { createDocPort } from './notes/docport.js';
 import { registerDocRoomIpc } from './docroom/ipc.js';
-import { registerProgressIpc } from './docroom/progress.js';
+import { buildProgress, registerProgressIpc } from './docroom/progress.js';
+import { outcomesRepo } from './db/repos/outcomes.js';
 // The experimental trial: consent gate and research export (src/shared/trial.ts).
 import { registerResearchIpc, trialGate } from './research/ipc.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
@@ -492,6 +493,16 @@ export class AppService {
         contentSha: material.file_sha256,
         roomId,
       }),
+      // collab-doc §4.8: what Ellie's idle recap is read from. The same view the bar draws and
+      // the same rows it is drawn from, so the message and the bar cannot disagree.
+      fileProgress: async () => {
+        if (!material.file_id) return null;
+        const host = this.docHost();
+        return {
+          view: await buildProgress(host, material.file_id),
+          outcomes: material.file_sha256 ? outcomesRepo(host.db).forContent(material.file_sha256) : [],
+        };
+      },
     });
     this.#actor.start();
     this.#actor.recover();

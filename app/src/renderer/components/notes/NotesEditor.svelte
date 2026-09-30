@@ -19,7 +19,7 @@
   import type { DocStore } from '../../lib/docstore.svelte.js';
   import { authorship } from '../../lib/pm/authorship.js';
   import { chromePlugin } from '../../lib/pm/chrome.js';
-  import { nodeViews } from '../../lib/pm/nodeviews.js';
+  import { nodeViews, submitAnswerAtSelection } from '../../lib/pm/nodeviews.js';
   import { revealPlugin } from '../../lib/pm/reveal.js';
   import { editorPlugins } from '../../lib/pm/setup.js';
 
@@ -51,6 +51,7 @@
                 void doc.saveNow();
                 return true;
               },
+              submitAnswer: submitAnswerAtSelection,
             }),
           ],
         });
@@ -59,6 +60,7 @@
           nodeViews: nodeViews({
             slides: () => doc.slides(),
             onOpenSlide: (page, rect) => doc.openSlide(page, rect),
+            onAnswerQuestion: (answer) => doc.answerQuestion(answer),
           }),
           attributes: { spellcheck: 'true', 'aria-label': 'Lecture notes' },
           dispatchTransaction(tr) {

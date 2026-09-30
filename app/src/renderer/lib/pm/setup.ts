@@ -54,6 +54,12 @@ export interface EditorKeys {
   onAskAboutSelection: () => boolean;
   /** ⌘S — the doc saves itself, but the reflex has to do something honest. */
   onSaveNow: () => boolean;
+  /**
+   * ⌘↩ — submit the answer the cursor is in (`nodeviews.ts` `submitAnswerAtSelection`). A whole
+   * command, because it needs the view; it returns false outside an open Q block's answer, and
+   * the key then falls through to the base keymap's `exitCode`.
+   */
+  submitAnswer: Command;
 }
 
 export function editorPlugins(keys: EditorKeys): Plugin[] {
@@ -79,6 +85,7 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
       'Mod-`': toggleMark(marks.code!),
       'Mod-e': askAbout,
       'Mod-s': saveNow,
+      'Mod-Enter': keys.submitAnswer,
       'Shift-Ctrl-0': setBlockType(nodes.paragraph!),
       'Shift-Ctrl-1': setBlockType(nodes.heading!, { level: 1 }),
       'Shift-Ctrl-2': setBlockType(nodes.heading!, { level: 2 }),

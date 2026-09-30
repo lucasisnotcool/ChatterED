@@ -135,8 +135,35 @@ export function maxFollowupBlock(input: {
   objectiveLabel: string | null;
   /** Every question already asked on this file, so a session cannot circle (interview finding). */
   askedBefore?: readonly string[];
+  /**
+   * **The follow-up is a fill-in-the-blank** (§4.5, amended 2026-10-01): the last question on this
+   * objective ended in a release. Everything this block says about own words and about an answer
+   * not being readable off the question is the opposite of a blank, so the cloze gets a block of
+   * its own and `pitchBlock` says how the blank is written.
+   */
+  cloze?: boolean;
 }): string {
   const about = input.objectiveLabel ? ` It is about: ${input.objectiveLabel}.` : '';
+  if (input.cloze === true) {
+    const already = (input.askedBefore ?? []).filter((q) => q.trim().length > 0);
+    return [
+      'ASK ONE FILL-IN-THE-BLANK',
+      `Ellie has just answered the learner’s question.${about} The last question on this objective`,
+      'ended with the answer being given, so this one is small: one sentence the page says, with one',
+      'key term for them to supply. The block below says exactly how to write it.',
+      'The sentence must be one they can complete from the page and Ellie’s answer alone, and the',
+      'term must matter: if the blank could be filled by a word that teaches nothing, pick another',
+      'sentence. Do not give the term, its first letter, or a list to choose from.',
+      ...(already.length > 0
+        ? [
+            '',
+            'YOU HAVE ALREADY ASKED, ON THIS FILE:',
+            ...already.map((q) => `- ${q}`),
+            'Do not blank a sentence you have already used.',
+          ]
+        : []),
+    ].join('\n');
+  }
   const lines = [
     'ASK ONE FOLLOW-UP QUESTION',
     `Ellie has just answered the learner’s question.${about} Ask **one** question that makes them`,
@@ -404,6 +431,55 @@ export function mentionReplyBlock(): string {
  * The feedback is the ordinary feedback turn; what this block adds is the two things that are
  * different about the surface it came from.
  */
+/**
+ * **Marking a fill-in-the-blank** (§4.5, amended 2026-10-01).
+ *
+ * The ordinary feedback turn asks for what the answer had and what it lacked, and ends on a
+ * follow-up about the gap. A blank has one term in it, so the mark is whether that term is right,
+ * and the way on from a wrong one is where on the page to look, not a second question.
+ */
+export function clozeFeedbackBlock(): string {
+  const [done, , notYet] = VERDICT_OPENERS;
+  const bare = (v: string): string => v.replace(/\.$/, '');
+  return [
+    'YOUR QUESTION WAS A FILL-IN-THE-BLANK',
+    `Mark the term they gave. **${done}** if it is the term, a plain synonym of it, or the term with`,
+    `a harmless slip in spelling. Otherwise **${notYet}** A blank has no *Partly there*.`,
+    `After ${bare(done)}: the completed sentence, quoted once with its page, and nothing else.`,
+    `After ${bare(notYet)}: do not give the term. Say in one sentence where on the page to look, and`,
+    'repeat the sentence with its blank so they can try again. No other question. Under 60 words.',
+  ].join('\n');
+}
+
+/**
+ * **The learner wrote their own question in the notes, answered it, and asked for a mark** (§5.6,
+ * 2026-10-01). Max did not ask this question, so there is no objective behind it and no list of
+ * what a correct demonstration contains: he marks the answer against the deck. It fills no
+ * progress, which is decided in code and is not his to mention.
+ */
+export function ownQuestionBlock(input: { question: string; answer: string }): string {
+  const [done, partly, notYet] = VERDICT_OPENERS;
+  return [
+    'THE LEARNER WROTE THIS QUESTION THEMSELVES, IN THEIR NOTES, AND ANSWERED IT',
+    'Their question:',
+    '"""',
+    input.question,
+    '"""',
+    'Their answer:',
+    '"""',
+    input.answer,
+    '"""',
+    'Mark the answer against what the deck says, as you would mark an answer to a question of your',
+    `own. Your first line is exactly one of **${done}** / **${partly}** / **${notYet}** and nothing else.`,
+    'Then what the answer had, what was missing or wrong, and the correction, each point grounded',
+    'as p. N: "…" in the page’s own words.',
+    'If the question cannot be answered from this deck, or asks something the deck gets no closer',
+    `to than a name, say so in one sentence after **${notYet}** and say what the deck does cover.`,
+    'Do not ask a question of your own and do not rewrite theirs: they may revise the answer and',
+    'submit it again. Under 100 words.',
+  ].join('\n');
+}
+
 export function docTextBlock(input: { blockQuote: string }): string {
   return [
     'THIS ANSWER WAS WRITTEN IN THE DOCUMENT, NOT IN THE CHAT',

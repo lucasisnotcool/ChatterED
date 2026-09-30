@@ -74,6 +74,26 @@ describe('progressFill', () => {
  * M2 (`docs/research/measurement.md` §4). The learning goal has two clauses and `progressFill`
  * answers one; these are the assertions that the second one is now visible.
  */
+/**
+ * **A fill-in-the-blank fills nothing** (`collab-doc.md` §4.5, amended 2026-10-01). One recalled
+ * term is not the learner's own words about the objective, and the skip is here, by construction,
+ * for the reason a release's is.
+ */
+describe('progressFill and the cloze form', () => {
+  it('ignores a Well done on a blank', () => {
+    expect(progressFill([{ ...verdict('complete'), form: 'cloze' }])).toBe(0);
+  });
+
+  it('keeps what an open answer earned beside it', () => {
+    expect(progressFill([verdict('partial'), { ...verdict('complete'), form: 'cloze' }])).toBe(0.5);
+    expect(progressFill([{ ...verdict('complete'), form: 'cloze' }, { ...verdict('complete'), form: 'open' }])).toBe(1);
+  });
+
+  it('reads a row with no form, from before migration 023, as an open question', () => {
+    expect(progressFill([{ ...verdict('complete'), form: null }])).toBe(1);
+  });
+});
+
 describe('revisionStats', () => {
   function at(index: number, v: QuizVerdict3, questionId = 'q_1'): QuizOutcome {
     return { ...verdict(v), questionId, attemptIndex: index };

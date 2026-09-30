@@ -61,12 +61,14 @@ export function wordCount(text: string): number {
  * learner who wrote a clause, let Ellie insert a phrase, then finished the sentence. A single
  * space joins them, because the agent's words in between are not the learner's evidence and
  * concatenating without a gap would invent a word that nobody typed.
+ *
+ * **Nothing inside a Q block is reported**, open or resolved (see `blocksInQuestions`).
  */
 export function learnerTextByBlock(doc: Node): LearnerBlockText[] {
-  const closed = blocksInResolvedQuestions(doc);
+  const inQuestions = blocksInQuestions(doc);
   const byBlock = new Map<string, string[]>();
   for (const span of learnerSpans(doc)) {
-    if (!span.blockId || closed.has(span.blockId)) continue;
+    if (!span.blockId || inQuestions.has(span.blockId)) continue;
     const list = byBlock.get(span.blockId) ?? [];
     list.push(span.text);
     byBlock.set(span.blockId, list);
@@ -75,17 +77,26 @@ export function learnerTextByBlock(doc: Node): LearnerBlockText[] {
 }
 
 /**
- * **The blocks inside a resolved Q block** (#49). A question Max has closed is not one the
- * learner can attempt again, and since #49 the *you got this* resolution files the learner's own
- * chat answer under the question, in their author mark. Reported as doc text it would be marked a
- * second time — against whatever question happened to be open next. Structural rather than a
- * "just inserted" flag, so it still holds when the doc is reopened.
+ * **The blocks inside any Q block, open or resolved.** The pause watcher leaves all of them alone,
+ * for three reasons that arrived in two steps:
+ *
+ *  - *Resolved* (#49). A question Max has closed is not one the learner can attempt again, and
+ *    the *you got this* resolution files the learner's own chat answer under the question, in
+ *    their author mark. Reported as doc text it would be marked a second time — against whatever
+ *    question happened to be open next.
+ *  - *Open, Max's* (2026-10-01). An answer typed under the question is marked **on Submit**
+ *    (`notes:answerQuestion`, `pm/qblock.ts`), against that question. A pause report as well
+ *    would mark the same words twice, and would mark a half-written answer the learner had not
+ *    offered yet.
+ *  - *The learner's own question* (2026-10-01). The text of a question they wrote is not an
+ *    attempt at anything, and its answer goes through the same Submit.
+ *
+ * Structural rather than a "just inserted" flag, so it still holds when the doc is reopened.
  */
-function blocksInResolvedQuestions(doc: Node): Set<string> {
+function blocksInQuestions(doc: Node): Set<string> {
   const ids = new Set<string>();
   doc.descendants((node) => {
     if (node.type.name !== 'q_block') return true;
-    if ((node.attrs.status as string) !== 'resolved') return false;
     node.descendants((child) => {
       const id = (child.attrs as { blockId?: string }).blockId;
       if (id) ids.add(id);

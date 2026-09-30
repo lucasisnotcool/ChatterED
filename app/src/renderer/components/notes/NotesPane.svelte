@@ -77,6 +77,12 @@
     if (line) store.notice = { level: 'info', text: line };
   }
 
+  /**
+   * **Add a question** (2026-10-01): a Q block of the learner's own, after the block their cursor
+   * is in. Offered only while the editor is on screen, which is what `ready` means here.
+   */
+  const canAsk = $derived(Boolean(doc.docId) && ready);
+
   // ── Zoom ────────────────────────────────────────────────────────────────
   let scroller = $state<HTMLElement | null>(null);
   let paneWidth = $state(0);
@@ -182,6 +188,18 @@
         onclick={() => command('zoom.in')}
       >+</button>
     </span>
+    <button
+      class="nd-toggle"
+      type="button"
+      disabled={!canAsk}
+      title={canAsk
+        ? 'Write a question of your own into the notes, answer it there, and Max marks it.'
+        : 'The notes are not open yet.'}
+      onmousedown={(e) => e.preventDefault()}
+      onclick={() => doc.addOwnQuestion()}
+    >
+      Add a question
+    </button>
     <button
       class="nd-toggle"
       type="button"

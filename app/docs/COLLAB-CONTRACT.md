@@ -155,6 +155,7 @@ renderer (T5 chatstore) ─ chat:* / quiz:pass / progress:* ──────�
 actor (T3) ── DocPort.outlineNear ─► T1      actor ── docedit call ─► LLM ─► emit doc.edit ─► T4 applies via T2
 T4 ── notes:editResolved / notes:suggestionResolved / notes:docText ─► T1 / T6
 T6 ── notes:docText ─► synthetic `doc_text` learner message ─► actor.assessDocText (T3)
+renderer (Q block Submit) ── notes:answerQuestion ─► actor.answerInPlace (Max's question) | actor.markOwnQuestion (the learner's own)
 ```
 
 Agreed signatures across tracks:

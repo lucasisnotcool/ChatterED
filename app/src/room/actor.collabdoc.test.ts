@@ -14,7 +14,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { RoomEvent } from '../shared/types.js';
-import type { AgentDocOpBatch, OutlineEntry, QuizOutcome } from '../shared/doc/types.js';
+import type { AgentDocOpBatch, OutlineEntry, ProgressView, QuizOutcome } from '../shared/doc/types.js';
+import { progressFill } from '../shared/doc/progress.js';
 import { groupView } from '../main/db/store.js';
 import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG, seedRoom } from '../test-support/db.js';
@@ -436,11 +437,14 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
     await settle(h.clock, h.actor.sendMessage('I give up', DOC));
     await settle(h.clock, h.actor.sendMessage('what does forwarding cost?', DOC));
 
-    const followups = prompts(h).filter((p) => p.includes('ASK ONE FOLLOW-UP QUESTION'));
-    expect(followups).toHaveLength(2);
-    expect(followups.at(-1)).toContain('YOU HAVE ALREADY ASKED, ON THIS FILE');
-    expect(followups.at(-1)).toContain('who pays it now');
-    expect(followups.at(-1)).toContain('must not be readable off the question');
+    const first = prompts(h).filter((p) => p.includes('ASK ONE FOLLOW-UP QUESTION'));
+    expect(first).toHaveLength(1);
+    expect(first[0]).toContain('must not be readable off the question');
+    // The second follows a give-up, so it is a fill-in-the-blank (§4.5), with the same history.
+    const second = prompts(h).filter((p) => p.includes('ASK ONE FILL-IN-THE-BLANK'));
+    expect(second).toHaveLength(1);
+    expect(second[0]).toContain('YOU HAVE ALREADY ASKED, ON THIS FILE');
+    expect(second[0]).toContain('who pays it now');
   });
 });
 
@@ -1261,5 +1265,288 @@ describe('the defended gate', () => {
     // The answer in the question's own thread is the reply the brief means.
     await settle(h.clock, h.actor.sendMessage(ANSWER, DOC));
     expect(level()).toBe(3);
+  });
+});
+
+// ── §4.5 (2026-10-01): after a release, the easier question is a fill-in-the-blank ─────────
+
+describe('the fill-in-the-blank after a release', () => {
+  const BLANK = 'Fill in the blank: the side channel is private from the rest of the ____.';
+  const asksBlank = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('ASK ONE FILL-IN-THE-BLANK');
+  const marksBlank = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('YOUR QUESTION WAS A FILL-IN-THE-BLANK');
+
+  async function withBlankOpen(feedback = 'Well done. "The side channel is private from the rest of the group." p. 3.') {
+    const h = build({}, null, (request) => (asksBlank(request) ? BLANK : marksBlank(request) ? feedback : null));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    await settle(h.clock, h.actor.sendMessage('what does forwarding cost?', DOC));
+    return h;
+  }
+
+  it('asks for one blank, and tells Max how to write it', async () => {
+    const h = await withBlankOpen();
+    const prompt = prompts(h).find((p) => p.includes('ASK ONE FILL-IN-THE-BLANK'))!;
+    expect(prompt).toContain('fill-in-the-blank');
+    expect(prompt).toContain('One blank only');
+    expect(flat(prompt)).toContain('one key term replaced by ____');
+    expect(h.actor.docThreads().find((t) => t.quiz)?.quiz?.form).toBe('cloze');
+  });
+
+  it('records the verdict as a cloze, which fills nothing, and does not run the ledger on it', async () => {
+    const h = await withBlankOpen();
+    const ledgerCalls = () => h.llm.requests.filter((r) => r.meta.scope === 'ledger').length;
+    const before = ledgerCalls();
+    await settle(h.clock, h.actor.sendMessage('group', DOC));
+
+    expect(rules(h).at(-1)).toBe('rule:quiz_feedback');
+    const verdicts = h.doc.outcomes.filter((o) => o.kind === 'verdict');
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0]).toMatchObject({ verdict: 'complete', form: 'cloze' });
+    expect(progressFill(verdicts.map((o) => ({ ...o, id: 'x', contentSha: 's', createdAt: 't' })))).toBe(0);
+    expect(ledgerCalls()).toBe(before);
+    expect(prompts(h).at(-1)).toContain('YOUR QUESTION WAS A FILL-IN-THE-BLANK');
+  });
+
+  /** The scripted follow-up has no blank in it, and a question with no blank is an open question. */
+  it('marks the question as open when Max wrote no blank, so a fill is not withheld', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    await settle(h.clock, h.actor.sendMessage('what does forwarding cost?', DOC));
+    const quiz = h.actor.docThreads().find((t) => t.quiz)?.quiz;
+    expect(quiz?.open).toBe(true);
+    expect(quiz?.form).toBeUndefined();
+  });
+
+  it('asks for own words after a filled blank, not something harder', async () => {
+    const h = await withBlankOpen();
+    await settle(h.clock, h.actor.sendMessage('group', DOC));
+    await settle(h.clock, h.actor.sendMessage('and what is forwarding?', DOC));
+    const last = prompts(h).filter((p) => p.includes('HOW HARD THIS QUESTION SHOULD BE')).at(-1)!;
+    expect(last).toContain('Now ask for it in their own words');
+    expect(last).not.toContain('You may go harder');
+  });
+});
+
+// ── §5.5 (2026-10-01): an answer typed inside Max's Q block ───────────────────────────────
+
+describe('answerInPlace', () => {
+  const ANSWER = 'the learner pays it, at the moment they decide whether to forward';
+  const questionId = (h: ReturnType<typeof build>) => h.actor.docThreads().find((t) => t.quiz)!.quiz!.questionId;
+
+  it('marks it as an attempt on the open question, in the thread Max asked in', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const result = await settle(h.clock, h.actor.answerInPlace({ questionId: questionId(h), blockId: 'b_ans', text: ANSWER }));
+
+    expect(result).toEqual({ accepted: true, threadId: DOC, reason: null });
+    expect(rules(h).at(-1)).toBe('rule:quiz_feedback');
+    const row = h.store.messages.forRoom(h.roomId).find((m) => m.body === ANSWER)!;
+    expect(row.kind).toBe('doc_text');
+    expect(row.anchor_id).toBe(DOC);
+    const verdicts = h.doc.outcomes.filter((o) => o.kind === 'verdict');
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0]!.source).toBe('doc_text');
+    expect(prompts(h).at(-1)).toContain('THIS ANSWER WAS WRITTEN IN THE DOCUMENT');
+  });
+
+  it('takes a one-word answer: a Submit is an attempt, whatever its length', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const result = await settle(h.clock, h.actor.answerInPlace({ questionId: questionId(h), blockId: 'b_ans', text: 'privacy' }));
+    expect(result.accepted).toBe(true);
+    expect(rules(h).at(-1)).toBe('rule:quiz_feedback');
+  });
+
+  it('releases the answer on a give-up phrase, as the chat does', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.answerInPlace({ questionId: questionId(h), blockId: 'b_ans', text: 'I give up' }));
+    expect(rules(h).at(-1)).toBe('rule:answer_released');
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict')).toEqual([]);
+  });
+
+  it('refuses an answer to a question that is not the open one, and writes nothing', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const before = h.store.messages.forRoom(h.roomId).length;
+    expect(await h.actor.answerInPlace({ questionId: 'q_other', blockId: 'b_ans', text: ANSWER })).toEqual({
+      accepted: false,
+      threadId: null,
+      reason: 'not_open',
+    });
+    expect((await h.actor.answerInPlace({ questionId: questionId(h), blockId: 'b_ans', text: '  ' })).reason).toBe('empty');
+    expect(h.store.messages.forRoom(h.roomId)).toHaveLength(before);
+  });
+
+  it('refuses once the question has been released', async () => {
+    const h = build();
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const id = questionId(h);
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    expect((await h.actor.answerInPlace({ questionId: id, blockId: 'b_ans', text: ANSWER })).reason).toBe('not_open');
+  });
+});
+
+// ── §5.6 (2026-10-01): the learner's own question ─────────────────────────────────────────
+
+describe('markOwnQuestion', () => {
+  const OWN = { anchorId: SPAN, questionId: 'q_own1', blockId: 'b_q', question: 'Why is the side channel private?', answer: 'Because only one agent sees the turn and the group never does.' };
+  const marks = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('THE LEARNER WROTE THIS QUESTION THEMSELVES');
+
+  function own(verdict: string, over: Partial<DocPort> = {}) {
+    const doc = docPort(over);
+    const h = build({ docPort: doc.port }, null, (request) => (marks(request) ? verdict : null));
+    return { ...h, doc };
+  }
+
+  it('has Max mark it, shown the question and the answer, and files nothing', async () => {
+    const h = own('Partly there. It is private from the group, p. 3: "A private turn with one agent."');
+    const ledgerCalls = () => h.llm.requests.filter((r) => r.meta.scope === 'ledger').length;
+    const result = await settle(h.clock, h.actor.markOwnQuestion(OWN));
+
+    expect(result).toEqual({ accepted: true, reason: null });
+    expect(rules(h)).toEqual(['rule:own_question']);
+    expect(decisions(h)[0]!.move_type).toBe('own_question_feedback');
+    const prompt = prompts(h).at(-1)!;
+    expect(prompt).toContain(OWN.question);
+    expect(prompt).toContain(OWN.answer);
+    // No outcome row, so no fill and nothing for the pitch; no ledger run; nothing to the notes.
+    expect(h.doc.outcomes).toEqual([]);
+    expect(ledgerCalls()).toBe(0);
+    expect(h.doc.edits).toEqual([]);
+    expect(h.actor.pendingQuizView()).toBeNull();
+  });
+
+  it('closes the learner’s Q block on a Well done, writing nothing under it', async () => {
+    const h = own('Well done. p. 3: "A private turn with one agent."', { hasQuestion: (id) => id === OWN.questionId });
+    await settle(h.clock, h.actor.markOwnQuestion(OWN));
+
+    expect(h.doc.edits).toHaveLength(1);
+    const batch = h.doc.edits[0]!.batch;
+    expect(batch.cause).toBe('q_resolved');
+    expect(batch.ops).toEqual([
+      { op: 'resolve_q', questionId: OWN.questionId, resolution: 'you_got_this', blocks: [], learnerAnswer: null },
+    ]);
+    expect(h.doc.outcomes).toEqual([]);
+  });
+
+  it('leaves Max’s own open question open and unmarked', async () => {
+    const h = own('Not yet. The deck says otherwise, p. 3: "A private turn with one agent."');
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const open = h.actor.pendingQuizView()!;
+    await settle(h.clock, h.actor.markOwnQuestion(OWN));
+
+    expect(rules(h).at(-1)).toBe('rule:own_question');
+    expect(h.actor.pendingQuizView()).toEqual(open);
+    expect(h.doc.outcomes).toEqual([]);
+  });
+
+  it('refuses a question with no text, or no answer', async () => {
+    const h = own('Well done.');
+    expect((await h.actor.markOwnQuestion({ ...OWN, question: ' ' })).reason).toBe('no_question');
+    expect((await h.actor.markOwnQuestion({ ...OWN, answer: '' })).reason).toBe('empty');
+    expect(rules(h)).toEqual([]);
+  });
+});
+
+// ── §4.8 (2026-10-01): where to look next, when the sitting goes idle ─────────────────────
+
+describe('the focus recap', () => {
+  const view = (fills: (0 | 0.5 | 1)[]): ProgressView => ({
+    fileId: 'f_1',
+    docId: 'doc_1',
+    status: 'ready',
+    completed: fills.filter((f) => f === 1).length,
+    total: fills.length,
+    fraction: 0,
+    objectives: fills.map((fill, i) => ({
+      objectiveId: `o_${String(i)}`,
+      title: `Objective ${String(i)}`,
+      statement: '',
+      criteria: [],
+      pages: [i + 3],
+      blockIds: [],
+      fill,
+      level: 0,
+      assumedByDeck: false,
+      evidence: null,
+      lastMovedAt: null,
+    })),
+  });
+  const recaps = (h: ReturnType<typeof build>) =>
+    h.store.messages.forRoom(h.roomId).filter((m) => m.decided_by === 'rule:focus_recap');
+
+  function withProgress(outcomesAt: (now: number) => QuizOutcome[]) {
+    const ref: { clock: FakeClock | null } = { clock: null };
+    const h = build({
+      fileProgress: async () => ({ view: view([1, 0, 0.5]), outcomes: outcomesAt(ref.clock!.now()) }),
+    });
+    ref.clock = h.clock;
+    return h;
+  }
+  const released = (now: number): QuizOutcome[] => [
+    {
+      id: 'qo_x', contentSha: 's', roomId: 'r', objectiveId: 'o_1', questionId: 'q', kind: 'released',
+      verdict: null, releasedBy: 'closure', messageId: null, source: 'chat', attemptIndex: null,
+      ownWords: null, createdAt: new Date(now).toISOString(),
+    },
+  ];
+
+  it('posts one message from Ellie in the doc chat when the sitting goes idle, after the release', async () => {
+    const h = withProgress(released);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await h.clock.run(21 * 60_000);
+    await h.clock.run(60_000);
+
+    expect(rules(h)).toContain('rule:closure');
+    const posted = recaps(h);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.anchor_id).toBe(DOC);
+    expect(posted[0]!.participant_id).toBe(h.store.participants.byAgentKey(h.roomId, 'peer.ellie')!.id);
+    expect(posted[0]!.body).toContain('Where this file stands: 1 of 3 objectives complete.');
+    expect(posted[0]!.body).toContain('- Answer shown, worth another try: **Objective 1** (p. 4)');
+    expect(posted[0]!.body).toContain('- Partly there: **Objective 2** (p. 5)');
+    // The recap is the last thing in the room: it comes after Max's release, not before it.
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.id).toBe(posted[0]!.id);
+
+    // Once per sitting: more idle time posts nothing more.
+    await h.clock.run(5 * 60_000);
+    expect(recaps(h)).toHaveLength(1);
+  });
+
+  it('calls no model for it', async () => {
+    const h = withProgress(released);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    const calls = h.llm.requests.length;
+    await h.clock.run(22 * 60_000);
+    expect(recaps(h)).toHaveLength(1);
+    expect(h.llm.requests).toHaveLength(calls);
+  });
+
+  it('says nothing about a sitting in which no question was resolved', async () => {
+    const h = withProgress(() => []);
+    await settle(h.clock, h.actor.sendMessage('@Ellie what is the side channel?', DOC));
+    await h.clock.run(22 * 60_000);
+    expect(recaps(h)).toEqual([]);
+  });
+
+  it('is not posted a second time when the file is reopened with the sitting still closed', async () => {
+    const h = withProgress(released);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    await h.clock.run(22 * 60_000);
+    expect(recaps(h)).toHaveLength(1);
+
+    const stored = h.actor.flowSnapshot();
+    h.actor.stop();
+    const again = relaunch(h, { flowState: stored, fileProgress: async () => ({ view: view([1, 0, 0.5]), outcomes: released(h.clock.now()) }) });
+    await h.clock.run(60_000);
+    expect(recaps(h)).toHaveLength(1);
+    again.stop();
   });
 });

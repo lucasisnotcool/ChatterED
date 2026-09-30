@@ -24,6 +24,9 @@ export function progressFill(outcomes: readonly QuizOutcome[]): ProgressFill {
     // `released` — give-up, Pass, or the closure rule (§4.4, §4.7) — is a full answer the learner
     // read, not one they gave.
     if (outcome.kind !== 'verdict') continue;
+    // A fill-in-the-blank (§4.5, 2026-10-01) is one recalled term, not the learner's own words
+    // about the objective. Its verdict is kept as a row and fills nothing, by construction here.
+    if (outcome.form === 'cloze') continue;
     if (outcome.verdict === 'complete') return 1;
     if (outcome.verdict === 'partial') best = 0.5;
     // `not_yet` is the third verdict (§4.2's "Not yet."): feedback, and no fill.

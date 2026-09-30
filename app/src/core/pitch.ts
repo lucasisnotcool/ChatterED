@@ -161,6 +161,35 @@ export function notePitch(state: PitchState, text: string, now: number): PitchSt
  */
 export type QuestionPitch = 'easier' | 'level' | 'harder';
 
+/**
+ * **The shape of a question** (`collab-doc.md` §4.5, amended 2026-10-01). `open` is every question
+ * until now: answered in the learner's own words. `cloze` is a fill-in-the-blank, which is what
+ * *"easier"* means after a release: one sentence from the page with one key term blanked.
+ *
+ * A cloze is a way back into the objective, not a demonstration of it. One recalled word is not
+ * the learner's own words about anything, so a cloze verdict **fills no progress** and never
+ * licenses a harder question; both are decided where the outcome is read, from this field.
+ */
+export type QuestionForm = 'open' | 'cloze';
+
+/** How the blank is written, and the only thing code reads off a cloze question. */
+export const CLOZE_BLANK = '____';
+const BLANK = /_{3,}/;
+
+/** True when a question carries a blank. Three underscores or more, so a model's five still count. */
+export function hasBlank(text: string): boolean {
+  return BLANK.test(text);
+}
+
+/**
+ * The form of the question that was actually asked. The pitch asks for a cloze; whether Max wrote
+ * one is read off his words, because a question with no blank in it is an open question whatever
+ * it was asked to be, and marking it as a cloze would withhold a fill the learner earned.
+ */
+export function questionForm(asked: QuestionForm, text: string): QuestionForm {
+  return asked === 'cloze' && hasBlank(text) ? 'cloze' : 'open';
+}
+
 /** One resolved question on this file, newest last. The only history the pitch reads. */
 export interface PitchOutcome {
   objectiveId: string | null;
@@ -168,6 +197,8 @@ export interface PitchOutcome {
   kind: 'verdict' | 'released';
   verdict: 'complete' | 'partial' | 'not_yet' | null;
   releasedBy: 'give_up' | 'pass' | 'closure' | null;
+  /** Absent on anything recorded before 2026-10-01, which was all `open`. */
+  form?: QuestionForm | null;
 }
 
 export interface PitchInputsRequest {
@@ -192,6 +223,13 @@ export interface PitchInputs {
   lastWasComplete: boolean;
   /** True when nothing has been asked on this objective yet (#49): the question is the easy end. */
   firstOnObjective: boolean;
+  /**
+   * The form the next question is asked in. `cloze` exactly when the pitch is `easier`: the
+   * smaller question after a release is a fill-in-the-blank.
+   */
+  form: QuestionForm;
+  /** True when the most recent result on this objective was a *Well done* on a cloze. */
+  lastWasCloze: boolean;
 }
 
 /** How much history the block carries. Three is enough to show a direction without a wall. */
@@ -216,7 +254,13 @@ export function pitchInputs(input: PitchInputsRequest): PitchInputs {
   );
   const last = onObjective[0] ?? null;
   const lastWasRelease = last?.kind === 'released';
-  const lastWasComplete = last?.kind === 'verdict' && last.verdict === 'complete';
+  /**
+   * **A filled blank is not a *Well done* the pitch may build on** (2026-10-01). The learner who
+   * gave up and then recalled one term is back at the start of the objective, so the next
+   * question is the own-words one a first question would have been, not a harder one.
+   */
+  const lastWasCloze = last?.kind === 'verdict' && last.verdict === 'complete' && last.form === 'cloze';
+  const lastWasComplete = last?.kind === 'verdict' && last.verdict === 'complete' && !lastWasCloze;
 
   const pitch: QuestionPitch = lastWasRelease ? 'easier' : lastWasComplete ? 'harder' : 'level';
   const reason = lastWasRelease
@@ -225,9 +269,21 @@ export function pitchInputs(input: PitchInputsRequest): PitchInputs {
       ? 'the last answer on this objective was marked Well done'
       : last === null
         ? 'nothing has been asked on this objective yet'
-        : `the last answer on this objective was marked ${last.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}`;
+        : lastWasCloze
+          ? 'the last answer on this objective filled a blank correctly'
+          : `the last answer on this objective was marked ${last.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}`;
 
-  return { pitch, reason, recent, fill: input.fill, lastWasRelease, lastWasComplete, firstOnObjective: last === null };
+  return {
+    pitch,
+    reason,
+    recent,
+    fill: input.fill,
+    lastWasRelease,
+    lastWasComplete,
+    firstOnObjective: last === null,
+    form: pitch === 'easier' ? 'cloze' : 'open',
+    lastWasCloze,
+  };
 }
 
 /**
@@ -248,7 +304,9 @@ export function pitchBlock(inputs: PitchInputs): string {
       lines.push(
         o.kind === 'released'
           ? `- answer released (${o.releasedBy ?? 'released'}) — fills nothing`
-          : `- marked ${o.verdict === 'complete' ? 'Well done' : o.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}`,
+          : `- marked ${o.verdict === 'complete' ? 'Well done' : o.verdict === 'not_yet' ? 'Not yet' : 'Partly there'}${
+              o.form === 'cloze' ? ' on a fill-in-the-blank — fills nothing' : ''
+            }`,
       );
     }
   }
@@ -256,16 +314,31 @@ export function pitchBlock(inputs: PitchInputs): string {
     `This objective is ${inputs.fill === 1 ? 'complete' : inputs.fill === 0.5 ? 'half filled' : 'not filled yet'}.`,
   );
   if (inputs.pitch === 'easier') {
+    /**
+     * **The easier question is a fill-in-the-blank** (2026-10-01). "Ask for recall" was left to the
+     * model, and a recall question in prose is still a question to compose an answer to. A blank
+     * in a sentence the page already says is the smallest thing that can be asked: one term.
+     */
     lines.push(
-      `**Ask an easier question than the last one** — ${inputs.reason}. Ask for recall, or for one`,
-      'part of the idea on its own: a definition, a single step, the name of the thing. Do not',
-      'reword the question they just gave up on, and do not say it is easier.',
+      `**Ask an easier question than the last one** — ${inputs.reason}. Ask for recall of one`,
+      'part of the idea, as a **fill-in-the-blank**: take one sentence from the page, word for word',
+      `or nearly, and replace one key term with ${CLOZE_BLANK} (four underscores). One blank only, and`,
+      'the missing term is a concept this objective names, never a number, a name or a filler word.',
+      'Say "Fill in the blank:" and then the sentence, and nothing after it. Do not reuse the',
+      'sentence or the wording of the question they just gave up on, and do not say it is easier.',
     );
   } else if (inputs.pitch === 'harder') {
     lines.push(
       `**You may go harder than the last one** — ${inputs.reason}. Ask them to explain why, or to`,
       'apply it to another case — but one the deck’s own examples or Ellie’s answer equip them',
       'for: no method, notation or format the deck only names. Still one question.',
+    );
+  } else if (inputs.lastWasCloze) {
+    lines.push(
+      `Now ask for it in their own words — ${inputs.reason}, which is recall and not yet an`,
+      'explanation. Ask them to say what it means or to tell it apart from what the page sets beside',
+      'it. Not another blank, and not a construction, a derivation or a case the page does not work',
+      'through.',
     );
   } else if (inputs.firstOnObjective) {
     /**

@@ -652,6 +652,33 @@ export function closureDecision(elementId: string): TurnDecision {
 }
 
 /**
+ * **`rule:own_question`** (brief §5.6, 2026-10-01): the learner wrote a question of their own in
+ * the notes, answered it there, and pressed Submit.
+ *
+ * Written here for the reason `rule:try_here` is: the learner named the move. It is its own move
+ * and not `quiz_feedback`, because everything downstream of that one belongs to Max's open
+ * question: the verdict closes it, an outcome row is filed under it and the bar reads the row.
+ * None of that may happen for a question Max did not ask. `challenges` is empty for the same
+ * reason: nothing is put under test for the ledger.
+ */
+export function ownQuestionDecision(): TurnDecision {
+  return {
+    speak: true,
+    role: 'challenger',
+    moveType: 'own_question_feedback',
+    probeType: null,
+    targetElementId: null,
+    challenges: [],
+    rationale:
+      'The learner answered a question they wrote themselves in the notes; Max marks the answer. ' +
+      'It fills no progress (collab-doc §5.6).',
+    decidedBy: 'rule:own_question',
+    handOffLine: null,
+    failure: null,
+  };
+}
+
+/**
  * **`rule:lesson_start`** (brief §6): the lesson card's **Start**.
  *
  * *"posts an Ellie message in the doc chat announcing what we need to understand and the
