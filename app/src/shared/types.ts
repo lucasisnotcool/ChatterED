@@ -1048,25 +1048,6 @@ export interface DocumentView {
   error: string | null;
 }
 
-/**
- * A session started from a file and a page range (issue #22 decision 4). It is not a new flow:
- * the extracted text simply pre-fills the paste box, and everything downstream is the existing
- * concept-pack path. Paste remains as the fallback it always was.
- */
-export interface SessionSeed {
-  fileId: string;
-  fileName: string;
-  relPath: string;
-  /** From the topic folder when it looks like a module code, else null. */
-  moduleCode: string | null;
-  pageFrom: number | null;
-  pageTo: number | null;
-  /** The extracted text, capped. This is what lands in the textarea. */
-  text: string;
-  /** Goes into the frozen prompt prefix so the agents know the module (decision 5). */
-  topic: { name: string; fileNames: string[] } | null;
-}
-
 /** What "Show the room" posts. The extracted page text is attached; the bytes never are. */
 export interface DocumentReference {
   fileId: string;

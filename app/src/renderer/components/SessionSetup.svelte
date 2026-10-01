@@ -3,18 +3,15 @@
   import type { ConceptDraft } from '../../shared/types.js';
   import { store } from '../lib/store.svelte.js';
 
+  // "Paste text instead" on the Notebooks home is the only way here since notebooks (#58): the
+  // file-and-page-range seed of #22 went with the vault, so a session here is always pasted text.
   let text = $state(store.setupSeed);
-  // A session can start from a file and a page range (issue #22 decision 4). It is not a second
-  // ingest path: the extracted text pre-fills this very box, and everything after it is the
-  // concept-pack flow that paste has always used.
-  const from = store.setupFrom;
   /**
-   * The module code, derived from the topic folder this file came out of and **empty when there
-   * is nothing to derive it from**. It used to default to the literal `'MA3236'`, so every
-   * session started without one was stamped with a real module the learner had never taken, and
-   * it then showed up as a course in the nav rail (ui-review-ux.md M2).
+   * The module code, **empty unless the learner types one**. It used to default to the literal
+   * `'MA3236'`, so every session started without one was stamped with a real module the learner
+   * had never taken, and it then showed up as a course in the nav rail (ui-review-ux.md M2).
    */
-  let moduleCode = $state(from?.moduleCode ?? '');
+  let moduleCode = $state('');
   let draft = $state<ConceptDraft | null>(null);
   let loading = $state(false);
   let opening = $state(false);
@@ -76,8 +73,6 @@
       text,
       conceptId: draft.conceptId,
       claims: claims.map((c) => ({ id: c.id, label: c.label.trim(), learnerLabel: c.learnerLabel.trim() })),
-      // The file provenance and the topic are added by the store when setup was seeded from a
-      // file; paste stays exactly what it was.
       sourceKind: 'pasted_text',
     });
     opening = false;
@@ -95,15 +90,6 @@
       <span>Module <span class="opt">optional</span></span>
       <input bind:value={moduleCode} spellcheck="false" placeholder="e.g. CS3249" />
     </label>
-    {#if from}
-      <p class="from">
-        From <strong>{from.fileName}</strong>{from.pageFrom !== null && from.pageTo !== null
-          ? from.pageFrom === from.pageTo
-            ? `, p. ${from.pageFrom}`
-            : `, pp. ${from.pageFrom}–${from.pageTo}`
-          : ''}. Edit it here if the extraction came out badly — it often does with maths.
-      </p>
-    {/if}
     <label class="field grow">
       <span>Paste the statement you want to explain</span>
       <textarea bind:value={text} placeholder="Paste text from your slide…"></textarea>
@@ -185,7 +171,6 @@
 </div>
 
 <style>
-  .from { margin: 0 0 10px; font-size: 12px; line-height: 1.6; color: var(--text-2); }
   .screen { flex: 1; display: flex; min-width: 0; }
   .col { padding: 20px 24px; overflow-y: auto; }
   .source { flex: 1; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid var(--hairline); }

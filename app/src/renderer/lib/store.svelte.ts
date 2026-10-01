@@ -14,7 +14,6 @@ import type {
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
-  SessionSeed,
   SettingsPatch,
   SettingsView,
   TurnTraceView,
@@ -185,12 +184,6 @@ class Store {
 
   /** Seed for the setup screen when the learner arrives via "Paste text instead". */
   setupSeed = $state('');
-  /**
-   * Set when setup was reached from a file and a page range instead (issue #22 decision 4).
-   * It carries the provenance the material row wants and the topic the prefix wants; the text
-   * itself still lands in the same textarea, because paste is the flow and this pre-fills it.
-   */
-  setupFrom: SessionSeed | null = $state(null);
 
   /** The ⌥⌘D debug drawer (audit §10). Closed, and empty, until it is opened. */
   debugOpen = $state(false);
@@ -819,7 +812,6 @@ class Store {
 
   goSetup(seed = ''): void {
     this.setupSeed = seed;
-    this.setupFrom = null;
     this.screen = 'setup';
   }
 
@@ -871,21 +863,9 @@ class Store {
   }
 
   async createSession(input: CreateSessionInput): Promise<void> {
-    const from = this.setupFrom;
-    const full: CreateSessionInput = from
-      ? {
-          ...input,
-          sourceKind: 'pdf_pages',
-          fileId: from.fileId,
-          fileName: from.fileName,
-          ...(from.pageFrom !== null ? { pageFrom: from.pageFrom } : {}),
-          ...(from.pageTo !== null ? { pageTo: from.pageTo } : {}),
-          ...(from.topic ? { topic: from.topic } : {}),
-        }
-      : input;
     // Everything on `this` is a $state proxy, and structuredClone — which is what IPC is —
     // refuses a proxy with "An object could not be cloned". Snapshot before it crosses.
-    const created = await run(this, () => bridge().createSession($state.snapshot(full) as CreateSessionInput));
+    const created = await run(this, () => bridge().createSession($state.snapshot(input) as CreateSessionInput));
     if (created) await this.openRoom(created.roomId);
   }
 
