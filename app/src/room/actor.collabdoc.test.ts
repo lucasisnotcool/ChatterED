@@ -114,6 +114,12 @@ function build(over: Partial<RoomActorDeps> = {}, docEdit: Record<string, unknow
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,
     docPort: doc.port,
+    /**
+     * **This file is the #48 loop**, `rule:max_followup` included, and since `notebooks.md` §5.2
+     * (C8) that loop is legacy coverage: it runs only with the flag off. The notebooks default is
+     * pinned in `actor.notebooks.test.ts`.
+     */
+    maxOnlyOnRequest: false,
     ...over,
   });
   actor.start();
@@ -142,6 +148,7 @@ function relaunch(h: ReturnType<typeof build>, over: Partial<RoomActorDeps> = {}
     newId: (prefix) => `${prefix}_r${(n += 1)}`,
     random: () => 0.5,
     docPort: h.doc.port,
+    maxOnlyOnRequest: false,
     ...over,
   });
   actor.start();

@@ -79,6 +79,8 @@ function build(mode: 'scripted' = 'scripted', flowState?: RoomActorDeps['flowSta
     flowState,
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,
+    // The #48 loop and the hand-off it pins are legacy coverage now (`notebooks.md` §5.2, C8).
+    maxOnlyOnRequest: false,
   });
   actor.start();
   return { ...seeded, clock, events, actor };

@@ -459,6 +459,8 @@ function build() {
     flowState: critique1Sitting(clock.now(), { ...DEMO, silenceScale: 1 }),
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,
+    // The Critique 1 take films the time-based hand-off: legacy coverage since C8 (`notebooks.md` §5.2).
+    maxOnlyOnRequest: false,
   });
   actor.start();
   return { ...seeded, clock, events, actor };

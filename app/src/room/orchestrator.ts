@@ -164,6 +164,14 @@ export interface DecisionInput {
    * not move with it.
    */
   lastAgentTurn?: LastAgentTurn;
+  /**
+   * **Max asks only when asked** (`notebooks.md` §5.2; `RoomActorDeps.maxOnlyOnRequest`). When
+   * true, no rule and no model may give the floor to the Tester for a **new** question: the
+   * hand-off is skipped (the actor also runs the Tester `reactive`, so it is never due) and a
+   * model that names the Tester is demoted to the Teacher whatever the hand-off verdict says.
+   * The rules about a question he was asked, and `@Max`, are untouched. Absent is the #48 loop.
+   */
+  maxOnlyOnRequest?: boolean;
 }
 
 /**
@@ -441,6 +449,9 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
   const collabChannel = input.threadKind === 'doc' || input.threadKind === 'span';
   if (
     !collabChannel &&
+    // Defensive under C8: the actor already runs the Tester `reactive`, so `due` is false; a
+    // caller that passed a due verdict anyway still does not get an unprompted question.
+    input.maxOnlyOnRequest !== true &&
     handOff?.due === true &&
     handOff.target !== null &&
     (input.trigger === 'student_message' || input.trigger === 'promote')
@@ -673,6 +684,33 @@ export function ownQuestionDecision(): TurnDecision {
       'The learner answered a question they wrote themselves in the notes; Max marks the answer. ' +
       'It fills no progress (collab-doc §5.6).',
     decidedBy: 'rule:own_question',
+    handOffLine: null,
+    failure: null,
+  };
+}
+
+/**
+ * **`rule:block_action`** (`notebooks.md` §4, contract C7): the learner pressed **Explain** or
+ * **Example** on a block of the overview.
+ *
+ * Written in code for the reason `rule:try_here` is: the button named the move and the answerer,
+ * so a model would be paid to be told what the learner already said. Ellie's, because both are
+ * the Teacher's (§4.1's table). `challenges` is empty: an explanation puts nothing under test, and
+ * §4.3 is explicit that actions fill nothing.
+ */
+export function blockActionDecision(kind: 'explain' | 'example'): TurnDecision {
+  return {
+    speak: true,
+    role: 'peer',
+    moveType: kind === 'explain' ? 'block_explain' : 'block_example',
+    probeType: null,
+    targetElementId: null,
+    challenges: [],
+    rationale:
+      kind === 'explain'
+        ? 'The learner pressed Explain on a block: Ellie gives the full explanation in its thread (notebooks §4).'
+        : 'The learner pressed Example on a block: Ellie works one example in its thread (notebooks §4).',
+    decidedBy: 'rule:block_action',
     handOffLine: null,
     failure: null,
   };
@@ -1044,7 +1082,9 @@ export async function decideTurn(opts: DecideOptions): Promise<TurnDecision> {
     // **The model may never put the Tester on the floor.** Eligibility is `handOffDue()`'s call
     // and the rule above is the only path to it; a model that asks for `challenger` here is
     // silently demoted to the Teacher rather than being allowed around the flow rule (#33).
-    if (role === 'challenger' && opts.input.handOff?.due !== true) role = 'peer';
+    // Under `maxOnlyOnRequest` (`notebooks.md` §5.2) not even a due hand-off lets it through:
+    // Quiz me and `@Max` are rules, decided above, and they are the only doors left.
+    if (role === 'challenger' && (opts.input.maxOnlyOnRequest === true || opts.input.handOff?.due !== true)) role = 'peer';
 
     /**
      * `speak: false` is a real answer — but not to a learner who has just typed a question.

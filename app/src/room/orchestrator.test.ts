@@ -18,6 +18,7 @@ import {
   type QuizzableItem,
 } from './flow.js';
 import {
+  blockActionDecision,
   classifyAgentTurn,
   closureDecision,
   decideTurn,
@@ -812,5 +813,67 @@ describe('classifying the turn a silence follows', () => {
     }
     expect(classifyAgentTurn(decision('opener'), 'teacher_explanation')).toBe('none');
     expect(classifyAgentTurn(decision('anything', null), 'tester_question')).toBe('tester_question');
+  });
+});
+
+/**
+ * **Max asks only when asked** (`notebooks.md` §5.2, contract C8). The actor closes the follow-up
+ * chain and runs the Tester `reactive`; these pin the orchestrator's own half, which holds even if
+ * a caller hands it a due hand-off: no rule and no model opens a new Max question unprompted, and
+ * everything about a question he was asked is unchanged.
+ */
+describe('maxOnlyOnRequest', () => {
+  it('skips the hand-off even when the verdict says it is due', () => {
+    const d = ruleDecision(input({ handOff: due(), handOffLine: 'over to you', maxOnlyOnRequest: true }));
+    expect(d === null || d.decidedBy !== 'rule:handoff').toBe(true);
+  });
+
+  it('demotes a model that names the Tester, even on a due hand-off', async () => {
+    const reply = JSON.stringify({ speak: true, role: 'challenger', move_type: 'quiz', rationale: 'x' });
+    const d = await decide(reply, { handOff: due(), maxOnlyOnRequest: true });
+    expect(d.role).toBe('peer');
+    // The legacy loop still lets a due hand-off through, which is what the flag changes.
+    const legacy = await decide(reply, { handOff: due() });
+    expect(legacy.role).toBe('challenger');
+  });
+
+  it('still reaches Max by @Max', () => {
+    const d = ruleDecision(input({ threadKind: 'doc', mention: 'max', maxOnlyOnRequest: true }))!;
+    expect(d.role).toBe('challenger');
+    expect(d.decidedBy).toBe('rule:mention');
+  });
+
+  it('leaves feedback, clarify, release and the silence pair on a question he was asked', () => {
+    const asked = openQuiz({ elementId: 'R1', quizMessageId: 'm_q' }, 0);
+    const answered = answerQuiz(asked, 'm_a', { attempt: true, text: 'an answer' });
+    expect(ruleDecision(input({ pendingQuiz: answered, maxOnlyOnRequest: true }))!.decidedBy).toBe('rule:quiz_feedback');
+    expect(ruleDecision(input({ pendingQuiz: asked, learnerTurn: 'question', maxOnlyOnRequest: true }))!.decidedBy).toBe(
+      'rule:quiz_clarify',
+    );
+    expect(ruleDecision(input({ pendingQuiz: asked, learnerTurn: 'give_up', maxOnlyOnRequest: true }))!.decidedBy).toBe(
+      'rule:answer_released',
+    );
+    const cue = ruleDecision(input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked, maxOnlyOnRequest: true }))!;
+    expect(cue.decidedBy).toBe('rule:ellie_cue');
+    const prompt = ruleDecision(
+      input({ trigger: 'silence', silenceStage: 2, pendingQuiz: markCueGiven(asked, { at: 1, hasMistake: false, claim: null }), maxOnlyOnRequest: true }),
+    )!;
+    expect(prompt.decidedBy).toBe('rule:max_prompt');
+  });
+});
+
+describe('rule:block_action', () => {
+  it('gives Explain and Example to Ellie, with nothing put under test', () => {
+    for (const [kind, move] of [
+      ['explain', 'block_explain'],
+      ['example', 'block_example'],
+    ] as const) {
+      const d = blockActionDecision(kind);
+      expect(d.role).toBe('peer');
+      expect(d.moveType).toBe(move);
+      expect(d.decidedBy).toBe('rule:block_action');
+      expect(d.challenges).toEqual([]);
+      expect(classifyAgentTurn(d, 'none')).toBe('teacher_explanation');
+    }
   });
 });

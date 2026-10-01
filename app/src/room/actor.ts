@@ -307,6 +307,19 @@ export interface RoomActorDeps {
    * callback, means there is nothing to recap from and nothing is posted.
    */
   fileProgress?: () => Promise<{ view: ProgressView; outcomes: readonly QuizOutcome[] } | null>;
+  /**
+   * **Max asks only when asked** (`notebooks.md` §5.2, answer A; contract C8). Default `true`.
+   *
+   * On, Max opens a **new** question only when the learner asks for one: Quiz me on a block (or
+   * "+ Try this", which is the same door, `rule:try_here`) or `@Max`. Three paths are closed:
+   * the follow-up chained after Ellie's answer (`rule:max_followup`), the time-based hand-off
+   * (`rule:handoff`, by running the Tester `reactive`), and a model decision that puts the Tester
+   * on the floor (`decideTurn` demotes it). Everything about a question he **was** asked is
+   * unchanged: feedback, clarify, nudge, release, Ellie's cue and his prompt on silence, closure.
+   *
+   * `false` is the #48 loop, kept as legacy coverage: the tests that pin it pass it explicitly.
+   */
+  maxOnlyOnRequest?: boolean;
 }
 
 interface PendingTurn {
@@ -503,7 +516,13 @@ export class RoomActor {
     requiring: string | null;
   } | null = null;
   #pendingQuiz: PendingQuiz | null = null;
+  /**
+   * Koala's toggle (`flow.ts`). `reactive` under `maxOnlyOnRequest` (`notebooks.md` §5.2), which
+   * is what makes `handOffDue` say no on every turn and so closes `rule:handoff` at its source.
+   */
   #testerMode: TesterMode = 'proactive';
+  /** `RoomActorDeps.maxOnlyOnRequest`, resolved once: true unless a caller turned it off. */
+  readonly #maxOnly: boolean;
   /** Every REFERENCE card inserted this session, and whether it has been explained back. */
   /**
    * The REFERENCE cards of `pivot-spec.md` §B1. **Nothing pushes to this since #41** — the Teacher
@@ -710,6 +729,8 @@ export class RoomActor {
 
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
+    this.#maxOnly = deps.maxOnlyOnRequest !== false;
+    this.#testerMode = this.#maxOnly ? 'reactive' : 'proactive';
     this.#log = deps.log ?? SILENT_LOG;
     this.#turnLog = this.#log;
     this.#openedAt = deps.clock.now();
@@ -2531,6 +2552,8 @@ export class RoomActor {
       silence_stage: opts.silenceStage ?? null,
       consecutive_agent_turns: this.#room().consecutive_agent_turns,
       backend: this.#d.llm.kind,
+      // C8: which loop this room runs, on every turn, so a log line says why Max did not follow up.
+      max_only_on_request: this.#maxOnly,
     });
 
     /**
@@ -2629,6 +2652,8 @@ export class RoomActor {
         trigger === 'student_message' || trigger === 'promote' ? this.#lastLearnerTurn : null,
       showAnswer: opts.showAnswer === true,
       askedHere: opts.askedHere === true,
+      // C8: the rules close every unprompted door onto a new Max question (`notebooks.md` §5.2).
+      maxOnlyOnRequest: this.#maxOnly,
     };
 
     const cue =
@@ -3173,6 +3198,12 @@ export class RoomActor {
        * there before this condition is read.)
        */
       this.#docPort.docId() !== null &&
+      /**
+       * **Retired under `maxOnlyOnRequest`** (`notebooks.md` §5.2, §10: *"Removed: his follow-up
+       * after Ellie's answer"*). Ellie's answer stands on its own; Max asks when the learner
+       * presses Quiz me or writes `@Max`.
+       */
+      !this.#maxOnly &&
       followupDue({
         decidedBy: decision.decidedBy,
         pendingQuiz: this.#pendingQuiz,

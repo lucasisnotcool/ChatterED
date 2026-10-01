@@ -101,6 +101,8 @@ function harness() {
     newId: (prefix) => `${prefix}_${(n += 1)}`,
     random: () => 0.5,
     docPort: doc,
+    // Table 3 is the #48 loop, follow-up included: legacy coverage since `notebooks.md` §5.2 (C8).
+    maxOnlyOnRequest: false,
   });
   actor.start();
 
