@@ -6,6 +6,13 @@ the **source of truth** for the interaction model from this date. What it supers
 §9; superseded briefs stay in the repo as the record of why. Code that contradicts this brief is a
 bug in the code.
 
+> **Amended 1 Oct 2026 by `notebooks.md` (#58), which wins where the two differ.** Notebooks of
+> uploaded sources replace the vault; the doc is a short learning overview, not AI-written full
+> notes (§0, §2 here); Max asks only when the learner presses Quiz me (`rule:max_followup` and the
+> hand-off in §4.2 are off); Ellie's chat answer is the full one and her doc edit is one line of at
+> most 25 words (§4.6, §5.1 here). Everything else in this brief stands. `notebooks.md` §10 lists
+> exactly what changed.
+
 **Read alongside.** `ai-use-transcripts/analysis/convergence.md` (the evidence, observed
 interactions only), `attempt-first.md` (the loop this replaces, and the rules that survive it),
 `learning-objectives.md` (the objective tree the progress bar is drawn from),
