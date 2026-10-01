@@ -8,20 +8,14 @@ import type {
   ConceptDraft,
   CreateSessionInput,
   DocumentView,
-  FinderHitView,
   RecapView,
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
-  SearchHitView,
-  SessionSeed,
   ProviderTestResult,
   SettingsPatch,
   SettingsView,
   TeachbackResult,
-  TopicCandidateView,
-  VaultTreeNode,
-  VaultView,
   WhisperThreadView,
   AppCommand,
   WindowState,
@@ -97,20 +91,7 @@ export const IPC = {
   appCommand: 'app:command',
 
   // The vault (issue #22).
-  vaultGet: 'vault:get',
-  vaultChoose: 'vault:choose',
-  vaultRescan: 'vault:rescan',
-  vaultCandidates: 'vault:candidates',
-  vaultPromote: 'vault:promote',
-  vaultTree: 'vault:tree',
-  vaultFind: 'vault:find',
-  vaultSearch: 'vault:search',
   vaultDocument: 'vault:document',
-  vaultReveal: 'vault:reveal',
-  vaultSeed: 'vault:seed',
-  showDocument: 'room:showDocument',
-  /** main → renderer: a scan finished, or the background indexer advanced. */
-  vaultChanged: 'vault:changed',
 
   // The flow's segments (issue #25).
   segmentsGet: 'segments:get',
@@ -285,55 +266,13 @@ export interface ChatterEdApi {
   /** Subscribe to pushed room events. Returns an unsubscribe function. */
   onEvent(listener: (event: RoomEvent) => void): () => void;
 
-  // ── The vault (issue #22) ───────────────────────────────────────────────
-  /** The Library's whole left-hand state: root, topics with counts, index progress. */
-  getVault(): Promise<VaultView>;
-  /** Opens the folder picker. Null when the learner cancelled. Scans before it returns. */
-  chooseVault(): Promise<VaultView | null>;
-  /** Re-walk the vault and reconcile by mtime. Cheap; called on window focus. */
-  rescanVault(): Promise<VaultView>;
-  /** The depth-1 folders on offer as topics, with the promoted ones ticked. */
-  topicCandidates(): Promise<TopicCandidateView[]>;
-  /** Sets the promoted set exactly. Anything omitted is demoted back to "Other". */
-  promoteTopics(input: { relPaths: string[] }): Promise<VaultView>;
-  /** The file tree for one topic, or for "Other" when topicId is null. */
-  vaultTree(input: { topicId: string | null }): Promise<VaultTreeNode[]>;
+  // ── Source bytes (the vault's one survivor; notebooks own the rest, issue #58) ───
   /**
-   * The ⌘K finder: fuzzy filename and path matching, no index needed, instant.
-   * ⌘K is the whisper key *inside a room* (§C10 L1004) and the finder key everywhere else —
-   * §B1's own header already reads `[ Search ⌘K ]` (L186). Scope decides, and the two scopes
-   * never overlap because the room owns the keydown while it is open.
-   */
-  findFiles(input: { query: string }): Promise<FinderHitView[]>;
-  /** Full text, over the FTS5 index: snippets, and a page number for a PDF hit. */
-  searchVault(input: { query: string }): Promise<SearchHitView[]>;
-  /**
-   * Everything the document pane needs for one file. PDF and image bytes come back over IPC as
-   * a Uint8Array rather than through a custom protocol: the renderer then holds no URL it could
-   * re-request, and a file it was never handed stays unreachable.
+   * Everything the document pane needs for one source file. PDF and image bytes come back over
+   * IPC as a Uint8Array rather than through a custom protocol: the renderer then holds no URL it
+   * could re-request, and a file it was never handed stays unreachable.
    */
   openDocument(input: { fileId: string }): Promise<DocumentView>;
-  /** Reveal in Finder — the one action the "no viewer" card offers (issue #22 decision 3). */
-  revealFile(input: { fileId: string }): Promise<void>;
-  /**
-   * Start session setup from a file and a page range: the extracted text pre-fills the paste
-   * box, and the topic comes along for the room's system context (issue #22 decisions 4 and 5).
-   */
-  sessionSeed(input: { fileId: string; pageFrom: number | null; pageTo: number | null }): Promise<SessionSeed>;
-  /**
-   * "Show the room": post a reference to the open document into the group chat, as the learner.
-   * The main process resolves the page text; the renderer only says which pages and what was
-   * highlighted, because the renderer has no authority to decide what the agents are told.
-   */
-  showDocument(input: {
-    roomId: string;
-    fileId: string;
-    pageFrom: number | null;
-    pageTo: number | null;
-    selection: string | null;
-  }): Promise<void>;
-  /** Subscribe to vault changes pushed by the scanner and the background indexer. */
-  onVaultChanged(listener: (view: VaultView) => void): () => void;
 
   // ── The flow's segments (issue #25) ─────────────────────────────────────
   /**

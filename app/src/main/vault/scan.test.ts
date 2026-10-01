@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MAX_FILE_BYTES, extensionOf, kindFor, skipDir } from './kinds.js';
-import { scanVault, topicCandidates, topicForPath } from './scan.js';
+import { scanVault, topicForPath } from './scan.js';
 
 let root = '';
 
@@ -138,20 +138,6 @@ describe('scanVault', () => {
 });
 
 describe('topic promotion', () => {
-  it('offers only the depth-1 folders, with the count of everything beneath them', () => {
-    write('MA3236/Week 4/lecture.pdf');
-    write('MA3236/Week 5/lecture.pdf');
-    write('MA3236/notes.md');
-    write('CS3249/brief.txt');
-    write('loose.md');
-
-    const candidates = topicCandidates(scanVault(root));
-    expect(candidates).toEqual([
-      { relPath: 'CS3249', name: 'CS3249', fileCount: 1 },
-      { relPath: 'MA3236', name: 'MA3236', fileCount: 3 },
-    ]);
-  });
-
   it('puts a file under the deepest promoted folder that contains it', () => {
     expect(topicForPath('MA3236/Week 4/x.pdf', ['MA3236'])).toBe('MA3236');
     expect(topicForPath('MA3236/Week 4/x.pdf', ['MA3236', 'MA3236/Week 4'])).toBe('MA3236/Week 4');

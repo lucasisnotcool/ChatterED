@@ -151,7 +151,6 @@ describe('the application menu', () => {
     expect(items(template, 'File')).toEqual([
       'New Notebook',
       'Add Sources…',
-      'Find a File…',
       'Regenerate Notes…',
       'New Conversation…',
       'Export Research Data…',
@@ -376,7 +375,6 @@ describe('what the menu is allowed to say', () => {
       'notebook.new',
       'notebook.addSources',
       'notebook.home',
-      'search.files',
       'settings.open',
       'notes.regenerate',
       'chat.reset',

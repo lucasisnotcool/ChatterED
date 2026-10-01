@@ -4,7 +4,7 @@
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
-import type { AppCommand, RoomEvent, VaultView, WindowState } from '../shared/types.js';
+import type { AppCommand, RoomEvent, WindowState } from '../shared/types.js';
 import type { CostUpdate } from '../shared/cost.js';
 import type { NotebookChange } from '../shared/notebook.js';
 import { trialApi } from './trial.js';
@@ -45,18 +45,7 @@ const api: ChatterEdApi = {
       ipcRenderer.removeListener(IPC.event, handler);
     };
   },
-  getVault: () => ipcRenderer.invoke(IPC.vaultGet),
-  chooseVault: () => ipcRenderer.invoke(IPC.vaultChoose),
-  rescanVault: () => ipcRenderer.invoke(IPC.vaultRescan),
-  topicCandidates: () => ipcRenderer.invoke(IPC.vaultCandidates),
-  promoteTopics: (input) => ipcRenderer.invoke(IPC.vaultPromote, input),
-  vaultTree: (input) => ipcRenderer.invoke(IPC.vaultTree, input),
-  findFiles: (input) => ipcRenderer.invoke(IPC.vaultFind, input),
-  searchVault: (input) => ipcRenderer.invoke(IPC.vaultSearch, input),
   openDocument: (input) => ipcRenderer.invoke(IPC.vaultDocument, input),
-  revealFile: (input) => ipcRenderer.invoke(IPC.vaultReveal, input),
-  sessionSeed: (input) => ipcRenderer.invoke(IPC.vaultSeed, input),
-  showDocument: (input) => ipcRenderer.invoke(IPC.showDocument, input),
   getSegments: (input) => ipcRenderer.invoke(IPC.segmentsGet, input),
   splitSegment: (input) => ipcRenderer.invoke(IPC.segmentsSplit, input),
   mergeSegments: (input) => ipcRenderer.invoke(IPC.segmentsMerge, input),
@@ -108,13 +97,6 @@ const api: ChatterEdApi = {
     ipcRenderer.on(IPC.costUpdated, handler);
     return () => {
       ipcRenderer.removeListener(IPC.costUpdated, handler);
-    };
-  },
-  onVaultChanged: (listener) => {
-    const handler = (_event: unknown, payload: VaultView) => listener(payload);
-    ipcRenderer.on(IPC.vaultChanged, handler);
-    return () => {
-      ipcRenderer.removeListener(IPC.vaultChanged, handler);
     };
   },
   // Notebooks (`docs/research/notebooks.md`, 2026-10-01).

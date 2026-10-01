@@ -13,7 +13,6 @@ import type {
   RoomEvent,
   RolePairing,
   RoomSnapshot,
-  SessionSeed,
   ReplySpeed,
   SettingsPatch,
   SettingsView,
@@ -65,8 +64,7 @@ import {
 import type { SegmentDocumentView } from '../shared/segment/types.js';
 import type { LearningObjectiveState, LearningTree, ObjectiveRef } from '../shared/objectives.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
-import { capText } from './vault/extract.js';
-import { SELECTION_CAP, VaultService } from './vault/service.js';
+import { VaultService } from './vault/service.js';
 import { SegmentService, type SplitInput } from './vault/segments.js';
 // collab-doc (#48): the three modules behind the hooks in `register()`, and what they may ask for.
 import type { ConfirmRequest, DocHost } from './dochost.js';
@@ -144,7 +142,6 @@ export class AppService {
     this.#vault = new VaultService({
       db: deps.db,
       settings: deps.store.settings,
-      onChanged: (view) => this.#d.getWindow()?.webContents.send(IPC.vaultChanged, view),
     });
     // The segmentation pipeline gets the vault's id→path resolver and nothing else: it can read
     // a file the renderer already has an id for, and no other file (issue #22's rule, unchanged).
@@ -973,28 +970,6 @@ export class AppService {
   }
 
   /**
-   * Session setup from a file and a page range (issue #22 decision 4). Not a second ingest
-   * path: it pre-fills the paste box that already exists, and everything after that is the
-   * concept-pack flow `createSession` has always run.
-   */
-  async sessionSeed(input: { fileId: string; pageFrom: number | null; pageTo: number | null }): Promise<SessionSeed> {
-    const file = this.#vault.fileRow(input.fileId);
-    if (!file) throw new Error('That file is not in the vault any more.');
-    const text = await this.#vault.textFor(input);
-    const topic = this.#vault.topicContext(file.topic_id);
-    return {
-      fileId: file.id,
-      fileName: file.name,
-      relPath: file.rel_path,
-      moduleCode: this.#vault.moduleCodeFor(file.topic_id),
-      pageFrom: input.pageFrom,
-      pageTo: input.pageTo,
-      text,
-      topic,
-    };
-  }
-
-  /**
    * The **Copy diagnostics** payload: what the app is, which backend and models are live, and
    * the last 50 log lines. Assembled here rather than in the renderer because the renderer has
    * no business reading a file, and because these are the four questions every bug report on
@@ -1265,60 +1240,8 @@ export class AppService {
     });
 
     // ── The vault (issue #22) ──────────────────────────────────────────────
-    handle(IPC.vaultGet, () => this.#vault.view());
-
-    handle(IPC.vaultChoose, async () => {
-      const win = this.#d.getWindow();
-      const result = await (win
-        ? dialog.showOpenDialog(win, { properties: ['openDirectory'], buttonLabel: 'Open vault' })
-        : dialog.showOpenDialog({ properties: ['openDirectory'] }));
-      const folder = result.canceled ? null : (result.filePaths[0] ?? null);
-      return folder ? this.#vault.open(folder) : null;
-    });
-
-    handle(IPC.vaultRescan, () => this.#vault.rescan());
-    handle(IPC.vaultCandidates, () => this.#vault.candidates());
-    handle<{ relPaths: string[] }>(IPC.vaultPromote, (input) => this.#vault.promote(input.relPaths));
-    handle<{ topicId: string | null }>(IPC.vaultTree, (input) => this.#vault.tree(input.topicId));
-    handle<{ query: string }>(IPC.vaultFind, (input) => this.#vault.find(input.query));
-    handle<{ query: string }>(IPC.vaultSearch, (input) => this.#vault.search(input.query));
+    // ── Source bytes (issue #58: the rest of the vault surface is gone) ────
     handle<{ fileId: string }>(IPC.vaultDocument, (input) => this.#vault.document(input.fileId));
-    handle<{ fileId: string }>(IPC.vaultReveal, (input) => {
-      shell.showItemInFolder(this.#vault.revealPath(input.fileId));
-    });
-
-    handle<{ fileId: string; pageFrom: number | null; pageTo: number | null }>(IPC.vaultSeed, (input) =>
-      this.sessionSeed(input),
-    );
-
-    handle<{
-      roomId: string;
-      fileId: string;
-      pageFrom: number | null;
-      pageTo: number | null;
-      selection: string | null;
-    }>(IPC.showDocument, async (input) => {
-      const actor = this.#requireActor(input.roomId);
-      const file = this.#vault.fileRow(input.fileId);
-      if (!file) throw new Error('That file is not in the vault any more.');
-      const pageText = await this.#vault.textFor({
-        fileId: input.fileId,
-        pageFrom: input.pageFrom,
-        pageTo: input.pageTo,
-      });
-      await actor.showDocument({
-        fileId: file.id,
-        fileName: file.name,
-        relPath: file.rel_path,
-        kind: file.kind,
-        pageFrom: input.pageFrom,
-        pageTo: input.pageTo,
-        // The cap is enforced here, in the main process. The renderer proposes a selection;
-        // it does not get to decide how much of a document reaches the model.
-        selection: input.selection ? capText(input.selection, SELECTION_CAP) : null,
-        pageText,
-      });
-    });
 
     // ── The flow's segments (issue #25) ───────────────────────────────────
     handle<{ fileId: string }>(IPC.segmentsGet, async (input) => {

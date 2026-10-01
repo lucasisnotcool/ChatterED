@@ -134,8 +134,6 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         { label: 'New Notebook', accelerator: 'CommandOrControl+N', click: send('notebook.new') },
         { label: 'Add Sources…', accelerator: 'CommandOrControl+Shift+O', click: send('notebook.addSources') },
         { type: 'separator' },
-        { label: 'Find a File…', accelerator: 'CommandOrControl+Shift+F', click: send('search.files') },
-        { type: 'separator' },
         // Both ask for confirmation in main before anything is lost (2026-09-23); no accelerator,
         // because a destructive action one chord away is one mistyped chord away.
         { label: 'Regenerate Notes…', click: send('notes.regenerate') },

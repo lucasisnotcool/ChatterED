@@ -123,29 +123,6 @@ export function scanVault(root: string, options: ScanOptions = {}): ScanResult {
   return { files, dirs, skipped };
 }
 
-export interface TopicCandidate {
-  relPath: string;
-  name: string;
-  fileCount: number;
-}
-
-/**
- * The folders the learner is offered as topics: the immediate children of the vault root, with
- * the number of scanned files anywhere beneath each. Depth 1 only — "MA3236" is a topic,
- * "MA3236/Week 4/slides" is a place inside one.
- */
-export function topicCandidates(scan: ScanResult): TopicCandidate[] {
-  const counts = new Map<string, number>();
-  for (const d of scan.dirs) if (d.depth === 1) counts.set(d.relPath, 0);
-  for (const f of scan.files) {
-    const head = f.relPath.includes('/') ? f.relPath.slice(0, f.relPath.indexOf('/')) : null;
-    if (head !== null && counts.has(head)) counts.set(head, (counts.get(head) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([relPath, fileCount]) => ({ relPath, name: relPath, fileCount }))
-    .sort((a, b) => (a.name < b.name ? -1 : 1));
-}
-
 /** Which promoted topic a file belongs to, or null for "Other". Longest prefix wins. */
 export function topicForPath(relPath: string, topicRelPaths: string[]): string | null {
   let best: string | null = null;

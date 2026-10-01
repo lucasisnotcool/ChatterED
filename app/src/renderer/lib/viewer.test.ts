@@ -6,7 +6,7 @@ describe('the viewer command registry', () => {
     expect(isViewerCommand('zoom.in')).toBe(true);
     expect(isViewerCommand('fit.page')).toBe(true);
     expect(isViewerCommand('page.prev')).toBe(true);
-    expect(isViewerCommand('vault.open')).toBe(false);
+    expect(isViewerCommand('notebook.new')).toBe(false);
     expect(isViewerCommand('settings.open')).toBe(false);
   });
 

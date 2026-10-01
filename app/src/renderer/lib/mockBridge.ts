@@ -88,7 +88,6 @@ import type {
   TimerView,
   TurnParticipantView,
   TurnTraceView,
-  VaultView,
   WhisperThreadView,
   WhisperTurnView,
 } from '../../shared/types.js';
@@ -106,21 +105,6 @@ import {
   type CostSlice,
   type CostTokens,
 } from '../../shared/cost.js';
-
-/**
- * The vault channels are still on `ChatterEdApi` until the lead removes them (#58); nothing in the
- * renderer calls them any more. They answer with an empty vault, which is the truth: notebooks
- * replaced it (`docs/research/notebooks.md` §1).
- */
-const MOCK_VAULT: VaultView = {
-  rootPath: null,
-  displayName: '',
-  topics: [],
-  otherCount: 0,
-  totalFiles: 0,
-  lastScanAt: null,
-  index: { total: 0, done: 0, failed: 0, running: false, current: null },
-};
 
 function emptyFlow(fileId: string, refused?: SegmentRefusal['reason']): SegmentDocumentView {
   return {
@@ -1583,15 +1567,6 @@ export function createMockBridge(): ChatterEdApi {
     },
     async closeWhisper({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
 
-    // The vault is gone (#58, notebooks.md §1); its channels answer empty until ipc.ts drops them.
-    getVault: async () => MOCK_VAULT,
-    chooseVault: async () => MOCK_VAULT,
-    rescanVault: async () => MOCK_VAULT,
-    topicCandidates: async () => [],
-    promoteTopics: async () => MOCK_VAULT,
-    vaultTree: async () => [],
-    findFiles: async () => [],
-    searchVault: async () => [],
     /**
      * A **source's** bytes (C2: `openDocument` still takes a source's file id). The mock has no
      * disk and no pdf.js bytes, so a source opens as its name and page count and the slide
@@ -1618,15 +1593,9 @@ export function createMockBridge(): ChatterEdApi {
             pageCount: null, text: null, bytes: null, error: 'No such source in the dev mock.',
           };
     },
-    revealFile: async () => undefined,
-    sessionSeed: async ({ fileId }) => ({
-      fileId, fileName: '', relPath: '', moduleCode: null, pageFrom: null, pageTo: null,
-      text: '', topic: null,
-    }),
-    showDocument: async () => undefined,
 
     // Segments need pdf.js, a file and SQLite, none of which `vite dev` has. An empty flow with
-    // the honest notice, for the same reason the vault above is empty: a mock deck of invented
+    // the honest notice, for the same reason as everywhere in this mock: a mock deck of invented
     // slide titles would be a screenshot of a lie.
     /**
      * Stop, with the real refusal: **only after the floor**. Before it the turn is still in the
@@ -2073,7 +2042,6 @@ export function createMockBridge(): ChatterEdApi {
     mergeSegments: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
     reorderSegments: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
     renameSegment: async ({ fileId }) => emptyFlow(fileId, 'no-segment'),
-    onVaultChanged() { return () => undefined; },
 
     // The cost ledger, in `vite dev`: plausible numbers on the CLI path so the panel can be
     // looked at, and a `cost.updated` tick that never fires because nothing here calls a model.

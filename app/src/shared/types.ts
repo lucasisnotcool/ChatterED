@@ -354,10 +354,6 @@ export type AppCommand =
   | 'fit.page'
   | 'page.next'
   | 'page.prev'
-  | 'vault.open'
-  | 'vault.rescan'
-  | 'topics.edit'
-  | 'search.files'
   | 'settings.open'
   | 'notes.regenerate'
   | 'chat.reset'
@@ -1012,15 +1008,6 @@ export interface VaultFileView {
   indexError: string | null;
 }
 
-/** A folder in the per-topic tree. Directories carry children; files carry `file`. */
-export interface VaultTreeNode {
-  name: string;
-  relPath: string;
-  dir: boolean;
-  children: VaultTreeNode[];
-  file: VaultFileView | null;
-}
-
 export interface IndexStatus {
   /** Indexable files known to the vault. */
   total: number;
@@ -1040,35 +1027,6 @@ export interface VaultView {
   totalFiles: number;
   lastScanAt: string | null;
   index: IndexStatus;
-}
-
-export interface TopicCandidateView {
-  relPath: string;
-  name: string;
-  fileCount: number;
-  promoted: boolean;
-}
-
-export interface FinderHitView {
-  fileId: string;
-  name: string;
-  relPath: string;
-  topicName: string | null;
-  kind: VaultFileKind;
-  /** Indices into `relPath` that matched, for highlighting. */
-  positions: number[];
-}
-
-export interface SearchHitView {
-  fileId: string;
-  name: string;
-  relPath: string;
-  topicName: string | null;
-  kind: VaultFileKind;
-  /** 1-indexed page for a PDF hit; null for Markdown, text and code. */
-  page: number | null;
-  /** An FTS5 snippet. Matched terms are wrapped in the SNIPPET_MARK delimiters. */
-  snippet: string;
 }
 
 /** What the document pane needs to render one file. */
