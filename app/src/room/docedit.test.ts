@@ -257,6 +257,16 @@ describe('buildQuestionEdit (§5.2)', () => {
     expect(batch.ops[0]).toMatchObject({ anchorBlockId: 'b_mine' });
   });
 
+  /** Quiz me on a line cited to p. 38 (live run, 1 Oct 2026): the question did not repeat the page. */
+  it('cites the pages of the block it was asked on when the question cites none', () => {
+    const d = deps({ outlineNear: () => OUTLINE });
+    const batch = buildQuestionEdit(d, { questionId: 'q_9', objectiveId: null, text: 'In your own words, why?', blockId: 'b_2' })!;
+    expect(batch.ops[0]).toMatchObject({ anchorBlockId: 'b_2', prov: { pages: [4], reason: null } });
+    // Its own citation still wins, and with no block there is only the reason.
+    const cited = buildQuestionEdit(d, { questionId: 'q_8', objectiveId: null, text: 'Why does p. 7 say so?', blockId: 'b_2' })!;
+    expect(cited.ops[0]).toMatchObject({ prov: { pages: [7], reason: null } });
+  });
+
   /** The one check code can make honestly about "a question the doc does not already answer". */
   it('writes nothing when the Q block is already in the document', () => {
     const d = deps({ hasQuestion: () => true });

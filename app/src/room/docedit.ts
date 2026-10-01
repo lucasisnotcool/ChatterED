@@ -506,12 +506,27 @@ export function buildQuestionEdit(
         questionId: input.questionId,
         objectiveId: input.objectiveId,
         text: input.text.trim(),
-        prov: provenanceFor(input.text, 'a question Max asked about this part of the notes', input.pageCount),
+        prov: questionProvenance(deps, input.text, input.blockId, input.pageCount),
       },
     ],
     focusBlockId: anchorBlockId,
     why: 'Max asked a question about this part of the notes.',
   };
+}
+
+/**
+ * The Q block's provenance: the pages Max's question cites, or else **the pages of the block it
+ * was asked on**. Quiz me (`notebooks.md` §4.1) asks about one line, and the question rarely
+ * repeats that line's page ("In your own words, what does REACH(s,h) contain?"), so on its text
+ * alone the block read "added: a question Max asked about this part of the notes" with no page,
+ * under a line cited to p. 38 (live run, 1 Oct 2026). The line's pages are what the question is
+ * about, so they are honest provenance; a question with neither still carries the reason.
+ */
+function questionProvenance(deps: DocEditDeps, text: string, blockId: string | null, pageCount?: number): Provenance {
+  const own = provenanceFor(text, 'a question Max asked about this part of the notes', pageCount);
+  if (own.pages.length > 0 || blockId === null) return own;
+  const pages = deps.docPort.outlineNear({ blockId }, 0).find((e) => e.blockId === blockId)?.pages ?? [];
+  return pages.length > 0 ? { pages: [...pages], reason: null } : own;
 }
 
 // ── 5.3: the closed question, with its answer under it ──────────────────────
