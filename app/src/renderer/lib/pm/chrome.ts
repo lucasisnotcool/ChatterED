@@ -51,6 +51,7 @@ import type { NotebookSourceView } from '../../../shared/notebook.js';
 import {
   BLOCK_KIND_NAME,
   chipLabel,
+  chipSourceNames,
   citationParts,
   fillMark,
   fillsForItems,
@@ -223,6 +224,8 @@ function widget(pos: number, key: string, side: number, build: (view: EditorView
 
 function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
   const out: Decoration[] = [];
+  // Several sources: each named by what tells it from the others (`chipSourceNames`).
+  const names = ctx.sources && ctx.sources.length > 1 ? chipSourceNames(ctx.sources) : null;
   eachBlock(doc, (node, pos, depth) => {
     if (depth > 0) return; // a q_block's children hang off the Q block's own chrome
     const { blockId, pages, reason } = blockAttrs(node);
@@ -265,12 +268,15 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
         // Several sources: the name may shorten, the page may not (`citationParts`).
         if (pages.length > 0 && ctx.sources && ctx.sources.length > 1) {
           chip.replaceChildren();
-          citationParts(ctx.sources, pages).forEach((part, i) => {
-            if (i > 0) chip.append(document.createTextNode(' · '));
-            if (part.source) chip.append(el('span', 'nd-chip-src', part.source));
-            if (part.source && part.where) chip.append(document.createTextNode(' '));
-            if (part.where) chip.append(el('span', 'nd-chip-where', part.where));
-          });
+          // One line per source (a chip citing two files stacks them, notes.css), each its
+          // name then its pages; the spacing is CSS, because a space between flex items is
+          // dropped ("Notesp. 3", live run 1 Oct 2026).
+          for (const part of citationParts(ctx.sources, pages)) {
+            const line = el('span', 'nd-chip-part');
+            if (part.source) line.append(el('span', 'nd-chip-src', names?.get(part.source) ?? part.source));
+            if (part.where) line.append(el('span', 'nd-chip-where', part.where));
+            chip.append(line);
+          }
           chip.setAttribute('aria-label', `Open the source (${label})`);
           if (!ctx.reader) chip.title = reason ? `${label} — ${reason}` : label;
         }

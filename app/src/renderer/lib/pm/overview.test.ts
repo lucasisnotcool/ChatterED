@@ -5,6 +5,7 @@ import { contextFingerprint } from '../../../shared/notebook.js';
 import {
   blockQuote,
   chipLabel,
+  chipSourceNames,
   citationParts,
   fillMark,
   fillsForItems,
@@ -146,6 +147,27 @@ describe('citationParts: the chip in parts, so a long name shortens and the page
     const withImage = [...sources, { name: 'Board.jpg', kind: 'image' as const, pageBase: 55, pageCount: 1 }];
     expect(citationParts(withImage, [56])).toEqual([{ source: 'Board', where: '' }]);
     expect(citationParts(sources, [60])).toEqual([{ source: null, where: 'removed source' }]);
+  });
+});
+
+describe('chipSourceNames: the part of a name that tells it from the others (§3.4)', () => {
+  it('drops the words two sources share at the start, so the chip says which file (live run, 1 Oct 2026)', () => {
+    const names = chipSourceNames([
+      { name: 'Lecture-complex v4.0.pdf' },
+      { name: 'Lecture-complex Notes.pdf' },
+      { name: 'Tutorial 1 W3.md' },
+    ]);
+    expect(names.get('Lecture-complex v4.0')).toBe('v4.0');
+    expect(names.get('Lecture-complex Notes')).toBe('Notes');
+    expect(names.get('Tutorial 1 W3')).toBe('Tutorial 1 W3');
+  });
+
+  it('never splits a word, never leaves nothing, and shortens what is left', () => {
+    const names = chipSourceNames([{ name: 'Notes.md' }, { name: 'Notes 2.md' }, { name: 'Lecturer.pdf' }, { name: 'Lectures on a very long topic indeed.pdf' }]);
+    expect(names.get('Notes')).toBe('Notes');
+    expect(names.get('Notes 2')).toBe('Notes 2');
+    expect(names.get('Lecturer')).toBe('Lecturer');
+    expect([...names.values()].every((n) => n.length <= 16)).toBe(true);
   });
 });
 

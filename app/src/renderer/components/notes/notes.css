@@ -1420,6 +1420,17 @@
 }
 
 /* A chip in a notebook of several sources: the name shortens, the page never does. */
-.nd-chip:has(.nd-chip-src) { display: inline-flex; align-items: baseline; max-width: calc(var(--nd-gutter) - 22px); }
-.nd-chip-src { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nd-chip-where { flex: none; white-space: nowrap; }
+/* Several sources: the name gives way long before the page does (it shrinks a hundred times
+   faster), so the page stays readable at any gutter, and only a page list too long for the chip
+   on its own is cut, with an ellipsis. */
+.nd-chip:has(.nd-chip-part) {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: calc(var(--nd-gutter) - 22px);
+}
+/* A chip that cites two sources stacks them, one per line, rather than cutting both. */
+.nd-chip:has(.nd-chip-part + .nd-chip-part) { border-radius: 9px; }
+.nd-chip-part { display: inline-flex; align-items: baseline; gap: 0.3em; max-width: 100%; min-width: 0; }
+.nd-chip-src { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nd-chip-where { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

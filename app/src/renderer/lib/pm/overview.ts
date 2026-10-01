@@ -23,7 +23,7 @@ import {
   type ProgressFill,
   type ProgressView,
 } from '../../../shared/doc/types.js';
-import { citationLabel, isNotebookId, type NotebookSourceView, type NotebookView } from '../../../shared/notebook.js';
+import { citationLabel, isNotebookId, shortSourceName, type NotebookSourceView, type NotebookView } from '../../../shared/notebook.js';
 import { taughtObjectives } from '../progressview.js';
 
 /** C6: the title heading's reason. */
@@ -121,6 +121,41 @@ export function citationParts(sources: readonly CiteSource[], pages: readonly nu
     if (at < 0) return { source: group, where: '' };
     return { source: group.slice(0, at), where: group.slice(at + 1) };
   });
+}
+
+/** A separator a name may be cut after: the end of a word. */
+const NAME_BREAK = /[\s_\-.]/;
+
+/**
+ * **The chip's name for each source: the part that tells it from the others** (`notebooks.md`
+ * §3.4: the chip reads `Notes p.3`). `citationLabel` shortens each name on its own, so
+ * "Lecture-complex v4.0" and "Lecture-complex Notes" both came out of a 110 px chip as
+ * "Lect… p. 3" (live run, 1 Oct 2026): a citation that cannot say which file it means. So the
+ * words a name shares at its start with another source's name are dropped ("v4.0", "Notes"),
+ * cut only at a word break, and never down to nothing; then it is shortened to fit.
+ *
+ * Keyed by `shortSourceName(name, 24)`, the name as `citationParts` gives it. Pure.
+ */
+export function chipSourceNames(sources: readonly Pick<NotebookSourceView, 'name'>[], max = 16): Map<string, string> {
+  const bare = sources.map((s) => shortSourceName(s.name, 1000));
+  const out = new Map<string, string>();
+  sources.forEach((source, i) => {
+    const mine = bare[i]!;
+    let cut = 0;
+    bare.forEach((other, j) => {
+      if (j === i) return;
+      let n = 0;
+      while (n < mine.length && n < other.length && mine[n]!.toLowerCase() === other[n]!.toLowerCase()) n += 1;
+      // Back to the last word break inside the shared run, so a word is never split.
+      let at = -1;
+      for (let k = 0; k < n; k += 1) if (NAME_BREAK.test(mine[k]!)) at = k;
+      const rest = mine.slice(at + 1).trim();
+      if (at >= 0 && rest.length >= 2 && at + 1 > cut) cut = at + 1;
+    });
+    const name = mine.slice(cut).trim() || mine;
+    out.set(shortSourceName(source.name, 24), name.length <= max ? name : `${name.slice(0, max - 1).trimEnd()}…`);
+  });
+  return out;
 }
 
 // ── the objectives' fills (C5) ──────────────────────────────────────────────────────────────
