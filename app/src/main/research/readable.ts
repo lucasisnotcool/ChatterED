@@ -11,7 +11,7 @@
  *   readable/progress.json                 objective trees and states, quiz outcomes, the old ledger
  *   readable/usage.csv                     the cost ledger, via `cost/export.ts` `toCsv`
  *   readable/events.jsonl                  the room event log, one event per line
- *   readable/files.json                    which file id is which file name
+ *   readable/files.json                    which file id is which file name, and which notebook is which
  *   readable/settings.json                 settings, secrets already removed
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -141,7 +141,40 @@ export function writeReadable(db: SqlDatabase, outDir: string): ReadableReport {
     topicId: f.topic_id ?? null,
     sha256: f.sha256 ?? null,
   }));
-  writeJson(join(dir, 'files.json'), { files, topics: r.all('topics', 'sort_order'), vaults: r.all('vaults') });
+  /**
+   * Notebooks (`docs/research/notebooks.md`, migration 024): which notebook is which name, and
+   * which of its sources is which file, so a notes doc or a room keyed on `nb_…` reads back to
+   * what the learner called it. Treated exactly as file names are: kept, after the same scrub
+   * (home folder and username) every text value of the copy got. A source's `files` row is in
+   * `files` above, under the managed vault (`vault_notebooks`); the copies themselves are never
+   * exported (the export is an allowlist).
+   */
+  const notebooks = r.all('notebooks', 'created_at').map((n) => ({
+    id: n.id,
+    name: n.name,
+    createdAt: n.created_at ?? null,
+    updatedAt: n.updated_at ?? null,
+    openedAt: n.opened_at ?? null,
+    legacyFileId: n.legacy_file_id ?? null,
+  }));
+  const notebookSources = r.all('notebook_sources', 'notebook_id, ord').map((s) => ({
+    fileId: s.file_id,
+    notebookId: s.notebook_id,
+    name: s.display_name,
+    pageBase: s.page_base ?? null,
+    pageCount: s.page_count ?? null,
+    enabled: s.enabled === 1,
+    status: s.status ?? null,
+    error: s.error ?? null,
+    addedAt: s.added_at ?? null,
+  }));
+  writeJson(join(dir, 'files.json'), {
+    files,
+    topics: r.all('topics', 'sort_order'),
+    vaults: r.all('vaults'),
+    notebooks,
+    notebookSources,
+  });
 
   // ── Transcripts ──
   const participants = new Map(r.all('participants').map((p) => [p.id as string, p]));

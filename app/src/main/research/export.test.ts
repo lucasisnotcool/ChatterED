@@ -81,6 +81,26 @@ function seed(): SqlDatabase {
   });
   db.prepare(`UPDATE materials SET file_path = @p`).run({ p: `${HOME}/Documents/CS3249/Lecture 4.pdf` });
 
+  // A notebook (migration 024): its name and its source's name are treated like file names —
+  // kept, after the same scrub — and the managed vault's root is under the home folder.
+  db.prepare(
+    `INSERT INTO vaults (id, root_path, display_name, created_at) VALUES ('vault_notebooks', @p, 'Notebooks', @t)`,
+  ).run({ p: `${HOME}/Library/Application Support/ChatterED/notebooks`, t: T });
+  db.prepare(
+    `INSERT INTO files (id, vault_id, rel_path, name, ext, kind, size, mtime_ms)
+     VALUES ('f_nb', 'vault_notebooks', 'nb_1/f_nb-jdoe week 4.pdf', 'jdoe week 4.pdf', 'pdf', 'pdf', 1000, 1)`,
+  ).run();
+  db.prepare(`INSERT INTO file_text (body, name, file_id, page) VALUES (@b, 'jdoe week 4.pdf', 'f_nb', 1)`).run({
+    b: 'SLIDE TEXT OF THE LECTURER in a notebook source',
+  });
+  db.prepare(
+    `INSERT INTO notebooks (id, name, created_at, updated_at) VALUES ('nb_1', 'JDoe revision', @t, @t)`,
+  ).run({ t: T });
+  db.prepare(
+    `INSERT INTO notebook_sources (file_id, notebook_id, display_name, page_base, page_count, status, added_at)
+     VALUES ('f_nb', 'nb_1', 'jdoe week 4.pdf', 0, 12, 'ready', @t)`,
+  ).run({ t: T });
+
   // A notes document, with the learner's own span.
   const doc = {
     type: 'doc',
@@ -143,6 +163,9 @@ function fixtureDirs(): { logDir: string; userDataDir: string; workDir: string }
   writeFileSync(join(userDataDir, 'anthropic-api-key'), KEY);
   writeFileSync(join(userDataDir, 'notes-pages', 'sha1', 'p-1.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
   writeFileSync(join(userDataDir, 'Lecture 4.pdf'), '%PDF-1.7 lecturer content');
+  // A notebook source's copy (the managed vault): never exported either.
+  mkdirSync(join(userDataDir, 'notebooks', 'nb_1'), { recursive: true });
+  writeFileSync(join(userDataDir, 'notebooks', 'nb_1', 'f_nb-week 4.pdf'), '%PDF-1.7 lecturer content');
   writeFileSync(join(userDataDir, 'app.db'), 'the live database is not copied from disk');
   // The one allowlisted file.
   writeFileSync(join(userDataDir, 'ui-text-scale.json'), '1.25');
@@ -219,8 +242,14 @@ describe('anonymiseDatabase', () => {
     });
     expect(db.prepare(`SELECT k FROM future_kv`).get()).toEqual({ k: '~/Documents/a.pdf' });
     expect(db.prepare(`SELECT root_path FROM vaults`).get()).toEqual({ root_path: '~/Documents/CS3249' });
+    expect(db.prepare(`SELECT root_path FROM vaults WHERE id = 'vault_notebooks'`).get()).toEqual({
+      root_path: '~/Library/Application Support/ChatterED/notebooks',
+    });
+    // Notebook and source names are kept, scrubbed like file names.
+    expect(db.prepare(`SELECT name FROM notebooks`).get()).toEqual({ name: '<user> revision' });
+    expect(db.prepare(`SELECT display_name FROM notebook_sources`).get()).toEqual({ display_name: '<user> week 4.pdf' });
     // File names are kept.
-    expect(db.prepare(`SELECT name FROM files`).get()).toEqual({ name: 'Lecture 4.pdf' });
+    expect(db.prepare(`SELECT name FROM files WHERE id = 'f1'`).get()).toEqual({ name: 'Lecture 4.pdf' });
     expect(db.prepare(`SELECT key FROM settings ORDER BY key`).all().map((r) => (r as { key: string }).key)).toEqual([
       'claude_cli_detection',
       'llm_backend',
@@ -302,6 +331,16 @@ describe('stageResearchExport', () => {
     const settings = JSON.parse(readFileSync(join(staged.dir, 'readable/settings.json'), 'utf8')) as Record<string, string>;
     expect(Object.keys(settings).sort()).toEqual(['claude_cli_detection', 'llm_backend', 'trial_participant_id']);
     expect(readFileSync(join(staged.dir, 'settings/ui-text-scale.json'), 'utf8')).toBe('1.25');
+
+    // Which notebook is which, and which of its sources is which file (migration 024).
+    const filesJson = JSON.parse(readFileSync(join(staged.dir, 'readable/files.json'), 'utf8')) as {
+      notebooks: { id: string; name: string }[];
+      notebookSources: { fileId: string; notebookId: string; name: string; pageBase: number; enabled: boolean }[];
+    };
+    expect(filesJson.notebooks).toMatchObject([{ id: 'nb_1', name: '<user> revision' }]);
+    expect(filesJson.notebookSources).toMatchObject([
+      { fileId: 'f_nb', notebookId: 'nb_1', name: '<user> week 4.pdf', pageBase: 0, enabled: true },
+    ]);
   });
 
   it('writes a manifest that describes the export and hashes every other file', async () => {
@@ -336,7 +375,7 @@ describe('stageResearchExport', () => {
     await stage(db);
     expect(db.prepare(`SELECT root_path FROM vaults`).get()).toEqual({ root_path: `${HOME}/Documents/CS3249` });
     expect(db.prepare(`SELECT value FROM settings WHERE key = 'openai_api_key'`).get()).toBeDefined();
-    expect(db.prepare(`SELECT count(*) AS n FROM file_text`).get()).toEqual({ n: 1 });
+    expect(db.prepare(`SELECT count(*) AS n FROM file_text`).get()).toEqual({ n: 2 });
   });
 
   it.runIf(existsSync('/usr/bin/ditto'))('zips to a single top-level folder with ditto', async () => {

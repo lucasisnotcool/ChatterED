@@ -306,7 +306,7 @@ What is here
     progress.json          learning objectives, your progress on them, and quiz outcomes.
     usage.csv              one row per AI call: model, tokens, estimated cost, timing.
     events.jsonl           the app's event log, one event per line.
-    files.json             which file ID is which file name in your folder.
+    files.json             which file ID is which file name, and which notebook is which.
     settings.json          your settings (API keys and other secrets removed).
   logs/                  The app's diagnostic logs (sizes, timings and errors; no message text).
   settings/              Small interface preferences (text size).
@@ -318,14 +318,14 @@ How it was anonymised
   - Anything that looks like an API key is replaced with "${KEY_REPLACEMENT}".
   - Settings whose name marks them as secret are removed.
   - The text of your lecture documents is removed (${excluded}), as is the
-    search index of your folder. File names are kept.
+    search index of your sources. File and notebook names are kept.
   - You are identified only by the random participant ID above.
   - What you typed is included exactly as you typed it.
 
 What is not here
 ----------------
-  Your lecture PDFs and other files, the slide images made from them, API keys, and anything
-  from outside ChatterED.
+  Your lecture PDFs and other files (and ChatterED's copies of the ones you added to notebooks),
+  the slide images made from them, API keys, and anything from outside ChatterED.
 
 To have data you have sent deleted, email ${TRIAL_CONTACT_EMAIL} with your participant ID.
 `;
