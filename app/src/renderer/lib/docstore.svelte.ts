@@ -49,6 +49,7 @@ import type {
   DocEditStatus,
   NotesDocView,
   NotesIngestView,
+  OverviewMeta,
   Rect,
   Suggestion,
 } from '../../shared/doc/types.js';
@@ -122,6 +123,13 @@ export class DocStore {
   /** Status `open` only. */
   suggestions = $state<Suggestion[]>([]);
   cursors = $state<AgentCursorView[]>([]);
+  /**
+   * The learning overview's metadata (`notebooks.md` §3, §5.3, §6): the fingerprint it was written
+   * from, the section recommendations, and Ellie's greeting with the three starter questions,
+   * which the chat (N5) reads from here. Null on a doc written before the overview existed (a
+   * legacy notebook's notes, `notebooks.md` §1), and while nothing is open.
+   */
+  overview = $state<OverviewMeta | null>(null);
 
   loading = $state(false);
   error = $state<string | null>(null);
@@ -335,6 +343,7 @@ export class DocStore {
     this.edits = [];
     this.suggestions = [];
     this.cursors = [];
+    this.overview = null;
     this.error = null;
     this.rasterising = null;
     this.learnerTouched = false;
@@ -351,6 +360,8 @@ export class DocStore {
     this.ingest = { ...view.ingest };
     this.edits = view.edits.map((edit) => ({ ...edit }));
     this.suggestions = view.suggestions.map((s) => ({ ...s }));
+    // A main process from before the overview (a dev build mid-reload) sends no field at all.
+    this.overview = view.overview ? structuredClone(view.overview) : null;
     this.#docJson = view.doc;
     this.epoch++;
   }
