@@ -504,9 +504,17 @@ export function applyBatch(
         nodes.push(...nodesFor(op.blocks));
         if (nodes.length === 0) return;
         // After the question paragraph — the answer reads under the question it answers, not at
-        // the bottom of whatever else has accumulated in the block.
-        const first = target.node.firstChild;
-        const insertAt = target.pos + 1 + (first ? first.nodeSize : 0);
+        // the bottom of whatever else has accumulated in the block — **and after the learner's
+        // own answer under it**. Since answers are written in place (2026-10-01) the paragraphs
+        // right under the question are often theirs (`reason: 'your answer'`), and Max's release
+        // went in above them, so the block read question, answer key, then what the learner
+        // wrote (live run, 1 Oct 2026). Their attempt comes first; the resolution follows it.
+        let insertAt = target.pos + 1;
+        for (let i = 0; i < target.node.childCount; i += 1) {
+          const child = target.node.child(i);
+          if (i > 0 && !String(child.attrs.reason ?? '').startsWith('your answer')) break;
+          insertAt += child.nodeSize;
+        }
         tr.insert(insertAt, Fragment.fromArray(nodes));
         touched.push(...idsOf(nodes));
         return;

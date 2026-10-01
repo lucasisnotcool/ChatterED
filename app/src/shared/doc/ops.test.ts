@@ -23,7 +23,9 @@ import {
   removeEdit,
   type ApplyResult,
 } from './ops.js';
+import { Fragment, Slice } from 'prosemirror-model';
 import {
+  authorMark,
   blockAttrs,
   blockPos,
   diagramSpec,
@@ -156,6 +158,38 @@ describe('rule 1 — the ops that only add', () => {
     expect(q.childCount).toBe(2);
     expect(q.child(0).textContent).toBe('Why does it converge?');
     expect(q.child(1).textContent).toBe('Because the update is a contraction.');
+    doc.check();
+  });
+
+  /** Live run, 1 Oct 2026: Max's release went in above the answer the learner wrote in place. */
+  it('resolve_q writes the resolution after the learner\'s own answer under the question', () => {
+    const asked = run(
+      [{ op: 'insert_q', anchorBlockId: 'b_2', questionId: 'q_1', objectiveId: null, text: 'Why?', prov: { pages: [5], reason: null } }],
+      { author: 'max', cause: 'q_block' },
+    );
+    // The learner's in-place answer, as the Q block's "Answer here" writes it.
+    const q0 = asked.doc.child(4);
+    const answer = notesSchema.nodes.paragraph!.create(
+      { blockId: 'b_ans', pages: [5], reason: 'your answer', objectiveIds: [] },
+      notesSchema.text('Because it contracts.', [authorMark('user', null, 1)]),
+    );
+    let pos = 0;
+    asked.doc.forEach((node, offset, index) => {
+      if (index === 4) pos = offset + node.nodeSize - 1;
+    });
+    const answered = asked.doc.replace(pos, pos, new Slice(Fragment.from(answer), 0, 0));
+    expect(answered.child(4).childCount).toBe(q0.childCount + 1);
+    const { doc } = run(
+      [{ op: 'resolve_q', questionId: 'q_1', resolution: 'released', blocks: [P('The update is a contraction in the max norm.')] }],
+      { author: 'max', cause: 'q_resolved', editId: 'e_2' },
+      answered,
+    );
+    const q = doc.child(4);
+    expect([0, 1, 2].map((i) => q.child(i).textContent)).toEqual([
+      'Why?',
+      'Because it contracts.',
+      'The update is a contraction in the max norm.',
+    ]);
     doc.check();
   });
 
