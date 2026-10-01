@@ -59,7 +59,7 @@ import {
   OVERVIEW_JSON_SCHEMA,
   OVERVIEW_MAX_OBJECTIVES,
   OVERVIEW_MIN_OBJECTIVES,
-  OVERVIEW_MIN_SECTIONS,
+  overviewSectionRange,
   OVERVIEW_SYSTEM,
   condenseMessage,
   condenseWords,
@@ -660,7 +660,7 @@ function logLanding(
     sections: extra.sections,
     objectives: extra.objectives,
     recommendations: extra.recommendations,
-    thin_sections: extra.sections < OVERVIEW_MIN_SECTIONS,
+    thin_sections: extra.sections < overviewSectionRange(landing.budget).min,
     thin_objectives: extra.objectives < OVERVIEW_MIN_OBJECTIVES,
     repaired: {
       pages_dropped: repairs.pagesDropped,

@@ -4,7 +4,7 @@
  *
  * The notebooks redesign takes the first full pass at the notes away from the AI. What it writes
  * instead is one short overview per notebook, across the ticked sources: a title, a two-to-three
- * sentence lede, four to six objectives ("By the end you can"), and five to eight sections, each a
+ * sentence lede, four to six objectives ("By the end you can"), and three to eight sections (scaled to the budget), each a
  * heading, a one-line takeaway, two or three cited key ideas and an empty slot for the learner's
  * own note. The rest of the notes grow from what the learner chooses to work on (§0).
  *
@@ -131,6 +131,22 @@ export const OVERVIEW_MIN_OBJECTIVES = 4;
 export const OVERVIEW_MAX_OBJECTIVES = 6;
 export const OVERVIEW_MIN_SECTIONS = 5;
 export const OVERVIEW_MAX_SECTIONS = 8;
+/** The brief asks for a recommendation on two to four sections; four is kept in code. */
+export const OVERVIEW_MAX_RECOMMENDATIONS = 4;
+
+/**
+ * **How many sections the budget can carry.** The per-part limits (`overviewPartLimits`) fix a
+ * section at about 6 + 12 words of heading and takeaway plus two ideas of 10 to 28 words, so a
+ * section costs 38 to 74 words. Add the lede (35) and four objective titles (40) and 200 words
+ * holds three sections, not six (a 10-page notes PDF came out at 255 words against 200 with five
+ * to eight asked for). So: a budget up to 250 gets three to five; up to 400 gets four to seven;
+ * beyond, the brief's five to eight. The ceiling of 8 never moves.
+ */
+export function overviewSectionRange(budget: number): { min: number; max: number } {
+  if (budget <= 250) return { min: 3, max: 5 };
+  if (budget <= 400) return { min: 4, max: 7 };
+  return { min: OVERVIEW_MIN_SECTIONS, max: OVERVIEW_MAX_SECTIONS };
+}
 export const OVERVIEW_MIN_IDEAS = 2;
 export const OVERVIEW_MAX_IDEAS = 3;
 export const OVERVIEW_MAX_CRITERIA = 4;
@@ -187,7 +203,7 @@ export const OVERVIEW_SYSTEM = [
   '  is admissible", not "Heuristics"), a one-sentence `statement`, two to four checkable',
   '  `criteria`, up to three `quizSeeds` (questions a tester would actually ask, never yes/no,',
   '  never containing their own answer) and the `pages` that teach it.',
-  '- `sections`: five to eight, IN THE SOURCES\' ORDER, ONE PER IDEA, NOT ONE PER SLIDE. Each has a',
+  '- `sections`: as many as the user message says (never more than eight), IN THE SOURCES\' ORDER, ONE PER IDEA, NOT ONE PER SLIDE. Each has a',
   '  `heading` (the lecturer\'s own words where the deck gives them), its `pages`, a one-line',
   '  `takeaway` (the sentence to leave with), and two or three `ideas`, each one short sentence or',
   '  two with its own `pages`. Optionally one `recommendation`: a block the student could add',
@@ -275,10 +291,11 @@ export function overviewMessage(input: OverviewPromptInput): string {
     ].join('\n'),
   );
   const limits = overviewPartLimits(input.budget);
+  const range = overviewSectionRange(input.budget);
   parts.push(
     `Write the overview now. The sources say about ${input.sourceWords} words;` +
       ` **everything you write is at most ${input.budget} words**, and fewer when they teach less.` +
-      ` Four to six objectives, five to eight sections in the sources' order, two or three cited` +
+      ` Four to six objectives, ${range.min} to ${range.max} sections in the sources' order, two or three cited` +
       ` ideas each, exactly three starter questions. Blanks (____) only where a slide itself leaves one.` +
       `\n\nWORD LIMITS, each a ceiling: lede ${limits.lede} words; each objective title ${limits.objective};` +
       ` each heading ${limits.heading}; each takeaway ${limits.takeaway}; each key idea ${limits.idea}.` +
@@ -669,6 +686,30 @@ export function validateOverview(
   }
   const next = root.next ? sectionOf(root.next, true) : null;
   if (root.next && !next) repairs.sectionsDropped += 1;
+
+  // The brief's "two to four": a model that recommends on five or six is cut to four in code,
+  // keeping a spread of kinds first (no kind twice while another is on offer), then section order.
+  const withRec = sections.flatMap((section, i) => (section.recommendation ? [i] : []));
+  if (withRec.length > OVERVIEW_MAX_RECOMMENDATIONS) {
+    const kept = new Set<number>();
+    const kinds = new Set<GeneratedBlockKind>();
+    for (const i of withRec) {
+      if (kept.size === OVERVIEW_MAX_RECOMMENDATIONS) break;
+      const kind = sections[i]!.recommendation!.kind;
+      if (kinds.has(kind)) continue;
+      kinds.add(kind);
+      kept.add(i);
+    }
+    for (const i of withRec) {
+      if (kept.size === OVERVIEW_MAX_RECOMMENDATIONS) break;
+      kept.add(i);
+    }
+    for (const i of withRec) {
+      if (kept.has(i)) continue;
+      sections[i] = { ...sections[i]!, recommendation: null };
+      repairs.recommendationsDropped += 1;
+    }
+  }
 
   // ── objectives ──
   const objectives: OverviewObjective[] = [];

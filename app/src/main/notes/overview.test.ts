@@ -18,6 +18,7 @@ import {
   overviewMessage,
   overviewMeta,
   overviewPartLimits,
+  overviewSectionRange,
   overviewWordBudget,
   overviewWords,
   overviewDrafts,
@@ -116,6 +117,28 @@ describe('the word budget (§3.2)', () => {
     expect(message).toContain('at most 350 words');
     expect(message).toContain('about 8800 words');
     expect(OVERVIEW_SYSTEM).toContain('LENGTH IS A CEILING, NOT A TARGET');
+  });
+});
+
+describe('the section range scales with the budget', () => {
+  it('is three to five at the floor, four to seven in the middle, five to eight past 400', () => {
+    expect(overviewSectionRange(200)).toEqual({ min: 3, max: 5 });
+    expect(overviewSectionRange(250)).toEqual({ min: 3, max: 5 });
+    expect(overviewSectionRange(350)).toEqual({ min: 4, max: 7 });
+    expect(overviewSectionRange(400)).toEqual({ min: 4, max: 7 });
+    expect(overviewSectionRange(600)).toEqual({ min: 5, max: 8 });
+  });
+
+  it('is stated in the user message for the budget it was given', () => {
+    const base = { notebookName: 'N', sourceNames: ['a.pdf'], deckText: '[p. 1]\nhi', condensed: false, sourceWords: 500, imagePages: [] };
+    expect(overviewMessage({ ...base, budget: 200 })).toContain('3 to 5 sections');
+    expect(overviewMessage({ ...base, budget: 350 })).toContain('4 to 7 sections');
+    expect(overviewMessage({ ...base, budget: 600 })).toContain('5 to 8 sections');
+  });
+
+  it('the validator accepts a three-section overview for a small source', () => {
+    const { overview } = validateOverview(rawOverview({ sections: [section('A', [1]), section('B', [2]), section('C', [3])] }), ctx());
+    expect(overview!.sections).toHaveLength(3);
   });
 });
 
@@ -231,6 +254,32 @@ describe('validateOverview: repair before reject', () => {
     );
     expect(overview!.sections.map((s) => s.recommendation?.kind ?? null)).toEqual([null, null, 'infographic']);
     expect(repairs.recommendationsDropped).toBe(2);
+  });
+
+  it('keeps at most four recommendations, varied in kind first, then in section order', () => {
+    const rec = (kind: string) => ({ recommendation: { kind, title: `A ${kind}`, description: 'Holds it.' } });
+    const kinds = ['table', 'table', 'quiz', 'diagram', 'table', 'flashcards'];
+    const sections = kinds.map((k, i) => section(`S${i}`, [i + 1], rec(k)));
+    const { overview, repairs } = validateOverview(rawOverview({ sections }), ctx());
+    // S0 table, S2 quiz, S3 diagram, S5 flashcards: the repeated tables (S1, S4) go.
+    expect(overview!.sections.map((s) => s.recommendation?.kind ?? null)).toEqual(['table', null, 'quiz', 'diagram', null, 'flashcards']);
+    expect(repairs.recommendationsDropped).toBe(2);
+  });
+
+  it('fills the four from repeats, in section order, when there are fewer than four kinds', () => {
+    const rec = (kind: string) => ({ recommendation: { kind, title: `A ${kind}`, description: 'Holds it.' } });
+    const kinds = ['table', 'table', 'quiz', 'table', 'quiz'];
+    const sections = kinds.map((k, i) => section(`S${i}`, [i + 1], rec(k)));
+    const { overview } = validateOverview(rawOverview({ sections }), ctx());
+    expect(overview!.sections.map((s) => s.recommendation?.kind ?? null)).toEqual(['table', 'table', 'quiz', 'table', null]);
+  });
+
+  it('leaves four or fewer recommendations alone', () => {
+    const rec = { recommendation: { kind: 'table', title: 'T', description: 'D.' } };
+    const sections = [1, 2, 3, 4].map((i) => section(`S${i}`, [i], rec));
+    const { overview, repairs } = validateOverview(rawOverview({ sections }), ctx());
+    expect(overview!.sections.filter((s) => s.recommendation)).toHaveLength(4);
+    expect(repairs.recommendationsDropped).toBe(0);
   });
 
   it('makes exactly three starter questions: cuts the extra, fills the missing from quiz seeds', () => {
