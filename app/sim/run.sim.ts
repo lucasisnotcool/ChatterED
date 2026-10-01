@@ -324,8 +324,9 @@ describe('simulation', () => {
   if (process.env.SIM_MODE === 'cost') {
     it('totals what every run under SIM_OUT cost', () => {
       const batches: Record<string, Cost & { sittings: number }> = {};
-      for (const stamp of readdirSync(OUT_ROOT)) {
-        for (const sitting of readdirSync(join(OUT_ROOT, stamp))) {
+      const dirs = (path: string) => readdirSync(path, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+      for (const stamp of dirs(OUT_ROOT)) {
+        for (const sitting of dirs(join(OUT_ROOT, stamp))) {
           const cost = sittingCost(join(OUT_ROOT, stamp, sitting));
           if (!cost) continue;
           const prev = batches[stamp] ?? { ...ZERO, sittings: 0 };
