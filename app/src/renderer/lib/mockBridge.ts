@@ -11,10 +11,11 @@ import { createMockTrial } from './mockTrial.js';
 import {
   contextFingerprint,
   type AddSourcesResult,
+  type NotebookChange,
   type NotebookSourceView,
   type NotebookSummary,
-  type NotebookView,
 } from '../../shared/notebook.js';
+import { MockNotebooks } from './mockNotebooks.js';
 /**
  * **The real classifier, imported and not copied** (issue #47, `attempt-first.md` §2.2).
  *
@@ -49,14 +50,16 @@ import { parseMention } from './chatview.js';
 import {
   MOCK_CONTENT_SHA,
   MOCK_DOC_ID,
-  MOCK_FILE_ID,
-  MOCK_FILE_NAME,
+  MOCK_NOTEBOOK_ID,
   MOCK_PAGE_COUNT,
   MOCK_TITLE,
   MOCK_WINDOWS,
   mockBlockOnPage,
   mockLastBlockId,
   mockNotesJson,
+  mockOverviewMeta,
+  mockPagesOf,
+  mockSources,
   // Renamed on the way in: this file already has a `mockObjectives`, and it is the *other* kind
   // — the learning-objective tree the retired panel drew (#38).
   mockObjectives as fixtureObjectives,
@@ -81,7 +84,6 @@ import type {
   TimerView,
   TurnParticipantView,
   TurnTraceView,
-  VaultFileView,
   VaultView,
   WhisperThreadView,
   WhisperTurnView,
@@ -102,41 +104,18 @@ import {
 } from '../../shared/cost.js';
 
 /**
- * The dev vault: one topic, one file, and the file is the demo deck the brief names (§7).
- *
- * See `openDocument` below for why this is no longer empty. The display name carries
- * `(dev fixture)` wherever it is shown, so nothing on screen claims a file was read from disk.
+ * The vault channels are still on `ChatterEdApi` until the lead removes them (#58); nothing in the
+ * renderer calls them any more. They answer with an empty vault, which is the truth: notebooks
+ * replaced it (`docs/research/notebooks.md` §1).
  */
-const MOCK_VAULT_FILE: VaultFileView = {
-  id: MOCK_FILE_ID,
-  name: `${MOCK_FILE_NAME} (dev fixture)`,
-  relPath: `CS3249/${MOCK_FILE_NAME}`,
-  kind: 'pdf',
-  size: 2_525_927,
-  mtimeMs: 1_758_240_000_000,
-  topicId: 'cs3249',
-  pageCount: MOCK_PAGE_COUNT,
-  indexed: true,
-  indexError: null,
-};
-
 const MOCK_VAULT: VaultView = {
-  rootPath: '~/vault (dev fixture)',
-  displayName: 'Dev fixture vault',
-  topics: [
-    {
-      id: 'cs3249',
-      name: 'CS3249',
-      relPath: 'CS3249',
-      colour: '#2f6f8f',
-      moduleCode: 'CS3249',
-      fileCount: 1,
-    },
-  ],
+  rootPath: null,
+  displayName: '',
+  topics: [],
   otherCount: 0,
-  totalFiles: 1,
-  lastScanAt: new Date(1_758_240_000_000).toISOString(),
-  index: { total: 1, done: 1, failed: 0, running: false, current: null },
+  totalFiles: 0,
+  lastScanAt: null,
+  index: { total: 0, done: 0, failed: 0, running: false, current: null },
 };
 
 function emptyFlow(fileId: string, refused?: SegmentRefusal['reason']): SegmentDocumentView {
@@ -570,7 +549,8 @@ export function createMockBridge(): ChatterEdApi {
    */
   const notes = {
     docId: MOCK_DOC_ID,
-    fileId: MOCK_FILE_ID,
+    // The notebook's id: the subject of every notes / chat / progress channel (C2).
+    fileId: MOCK_NOTEBOOK_ID,
     contentSha: MOCK_CONTENT_SHA,
     title: MOCK_TITLE,
     pageCount: MOCK_PAGE_COUNT,
@@ -581,7 +561,10 @@ export function createMockBridge(): ChatterEdApi {
     suggestions: [] as Suggestion[],
     windowsDone: 1,
     windowsTotal: 1 + MOCK_WINDOWS.length,
-    status: 'none' as 'none' | 'pending' | 'streaming' | 'ready' | 'failed',
+    // The overview is already written when the notebook opens: one call, no windows (§3.5).
+    status: 'ready' as 'none' | 'pending' | 'streaming' | 'ready' | 'failed',
+    /** Written from the sources ticked at the start; the out-of-date banner compares against it. */
+    overview: mockOverviewMeta(contextFingerprint(mockSources())),
   };
   /** Objectives, and their fills. The one number the whole progress surface is drawn from. */
   let objectives: ProgressObjectiveView[] = fixtureObjectives();
@@ -609,33 +592,30 @@ export function createMockBridge(): ChatterEdApi {
   /** What Insert ▸ Table draws, from pages the fixture document actually carries. */
   const MOCK_TABLE: TableDraft = {
     kind: 'table',
-    caption: 'What each prototype can and cannot tell you',
-    columns: ['Prototype', 'Good for', 'Cannot show'],
+    caption: 'The three relaxed-problem heuristics',
+    columns: ['Heuristic', 'How it is computed', 'Admissible?'],
     rows: [
-      { cells: ['Paper prototype', 'Flow and layout, **cheaply**', 'Feel and response time'], pages: [34] },
-      { cells: ['Sample dialogue', 'Wording and turn order', 'How people repair a misunderstanding'], pages: [38] },
-      { cells: ['Wizard of Oz', 'The whole dialogue, with a person behind it', 'What the system can really parse'], pages: [38, 39] },
+      { cells: ['h_max', 'The cost of the **hardest** subgoal', 'Yes, but weak'], pages: [17] },
+      { cells: ['h_add', 'The **sum** of the subgoal costs', 'Not always'], pages: [17] },
+      { cells: ['h_FF', 'Actions in a greedily built relaxed plan', 'No'], pages: [18] },
     ],
-    prov: { pages: [22, 34, 38], reason: null },
+    prov: { pages: [17, 18], reason: null },
   };
 
-  /** What Insert ▸ Diagram draws: p. 38's pipeline, as a flow. */
+  /** What Insert ▸ Diagram draws: the refinement on p. 28 and p. 32, as a hierarchy. */
   const MOCK_DIAGRAM: DiagramDraft = {
     kind: 'diagram',
-    layout: 'flow',
-    title: 'From a script to a working dialogue',
+    layout: 'hierarchy',
+    title: 'Refining Go(Home, SIN)',
     nodes: [
-      { id: 'n1', label: 'Scripts', pages: [38] },
-      { id: 'n2', label: 'Dialogue maps', pages: [38] },
-      { id: 'n3', label: 'Wizard of Oz', pages: [38] },
-      { id: 'n4', label: 'Coded prototype', pages: [39] },
+      { id: 'n1', label: 'Go(Home, SIN)', parent: null, pages: [28] },
+      { id: 'n2', label: 'Taxi(Home, SIN)', parent: 'n1', pages: [28] },
+      { id: 'n3', label: 'Call-Taxi', parent: 'n2', pages: [32] },
+      { id: 'n4', label: 'Ride', parent: 'n2', pages: [32] },
+      { id: 'n5', label: 'Pay-Taxi', parent: 'n2', pages: [32] },
     ],
-    edges: [
-      { from: 'n1', to: 'n2' },
-      { from: 'n2', to: 'n3' },
-      { from: 'n3', to: 'n4', label: 'once the repairs are known' },
-    ],
-    prov: { pages: [38], reason: null },
+    edges: [],
+    prov: { pages: [28, 32], reason: null },
   };
 
   function notesIngestView() {
@@ -662,8 +642,7 @@ export function createMockBridge(): ChatterEdApi {
       frozen: notes.frozen,
       edits: notes.edits.filter((e) => e.status === 'applied'),
       suggestions: notes.suggestions.filter((s) => s.status === 'open'),
-      // Day 0 (NOTEBOOK-CONTRACT.md): the shell track (N5) fills a mock overview.
-      overview: null,
+      overview: structuredClone(notes.overview),
     };
   }
 
@@ -780,81 +759,166 @@ export function createMockBridge(): ChatterEdApi {
   // ── the words ────────────────────────────────────────────────────────────────────────────
   // Fixed text, grounded in pages the fixture document actually carries.
 
-  const ELLIE_ANSWERS = [
-    'The short version is that a prototype exists **to be wrong cheaply**. So fidelity is an ' +
-      'economic decision, not a craft one — p. 22 puts it as buying exactly as much realism as ' +
-      'the question you are asking needs.\n\n' +
-      'For a conversational interface that lands differently from a GUI: there are no screens to ' +
-      'wireframe, so the pipeline is scripts → dialogue maps → Wizard of Oz (p. 38). What you are ' +
-      'prototyping is the dialogue itself.',
-    'Because the thing that breaks is almost never the wording — it is the **repair**. p. 39 ' +
-      'lists the parts of a designed dialogue, and repair is the one it calls make-or-break: ' +
-      'every other part can be mediocre and the system still works, but a conversation that ' +
-      'cannot recover from a misunderstanding is over.\n\n' +
-      'That is also why paper runs out so fast here. p. 34: paper hides feel and response time, ' +
-      'and a repair turn is mostly timing.',
+  /**
+   * Ellie's doc-chat answers, matched to the three starter questions by a word in them and
+   * cycled otherwise. Full length in the chat; the doc gets one line (§4.2, `DOC_LINES`).
+   */
+  const ELLIE_ANSWERS: { match: RegExp; body: string; line: string; page: number; pages: number[] }[] = [
+    {
+      match: /delete/i,
+      body:
+        'Because a fact, once true, stays true. Without delete effects no action can undo another, so the ' +
+        'relaxed problem only ever gains facts and you can reach every achievable fact in a few layers, ' +
+        'in polynomial time (p. 16).\n\n' +
+        'The cost of solving that easier problem is the estimate. On p. 17 the 8-puzzle shows it: ' +
+        '**h_max = 1** and **h_add = 3** on the same state. The slide leaves h_FF as a question for you.',
+      line: 'Without delete effects facts only accumulate, so the relaxed problem is solved in polynomial time.',
+      page: 16,
+      pages: [16, 17],
+    },
+    {
+      match: /decompos|HTN/i,
+      body:
+        'Decomposition splits the **goal**: solve each subgoal on its own and combine the costs, Max or Sum ' +
+        '(p. 23). An HTN splits the **actions**: a high-level action like Go(Home, SIN) is refined into ' +
+        'smaller ones until they are primitive (p. 28).\n\n' +
+        'So decomposition is a way to estimate, and an HTN is a way to plan. The search an HTN saves is on ' +
+        'p. 33: r refinements per level instead of b actions per step.',
+      line: 'Decomposition splits the goal to estimate cost; an HTN refines high-level actions to build the plan.',
+      page: 23,
+      pages: [23, 28],
+    },
+    {
+      match: /LLM/i,
+      body:
+        'Where the planner is weakest: **getting the model in**. Writing PDDL by hand is the bottleneck, so ' +
+        'an LLM drafts it from text and a validator sends errors back until it parses (p. 45–46).\n\n' +
+        'The other three roles on p. 47–50 are decomposing tasks, writing heuristics as code, and writing ' +
+        'generalised planners. In each one the symbolic planner still checks the plan, which is the guarantee ' +
+        'the LLM cannot give.',
+      line: 'The LLM drafts and decomposes; the symbolic planner still checks the plan, which keeps the guarantees.',
+      page: 45,
+      pages: [45, 46, 47, 50],
+    },
   ];
+
+  /** Ellie's answer when the question matches none of the above. Honest about being the mock. */
+  const ELLIE_FALLBACK = {
+    body:
+      'Good question. In the dev mock I only have scripted answers for the three starters, so here is ' +
+      'where to look instead: the overview\'s sections cite their slides, and **Explain** on a line gives ' +
+      'you the full version of that line.',
+    line: 'Each section of the overview cites its slides; Explain on a line gives its full version.',
+    page: 3,
+    pages: [3],
+  };
 
   const ELLIE_MENTION =
-    'Just me, then. The bit I would hold on to is p. 20: every design goal should name the ' +
-      'cheapest prototype that could falsify it. If you cannot name one, what you have written ' +
-      'down is a hope rather than a goal.';
+    'Just me, then. The bit I would hold on to is p. 17: a heuristic from a relaxed problem is only as ' +
+    'good as the relaxation, and ignoring delete effects is the one that keeps it cheap.';
 
   const MAX_MENTION =
-    'Directly, then. Name one design goal from your own project and the prototype that could ' +
-      'falsify it. If the prototype you name is "build it and see", the goal is not testable yet.';
+    'Directly, then. Here is one to try: on p. 23, when does Sum(Cost) overestimate? Give me the kind ' +
+    'of interaction, in your own words.';
 
-  const MAX_QUESTIONS = [
-    'One question, then. You are building a coach that nags people to go for a walk. Which ' +
-      'prototype would you build **first** to find out whether people would actually answer it — ' +
-      'and name one thing that prototype could not tell you.',
-    'Smaller one, since that landed. p. 34 splits what a paper session reveals from what it ' +
-      'hides. Name one thing on the *hidden* side, in your own words.',
-  ];
+  /**
+   * Max's question for **Quiz me** (C8: he asks only when asked). The blocks-world one is p. 24's
+   * own, for the Max/Sum line; any other line gets the question in its general form.
+   */
+  const MAX_QUESTION_P24 =
+    'Blocks A, B, C and D all start on the table. The goal is A on B and C on D. What do Max(Cost) and ' +
+    'Sum(Cost) give, and which one matches the true cost? (p. 24)';
+  const MAX_QUESTION_GENERIC = (quote: string, pages: number[]) =>
+    `In your own words: what does this line claim, and why does it hold? “${quote.slice(0, 90)}${quote.length > 90 ? '…' : ''}”` +
+    (pages.length > 0 ? ` (p. ${pages.join(', ')})` : '');
 
   const MAX_FEEDBACK_PARTIAL =
-    'Partly there. You have the cheap-first half, and p. 22: "a prototype exists to be wrong ' +
-      'cheaply" is where the deck settles it.\n\n' +
-      'What is missing is the second half of my question. p. 34 lists four things a paper ' +
-      'session hides, and one of them is exactly what a nagging coach lives or dies on. Which ' +
-      'one, and why does it matter here?';
+    'Partly there. You have one of the two numbers right. Count the moves for each stack separately ' +
+    '(p. 24): each needs exactly one move, and the two stacks never touch.\n\n' +
+    'So what are Max and Sum, and which matches the true cost?';
 
   const MAX_FEEDBACK_COMPLETE =
-    'Well done. Timing is the one — p. 34: "feel — efficiency, response time" — and you said why ' +
-      'it bites here rather than just naming it. A reminder that arrives at the wrong moment is ' +
-      'not a wording problem and paper will never show it to you.\n\n' +
-      'That is this objective done.';
+    'Both numbers are right, and so is your reason.\n\n' +
+    'The words that make Sum safe here are "don\'t get in each other\'s way": the subgoals are ' +
+    'independent. Suppose C started on top of A. Clearing A then becomes part of both plans, which is a ' +
+    'positive interaction, and Sum would count that work twice. That is the overestimate case on p. 23.';
 
   const MAX_CLARIFY =
-    'Fair question, and I will answer it without answering mine. "Prototype" here means anything ' +
-      'you could put in front of a person — a script read aloud counts. So: which one would you ' +
-      'build first, and what would it fail to tell you?';
+    'Fair question, and I will answer it without answering mine. Max(Cost) is the cost of the single ' +
+    'hardest subgoal; Sum(Cost) adds the subgoals up. So: what are the two numbers here?';
 
   const MAX_RELEASED =
-    'Here it is, and it changes nothing on your progress — that only moves on words you wrote ' +
-      'yourself.\n\n' +
-      'Build the **paper prototype or the sample dialogue** first: p. 22, be wrong cheaply. What ' +
-      'it cannot tell you is on p. 34 — look, feel, response time, and whether subtle feedback is ' +
-      'noticed. For a nagging coach the fatal one is **timing**: the message that arrives at the ' +
-      'wrong moment reads as nagging however well it is worded.\n\n' +
-      'Next one on this will be smaller.';
+    'Here it is, and it changes nothing on your progress: that only moves on words you wrote yourself.\n\n' +
+    'Each stack takes one move, so **Max(Cost) = 1** and **Sum(Cost) = 2**, and the true cost is 2: ' +
+    'Sum is exact because the two stacks are independent (p. 23–24).\n\n' +
+    'Next one on this will be smaller.';
 
   const MAX_NUDGE =
-    'Take your time. A wrong attempt is worth more to me than a right silence — and if you would ' +
-      'rather have the answer, say so and it is yours.';
+    'Take your time. A wrong attempt is worth more to me than a right silence, and if you would rather ' +
+    'have the answer, say so and it is yours.';
 
   /** §4.3: unsure, partial, at most 60 words, and with one plausible student mistake in it. */
   const ELLIE_CUE =
-    'I will go first, and I am genuinely not sure. I think you build the paper version — it is ' +
-      'the cheapest thing that could be wrong. And I *think* paper would also show you whether ' +
-      'the reminder lands at a good moment, because the timings are written on the script. Knock ' +
-      'that second bit down if it is wrong.';
+    'I will go first, and I am genuinely not sure. Each stack is one move, so I think Max is 1. And Sum ' +
+    'is 2, but I *think* Max matches the true cost, because the planner can do both stacks at once. ' +
+    'Knock that last bit down if it is wrong.';
 
-  /** §4.3: Max neither confirms nor corrects — he names the part worth improving. At most 50. */
+  /** §4.3: Max neither confirms nor corrects; he names the part worth improving. At most 50. */
   const MAX_PROMPT =
-    'Ellie has the cheap-first half right. Look at her second sentence, about the script carrying ' +
-      'the timing. p. 34 has a column for what a paper session hides. Improve on it, or tell me ' +
-      'whether she is right.';
+    'Ellie has both numbers right. Look at her last sentence, about doing both stacks at once. A classical ' +
+    'plan is a sequence of actions (p. 3). Improve on it, or tell me whether she is right.';
+
+  /**
+   * **Explain** and **Example** on a block (§4.1, C7): Ellie's full answer for the chat, and the
+   * one line (≤ 25 words, `BLOCK_LINE_MAX_WORDS`) that goes under the block. Keyed by a word in the
+   * block; a block with no script gets an honest mock line rather than an invented explanation.
+   */
+  const BLOCK_ACTIONS: { match: RegExp; explain: string; explainLine: string; example: string; exampleLine: string }[] = [
+    {
+      match: /h_\{FF\}|greedily built relaxed plan/,
+      explain:
+        '**Three steps** (Hoffmann & Nebel, 2001). First, drop every delete effect, so facts only ever get ' +
+        'added. Then build a relaxed plan greedily: pick actions that achieve the goals you still need. ' +
+        'h_FF(s) is the number of actions in that plan.\n\n' +
+        '**Why it is inadmissible.** The greedy pick is not optimal, even for the relaxed problem, so it can ' +
+        'count more actions than needed. h_max cannot overshoot, because it only takes the single hardest ' +
+        'subgoal.\n\n' +
+        '**Why people still use it.** In greedy best-first search you want a guide that is well informed, and ' +
+        'you do not need a proof of optimality (p. 18).',
+      explainLine:
+        'Why it is inadmissible: a greedy relaxed plan can be longer than the optimal relaxed plan, so h_FF can overestimate.',
+      example:
+        'p. 17\'s 8-puzzle state is the slide\'s own example: h_max = 1, h_add = 3, and h_FF is left as the ' +
+        'question. Build the relaxed plan greedily and count its actions: that count is h_FF for the state.',
+      exampleLine: 'On p. 17\'s 8-puzzle state, h_max = 1 and h_add = 3; h_FF counts the greedy relaxed plan\'s actions.',
+    },
+    {
+      match: /PDDL splits/,
+      explain:
+        'The **domain** is what stays the same across problems: the predicates (At, In, Cargo…) and the ' +
+        'action schemas Load, Unload and Fly with their preconditions and effects (p. 4).\n\n' +
+        'The **problem** is one instance: which planes, cargos and airports exist, where they start, and the ' +
+        'goal (p. 5). One domain file, many problem files.',
+      explainLine: 'The domain is reusable (predicates, action schemas); a problem is one instance (objects, start, goal).',
+      example:
+        'Air cargo (p. 4–5): the domain defines Load(c, p, a), Unload and Fly. A problem then says C1 is at SFO, ' +
+        'P1 at JFK, and the goal is C1 at JFK.',
+      exampleLine: 'Air cargo: Load, Unload and Fly live in the domain; "C1 at SFO, goal C1 at JFK" is one problem.',
+    },
+    {
+      match: /REACH/,
+      explain:
+        'REACH+ is an **optimistic** description: everything the HLA might reach. REACH− is a **pessimistic** ' +
+        'one: what it is sure to reach. The true set sits between them (p. 41).\n\n' +
+        'So if even the optimistic set misses the goal, no refinement can work, and if the pessimistic set ' +
+        'already hits it, some refinement must. In between, you refine and look again (p. 42).',
+      explainLine: 'REACH+ is optimistic and REACH− pessimistic; missing with REACH+ proves failure, hitting with REACH− proves success.',
+      example:
+        'Go(Home, SIN): if REACH− of the taxi refinement already includes At(SIN), the plan works without ' +
+        'expanding it. If no refinement\'s REACH+ includes it, stop searching that branch (p. 41–42).',
+      exampleLine: 'If REACH− of Taxi(Home, SIN) already contains At(SIN), the high-level plan is proven without expanding it.',
+    },
+  ];
 
   // ── the doc chat (§4.1) ──────────────────────────────────────────────────────────────────
 
@@ -876,22 +940,31 @@ export function createMockBridge(): ChatterEdApi {
     }, MOCK_SILENCE_MS);
   }
 
-  /** Max asks one question: to the chat, and into the document as a Q block (§5.2). */
-  function askDocQuestion(threadId: string, objectiveId: string, n = 0): void {
+  /**
+   * Max asks one question — **only when asked** (C8: Quiz me, or a lesson's question): to the
+   * block's thread, and into the document as a Q block under the block (§5.2, C7).
+   */
+  function askDocQuestion(input: {
+    threadId: string;
+    objectiveId: string;
+    anchorBlockId: string;
+    body: string;
+    question: string;
+    pages: number[];
+  }): void {
     questionSeq += 1;
     const questionId = `q_mock_${questionSeq}`;
-    const body = MAX_QUESTIONS[Math.min(n, MAX_QUESTIONS.length - 1)]!;
-    think(max, 9000, body, { anchorId: threadId, decidedBy: 'rule:max_followup' }, () => {
-      const t = thread(threadId);
+    think(max, 9000, input.body, { anchorId: input.threadId, decidedBy: 'rule:try_here' }, () => {
+      const t = thread(input.threadId);
       const quiz: DocQuizView = {
         quizMessageId: `m${seq + 1}`,
-        elementId: objectiveId,
+        elementId: input.objectiveId,
         attempts: 0,
         feedbackGiven: false,
         answerShown: false,
         verdict: null,
         questionId,
-        objectiveId,
+        objectiveId: input.objectiveId,
         cueGiven: false,
         resolution: null,
         open: true,
@@ -901,22 +974,25 @@ export function createMockBridge(): ChatterEdApi {
       emitEdit({
         author: 'max',
         cause: 'q_block',
-        focusBlockId: mockBlockOnPage(34),
-        why: 'The document did not already ask this, so the question goes in where it is about.',
+        focusBlockId: input.anchorBlockId,
+        why: 'You pressed Quiz me on this line, so the question goes in under it.',
         ops: [
           {
             op: 'insert_q',
-            anchorBlockId: mockBlockOnPage(34),
+            anchorBlockId: input.anchorBlockId,
             questionId,
-            objectiveId,
-            text: 'Which prototype would you build first to find out whether people answer a nagging coach — and what could it not tell you?',
-            prov: { pages: [22, 34], reason: 'asked in the conversation' },
+            objectiveId: input.objectiveId,
+            text: input.question,
+            prov: { pages: input.pages, reason: input.pages.length > 0 ? null : 'asked on Quiz me' },
           },
         ],
       });
-      armCue(threadId);
+      armCue(input.threadId);
     });
   }
+
+  /** The block a question hangs off, by question id, so its resolution lands under it. */
+  const questionAnchor = new Map<string, string>();
 
   /** Resolve the open question in the document (§5.3). The Q block stays; the answer goes under it. */
   function resolveDocQuestion(threadId: string, resolution: QResolution): void {
@@ -927,10 +1003,11 @@ export function createMockBridge(): ChatterEdApi {
     quiz.resolution = resolution;
     pushThread(t);
     if (cueHandle) clearTimeout(cueHandle);
+    const anchor = questionAnchor.get(quiz.questionId) ?? mockBlockOnPage(23);
     emitEdit({
       author: 'max',
       cause: 'q_resolved',
-      focusBlockId: mockBlockOnPage(34),
+      focusBlockId: anchor,
       why: `The question is resolved (${resolution}), so the correct version goes under it.`,
       ops: [
         {
@@ -940,11 +1017,8 @@ export function createMockBridge(): ChatterEdApi {
           blocks: [
             {
               kind: 'paragraph',
-              text:
-                'Build the cheapest thing that could be wrong — a sample dialogue or a paper ' +
-                'prototype. What it cannot show you is **feel and response time** (p. 34), and ' +
-                'for a reminder that is the property the whole design rests on.',
-              prov: { pages: [22, 34], reason: null },
+              text: 'Max(Cost) = 1 and Sum(Cost) = 2; Sum is exact here because the two stacks are independent.',
+              prov: { pages: [23, 24], reason: null },
             },
           ],
         },
@@ -984,7 +1058,7 @@ export function createMockBridge(): ChatterEdApi {
         quiz.verdict = second ? 'complete' : 'partial';
         pushThread(t);
         // The learner's own words, and only those, move the bar.
-        fillObjective(quiz.objectiveId ?? 'obj-fidelity', second ? 1 : 0.5, text);
+        fillObjective(quiz.objectiveId ?? 'obj-abstraction', second ? 1 : 0.5, text);
         if (second) resolveDocQuestion(threadId, 'you_got_this');
       },
     );
@@ -1045,39 +1119,102 @@ export function createMockBridge(): ChatterEdApi {
     }
 
     docTurns += 1;
-    const n = docTurns;
-    const answer = ELLIE_ANSWERS[Math.min(n - 1, ELLIE_ANSWERS.length - 1)]!;
-    emitCursor('ellie', mockBlockOnPage(22), 'thinking');
-    think(ellie, 4500, answer, { anchorId: threadId, decidedBy: 'rule:ellie_answers' }, () => {
-      // §5.1: what she answered was not in the document, so she writes it in where it belongs.
-      later(900, () =>
-        emitEdit({
-          author: 'ellie',
-          cause: 'answer_missing',
-          focusBlockId: mockBlockOnPage(22),
-          why: 'Asked in the chat and the notes did not say it, so it goes in at the segment it belongs to.',
-          ops: [
-            {
-              op: 'insert_after',
-              anchorBlockId: mockBlockOnPage(22),
-              blocks: [
-                {
-                  kind: 'paragraph',
-                  text:
-                    'Name the question before you choose the fidelity: the prototype you want is ' +
-                    'the cheapest one that could **falsify** the design goal you wrote down.',
-                  prov: { pages: [20, 22], reason: 'asked in the conversation' },
-                },
-              ],
-            },
-          ],
-        }),
-      );
-      // Ellie answered in full, so the rule gives Max the floor for one question — and only
-      // while nothing is already open (§4.2: one open Max question at a time per file).
-      const open = [...chatThreadMap.values()].some((x) => x.quiz?.open);
-      if (!open && n === 1) later(3200, () => askDocQuestion(threadId, 'obj-fidelity', 0));
+    const script =
+      ELLIE_ANSWERS.find((a) => a.match.test(text)) ?? (docTurns <= 1 ? ELLIE_FALLBACK : ELLIE_ANSWERS[(docTurns - 2) % ELLIE_ANSWERS.length]!);
+    const anchor = mockBlockOnPage(script.page);
+    emitCursor('ellie', anchor, 'thinking');
+    think(
+      ellie,
+      4500,
+      `${script.body}\n\n*Added one line under the block it is about. Remove it if you don't want it.*`,
+      { anchorId: threadId, decidedBy: 'rule:ellie_answers' },
+      () => {
+        // §4.2: the full answer stays in the chat; the doc gets one line (≤ 25 words) under the
+        // block the question was about, with Keep / Remove. Max does **not** follow up (C8).
+        later(900, () => emitBlockLine(anchor, script.line, script.pages));
+      },
+    );
+  }
+
+  /** The one-line doc edit of §4.2, under `anchorBlockId`, Ellie's, `cause: 'block_action'`. */
+  function emitBlockLine(anchorBlockId: string, line: string, pages: number[]): string | null {
+    return emitEdit({
+      author: 'ellie',
+      cause: 'block_action',
+      focusBlockId: anchorBlockId,
+      why: 'One line worth keeping, under the block it is about. The full answer is in the chat.',
+      ops: [
+        {
+          op: 'insert_after',
+          anchorBlockId,
+          blocks: [{ kind: 'paragraph', text: line, prov: { pages, reason: pages.length > 0 ? null : 'added in the conversation' } }],
+        },
+      ],
     });
+  }
+
+  /**
+   * **Explain · Example · Quiz me** on one block (§4.1, C7). Explain and Example: the learner's
+   * press is posted in the block's own span thread, Ellie answers in full there, and one line goes
+   * under the block. Quiz me: Max's question in the thread and a Q block under the block. One
+   * action at a time per notebook (`busy`), one open question at a time (`question_open`).
+   */
+  let blockActionBusy = false;
+  function blockAction(input: { blockId: string; kind: 'explain' | 'example' | 'quiz'; quote: string }): {
+    accepted: boolean;
+    threadId: string | null;
+    reason: 'busy' | 'question_open' | null;
+  } {
+    if (blockActionBusy) return { accepted: false, threadId: null, reason: 'busy' };
+    const open = [...chatThreadMap.values()].some((x) => x.quiz?.open);
+    if (input.kind === 'quiz' && open) return { accepted: false, threadId: null, reason: 'question_open' };
+    const pages = mockPagesOf(input.blockId);
+    const quote = input.quote.trim();
+    const existing = [...chatThreadMap.values()].find((t) => t.kind === 'span' && t.blockId === input.blockId);
+    const threadId = existing?.threadId ?? `${SPAN_THREAD_PREFIX}${hex12()}`;
+    const t = thread(threadId, { kind: 'span', blockId: input.blockId, quote: quote.slice(0, 120) });
+    const verb = input.kind === 'explain' ? 'Explain' : input.kind === 'example' ? 'Example' : 'Quiz me';
+    post(verb, null, { anchorId: threadId });
+    pushThread(t);
+    blockActionBusy = true;
+
+    if (input.kind === 'quiz') {
+      const p24 = /Max is admissible but weak|Max\(Cost\)/.test(quote);
+      const objective = objectives.find((o) => o.blockIds.includes(input.blockId)) ?? objectives[0]!;
+      questionAnchor.set(`q_mock_${questionSeq + 1}`, input.blockId);
+      askDocQuestion({
+        threadId,
+        objectiveId: p24 ? 'obj-abstraction' : objective.objectiveId,
+        anchorBlockId: input.blockId,
+        body: `I put a question under that line. Answer it there or here, whichever you prefer.\n\n${p24 ? MAX_QUESTION_P24 : MAX_QUESTION_GENERIC(quote, pages)}`,
+        question: p24 ? MAX_QUESTION_P24 : MAX_QUESTION_GENERIC(quote, pages),
+        pages: p24 ? [23, 24] : pages,
+      });
+      later(9200, () => (blockActionBusy = false));
+      return { accepted: true, threadId, reason: null };
+    }
+
+    const script = BLOCK_ACTIONS.find((a) => a.match.test(quote));
+    const where = pages.length > 0 ? `p. ${pages.join(', ')}` : 'the slides';
+    const body = script
+      ? input.kind === 'explain' ? script.explain : script.example
+      : `(Dev mock.) Ellie's ${input.kind === 'explain' ? 'full explanation' : 'worked example'} of this line would be here, drawn from ${where}. ` +
+        'The scripted ones are on the PDDL, h_FF and REACH lines.';
+    const line = script
+      ? input.kind === 'explain' ? script.explainLine : script.exampleLine
+      : `(Dev mock) One line worth keeping from ${where} would go here.`;
+    emitCursor('ellie', input.blockId, 'thinking');
+    think(
+      ellie,
+      4500,
+      `${body}\n\n*Added one line under this line in the notes. Remove it if you don't want it.*`,
+      { anchorId: threadId, decidedBy: 'rule:block_action' },
+      () => {
+        blockActionBusy = false;
+        later(700, () => emitBlockLine(input.blockId, line, pages));
+      },
+    );
+    return { accepted: true, threadId, reason: null };
   }
 
   // ── private threads (§4.1) ───────────────────────────────────────────────────────────────
@@ -1092,17 +1229,94 @@ export function createMockBridge(): ChatterEdApi {
 
   const PRIVATE_REPLY: Record<AgentAuthor, string> = {
     ellie:
-      'Not embarrassing, and nothing here reaches Max. Two sentences: **formative** studies are ' +
-      'the ones you run while the design is still moving — small, quick, and the audience is ' +
-      'your own team (p. 18). **Summative** ones are the ones you run when there is something to ' +
-      'judge, and the audience is everybody else.\n\n' +
+      'Not embarrassing, and nothing here reaches Max. Two sentences: **admissible** means the ' +
+      'heuristic never overestimates the true cost, which is what A* needs to stay optimal. ' +
+      '**Inadmissible** ones like h_FF can overestimate, and greedy search uses them anyway because ' +
+      'they guide better (p. 17–18).\n\n' +
       'If it helps, put it in the document and it stops being a thing you have to hold in your head.',
     max:
       "Between us, and Ellie can't see this. You are allowed to ask me what the question is " +
       'asking — that is not the same as asking for the answer, and I will always answer it.\n\n' +
-      'What I want from that question is one item from the *hidden* column of p. 34 and a reason ' +
-      'it matters for a reminder specifically. One sentence is enough.',
+      'What I want from that question is the two numbers and which one matches the true cost. ' +
+      'Count each stack on its own first (p. 24). One sentence is enough.',
   };
+
+  // ── the notebooks (#58) ───────────────────────────────────────────────────────────────────
+
+  const notebookListeners = new Set<(change: NotebookChange) => void>();
+  /**
+   * Three notebooks, as the mockup's home shows them. The first is the fixture: its sources are
+   * the overview's, and the notes, the chats and the progress bar are all its. The other two are
+   * cards to look at and open; they say plainly that the mock has no overview for them.
+   */
+  const notebooks = (() => {
+    const model = new MockNotebooks({
+      push: (change) => notebookListeners.forEach((l) => l(structuredClone(change))),
+      later,
+      confirm: (text) => (typeof window !== 'undefined' && typeof window.confirm === 'function' ? window.confirm(text) : true),
+      fillOf: (id) => (id === notes.fileId ? progressView().fraction : null),
+    });
+    model.seed({
+      id: MOCK_NOTEBOOK_ID,
+      name: 'CS4246 · Week 2 Planning',
+      sources: mockSources(),
+      subtitle: MOCK_TITLE,
+      fill: 0,
+      updatedAt: iso(-40 * 60_000),
+    });
+    model.seed({
+      id: 'nb_cs3249lect4',
+      name: 'CS3249 · Lecture 4',
+      sources: [
+        { fileId: 'f_mock_cs3249', name: 'CS3249+Lecture+4.pdf', kind: 'pdf', pageBase: 0, pageCount: 66, enabled: true, status: 'ready', error: null, addedAt: iso(-3 * 864e5) },
+      ],
+      subtitle: 'Prototyping Conversational User Interfaces',
+      fill: 0.4,
+      updatedAt: iso(-3 * 864e5),
+    });
+    model.seed({
+      id: 'nb_cs4246week1',
+      name: 'CS4246 · Week 1',
+      sources: [
+        { fileId: 'f_mock_wk1_slides', name: 'Week 1 slides.pdf', kind: 'pdf', pageBase: 0, pageCount: 48, enabled: true, status: 'ready', error: null, addedAt: iso(-9 * 864e5) },
+        { fileId: 'f_mock_wk1_notes', name: 'Week 1 notes.md', kind: 'text', pageBase: 48, pageCount: 2, enabled: true, status: 'ready', error: null, addedAt: iso(-9 * 864e5) },
+      ],
+      subtitle: 'Classical planning, PDDL',
+      fill: 0.75,
+      updatedAt: iso(-9 * 864e5),
+    });
+    /** A source by its file id, in any notebook: what `openDocument` is asked for. */
+    const sourceById = (fileId: string): NotebookSourceView | null => {
+      for (const summary of model.list()) {
+        const hit = model.view(summary.id)?.sources.find((src) => src.fileId === fileId);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return { model, sourceById };
+  })();
+
+  const OTHER_NOTEBOOK_LINE =
+    'The dev mock has a written overview and a conversation for “CS4246 · Week 2 Planning” only.';
+
+  /** Any notebook but the fixture: a doc that failed to write, with the reason in a sentence. */
+  function otherNotebookView(fileId: string): NotesDocView {
+    const view = notebooks.model.view(fileId);
+    return {
+      docId: `doc_mock_${fileId}`,
+      fileId,
+      contentSha: `nb:${fileId}`,
+      title: view?.name ?? 'Untitled notebook',
+      pageCount: view?.pageCount ?? 0,
+      version: 1,
+      doc: null,
+      ingest: { status: 'failed', windowsDone: 0, windowsTotal: 1, withImages: false, error: OTHER_NOTEBOOK_LINE },
+      frozen: false,
+      edits: [],
+      suggestions: [],
+      overview: null,
+    };
+  }
 
   return {
     trial: createMockTrial(),
@@ -1261,49 +1475,41 @@ export function createMockBridge(): ChatterEdApi {
     },
     async closeWhisper({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
 
-    /**
-     * The vault needs a filesystem, which `vite dev` does not have — so it holds **exactly one
-     * file, labelled as the fixture it is** (#48).
-     *
-     * This is a deliberate change from "empty, never fabricated". The argument for the empty
-     * vault was that invented file names would be a screenshot of a lie; the argument for this
-     * one row is that the collab doc's whole surface hangs off an open document, and a shell
-     * that cannot be opened at all cannot be built or reviewed without Electron. The row names
-     * the real deck, says `(dev fixture)` in its own display name, and opens the fixture notes —
-     * which are themselves written from that deck, page by page. Nothing here claims to have
-     * read a file it has not.
-     */
+    // The vault is gone (#58, notebooks.md §1); its channels answer empty until ipc.ts drops them.
     getVault: async () => MOCK_VAULT,
     chooseVault: async () => MOCK_VAULT,
     rescanVault: async () => MOCK_VAULT,
-    topicCandidates: async () => [{ relPath: 'CS3249', name: 'CS3249', fileCount: 1, promoted: true }],
+    topicCandidates: async () => [],
     promoteTopics: async () => MOCK_VAULT,
-    vaultTree: async () => [
-      { name: MOCK_FILE_NAME, relPath: `CS3249/${MOCK_FILE_NAME}`, dir: false, children: [], file: MOCK_VAULT_FILE },
-    ],
+    vaultTree: async () => [],
     findFiles: async () => [],
     searchVault: async () => [],
-    openDocument: async ({ fileId }) =>
-      fileId === MOCK_FILE_ID
+    /**
+     * A **source's** bytes (C2: `openDocument` still takes a source's file id). The mock has no
+     * disk and no pdf.js bytes, so a source opens as its name and page count and the slide
+     * previews degrade to their captions; everything else is real.
+     */
+    openDocument: async ({ fileId }) => {
+      const source = notebooks.sourceById(fileId);
+      return source
         ? {
             fileId,
-            name: `${MOCK_FILE_NAME} (dev fixture)`,
-            relPath: `CS3249/${MOCK_FILE_NAME}`,
-            absPath: `~/vault/CS3249/${MOCK_FILE_NAME}`,
-            kind: 'pdf' as const,
-            ext: '.pdf',
-            size: 2_525_927,
-            pageCount: MOCK_PAGE_COUNT,
-            text: null,
-            // No pdf.js bytes outside Electron: the carousel, the modal and the inline figures
-            // degrade to their captions, and everything else is real.
+            name: `${source.name} (dev fixture)`,
+            relPath: source.name,
+            absPath: `~/Library/Application Support/ChatterED/notebooks/${source.name}`,
+            kind: source.kind === 'pdf' ? ('pdf' as const) : source.kind === 'image' ? ('image' as const) : ('text' as const),
+            ext: `.${source.name.split('.').pop() ?? ''}`,
+            size: 0,
+            pageCount: source.pageCount,
+            text: source.kind === 'text' ? '(The dev mock has no file contents.)' : null,
             bytes: null,
             error: null,
           }
         : {
             fileId, name: '', relPath: '', absPath: '', kind: 'other' as const, ext: '', size: 0,
-            pageCount: null, text: null, bytes: null, error: 'No vault outside Electron.',
-          },
+            pageCount: null, text: null, bytes: null, error: 'No such source in the dev mock.',
+          };
+    },
     revealFile: async () => undefined,
     sessionSeed: async ({ fileId }) => ({
       fileId, fileName: '', relPath: '', moduleCode: null, pageFrom: null, pageTo: null,
@@ -1337,7 +1543,8 @@ export function createMockBridge(): ChatterEdApi {
     // ── collab-doc (#48) ────────────────────────────────────────────────────────────────────
 
     /** Null until the deck has been ingested once — and it never starts one, as the channel says. */
-    async notesGet() {
+    async notesGet({ fileId }) {
+      if (fileId !== notes.fileId) return null;
       return notes.status === 'none' ? null : notesView();
     },
     /**
@@ -1346,7 +1553,10 @@ export function createMockBridge(): ChatterEdApi {
      * previous window's last block, which is the rule (contract E9) that makes it safe for the
      * learner to be typing while window 3 lands.
      */
-    async notesIngest({ force }) {
+    async notesIngest({ fileId, force }) {
+      // The dev mock has one written overview. Any other notebook says so rather than showing
+      // the fixture's overview under the wrong sources.
+      if (fileId !== notes.fileId) return otherNotebookView(fileId);
       if (notes.status === 'ready' && force !== true) return notesView();
       notes.status = 'streaming';
       notes.windowsDone = 1;
@@ -1452,8 +1662,8 @@ export function createMockBridge(): ChatterEdApi {
           focusBlockId: blockId,
           why:
             kind === 'table'
-              ? 'You asked for a table: the section compares three prototypes on what they show.'
-              : 'You asked for a diagram: p. 38 is a pipeline, so it is drawn as a flow.',
+              ? 'You asked for a table: the section compares three heuristics on how they are built.'
+              : 'You asked for a diagram: p. 28 and p. 32 are a refinement, so it is drawn as a hierarchy.',
           ops: [{ op: 'insert_after', anchorBlockId: blockId, blocks: [structuredClone(kind === 'table' ? MOCK_TABLE : MOCK_DIAGRAM)] }],
         });
         if (!editId) {
@@ -1480,13 +1690,13 @@ export function createMockBridge(): ChatterEdApi {
       think(
         max,
         9000,
-        'Partly there, and this is your own sentence so it counts. p. 34: paper hides feel and ' +
-          'response time — your line says "paper shows you the flow", which is right, but the ' +
-          'word *and timing* in it is the part the deck contradicts. I have suggested the ' +
-          'correction rather than making it; accept or reject it, it is your text.',
+        'Partly there, and this is your own sentence so it counts. p. 17: h_max takes the largest ' +
+          'subgoal cost, which is why it never overestimates. If your line says it is *always* the ' +
+          'best guide, that is the part the deck contradicts: it is admissible but weak. I have ' +
+          'suggested the correction rather than making it; accept or reject it, it is your text.',
         { anchorId: threadId, decidedBy: 'rule:quiz_feedback' },
         () => {
-          fillObjective('obj-paper', 0.5, text);
+          fillObjective('obj-heuristics', 0.5, text);
           const suggestionId = `sug_mock_${hex12()}`;
           const suggestion: Suggestion = {
             suggestionId,
@@ -1495,7 +1705,7 @@ export function createMockBridge(): ChatterEdApi {
             author: 'max',
             blockId,
             status: 'open',
-            note: 'p. 34 lists response time under what paper hides.',
+            note: 'p. 17 calls h_max admissible but weak.',
             threadId,
             createdAt: iso(),
             resolvedAt: null,
@@ -1510,7 +1720,7 @@ export function createMockBridge(): ChatterEdApi {
             suggestion: {
               blockId,
               quote: text.slice(0, 120),
-              replacement: text.slice(0, 120).replace(/and timing/i, 'but not timing'),
+              replacement: text.slice(0, 120).replace(/always/i, 'safely, if weakly,'),
               note: suggestion.note ?? '',
               threadId,
             },
@@ -1568,6 +1778,7 @@ export function createMockBridge(): ChatterEdApi {
     },
 
     async chatThreads({ fileId }) {
+      if (fileId !== notes.fileId) return { roomId: null, fileId, threads: [] };
       return {
         roomId: chatThreadMap.size > 0 ? ROOM : null,
         fileId,
@@ -1575,6 +1786,7 @@ export function createMockBridge(): ChatterEdApi {
       };
     },
     async chatSend({ fileId, threadId, text }) {
+      if (fileId !== notes.fileId) throw new Error(OTHER_NOTEBOOK_LINE);
       const id = threadId ?? DOC_ANCHOR_ID;
       docChatTurn(id, text);
       void fileId;
@@ -1589,9 +1801,9 @@ export function createMockBridge(): ChatterEdApi {
       think(
         ellie,
         4500,
-        'About that line specifically: it is the deck\'s own wording from p. 34, and the column ' +
-          'it sits in is *hidden*, not *revealed*. The useful way to hold it is that paper tests ' +
-          'the **structure** of the conversation and nothing about its **timing**.',
+        'About that line specifically: it is close to the deck\'s own wording, and the slide it ' +
+          'cites is where to check it. The useful way to hold it is as a claim with a reason: ' +
+          'what it says, and which part of the slide makes it true.',
         { anchorId: threadId, decidedBy: 'rule:ellie_answers' },
       );
       return { roomId: ROOM, threadId };
@@ -1635,7 +1847,7 @@ export function createMockBridge(): ChatterEdApi {
       const [agent, held] = entry;
       const turn = held.turns.find((t) => t.id === turnId);
       if (!turn) return { editId: null };
-      const anchor = anchorBlockId ?? mockBlockOnPage(18);
+      const anchor = anchorBlockId ?? mockBlockOnPage(17);
       const editId = emitEdit({
         author: agent,
         cause: 'whisper_insert',
@@ -1649,7 +1861,7 @@ export function createMockBridge(): ChatterEdApi {
               {
                 kind: 'paragraph',
                 text: turn.text.split('\n\n')[0] ?? turn.text,
-                prov: { pages: [18], reason: 'brought over from a private note' },
+                prov: { pages: [17, 18], reason: 'brought over from a private note' },
               },
             ],
           },
@@ -1680,7 +1892,9 @@ export function createMockBridge(): ChatterEdApi {
     },
 
     async progressGet({ fileId }) {
-      void fileId;
+      if (fileId !== notes.fileId) {
+        return { fileId, docId: null, status: 'none' as const, completed: 0, total: 0, fraction: 0, objectives: [] };
+      }
       return progressView();
     },
     /**
@@ -1900,99 +2114,80 @@ export function createMockBridge(): ChatterEdApi {
     onAppCommand() { return () => undefined; },
     onWindowState(listener) { listener({ fullScreen: false }); return () => undefined; },
 
-    // ── Notebooks: day-0 stubs (NOTEBOOK-CONTRACT.md). The shell track (N5) owns these and makes
-    // them a real in-memory model; until then the one mock notebook is the one mock file.
+    // ── Notebooks (#58): the in-memory model in `mockNotebooks.ts` ──────────────────────────
     async notebookList(): Promise<NotebookSummary[]> {
-      return [mockNotebookSummary()];
+      return notebooks.model.list();
     },
-    async notebookGet() {
-      return mockNotebookView();
+    async notebookGet({ notebookId }) {
+      return notebooks.model.view(notebookId);
     },
-    async notebookCreate(): Promise<AddSourcesResult> {
-      return { notebook: mockNotebookView(), added: [], refused: [] };
+    async notebookCreate(input): Promise<AddSourcesResult> {
+      return notebooks.model.create(input);
     },
-    async notebookRename(input) {
-      return { ...mockNotebookView(), name: input.name };
+    async notebookRename({ notebookId, name }) {
+      return notebooks.model.rename(notebookId, name);
     },
-    async notebookDelete() {
-      return { deleted: false };
+    async notebookDelete({ notebookId }) {
+      return { deleted: notebooks.model.delete(notebookId) };
     },
-    async notebookOpen() {
-      return mockNotebookView();
+    async notebookOpen({ notebookId }) {
+      return notebooks.model.open(notebookId);
     },
+    /**
+     * The native picker, played by a hidden `<input type="file">`. The learner's click is still the
+     * user activation that lets it open; a cancel resolves empty, as main's does.
+     */
     async notebookPickFiles() {
-      return { paths: [] };
+      return { paths: await pickInBrowser() };
     },
-    async notebookAddSources(): Promise<AddSourcesResult> {
-      return { notebook: mockNotebookView(), added: [], refused: [] };
+    async notebookAddSources(input): Promise<AddSourcesResult> {
+      return notebooks.model.addSources(input);
     },
-    async notebookSetEnabled() {
-      return mockNotebookView();
+    async notebookSetEnabled(input) {
+      return notebooks.model.setEnabled(input);
     },
-    async notebookRemoveSource() {
-      return { removed: false, notebook: mockNotebookView() };
+    async notebookRemoveSource(input) {
+      return notebooks.model.removeSource(input);
     },
-    onNotebookChanged() {
-      return () => undefined;
+    onNotebookChanged(listener) {
+      notebookListeners.add(listener);
+      return () => notebookListeners.delete(listener);
     },
-    pathForFile() {
-      return '';
+    /** The browser has no paths; the name is the mock's path, and `baseName` reads it back. */
+    pathForFile(file: File) {
+      return file.name;
     },
-    async notesUpdateOverview() {
-      return { started: false, reason: 'no_doc' as const };
+    /** **Update overview** (§2): pending, then ready, written from the sources ticked now. */
+    async notesUpdateOverview({ fileId }) {
+      if (fileId !== notes.fileId) return { started: false, reason: 'no_doc' as const };
+      const view = notebooks.model.view(fileId);
+      if (!view || view.contextFingerprint === '') return { started: false, reason: 'no_sources' as const };
+      if (notes.status === 'pending' || notes.status === 'streaming') return { started: false, reason: 'in_flight' as const };
+      notes.status = 'pending';
+      emitNotesStatus();
+      later(2600, () => {
+        notes.overview = { ...notes.overview, fingerprint: view.contextFingerprint, writtenAt: iso() };
+        notes.status = 'ready';
+        notes.version += 1;
+        emitNotesStatus();
+      });
+      return { started: true, reason: null };
     },
-    async notesSetRecommendation() {
-      return null;
+    async notesSetRecommendation({ fileId, recommendationId, status }) {
+      if (fileId !== notes.fileId) return null;
+      notes.overview = {
+        ...notes.overview,
+        recommendations: notes.overview.recommendations.map((r) => (r.id === recommendationId ? { ...r, status } : r)),
+      };
+      return structuredClone(notes.overview);
     },
-    async notesBlockAction() {
-      return { accepted: false, roomId: null, threadId: null, reason: 'no_doc' as const };
+    async notesBlockAction({ fileId, blockId, kind, quote }) {
+      if (fileId !== notes.fileId || !blockId) return { accepted: false, roomId: null, threadId: null, reason: 'no_doc' as const };
+      const out = blockAction({ blockId, kind, quote });
+      return { accepted: out.accepted, roomId: out.accepted ? ROOM : null, threadId: out.threadId, reason: out.reason };
     },
   };
 }
-
-/** The day-0 mock notebook: one source, the mock deck, at base 0. */
-const MOCK_NOTEBOOK_ID = 'nb_mock00000000';
-
-function mockNotebookView(): NotebookView {
-  const sources: NotebookSourceView[] = [
-    {
-      fileId: MOCK_NOTEBOOK_SOURCE_ID,
-      name: 'CS3249 Lecture 4.pdf',
-      kind: 'pdf',
-      pageBase: 0,
-      pageCount: 66,
-      enabled: true,
-      status: 'ready',
-      error: null,
-      addedAt: '2026-10-01T00:00:00.000Z',
-    },
-  ];
-  return {
-    id: MOCK_NOTEBOOK_ID,
-    name: 'CS3249 · Lecture 4',
-    sources,
-    pageCount: 66,
-    contextFingerprint: contextFingerprint(sources),
-    createdAt: '2026-10-01T00:00:00.000Z',
-    updatedAt: '2026-10-01T00:00:00.000Z',
-  };
-}
-
-function mockNotebookSummary(): NotebookSummary {
-  return {
-    id: MOCK_NOTEBOOK_ID,
-    name: 'CS3249 · Lecture 4',
-    sourceCount: 1,
-    enabledCount: 1,
-    subtitle: null,
-    fill: null,
-    updatedAt: '2026-10-01T00:00:00.000Z',
-    openedAt: null,
-  };
-}
-
-/** Day 0 only: the id the mock vault gives its one file. N5 replaces this wiring. */
-const MOCK_NOTEBOOK_SOURCE_ID = 'f_mock_source';
 
 // ── The cost fixtures (#42 item E) ──────────────────────────────────────────
 //
@@ -2230,4 +2425,26 @@ function mockAnalytics(query: CostAnalyticsQuery): CostAnalytics {
     knownFiles: MOCK_FILES,
     generatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * The dev stand-in for main's native multi-file picker: a hidden `<input type="file" multiple>`.
+ * Resolves with the chosen files' names (the mock's "paths"), or empty on cancel.
+ */
+function pickInBrowser(): Promise<string[]> {
+  if (typeof document === 'undefined') return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.style.display = 'none';
+    const done = (paths: string[]) => {
+      input.remove();
+      resolve(paths);
+    };
+    input.addEventListener('change', () => done([...(input.files ?? [])].map((f) => f.name)));
+    input.addEventListener('cancel', () => done([]));
+    document.body.appendChild(input);
+    input.click();
+  });
 }
