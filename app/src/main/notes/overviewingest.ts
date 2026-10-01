@@ -165,11 +165,12 @@ function fixtureFor(deps: Pick<OverviewDeps, 'notebooks'>, subject: NotebookSubj
  * overview. Never over the learner's words, and never over the scripted demo's canned overview.
  */
 export function overviewPlaceholderSuperseded(
-  deps: Pick<OverviewDeps, 'notebooks' | 'mode' | 'llm'>,
+  deps: Pick<OverviewDeps, 'notebooks'>,
   record: NotesDocRecord | null,
   subject: NotebookSubject,
+  live: boolean,
 ): boolean {
-  if (!record || !isLive(deps)) return false;
+  if (!record || !live) return false;
   if (record.model !== 'fixture' || record.learnerTouched) return false;
   return fixtureFor(deps, subject) !== 'critique1';
 }
@@ -206,7 +207,7 @@ export async function ensureOverview(
   const subject = deps.notebooks.subject(input.notebookId);
   if (!subject) return existing;
 
-  const superseded = overviewPlaceholderSuperseded(deps, existing, subject);
+  const superseded = overviewPlaceholderSuperseded(deps, existing, subject, isLive(deps));
   if (superseded) log().info('notes.placeholder_superseded', { file_id: input.notebookId, doc_id: existing!.id });
 
   if (!opts.force && !superseded) {

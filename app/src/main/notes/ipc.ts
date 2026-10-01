@@ -126,7 +126,7 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
       const subject = host.notebooks.subject(fileId);
       // The placeholder written without a model reads as "nothing yet" once there is one, so the
       // renderer takes its first-open path and `notes:ingest` writes the real overview.
-      if (subject && overviewPlaceholderSuperseded(overviewDeps(fileId, null), record, subject)) return null;
+      if (subject && overviewPlaceholderSuperseded(host, record, subject, host.backend().kind !== 'scripted')) return null;
       return record ? view(repo, record) : null;
     }
     const { contentSha } = await host.fileBytesKey(fileId);
