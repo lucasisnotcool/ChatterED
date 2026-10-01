@@ -410,6 +410,12 @@ export class DocStore {
       if (token !== this.#openToken) return;
       const created = await bridge().notesIngest({ fileId });
       if (token !== this.#openToken) return;
+      // `none`: main found no ticked, ready source after all (a race with an untick) and wrote
+      // nothing. Back to the empty state; the next notebook change tries again.
+      if (created.ingest.status === 'none' || !created.docId) {
+        this.ingest = { ...EMPTY_INGEST };
+        return;
+      }
       this.#adopt(created);
     } catch (err) {
       if (token !== this.#openToken) return;

@@ -18,7 +18,7 @@
   import { docFromJson } from '../../../shared/doc/schema.js';
   import type { DocStore } from '../../lib/docstore.svelte.js';
   import { authorship } from '../../lib/pm/authorship.js';
-  import { chromePlugin } from '../../lib/pm/chrome.js';
+  import { chromePlugin, focusPlugin } from '../../lib/pm/chrome.js';
   import { nodeViews, submitAnswerAtSelection } from '../../lib/pm/nodeviews.js';
   import { revealPlugin } from '../../lib/pm/reveal.js';
   import { editorPlugins } from '../../lib/pm/setup.js';
@@ -56,6 +56,8 @@
             authorship({ onLearnerEdit: (at) => doc.onLearnerEdit(at) }),
             revealPlugin(),
             chromePlugin(() => ({ ...doc.chromeContext(), reader: { slides: () => doc.slides(), pageLines } })),
+            // The caret's block (its toolbar shows without a hover) and the note slots' placeholder.
+            focusPlugin(),
             ...editorPlugins({
               onAskAboutSelection: () => doc.askAboutSelection(),
               onSaveNow: () => {

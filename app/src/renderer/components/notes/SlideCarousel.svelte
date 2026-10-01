@@ -10,6 +10,10 @@
    * The grouping comes from `DocStore.sections()`, walked from the live document — so a page that
    * no block claims shows up under *Not in the notes*, which is the carousel quietly answering
    * the question R3 and R4 could not: **what did the ingest leave out?**
+   *
+   * In a notebook the pages are notebook pages (C1) and the groups are the doc's sections across
+   * every source: a section that draws on the lecture and on the learner's notes shows both,
+   * each thumbnail labelled with its source (`Lecture p. 17`, `Notes §2`).
    */
   import SlideFigure from './SlideFigure.svelte';
   import type { SlideSource } from '../../lib/rasterise.js';
@@ -51,7 +55,13 @@
         <div class="nd-carousel-head">{group.title}</div>
         <div class="nd-thumbs">
           {#each group.pages as page (page)}
-            <SlideFigure {source} {page} label={`p. ${page}`} {onopen} />
+            <SlideFigure
+              {source}
+              {page}
+              label={source?.citation([page]) ?? `p. ${page}`}
+              title={source ? `Open ${source.title(page)}` : null}
+              {onopen}
+            />
           {/each}
         </div>
       </div>

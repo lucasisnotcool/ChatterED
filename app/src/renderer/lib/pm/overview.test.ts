@@ -5,6 +5,7 @@ import { contextFingerprint } from '../../../shared/notebook.js';
 import {
   blockQuote,
   chipLabel,
+  citationParts,
   fillMark,
   fillsForItems,
   hasToolbar,
@@ -118,6 +119,32 @@ describe('chipLabel: citations through the notebook (C1)', () => {
     expect(chipLabel([], sources, fallback)).toBe('FALLBACK');
     expect(chipLabel([4], null, fallback)).toBe('FALLBACK');
     expect(chipLabel([4], [], fallback)).toBe('FALLBACK');
+  });
+});
+
+describe('citationParts: the chip in parts, so a long name shortens and the page stays', () => {
+  const sources = fixtureNotebook().sources;
+  const join = (parts: { source: string | null; where: string }[]): string =>
+    parts.map((p) => [p.source, p.where].filter(Boolean).join(' ')).join(' · ');
+
+  it('splits the source from the page', () => {
+    expect(citationParts(sources, [7, 53])).toEqual([
+      { source: 'Lecture-complex v4.0', where: 'p. 7' },
+      { source: 'Week 2 notes', where: '§1' },
+    ]);
+  });
+
+  it('joins back to exactly citationLabel', () => {
+    for (const pages of [[4, 5], [7, 53], [53, 54, 55], [60], [3, 60]]) {
+      expect(join(citationParts(sources, pages))).toBe(chipLabel(pages, sources, () => ''));
+    }
+    expect(join(citationParts(sources.slice(0, 1), [4, 5]))).toBe('p. 4–5');
+  });
+
+  it('keeps an image (a name and no page) and a removed source whole', () => {
+    const withImage = [...sources, { name: 'Board.jpg', kind: 'image' as const, pageBase: 55, pageCount: 1 }];
+    expect(citationParts(withImage, [56])).toEqual([{ source: 'Board', where: '' }]);
+    expect(citationParts(sources, [60])).toEqual([{ source: null, where: 'removed source' }]);
   });
 });
 

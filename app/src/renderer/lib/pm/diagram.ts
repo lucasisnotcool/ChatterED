@@ -843,7 +843,8 @@ class DiagramNodeView implements NodeView {
     this.#chip?.remove();
     this.#chip = null;
     if (pages.length === 0) return;
-    const label = provenanceLabel(pages, null);
+    // Through the notebook's sources (C1); the slides know them once a notebook is open.
+    const label = this.#ctx.slides()?.citation(pages) ?? provenanceLabel(pages, null);
     const first = pages[0]!;
     const chip = el('button', 'nd-dg-pages', label);
     chip.type = 'button';

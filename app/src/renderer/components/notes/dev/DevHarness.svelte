@@ -6,13 +6,36 @@
    *
    * It applies events **straight into `store.doc.apply`**, exactly as `store.svelte.ts` does, so
    * what is being watched here is the real path and not a demo of it.
+   *
+   * **Two benches.** *Overview* (the default, `notebooks.md`): a notebook of two sources whose doc
+   * is the C6 fixture, served by `overviewBench.ts` behind the bridge calls main will answer —
+   * the toolbar, the note slots, the objectives' fills, a recommended block, the out-of-date
+   * banner and Ellie's one-line edit with Keep · Remove can all be seen and screenshotted. *Notes*:
+   * the pre-notebook fixture deck, as before. `?bench=notes` in the URL starts on that one.
    */
   import { onMount } from 'svelte';
   import { store } from '../../../lib/store.svelte.js';
   import { bridge } from '../../../lib/bridge.js';
   import { MOCK_DOC_ID, MOCK_FILE_ID, mockBlockOnPage } from '../../../lib/mockNotes.js';
   import type { AgentDocOpBatch } from '../../../../shared/doc/types.js';
+  import type { RoomEvent } from '../../../../shared/types.js';
+  import { contextFingerprint } from '../../../../shared/notebook.js';
+  import {
+    FIXTURE_DOC_ID,
+    FIXTURE_NOTEBOOK_ID,
+    fixtureNewSource,
+    fixtureNotebook,
+    fixtureOverviewMeta,
+    fixtureProgress,
+  } from '../../../lib/pm/overviewfixture.js';
   import NotesPane from '../NotesPane.svelte';
+  import { installOverviewBench, type OverviewBench } from './overviewBench.js';
+
+  let mode = $state<'overview' | 'notes'>(
+    new URLSearchParams(globalThis.location?.search ?? '').get('bench') === 'notes' ? 'notes' : 'overview',
+  );
+  const paneFileId = $derived(mode === 'overview' ? FIXTURE_NOTEBOOK_ID : MOCK_FILE_ID);
+  const benchDocId = (): string => (mode === 'overview' ? FIXTURE_DOC_ID : MOCK_DOC_ID);
 
   const ROOM = 'room_mock_1';
   const doc = store.doc;
@@ -26,14 +49,87 @@
     log = [`${new Date().toLocaleTimeString()}  ${line}`, ...log].slice(0, 12);
   }
 
-  onMount(() =>
-    bridge().onEvent((e) => {
-      doc.apply(e);
-      // The chat store too, because the span highlights are drawn from `store.chat.spanThreads`
-      // and a thread only reaches it on a `chat.thread` event.
-      store.chat.apply(e);
-    }),
-  );
+  function deliver(e: RoomEvent): void {
+    doc.apply(e);
+    // The chat store too, because the span highlights are drawn from `store.chat.spanThreads`
+    // and a thread only reaches it on a `chat.thread` event.
+    store.chat.apply(e);
+  }
+
+  let bench: OverviewBench | null = null;
+  let deck: Promise<Uint8Array | null> | null = null;
+
+  /** The real lecture deck, if the static server over `Academia/Sources` is up (see below). */
+  function lectureBytes(): Promise<Uint8Array | null> {
+    deck ??= fetch('http://localhost:5401/CS3249+Lecture+4.pdf')
+      .then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null))
+      .catch(() => null);
+    return deck;
+  }
+
+  /** The notebook and the progress, as N5's stores would hold them for the fixture. */
+  function seedOverview(extra = false): void {
+    store.notebook.view = fixtureNotebook(extra ? [fixtureNewSource()] : []);
+    store.progress.view = fixtureProgress();
+  }
+
+  onMount(() => {
+    bench = installOverviewBench({ emit: deliver, log: note, lectureBytes });
+    if (mode === 'overview') seedOverview();
+    const off = bridge().onEvent(deliver);
+    return () => {
+      off();
+      bench?.teardown();
+    };
+  });
+
+  function switchTo(next: 'overview' | 'notes'): void {
+    if (next === 'overview') {
+      bench?.setOverview(fixtureOverviewMeta());
+      seedOverview();
+    } else {
+      store.notebook.view = null;
+      store.progress.view = null;
+    }
+    mode = next;
+  }
+
+  /** A third source arrives after the overview was written: the banner says so (§2). */
+  function addSource(): void {
+    const nb = fixtureNotebook([fixtureNewSource()]);
+    store.notebook.view = nb;
+    bench?.setFingerprint(nb.contextFingerprint);
+    note('notebook: Russell & Norvig ch11.pdf added and ready');
+  }
+
+  /** Untick the notes: "Sources changed since the overview was written." */
+  function untickNotes(): void {
+    const nb = fixtureNotebook();
+    nb.sources[1]!.enabled = false;
+    nb.contextFingerprint = contextFingerprint(nb.sources);
+    store.notebook.view = nb;
+    bench?.setFingerprint(nb.contextFingerprint);
+    note('notebook: Week 2 notes.md unticked');
+  }
+
+  /** A doc from before the overview: reopen it with no `OverviewMeta`. */
+  function legacy(): void {
+    bench?.setOverview(null);
+    mode = 'notes';
+    queueMicrotask(() => {
+      seedOverview();
+      mode = 'overview';
+    });
+    note('reopened as a legacy doc (no overview)');
+  }
+
+  /** Objective 3 moves to half, as a learner's own sentence would move it. */
+  function moveFill(): void {
+    const view = fixtureProgress();
+    view.objectives[2]!.fill = 0.5;
+    store.progress.view = view;
+    note('progress: objective 3 → half');
+  }
 
   /**
    * The mock bridge has no PDF bytes, so the figures and the carousel would draw nothing. Vite
@@ -71,8 +167,8 @@
   function edit(batch: Omit<AgentDocOpBatch, 'editId'>): void {
     seq += 1;
     const editId = `edit_dev_${seq}`;
-    doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: MOCK_DOC_ID, author: batch.author, blockId: batch.focusBlockId, state: 'typing' });
-    doc.apply({ type: 'doc.edit', roomId: ROOM, docId: MOCK_DOC_ID, batch: { ...batch, editId } });
+    doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: benchDocId(), author: batch.author, blockId: batch.focusBlockId, state: 'typing' });
+    doc.apply({ type: 'doc.edit', roomId: ROOM, docId: benchDocId(), batch: { ...batch, editId } });
     note(`doc.edit ${editId} — ${batch.author} · ${batch.cause}`);
   }
 
@@ -177,13 +273,13 @@
   }
 
   function thinking(author: 'ellie' | 'max'): void {
-    doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: MOCK_DOC_ID, author, blockId: anchor(), state: 'thinking' });
+    doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: benchDocId(), author, blockId: anchor(), state: 'thinking' });
     note(`doc.cursor ${author} thinking`);
   }
 
   function idle(): void {
     for (const author of ['ellie', 'max'] as const) {
-      doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: MOCK_DOC_ID, author, blockId: null, state: 'idle' });
+      doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: benchDocId(), author, blockId: null, state: 'idle' });
     }
     note('cursors idle');
   }
@@ -196,6 +292,23 @@
       Mock bridge, fixture deck. Click into the document, then fire an event. Select a phrase and
       press ⌘E.
     </p>
+
+    <div class="group" role="group" aria-label="Bench">
+      <button class="btn" aria-pressed={mode === 'overview'} onclick={() => switchTo('overview')}>Overview (notebook)</button>
+      <button class="btn" aria-pressed={mode === 'notes'} onclick={() => switchTo('notes')}>Notes (one file)</button>
+    </div>
+
+    {#if mode === 'overview'}
+      <div class="group">
+        <button class="btn" onclick={() => void doc.blockAction('b_s2_i3', 'explain')}>Explain h_FF (Ellie's one line)</button>
+        <button class="btn" onclick={() => void doc.blockAction('b_s3_i1', 'quiz')}>Quiz me on Max/Sum</button>
+        <button class="btn" onclick={addSource}>A source is added (banner)</button>
+        <button class="btn" onclick={untickNotes}>Untick the notes (banner)</button>
+        <button class="btn" onclick={legacy}>Reopen as a legacy doc</button>
+        <button class="btn" onclick={moveFill}>Objective 3 → half</button>
+        <button class="btn" onclick={() => doc.openSlide(53, null)}>Open notes §1 (a text page)</button>
+      </div>
+    {/if}
 
     <div class="group">
       <button class="btn" onclick={ellieAnswers}>Ellie writes an answer</button>
@@ -239,7 +352,7 @@
   </aside>
 
   <main class="stage">
-    <NotesPane fileId={MOCK_FILE_ID} />
+    <NotesPane fileId={paneFileId} />
   </main>
 </div>
 

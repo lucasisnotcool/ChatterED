@@ -1135,3 +1135,248 @@
   visibility: hidden;
   pointer-events: none;
 }
+
+/* ══ the learning overview (`docs/research/notebooks.md`, 2026-10-01) ═══════════════════════ */
+
+/* "Learning overview · from 2 sources · about 4 min to read", above the title. */
+.nd-kicker {
+  max-width: var(--nd-column);
+  margin: 0 auto 6px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.nd-kicker-name {
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* ── the out-of-date banner (§2): never rewritten silently ──────────────── */
+
+.nd-banner {
+  max-width: var(--nd-column);
+  margin: 0 auto 18px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--indigo-tint);
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+}
+.nd-banner-acts { margin-left: auto; display: flex; gap: 6px; }
+.nd-banner-go,
+.nd-banner-later {
+  border: 1px solid var(--indigo);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.nd-banner-go { background: var(--indigo); color: var(--pane); }
+.nd-banner-later { background: none; color: var(--indigo); }
+.nd-banner-go:hover { filter: brightness(1.08); }
+.nd-banner-error { background: #fdf3e6; border: 1px solid #ecd3b0; }
+.nd-banner-error .nd-banner-later { border-color: var(--challenger); color: var(--challenger); }
+.nd-banner-later:hover { background: var(--pane); }
+
+/* ── the overview's shape (C6) ──────────────────────────────────────────── */
+
+/* Each key idea is its own one-item list, so it has its own chip and toolbar: read as one list. */
+.nd-editor .ProseMirror > ul + ul { margin-top: -12px; }
+
+/* "By the end you can": a boxed list with a fill beside each objective (C5). */
+.nd-editor .ProseMirror > ol.nd-objectives {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--ground);
+  padding: 10px 14px 10px 36px;
+  font-size: 14px;
+}
+.nd-editor .ProseMirror > h3 + ol.nd-objectives { margin-top: -4px; }
+.nd-objectives > li { position: relative; padding-right: 96px; }
+.nd-objfill {
+  position: absolute;
+  right: 0;
+  top: 0.62em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 86px;
+  user-select: none;
+  line-height: 1;
+}
+.nd-objfill-bar {
+  flex: 0 0 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.nd-objfill-in { display: block; height: 100%; background: var(--indigo); transition: width 0.5s ease; }
+.nd-objfill-word { font-size: 10.5px; color: var(--text-2); white-space: nowrap; }
+
+/* The learner's note slot (C6): a dashed box with a placeholder until they write, then theirs. */
+.nd-editor .ProseMirror > p.nd-noteslot {
+  margin: 4px 0 18px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--indigo-tint);
+  background: var(--ground);
+  font-size: 14px;
+}
+.nd-editor .ProseMirror > p.nd-noteslot-empty {
+  border: 1px dashed var(--hairline);
+  background: none;
+}
+.nd-editor .ProseMirror > p.nd-noteslot-empty::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  left: 10px;
+  top: 6px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ── the action toolbar (§4.1): on hover, and on the caret's block ─────── */
+
+.nd-tools-holder {
+  position: absolute;
+  right: 0;
+  top: -1.3em;
+  z-index: 3;
+  line-height: 1;
+  user-select: none;
+}
+.nd-tools {
+  display: none;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--pane);
+  box-shadow: 0 4px 14px rgb(20 20 40 / 8%);
+}
+.nd-editor .ProseMirror > *:hover > .nd-tools-holder .nd-tools,
+.nd-editor .ProseMirror.ProseMirror-focused > .nd-caret-block .nd-tools,
+.nd-tools:focus-within { display: inline-flex; }
+.nd-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.nd-tool:hover:not(:disabled) { background: var(--ground); color: var(--text); }
+.nd-tool:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+.nd-tool:disabled { opacity: 0.45; cursor: default; }
+/* Who answers. Not colour alone: Ellie's dot is solid, Max's a dashed ring. */
+.nd-tool-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; box-sizing: border-box; }
+.nd-tool-dot-ellie { background: var(--nd-ellie); }
+.nd-tool-dot-max { border: 1.5px dashed var(--nd-max); }
+
+/* "Ellie is writing…" under a block while its action runs, or why it was refused. */
+.nd-actline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -10px 0 12px;
+  padding-left: 10px;
+  border-left: 2px solid;
+  font-size: 11.5px;
+  line-height: 1.6;
+  user-select: none;
+}
+.nd-actline.nd-ellie { color: var(--nd-ellie); border-left-style: solid; }
+.nd-actline.nd-max { color: var(--nd-max); border-left-style: dashed; }
+.nd-actline.nd-max .nd-writing-dot { background: var(--nd-max); }
+.nd-actline-refused { color: var(--text-2); border-left-color: var(--challenger); }
+.nd-actline-refused.nd-ellie,
+.nd-actline-refused.nd-max { color: var(--text-2); }
+
+/* ── a section's recommended block (§5.3) ───────────────────────────────── */
+
+.nd-rec {
+  margin: -6px 0 22px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--pane);
+  user-select: none;
+  line-height: 1.45;
+}
+.nd-rec-head { display: flex; align-items: center; gap: 8px; }
+.nd-rec-kind {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--indigo);
+}
+.nd-rec-dismiss {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.nd-rec-dismiss:hover:not(:disabled) { background: var(--ground); color: var(--text); }
+.nd-rec-body { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.nd-rec-words { flex: 1 1 auto; min-width: 0; }
+.nd-rec-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.nd-rec-line { font-size: 12.5px; color: var(--text-2); }
+.nd-rec-add {
+  flex: none;
+  border: 1px solid var(--indigo);
+  border-radius: 6px;
+  background: var(--pane);
+  color: var(--indigo);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 12px;
+}
+.nd-rec-add:hover:not(:disabled) { background: var(--indigo); color: var(--pane); }
+.nd-rec-add:disabled { opacity: 0.6; cursor: default; }
+.nd-rec-state { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11.5px; color: var(--nd-ellie); }
+.nd-rec-state-refused { color: var(--text-2); }
+
+/* ── a text source's page, as words (C1) ────────────────────────────────── */
+
+.nd-cite-text {
+  display: block;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--pane);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  text-align: left;
+}
+.nd-modal-text {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 7% 8%;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* A chip in a notebook of several sources: the name shortens, the page never does. */
+.nd-chip:has(.nd-chip-src) { display: inline-flex; align-items: baseline; max-width: calc(var(--nd-gutter) - 22px); }
+.nd-chip-src { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nd-chip-where { flex: none; white-space: nowrap; }

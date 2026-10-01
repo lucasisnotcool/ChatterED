@@ -18,6 +18,12 @@
    * (the bitmap already on screen is stretched to fill it), and pdf.js is asked for a sharp one
    * only once the size has stopped changing — a render per wheel event would be sixty renders a
    * second of a 2000 px canvas.
+   *
+   * **Across a notebook's sources** (`notebooks.md` C1): `page` is a notebook page, and the
+   * source finds the file and its own page. Previous and Next walk the notebook in order, across
+   * a source boundary and over a removed source's gap; the bar names the source when there is
+   * more than one. A text source's page is shown as its words, readable and selectable, rather
+   * than as a picture of them.
    */
   import { onMount, untrack } from 'svelte';
   import { SLIDE_ZOOM, clamp, isSideways, percent, zoomIn, zoomOut } from '../../lib/layout.js';
@@ -134,9 +140,41 @@
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  /** The page `delta` away, or null at an end: over the notebook's pages, gaps skipped. */
+  function neighbour(from: number, delta: number): number | null {
+    if (source) return source.step(from, delta);
+    const next = from + delta;
+    return next < 1 || next > pageCount ? null : next;
+  }
+
+  const title = $derived.by(() => {
+    if (!source) return `Slide ${at} of ${pageCount}`;
+    const name = source.title(at);
+    return source.parts.length <= 1 && source.kindOf(at) === 'pdf' ? `${name} of ${pageCount}` : name;
+  });
+  const hasPrev = $derived(neighbour(at, -1) !== null);
+  const hasNext = $derived(neighbour(at, 1) !== null);
+
+  /** A text source's page, as text (null while it loads, and for every other kind of page). */
+  let pageText = $state<string | null>(null);
+  const isText = $derived(source?.kindOf(at) === 'text');
+  $effect(() => {
+    const from = source;
+    const which = at;
+    pageText = null;
+    if (!from || from.kindOf(which) !== 'text') return;
+    let live = true;
+    void from.text(which).then((text) => {
+      if (live) pageText = text ?? 'This part of the source could not be read.';
+    });
+    return () => {
+      live = false;
+    };
+  });
+
   function go(delta: number): void {
-    const next = at + delta;
-    if (next < 1 || next > pageCount) return;
+    const next = neighbour(at, delta);
+    if (next === null) return;
     at = next;
     // The outline belongs to the page the learner came in on, not to every page they page to.
     outline = next === page ? rect : null;
@@ -173,7 +211,7 @@
     const from = source;
     const which = at;
     const width = renderWidth;
-    if (!element || !from || width <= 0) return;
+    if (!element || !from || width <= 0 || from.kindOf(which) === 'text') return;
     let live = true;
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
     void from
@@ -214,15 +252,15 @@
   class="nd-modal-veil"
   role="dialog"
   aria-modal="true"
-  aria-label={`Slide ${at}`}
+  aria-label={title}
   onclick={(event) => {
     if (event.target === event.currentTarget) onclose();
   }}
 >
   <div class="nd-modal-bar">
-    <button type="button" onclick={() => go(-1)} disabled={at <= 1} title="Previous slide (←, or swipe right)">‹ Previous</button>
-    <span aria-live="polite">Slide {at} of {pageCount}</span>
-    <button type="button" onclick={() => go(1)} disabled={at >= pageCount} title="Next slide (→, or swipe left)">Next ›</button>
+    <button type="button" onclick={() => go(-1)} disabled={!hasPrev} title="Previous slide (←, or swipe right)">‹ Previous</button>
+    <span aria-live="polite">{title}</span>
+    <button type="button" onclick={() => go(1)} disabled={!hasNext} title="Next slide (→, or swipe left)">Next ›</button>
     <span class="nd-modal-spacer"></span>
     <button
       type="button"
@@ -256,8 +294,11 @@
       style:aspect-ratio={String(aspect)}
       {ondblclick}
     >
-      <div bind:this={holder}></div>
-      {#if outline}
+      {#if isText}
+        <div class="nd-modal-text">{pageText ?? ''}</div>
+      {/if}
+      <div bind:this={holder} hidden={isText}></div>
+      {#if outline && !isText}
         <div
           class="nd-modal-rect"
           style:left={`${outline.x0 * 100}%`}

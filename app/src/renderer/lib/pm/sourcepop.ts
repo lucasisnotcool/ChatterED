@@ -217,7 +217,9 @@ export function attachCitePreview(chip: HTMLElement, options: CitePreviewOptions
     const draw = (): void => {
       const page = pages[index]!;
       const mine = ++token;
-      where.textContent = `Slide ${String(page)}`;
+      const source = reader.slides();
+      // `Slide 12` in a notebook of one PDF; `Lecture p. 12` or `Notes §2` in one of several (C1).
+      where.textContent = source ? source.title(page) : `Slide ${String(page)}`;
       count.textContent = pages.length > 1 ? `${String(index + 1)} of ${String(pages.length)}` : '';
       thumb.replaceChildren();
       thumb.classList.remove('nd-cite-ready');
@@ -225,7 +227,21 @@ export function attachCitePreview(chip: HTMLElement, options: CitePreviewOptions
       quote.hidden = true;
       found = { rect: null, quote: '' };
 
-      const source = reader.slides();
+      /**
+       * A text source's page is shown as its words, not as a picture of them: at this size a
+       * drawn card is unreadable, and the words are the whole of what the page is. The quote is
+       * left out, because the page itself is the quote.
+       */
+      if (source?.kindOf(page) === 'text') {
+        void source.text(page).then((text) => {
+          if (mine !== token || !pop.isConnected) return;
+          thumb.append(el('span', 'nd-cite-text', text ?? 'This part of the source could not be read.'));
+          thumb.classList.add('nd-cite-ready');
+          place(pop, chip, 'end');
+        });
+        return;
+      }
+
       const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
       const canvas = source ? source.canvas(page, Math.round(THUMB_WIDTH * dpr)).catch(() => null) : Promise.resolve(null);
       void Promise.all([canvas, find(page)]).then(([rendered, region]) => {

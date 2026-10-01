@@ -100,6 +100,29 @@ export function chipLabel(
   return citationLabel(sources, clean);
 }
 
+/** One group of a chip: the source's short name (null in a one-source notebook) and where in it. */
+export interface CitationPart {
+  source: string | null;
+  where: string;
+}
+
+/**
+ * `citationLabel`'s words in parts, so the chip can let a long source name shorten without
+ * cutting off the page (`Lecture-complex v4.0 p. 17` does not fit a 110 px gutter, and an
+ * ellipsis at the end would drop the one thing a citation is for). Joined back with a space and
+ * ` · `, the parts are exactly `citationLabel` (tested).
+ */
+export function citationParts(sources: readonly CiteSource[], pages: readonly number[]): CitationPart[] {
+  const label = citationLabel(sources, pages);
+  if (!label) return [];
+  return label.split(' · ').map((group) => {
+    const at = Math.max(group.lastIndexOf(' p. '), group.lastIndexOf(' §'));
+    if (sources.length <= 1 || group === 'removed source') return { source: null, where: group };
+    if (at < 0) return { source: group, where: '' };
+    return { source: group.slice(0, at), where: group.slice(at + 1) };
+  });
+}
+
 // ── the objectives' fills (C5) ──────────────────────────────────────────────────────────────
 
 export interface ObjectiveFillView {

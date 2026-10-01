@@ -25,7 +25,7 @@ import { Plugin, PluginKey, type EditorState } from 'prosemirror-state';
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from 'prosemirror-view';
 import { blockAttrs, blockPages } from '../../../shared/doc/schema.js';
 import type { Rect } from '../../../shared/doc/types.js';
-import { provenanceLabel } from './chrome.js';
+import { citationFor } from './chrome.js';
 import {
   addColumn,
   addRow,
@@ -307,7 +307,8 @@ function build(state: EditorState): DecorationSet {
     node.forEach((row, offset) => {
       const pages = ((row.attrs.pages as number[] | undefined) ?? []).filter((p) => Number.isInteger(p) && p > 0);
       if (pages.length === 0 || row.childCount === 0) return;
-      const label = provenanceLabel(pages, null);
+      // Through the notebook's sources (C1): `Lecture p. 17` when the notebook has several.
+      const label = citationFor(state, pages);
       // Inside the row's last cell, after its text: the end of the row.
       const at = pos + 1 + offset + row.nodeSize - 2;
       decorations.push(

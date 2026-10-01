@@ -50,6 +50,7 @@ import type { NotebookSourceView } from '../../../shared/notebook.js';
 import {
   BLOCK_KIND_NAME,
   chipLabel,
+  citationParts,
   fillMark,
   fillsForItems,
   hasToolbar,
@@ -260,6 +261,18 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
         }
         // A block with a reason and no page is ordinary (§2 allows either); a block with
         // neither is an ingest bug and says so in the one place a reader will see it.
+        // Several sources: the name may shorten, the page may not (`citationParts`).
+        if (pages.length > 0 && ctx.sources && ctx.sources.length > 1) {
+          chip.replaceChildren();
+          citationParts(ctx.sources, pages).forEach((part, i) => {
+            if (i > 0) chip.append(document.createTextNode(' · '));
+            if (part.source) chip.append(el('span', 'nd-chip-src', part.source));
+            if (part.source && part.where) chip.append(document.createTextNode(' '));
+            if (part.where) chip.append(el('span', 'nd-chip-where', part.where));
+          });
+          chip.setAttribute('aria-label', `Open the source (${label})`);
+          if (!ctx.reader) chip.title = reason ? `${label} — ${reason}` : label;
+        }
         if (label === 'no source') chip.classList.add('nd-chip-bad');
         else if (page === null) chip.classList.add('nd-chip-flat');
         holder.append(chip);
@@ -605,6 +618,17 @@ function build(state: EditorState, ctx: ChromeContext): DecorationSet {
 }
 
 /**
+ * **A chip's words, for chrome this plugin does not draw** (a table row's chip, `tableview.ts`):
+ * through the open notebook's sources when there is one (C1), else `provenanceLabel` as before.
+ * Read from the chrome plugin's own context, so those plugins need no wiring of their own.
+ */
+export function citationFor(state: EditorState, pages: readonly number[]): string {
+  const plugin = chromeKey.get(state);
+  const context = plugin?.spec.chromeContext as (() => ChromeContext) | undefined;
+  return chipLabel(pages, context?.().sources, () => provenanceLabel(pages, null));
+}
+
+/**
  * `context()` is read on every rebuild rather than captured, so the store can hand the plugin a
  * plain object rebuilt from `$state` on each call — a Svelte proxy must never be retained here
  * (this app has been bitten by a `$state` proxy reaching code that clones, STATUS bug 2).
@@ -612,6 +636,8 @@ function build(state: EditorState, ctx: ChromeContext): DecorationSet {
 export function chromePlugin(context: () => ChromeContext): Plugin<DecorationSet> {
   return new Plugin<DecorationSet>({
     key: chromeKey,
+    // Read by `citationFor`: chips drawn outside this plugin (a table row's) label through it too.
+    chromeContext: context,
     state: {
       init(_config, state): DecorationSet {
         return build(state, context());
