@@ -151,7 +151,7 @@ describe('the application menu', () => {
     expect(items(template, 'File')).toEqual([
       'New Notebook',
       'Add Sources…',
-      'Regenerate Notes…',
+      'Update Overview',
       'New Conversation…',
       'Export Research Data…',
       'close',
@@ -198,14 +198,14 @@ describe('the application menu', () => {
     expect(sent).toEqual(['research.export']);
   });
 
-  /** 2026-09-23: both destructive, so both confirm in main, and neither has a key chord. */
-  it('offers Regenerate Notes and New Conversation on the File menu, with no accelerator', () => {
+  /** Neither has a key chord: New Conversation is destructive, and Update Overview is not cheap. */
+  it('offers Update Overview and New Conversation on the File menu, with no accelerator', () => {
     const { template, sent } = harness(true);
     const file = template.find((m) => m.label === 'File')!.submenu as MenuItemConstructorOptions[];
-    for (const label of ['Regenerate Notes…', 'New Conversation…']) {
+    for (const label of ['Update Overview', 'New Conversation…']) {
       expect(file.find((i) => i.label === label)?.accelerator).toBeUndefined();
     }
-    click(template, 'File', 'Regenerate Notes…');
+    click(template, 'File', 'Update Overview');
     click(template, 'File', 'New Conversation…');
     expect(sent).toEqual(['notes.regenerate', 'chat.reset']);
   });

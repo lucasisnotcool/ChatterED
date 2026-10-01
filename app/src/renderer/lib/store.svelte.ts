@@ -42,6 +42,7 @@ import { ChatStore } from './chatstore.svelte.js';
 import { ProgressStore } from './progressstore.svelte.js';
 import { NotebookStore } from './notebookstore.svelte.js';
 import type { NotebookView } from '../../shared/notebook.js';
+import { regenerateCommand } from './pm/overview.js';
 
 /**
  * Is a channel actually on the bridge?
@@ -288,15 +289,18 @@ class Store {
         layout.toggleFiles();
         break;
       // The same calls the pane buttons make; the confirm is main's either way (2026-09-23).
-      case 'notes.regenerate':
-        if (!this.doc.fileId) {
+      // On a notebook it is Update overview, never the destructive regenerate (`regenerateCommand`).
+      case 'notes.regenerate': {
+        const route = regenerateCommand(this.doc.fileId);
+        if (!route) {
           this.notice = { level: 'info', text: 'Open a notebook first.' };
           break;
         }
-        void this.doc.regenerate().then((line) => {
+        void (route === 'update_overview' ? this.doc.updateOverview() : this.doc.regenerate()).then((line) => {
           if (line) this.notice = { level: 'info', text: line };
         });
         break;
+      }
       case 'chat.reset':
         if (!this.chat.roomId) {
           this.notice = { level: 'info', text: 'There is no conversation in this notebook to reset yet.' };

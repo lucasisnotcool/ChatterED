@@ -23,7 +23,7 @@ import {
   type ProgressFill,
   type ProgressView,
 } from '../../../shared/doc/types.js';
-import { citationLabel, type NotebookSourceView, type NotebookView } from '../../../shared/notebook.js';
+import { citationLabel, isNotebookId, type NotebookSourceView, type NotebookView } from '../../../shared/notebook.js';
 import { taughtObjectives } from '../progressview.js';
 
 /** C6: the title heading's reason. */
@@ -342,4 +342,16 @@ export function overviewMeta(overview: OverviewMeta | null): string {
   const minutes = Math.max(1, Math.round(overview.words / 200));
   const from = count === 1 ? 'from 1 source' : count > 1 ? `from ${String(count)} sources` : '';
   return [from, `about ${String(minutes)} min to read`].filter(Boolean).join(' · ');
+}
+
+/**
+ * **What File ▸ Regenerate does to the open doc.** A notebook's doc is the learner's work grown from
+ * its overview (§0): the destructive regenerate of #48 would throw away every kept line and note to
+ * write an overview again, which Update overview already does without losing any of them (§2,
+ * carry-over). So on a notebook the menu item is Update overview (Make overview on a legacy doc,
+ * the same call), and only a doc outside a notebook still regenerates. Null: nothing is open.
+ */
+export function regenerateCommand(fileId: string | null): 'update_overview' | 'regenerate' | null {
+  if (!fileId) return null;
+  return isNotebookId(fileId) ? 'update_overview' : 'regenerate';
 }

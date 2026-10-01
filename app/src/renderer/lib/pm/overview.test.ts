@@ -17,6 +17,7 @@ import {
   overviewBanner,
   overviewMeta,
   placeRecommendations,
+  regenerateCommand,
   sectionSpans,
   showsChip,
   unseenSources,
@@ -302,5 +303,15 @@ describe('the small words', () => {
     expect(overviewMeta(fixtureOverviewMeta())).toBe('from 2 sources · about 1 min to read');
     expect(overviewMeta({ ...fixtureOverviewMeta(), words: 820, fingerprint: 'a@0' })).toBe('from 1 source · about 4 min to read');
     expect(overviewMeta(null)).toBe('');
+  });
+});
+
+describe('File ▸ Update Overview (the old Regenerate Notes item)', () => {
+  it('updates the overview of a notebook, never regenerates it', () => {
+    expect(regenerateCommand('nb_df1760bc00d7')).toBe('update_overview');
+  });
+  it('still regenerates a doc outside a notebook, and does nothing with none open', () => {
+    expect(regenerateCommand('f_daf6e155d842')).toBe('regenerate');
+    expect(regenerateCommand(null)).toBeNull();
   });
 });

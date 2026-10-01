@@ -134,9 +134,12 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         { label: 'New Notebook', accelerator: 'CommandOrControl+N', click: send('notebook.new') },
         { label: 'Add Sources…', accelerator: 'CommandOrControl+Shift+O', click: send('notebook.addSources') },
         { type: 'separator' },
-        // Both ask for confirmation in main before anything is lost (2026-09-23); no accelerator,
-        // because a destructive action one chord away is one mistyped chord away.
-        { label: 'Regenerate Notes…', click: send('notes.regenerate') },
+        // No accelerator on either. New Conversation asks in main before anything is lost
+        // (2026-09-23). The first item kept its command id, but on a notebook it is Update
+        // overview, which rewrites only the overview's own blocks and carries the learner's text
+        // and kept lines over (notebooks.md §2); the destructive regenerate is never reached
+        // from a notebook (renderer `regenerateCommand`).
+        { label: 'Update Overview', click: send('notes.regenerate') },
         { label: 'New Conversation…', click: send('chat.reset') },
         { type: 'separator' },
         // The experimental trial (src/shared/trial.ts): a zip the learner emails, never an upload.
