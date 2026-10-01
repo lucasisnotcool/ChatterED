@@ -212,10 +212,14 @@
   .hint { margin: 0; font-size: 12.5px; color: var(--text-2); max-width: 70ch; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-  .cardwrap { position: relative; }
+  .cardwrap { position: relative; min-width: 0; }
   .card {
     width: 100%;
     height: 100%;
+    /* One column that may be narrower than its content: a file name with no spaces
+       ("CSXX46_AY2627_1_Week4_Tutorial2_Rational_Decision_Making_Students", from the legacy import
+       of 1 Oct 2026) otherwise sized the column to itself and ran out of the card. */
+    grid-template-columns: minmax(0, 1fr);
     background: var(--pane);
     border: 1px solid var(--hairline);
     border-radius: 12px;
@@ -230,7 +234,7 @@
   .card.editing { border-color: var(--indigo); }
   .t { font-weight: 600; font-size: 14px; line-height: 1.3; padding-right: 22px; overflow-wrap: anywhere; }
   .s { font-size: 12px; color: var(--text-2); }
-  .sub { color: var(--text); }
+  .sub { color: var(--text); overflow-wrap: anywhere; }
   .fill { margin-top: auto; height: 4px; border-radius: 2px; background: var(--hairline); overflow: hidden; align-self: end; }
   .fill > i { display: block; height: 100%; background: var(--indigo); transition: width 0.5s; }
   .rename {
