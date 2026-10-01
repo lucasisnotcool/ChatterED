@@ -33,6 +33,7 @@
  * and is the path that would otherwise mint the second room and regenerate the tree).
  */
 import type { SqlDatabase } from '../db/driver.js';
+import { MANAGED_VAULT_ID } from './managed.js';
 
 export interface Adoption {
   /** The orphaned ids whose rows now belong to `fileId`. Empty when there was nothing to do. */
@@ -72,6 +73,11 @@ export function adoptOrphanedFileRows(db: SqlDatabase, fileId: string, sha: stri
     f: fileId,
   });
   if (!file) return NOTHING;
+  // A notebook source (`managed.ts`) is a deliberate copy, keyed on its notebook rather than on
+  // its bytes, and never a re-mint of anything. It adopts nothing; and since the orphan query
+  // below only ever looks outside the adopting file's own vault, a folder-vault file must not
+  // adopt a notebook's rows either — those are keyed on `nb:<id>`, not a sha, so it cannot.
+  if (file.vault_id === MANAGED_VAULT_ID) return NOTHING;
 
   // A second known copy of these bytes in this vault: ambiguous, so adopt nothing.
   const twin = db

@@ -27,6 +27,7 @@ import { isIndexable, type FileKind } from './kinds.js';
 import { topicColour } from './palette.js';
 import { createVaultRepo, newVaultId, type FileRow, type VaultRepo } from './repo.js';
 import { scanVault, topicCandidates, topicForPath } from './scan.js';
+import { MANAGED_VAULT_ID } from './managed.js';
 import type { SqlDatabase } from '../db/driver.js';
 import type { SettingsRepo } from '../db/repos/core.js';
 
@@ -114,6 +115,9 @@ export class VaultService {
    */
   open(rootPath: string): VaultView {
     const existing = this.#repo.vaults.byPath(rootPath);
+    // The notebook store is never a folder vault: scanning it would reconcile its copies away
+    // by path (`managed.ts`).
+    if (existing?.id === MANAGED_VAULT_ID) throw new Error("That folder is ChatterED's own notebook storage.");
     const id = existing?.id ?? newVaultId('vault');
     if (!existing) {
       this.#repo.vaults.insert({
@@ -136,7 +140,7 @@ export class VaultService {
   /** Re-walk the vault and reconcile. Cheap enough to run on app focus (issue #22 decision 1). */
   rescan(): VaultView {
     const { id, root } = this.#requireVault();
-    if (!existsSync(root)) return this.view();
+    if (!existsSync(root) || id === MANAGED_VAULT_ID) return this.view();
     const scan = scanVault(root);
     const topics = this.#repo.topics.forVault(id);
     const relPaths = topics.map((t) => t.rel_path);

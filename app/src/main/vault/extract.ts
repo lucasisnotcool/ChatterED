@@ -36,11 +36,23 @@ function decodeText(bytes: Buffer): string | null {
   return text;
 }
 
-export async function extractFile(absPath: string, kind: FileKind): Promise<ExtractResult> {
+export async function extractFile(
+  absPath: string,
+  kind: FileKind,
+  opts: {
+    /**
+     * The size over which a file is not read. The folder vault's `MAX_INDEX_BYTES` by default; a
+     * notebook source passes its own ceiling, because a source the learner added on purpose is
+     * reading, not a 40 MB log that happened to sit in a folder (a slide PDF with images is
+     * easily over 32 MB).
+     */
+    maxBytes?: number;
+  } = {},
+): Promise<ExtractResult> {
   const st = await stat(absPath);
   const base = { size: st.size, mtimeMs: Math.round(st.mtimeMs) };
 
-  if (st.size > MAX_INDEX_BYTES) {
+  if (st.size > (opts.maxBytes ?? MAX_INDEX_BYTES)) {
     throw Object.assign(new Error(TOO_BIG_TO_INDEX), { soft: true });
   }
 
