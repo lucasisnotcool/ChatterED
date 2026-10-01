@@ -128,9 +128,11 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
     {
       label: 'File',
       submenu: [
-        { label: 'Open Vault…', accelerator: 'CommandOrControl+Shift+O', click: send('vault.open') },
-        { label: 'Re-scan Vault', accelerator: 'CommandOrControl+R', click: send('vault.rescan') },
-        { label: 'Edit Topics…', click: send('topics.edit') },
+        // Notebooks replaced the folder vault (`docs/research/notebooks.md` §1): Open Vault…,
+        // Re-scan Vault and Edit Topics… went with it. ⌘N is the Mac's "new document"; ⇧⌘O is
+        // the chord Open Vault… had, and adding sources is what opening files now means.
+        { label: 'New Notebook', accelerator: 'CommandOrControl+N', click: send('notebook.new') },
+        { label: 'Add Sources…', accelerator: 'CommandOrControl+Shift+O', click: send('notebook.addSources') },
         { type: 'separator' },
         { label: 'Find a File…', accelerator: 'CommandOrControl+Shift+F', click: send('search.files') },
         { type: 'separator' },
@@ -149,6 +151,9 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
     {
       label: 'View',
       submenu: [
+        // The home grid (`notebooks.md` §1). The title bar's "Notebooks ›" does the same.
+        { label: 'Notebooks', click: send('notebook.home') },
+        { type: 'separator' },
         // Two entries for zoom in: ⌘+ on a US layout arrives as `=` without shift, and an
         // accelerator registered as `Plus` alone does not catch it.
         { label: 'Zoom In', accelerator: 'CommandOrControl+Plus', click: send('zoom.in') },
@@ -163,7 +168,8 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         { label: 'Previous Page', accelerator: 'CommandOrControl+Up', click: send('page.prev') },
         { type: 'separator' },
         // ⌃⌘S is the Mac's own Show/Hide Sidebar chord (Finder, Mail, Notes).
-        { label: 'Show or Hide Files', accelerator: 'Control+Command+S', click: send('files.toggle') },
+        // The left column is the notebook's sources now (`notebooks.md` §8); the command is unchanged.
+        { label: 'Show or Hide Sources', accelerator: 'Control+Command+S', click: send('files.toggle') },
         { type: 'separator' },
         // The heading is a menu item, not a comment: the person who needs to know that the two
         // zooms are different things is reading the menu. Everything above scales the document;

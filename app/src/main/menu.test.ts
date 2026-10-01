@@ -146,20 +146,50 @@ describe('the application menu', () => {
     expect(labels).toContain('Fit Width');
   });
 
-  it('puts the vault on the File menu, where a Mac user looks for it', () => {
+  it('puts notebooks on the File menu, where a Mac user looks for New and Open', () => {
     const { template, sent } = harness(true);
     expect(items(template, 'File')).toEqual([
-      'Open Vault…',
-      'Re-scan Vault',
-      'Edit Topics…',
+      'New Notebook',
+      'Add Sources…',
       'Find a File…',
       'Regenerate Notes…',
       'New Conversation…',
       'Export Research Data…',
       'close',
     ]);
-    click(template, 'File', 'Open Vault…');
-    expect(sent).toEqual(['vault.open']);
+    const file = submenu(template, 'File');
+    expect(file.find((i) => i.label === 'New Notebook')?.accelerator).toBe('CommandOrControl+N');
+    expect(file.find((i) => i.label === 'Add Sources…')?.accelerator).toBe('CommandOrControl+Shift+O');
+    click(template, 'File', 'New Notebook');
+    click(template, 'File', 'Add Sources…');
+    expect(sent).toEqual(['notebook.new', 'notebook.addSources']);
+  });
+
+  /** The folder vault is gone (`notebooks.md` §1), and so is its menu. */
+  it('has no vault items any more', () => {
+    const labels = [...items(harness(true).template, 'File'), ...items(harness(true).template, 'View')];
+    for (const gone of ['Open Vault…', 'Re-scan Vault', 'Edit Topics…']) expect(labels).not.toContain(gone);
+  });
+
+  it('goes home to the Notebooks grid from the View menu', () => {
+    const { template, sent } = harness(true);
+    expect(items(template, 'View')[0]).toBe('Notebooks');
+    click(template, 'View', 'Notebooks');
+    expect(sent).toEqual(['notebook.home']);
+  });
+
+  /** No two items may claim the same chord: ⌘N and ⇧⌘O must not shadow anything. */
+  it('claims every accelerator once', () => {
+    const seen = new Map<string, string>();
+    const { template } = harness(false);
+    for (const menu of ['File', 'View', 'help']) {
+      for (const item of submenu(template, menu)) {
+        if (!item.accelerator || item.visible === false) continue;
+        const key = String(item.accelerator);
+        expect(seen.get(key), `${key} on ${item.label} and ${seen.get(key)}`).toBeUndefined();
+        seen.set(key, String(item.label));
+      }
+    }
   });
 
   /** The experimental trial: the export is a File-menu item, and it only asks the renderer. */
@@ -181,11 +211,11 @@ describe('the application menu', () => {
     expect(sent).toEqual(['notes.regenerate', 'chat.reset']);
   });
 
-  it('shows and hides the file panel on the Mac sidebar chord, ⌃⌘S', () => {
+  it('shows and hides the sources panel on the Mac sidebar chord, ⌃⌘S', () => {
     const { template, sent } = harness(true);
-    const item = submenu(template, 'View').find((i) => i.label === 'Show or Hide Files');
+    const item = submenu(template, 'View').find((i) => i.label === 'Show or Hide Sources');
     expect(item?.accelerator).toBe('Control+Command+S');
-    click(template, 'View', 'Show or Hide Files');
+    click(template, 'View', 'Show or Hide Sources');
     expect(sent).toEqual(['files.toggle']);
   });
 
@@ -343,9 +373,9 @@ describe('what the menu is allowed to say', () => {
       'fit.page',
       'page.next',
       'page.prev',
-      'vault.open',
-      'vault.rescan',
-      'topics.edit',
+      'notebook.new',
+      'notebook.addSources',
+      'notebook.home',
       'search.files',
       'settings.open',
       'notes.regenerate',
