@@ -332,6 +332,12 @@ export function pitchBlock(inputs: PitchInputs): string {
       `**You may go harder than the last one** — ${inputs.reason}. Ask them to explain why, or to`,
       'apply it to another case — but one the deck’s own examples or Ellie’s answer equip them',
       'for: no method, notation or format the deck only names. Still one question.',
+      /**
+       * **Harder is a new angle, not the last question again** (sim harness, 2026-10-01). "Apply
+       * it to another case" read literally is the settled question on a different symbol.
+       */
+      'Take a different angle from the last question: the same distinction asked again about',
+      'another symbol or example is not harder, it is the same question.',
     );
   } else if (inputs.lastWasCloze) {
     lines.push(
@@ -348,9 +354,16 @@ export function pitchBlock(inputs: PitchInputs): string {
      * p. 7 as a list to distinguish, and the question should ask for that.
      */
     lines.push(
-      `This is the first question on this objective — ${inputs.reason}. Ask them to say it in their`,
-      'own words, or to name or tell apart what the page shows. Not a construction, a derivation, or',
-      'a case the page does not work through: that is for after they have got this one.',
+      /**
+       * **Use it, on the page's own case** (sim harness, 2026-10-01). "Say it in their own words,
+       * or name or tell apart" produced recall: "what is the termination test?", "what are the
+       * two conditions?", answered by reading the line back. Using the idea on an example the page
+       * already works through is still not a construction, and it is what shows understanding.
+       */
+      `This is the first question on this objective — ${inputs.reason}. Ask them to use it: apply`,
+      'it to a case the page itself works through (its own example), or say in their own words why',
+      'it holds. Not a construction, a derivation, or a case the page does not work through: that is',
+      'for after they have got this one.',
     );
   } else {
     lines.push(`Pitch it at the same level as the last one — ${inputs.reason}.`);

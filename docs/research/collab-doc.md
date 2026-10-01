@@ -218,6 +218,14 @@ pure function (`room/pitch.ts`), unit-tested; the wording is the model's.
 examples or Ellie's answer equip the learner for, never a method, notation or format the page only
 names.
 
+*Amended 2026-10-01 (from the simulation harness, `app/sim/`):* a first question on an objective
+asks the learner to **use** the idea, on a case the page itself works through or by saying why it
+holds, rather than to name or tell apart what the page shows; "harder" is a new angle, never the
+settled distinction asked again about another symbol. Quiz me's question is about **the line
+pressed** (`notebooks.md` §4.1), with the objective's seed questions offered as ideas, not stems.
+Max marks against **the question he asked**, which he is shown; the objective's checklist is not
+in the marking turn, and a step the question did not ask for is never missing.
+
 **Amended 2026-10-01: the easier question is a fill-in-the-blank.** "Easier (recall, or one part of
 the idea)" was left to the model, and a recall question in prose is still a question to compose an
 answer to. After a release, the next question on that objective is now one sentence from the page

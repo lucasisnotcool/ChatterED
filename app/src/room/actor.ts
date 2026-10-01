@@ -5012,11 +5012,20 @@ export class RoomActor {
     if (decision.role === 'challenger' && decision.targetElementId) {
       const element = this.#d.pack.elements.find((e) => e.id === decision.targetElementId);
       if (!element) return undefined;
+      const turn = quizTurnFor(decision);
       const quiz = quizBlock({
         label: element.learner_label || element.label,
         seeds: element.quiz_seeds ?? [],
         demonstration: element.demonstration ?? [],
-        turn: quizTurnFor(decision),
+        turn,
+        // Quiz me's line (`notebooks.md` §4.1). A lesson's question is asked in the doc chat, on
+        // the objective, and has none.
+        line:
+          decision.decidedBy === 'rule:try_here' && this.#blockQuiz && this.#turnAnchorId !== null
+            ? (this.#threads.get(this.#turnAnchorId)?.quote ?? null)
+            : null,
+        // The quiz's own copy, else the message it was asked in (a quiz restored from an older sitting).
+        question: turn === 'feedback' ? this.#pendingQuiz?.questionText?.trim() || this.#openQuestionText() || null : null,
       });
       /**
        * **The Tester gets the page too, since #47 §3.** He is asked to ground every point as

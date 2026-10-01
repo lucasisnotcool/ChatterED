@@ -136,6 +136,8 @@ describe('pitchBlock', () => {
     const text = pitchBlock(pitchInputs({ objectiveId: 'obj_1', outcomes: [verdict('complete')], fill: 1 }));
     expect(text).toContain('You may go harder');
     expect(text).toContain('apply it to another case');
+    // Sim harness, 2026-10-01: "another case" is not the settled distinction on another symbol.
+    expect(text.replace(/\s+/g, ' ')).toContain('Take a different angle from the last question');
   });
 
   /**
@@ -167,6 +169,9 @@ describe('pitchBlock', () => {
     const text = pitchBlock(inputs);
     expect(text).toContain('first question on this objective');
     expect(text).toContain('Not a construction');
+    // Sim harness, 2026-10-01: use the idea on the page's own case, not name or tell apart.
+    expect(text.replace(/\s+/g, ' ')).toContain('apply it to a case the page itself works through');
+    expect(text).not.toContain('name or tell apart');
     expect(text).toContain('not filled yet');
 
     const again = pitchInputs({ objectiveId: 'obj_1', outcomes: [{ ...elsewhere, objectiveId: 'obj_1', verdict: 'partial' }], fill: 0.5 });

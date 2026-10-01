@@ -343,6 +343,33 @@ describe('blockAction: Quiz me', () => {
     expect(h.actor.docThreads().find((t) => t.threadId === SPAN)!.quiz?.open).toBe(true);
   });
 
+  /**
+   * **Max is told which line, and marks the question he asked** (sim harness, 2026-10-01). The
+   * line reached him only as the *where* label, and the marking turn saw the objective's checklist
+   * instead of the question; both showed up as off-line questions and correct answers marked down.
+   */
+  it('gives Max the pressed line on the question, and the question itself on the marking turn', async () => {
+    const QUESTION = 'Why does a side channel never reach the shared context?';
+    const h = build({}, (r) =>
+      r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger') && r.meta.scriptCue?.startsWith('try') ? QUESTION : null,
+    );
+    await act(h, { kind: 'quiz' });
+    const asking = h.llm.requests.find((r) => r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger'))!;
+    const directive = asking.messages.at(-1)!.content;
+    expect(directive).toContain('THE LINE THEY PRESSED QUIZ ME ON:');
+    expect(directive).toContain(`"${BULLET_TEXT}"`);
+    expect(directive).not.toContain(`Aim it at ${ELEMENT}`);
+
+    const asked = rows(h).find((m) => m.decided_by === 'rule:try_here')!;
+    await settle(h.clock, h.actor.sendMessage('the side channel keeps the turn out of the shared context', SPAN));
+    const marking = h.llm.requests.filter((r) => r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger')).at(-1)!;
+    const note = marking.messages.at(-1)!.content;
+    expect(note).toContain('THE QUESTION YOU ASKED, WHICH IS WHAT YOU MARK:');
+    expect(asked.body).toBe(QUESTION);
+    expect(note).toContain(`"${QUESTION}"`);
+    expect(note).not.toContain('A correct demonstration contains');
+  });
+
   it('refuses a second Quiz me while Max’s question is open, and names that question’s thread', async () => {
     const h = build();
     await act(h, { kind: 'quiz' });

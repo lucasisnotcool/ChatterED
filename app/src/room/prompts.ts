@@ -526,6 +526,14 @@ export function quizBlock(input: {
   label: string;
   seeds: readonly string[];
   demonstration?: readonly string[];
+  /**
+   * **The line the learner pressed Quiz me on** (`notebooks.md` §4.1: Quiz me asks about one
+   * line). Question turns only. Until 2026-10-01 it reached Max only as the *where* block's
+   * label, and the objective's seeds, written for the whole section, decided the question.
+   */
+  line?: string | null;
+  /** **The question being marked**, verbatim. Feedback turns only. */
+  question?: string | null;
   /** True on the feedback turn: a verdict, what landed and what was missing, and a follow-up unless Well done. */
   feedback?: boolean;
   /** #47: the rest of the loop. `feedback: true` is the alias this shipped with. */
@@ -533,11 +541,22 @@ export function quizBlock(input: {
 }): string | undefined {
   const seeds = input.seeds.filter((s) => s.trim().length > 0);
   const criteria = (input.demonstration ?? []).filter((c) => c.trim().length > 0);
-  if (seeds.length === 0 && criteria.length === 0) return undefined;
+  // The line or the question alone is reason enough: an objective with no seeds still has a line
+  // pressed on it, and a marking turn still has a question to mark.
+  if (seeds.length === 0 && criteria.length === 0 && !input.line?.trim() && !input.question?.trim()) return undefined;
   const turn: QuizTurn = input.turn ?? (input.feedback ? 'feedback' : 'question');
   const lines: string[] = [`THIS TURN IS ABOUT: ${input.label}`];
-  if (criteria.length > 0) {
+  /**
+   * **The objective's checklist is not shown to the marking turn** (sim harness, 2026-10-01).
+   * With it in view, seven correct answers in 26 simulated sittings were marked *Partly there*
+   * for a step the question never asked ("checks precondition entailment before applying"), and
+   * each verdict forced a follow-up on that step. The feedback turn is told the question instead.
+   */
+  if (criteria.length > 0 && turn !== 'feedback' && turn !== 'clarify') {
     lines.push('A correct demonstration contains:', ...criteria.map((c) => `- ${c}`));
+  }
+  if (turn === 'feedback' && input.question?.trim()) {
+    lines.push('THE QUESTION YOU ASKED, WHICH IS WHAT YOU MARK:', `"${input.question.trim()}"`);
   }
   /**
    * **The feedback turn** (§2.4, second cut — Lucas's 2026-09-19 run on the MDP deck).
@@ -554,10 +573,12 @@ export function quizBlock(input: {
   if (turn === 'feedback') {
     const [done, partly, notYet] = VERDICT_OPENERS;
     lines.push(
-      'Mark the answer against **the question you asked**, not against the whole objective. The list',
-      'above is what the objective needs in the end, not a checklist for this turn: if you asked for',
-      'four properties and got four, the answer is complete, and nothing the question did not ask for',
-      'counts as missing.',
+      'Mark the answer against **the question you asked**, not against the whole objective: if you',
+      'asked for four properties and got four, the answer is complete.',
+      '**A step or fact the question did not ask for is never missing**, even one the objective needs',
+      'or one you would have liked to see: it is not a reason for Partly there, and it is not your',
+      'follow-up. Nor is the order or wording they put a correct answer in. If the answer is a',
+      'complete and correct answer to the question as written, the verdict is Well done.',
       `Your first line is exactly one of these three verdicts and nothing else: **${done}** \u2014 the`,
       `answer to the question is complete and correct; **${partly}** \u2014 right in part, or right but`,
       `incomplete; **${notYet}** \u2014 wrong, or not an answer to the question.`,
@@ -640,10 +661,29 @@ export function quizBlock(input: {
     );
     return lines.join('\n');
   }
+  /**
+   * **The line, then what a good question is, then the seeds as ideas** (sim harness,
+   * 2026-10-01). Told to "ask one of these", Max followed a seed in 23 of 42 questions, and the
+   * seeds are recall stems for a whole section: the soundness line got the PlanSAT seed word for
+   * word in every run.
+   */
+  if (input.line?.trim()) {
+    lines.push(
+      'THE LINE THEY PRESSED QUIZ ME ON:',
+      `"${input.line.trim()}"`,
+      'Your question is about the idea in this line. The objective above is the wider topic it',
+      'belongs to; a question about another part of that topic is not a question about this line.',
+    );
+  }
+  lines.push(
+    'A good question makes them use the idea: apply it to a case the page or the notes work through,',
+    'predict what happens, or say why it holds. Not one whose answer is a word or phrase printed in',
+    'the notes, and not an either/or between two terms.',
+  );
   if (seeds.length > 0) {
     lines.push(
-      'Questions written for this objective \u2014 ask one of these, or one of your own that is about',
-      'the same objective:',
+      'Angles on this objective, for ideas only \u2014 do not reuse their wording, and leave out any',
+      'that is not about the line:',
       ...seeds.map((s) => `- ${s}`),
     );
   }
@@ -921,8 +961,9 @@ export function turnDirective(d: TurnDirective): string {
   } else if (d.move === 'quiz_feedback') {
     bits.push(
       `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
-      'the question you asked, not the whole objective. Unless it is Well done, your last sentence is',
-      'one follow-up question on the gap, and there is no other question in the turn.',
+      'the question you asked, not the whole objective: nothing it did not ask for is missing, and a',
+      'complete answer to it is Well done. Unless it is Well done, your last sentence is one follow-up',
+      'question on the gap, and there is no other question in the turn.',
       `Only if the message asks for background and tries no answer at all: first line **${UNMARKED_OPENER}**,`,
       'then that background in at most 80 words, with a toy example that is not your question\u2019s case',
       'and without answering it, then the same question again \u2014 and no verdict.',
@@ -940,7 +981,9 @@ export function turnDirective(d: TurnDirective): string {
     );
   }
   if (d.probeType) bits.push(`Socratic type: ${d.probeType}.`);
-  if (d.targetElementId) bits.push(`Aim it at ${d.targetElementId}.`);
+  // An objective id means nothing to a model, and the Tester's note names the objective in words
+  // (`quizBlock`'s THIS TURN IS ABOUT), so he is not handed the bare id (sim harness, 2026-10-01).
+  if (d.targetElementId && d.agentRole !== 'challenger') bits.push(`Aim it at ${d.targetElementId}.`);
   if (d.note) bits.push(d.note);
   bits.push('Reply with the message only — no preamble, no name prefix, no stage directions.');
   return bits.join(' ');

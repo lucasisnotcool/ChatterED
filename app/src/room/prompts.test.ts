@@ -364,7 +364,11 @@ describe('the version', () => {
  * the learner clicks a prerequisite the deck never teaches.
  */
 describe('quizBlock', () => {
-  it('offers the objective’s own stems rather than dictating one', () => {
+  /**
+   * **The seeds are ideas, not stems** (sim harness, 2026-10-01): told to "ask one of these", Max
+   * followed a section-wide recall seed in 23 of 42 simulated questions.
+   */
+  it('offers the objective’s seeds as angles, not as questions to copy, and says what a good question is', () => {
     const block = quizBlock({
       label: 'what /btw can see',
       seeds: ['What does /btw promise about the history?', 'Where does its answer come from?'],
@@ -372,8 +376,27 @@ describe('quizBlock', () => {
     })!;
     expect(block).toContain('what /btw can see');
     expect(block).toContain('What does /btw promise about the history?');
-    expect(block).toContain('or one of your own');
+    expect(flat(block)).toContain('for ideas only — do not reuse their wording');
+    expect(block).not.toContain('ask one of these');
+    expect(flat(block)).toContain('A good question makes them use the idea');
+    expect(flat(block)).toContain('not an either/or');
     expect(block).toContain('names both halves');
+    // No Quiz me line, no line block: a lesson's question is about the objective.
+    expect(block).not.toContain('THE LINE THEY PRESSED QUIZ ME ON');
+  });
+
+  /** `notebooks.md` §4.1: Quiz me asks about one line, so the line leads the question turn. */
+  it('puts the pressed line in front of the seeds on a Quiz me question', () => {
+    const block = quizBlock({
+      label: 'Compare soundness, completeness and complexity',
+      seeds: ['What is the complexity difference between PlanSAT and Bounded PlanSAT?'],
+      line: 'Soundness means valid plans; completeness means a solution is found if it exists.',
+    })!;
+    const at = block.indexOf('THE LINE THEY PRESSED QUIZ ME ON');
+    expect(at).toBeGreaterThan(0);
+    expect(block).toContain('"Soundness means valid plans; completeness means a solution is found if it exists."');
+    expect(flat(block)).toContain('Your question is about the idea in this line');
+    expect(at).toBeLessThan(block.indexOf('PlanSAT and Bounded'));
   });
 
   /**
@@ -382,17 +405,27 @@ describe('quizBlock', () => {
    * ends on one follow-up question unless the verdict is "Well done." The seeds are still not
    * offered: the follow-up is about the gap, not a fresh question.
    */
+  /**
+   * Sim harness, 2026-10-01: with the objective's checklist in view, correct answers were marked
+   * *Partly there* for a step the question never asked. The feedback turn now sees the question
+   * it marks, and not the checklist.
+   */
   it('on the feedback turn demands a verdict first, marks the question asked, and ends on a follow-up', () => {
     const block = quizBlock({
       label: 'what /btw can see',
       seeds: ['A question nobody should ask now.'],
       demonstration: ['names the missing tools'],
+      question: 'What two things does /btw leave out of the main thread?',
       feedback: true,
     })!;
-    expect(block).toContain('names the missing tools');
+    expect(block).not.toContain('names the missing tools');
+    expect(block).not.toContain('A correct demonstration contains');
     expect(block).not.toContain('A question nobody should ask now.');
+    expect(block).toContain('THE QUESTION YOU ASKED, WHICH IS WHAT YOU MARK:');
+    expect(block).toContain('"What two things does /btw leave out of the main thread?"');
     expect(flat(block)).toContain('against **the question you asked**, not against the whole objective');
-    expect(flat(block)).toContain('not a checklist for this turn');
+    expect(flat(block)).toContain('**A step or fact the question did not ask for is never missing**');
+    expect(flat(block)).toContain('the verdict is Well done.');
     for (const v of VERDICT_OPENERS) expect(block).toContain(`**${v}**`);
     expect(flat(block)).toContain('Your first line is exactly one of these three verdicts');
     expect(flat(block)).toContain('**end on one follow-up question**');
