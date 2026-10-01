@@ -63,6 +63,7 @@ import {
   OVERVIEW_SYSTEM,
   condenseMessage,
   condenseWords,
+  fitOverview,
   mintOverview,
   overviewMessage,
   overviewMeta,
@@ -525,13 +526,16 @@ function land(
 ): NotesDocRecord {
   const now = deps.now ?? (() => new Date().toISOString());
   const contentKey = notebookContentKey(input.notebookId);
-  const { overview, repairs } = validateOverview(landing.raw, {
+  const checked = validateOverview(landing.raw, {
     pageCount: subject.pageCount,
     pageExists: (page) => deps.notebooks.locate(input.notebookId, page) !== null,
     pageTexts: pageTextsOf(landing.deckText),
     fallbackTitle: subject.name,
   });
-  if (!overview) throw new Error('the model returned no usable section');
+  const { repairs } = checked;
+  if (!checked.overview) throw new Error('the model returned no usable section');
+  // §3.2: the budget is a ceiling, so an overview well over it loses its third ideas.
+  const { overview, ideasCut } = fitOverview(checked.overview, landing.budget);
 
   // ── C5: the tree first, so the list is drawn from what is stored ──
   const { objectives, notes } = objectivesFromOverview({
@@ -600,6 +604,7 @@ function land(
     editsCleared: cleared.edits,
     suggestionsCleared: cleared.suggestions,
     recommendations: meta.recommendations.length,
+    ideasCut,
   });
   return record;
 }
@@ -619,6 +624,7 @@ function logLanding(
     editsCleared: number;
     suggestionsCleared: number;
     recommendations: number;
+    ideasCut: number;
   },
 ): void {
   log().info('notes.overview', {
@@ -652,6 +658,7 @@ function logLanding(
       starters_cut: repairs.startersCut,
       greeting_filled: repairs.greetingFilled,
       title_filled: repairs.titleFilled,
+      ideas_cut_over_budget: extra.ideasCut,
       tree: extra.treeRepairs,
     },
     carried: extra.carried.carried,
@@ -780,37 +787,57 @@ export function sourceText(notebooks: NotebookHost, notebookId: string, source: 
 }
 
 /**
- * The page images worth sending: pages of the ticked PDF sources that have a drawn figure on them
- * (pass 1's `figures`), when the renderer has stored that source's images. Labelled with their
- * **notebook** page, which is what the call's `[p. N]` markers say. Spread evenly when there are
- * more than `OVERVIEW_MAX_IMAGES`.
+ * A slide that leaves a blank for the student (answer B): a line ending "=" ("Max(Cost) ="), a
+ * ":?" anywhere in a line, or a run of underscores. Mid-line for the second, because a garbled
+ * text layer runs a slide's columns together: Lecture-complex p. 17's "h_FF : ?" extracts as
+ * "…•ℎ:?12%%Precond:…", and only the image shows the student what the blank is.
+ */
+const BLANK_SLIDE = /=\s*$|:\s*\?|_{3,}/;
+
+/**
+ * The page images worth sending: pages of the ticked PDF sources that **leave a blank**
+ * (`BLANK_SLIDE`), then pages that have a drawn figure on them (pass 1's `figures`), when the
+ * renderer has stored that source's images. Labelled with their **notebook** page, which is what
+ * the call's `[p. N]` markers say. The blank pages come first because the overview may carry a
+ * blank only where the slide leaves one, and the image is how the model sees it does; the figure
+ * pages are spread evenly over what is left of `OVERVIEW_MAX_IMAGES`.
+ *
+ * The blank pages were added after the live run of 1 Oct 2026: on Lecture-complex the figure
+ * detector finds no figure on any of the 58 pages (each page's only ink box is the template's
+ * container), so the call went text-only and the model never saw p. 17 or p. 24.
  */
 export async function evidentiaryImages(
   deps: Pick<OverviewDeps, 'notebooks' | 'userDataDir' | 'geometry'>,
   notebookId: string,
   sources: readonly NotebookSourceView[],
 ): Promise<StoredPageImage[]> {
-  const out: StoredPageImage[] = [];
+  const blanks: StoredPageImage[] = [];
+  const figures: StoredPageImage[] = [];
   for (const source of sources) {
     if (source.kind !== 'pdf') continue;
     const located = deps.notebooks.locate(notebookId, source.pageBase + 1);
     if (!located?.contentSha) continue;
     const dir = pageImageDir(deps.userDataDir, located.contentSha);
     if ((await countPageImages(dir)) === 0) continue;
-    let pages: number[];
+    let blankPages: number[];
+    let figurePages: number[];
     try {
       const geometry = await deps.geometry({ filePath: located.path, contentSha: located.contentSha });
-      pages = extractNotesPages(geometry)
-        .filter((p) => p.figures.length > 0)
-        .map((p) => p.page);
+      const pages = extractNotesPages(geometry);
+      blankPages = pages.filter((p) => p.lines.some((l) => BLANK_SLIDE.test(l.text))).map((p) => p.page);
+      figurePages = pages.filter((p) => p.figures.length > 0 && !blankPages.includes(p.page)).map((p) => p.page);
     } catch {
       continue;
     }
-    for (const image of await pageImagesFor(dir, pages)) out.push({ ...image, page: source.pageBase + image.page });
+    for (const image of await pageImagesFor(dir, blankPages)) blanks.push({ ...image, page: source.pageBase + image.page });
+    for (const image of await pageImagesFor(dir, figurePages)) figures.push({ ...image, page: source.pageBase + image.page });
   }
-  if (out.length <= OVERVIEW_MAX_IMAGES) return out;
-  const step = out.length / OVERVIEW_MAX_IMAGES;
-  return Array.from({ length: OVERVIEW_MAX_IMAGES }, (_, i) => out[Math.floor(i * step)]!);
+  const first = blanks.slice(0, OVERVIEW_MAX_IMAGES);
+  const room = OVERVIEW_MAX_IMAGES - first.length;
+  if (figures.length <= room) return [...first, ...figures].sort((a, b) => a.page - b.page);
+  const step = figures.length / room;
+  const spread = Array.from({ length: room }, (_, i) => figures[Math.floor(i * step)]!);
+  return [...first, ...spread].sort((a, b) => a.page - b.page);
 }
 
 /** The same unwrapper the window ingest uses: prose around the object is a known shape. */

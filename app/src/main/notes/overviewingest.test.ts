@@ -22,6 +22,7 @@ import { objectiveIdFor } from '../objectives/repair.js';
 import { ensureTree } from '../objectives/ingest.js';
 import {
   ensureOverview,
+  evidentiaryImages,
   isLegacyDoc,
   overviewInFlight,
   setRecommendationStatus,
@@ -537,4 +538,33 @@ describe('pages by notebook page (C1)', () => {
     expect(await notebookPageLines({ notebooks: nb.host }, NB, 3, extractor)).toEqual({ page: 3, width: 0, height: 0, lines: [], items: [] });
     expect(await notebookPageLines({ notebooks: nb.host }, NB, 99, extractor)).toEqual({ page: 99, width: 0, height: 0, lines: [], items: [] });
   });
+
+  it('sends the images of the slides that leave a blank first, then the figures', async () => {
+    const userData = mkdtempSync(join(tmpdir(), 'chattered-nb-blanks-'));
+    const nb = fakeNotebook(NB, [{ fileId: 'f_a', name: 'A.pdf', pageBase: 0, pages: slides(5) }]);
+    const image = (page: number) => ({ page, mime: 'image/jpeg' as const, width: 10, height: 10, bytes: new Uint8Array([1]) });
+    await storeNotebookPageImages({ notebooks: nb.host, userDataDir: userData }, NB, [1, 2, 3, 4, 5].map(image));
+    // As Lecture-complex extracts: p. 2's "h_FF : ?" garbled mid-line, p. 3's "Max(Cost) =", p. 5
+    // a drawn figure, and the rest plain text.
+    const text: Record<number, string> = {
+      1: 'Planning',
+      2: 'Action(Slide)•ℎ:?12%%Precond: On t',
+      3: 'Max(Cost) =',
+      4: 'What are the estimates?',
+      5: 'Air cargo',
+    };
+    const geometry = async () =>
+      [1, 2, 3, 4, 5].map((page) => ({
+        page,
+        width: 960,
+        height: 540,
+        textBoxes: [{ text: text[page]!, x0: 0.1, y0: 0.1, x1: 0.5, y1: 0.15, fontPt: 14, fontName: 'f' }],
+        inkBoxes: page === 5 ? [{ kind: 'path' as const, x0: 0.1, y0: 0.3, x1: 0.8, y1: 0.9 }] : [],
+        chrome: [false],
+        imageCount: 0,
+      }));
+    const images = await evidentiaryImages({ notebooks: nb.host, userDataDir: userData, geometry }, NB, nb.subject().sources);
+    expect(images.map((i) => i.page)).toEqual([2, 3, 5]);
+  });
 });
+

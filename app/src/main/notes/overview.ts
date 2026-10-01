@@ -50,18 +50,42 @@ export const OVERVIEW_BUDGET_FLOOR = 200;
 export const OVERVIEW_BUDGET_CEILING = 600;
 /**
  * **Scaling gently**: the budget grows with the square root of the sources' words. Calibrated on
- * the brief's own pair: Lecture-complex, 60-odd pages, about 8,800 words of slide text (the #48
- * notes were 9,500 words at 1.08x the slides, `prompts.ts`), should get about 350. 3.75 x
- * sqrt(8,800) = 352. A 2,000-word handout lands on the floor; the ceiling is reached at about
- * 25,600 words, three or four long decks.
+ * the brief's own deck, Lecture-complex v4.0 (58 pages), which should get about 350. It was first
+ * set from an estimate of 8,800 words of slide text (3.75 x sqrt(8,800) = 352); the live run of
+ * 1 Oct 2026 measured the deck's text layer at **4,604 words**, which gave 250, not 350. So
+ * 5.2 x sqrt(4,600) = 353. A 1,500-word handout lands on the floor; the ceiling is reached at
+ * about 13,300 words, three long decks.
  */
-export const OVERVIEW_BUDGET_PER_SQRT_WORD = 3.75;
+export const OVERVIEW_BUDGET_PER_SQRT_WORD = 5.2;
 
 /** The overview's word ceiling for sources of this many words, rounded to ten. Pure. */
 export function overviewWordBudget(sourceWords: number): number {
   const raw = OVERVIEW_BUDGET_PER_SQRT_WORD * Math.sqrt(Math.max(0, sourceWords));
   const rounded = Math.round(raw / 10) * 10;
   return Math.min(OVERVIEW_BUDGET_CEILING, Math.max(OVERVIEW_BUDGET_FLOOR, rounded));
+}
+
+/** Per-part word ceilings the prompt states, so a budget the model is given is one it can keep. */
+export interface OverviewPartLimits {
+  lede: number;
+  objective: number;
+  heading: number;
+  takeaway: number;
+  idea: number;
+}
+
+/**
+ * **The budget, split into limits a writer can keep.** A whole-overview number alone did not hold:
+ * told "at most 250 words", Sonnet wrote 788 on Lecture-complex (1 Oct 2026), every key idea a
+ * 30-word explanation. What it can keep is a limit per part. The fixed parts (lede 35, five
+ * objective titles of 10, six headings of 6, six takeaways of 12) come to about 190 words; the
+ * key ideas share the rest, about 2.3 to a section, never under 10 words each (a phrase) nor over
+ * 28 (two short sentences). At the brief's 350 that is 11 words an idea.
+ */
+export function overviewPartLimits(budget: number): OverviewPartLimits {
+  const fixed = 35 + 5 * 10 + 6 * 6 + 6 * 12;
+  const idea = Math.max(10, Math.min(28, Math.floor((budget - fixed) / (6 * 2.3))));
+  return { lede: 35, objective: 10, heading: 6, takeaway: 12, idea };
 }
 
 /** A `[p. N]` page line of `NotebookHost.deckText`, with whatever follows it on the same line. */
@@ -171,15 +195,17 @@ export const OVERVIEW_SYSTEM = [
   '  hierarchy or a cycle), flashcards (terms and definitions worth recalling), quiz (a few',
   '  questions that check the section) or infographic (a structured visual summary: steps, stat',
   '  callouts, a comparison, rendered from text). A `title` of at most eight words and a one-line',
-  '  `description` of what it would hold. Recommend only where the section genuinely has that',
-  '  shape; most sections need none. Never a mind map, never an image.',
+  '  `description` of what it would hold. Recommend for two to four of the sections, the ones that',
+  '  genuinely have that shape (a comparison the slides draw, a process with steps, terms worth',
+  '  recalling); the rest carry null. Never a mind map, never an image.',
   '- `next`: optional, only when the sources end on what comes next (the next lecture, an',
   '  assignment, open questions). A short section of the same shape. Otherwise null.',
   '- `greeting`: one line in Ellie\'s voice: a peer who has read the same sources and is about to',
   '  work through them with the student. Warm and plain, not a teacher, no exclamation marks, no',
   '  "Welcome to".',
   '- `starterQuestions`: exactly three questions a student might ask first, each answerable from',
-  '  the sources, each about a different section, each under fifteen words.',
+  '  the sources, each about a different section, each under fifteen words. They are shown as',
+  '  plain buttons: no markup and no $tex$ in them, symbols written as text (h_max, not $h_{max}$).',
   '',
   'PAGES ARE MANDATORY AND REAL. Every page number is a [p. N] number from the text you are given:',
   'those are the notebook\'s page numbers, already counted across all the sources. Never a page you',
@@ -187,14 +213,19 @@ export const OVERVIEW_SYSTEM = [
   'away. Cite the page that says it; usually one or two pages, a short range at most.',
   '',
   'LENGTH IS A CEILING, NOT A TARGET. You are given a word budget for everything you write in the',
-  'title, lede, objectives\' titles, headings, takeaways and ideas together. Sources with less to say',
-  'get less. Never pad. Cut "it is important to note", "this section covers", "in this lecture".',
+  'title, lede, objectives\' titles, headings, takeaways and ideas together, and a word limit for',
+  'each part. Keep to both: an overview that runs over is cut in code, last ideas first. A key idea',
+  'is a phrase-length sentence that names the idea and where it is, not an explanation of it.',
+  'Sources with less to say get less. Never pad. Cut "it is important to note", "this section',
+  'covers", "in this lecture".',
   'Never narrate the deck ("this slide shows"). No exam framing ("you will be tested on").',
   '',
   'NOTHING THE SOURCES DO NOT SAY. You may name, connect and phrase; you may not add a fact, a',
   'result, a number or a citation that is not in them.',
   '',
-  'INLINE MARKUP is exactly four things: **bold**, *italic*, `code` and $tex$. Nothing else.',
+  'INLINE MARKUP is exactly three things: **bold**, *italic* and `code`. No $tex$: the overview',
+  'shows inline maths as its raw source, so "$h_{FF}$" would read as h_{FF}. Write a symbol the',
+  'way a student would type it, or in Unicode: h_FF, h_max, REACH⁺, ⊆, ≤, 10^405.',
   '',
   'Return the JSON object and nothing else: no preamble, no reasoning before it, no commentary',
   'after it.',
@@ -243,11 +274,15 @@ export function overviewMessage(input: OverviewPromptInput): string {
       input.deckText,
     ].join('\n'),
   );
+  const limits = overviewPartLimits(input.budget);
   parts.push(
     `Write the overview now. The sources say about ${input.sourceWords} words;` +
       ` **everything you write is at most ${input.budget} words**, and fewer when they teach less.` +
       ` Four to six objectives, five to eight sections in the sources' order, two or three cited` +
-      ` ideas each, exactly three starter questions. Blanks (____) only where a slide itself leaves one.`,
+      ` ideas each, exactly three starter questions. Blanks (____) only where a slide itself leaves one.` +
+      `\n\nWORD LIMITS, each a ceiling: lede ${limits.lede} words; each objective title ${limits.objective};` +
+      ` each heading ${limits.heading}; each takeaway ${limits.takeaway}; each key idea ${limits.idea}.` +
+      ` Two ideas per section unless the section really needs a third.`,
   );
   return parts.join('\n\n');
 }
@@ -458,6 +493,21 @@ function capWords(value: string, max: number): string {
   return words.length <= max ? value : words.slice(0, max).join(' ');
 }
 
+/**
+ * The greeting and the starter questions are drawn as plain text (a button, Ellie's first line),
+ * where `$h_{max}$` reads as exactly that (live run, 1 Oct 2026). The prompt asks for none; this
+ * takes off what still comes: maths delimiters (`$h_{max}$` → `h_max`) and the inline markup.
+ */
+export function plainLine(value: string): string {
+  return value
+    .replace(/\$([^$]+)\$/g, (_, tex: string) => tex.replace(/_\{([^{}]*)\}/g, '_$1').replace(/\^\{([^{}]*)\}/g, '^$1').replace(/\\/g, ''))
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Three or more underscores are the blank, written one way (answer B). */
 function normaliseBlanks(value: string): string {
   return value.replace(/_{3,}/g, BLANK);
@@ -474,27 +524,34 @@ function matchable(value: string): string {
     .trim();
 }
 
+/** A line of a slide that leaves something for the student: it ends on "=", "?" or a run of underscores. */
+const BLANK_LINE = /(=|\?|_{2,})\s*$/m;
+
 /**
- * **Is this blank the deck's own?** The up-to-four words before each `____` must appear, in order,
- * in the text of a page the idea cites. A slide that leaves "Max(Cost) = " blank has
- * "Max(Cost) =" in its text, and an idea that blanks out a word the slide prints in full has
- * words before it that the slide does not end on — but that second case can still pass when the
- * words before are on the slide, which is why the prompt carries the rule and this only catches
- * a blank after words no cited page says.
+ * **Is this blank the deck's own?** Two things must hold. A page the idea cites must itself leave
+ * a blank somewhere (a line ending "=", "?" or "__"): a slide that prints everything in full has
+ * no blank to carry. And the **two** words before each `____` must appear, in order, in the text
+ * of a cited page: a slide that leaves "Max(Cost) = " blank has "Max(Cost) =" in its text.
+ *
+ * Two, not four: the live run of 1 Oct 2026 (Lecture-complex p. 24) had the model write the
+ * slide's own blank inside its own sentence ("…the blocks example, Max(Cost) = ____"), and four
+ * words reached back past the slide's words into the model's, so the deck's one real blank was
+ * thrown away as invented. The page-must-leave-a-blank test is what keeps the shorter window
+ * from passing an invented blank after two common words. Still a heuristic: the prompt carries
+ * the rule in full.
  */
 export function blankIsTheDecks(idea: OverviewIdea, pageTexts: ReadonlyMap<number, string>): boolean {
   const pieces = idea.text.split(BLANK);
   if (pieces.length < 2) return true;
+  const raw = idea.pages.map((p) => pageTexts.get(p) ?? '').join('\n');
+  if (!BLANK_LINE.test(raw)) return false;
   const cited = idea.pages.map((p) => matchable(pageTexts.get(p) ?? '')).join(' \n ');
   if (cited.trim().length === 0) return false;
   for (let i = 0; i < pieces.length - 1; i += 1) {
-    const before = matchable(pieces[i]!).split(' ').filter((w) => w.length > 0).slice(-4).join(' ');
-    // A blank with nothing before it ("____ is the cost of…") cannot be checked; it is allowed only
-    // when the cited page itself shows a blank or a question mark.
-    if (before.length === 0) {
-      if (!/(=\s*$|\?|_{2,})/m.test(idea.pages.map((p) => pageTexts.get(p) ?? '').join('\n'))) return false;
-      continue;
-    }
+    const before = matchable(pieces[i]!).split(' ').filter((w) => w.length > 0).slice(-2).join(' ');
+    // A blank with nothing before it ("____ is the cost of…") cannot be matched; the page leaving
+    // a blank, checked above, is all there is to go on.
+    if (before.length === 0) continue;
     if (!cited.includes(before)) return false;
   }
   return true;
@@ -650,13 +707,17 @@ export function validateOverview(
   const ledePages = pagesOf(lede?.pages);
 
   // ── the chat's half (§6): a greeting and exactly three starters ──
-  let greeting = text(typeof root.greeting === 'string' ? root.greeting.trim().split('\n')[0] : '');
+  let greeting = plainLine(text(typeof root.greeting === 'string' ? root.greeting.trim().split('\n')[0] : ''));
   if (greeting.length === 0) {
     greeting = 'I have read these sources too. Where do you want to start?';
     repairs.greetingFilled = true;
   }
   const starters = [
-    ...new Set((Array.isArray(root.starterQuestions) ? root.starterQuestions : []).map(text).filter((s) => s.length > 0)),
+    ...new Set(
+      (Array.isArray(root.starterQuestions) ? root.starterQuestions : [])
+        .map((q) => plainLine(text(q)))
+        .filter((s) => s.length > 0),
+    ),
   ];
   if (starters.length > OVERVIEW_STARTERS) repairs.startersCut = starters.length - OVERVIEW_STARTERS;
   const starterQuestions = starters.slice(0, OVERVIEW_STARTERS);
@@ -752,6 +813,32 @@ export function overviewDrafts(overview: ValidOverview, objectiveTitles: readonl
 /** Words the overview writes, title excluded: the number logged against the budget. */
 export function overviewWords(drafts: readonly DocBlockDraft[]): number {
   return draftWords(drafts.filter((d) => !(d.kind === 'heading' && d.prov.reason === TITLE_REASON)));
+}
+
+/** How far over the budget an overview may land before its third ideas are cut: a ceiling, loosely. */
+export const OVERVIEW_BUDGET_SLACK = 1.1;
+
+/**
+ * **The ceiling, kept in code** (§3.2: "It is a ceiling"). When the model runs over the budget
+ * by more than the slack, the third key idea of a section goes, last section first, until the
+ * overview fits or every section is down to two (the brief's floor of ideas). Nothing else is cut:
+ * a takeaway, a heading or an objective is the overview's frame, and a section's first two ideas
+ * are what it is. Pure; returns how many ideas went, for the log line.
+ */
+export function fitOverview(overview: ValidOverview, budget: number): { overview: ValidOverview; ideasCut: number } {
+  const titles = overview.objectives.map((o) => o.title);
+  const words = (o: ValidOverview): number => overviewWords(overviewDrafts(o, titles).drafts);
+  let current = overview;
+  let ideasCut = 0;
+  for (let i = current.sections.length - 1; i >= 0 && words(current) > budget * OVERVIEW_BUDGET_SLACK; i -= 1) {
+    const section = current.sections[i]!;
+    if (section.ideas.length <= OVERVIEW_MIN_IDEAS) continue;
+    const sections = [...current.sections];
+    sections[i] = { ...section, ideas: section.ideas.slice(0, OVERVIEW_MIN_IDEAS) };
+    ideasCut += section.ideas.length - OVERVIEW_MIN_IDEAS;
+    current = { ...current, sections };
+  }
+  return { overview: current, ideasCut };
 }
 
 export interface MintedOverview {

@@ -13,11 +13,16 @@ import {
   OVERVIEW_JSON_SCHEMA,
   OVERVIEW_SYSTEM,
   blankIsTheDecks,
+  fitOverview,
   mintOverview,
   overviewMessage,
   overviewMeta,
+  overviewPartLimits,
   overviewWordBudget,
+  overviewWords,
+  overviewDrafts,
   pageTextsOf,
+  plainLine,
   sourceWordsOf,
   validateOverview,
   type ValidOverview,
@@ -61,10 +66,28 @@ function rawOverview(over: Record<string, unknown> = {}): Record<string, unknown
 }
 
 describe('the word budget (§3.2)', () => {
-  it('is about 350 for a 60-page deck of about 8,800 words, and scales gently', () => {
-    expect(overviewWordBudget(8_800)).toBe(350);
-    expect(overviewWordBudget(4_000)).toBe(240);
-    expect(overviewWordBudget(16_000)).toBe(470);
+  it('is about 350 for the brief\'s 58-page deck, whose text layer is 4,604 words, and scales gently', () => {
+    // Measured live, 1 Oct 2026: Lecture-complex v4.0's `sourceWordsOf` is 4,604.
+    expect(overviewWordBudget(4_604)).toBe(350);
+    expect(overviewWordBudget(8_800)).toBe(490);
+    expect(overviewWordBudget(2_500)).toBe(260);
+  });
+
+  it('is split into per-part limits the prompt states, the key ideas taking what is left', () => {
+    expect(overviewPartLimits(350)).toEqual({ lede: 35, objective: 10, heading: 6, takeaway: 12, idea: 11 });
+    expect(overviewPartLimits(200).idea).toBe(10);
+    expect(overviewPartLimits(600).idea).toBe(28);
+    const message = overviewMessage({
+      notebookName: 'Planning',
+      sourceNames: ['Lecture-complex v4.0.pdf'],
+      deckText: '[p. 1]\nhello',
+      condensed: false,
+      sourceWords: 4_604,
+      budget: 350,
+      imagePages: [],
+    });
+    expect(message).toContain('each key idea 11.');
+    expect(message).toContain('each takeaway 12;');
   });
 
   it('has a floor of 200 and a ceiling of 600', () => {
@@ -269,13 +292,21 @@ describe('blanks: only the deck\'s own (answer B)', () => {
       }),
       { ...ctx(30), pageTexts },
     );
-    // "relaxed plan is" is on p. 5, but "the cost of the relaxed plan is" → admissible, so the
-    // words before are there; the check passes this one. A blank after words not on the page:
+    // "relaxed plan is" is on p. 5, but p. 5 leaves no blank anywhere (no line ends on "=",
+    // "?" or "__"), so a blank cited to it is invented however well its words match.
     expect(blankIsTheDecks({ text: 'Heuristics are always ____.', pages: [5] }, pageTexts)).toBe(false);
     expect(blankIsTheDecks({ text: 'h_FF : ____', pages: [17] }, pageTexts)).toBe(true);
     expect(blankIsTheDecks({ text: 'Max(Cost) = ____', pages: [5] }, pageTexts)).toBe(false);
-    expect(overview!.sections[0]!.ideas.map((i) => i.text)).toContain('Relaxed plans ignore deletes.');
-    expect(repairs.inventedBlanks).toBe(0);
+    expect(overview!.sections[0]!.ideas.map((i) => i.text)).toEqual(['Relaxed plans ignore deletes.']);
+    expect(repairs.inventedBlanks).toBe(1);
+  });
+
+  it('keeps the deck\'s blank inside the model\'s own sentence (two words before it, not four)', () => {
+    // As the live run of 1 Oct 2026 wrote p. 24's blanks: inside a sentence of its own.
+    const idea = { text: 'For the blocks example (A on B, C on D), Max(Cost) = ____ and Sum(Cost) = ____.', pages: [24] };
+    expect(blankIsTheDecks(idea, pageTexts)).toBe(true);
+    // A blank after words the page has, on a page that leaves one, but not after them.
+    expect(blankIsTheDecks({ text: 'Combining heuristics is ____.', pages: [24] }, pageTexts)).toBe(false);
   });
 
   it('counts an invented blank and drops its idea', () => {
@@ -370,5 +401,52 @@ describe('the C6 block shape', () => {
     const minted = mintOverview(validateOverview(critique1OverviewRaw(), ctx(7)).overview!, ['One two']);
     expect(minted.words).toBeGreaterThan(100);
     expect(minted.words).toBeLessThan(400);
+  });
+});
+
+describe('plain lines for the chat (§6)', () => {
+  it('takes maths delimiters and markup off a starter question or the greeting', () => {
+    expect(plainLine('Why is $h_{max}$ admissible but $h_{sum}$ sometimes not?')).toBe('Why is h_max admissible but h_sum sometimes not?');
+    expect(plainLine('What does **downward refinement** guarantee for `HLA` plans?')).toBe('What does downward refinement guarantee for HLA plans?');
+    expect(plainLine('Is $10^{405}$ a *lot*?')).toBe('Is 10^405 a lot?');
+  });
+
+  it('is applied by the gate to the starters and the greeting', () => {
+    const { overview } = validateOverview(
+      rawOverview({ greeting: 'Hi, I read about $h_{FF}$ too.', starterQuestions: ['Why $h_{max}$?', 'B?', 'C?'] }),
+      ctx(),
+    );
+    expect(overview!.greeting).toBe('Hi, I read about h_FF too.');
+    expect(overview!.starterQuestions[0]).toBe('Why h_max?');
+  });
+});
+
+describe('the budget kept in code (§3.2: a ceiling)', () => {
+  const long = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
+  const wordsOf = (o: ValidOverview) => overviewWords(overviewDrafts(o, o.objectives.map((x) => x.title)).drafts);
+
+  it('cuts third ideas, last section first, until the overview fits', () => {
+    const sections = [1, 3, 5, 7, 9].map((p) =>
+      section(`S${p}`, [p], { ideas: [p, p, p].map((q) => ({ text: long(20), pages: [q] })) }),
+    );
+    const { overview } = validateOverview(rawOverview({ sections }), ctx());
+    const before = wordsOf(overview!);
+    // Over by more than the slack: two sections' third ideas (2 x 20 words) bring it back.
+    const budget = Math.floor((before - 45) / 1.1);
+    const { overview: fitted, ideasCut } = fitOverview(overview!, budget);
+    expect(ideasCut).toBeGreaterThan(0);
+    expect(wordsOf(fitted)).toBeLessThanOrEqual(budget * 1.1);
+    // The last sections lost theirs; the first kept its three.
+    expect(fitted.sections[0]!.ideas).toHaveLength(3);
+    expect(fitted.sections.at(-1)!.ideas).toHaveLength(2);
+  });
+
+  it('never cuts below two ideas, nor anything within the slack', () => {
+    const { overview } = validateOverview(rawOverview(), ctx());
+    expect(fitOverview(overview!, 10_000)).toEqual({ overview, ideasCut: 0 });
+    const tiny = fitOverview(overview!, 1);
+    tiny.overview.sections.forEach((s, i) => {
+      expect(s.ideas.length).toBe(Math.min(2, overview!.sections[i]!.ideas.length));
+    });
   });
 });
