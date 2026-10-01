@@ -59,6 +59,7 @@ import {
 } from './prompts.doc.js';
 import type {
   AgentProfile,
+  AgentVerb,
   ReplySpeed,
   StopTurnResult,
   FlowQuizView,
@@ -174,7 +175,7 @@ import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
-import { SilenceTimer, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
+import { SilenceTimer, lessonReadingMs, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
 import { ledgerView, messageView, timerView, whisperTurnView } from './views.js';
 
 /** No agent indicator at all for the first 8 s after a learner message (product-design.md §C3). */
@@ -744,7 +745,7 @@ export class RoomActor {
   /** Her cue's text, so Max's prompt can answer *it* rather than the question (§4.3 step 2). */
   #cueText: string | null = null;
   /** The objective a `lesson_start` turn is about, for the length of that turn (§6). */
-  #lessonTarget: { title: string; statement: string; criteria: string[]; pages: number[] } | null = null;
+  #lessonTarget: { title: string; statement: string; criteria: string[]; pages: number[]; maxAsksNext: boolean } | null = null;
   /** The learner's own doc text being assessed, for the length of that turn (§6). */
   #docTextTarget: { blockId: string; text: string; anchorId: string } | null = null;
   /** Questions asked, so a `questionId` is minted once and shared by the Q block and the outcomes. */
@@ -778,6 +779,12 @@ export class RoomActor {
   #actionPassage = new Map<string, string>();
   /** True for the length of a Quiz me turn, so the question is pitched (§4.5) like a follow-up was. */
   #blockQuiz = false;
+  /**
+   * **Where a lesson's question is filed in the notes** (§6, 2026-10-01): the objective's first
+   * block. The question is asked in the doc chat, which has no block of its own, so without this
+   * its Q block would fall back to the pages it happens to cite. Set for the length of that turn.
+   */
+  #questionBlockAt: string | null = null;
   /** Cancels the closure tick. Null while the actor is stopped. */
   #stopClosureTick: (() => void) | null = null;
   /**
@@ -2330,13 +2337,19 @@ export class RoomActor {
   // ── the lesson card, and the learner's own doc text (#48 §6) ─────────────
 
   /**
-   * **Start**, on a lesson card (brief §6). One Ellie turn that says what the objective is and
-   * ends by asking the learner to ask — *"has Ellie prompt the learner to ask a question to
-   * begin"*. It teaches nothing, deliberately: every studied session opened by the learner asking
-   * (R1, R3, R4), and lecturing first would take that from them.
+   * **Start**, on a lesson card (brief §6, revised 2026-10-01). Two turns, one press:
    *
-   * It reuses `tryHere`'s code path, as the brief's own §9 note says it should — the learner named
-   * the move, so the orchestrator is bypassed and the decision is written here.
+   * 1. **Ellie** says what this lesson is about and why it matters, in two or three sentences.
+   *    She teaches nothing and asks nothing (`lessonStartBlock`).
+   * 2. **Max** asks the first question on the objective, the way Quiz me does (`rule:try_here`,
+   *    pitched, its Q block under the objective's first block). He is shown typing from the moment
+   *    Ellie's intro lands, and his question is held until the learner has had time to read it
+   *    (`lessonReadingMs`), so the two do not arrive on top of each other.
+   *
+   * Until 1 Oct, Start ended on Ellie inviting the learner to ask, on the argument that every
+   * studied session opened by the learner asking (R1, R3, R4). Lucas changed it on 1 Oct so that a
+   * lesson opens on Max's first question, which is how its objective is cleared. When Max already
+   * has a question open (one at a time, §5.2), only Ellie's turn runs.
    */
   async startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void> {
     this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
@@ -2350,12 +2363,51 @@ export class RoomActor {
       statement: element?.label ?? '',
       criteria: [...(element?.demonstration ?? [])],
       pages: [],
+      maxAsksNext: !quizOpen(this.#pendingQuiz),
     };
-    this.#event('student', 'flow.lesson_start', { objective_id: input.objectiveId, anchor_id: input.anchorId });
+    const maxQuestionOpen = !this.#lessonTarget.maxAsksNext;
+    this.#event('student', 'flow.lesson_start', {
+      objective_id: input.objectiveId,
+      anchor_id: input.anchorId,
+      max_asks: !maxQuestionOpen,
+    });
+    const before = Math.max(0, ...this.#d.store.messages.forRoom(this.#d.roomId).map((m) => m.seq));
     try {
-      await this.#runAgentTurn('promote', { anchorId: input.anchorId, lesson: { objectiveId: input.objectiveId } });
+      await this.#runAgentTurn('promote', {
+        anchorId: input.anchorId,
+        lesson: { objectiveId: input.objectiveId },
+      });
     } finally {
       this.#lessonTarget = null;
+    }
+    if (maxQuestionOpen || this.#retired) return;
+
+    // Ellie's intro, if it landed. A failed turn has its own card, and Max does not talk over it.
+    const peer = agentByRole(this.#d.roster, 'peer');
+    const intro = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .filter((m) => m.seq > before && m.anchor_id === input.anchorId)
+      .find((m) => this.#d.store.participants.get(m.participant_id)?.agent_key === peer.key);
+    if (!intro) return;
+
+    this.#event('student', 'flow.try', {
+      anchor_id: input.anchorId,
+      objective_id: input.objectiveId,
+      door: 'lesson_start',
+      question_number: this.#testerQuestions + 1,
+    });
+    this.#blockQuiz = true;
+    this.#questionBlockAt = input.blockId;
+    try {
+      await this.#runAgentTurn('promote', {
+        anchorId: input.anchorId,
+        tryHere: { objectiveId: input.objectiveId },
+        minFloorMs: lessonReadingMs(intro.body),
+        thinkingVerb: 'typing',
+      });
+    } finally {
+      this.#blockQuiz = false;
+      this.#questionBlockAt = null;
     }
   }
 
@@ -2715,6 +2767,14 @@ export class RoomActor {
       ownQuestion?: boolean;
       /** **`rule:block_action`** (`notebooks.md` §4): Explain or Example pressed on a block. */
       blockAction?: 'explain' | 'example';
+      /**
+       * **A floor this turn may not be released before** (§6, 2026-10-01: the learner reads
+       * Ellie's lesson intro while Max is typing). Not scaled by Reply speed: it is reading time,
+       * not an agent's manufactured latency, and *off* would remove it.
+       */
+      minFloorMs?: number;
+      /** The verb the indicator shows for this turn, when it is not the agent's own. */
+      thinkingVerb?: AgentVerb;
     } = {},
   ): Promise<void> {
     // A reset room starts nothing — not a chained follow-up, not a closure release (`retire()`).
@@ -3049,7 +3109,10 @@ export class RoomActor {
       decision.moveType === 'max_prompt'
         ? agentByRole(this.#d.roster, 'peer').latency
         : agent.latency;
-    const target = this.#floor(latencyTargetMs({ ...agent, latency: band }, this.#d.config.latency_scale, this.#rand));
+    const target = Math.max(
+      this.#floor(latencyTargetMs({ ...agent, latency: band }, this.#d.config.latency_scale, this.#rand)),
+      opts.minFloorMs ?? 0,
+    );
     this.#d.store.rooms.update(this.#d.roomId, {
       state: 'agent_scheduled',
       pending_turn_id: pending.id,
@@ -3190,7 +3253,7 @@ export class RoomActor {
       this.#cancelTurn(decision.role, pending);
       return;
     }
-    this.#showThinking(agent, turnStart, target);
+    this.#showThinking(agent, turnStart, target, opts.thinkingVerb);
 
     let text: string;
     /** The model's own time to first token. The *visible* one is computed after the floor. */
@@ -4713,7 +4776,10 @@ export class RoomActor {
     // #49: a `Not marked.` turn marked nothing — no suggestion on the learner's text, no resolution.
     if (decision.moveType === 'quiz_feedback' && feedbackUnmarked(text)) return;
     const deps = this.#docEditDeps(anchorId, turnId);
-    const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);
+    // Read before the first await below: a lesson's question sets it for its own turn only.
+    const blockId =
+      (decision.moveType === 'quiz' ? this.#questionBlockAt : null) ??
+      (anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null));
     const quiz = this.#pendingQuiz;
     /**
      * **5.3 happens once, when the question closes** (#49), and the claim is taken here, before
@@ -5632,13 +5698,13 @@ export class RoomActor {
     this.#d.transport.emit({ type: 'turn.released', roomId: this.#d.roomId, turnId, messageId, stopped });
   }
 
-  #showThinking(agent: AgentProfile, turnStart: number, etaMs: number): void {
+  #showThinking(agent: AgentProfile, turnStart: number, etaMs: number, verb?: AgentVerb): void {
     this.#thinking = {
       agentKey: agent.key,
       displayName: agent.displayName,
       role: agent.role,
       colour: agent.colour,
-      verb: agent.verb,
+      verb: verb ?? agent.verb,
       // The counter reads elapsed since the turn began, so it shows ~9s when it appears.
       startedAt: new Date(turnStart).toISOString(),
       etaMs,

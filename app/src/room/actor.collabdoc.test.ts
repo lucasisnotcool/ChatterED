@@ -28,6 +28,7 @@ import { NOTES_SCRIPT } from './llm/script.notes.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 import { API_PLAN } from './llm/models.js';
 import { DEMO, FLOW, openSession, type TaughtItem } from './flow.js';
+import { LESSON_READ_FLOOR_MS, lessonReadingMs } from './timer.js';
 
 const DOC = 'doc';
 const SPAN = 'span_0123456789ab';
@@ -1088,19 +1089,61 @@ describe('assessDocText', () => {
 });
 
 describe('startLesson', () => {
-  it('posts one Ellie turn that names the objective and asks the learner to begin', async () => {
-    const h = build();
+  /** Max's lesson question, in place of the script's, so the test does not depend on its cues. */
+  const LESSON_Q = 'Why does a side channel keep the main thread clean?';
+  const maxAsks: Reply = (r) =>
+    r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger') && r.meta.scriptCue?.startsWith('try') ? LESSON_Q : null;
+
+  it('has Ellie say what the lesson is, asking nothing, and then Max ask the first question (§6, 2026-10-01)', async () => {
+    const h = build({}, null, maxAsks);
     await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_bbb' }));
 
-    expect(rules(h)).toEqual(['rule:lesson_start']);
-    expect(h.store.messages.forRoom(h.roomId)).toHaveLength(1);
-    expect(prompts(h)[0]).toContain('THE LEARNER PRESSED START ON A LESSON');
-    expect(prompts(h)[0]).toContain('Do not teach it yet');
-    // It opens no question, so Max is not waiting on anything.
-    expect(h.actor.pendingQuizView()).toBeNull();
-    // #49: the turn is told not to teach yet, so the notes do not teach it either.
-    await h.clock.run(1_000);
-    expect(h.llm.requests.some((r) => r.meta.scope === 'docedit')).toBe(false);
+    expect(rules(h)).toEqual(['rule:lesson_start', 'rule:try_here']);
+    const messages = h.store.messages.forRoom(h.roomId);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]!.body).toBe(LESSON_Q);
+    expect(messages.every((m) => m.anchor_id === DOC)).toBe(true);
+
+    const ellie = flat(prompts(h)[0]!);
+    expect(ellie).toContain('THE LEARNER PRESSED START ON A LESSON');
+    expect(ellie).toContain('Do not teach it yet');
+    expect(ellie).toContain('ask the learner nothing');
+    expect(ellie).toContain('Max asks them the first question on this right after you');
+    // Max's question is pitched as Quiz me's is.
+    expect(prompts(h)[1]).toContain('HOW HARD THIS QUESTION SHOULD BE');
+
+    // His question is the open one, on the lesson's objective, and its Q block sits under the
+    // objective's first block rather than wherever the question's citations would put it.
+    const open = h.actor.pendingQuizView()!.quiz;
+    expect(open.attempts).toBe(0);
+    const insert = h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'insert_q');
+    expect(insert).toMatchObject({ anchorBlockId: 'b_bbb', objectiveId: ELEMENT });
+  });
+
+  it('shows Max typing, and holds his question for one read of Ellie\'s intro', async () => {
+    const h = build({ replySpeed: 'off' }, null, maxAsks);
+    await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_bbb' }));
+
+    const [intro, question] = h.store.messages.forRoom(h.roomId);
+    // Reply speed *off* removes every manufactured floor, and not this one: it is reading time.
+    expect(question!.latency_target_ms).toBe(lessonReadingMs(intro!.body));
+    expect(question!.latency_target_ms).toBeGreaterThanOrEqual(LESSON_READ_FLOOR_MS);
+    const thinking = h.events.filter((e) => e.type === 'agent.thinking').map((e) => (e as { thinking: { agentKey: string; verb: string } }).thinking);
+    expect(thinking.some((t) => t.agentKey.startsWith('challenger') && t.verb === 'typing')).toBe(true);
+  });
+
+  it('runs only Ellie\'s turn when Max already has a question open, and she points back to it', async () => {
+    const h = build({}, null, maxAsks);
+    await settle(h.clock, h.actor.tryHere({ anchorId: SPAN, objectiveId: ELEMENT }));
+    expect(rules(h)).toEqual(['rule:try_here']);
+
+    await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_bbb' }));
+    // The silence on his open question may still bring Ellie's cue; what must not happen is a
+    // second question from Max.
+    expect(rules(h).slice(0, 2)).toEqual(['rule:try_here', 'rule:lesson_start']);
+    expect(rules(h).filter((r) => r === 'rule:try_here')).toHaveLength(1);
+    const lesson = prompts(h).find((p) => p.includes('THE LEARNER PRESSED START ON A LESSON'))!;
+    expect(flat(lesson)).toContain('Max already has a question open for them');
   });
 });
 

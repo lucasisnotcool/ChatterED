@@ -409,9 +409,17 @@ Code: `room/docedit.ts` (`planGeneratedBlock`), `actor.generateBlock`, `notes:ge
   naturally.
 - **Click the bar** and the objectives open as hover cards, one per objective, like lessons: title,
   what it asks of you, its fill, the slide pages. Each has one big **Start** button, which:
-  1. posts an Ellie message in the doc chat announcing what we need to understand and the objective;
+  1. posts an Ellie message in the doc chat announcing what we need to understand and the objective,
+     teaching nothing and asking nothing;
   2. scrolls the doc to the segment that carries it;
-  3. has Ellie prompt the learner to ask a question to begin.
+  3. shows Max typing while the learner reads it (one read of her message at 238 wpm, 4–15 s), then
+     has Max ask the first question on the objective, pitched and filed as Quiz me's is, with its
+     Q block under the objective's first block. If Max already has a question open, step 3 is
+     skipped and Ellie points the learner back to it.
+
+  *Revised 2026-10-01 (Lucas's decision).* Step 3 used to be "has Ellie prompt the learner to ask
+  a question to begin". A lesson now opens on Max's first question on the objective, which is how
+  the learner clears it.
 
 ## 7. The demo and the report
 

@@ -1978,26 +1978,41 @@ export function createMockBridge(): ChatterEdApi {
       return progressView();
     },
     /**
-     * A lesson card's **Start** (§6): Ellie says what we need to understand, the doc scrolls to
-     * the segment that carries it, and she ends by asking the learner for a question. The scroll
-     * target is returned rather than pushed, because the renderer owns where the document goes.
+     * A lesson card's **Start** (§6, revised 2026-10-01): Ellie says what we will be learning,
+     * asking nothing; the doc scrolls to the segment that carries it; then Max asks the first
+     * question on the objective in the doc chat, its Q block under the objective's first block.
+     * Skipped when a question is already open, as in the actor. The scroll target is returned
+     * rather than pushed, because the renderer owns where the document goes.
      */
     async progressStart({ objectiveId }) {
       const objective = objectives.find((o) => o.objectiveId === objectiveId) ?? objectives[0]!;
       const t = thread(DOC_ANCHOR_ID);
       const pages = objective.pages.length > 0 ? ` It is on ${objective.pages.map((n) => `p. ${n}`).join(', ')}.` : '';
+      const openQ = [...chatThreadMap.values()].some((x) => x.quiz?.open);
+      const anchorBlockId = objective.blockIds[0] ?? null;
       think(
         ellie,
         3600,
         `Right — **${objective.title.toLowerCase()}**.\n\n` +
-          `What we need is this: ${objective.statement}${pages} I have scrolled the notes to the ` +
-          'part that carries it.\n\n' +
-          'Ask me something about it to begin — "I do not know where to start" is a perfectly ' +
-          'good first question.',
+          `What we will be learning: ${objective.statement}${pages} I have scrolled the notes to the ` +
+          'part that carries it, and Max has the first question on it.',
         { anchorId: DOC_ANCHOR_ID, decidedBy: 'rule:lesson_start' },
-        () => pushThread(t),
+        () => {
+          pushThread(t);
+          if (openQ || anchorBlockId === null) return;
+          const question = MAX_QUESTION_GENERIC(objective.statement, objective.pages);
+          questionAnchor.set(`q_mock_${questionSeq + 1}`, anchorBlockId);
+          askDocQuestion({
+            threadId: DOC_ANCHOR_ID,
+            objectiveId: objective.objectiveId,
+            anchorBlockId,
+            body: question,
+            question,
+            pages: objective.pages,
+          });
+        },
       );
-      return { roomId: ROOM, threadId: DOC_ANCHOR_ID, blockId: objective.blockIds[0] ?? null };
+      return { roomId: ROOM, threadId: DOC_ANCHOR_ID, blockId: anchorBlockId };
     },
 
     // ── The learning-objective tree (issue #38) ──────────────────────────

@@ -163,6 +163,19 @@ export function silenceStagesMs(words: number, scale = 1): SilenceStages {
   return { stageOneMs, stageTwoMs: stageOneMs + Math.round(STAGE_TWO_GAP_MS * factor) };
 }
 
+/**
+ * **How long Max holds a lesson's first question** (§6, 2026-10-01): one read of Ellie's intro at
+ * `READING_WPM`, at least 4 s so a short intro is still read before the question lands, and at
+ * most 15 s so a long one does not leave the learner watching a typing indicator.
+ */
+export const LESSON_READ_FLOOR_MS = 4_000;
+export const LESSON_READ_CEILING_MS = 15_000;
+
+export function lessonReadingMs(text: string): number {
+  const ms = (wordCount(text) * 60_000) / READING_WPM;
+  return Math.round(Math.min(LESSON_READ_CEILING_MS, Math.max(LESSON_READ_FLOOR_MS, ms)));
+}
+
 /** Words, the way the threshold counts them: whitespace-separated tokens with a letter or digit. */
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).length;

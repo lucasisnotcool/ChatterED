@@ -733,7 +733,7 @@ export function lessonStartDecision(objectiveId: string): TurnDecision {
     probeType: null,
     targetElementId: objectiveId,
     challenges: [],
-    rationale: 'The learner pressed Start on a lesson card; Ellie says what it is about and invites the first question.',
+    rationale: 'The learner pressed Start on a lesson card; Ellie says what it is about, and Max asks the first question after her.',
     decidedBy: 'rule:lesson_start',
     handOffLine: null,
     failure: null,

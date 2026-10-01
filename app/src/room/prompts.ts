@@ -886,8 +886,8 @@ export function turnDirective(d: TurnDirective): string {
   /** §6's Start button, and §4.2 row 3's `@Max`. The notes carry the objective and the limits. */
   if (d.move === 'lesson_start') {
     bits.push(
-      'Say what this lesson is about in two or three sentences and then ask them to ask you a',
-      'question to begin. Do not teach it yet.',
+      'Say what this lesson is about in two or three sentences. Do not teach it yet, and ask them',
+      'nothing: Max asks the first question.',
     );
   }
   if (d.move === 'mention_reply') {

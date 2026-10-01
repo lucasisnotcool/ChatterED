@@ -413,18 +413,21 @@ export function cueCorrectionLines(claim: string, ellieName: string): string[] {
 // ── §6: the lesson card's Start ────────────────────────────────────────────
 
 /**
- * **Start**, on a lesson card (§6): *"posts an Ellie message in the doc chat announcing what we
- * need to understand and the objective… has Ellie prompt the learner to ask a question to begin."*
+ * **Start**, on a lesson card (§6, revised 2026-10-01): Ellie's half. She says what the lesson is
+ * and why it matters, and stops; Max asks the first question on the objective after her
+ * (`RoomActor.startLesson`).
  *
- * It teaches nothing, and that is deliberate — the brief has the learner *ask* to begin, which is
- * the one behaviour every studied session already had (R1, R3, R4 all open by asking) and the one
- * the app should not take away from them by lecturing first.
+ * It still teaches nothing, so the learner meets the question before the explanation. It no longer
+ * invites the learner to ask: that was the first design (R1, R3, R4 all opened by asking), and
+ * Lucas replaced it on 1 Oct with a question from Max, which is how a lesson's objective is cleared.
  */
 export function lessonStartBlock(input: {
   title: string;
   statement: string;
   criteria: readonly string[];
   pages: readonly number[];
+  /** Max asks the first question straight after (§6, 2026-10-01); false when one is already open. */
+  maxAsksNext?: boolean;
 }): string {
   const lines = [
     'THE LEARNER PRESSED START ON A LESSON',
@@ -438,11 +441,19 @@ export function lessonStartBlock(input: {
   if (input.pages.length > 0) {
     lines.push(`The notes for it are on ${input.pages.length === 1 ? 'p.' : 'pp.'} ${input.pages.join(', ')}.`);
   }
+  /**
+   * **Ellie introduces; Max opens** (§6, revised 2026-10-01). She used to end by inviting the
+   * learner to ask. Now Max asks the first question on the objective right after her, so her turn
+   * says what the lesson is and stops: a question from her would be a second one on top of his.
+   */
   lines.push(
     '',
-    'Say in two or three sentences what this is and why it is worth understanding — no more.',
-    '**Do not teach it yet.** End by asking them to ask you something about it to begin: name one',
-    'or two things they could ask, so the invitation is concrete rather than "any questions?".',
+    'Say in two or three sentences what we will be learning here and why it is worth understanding —',
+    'no more. **Do not teach it yet**, and **ask the learner nothing**: no question, no "any',
+    'questions?", no invitation to ask.',
+    input.maxAsksNext === false
+      ? 'Max already has a question open for them; end by pointing them back to it in a few words.'
+      : 'Max asks them the first question on this right after you, so end on what they are about to be asked to show, not on a question.',
   );
   return lines.join('\n');
 }
