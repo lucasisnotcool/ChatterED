@@ -1246,31 +1246,68 @@
 
 /* ── the action toolbar (§4.1): on hover, and on the caret's block ─────── */
 
+/*
+ * **In the right gutter, under the chip, never over the words.** It was first drawn over the top
+ * right corner of the block (`top: -1.3em`), and in the live run of 1 Oct it covered the end of
+ * the hovered bullet's first line; above the block instead it would cover the line before (the
+ * key ideas sit 4 px apart). The gutter is the one place with nothing to hide, so the four
+ * actions stack there, one per row, under the provenance chip, which keeps its own place.
+ *
+ * **It stays reachable.** The toolbar is a widget inside the block, so hovering it keeps the
+ * block hovered; but the path from the line to it crosses the chip's 16 px margin and, on a
+ * one-line block, the gutter beside the next block. So it does not vanish the moment the pointer
+ * leaves the block: it fades out over a short delay (`visibility` with a transition delay), long
+ * enough to reach it, and the `::before` strip bridges the gap on its left.
+ */
 .nd-tools-holder {
   position: absolute;
-  right: 0;
-  top: -1.3em;
+  left: 100%;
+  top: calc(0.24em + 23px);
   z-index: 3;
   line-height: 1;
   user-select: none;
+  /* The holder spans nothing; only the toolbar takes the pointer. */
+  width: 0;
+  pointer-events: none;
 }
 .nd-tools {
-  display: none;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 1px;
+  margin-left: 12px;
   padding: 2px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--pane);
   box-shadow: 0 4px 14px rgb(20 20 40 / 8%);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 0.12s ease 0.35s, visibility 0s linear 0.47s;
+}
+.nd-tools::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: calc(-0.24em - 23px);
+  bottom: 0;
+  width: 14px;
 }
 .nd-editor .ProseMirror > *:hover > .nd-tools-holder .nd-tools,
 .nd-editor .ProseMirror.ProseMirror-focused > .nd-caret-block .nd-tools,
-.nd-tools:focus-within { display: inline-flex; }
+.nd-tools:hover,
+.nd-tools:focus-within {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 0.12s ease, visibility 0s;
+}
 .nd-tool {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 8px;
+  padding: 4px 7px;
   border: 0;
   border-radius: 6px;
   background: none;

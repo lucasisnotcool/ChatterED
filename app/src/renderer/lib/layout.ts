@@ -144,9 +144,15 @@ export function blockAnchorDelta(
   return after.top + frac * after.height - pointY;
 }
 
-/** The gutters' full width (notes.css `--nd-gutter`), and the least a `p. 12` chip still fits in. */
+/**
+ * The gutters' full width (notes.css `--nd-gutter`), and the least they shrink to. The floor was
+ * 72, the width of a `p. 12` chip; the live run of 1 Oct 2026 showed that is not all a gutter
+ * holds. The left one holds **Remove · Keep** (about 76 px at 10.5 px, and at 72 it read
+ * "emove"), the right one the block's action toolbar under its chip (about 90 px with its
+ * margin, notes.css `.nd-tools`). 104 fits both, and the text column still gets the rest.
+ */
 export const GUTTER_FULL = 132;
-export const GUTTER_FLOOR = 72;
+export const GUTTER_FLOOR = 104;
 /** The text column the gutters give way to before they will shrink no further. */
 const TEXT_WANTED = 560;
 

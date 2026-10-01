@@ -106,6 +106,13 @@ describe('the notes gutters', () => {
     expect(1000 / 1.25 - 2 * g).toBeCloseTo(560, 0);
   });
 
+  it('never shrink below what the gutters hold: Remove · Keep on the left, the action toolbar on the right', () => {
+    // Measured live on 1 Oct 2026: Remove · Keep is about 76 px of a gutter's width less 22,
+    // and the stacked toolbar about 78 px plus its 12 px margin. At 72 the first read "emove".
+    expect(GUTTER_FLOOR - 22).toBeGreaterThanOrEqual(76);
+    expect(GUTTER_FLOOR).toBeGreaterThanOrEqual(78 + 12);
+  });
+
   it('never go below the width a page chip needs, nor above their design width', () => {
     expect(sheetGutter(300, 2)).toBe(GUTTER_FLOOR);
     expect(sheetGutter(4000, 0.75)).toBe(GUTTER_FULL);
