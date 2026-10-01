@@ -1,79 +1,71 @@
 # Scope: Assignment 1, Assignment 2, and the group project
 
-For the developers and for every agent working here. Decided 2026-09-26.
+For both developers and every agent working here. Revised 2026-10-01; this replaces the zones of
+2026-09-26.
 
-Assignment 2 is **individual**. Some code may be shared between teammates, but **A2 deliverables
-are never shared**: not with the teammate, not in the group repo, and not after submission
-either. The group project later combines this A1 with a teammate's A1 (Nudge, on help selection
-and response planning). This file says which work belongs to which of the three, and where each
-piece lives.
+## What changed, and why
 
-## The zones
+On 26 Sep the work was split three ways: Lucas's A2 app here, a separate group repo
+(`lucasisnotcool/cs3249-group`) holding a mirror of `app/src/core`, and a private A2 repo. After
+consulting the prof, codebases and ideas need not be separated that strictly. So from
+2026-10-01:
 
-| Zone | What | Where | Who may see it |
+- **One repo and one app** serve both people's individual Assignment 2 and the group project.
+  Valerie works here too.
+- The group repo was folded in (its A1 evidence index, provenance record and decision issues) and
+  archived. `core/` there was only a mirror; `app/src/core/` here is the one copy.
+- **Assignment 2 is design-only** (no user study).
+- **What stays individual is each person's A2 intellectual work, not the code.** Valerie gets the
+  latest app, but not Lucas's A2 reasoning or draft report, and the same holds the other way.
+
+## The three kinds of material
+
+| Kind | What | Where | Who sees it |
 |---|---|---|---|
-| **1 · A1, frozen** | The Assignment 1 submission | tag `a1-submitted` (`9655c39`); `docs/report/assignment1-final.md` | The teammate, for the group project. The group project builds on both A1s. |
-| **2 · Core** | Pure TypeScript learner-turn logic that both A1 designs share | `app/src/core/` | The teammate, at any time. This is the declared shared code. |
-| **3 · The ChatterED app** | Lucas's A2 implementation: all other code, and the design briefs | the rest of `app/`, `docs/research/` | Lucas. It enters the group repo from tag `a2-submitted`. |
-| **4 · A2 deliverables** | Report, video script and storyboard, Study A data, analysis and results, the submission package | `~/ChatterED-A2/`, a **separate private repo** | **Lucas only. Never shared.** |
-| **5 · Group project** | Integration of both A1s, the teammate's planner, joint docs | `lucasisnotcool/cs3249-group` (private, Lucas owns it; cloned at `~/cs3249-group`). Today it holds a mirror of zone 2 in `core/`, and zone 1 in `docs/evidence/`. Its rules are in its `AGENTS.md`. | Both, once Lucas invites the teammate. |
-| **6 · Product** | ChatterED work outside A2 | here, issues labelled `scope:product` (#27–#31, #50) | Lucas. It is not A2 scope and not A2 evidence. |
+| **Shared** | All code (the app, `app/src/core/`, tools), app docs, product design briefs (`docs/research/`), decisions (issues), both A1s as submitted, course material `.gitignore` allows | this repo | both of us, and anyone the repo is later shared with |
+| **Private A2 work** | Each person's working documents, framing and positioning of their A2, reasoning written for the write-up, presentation and video, report drafts | Lucas: `~/ChatterED-A2` (private repo). Valerie: her own private place. | its author only, never the other person |
+| **Raw research data** | Interview sheets, notes, recordings and transcripts (both people's), raw and processed AI-use transcripts, any name or ID | local only, gitignored (`Academia/Interviews/`, `Academia/valerie research/`, `docs/research/ai-use-transcripts/{raw,processed}/`) | nobody through the repo, ever; only de-identified analysis is committed |
+
+Everything committed before 2026-10-01 is shared; Lucas cleared it for sharing on that date.
+**From now on, classify before adding** (AGENTS.md, "Classify before you add"): code and
+app-level writing are shared; anything written to argue, frame or present one person's A2 is
+private; if it is unclear, the agent asks its human and commits nothing until they answer.
 
 ## The one-way rule
 
-Zone 4 may read and cite zones 1–3. **Nothing flows back from zone 4**, whether into this repo,
-the group repo, an issue, a commit message, a PR, a code comment, or a message to the teammate.
-
-- A design change prompted by Study A is recorded here as a decision with its design rationale,
-  **without** participant results, numbers or quotes. "Max's feedback skips the case asked" is
-  fine. "3 of 5 Study A participants said…" belongs in zone 4.
-- The same holds in reverse: the teammate's A2 deliverables are never stored, pasted or
-  summarised anywhere here. Her **A1** report can be brought in for the group project.
-- The A2 brief is course material, not a deliverable. It goes in `Academia/`, next to the A1
-  brief.
-
-## Your working directory is your zone
-
-| Session opened in | May do | Must not |
-|---|---|---|
-| `~/ChatterED` | zones 1, 2, 3, 6 | write zone-4 content here |
-| `~/ChatterED-A2` | zone 4; read `~/ChatterED` | edit `~/ChatterED` (its settings deny it: open a ChatterED session to change code) |
-| `~/cs3249-group` | zone 5; refresh its `core/` from here with its `tools/sync-core.sh` | read `~/ChatterED-A2` at all (its local settings deny it) |
-
-Claude Code keeps memory per checkout path, so each of these gets its own memory. Anything the
-other developer needs has to be in a repo, not in memory.
+Private A2 work may read and cite this repo. **Nothing flows back from it**, whether into this
+repo, an issue, a commit message, a PR, a code comment, or a message to the other person. A design
+change prompted by private work is recorded here as a product decision with its design rationale,
+without the private argument behind it.
 
 ## Guards
 
-1. **Physical.** Zone 4 is a different repository, so a fork, subtree or copy of this repo can
-   never carry it.
-2. **Marker.** Every text file in zone 4 opens with a line that says `A2-PRIVATE` and nothing
-   else, in the file's comment syntax (`<!-- … -->`, `#`, `//`). Two hooks here refuse any
-   content carrying that line:
-   - `.githooks/pre-commit`, for people and agents. It is enabled per clone:
-     `git config core.hooksPath .githooks`.
-   - `.claude/hooks/guard-a2-private.sh`, which refuses a Write or Edit before it happens.
-
-   Both also refuse the reserved paths `a2-private/` and `docs/a2/`.
+1. **Physical.** Private A2 work lives in a different repository, so a fork or copy of this repo
+   can never carry it.
+2. **Marker.** Every text file of private A2 work opens with a line that says `A2-PRIVATE` and
+   nothing else, in the file's comment syntax (`<!-- … -->`, `#`, `//`). `tools/check-scope.sh`
+   refuses that line, the reserved paths `a2/`, `a2-private/` and `docs/a2/`, and the raw-research
+   paths above. It runs in `.githooks/pre-commit` (enabled per clone with
+   `git config core.hooksPath .githooks`) and in CI (`.github/workflows/scope.yml`).
+   `.claude/hooks/guard-a2-private.sh` refuses the same before a Claude Code Write or Edit.
 3. **Settings.** `~/ChatterED-A2/.claude/settings.json` denies file edits into this repo.
-4. **Lint.** `app/src/core/` may import nothing outside itself (`eslint.config.mjs`), so the
-   shared zone cannot quietly grow a dependency on zone 3.
+4. **Lint.** `app/src/core/` may import nothing outside itself (`app/eslint.config.mjs`).
 
 The hooks catch accidents, not intent. The rule above is the policy.
 
-## Group-project conventions (agreed in advance)
+## Conventions
 
-- **Evidence ids carry an owner prefix** once both A1s are in one place: `L-T1…T6` and
-  `L-P1…P3` (ChatterED A1), `N-P1…P5` (Nudge A1). Both A1s use P1…, and they are different
-  people. Inside this repo, unprefixed ids are ChatterED's.
-- **Attribution.** Anyone using zone-2 code in an individual assignment says so in that
-  assignment. The group repo keeps a `docs/provenance.md` recording which part came from which
-  A1 or A2.
-- **Labels.** Issues carry one of `scope:a2`, `scope:core`, `scope:group`, `scope:product`.
+- **Evidence ids carry an owner prefix** in new writing: `L-T1…T6` and `L-P1…P3` (ChatterED A1),
+  `N-P1…P5` (Nudge A1). Docs written before 2026-10-01 use unprefixed ids, and those are
+  ChatterED's.
+- **Attribution.** Both of us submit an individual A2 on the same app, so git history and
+  `docs/provenance.md` show who built what.
+- **Labels.** Every open issue carries one of `scope:a2` (part of someone's A2 build; the
+  assignee says whose), `scope:core`, `scope:group`, `scope:product`.
 
 ## Tags
 
 - `a1-submitted`: the last commit before the A1 deadline (22 Sep 2026 23:59), which the
   prototype ZIP was cut from.
-- `a2-submitted`: create at A2 submission, on the commit the A2 code ZIP is cut from. The group
-  repo starts from it.
+- `a2-submitted-lucas`, `a2-submitted-valerie`: create at each person's A2 submission, on the
+  commit that person's A2 code ZIP is cut from.

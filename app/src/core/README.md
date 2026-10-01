@@ -1,12 +1,9 @@
 # `app/src/core`: the shared core
 
-Pure TypeScript learner-turn logic that ChatterED's A1 design and the teammate's A1 design
-(Nudge: response-contingent help, fading) both need. It lives in two places:
-
-- **In ChatterED** (`app/src/core/`) it is the source, `SCOPE.md` zone 2. Everything else in
-  ChatterED's `app/` is the ChatterED app, which is Lucas's individual A2.
-- **In the group repo** (`core/`) it is a mirror of that source, pinned by `core/SOURCE`, until the
-  group project starts. Paths below such as `room/ledger.ts` are ChatterED files.
+Pure TypeScript learner-turn logic that ChatterED's A1 design and Valerie's A1 design (Nudge:
+response-contingent help, fading) both need. It is part of the one shared app (`AGENTS.md`); until
+2026-10-01 it was also mirrored to the group repo's `core/`, which is now archived. It stays pure
+and self-contained so that Nudge's planner can plug into it.
 
 ## What is in it (v0, 2026-09-26, #54)
 
@@ -17,7 +14,7 @@ Pure TypeScript learner-turn logic that ChatterED's A1 design and the teammate's
 | `ownwords.ts` | How much of an answer is the learner's own words, against the source, the cue and the question | A claim becomes Done only when the learner states it |
 
 `attempt.ts` and `pitch.ts` still carry ChatterED's cue and prompt wording (`quizCue`,
-`pitchBlock`). Making those agent-neutral is group-project work, not A2 work.
+`pitchBlock`). Making those agent-neutral is group-project work.
 
 ## Rules
 
@@ -26,8 +23,8 @@ Pure TypeScript learner-turn logic that ChatterED's A1 design and the teammate's
    depends on the core, never the reverse. A type the core needs is defined here and imported
    by the app.
 2. **Pure.** No clock (take `now` as an argument), no I/O, no model call, no storage.
-3. **Nothing from A2 deliverables.** No Study A data, results or quotes, and no participant data,
-   in code or in comments. Comments may cite A1 evidence (R1–R6, P1–P3) and the design briefs.
+3. **Nothing from anyone's private A2 work** and no participant data, in code or in comments.
+   Comments may cite A1 evidence (R1–R6, P1–P3) and the design briefs.
 4. **Every export is tested here** (`*.test.ts` beside it). A change to the core changes what
    the teammate can see, so keep changes small, and record them in the commit.
 

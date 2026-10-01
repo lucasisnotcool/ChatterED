@@ -10,9 +10,10 @@ quiet, Ellie offers a peer's partial take. A give-up releases the answer and pit
 question lower, and the progress bar fills only on the learner's own words.
 
 Built for **NUS CS3249**: a working macOS Electron app, NUS-internal distribution. **Assignment 1
-was submitted on 22 Sep 2026** (tag `a1-submitted`). **Assignment 2 is individual and in
-progress**, and a group project will later combine this with a teammate's A1. **`SCOPE.md` says
-which work belongs to which, and where A2 deliverables live (not here).**
+was submitted on 22 Sep 2026** (tag `a1-submitted`). From 1 Oct 2026 this one repo and app serve
+**both developers' individual Assignment 2 and the group project**, which combines ChatterED with
+Valerie's A1 design, Nudge. **Start with `AGENTS.md`** (people and coding agents read the same
+file); `SCOPE.md` says what is shared and what stays private to each person.
 
 ## How the design got here
 
@@ -47,11 +48,12 @@ owner's own framing:
 | Assignment brief, source papers, extracted text | `Academia/` |
 | Design briefs, research plans, evaluation plan | `docs/research/` |
 | Assignment 1 report as submitted, with its claims register | `docs/report/assignment1-final.md` |
-| What belongs to A2, the shared core, the group project, product | `SCOPE.md` |
-| The code shared with the group project | `app/src/core/` |
-| Assignment 2 deliverables | **not here**: the private repo `~/ChatterED-A2` |
-| Agent conventions | `CLAUDE.md` |
-| Subagent model policy | `.claude/settings.json`, `.claude/hooks/guard-agent-model.sh` |
+| Rules for both developers and every coding agent, onboarding | `AGENTS.md` (`CLAUDE.md` imports it) |
+| What is shared, what stays private, the tags | `SCOPE.md` |
+| The pure learner-turn core both A1 designs share | `app/src/core/` |
+| Each A1 as submitted, and who built what | `docs/evidence/`, `docs/provenance.md` |
+| Each person's A2 write-up and working documents | **not here**: each person's own private repo |
+| The private-material check (pre-commit and CI) | `tools/check-scope.sh` |
 
 `docs/research/` is the source of truth for design decisions. If the code and a brief
 disagree, that is a bug in one of the two — say which before changing either.
