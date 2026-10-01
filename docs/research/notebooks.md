@@ -199,6 +199,13 @@ The Insert menu offers all five types anywhere, as it offers table and diagram t
 ## 7. Progress
 
 Unchanged: the bar and the objective fills move only on the learner's own words (in chat or doc).
+
+**Typing in the doc is just writing** (Lucas, 1 Oct 2026, after the live run: *"adding your own
+notes is just typing into doc, but with a nice box"*). `collab-doc.md` §6's rule that a pause in
+the learner's own doc text is assessed as an attempt is **retired**: no agent reads, answers or
+writes under what the learner types, in a your-note slot or anywhere else. The learner's words in
+the doc count when the learner says they are an answer: **Submit** in a Q block (`collab-doc.md`
+§5.5, §5.6), or an answer in the chat. The your-note slot is only a box to write in.
 The overview's objectives are those fills; the outline in the sources panel shows each section's
 fill, as the notes map does now.
 

@@ -74,16 +74,13 @@ import {
 } from './pm/chrome.js';
 import { blockQuote, notebookEmpty, objectiveFills, sectionSpans, unseenSources } from './pm/overview.js';
 import { reveal, revealText } from './pm/reveal.js';
-import { DocTextWatch, learnerTextByBlock } from './pm/doctext.js';
 import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
 import { setReading } from './pm/readaloud.js';
 import { insertTargetId } from './pm/insertat.js';
+import { learnerTextByBlock } from './pm/doctext.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
 const SAVE_DEBOUNCE_MS = 800;
-
-/** How often the doc-text pause detector is polled while there is something pending. */
-const DOC_TEXT_TICK_MS = 1_000;
 
 /**
  * How long a first ingest waits for the deck to open before it starts without the slides.
@@ -241,8 +238,6 @@ export class DocStore {
   #savePending = false;
   /** Settles when the save now in flight has finished. Null when none is. */
   #saveSettled: Promise<void> | null = null;
-  #docText = new DocTextWatch();
-  #docTextTimer: ReturnType<typeof setInterval> | null = null;
   // A plain Map on purpose: these are timer handles, nothing renders them, and making them
   // reactive would re-run effects on every frame of the typing animation.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -523,7 +518,6 @@ export class DocStore {
     this.#slides = null;
     this.slidesReady = false;
     this.#docJson = null;
-    this.#docText = new DocTextWatch();
     this.docId = null;
     this.title = '';
     this.pageCount = 0;
@@ -665,8 +659,6 @@ export class DocStore {
       },
       { once: true },
     );
-    this.#docText.observe(learnerTextByBlock(view.state.doc), Date.now());
-    this.#armDocTextTimer();
   }
 
   /**
@@ -693,8 +685,6 @@ export class DocStore {
   detach(): void {
     if (this.#view) this.#docJson = this.#view.state.doc.toJSON();
     this.#view = null;
-    if (this.#docTextTimer) clearInterval(this.#docTextTimer);
-    this.#docTextTimer = null;
     this.#cancelAnimations();
     if (this.#saveTimer) {
       clearTimeout(this.#saveTimer);
@@ -708,7 +698,6 @@ export class DocStore {
     if (!docChanged) return;
     const view = this.#view;
     if (!view) return;
-    this.#docText.observe(learnerTextByBlock(view.state.doc), Date.now());
     this.#scheduleSave();
   }
 
@@ -1224,31 +1213,11 @@ export class DocStore {
   }
 
   // ── §6: the learner's own doc text ────────────────────────────────────────────────────────
-
-  #armDocTextTimer(): void {
-    if (this.#docTextTimer) return;
-    this.#docTextTimer = setInterval(() => void this.#reportDocText(), DOC_TEXT_TICK_MS);
-  }
-
-  async #reportDocText(): Promise<void> {
-    if (!this.fileId || !this.docId || !has('notesDocText')) return;
-    const due = this.#docText.due(Date.now());
-    for (const block of due) {
-      // Marked first: a call that fails must not be retried on a one-second timer forever.
-      this.#docText.markReported(block.blockId, block.text);
-      try {
-        await bridge().notesDocText({
-          fileId: this.fileId,
-          docId: this.docId,
-          blockId: block.blockId,
-          text: block.text,
-        });
-      } catch {
-        // Main decides whether it was an attempt at all; a failed report is not the learner's
-        // problem and must never interrupt their writing.
-      }
-    }
-  }
+  //
+  // **Typing in the doc is just writing** (Lucas, 1 Oct 2026, #58; `notebooks.md` §7). A pause in
+  // the learner's own text is no longer reported to main as an attempt: no agent reads it, answers
+  // it, or writes under it. The learner's words in the doc move the bar only when they say so —
+  // Submit in a Q block (`answerQuestion` below), or an answer in the chat.
 
   // ── questions in the notes: answer in place, and the learner's own (2026-10-01) ───────────
 
