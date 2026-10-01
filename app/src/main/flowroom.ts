@@ -41,6 +41,8 @@ import { segmentContext, type ReferenceContext } from '../room/reference.js';
 import { createSession, frozenPrefix } from './sessions.js';
 import type { SegmentService } from './vault/segments.js';
 import type { VaultService } from './vault/service.js';
+import type { NotebookHostImpl } from './notebooks/host.js';
+import { isNotebookId } from '../shared/notebook.js';
 
 export interface FlowRoomDeps {
   store: LocalStore;
@@ -54,6 +56,12 @@ export interface FlowRoomDeps {
   models: ModelPlan;
   /** Null in scripted mode: nothing is drafted, the fixture pack is used. */
   llm: LLMClient | null;
+  /**
+   * Notebooks as subjects (contract C2, C4). A notebook id (`nb_…`) passed where a file id was
+   * opens the notebook's room, whose material is its ticked sources. Optional only so the tests
+   * that predate notebooks build without it; the app always passes it.
+   */
+  notebooks?: Pick<NotebookHostImpl, 'subject' | 'deckText' | 'outline' | 'scriptMaterial'>;
 }
 
 export interface FlowRoom {
@@ -70,6 +78,7 @@ export interface FlowRoom {
  * deck can only produce one room.
  */
 export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): Promise<FlowRoom> {
+  if (isNotebookId(fileId)) return openOrCreateNotebookRoom(deps, fileId);
   const view = await deps.segments.document(fileId);
   const sha = view.contentSha;
   const existing = deps.store.materials.forFile(fileId, sha);
@@ -125,6 +134,109 @@ export async function openOrCreateFlowRoom(deps: FlowRoomDeps, fileId: string): 
     input,
   );
   return { roomId: created.roomId, created: true };
+}
+
+// ── a notebook's room (`docs/research/notebooks.md`, contract C2, C4) ──────
+
+/**
+ * **The room for a notebook, opened or made.** One per notebook, keyed exactly as a file's is —
+ * `materials.file_id` = the notebook id, `materials.file_sha256` = its content key `nb:<id>` —
+ * and that key never changes when the sources do, so ticking, adding or removing a source keeps
+ * the room, the transcript and the sitting.
+ *
+ * What changes is the material: the ticked, ready sources' text (`NotebookHost.deckText`, each
+ * page under its notebook page marker) and their outline. When either differs from what the
+ * material holds, it is **re-frozen in place** before the next turn — the same move
+ * `reextractIfTruncated` makes for a file, for the same reason (the room is the learner's
+ * record; a re-frozen prefix costs one full-price turn on the API path and nothing on the CLI).
+ * The actor reads the material from SQLite every turn, so the write is all it takes.
+ */
+async function openOrCreateNotebookRoom(deps: FlowRoomDeps, notebookId: string): Promise<FlowRoom> {
+  const host = deps.notebooks;
+  if (!host) throw new Error('Notebooks are not available here.');
+  const subject = host.subject(notebookId);
+  if (!subject) throw new Error('That notebook no longer exists.');
+  const existing = deps.store.materials.forFile(notebookId, subject.contentKey);
+  if (existing) {
+    const room = deps.store.rooms.get(roomIdForMaterial(deps.store, existing.id) ?? '');
+    if (room) {
+      refreezeNotebookMaterial(deps, notebookId, existing, room.topic);
+      return { roomId: room.id, created: false };
+    }
+  }
+
+  const { text } = host.deckText(notebookId);
+  const outline = host.outline(notebookId);
+  const input: CreateSessionInput = {
+    moduleCode: '',
+    title: subject.name,
+    text,
+    sourceKind: 'pdf_pages',
+    fileId: notebookId,
+    // `file_path` is what the scripted backend recognises a deck by and what the CHECK on a
+    // `pdf_pages` material requires; for a notebook it is the notebook's name.
+    fileName: subject.name,
+    fileSha: subject.contentKey,
+    pageFrom: 1,
+    pageTo: Math.max(1, subject.pageCount),
+    ...(outline ? { outline } : {}),
+    // A fixture deck in a notebook still replays its script: recognised by its first source.
+    ...conceptFor(deps, host.scriptMaterial(notebookId)),
+  };
+  const created = createSession(
+    {
+      store: deps.store,
+      pairing: deps.pairing,
+      appVersion: deps.appVersion,
+      osVersion: deps.osVersion,
+      mode: deps.mode,
+      backend: deps.backend,
+      models: deps.models,
+    },
+    input,
+  );
+  log().info('notebook.room_created', {
+    notebook_id: notebookId,
+    room_id: created.roomId,
+    sources: subject.sources.filter((s) => s.enabled && s.status === 'ready').length,
+    chars: text.length,
+  });
+  return { roomId: created.roomId, created: true };
+}
+
+/**
+ * **Re-freeze a notebook room's material when its context changed** (C4). A no-op when the ticked
+ * sources' text and outline are what the material already holds, so it is cheap to call before
+ * every turn; `DocHost.openFlowRoom` and `roomForFile` both do.
+ */
+export function refreezeNotebookMaterial(
+  deps: Pick<FlowRoomDeps, 'store' | 'pairing' | 'models' | 'notebooks'>,
+  notebookId: string,
+  material: MaterialRow,
+  topic: string,
+): boolean {
+  const host = deps.notebooks;
+  if (!host) return false;
+  const { text, truncated } = host.deckText(notebookId);
+  const outline = host.outline(notebookId);
+  if (text === material.extracted_text && outline === material.outline) return false;
+
+  const before = material.extracted_text.length;
+  const patched: MaterialRow = { ...material, extracted_text: text, outline };
+  const pack = JSON.parse(material.concept_pack) as ConceptPack;
+  const roster = rosterFor(deps.pairing, deps.models.agent);
+  const frozen = frozenPrefix(patched, pack, roster, topic);
+  deps.store.materials.refreeze(material.id, { extracted_text: text, outline, ...frozen });
+  log().info('notebook.material_refrozen', {
+    material_id: material.id,
+    notebook_id: notebookId,
+    chars_before: before,
+    chars_after: text.length,
+    truncated,
+    fingerprint: host.subject(notebookId)?.fingerprint.slice(0, 200) ?? null,
+    prefix_sha256: frozen.prefix_sha256.slice(0, 12),
+  });
+  return true;
 }
 
 // ── the deck, whole ─────────────────────────────────────────────────────────

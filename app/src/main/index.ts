@@ -145,11 +145,10 @@ function createWindow(): BrowserWindow {
   if (devServer) void win.loadURL(devServer);
   else void win.loadFile(join(__dirname, '../renderer/index.html'));
 
-  // Re-walk the vault when the learner comes back to the window: they may have dropped a new
-  // PDF into it from Finder or from a browser download (issue #22 decision 1). mtime diffing
-  // makes an unchanged vault nearly free, so this does not need to be rate-limited. Here rather
-  // than in boot(), so a window re-created from the Dock gets it too (release review P2-5).
-  win.on('focus', () => service?.refreshVault());
+  // There used to be a `focus` hook here that re-walked the folder vault (issue #22 decision 1).
+  // Notebooks replaced the folder vault (`docs/research/notebooks.md` §1): sources are copies the
+  // learner added on purpose, so there is nothing on disk to notice, and a rescan must never
+  // reach the managed vault (`vault/managed.ts`).
 
   // macOS hides the traffic lights in fullscreen, so the renderer's reserved spacer has to
   // collapse or the title sits 78 px too far right (issue #21). The window is the only thing
@@ -333,6 +332,10 @@ function boot(): void {
   // What this install spent before there was a ledger. Once per launch, idempotent, swallowed
   // on failure — see `AppService.backfillCost`.
   service.backfillCost();
+  // Notebooks: the managed vault's row, the one-time import of every file that already has a
+  // notes doc (brief §1, "existing work is kept"), and any source a quit left half-read. After
+  // the migration and its backup above, so the import runs on a database that has been saved.
+  service.startNotebooks();
 
   mainWindow = createWindow();
   // Reload and DevTools are in this menu only while `app.isPackaged` is false.

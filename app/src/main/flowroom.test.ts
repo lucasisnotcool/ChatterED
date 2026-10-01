@@ -453,3 +453,76 @@ describe('MessagesRepo.forAnchor', () => {
     expect(sql).toEqual(pure);
   });
 });
+
+// ── a notebook's room (`docs/research/notebooks.md`, contract C2, C4) ──────
+
+describe('a notebook room', () => {
+  const NB = 'nb_0123456789ab';
+  function notebookHost(state: { text: string; outline: string; sources: number; gone?: boolean }) {
+    return {
+      subject: (id: string) =>
+        state.gone || id !== NB
+          ? null
+          : {
+              id: NB,
+              name: 'Week 4',
+              contentKey: `nb:${NB}`,
+              sources: [],
+              pageCount: 12,
+              fingerprint: `f_a@0${state.sources > 1 ? ',f_b@7' : ''}`,
+            },
+      deckText: () => ({ text: state.text, truncated: false }),
+      outline: () => state.outline,
+      scriptMaterial: () => ({ fileName: 'A0282987E_LohZhengLucas_Critique1_slides (1).pdf', contentSha: CRITIQUE1_SHA }),
+    };
+  }
+
+  it('is keyed on the notebook id and its content key, and reopens rather than duplicating', async () => {
+    const state = { text: '=== SOURCE: a.pdf ===\n\n[p. 1]\nalpha', outline: 'p. 1 — alpha', sources: 1 };
+    const d = { ...deps(), notebooks: notebookHost(state) };
+    const first = await openOrCreateFlowRoom(d, NB);
+    expect(first.created).toBe(true);
+    const material = d.store.materials.forFile(NB, `nb:${NB}`)!;
+    expect(material).toMatchObject({
+      file_id: NB,
+      file_sha256: `nb:${NB}`,
+      file_path: 'Week 4',
+      title: 'Week 4',
+      extracted_text: state.text,
+      outline: state.outline,
+      page_from: 1,
+      page_to: 12,
+    });
+    // A fixture deck added to a notebook still replays its script (scripted mode).
+    expect(material.pack_provenance).toBe('fixed');
+    const again = await openOrCreateFlowRoom(d, NB);
+    expect(again).toEqual({ roomId: first.roomId, created: false });
+  });
+
+  it('re-freezes the material in place when the ticked sources change, not a new room', async () => {
+    const state = { text: '[p. 1]\nalpha', outline: 'p. 1 — alpha', sources: 1 };
+    const d = { ...deps(), notebooks: notebookHost(state) };
+    const first = await openOrCreateFlowRoom(d, NB);
+    const before = d.store.materials.forFile(NB, `nb:${NB}`)!;
+
+    state.text = '[p. 1]\nalpha\n\n=== SOURCE: b.md ===\n\n[p. 8]\nbeta';
+    state.outline = 'p. 1 — alpha\np. 8 — beta';
+    state.sources = 2;
+    const again = await openOrCreateFlowRoom(d, NB);
+    expect(again).toEqual({ roomId: first.roomId, created: false });
+    const after = d.store.materials.forFile(NB, `nb:${NB}`)!;
+    expect(after.id).toBe(before.id);
+    expect(after.extracted_text).toBe(state.text);
+    expect(after.outline).toBe(state.outline);
+    expect(after.prefix_sha256).not.toBe(before.prefix_sha256);
+
+    // Unchanged context: nothing is written.
+    const { refreezeNotebookMaterial } = await import('./flowroom.js');
+    expect(refreezeNotebookMaterial(d, NB, after, 'Week 4')).toBe(false);
+  });
+
+  it('refuses a notebook that does not exist', async () => {
+    const d = { ...deps(), notebooks: notebookHost({ text: '', outline: '', sources: 0, gone: true }) };
+    await expect(openOrCreateFlowRoom(d, NB)).rejects.toThrow(/no longer exists/);
+  });
+});

@@ -57,6 +57,7 @@ import {
   deckMaterial,
   loadFlowState,
   openOrCreateFlowRoom,
+  refreezeNotebookMaterial,
   saveFlowState,
   titleFor,
   type FlowRoomDeps,
@@ -77,6 +78,14 @@ import { outcomesRepo } from './db/repos/outcomes.js';
 // The experimental trial: consent gate and research export (src/shared/trial.ts).
 import { registerResearchIpc, trialGate } from './research/ipc.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
+// Notebooks (`docs/research/notebooks.md`, 2026-10-01): the service, its host and its channels.
+import { NotebookService } from './notebooks/service.js';
+import { createNotebookHost, type NotebookHostImpl } from './notebooks/host.js';
+import { PICKER_FILTERS, registerNotebookIpc } from './notebooks/ipc.js';
+import { importLegacyNotebooks } from './notebooks/legacy.js';
+import { ensureManagedVault, isManagedVault } from './vault/managed.js';
+import { isNotebookId, notebookContentKey } from '../shared/notebook.js';
+import type { MaterialRow } from '../room/records.js';
 
 export interface IpcDeps {
   store: LocalStore;
@@ -118,6 +127,8 @@ export class AppService {
   readonly #providers: ProviderService;
   readonly #vault: VaultService;
   readonly #segments: SegmentService;
+  readonly #notebooks: NotebookService;
+  readonly #notebookHost: NotebookHostImpl;
   readonly #cost: CostLedger;
   /** Running app-level totals since launch, so `cost.updated` needs no second query per call. */
   #sessionTokens: CostTokens = emptyTokens();
@@ -141,6 +152,21 @@ export class AppService {
       db: deps.db,
       sourcePath: (fileId) => this.#vault.sourcePath(fileId),
     });
+    /**
+     * **Notebooks** (`docs/research/notebooks.md`). Sources are copied under
+     * `<userData>/notebooks` (the managed vault, `vault/managed.ts`). Every change is pushed on
+     * `notebook:changed`; deleting one asks the same native sheet as every destructive action and
+     * retires its room. `startNotebooks()` (boot) makes the vault row, runs the legacy import and
+     * resumes any source a quit left half-read.
+     */
+    this.#notebooks = new NotebookService({
+      db: deps.db,
+      root: join(deps.userDataDir, 'notebooks'),
+      onChanged: (change) => this.#d.getWindow()?.webContents.send(IPC.notebookChanged, change),
+      confirm: (input) => this.#confirm(input),
+      onDeleted: (notebookId) => this.#retireNotebookRoom(notebookId),
+    });
+    this.#notebookHost = createNotebookHost(deps.db, { absPath: (rel) => this.#notebooks.absPath(rel) });
     /**
      * **The cost ledger, constructed here and nowhere else.** It is handed to `createClient()`
      * on every `llm()` call, which is the one place every backend is built, so a call cannot be
@@ -214,6 +240,48 @@ export class AppService {
 
   get segments(): SegmentService {
     return this.#segments;
+  }
+
+  get notebooks(): NotebookService {
+    return this.#notebooks;
+  }
+
+  /**
+   * **Boot's half of notebooks**: the managed vault's row (contract C3), then the one-time import
+   * of every file that already has a notes doc (`notebooks/legacy.ts`, brief §1), then any source
+   * a quit left `reading`. The import is logged and swallowed on failure: it is idempotent and
+   * re-runs next launch, and a learner must never be locked out of the app by it.
+   */
+  startNotebooks(): void {
+    ensureManagedVault(this.#d.db, this.#notebooks.root, new Date().toISOString());
+    try {
+      importLegacyNotebooks({ db: this.#d.db, service: this.#notebooks });
+    } catch (err) {
+      log().error('notebook.legacy_import_crashed', { class: errorClass(err), cause: (err as Error).message.slice(0, 300) });
+    }
+    this.#notebooks.resumeReading();
+  }
+
+  /** A deleted notebook's room is retired, as New Conversation retires one; its rows stay. */
+  #retireNotebookRoom(notebookId: string): void {
+    const material = this.#d.store.materials.forFile(notebookId, notebookContentKey(notebookId));
+    if (!material) return;
+    for (const room of this.#d.store.rooms.openOrScheduled()) {
+      if (room.material_id === material.id) this.#retireRoom(room.id, 'notebook_deleted');
+    }
+  }
+
+  /**
+   * What the scripted backend recognises a material by. A notebook's material is named after the
+   * notebook and keyed on `nb:<id>`, which no fixture matches; its first ticked source is what
+   * the fixture deck would be, so that is what is passed (`NotebookHostImpl.scriptMaterial`).
+   */
+  #scriptMaterial(material: Pick<MaterialRow, 'file_id' | 'file_path' | 'file_sha256'> | undefined): {
+    fileName: string | null;
+    contentSha: string | null;
+  } {
+    if (material && isNotebookId(material.file_id)) return this.#notebookHost.scriptMaterial(material.file_id);
+    return { fileName: material?.file_path ?? null, contentSha: material?.file_sha256 ?? null };
   }
 
   get vault(): VaultService {
@@ -457,7 +525,7 @@ export class AppService {
       groupStore: groupView(this.#d.store),
       clock: systemClock,
       transport: { emit: (event) => this.emit(event) },
-      llm: this.llm(resolved, { fileName: material.file_path, contentSha: material.file_sha256 }),
+      llm: this.llm(resolved, this.#scriptMaterial(material)),
       roomId,
       sessionId: session.id,
       roster: rosterFor(this.pairing(), resolved.models.agent),
@@ -527,7 +595,7 @@ export class AppService {
     const resolved = this.backend();
     const material = this.#d.store.materials.get(this.#d.store.rooms.get(actor.snapshot().roomId)?.material_id ?? '');
     actor.rebind({
-      llm: this.llm(resolved, { fileName: material?.file_path ?? null, contentSha: material?.file_sha256 ?? null }),
+      llm: this.llm(resolved, this.#scriptMaterial(material)),
       models: resolved.models,
       roster: rosterFor(this.pairing(), resolved.models.agent),
       mode: modeFor(resolved.kind),
@@ -549,6 +617,7 @@ export class AppService {
     this.#actor?.stop();
     this.#actor = null;
     this.#vault.dispose();
+    this.#notebooks.dispose();
   }
 
   // ── The conversation inside the flow (issue #25, §3.3 track B) ───────────
@@ -609,6 +678,9 @@ export class AppService {
   #ensureTree(fileId: string, view: SegmentDocumentView, opts: { force?: boolean } = {}): void {
     // A document the pipeline refused, or one with no pages, is not a deck to read.
     if (view.refused !== null || view.pageCount < 1) return;
+    // A notebook's tree is written by its overview (contract C5), and a notebook *source* is not
+    // a subject of its own: opening one's pages must never run the whole-deck objective ingest.
+    if (isNotebookId(fileId) || isManagedVault(this.#vault.fileRow(fileId)?.vault_id)) return;
     if (!opts.force && treeIsCurrent(this.#d.store.objectives.tree(fileId), view.contentSha)) return;
     const resolved = this.backend();
     void (async () => {
@@ -713,6 +785,8 @@ export class AppService {
    * rest. Returns the `pending` tree at once; the real one arrives on `objectives.tree`.
    */
   async objectivesRegenerate(fileId: string): Promise<LearningTree | null> {
+    // A notebook's tree is the overview's (C5): Update overview rewrites it, not this.
+    if (isNotebookId(fileId)) return this.#d.store.objectives.tree(fileId);
     const view = await this.#segments.document(fileId);
     this.#ensureTree(fileId, view, { force: true });
     return this.#d.store.objectives.tree(fileId);
@@ -861,6 +935,9 @@ export class AppService {
   async #anchorForObjective(fileId: string, ref: { page: number; segmentId?: string } | null): Promise<string> {
     if (!ref) return DECK_ANCHOR_ID;
     if (ref.segmentId) return ref.segmentId;
+    // A notebook has no segment flow; its threads hang off blocks, and the deck anchor is the
+    // honest place for a Teach-me with no block in hand.
+    if (isNotebookId(fileId)) return DECK_ANCHOR_ID;
     const view = await this.#segments.document(fileId);
     return view.segments.find((s) => s.page === ref.page)?.id ?? DECK_ANCHOR_ID;
   }
@@ -878,6 +955,7 @@ export class AppService {
       backend: resolved.kind,
       models: resolved.models,
       llm: resolved.kind === 'scripted' ? null : this.llm(resolved),
+      notebooks: this.#notebookHost,
     };
   }
 
@@ -917,18 +995,6 @@ export class AppService {
   }
 
   /**
-   * Re-walk the vault. Called on window focus (issue #22 decision 1) and swallowed rather than
-   * surfaced: a rescan the learner did not ask for must never put a banner in front of them.
-   */
-  refreshVault(): void {
-    try {
-      if (this.#vault.activeVaultId()) this.#vault.rescan();
-    } catch {
-      /* the folder has gone away, or is not readable; the Library says so on its own. */
-    }
-  }
-
-  /**
    * The **Copy diagnostics** payload: what the app is, which backend and models are live, and
    * the last 50 log lines. Assembled here rather than in the renderer because the renderer has
    * no business reading a file, and because these are the four questions every bug report on
@@ -963,11 +1029,17 @@ export class AppService {
         this.openRoom(roomId, { opener: false });
         return { roomId, actor: this.#requireActor(roomId), created };
       }
-      const { contentSha } = await this.#segments.document(fileId);
+      // A notebook (C2): its room is keyed on the notebook id and its content key, which never
+      // change; a file's on the bytes, as ever.
+      const notebook = isNotebookId(fileId) ? this.#notebookHost.subject(fileId) : null;
+      if (isNotebookId(fileId) && !notebook) return null;
+      const contentSha = notebook ? notebook.contentKey : (await this.#segments.document(fileId)).contentSha;
       const material = this.#d.store.materials.forFile(fileId, contentSha);
       if (!material) return null;
       const room = this.#d.store.rooms.openOrScheduled().find((r) => r.material_id === material.id);
       if (!room) return null;
+      // C4: the ticked sources changed since the material was frozen ⟹ re-freeze before the turn.
+      if (notebook) refreezeNotebookMaterial(this.#flowDeps(), fileId, material, room.topic);
       this.openRoom(room.id, { opener: false });
       return { roomId: room.id, actor: this.#requireActor(room.id), created: false };
     };
@@ -976,13 +1048,8 @@ export class AppService {
       store: this.#d.store,
       vault: this.#vault,
       segments: this.#segments,
-      // Day 0 (NOTEBOOK-CONTRACT.md): track N1 replaces this with the NotebookService.
-      notebooks: {
-        subject: () => null,
-        deckText: () => ({ text: '', truncated: false }),
-        textFor: () => '',
-        locate: () => null,
-      },
+      // Notebooks as subjects (NOTEBOOK-CONTRACT.md C1–C4): `notebooks/host.ts`.
+      notebooks: this.#notebookHost,
       userDataDir: this.#d.userDataDir,
       emit: (event) => this.emit(event),
       backend: () => this.backend(),
@@ -999,12 +1066,21 @@ export class AppService {
       objectivesTree: (fileId) => this.objectivesTree(fileId),
       objectivesStates: (fileId) => this.objectivesStates(fileId),
       ensureObjectives: (fileId) => {
+        // C5: a notebook's tree comes from its overview (track N2), never the whole-deck ingest.
+        if (isNotebookId(fileId)) return;
         void this.#segments
           .document(fileId)
           .then((view) => this.#ensureTree(fileId, view))
           .catch(() => undefined);
       },
       fileBytesKey: async (fileId) => {
+        // C2: a notebook's key is `nb:<id>` for its whole life, and its pages are the virtual
+        // deck's (gaps included), whatever its sources are doing.
+        if (isNotebookId(fileId)) {
+          const subject = this.#notebookHost.subject(fileId);
+          if (!subject) throw new Error('That notebook no longer exists.');
+          return { contentSha: subject.contentKey, pageCount: subject.pageCount };
+        }
         const view = await this.#segments.document(fileId);
         return { contentSha: view.contentSha, pageCount: view.pageCount };
       },
@@ -1098,6 +1174,21 @@ export class AppService {
     registerNotesIpc(docHost, handle);
     registerDocRoomIpc(docHost, handle);
     registerProgressIpc(docHost, handle);
+    // Notebooks (`docs/research/notebooks.md`): the home, the sources panel and the drop path.
+    registerNotebookIpc({
+      service: this.#notebooks,
+      handle,
+      pickFiles: async () => {
+        const win = this.#d.getWindow();
+        const options = {
+          properties: ['openFile', 'multiSelections'] as Array<'openFile' | 'multiSelections'>,
+          filters: PICKER_FILTERS,
+          buttonLabel: 'Add Sources',
+        };
+        const result = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+        return result.canceled ? null : result.filePaths;
+      },
+    });
 
     handle<string>(IPC.setApiKey, (key) => {
       if (!looksLikeAnthropicKey(key)) {
