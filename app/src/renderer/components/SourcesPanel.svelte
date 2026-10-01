@@ -68,6 +68,7 @@
 </script>
 
 <aside class="sources" id="files-panel" aria-label="Sources" style:width={`${layout.filesWidth}px`}>
+  <div class="top">
   <header class="head">
     <span class="title">Sources</span>
     {#if count}<span class="sub">{count}</span>{/if}
@@ -126,9 +127,9 @@
   {:else if nb.view}
     <p class="ctxnote">No sources yet. Add files, or drop them anywhere on this window.</p>
   {/if}
+  </div>
 
   {#if below}
-    <div class="divider"></div>
     <div class="below">{@render below()}</div>
   {/if}
 </aside>
@@ -151,10 +152,13 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--ground);
     border-right: 1px solid var(--hairline);
   }
+  /* The sources take what they need and scroll past about half the column; the outline below
+     takes the rest, so neither can push the other off the bottom of the window. */
+  .top { flex: 0 1 auto; max-height: 58%; overflow-y: auto; min-height: 0; padding-bottom: 12px; }
 
   .head { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 10px; }
   .title { font-size: 13px; font-weight: 600; }
@@ -273,6 +277,8 @@
 
   .ctxnote { margin: 8px 14px 0; font-size: 11px; line-height: 1.5; color: var(--text-2); }
 
-  .divider { height: 1px; background: var(--hairline); margin: 14px 14px 0; flex: none; }
-  .below { display: flex; flex-direction: column; min-height: 0; }
+  .below { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  /* The outline's own cap (46%) was for sharing the column with a file tree; here it has the
+     rest of the column to itself. */
+  .below > :global(.map) { max-height: none; flex: 1 1 auto; }
 </style>

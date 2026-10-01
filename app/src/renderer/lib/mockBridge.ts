@@ -947,7 +947,7 @@ export function createMockBridge(): ChatterEdApi {
    */
   const BLOCK_ACTIONS: { match: RegExp; explain: string; explainLine: string; example: string; exampleLine: string }[] = [
     {
-      match: /h_\{FF\}|greedily built relaxed plan/,
+      match: /h_FF counts|greedily built relaxed plan/,
       explain:
         '**Three steps** (Hoffmann & Nebel, 2001). First, drop every delete effect, so facts only ever get ' +
         'added. Then build a relaxed plan greedily: pick actions that achieve the goals you still need. ' +

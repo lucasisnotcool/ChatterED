@@ -20,6 +20,9 @@
  * as its **own** one-item bullet list with its own pages, and an empty paragraph whose `reason` is
  * `NOTE_SLOT_REASON` and whose pages are the section's: the learner's note slot.
  *
+ * Inline maths is kept to plain text (h_max, 10⁴⁰⁵): the editor draws `$…$` as a styled mark,
+ * not typeset, so TeX source would show as source.
+ *
  * **The real functions do the work.** `validateDrafts` gates every written block as the ingest's
  * gate would and `draftsToDocJson` builds the nodes with an author mark on every span; only the
  * note slots are made directly, because an empty paragraph is exactly what the ingest gate
@@ -201,7 +204,7 @@ const SECTIONS: Section[] = [
         [4, 5],
       ),
       idea(
-        'Search forward or backward, or encode as SAT. A search planner uses an explicit heuristic $h(s)$. For a ' +
+        'Search forward or backward, or encode as SAT. A search planner uses an explicit heuristic *h*(*s*). For a ' +
           'SAT solver, the heuristic is implicit in its branching.',
         [7, 11],
       ),
@@ -214,12 +217,12 @@ const SECTIONS: Section[] = [
     ideas: [
       idea('Relax by ignoring some preconditions, or by ignoring delete effects so that facts never become false.', [16, 17]),
       idea(
-        '$h_{max}$ takes the largest subgoal cost, which is admissible but weak. $h_{add}$ sums the subgoal costs, ' +
+        'h_max takes the largest subgoal cost, which is admissible but weak. h_add sums the subgoal costs, ' +
           'which is more informed but not always admissible.',
         [17],
       ),
       idea(
-        '$h_{FF}$ counts the actions in a greedily built relaxed plan. It is inadmissible, and it is the standard ' +
+        'h_FF counts the actions in a greedily built relaxed plan. It is inadmissible, and it is the standard ' +
           'choice for greedy best-first search.',
         [18],
       ),
@@ -231,8 +234,8 @@ const SECTIONS: Section[] = [
     takeaway: p('Search a smaller problem, or split the goal, and then map the result back.', [20]),
     ideas: [
       idea(
-        'Air cargo with 10 airports, 50 planes and 200 cargos has about $10^{405}$ states. Assuming 5 airports and ' +
-          'dropping the irrelevant *At* fluents leaves about $10^{11}$.',
+        'Air cargo with 10 airports, 50 planes and 200 cargos has about 10⁴⁰⁵ states. Assuming 5 airports and ' +
+          'dropping the irrelevant *At* fluents leaves about 10¹¹.',
         [22],
       ),
       idea(
@@ -254,8 +257,8 @@ const SECTIONS: Section[] = [
     ideas: [
       idea('`Go(Home, SIN)` refines to `Taxi(Home, SIN)`, which refines to Call-Taxi, Ride and Pay-Taxi.', [28, 32]),
       idea(
-        'A flat planner pays $O(b^d)$. An HTN planner chooses among $r$ refinements per level, and a small $r$ with ' +
-          'a large $k$ is cheaper.',
+        'A flat planner pays O(bᵈ). An HTN planner chooses among *r* refinements per level, and a small *r* with ' +
+          'a large *k* is cheaper.',
         [33],
       ),
     ],
@@ -376,22 +379,25 @@ export function mockLastBlockId(): string {
 }
 
 /**
- * A named handle on one fixture block, for the scripted conversation: the first block (or the
- * `offset`-th) that cites `page`. A note slot cites its section's pages too, so it is skipped
- * unless nothing else does — an agent's line never goes under an empty slot.
+ * A named handle on one fixture block, for the scripted conversation: the first written block
+ * (or the `offset`-th) that cites `page`. Headings, the objectives list and the note slots also
+ * cite pages, but an agent's line never goes under them, so they are passed over unless nothing
+ * else cites the page.
  */
 export function mockBlockOnPage(page: number, offset = 0): string {
   const hits = FIXTURE.ids.filter((id) => (FIXTURE.pagesOf.get(id) ?? []).includes(page));
-  const written = hits.filter((id) => !SLOT_IDS.has(id));
-  const pool = written.length > 0 ? written : hits;
+  const content = hits.filter((id) => !SKIP_IDS.has(id));
+  const pool = content.length > 0 ? content : hits;
   return pool[Math.min(offset, Math.max(0, pool.length - 1))] ?? FIXTURE.ids[0] ?? '';
 }
 
-const SLOT_IDS = (() => {
+/** Blocks a scripted line never anchors to: headings, the objectives list, the note slots. */
+const SKIP_IDS = (() => {
   const set = new Set<string>();
   docFromJson(FIXTURE.json).forEach((node) => {
     const attrs = node.attrs as { blockId?: string; reason?: string | null };
-    if (attrs.reason === NOTE_SLOT_REASON && attrs.blockId) set.add(attrs.blockId);
+    if (!attrs.blockId) return;
+    if (node.type.name === 'heading' || attrs.reason === NOTE_SLOT_REASON || attrs.reason === 'objectives') set.add(attrs.blockId);
   });
   return set;
 })();

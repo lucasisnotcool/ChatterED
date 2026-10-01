@@ -140,3 +140,13 @@ describe('the fixture objectives', () => {
     }
   });
 });
+
+describe('mockBlockOnPage', () => {
+  it('anchors to a written block, never the objectives list or a heading that shares the page', () => {
+    for (const page of [16, 17, 23, 45]) {
+      const node = blocks().find((n) => attrs(n).blockId === mockBlockOnPage(page))!;
+      expect(node.type.name).not.toBe('heading');
+      expect(attrs(node).reason).not.toBe('objectives');
+    }
+  });
+});
