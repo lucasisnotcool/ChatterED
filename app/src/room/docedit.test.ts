@@ -222,6 +222,19 @@ describe('planBlockNote (notebooks §4.2)', () => {
     expect(stray.batch).toBeNull();
   });
 
+  /** Live run, 1 Oct 2026: "Added one line under that heading.", above the section's takeaway. */
+  it('files a doc-chat line picked onto a heading under the block the heading heads', async () => {
+    const d = seq([{ line: 'Admissible means never overestimating.', anchor_block_id: 'b_1', why: 'x' }]);
+    d.docPort = { ...d.docPort, outlineNear: () => OUTLINE };
+    const out = await planBlockNote(d, { kind: 'answer', answer: 'a', blockId: null, outline: OUTLINE });
+    expect(out.batch!.ops[0]).toMatchObject({ anchorBlockId: 'b_2' });
+    // A heading with another heading (or nothing) next keeps the pick.
+    const lone = seq([{ line: 'Admissible means never overestimating.', anchor_block_id: 'b_1', why: 'x' }]);
+    lone.docPort = { ...lone.docPort, outlineNear: () => [OUTLINE[0]!] };
+    const kept = await planBlockNote(lone, { kind: 'answer', answer: 'a', blockId: null, outline: OUTLINE });
+    expect(kept.batch!.ops[0]).toMatchObject({ anchorBlockId: 'b_1' });
+  });
+
   it('shows the block, the slide, the question and the chat answer, and says what the line is', () => {
     const passage = 'An admissible heuristic never overestimates. '.repeat(100);
     const prompt = blockNotePrompt({ kind: 'example', answer: 'THE-CHAT', question: 'why?', passage, page: 4, blockId: 'b_2', outline: OUTLINE });

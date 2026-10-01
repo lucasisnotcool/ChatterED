@@ -405,7 +405,7 @@ export async function planBlockNote(
   // question that named none. A pick that is not in the outline is not trusted.
   const picked = typeof parsed?.anchor_block_id === 'string' ? parsed.anchor_block_id : null;
   const anchorBlockId =
-    input.blockId ?? (picked !== null && input.outline.some((e) => e.blockId === picked) ? picked : null);
+    input.blockId ?? underHeading(deps, picked !== null && input.outline.some((e) => e.blockId === picked) ? picked : null, input.outline);
 
   if (line === null) {
     if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried };
@@ -445,6 +445,24 @@ export async function planBlockNote(
     words: wordCount(line),
     retried,
   };
+}
+
+/**
+ * **A line is never filed between a heading and what it heads.** A doc-chat question with no
+ * page is planned against the table of contents (`docOutlineNear` with no anchor), so the planner
+ * often picks a section's heading, and the line went in straight under the H2, above the
+ * section's takeaway (live run, 1 Oct 2026: "Added one line under that heading."). On an
+ * overview the takeaway is the line that says what the section is (C6), so the line goes under
+ * the first block of the section instead. A heading with nothing under it, or another heading
+ * next, keeps the pick.
+ */
+function underHeading(deps: DocEditDeps, picked: string | null, outline: readonly OutlineEntry[]): string | null {
+  if (picked === null) return null;
+  if (outline.find((e) => e.blockId === picked)?.kind !== 'heading') return picked;
+  const near = deps.docPort.outlineNear({ blockId: picked }, 1);
+  const at = near.findIndex((e) => e.blockId === picked);
+  const next = at >= 0 ? near[at + 1] : undefined;
+  return next && next.kind !== 'heading' && next.questionId === null ? next.blockId : picked;
 }
 
 // ── 5.2: Max's question, written in as a Q block ───────────────────────────
