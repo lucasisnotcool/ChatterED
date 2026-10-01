@@ -35,6 +35,7 @@
 
 import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 import { Plugin, PluginKey, type EditorState, type Transaction } from 'prosemirror-state';
+import { AttrStep, ReplaceAroundStep } from 'prosemirror-transform';
 import type { Node } from 'prosemirror-model';
 import { blockAttrs, blockPos, eachBlock } from '../../../shared/doc/schema.js';
 import type {
@@ -370,8 +371,14 @@ function blockActionLines(doc: Node, ctx: ChromeContext): Decoration[] {
 
 /**
  * **The objectives' fills** (C5): a small bar beside each item of "By the end you can", from the
- * progress view. The bar's *length* is the signal and the word beside it ("half", "done") says it
- * again, so it is never colour alone.
+ * progress view. The bar's *length* is the signal and the word beside it ("half", "✓ done") says
+ * it again, so it is never colour alone.
+ *
+ * **Attributes, not widgets.** Each item gets a node decoration whose `--fill` and `data-fill-word`
+ * notes.css draws as the item's `::before` (the bar) and `::after` (the word). A widget inside a
+ * list item was tried first: ProseMirror reused it by key across a rebuild of the chrome and lost
+ * its DOM on the way (the fills vanished when a source was added and came back on the next fill
+ * change). An attribute cannot be lost that way, and it puts nothing where the caret can go.
  */
 function objectiveDecorations(doc: Node, ctx: ChromeContext): Decoration[] {
   const out: Decoration[] = [];
@@ -383,24 +390,17 @@ function objectiveDecorations(doc: Node, ctx: ChromeContext): Decoration[] {
     node.forEach((item) => items.push(item.textContent));
     const fills = fillsForItems(items, objectives);
     let index = 0;
-    node.forEach((_item, itemOffset) => {
+    node.forEach((item, itemOffset) => {
       const which = fills[index++] ?? null;
       if (!which) return; // a line the learner added has nothing to fill
-      // Inside the list item, before its paragraph: notes.css sets it at the item's right edge.
-      const at = offset + 1 + itemOffset + 1;
+      const from = offset + 1 + itemOffset;
       const word = fillMark(which.fill);
       out.push(
-        widget(at, `objfill:${String(at)}:${which.objectiveId}:${String(which.fill)}`, -1, () => {
-          const holder = el('span', 'nd-objfill');
-          holder.title = `${which.title}: ${word || 'not started'}`;
-          holder.setAttribute('role', 'img');
-          holder.setAttribute('aria-label', `Your own words on this objective: ${word || 'not started'}`);
-          const bar = el('span', 'nd-objfill-bar');
-          const fill = el('i', 'nd-objfill-in');
-          fill.style.width = `${String(which.fill * 100)}%`;
-          bar.append(fill);
-          holder.append(bar, el('span', 'nd-objfill-word', word === 'done' ? '✓ done' : word));
-          return holder;
+        Decoration.node(from, from + item.nodeSize, {
+          class: 'nd-objitem',
+          style: `--fill: ${String(which.fill * 100)}%`,
+          'data-fill-word': word === 'done' ? '✓ done' : word,
+          title: `Your own words on this objective: ${word || 'not started'}`,
         }),
       );
     });
@@ -646,6 +646,14 @@ export function chromePlugin(context: () => ChromeContext): Plugin<DecorationSet
         // A structural change (a split, a paste, an agent's new blocks, an ingest window) can
         // add or remove chips and controls; anything else only moves them.
         const structural = tr.docChanged && tr.doc.childCount !== _old.doc.childCount;
+        /**
+         * A node's markup changed (its attrs, or its type): `assignMissingBlockIds` minting ids,
+         * a lift or a wrap. Mapping drops a decoration on a node that was replaced, and the
+         * objectives' fills are exactly that (found when a list item's first id was minted and
+         * every fill vanished). Never a keystroke: typing is plain `ReplaceStep`s and marks.
+         */
+        const remarked = tr.steps.some((step) => step instanceof ReplaceAroundStep || step instanceof AttrStep);
+        if (remarked) return build(newState, context());
         if (tr.getMeta(chromeKey) || structural) return build(newState, context());
         if (tr.docChanged) return value.map(tr.mapping, tr.doc);
         return value;

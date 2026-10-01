@@ -28,6 +28,8 @@ export interface OverviewBench {
   setOverview(meta: OverviewMeta | null): void;
   /** The fingerprint the next Update writes (the notebook's, as main would). */
   setFingerprint(fingerprint: string): void;
+  /** False: the notebook has no doc yet, until the editor asks for one with `notesIngest`. */
+  setHasDoc(exists: boolean): void;
   teardown(): void;
 }
 
@@ -51,6 +53,7 @@ export function installOverviewBench(options: {
   let version = 1;
   let stored: unknown = fixtureOverviewDoc();
   let seq = 0;
+  let hasDoc = true;
 
   const view = (): NotesDocView => ({
     docId: FIXTURE_DOC_ID,
@@ -71,7 +74,15 @@ export function installOverviewBench(options: {
     setTimeout(fn, ms);
   };
 
-  patch('notesGet', async (input) => (input.fileId === FIXTURE_NOTEBOOK_ID ? view() : original('notesGet')(input)));
+  patch('notesGet', async (input) =>
+    input.fileId === FIXTURE_NOTEBOOK_ID ? (hasDoc ? view() : null) : original('notesGet')(input),
+  );
+  patch('notesIngest', async (input) => {
+    if (input.fileId !== FIXTURE_NOTEBOOK_ID) return original('notesIngest')(input);
+    options.log('notes:ingest — the overview, written in one call');
+    hasDoc = true;
+    return view();
+  });
   patch('openDocument', async (input) => {
     if (input.fileId === 'file_notes' || input.fileId === 'file_lecture') {
       const bytes = input.fileId === 'file_lecture' ? await options.lectureBytes() : null;
@@ -234,6 +245,9 @@ export function installOverviewBench(options: {
     },
     setFingerprint(next) {
       fingerprint = next;
+    },
+    setHasDoc(exists) {
+      hasDoc = exists;
     },
     teardown() {
       for (const [name, fn] of saved) api[name] = fn;

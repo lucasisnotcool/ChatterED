@@ -802,12 +802,11 @@ export class DocStore {
         return;
       case 'doc.edit':
         if (e.docId !== this.docId) return;
-        this.#settleBlockActions(e.batch.author);
+        this.#settleBlockActions(e.batch);
         void this.applyAgentEdit(e.batch);
         return;
       case 'doc.cursor': {
         if (e.docId !== this.docId) return;
-        if (e.state === 'idle') this.#settleBlockActions(e.author);
         const rest = this.cursors.filter((c) => c.author !== e.author);
         this.cursors = e.state === 'idle' ? rest : [...rest, { author: e.author, blockId: e.blockId, state: e.state }];
         this.#bump();
@@ -1362,6 +1361,8 @@ export class DocStore {
       if (fileId !== this.fileId) return;
       if (!result.accepted) {
         this.#refuseBlock(blockId, kind, blockActionRefusal(result.reason));
+        // Max's open question is in its own thread (N3): bring it up beside the line saying so.
+        if (result.reason === 'question_open' && result.threadId) this.focusThread?.(result.threadId);
         return;
       }
       if (result.threadId) this.focusThread?.(result.threadId);
@@ -1397,10 +1398,20 @@ export class DocStore {
     this.#bump();
   }
 
-  /** The agent's edit landed, or its cursor went idle: what it was doing on a block is done. */
-  #settleBlockActions(author: AgentAuthor): void {
+  /**
+   * The agent's edit for a block landed: what it was doing there is done. Matched on the block
+   * the edit is anchored at (N3: the one line is `insert_after` the block, Max's question
+   * `insert_q` under it), not on the IPC resolving, which happens before Ellie has written
+   * anything. A frozen doc gets no edit; `blockAction` clears the line itself then.
+   */
+  #settleBlockActions(batch: AgentDocOpBatch): void {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local scratch set
+    const anchors = new Set<string>([batch.focusBlockId ?? '']);
+    for (const op of batch.ops) {
+      if ('anchorBlockId' in op && typeof op.anchorBlockId === 'string') anchors.add(op.anchorBlockId);
+    }
     for (const [blockId, value] of Object.entries(this.blockActions)) {
-      if (value.state === 'running' && value.author === author) this.#clearBlockLine(blockId);
+      if (value.state === 'running' && value.author === batch.author && anchors.has(blockId)) this.#clearBlockLine(blockId);
     }
   }
 

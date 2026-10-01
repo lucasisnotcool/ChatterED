@@ -11,7 +11,7 @@
    * is the C6 fixture, served by `overviewBench.ts` behind the bridge calls main will answer —
    * the toolbar, the note slots, the objectives' fills, a recommended block, the out-of-date
    * banner and Ellie's one-line edit with Keep · Remove can all be seen and screenshotted. *Notes*:
-   * the pre-notebook fixture deck, as before. `?bench=notes` in the URL starts on that one.
+   * the mock bridge's own notebook (N5's mock, `MOCK_FILE_ID`). `?bench=notes` starts on that one.
    */
   import { onMount } from 'svelte';
   import { store } from '../../../lib/store.svelte.js';
@@ -121,6 +121,29 @@
       mode = 'overview';
     });
     note('reopened as a legacy doc (no overview)');
+  }
+
+  /** A notebook with no overview yet: no sources, then one being read, then ready (§1). */
+  function emptyNotebook(): void {
+    bench?.setHasDoc(false);
+    mode = 'notes';
+    queueMicrotask(() => {
+      store.notebook.view = { ...fixtureNotebook(), sources: [], pageCount: 0, contextFingerprint: '' };
+      store.progress.view = null;
+      mode = 'overview';
+    });
+    note('an empty notebook: no doc, no sources');
+  }
+
+  function sourceReading(): void {
+    const nb = fixtureNotebook();
+    store.notebook.view = { ...nb, sources: [{ ...nb.sources[0]!, status: 'reading', pageCount: 0 }], contextFingerprint: '' };
+    note('notebook: Lecture-complex v4.0.pdf is being read');
+  }
+
+  function sourceReady(): void {
+    seedOverview();
+    note('notebook: both sources ready → the overview is written');
   }
 
   /** Objective 3 moves to half, as a learner's own sentence would move it. */
@@ -295,7 +318,7 @@
 
     <div class="group" role="group" aria-label="Bench">
       <button class="btn" aria-pressed={mode === 'overview'} onclick={() => switchTo('overview')}>Overview (notebook)</button>
-      <button class="btn" aria-pressed={mode === 'notes'} onclick={() => switchTo('notes')}>Notes (one file)</button>
+      <button class="btn" aria-pressed={mode === 'notes'} onclick={() => switchTo('notes')}>The mock's notebook</button>
     </div>
 
     {#if mode === 'overview'}
@@ -307,6 +330,9 @@
         <button class="btn" onclick={legacy}>Reopen as a legacy doc</button>
         <button class="btn" onclick={moveFill}>Objective 3 → half</button>
         <button class="btn" onclick={() => doc.openSlide(53, null)}>Open notes §1 (a text page)</button>
+        <button class="btn" onclick={emptyNotebook}>An empty notebook</button>
+        <button class="btn" onclick={sourceReading}>A source is being read</button>
+        <button class="btn" onclick={sourceReady}>The sources are ready</button>
       </div>
     {/if}
 
@@ -340,6 +366,8 @@
       <dt>caret</dt><dd>{doc.caretBlockId() ?? '—'}</dd>
       <dt>spans</dt><dd>{(doc.spanThreads?.() ?? []).length}</dd>
       <dt>mine</dt><dd>{doc.learnerText().length}</dd>
+      <dt>objectives</dt><dd>{store.progress.view?.objectives.length ?? '—'}</dd>
+      <dt>overview</dt><dd>{doc.overview ? doc.overview.fingerprint || '(none ticked)' : '—'}</dd>
     </dl>
 
     {#if ask}

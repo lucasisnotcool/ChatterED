@@ -1198,26 +1198,29 @@
 }
 .nd-editor .ProseMirror > h3 + ol.nd-objectives { margin-top: -4px; }
 .nd-objectives > li { position: relative; padding-right: 96px; }
-.nd-objfill {
+/* The bar (its length is the fill) and the word that says it again: `objectiveDecorations`. */
+.nd-objectives > li.nd-objitem::before {
+  content: '';
   position: absolute;
-  right: 0;
-  top: 0.62em;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: 86px;
-  user-select: none;
-  line-height: 1;
-}
-.nd-objfill-bar {
-  flex: 0 0 44px;
+  right: 42px;
+  top: 0.78em;
+  width: 44px;
   height: 5px;
   border-radius: 3px;
-  background: var(--hairline);
-  overflow: hidden;
+  background: linear-gradient(to right, var(--indigo) var(--fill, 0%), var(--hairline) var(--fill, 0%));
 }
-.nd-objfill-in { display: block; height: 100%; background: var(--indigo); transition: width 0.5s ease; }
-.nd-objfill-word { font-size: 10.5px; color: var(--text-2); white-space: nowrap; }
+.nd-objectives > li.nd-objitem::after {
+  content: attr(data-fill-word);
+  position: absolute;
+  right: 0;
+  top: 0.32em;
+  width: 36px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
 
 /* The learner's note slot (C6): a dashed box with a placeholder until they write, then theirs. */
 .nd-editor .ProseMirror > p.nd-noteslot {

@@ -198,14 +198,14 @@
 {/if}
 
 <style>
-  /* Under the file tree, which keeps the room: the map takes what it needs up to a little
-     under half the panel and scrolls inside that. */
+  /* Under the sources (`notebooks.md` §8): the map takes what it needs and scrolls inside what
+     the panel gives it. The 46 % cap was for sharing the column with the file tree; the
+     sources panel sizes it now (N5's SourcesPanel). */
   .map {
     flex: 0 1 auto;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    max-height: 46%;
     border-top: 1px solid var(--hairline);
   }
 
