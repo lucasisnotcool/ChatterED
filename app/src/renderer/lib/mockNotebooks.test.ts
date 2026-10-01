@@ -24,21 +24,26 @@ describe('MockNotebooks', () => {
     const out = model.create({ paths: ['/Users/me/Lecture 5.pdf', '/Users/me/notes.md'] });
     expect(out.notebook.name).toBe('Lecture 5');
     expect(out.added.map((s) => s.status)).toEqual(['reading', 'reading']);
-    expect(out.added[1]!.pageBase).toBe(out.added[0]!.pageCount);
+    // Reading: no pages and no base yet (main fixes the base at ready).
+    expect(out.added.map((s) => s.pageCount)).toEqual([0, 0]);
     flush();
     const view = model.view(out.notebook.id)!;
     expect(view.sources.every((s) => s.status === 'ready')).toBe(true);
+    expect(view.sources[1]!.pageBase).toBe(view.sources[0]!.pageCount);
     expect(pushed.at(-1)!.view!.sources.every((s) => s.status === 'ready')).toBe(true);
     expect(view.contextFingerprint).not.toBe('');
   });
 
   it('never reuses a removed source’s pages', () => {
     const { model, flush } = setup();
-    const { notebook, added } = model.create({ paths: ['a.pdf', 'b.pdf'] });
+    const { notebook } = model.create({ paths: ['a.pdf', 'b.pdf'] });
     flush();
-    model.removeSource({ notebookId: notebook.id, fileId: added[1]!.fileId });
-    const again = model.addSources({ notebookId: notebook.id, paths: ['c.pdf'] });
-    expect(again.added[0]!.pageBase).toBe(added[1]!.pageBase + added[1]!.pageCount);
+    const b = model.view(notebook.id)!.sources[1]!;
+    model.removeSource({ notebookId: notebook.id, fileId: b.fileId });
+    model.addSources({ notebookId: notebook.id, paths: ['c.pdf'] });
+    flush();
+    const c = model.view(notebook.id)!.sources.find((s) => s.name === 'c.pdf')!;
+    expect(c.pageBase).toBe(b.pageBase + b.pageCount);
   });
 
   it('refuses Keynote, unknown types and duplicates, and adds the rest', () => {

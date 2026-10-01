@@ -7,7 +7,8 @@
  *
  * It keeps main's rules where a renderer could be built against the wrong one: bases are
  * append-only and never reused (`nextPageBase` with the highest base ever used), a source reads
- * in the background and every step is pushed (`reading` → `ready`), a Keynote file is refused with
+ * in the background and every step is pushed (`reading` → `ready`), a reading source has
+ * `pageCount` 0 and gets its fixed `pageBase` only when it is ready, a Keynote file is refused with
  * "export it as a PDF first", the same name twice is a duplicate, removing or deleting asks first
  * (the browser's `confirm` standing in for main's native sheet), and the list sorts by last
  * opened. What it does not have is a disk: a "path" is whatever `pathForFile` gave it, which in
@@ -224,20 +225,18 @@ export class MockNotebooks {
         continue;
       }
       const kind = sourceKindFor(name)!;
-      const pageCount = kind === 'image' ? 1 : kind === 'text' ? 1 + (hash(name) % 3) : 8 + (hash(name) % 33);
-      const pageBase = nextPageBase([...n.sources, ...added], n.highest);
+      // Reading: no pages yet, and no base. Main fixes the base when the read is done.
       const source: NotebookSourceView = {
-        fileId: `f_${hash(`${n.id}:${name}:${pageBase}`).toString(16).padStart(8, '0')}`,
+        fileId: `f_${hash(`${n.id}:${name}:${n.highest}:${added.length}`).toString(16).padStart(8, '0')}`,
         name,
         kind,
-        pageBase,
-        pageCount,
+        pageBase: 0,
+        pageCount: 0,
         enabled: true,
         status: 'reading',
         error: null,
         addedAt: this.#now(),
       };
-      n.highest = Math.max(n.highest, pageBase + pageCount);
       added.push(source);
     }
     n.sources.push(...added);
@@ -246,14 +245,20 @@ export class MockNotebooks {
       this.#deps.later(1400 + i * 700, () => {
         const live = this.#held.get(n.id)?.sources.find((s) => s.fileId === source.fileId);
         if (!live) return;
+        const held = this.#held.get(n.id)!;
         if (/broken/i.test(live.name)) {
           live.status = 'failed';
           live.error = 'This file could not be read. It may be damaged or password-protected.';
           live.enabled = false;
         } else {
+          const pageCount = live.kind === 'image' ? 1 : live.kind === 'text' ? 1 + (hash(live.name) % 3) : 8 + (hash(live.name) % 33);
+          const ready = held.sources.filter((s) => s.status === 'ready');
+          live.pageBase = nextPageBase(ready, held.highest);
+          live.pageCount = pageCount;
           live.status = 'ready';
+          held.highest = Math.max(held.highest, live.pageBase + pageCount);
         }
-        this.#changed(this.#held.get(n.id)!);
+        this.#changed(held);
       });
     });
     return { notebook, added: added.map((s) => ({ ...s })), refused };
