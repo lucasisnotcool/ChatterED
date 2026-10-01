@@ -1,0 +1,454 @@
+/**
+ * The three generated blocks of notebooks §5.3 (2026-10-01): flashcards, a quiz, an infographic.
+ * `pm/blockkit.ts` draws them, `pm/{flashcards,quiz,infographic}.ts` say what differs, and
+ * `lib/blockfields.ts` edits them.
+ *
+ * The same global, `nd-`-prefixed namespace as `notes.css` and `table.css`, for the same reason
+ * (ProseMirror's DOM never carries Svelte's scoping class). It is imported by `pm/nodeviews.ts`,
+ * the views that need it, so no component has to remember to.
+ *
+ * Every word in these blocks is real document text, styled here by the `data-*` attribute the
+ * schema's `toDOM` writes on its field (`data-flashcard-front`, `data-quiz-prompt`, …).
+ *
+ * **Colour is never the only signal.** A card says Front or Back, a question says Q1 and, once
+ * answered, "✓ Correct answer" or "✗ Not this one", a step says "Step 2", a stat is its number.
+ * **Editing reveals everything**: the item the caret is in carries `.nd-item-active` (blockkit's
+ * decoration), and every rule that hides something says `:not(.nd-item-active)`.
+ */
+
+.nd-fc,
+.nd-qz,
+.nd-ig {
+  --nd-qz-right: #1a7f37;
+  --nd-qz-wrong: #b42318;
+  position: relative;
+  margin: 24px 0;
+}
+.nd-editor .ProseMirror-selectednode.nd-fc,
+.nd-editor .ProseMirror-selectednode.nd-qz,
+.nd-editor .ProseMirror-selectednode.nd-ig {
+  outline: 2px solid var(--indigo-tint);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+
+/* ── the head: the title, and the toolbar on hover or with the caret inside ── */
+
+.nd-blk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 24px;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.nd-blk-title {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  outline: none;
+}
+.nd-blk-title::placeholder { color: var(--muted); font-weight: 500; }
+.nd-blk-title:hover { border-bottom-color: var(--hairline); }
+.nd-blk-title:focus { border-bottom-color: var(--indigo); }
+.nd-fc:not(:hover):not(.nd-blk-active) .nd-blk-title:placeholder-shown,
+.nd-qz:not(:hover):not(.nd-blk-active) .nd-blk-title:placeholder-shown,
+.nd-ig:not(:hover):not(.nd-blk-active) .nd-blk-title:placeholder-shown { opacity: 0; }
+
+/* Floats in the block's top margin over its right edge, so it takes no room at rest. */
+.nd-blk-tools {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 2px);
+  z-index: 3;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+.nd-fc:hover .nd-blk-tools,
+.nd-qz:hover .nd-blk-tools,
+.nd-ig:hover .nd-blk-tools,
+.nd-blk-active .nd-blk-tools {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.nd-blk-layouts {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  overflow: hidden;
+}
+.nd-blk-tool {
+  padding: 2px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.nd-blk-layouts .nd-blk-tool { border: 0; border-radius: 0; }
+.nd-blk-layouts .nd-blk-tool + .nd-blk-tool { border-left: 1px solid var(--hairline); }
+.nd-blk-tool:hover { color: var(--indigo); border-color: #c7c7e8; }
+.nd-blk-layout[aria-pressed='true'] { background: var(--indigo-tint); color: var(--indigo); }
+.nd-blk-tool:disabled { opacity: 0.4; cursor: default; color: var(--text-2); border-color: var(--hairline); }
+
+/* ── an item's own pages, on its corner, on hover ── */
+
+.nd-blk-pages {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  z-index: 1;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: nowrap;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.nd-fc-card:hover .nd-blk-pages,
+.nd-qz-q:hover .nd-blk-pages,
+.nd-ig-panel:hover .nd-blk-pages,
+.nd-blk-pages:focus-visible { opacity: 1; }
+.nd-blk-pages:hover { color: var(--indigo); border-color: #c7c7e8; }
+
+/* An agent's cursor parked at the end of a block would be a grid item; it floats instead. */
+.nd-blk-items > .nd-cursor { position: absolute; right: 6px; bottom: 2px; }
+
+/* The fields: no paragraph margins, and each says what it is. The label is a block pseudo, set
+   apart from the text so it is never selected with it. */
+.nd-fc-card-fields > div,
+.nd-qz-q-fields > div,
+.nd-ig-panel-fields > div { margin: 0; min-width: 0; overflow-wrap: anywhere; outline: none; }
+[data-flashcard-front]::before,
+[data-flashcard-back]::before,
+[data-quiz-explain]::before,
+[data-info-value]::before {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-2);
+  font-size: 10px;
+  font-variant-caps: all-small-caps;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  user-select: none;
+  pointer-events: none;
+}
+[data-flashcard-front]::before { content: 'Front'; }
+[data-flashcard-back]::before { content: 'Back'; }
+[data-quiz-explain]::before { content: 'Answer'; }
+
+/* An agent's item whose words are still unkept: its edge, Ellie solid and Max dashed (as the
+   diagram's box does). Kept, and both go. */
+.nd-fc-card:has([data-author='ellie'][data-edit-id]),
+.nd-qz-q:has([data-author='ellie'][data-edit-id]),
+.nd-ig-panel:has([data-author='ellie'][data-edit-id]) { border-color: var(--nd-ellie-edge); }
+.nd-fc-card:has([data-author='max'][data-edit-id]),
+.nd-qz-q:has([data-author='max'][data-edit-id]),
+.nd-ig-panel:has([data-author='max'][data-edit-id]) { border-color: var(--nd-max-edge); border-style: dashed; }
+/* The item the caret is in, over the tint (hence after it, at the same specificity). */
+.nd-fc .nd-fc-card.nd-item-active,
+.nd-qz .nd-qz-q.nd-item-active,
+.nd-ig .nd-ig-panel.nd-item-active {
+  border-color: var(--indigo);
+  box-shadow: 0 0 0 2px var(--indigo-tint);
+}
+
+/* ══ FLASHCARDS ═════════════════════════════════════════════════════════════════════════════ */
+
+.nd-fc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+.nd-fc-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 128px;
+  padding: 12px 14px 40px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+  box-shadow: 0 1px 2px rgb(20 20 40 / 4%);
+  font-size: 13px;
+  line-height: 1.45;
+  transition: border-color 0.12s ease;
+}
+.nd-fc-card:hover { border-color: #c7c7e8; }
+.nd-fc-card-fields { flex: 1 1 auto; min-width: 0; }
+[data-flashcard-front] { font-size: 14px; font-weight: 600; }
+[data-flashcard-back] { color: var(--text-2); }
+/* The back is held until the card is flipped; a flipped card shows its back instead of its front. */
+.nd-fc-card[data-flipped='false']:not(.nd-item-active) [data-flashcard-back],
+.nd-fc-card[data-flipped='true']:not(.nd-item-active) [data-flashcard-front] { display: none; }
+.nd-fc-card[data-flipped='true']:not(.nd-item-active) { background: var(--indigo-tint); }
+.nd-fc-card:not(.nd-item-active) [data-flashcard-back] { color: var(--text); font-weight: 450; }
+/* When both show (editing) the sides are told apart by a rule as well as a label. */
+.nd-fc-card.nd-item-active [data-flashcard-back] { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--hairline); }
+.nd-fc-flip {
+  position: absolute;
+  left: 10px;
+  bottom: 9px;
+  padding: 2px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 1.5;
+  user-select: none;
+}
+.nd-fc-flip:hover,
+.nd-fc-flip:focus-visible { color: var(--indigo); border-color: #c7c7e8; }
+.nd-fc-card.nd-item-active .nd-fc-flip { display: none; }
+
+/* ══ THE QUIZ ═══════════════════════════════════════════════════════════════════════════════ */
+
+.nd-qz-grid { display: flex; flex-direction: column; gap: 14px; counter-reset: nd-qz; }
+.nd-qz-q {
+  position: relative;
+  counter-increment: nd-qz;
+  counter-reset: nd-opt;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+  box-shadow: 0 1px 2px rgb(20 20 40 / 4%);
+  font-size: 13px;
+  line-height: 1.5;
+}
+[data-quiz-prompt] { font-size: 14px; font-weight: 600; }
+[data-quiz-prompt]::before {
+  content: 'Q' counter(nd-qz) '. ';
+  color: var(--text-2);
+  user-select: none;
+  pointer-events: none;
+}
+
+.nd-qz-option {
+  counter-increment: nd-opt;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+.nd-qz-option-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; outline: none; }
+.nd-qz-pick {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 20px;
+  text-align: center;
+  user-select: none;
+}
+.nd-qz-pick::before { content: counter(nd-opt, upper-alpha); }
+.nd-qz-pick:hover,
+.nd-qz-pick:focus-visible { color: var(--indigo); border-color: var(--indigo); }
+.nd-qz-q[data-revealed='true'] .nd-qz-pick { cursor: default; }
+.nd-qz-option::after { flex: none; order: 3; font-size: 10.5px; font-weight: 650; user-select: none; }
+
+/* Answered: the right option is marked by a solid heavy edge and its words; a wrong pick by a
+   dashed one and its words. Colour only repeats it. */
+.nd-qz-q[data-revealed='true'] .nd-qz-option[data-correct='true'] {
+  border: 2px solid var(--nd-qz-right);
+  padding: 5px 9px;
+}
+.nd-qz-q[data-revealed='true'] .nd-qz-option[data-correct='true']::after { content: '✓ Correct answer'; color: var(--nd-qz-right); }
+.nd-qz-q[data-revealed='true'] .nd-qz-option[data-picked='true'][data-correct='false'] {
+  border: 2px dashed var(--nd-qz-wrong);
+  padding: 5px 9px;
+}
+.nd-qz-q[data-revealed='true'] .nd-qz-option[data-picked='true'][data-correct='false']::after { content: '✗ Not this one'; color: var(--nd-qz-wrong); }
+/* Editing: the key is shown, so the author can see and change it. */
+.nd-qz-q.nd-item-active .nd-qz-option[data-correct='true']::after { content: '✓ Key'; color: var(--nd-qz-right); }
+
+/* The answer is held back until the question is answered, or the caret is in it. */
+[data-quiz-explain] {
+  display: none;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border-left: 3px solid var(--indigo);
+  border-radius: 0 6px 6px 0;
+  background: var(--indigo-tint);
+  color: var(--text);
+}
+.nd-qz-q[data-revealed='true'] [data-quiz-explain],
+.nd-qz-q.nd-item-active [data-quiz-explain] { display: block; }
+
+.nd-qz-status { margin: 8px 0 0; font-size: 12px; font-weight: 650; color: var(--text); user-select: none; }
+.nd-qz-status:empty { display: none; }
+.nd-qz-status[data-verdict='right'] { color: var(--nd-qz-right); }
+.nd-qz-status[data-verdict='wrong'] { color: var(--nd-qz-wrong); }
+.nd-qz-action {
+  margin-top: 8px;
+  padding: 2px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 10.5px;
+  line-height: 1.5;
+  user-select: none;
+}
+.nd-qz-action[hidden] { display: none; }
+.nd-qz-action:hover,
+.nd-qz-action:focus-visible { color: var(--indigo); border-color: #c7c7e8; }
+.nd-qz-q.nd-item-active .nd-qz-action,
+.nd-qz-q.nd-item-active .nd-qz-status { display: none; }
+
+/* ══ THE INFOGRAPHIC ════════════════════════════════════════════════════════════════════════
+   Data in code: every panel is three real text fields, laid out by `data-layout`. No image. */
+
+.nd-ig-grid { display: grid; gap: 12px; }
+.nd-ig-panel {
+  position: relative;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+  box-shadow: 0 1px 2px rgb(20 20 40 / 4%);
+  font-size: 13px;
+  line-height: 1.45;
+}
+[data-info-value] { color: var(--indigo); font-weight: 700; }
+[data-info-heading] { color: var(--text); font-size: 14px; font-weight: 650; }
+[data-info-body] { margin-top: 3px; color: var(--text-2); }
+/* A value or a body left empty takes no room, until the caret is in the panel to fill it. */
+.nd-ig-panel:not(.nd-item-active) [data-info-value]:has(> .ProseMirror-trailingBreak:only-child),
+.nd-ig-panel:not(.nd-item-active) [data-info-body]:has(> .ProseMirror-trailingBreak:only-child) { display: none; }
+.nd-ig-panel.nd-item-active [data-info-value]::before { content: 'Value (optional)'; }
+
+/* steps: numbered cards, an arrow into the next */
+.nd-ig[data-layout='steps'] .nd-ig-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  counter-reset: nd-step;
+  column-gap: 26px;
+}
+.nd-ig[data-layout='steps'] .nd-ig-panel { counter-increment: nd-step; }
+.nd-ig[data-layout='steps'] .nd-ig-panel::before {
+  content: 'Step ' counter(nd-step);
+  display: block;
+  margin-bottom: 4px;
+  color: var(--indigo);
+  font-size: 10.5px;
+  font-variant-caps: all-small-caps;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+.nd-ig[data-layout='steps'] .nd-ig-panel:not(:last-of-type)::after {
+  content: '→';
+  position: absolute;
+  top: 50%;
+  right: -22px;
+  width: 18px;
+  transform: translateY(-50%);
+  color: var(--glyph);
+  font-size: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* stats: the number, big, over its label */
+.nd-ig[data-layout='stats'] .nd-ig-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.nd-ig[data-layout='stats'] .nd-ig-panel { text-align: center; padding: 16px 12px; }
+.nd-ig[data-layout='stats'] [data-info-value] { font-size: 30px; line-height: 1.15; }
+.nd-ig[data-layout='stats'] [data-info-heading] {
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+.nd-ig[data-layout='stats'] [data-info-body] { font-size: 12px; }
+
+/* compare: columns, the heading as the column's head */
+.nd-ig[data-layout='compare'] .nd-ig-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.nd-ig[data-layout='compare'] .nd-ig-panel { border-top: 3px solid var(--indigo); }
+.nd-ig[data-layout='compare'] [data-info-value] { font-size: 11px; color: var(--text-2); }
+.nd-ig[data-layout='compare'] [data-info-heading] { margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--hairline); }
+
+/* timeline: a rail, a dot and the date (the value) at each stop */
+.nd-ig[data-layout='timeline'] .nd-ig-grid { gap: 0; }
+.nd-ig[data-layout='timeline'] .nd-ig-panel {
+  padding: 0 0 18px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.nd-ig[data-layout='timeline'] .nd-ig-panel:last-of-type { padding-bottom: 0; }
+.nd-ig[data-layout='timeline'] .nd-ig-panel-fields {
+  position: relative;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  column-gap: 30px;
+  align-items: start;
+}
+.nd-ig[data-layout='timeline'] [data-info-value] { grid-column: 1; grid-row: 1 / span 2; text-align: right; font-size: 15px; }
+.nd-ig[data-layout='timeline'] [data-info-heading] { grid-column: 2; grid-row: 1; }
+.nd-ig[data-layout='timeline'] [data-info-body] { grid-column: 2; grid-row: 2; }
+.nd-ig[data-layout='timeline'] [data-info-value]::before { text-align: right; }
+.nd-ig[data-layout='timeline'] .nd-ig-panel-fields::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: -25px;
+  left: 110px;
+  width: 2px;
+  background: var(--hairline);
+}
+.nd-ig[data-layout='timeline'] .nd-ig-panel:last-of-type .nd-ig-panel-fields::before { bottom: 0; }
+.nd-ig[data-layout='timeline'] .nd-ig-panel-fields::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 105px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--indigo);
+  border-radius: 50%;
+  background: var(--pane);
+}
+.nd-ig[data-layout='timeline'] .nd-ig-panel.nd-item-active { box-shadow: none; }
+@media (max-width: 560px) {
+  .nd-ig[data-layout='timeline'] .nd-ig-panel-fields { grid-template-columns: 64px minmax(0, 1fr); column-gap: 24px; }
+  .nd-ig[data-layout='timeline'] .nd-ig-panel-fields::before { left: 78px; }
+  .nd-ig[data-layout='timeline'] .nd-ig-panel-fields::after { left: 73px; }
+}

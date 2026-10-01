@@ -551,6 +551,11 @@ export function isInfographicLayout(value: unknown): value is InfographicLayout 
   return typeof value === 'string' && (INFOGRAPHIC_LAYOUTS as readonly string[]).includes(value);
 }
 
+/** `A`, `B`, … for the n-th option (0-based): what the quiz's buttons and its read-aloud both say. */
+export function optionLabel(index: number): string {
+  return String.fromCharCode(65 + (index % 26));
+}
+
 export function isQuizQuestionType(value: unknown): value is QuizQuestionType {
   return value === 'mc' || value === 'short';
 }

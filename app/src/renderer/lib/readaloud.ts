@@ -18,7 +18,7 @@
  */
 
 import type { Node } from 'prosemirror-model';
-import { blockAttrs, diagramSpec, tableGrid } from '../../shared/doc/schema.js';
+import { blockAttrs, diagramSpec, flashcardsSpec, infographicSpec, optionLabel, quizSpec, tableGrid } from '../../shared/doc/schema.js';
 
 // ── what to say ─────────────────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,9 @@ const SILENT = new Set(['slide_figure']);
 const READ_CHILDREN = new Set(['bullet_list', 'ordered_list', 'q_block']);
 
 const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+/** The text with a full stop after it unless it already ends a sentence: the pause a voice needs. */
+const stop = (text: string): string => (/[.!?:]$/.test(text) ? text : `${text}.`);
 
 /**
  * A text block as it should be heard: its characters, and nothing of its marks.
@@ -84,6 +87,50 @@ function diagramWords(diagram: Node): string {
 }
 
 /**
+ * A deck: the fronts, then the backs. Said in that order so a listener can answer each front in
+ * their head before the backs come round, which is what a deck is for.
+ */
+function flashcardLines(deck: Node): string[] {
+  const { title, cards } = flashcardsSpec(deck);
+  const fronts = cards.map((c) => squash(c.front)).filter((t) => t.length > 0);
+  const backs = cards.map((c) => squash(c.back)).filter((t) => t.length > 0);
+  const head = title && squash(title) ? `Flashcards: ${squash(title)}.` : 'Flashcards.';
+  return [
+    ...(fronts.length > 0 ? [`${head} Fronts. ${fronts.map(stop).join(' ')}`] : []),
+    ...(backs.length > 0 ? [`Backs. ${backs.map(stop).join(' ')}`] : []),
+  ];
+}
+
+/**
+ * A quiz: each question and then its options, lettered. **Never the answers or explanations**: they
+ * are held back on the page until the learner answers, and reading them out would give them away.
+ */
+function quizLines(quiz: Node): string[] {
+  const { title, questions } = quizSpec(quiz);
+  const lines: string[] = [];
+  if (title && squash(title)) lines.push(`Quiz: ${squash(title)}.`);
+  questions.forEach((q, i) => {
+    const options = q.options.map((o, k) => [k, squash(o)] as const).filter(([, o]) => o.length > 0).map(([k, o]) => stop(`${optionLabel(k)}, ${o}`));
+    const prompt = squash(q.prompt);
+    if (prompt.length === 0) return;
+    lines.push(`Question ${String(i + 1)}. ${stop(prompt)}${options.length > 0 ? ` Options. ${options.join(' ')}` : ''}`);
+  });
+  return lines;
+}
+
+/** An infographic: its title, then each panel as value, heading and body. */
+function infographicLines(info: Node): string[] {
+  const { title, panels } = infographicSpec(info);
+  const lines: string[] = [];
+  lines.push(title && squash(title) ? `Infographic: ${squash(title)}.` : 'Infographic.');
+  for (const panel of panels) {
+    const line = [panel.value, panel.heading, panel.body].map(squash).filter((t) => t.length > 0).map(stop).join(' ');
+    if (line.length > 0) lines.push(line);
+  }
+  return lines;
+}
+
+/**
  * One block into the queue. `fallbackId` is the nearest id above it: a `list_item` whose id has
  * not been minted yet highlights its list, which is better than highlighting nothing.
  */
@@ -99,6 +146,9 @@ function readBlock(node: Node, fallbackId: string, out: ReadItem[]): void {
   if (node.isTextblock) return say(spokenText(node));
   if (name === 'table') return tableRows(node).forEach(say);
   if (name === 'diagram') return say(diagramWords(node));
+  if (name === 'flashcards') return flashcardLines(node).forEach(say);
+  if (name === 'quiz') return quizLines(node).forEach(say);
+  if (name === 'infographic') return infographicLines(node).forEach(say);
   // Any other atom is a picture of something: there are no words in it to read.
   if (node.isLeaf) return;
   if (name === 'list_item') {

@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
-   * **Insert ▸ Table / Diagram** (2026-10-01): ask Ellie for a table or a diagram of the section
-   * the caret is in, placed after the block it is in.
+   * **Insert ▸ Table / Diagram / Flashcards / Quiz / Infographic** (2026-10-01; notebooks §5.3):
+   * ask Ellie for one of the five of the section the caret is in, placed after the block it is in.
    *
-   * The header's control and the glue around `doc.generateBlock`: a two-item menu, then a
+   * The header's control and the glue around `doc.generateBlock`: a five-item menu, then a
    * one-line prompt that is optional ("whatever fits best" when empty), then the call. The call
    * can take half a minute, and the block it makes arrives by itself as Ellie's edit, so on
    * success the control just closes. A refusal is said in plain words for a few seconds.
@@ -13,10 +13,12 @@
    */
   import { onDestroy, tick } from 'svelte';
   import type { DocStore, GenerateBlockOutcome } from '../../lib/docstore.svelte.js';
+  import type { GeneratedBlockKind } from '../../../shared/doc/types.js';
+  import { BLOCK_KINDS, blockKindLabel, declinedLine } from '../../lib/insertkinds.js';
 
   let { doc }: { doc: DocStore } = $props();
 
-  type Kind = 'table' | 'diagram';
+  type Kind = GeneratedBlockKind;
   type Phase = 'closed' | 'menu' | 'prompt' | 'busy';
 
   let phase = $state<Phase>('closed');
@@ -41,9 +43,7 @@
       case 'frozen':
         return 'The notes are frozen, so Ellie cannot add to them.';
       case 'declined':
-        return what === 'table'
-          ? 'Ellie found nothing in this section to put in a table.'
-          : 'Ellie found nothing in this section to draw.';
+        return declinedLine(what);
       case 'in_flight':
         return 'Ellie is already drawing one.';
       case 'no_doc':
@@ -152,24 +152,23 @@
       ? 'The notes are not open yet.'
       : doc.frozen
         ? 'The notes are frozen, so Ellie cannot add to them.'
-        : 'Ask Ellie for a table or a diagram of this section, after the block your cursor is in.'}
+        : 'Ask Ellie for a table, diagram, flashcards, quiz or infographic of this section, after the block your cursor is in.'}
     onmousedown={keepCursor}
     onclick={toggleMenu}
   >
-    {phase === 'busy' ? 'Ellie is drawing…' : 'Insert'}
+    {phase === 'busy' ? 'Ellie is writing…' : 'Insert'}
   </button>
 
   {#if phase === 'menu'}
     <span class="ni-pop ni-menu" role="menu">
-      <button type="button" role="menuitem" onmousedown={keepCursor} onclick={() => void choose('table')}>
-        Table
-      </button>
-      <button type="button" role="menuitem" onmousedown={keepCursor} onclick={() => void choose('diagram')}>
-        Diagram
-      </button>
+      {#each BLOCK_KINDS as option (option)}
+        <button type="button" role="menuitem" onmousedown={keepCursor} onclick={() => void choose(option)}>
+          {blockKindLabel(option)}
+        </button>
+      {/each}
     </span>
   {:else if phase === 'prompt'}
-    <span class="ni-pop ni-prompt" role="dialog" aria-label={kind === 'table' ? 'Insert a table' : 'Insert a diagram'}>
+    <span class="ni-pop ni-prompt" role="dialog" aria-label={`Insert ${blockKindLabel(kind).toLowerCase()}`}>
       <input
         bind:this={field}
         bind:value={instruction}
@@ -213,7 +212,7 @@
   .ni-menu {
     display: flex;
     flex-direction: column;
-    min-width: 120px;
+    min-width: 140px;
     padding: 4px;
   }
   .ni-menu button {

@@ -39,6 +39,12 @@ import { hotspotQuestion, hotspotsIn, type PageLinesView } from '../../../shared
 import { drawHotspots, toLineRect } from './sourcepop.js';
 import { TableView } from './tableview.js';
 import { diagramNodeViews } from './diagram.js';
+import { flashcardNodeViews } from './flashcards.js';
+import { infographicNodeViews } from './infographic.js';
+import { quizNodeViews } from './quiz.js';
+// The stylesheet of the three blocks of notebooks §5.3, carried by the views that need it so no
+// other file has to import it (`blocks.css`).
+import '../../components/notes/blocks.css';
 
 export interface NodeViewContext {
   /** The open deck, once its bytes have arrived. Null while it is still loading. */
@@ -575,5 +581,8 @@ export function nodeViews(ctx: NodeViewContext): Record<
     q_block: (node, view, getPos) => new QBlockView(node, view, getPos, ctx),
     table: (node, view, getPos) => new TableView(node, view, getPos, ctx),
     ...diagramNodeViews(ctx),
+    ...flashcardNodeViews(ctx),
+    ...quizNodeViews(ctx),
+    ...infographicNodeViews(ctx),
   };
 }

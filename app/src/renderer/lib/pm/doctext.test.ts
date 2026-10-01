@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { docOf, flashcards, infographic, quiz } from '../../../shared/doc/fixture.test-support.js';
 import { authorMark, notesSchema } from '../../../shared/doc/schema.js';
 import {
   DOC_TEXT_MIN_WORDS,
@@ -155,5 +156,26 @@ describe('DocTextWatch', () => {
     expect(watch.nextDueAt(t0)).toBe(t0 + DOC_TEXT_PAUSE_MS);
     watch.markReported('b', SENTENCE);
     expect(watch.nextDueAt(t0)).toBeNull();
+  });
+});
+
+describe('learnerTextByBlock — flashcards, a quiz, an infographic', () => {
+  const mine = (text: string) => [{ text, by: 'user' as const }];
+
+  it('reports the learner’s words inside each, against the block, and not the agent’s', () => {
+    const doc = docOf(
+      flashcards('b_f', [['Term', mine('my own gloss on the term')], ['Other', 'agent text']]),
+      quiz('b_q', [{ prompt: 'Which?', options: [{ text: mine('my option') }, { text: 'c' }], explain: 'Because.' }]),
+      infographic('b_i', [{ value: '1', heading: 'H', body: mine('what I noticed here') }]),
+    );
+    expect(learnerTextByBlock(doc)).toEqual([
+      { blockId: 'b_f', text: 'my own gloss on the term' },
+      { blockId: 'b_q', text: 'my option' },
+      { blockId: 'b_i', text: 'what I noticed here' },
+    ]);
+  });
+
+  it('reports nothing for blocks only the agents wrote', () => {
+    expect(learnerTextByBlock(docOf(flashcards('b_f', [['a', 'b']]), quiz('b_q', [{ prompt: 'p', explain: 'e' }])))).toEqual([]);
   });
 });

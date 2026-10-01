@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mark, Node } from 'prosemirror-model';
 import { authorMark, notesSchema } from '../../shared/doc/schema.js';
+import { flashcards, infographic, quiz } from '../../shared/doc/fixture.test-support.js';
 import {
   FORMULA_WORD,
   MAX_UTTERANCE_CHARS,
@@ -202,6 +203,42 @@ describe('readQueue', () => {
     );
     expect(readQueue(docOf(diagram), null)).toEqual([
       { blockId: 'd', text: 'Diagram: The loop. Evaluate, Improve.' },
+    ]);
+  });
+});
+
+describe('readQueue — flashcards, a quiz, an infographic', () => {
+  it('reads the fronts, then the backs, of a deck', () => {
+    const deck = flashcards('f', [['Admissible', 'Never overestimates'], ['f(n)', 'g plus h']], { title: 'Terms' });
+    expect(readQueue(docOf(deck), null)).toEqual([
+      { blockId: 'f', text: 'Flashcards: Terms. Fronts. Admissible. f(n).' },
+      { blockId: 'f', text: 'Backs. Never overestimates. g plus h.' },
+    ]);
+  });
+
+  it('reads each question and its lettered options, and never the answer', () => {
+    const quizNode = quiz('q', [
+      { prompt: 'Which is admissible?', options: [{ text: 'Manhattan', correct: true }, { text: 'Twice the cost' }], explain: 'SECRET answer' },
+      { prompt: 'Why?', explain: 'ALSO secret' },
+    ]);
+    const queue = readQueue(docOf(quizNode), null);
+    expect(queue).toEqual([
+      { blockId: 'q', text: 'Question 1. Which is admissible? Options. A, Manhattan. B, Twice the cost.' },
+      { blockId: 'q', text: 'Question 2. Why?' },
+    ]);
+    expect(JSON.stringify(queue)).not.toContain('secret');
+  });
+
+  it('reads an infographic as its title, then each panel: value, heading, body', () => {
+    const info = infographic(
+      'i',
+      [{ value: '1968', heading: 'A* published', body: 'Hart et al.' }, { heading: 'Then IDA*', body: 'Linear space.' }],
+      { layout: 'timeline', title: 'History' },
+    );
+    expect(readQueue(docOf(info), null)).toEqual([
+      { blockId: 'i', text: 'Infographic: History.' },
+      { blockId: 'i', text: '1968. A* published. Hart et al.' },
+      { blockId: 'i', text: 'Then IDA*. Linear space.' },
     ]);
   });
 });

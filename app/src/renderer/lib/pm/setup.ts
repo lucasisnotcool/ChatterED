@@ -21,6 +21,7 @@ import { keymap } from 'prosemirror-keymap';
 import { liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-list';
 import type { Command, Plugin } from 'prosemirror-state';
 import { notesSchema } from '../../../shared/doc/schema.js';
+import { blockKitPlugin } from './blockkit.js';
 import { diagramPlugin } from './diagram.js';
 import { readAloudPlugin } from './readaloud.js';
 import { tableGuard, tableKeymap } from './table.js';
@@ -84,6 +85,8 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
     keymap(tableKeymap()),
     // Inside a diagram node, also first: Enter, Tab and the deletes never split or merge a box (`diagram.ts`).
     diagramPlugin(),
+    // Inside a card, a question or a panel: the same, for the three blocks of notebooks §5.3 (`blockkit.ts`).
+    blockKitPlugin(),
     keymap({
       'Mod-z': undo,
       'Mod-y': redo,
