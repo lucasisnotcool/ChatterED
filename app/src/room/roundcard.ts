@@ -51,8 +51,8 @@ export function roundCardFor(input: {
     title: 'Explain',
     body:
       `Your slide: ${subject}. ${teacherName(input.roster)} teaches from it; ` +
-      `${testerName(input.roster)} tests you on what has been covered, once you have been at it ` +
-      'long enough for that to be worth doing. Replies here are deliberately paced so you get ' +
+      `${testerName(input.roster)} tests you on what has been covered, when you press Quiz me ` +
+      '(or ask him). He does not ask on his own. Replies here are deliberately paced so you get ' +
       `room to think first. You can ask ${teacherName(input.roster)} privately at any point. ` +
       'You have the last word.',
   };

@@ -301,8 +301,8 @@ export const SCRIPT_WHISPERS: ScriptedWhisperBeat[] = [
 export const SCRIPT_ROUND_CARD = {
   title: 'Explain',
   body:
-    'Your slide: convexity and the Hessian. Ellie teaches from it; Max tests you on what she has covered, once ' +
-    "you've been at it long enough for that to be worth doing. Replies here are deliberately paced so you get " +
+    'Your slide: convexity and the Hessian. Ellie teaches from it; Max tests you on what she has covered, when you press Quiz me ' +
+    "(or ask him). He does not ask on his own. Replies here are deliberately paced so you get " +
     'room to think first. You can ask Ellie privately at any point. You have the last word.',
 };
 
