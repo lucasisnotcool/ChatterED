@@ -169,8 +169,27 @@ export function draftWords(blocks: readonly DocBlockDraft[]): number {
         return n + b.columns.concat(b.rows.flatMap((r) => r.cells)).reduce((m, c) => m + count(c), 0);
       case 'diagram':
         return n + b.nodes.reduce((m, node) => m + count(node.label), 0);
+      default:
+        // A block kind this switch does not know yet (other tracks add kinds): count the words
+        // of any text it carries, wherever it is nested, rather than failing to compile.
+        return n + looseWords(b as unknown, count);
     }
   }, 0);
+}
+
+/** Words in every string under `text`, `items`, `caption`, `label`, `title` or nested arrays/objects. */
+function looseWords(v: unknown, count: (t: string) => number, depth = 0): number {
+  if (depth > 6 || v === null || v === undefined) return 0;
+  if (typeof v === 'string') return count(v);
+  if (Array.isArray(v)) return v.reduce((m: number, x) => m + looseWords(x, count, depth + 1), 0);
+  if (typeof v !== 'object') return 0;
+  let n = 0;
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    // Skip identifiers and structural fields; only prose counts.
+    if (k === 'kind' || k === 'reason' || k === 'id' || k === 'pages' || k === 'src' || k === 'lang') continue;
+    n += looseWords(x, count, depth + 1);
+  }
+  return n;
 }
 
 /** What the ingest knows when it asks for one window. */
