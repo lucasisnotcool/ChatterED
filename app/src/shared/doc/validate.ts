@@ -22,10 +22,19 @@
  * Pure, no DOM, no schema knowledge beyond `draftToNodes` — `src/main/notes` runs it.
  */
 
-import { DIAGRAM_LAYOUTS, isDiagramLayout, notesSchema, newBlockId } from './schema.js';
+import { DIAGRAM_LAYOUTS, INFOGRAPHIC_LAYOUTS, isDiagramLayout, isInfographicLayout, notesSchema, newBlockId } from './schema.js';
 import { draftToNodes } from './ops.js';
 import { inlineToNodes } from './inline.js';
-import type { DiagramDraft, DocBlockDraft, Provenance, Rect, TableDraft } from './types.js';
+import type {
+  DiagramDraft,
+  DocBlockDraft,
+  FlashcardsDraft,
+  InfographicDraft,
+  Provenance,
+  QuizDraft,
+  Rect,
+  TableDraft,
+} from './types.js';
 
 export interface ValidationIssue {
   index: number;
@@ -33,7 +42,7 @@ export interface ValidationIssue {
 }
 
 /**
- * The kinds the *ingest* may write. `table` and `diagram` are deliberately absent: they have their
+ * The kinds the *ingest* may write. `table`, `diagram`, `flashcards`, `quiz` and `infographic` are deliberately absent: they have their
  * own validators below, and one arriving here is an `unknown_kind`.
  */
 const KINDS = new Set(['heading', 'paragraph', 'bullets', 'numbers', 'code', 'math', 'figure']);
@@ -499,6 +508,290 @@ export const DIAGRAM_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
           from: { type: 'string' },
           to: { type: 'string' },
           label: { type: ['string', 'null'], description: 'Optional: a word or two on the arrow.' },
+        },
+      },
+    },
+  },
+};
+
+// ── flashcards, a quiz, an infographic (2026-10-01; notebooks §5.3) ─────────────────────────
+
+/**
+ * The same gate as the table's and the diagram's, for the three blocks of notebooks §5.3. Counts
+ * are the brief's (cards 3 to 12, questions 3 to 5, panels 3 to 8). **Repair before reject, and
+ * never pad:** too many items are cut to the cap (the first ones are the ones the model chose to
+ * lead with), and a single bad item (an empty side, a multiple-choice question with no one right
+ * option) is dropped on its own; the draft is refused only when fewer than the minimum survive.
+ * A missing side is never invented.
+ */
+export const FLASHCARD_LIMITS = { minCards: 3, maxCards: 12, maxSide: 300 } as const;
+export const QUIZ_LIMITS = { minQuestions: 3, maxQuestions: 5, minOptions: 3, maxOptions: 4, maxText: 400 } as const;
+export const INFOGRAPHIC_LIMITS = { minPanels: 3, maxPanels: 8, maxValue: 24, maxHeading: 80, maxBody: 240 } as const;
+
+/** The optional one-line title every one of these carries. */
+function titleOf(record: Record<string, unknown>): string | null {
+  const title = asText(record.title);
+  return title.length > 0 ? title : null;
+}
+
+/** At most `max` of `items`; a cut is a problem worth logging, not a refusal. */
+function capped<T>(items: readonly T[], max: number, what: string, problems: string[]): T[] {
+  if (items.length <= max) return [...items];
+  problems.push(`${what}: ${String(items.length)} given, the first ${String(max)} kept`);
+  return items.slice(0, max);
+}
+
+export function validateFlashcardsDraft(
+  raw: unknown,
+  pageCount: number,
+  prov: Provenance,
+): { draft: FlashcardsDraft | null; problems: string[] } {
+  const problems: string[] = [];
+  const record = unwrap(raw, 'flashcards');
+  if (!record) return { draft: null, problems: ['flashcards: not an object'] };
+  const provenance = checkedProv(prov, pageCount, problems);
+  const { minCards, maxCards, maxSide } = FLASHCARD_LIMITS;
+  const cards: FlashcardsDraft['cards'] = [];
+  (Array.isArray(record.cards) ? record.cards : []).forEach((rawCard, i) => {
+    const card = asRecord(rawCard) ?? {};
+    const front = asText(card.front);
+    const back = asText(card.back);
+    if (front.length === 0 || back.length === 0) {
+      problems.push(`flashcards: card ${String(i + 1)} has no ${front.length === 0 ? 'front' : 'back'}, dropped`);
+      return;
+    }
+    if (front.length > maxSide || back.length > maxSide) {
+      problems.push(`flashcards: card ${String(i + 1)} is longer than ${String(maxSide)} characters on a side, dropped`);
+      return;
+    }
+    const { pages, dropped } = clampPages(card.pages, pageCount);
+    if (dropped) problems.push(`flashcards: card ${String(i + 1)} cited a page outside the deck, dropped`);
+    cards.push({ front, back, pages });
+  });
+  const kept = capped(cards, maxCards, 'flashcards', problems);
+  if (kept.length < minCards) {
+    problems.push(`flashcards: ${String(kept.length)} usable cards (at least ${String(minCards)} needed)`);
+    return { draft: null, problems };
+  }
+  if (!provenance) return { draft: null, problems };
+  return { draft: { kind: 'flashcards', title: titleOf(record), cards: kept, prov: provenance }, problems };
+}
+
+export function validateQuizDraft(
+  raw: unknown,
+  pageCount: number,
+  prov: Provenance,
+): { draft: QuizDraft | null; problems: string[] } {
+  const problems: string[] = [];
+  const record = unwrap(raw, 'quiz');
+  if (!record) return { draft: null, problems: ['quiz: not an object'] };
+  const provenance = checkedProv(prov, pageCount, problems);
+  const { minQuestions, maxQuestions, minOptions, maxOptions, maxText } = QUIZ_LIMITS;
+  const questions: QuizDraft['questions'] = [];
+  (Array.isArray(record.questions) ? record.questions : []).forEach((rawQuestion, i) => {
+    const q = asRecord(rawQuestion) ?? {};
+    const name = `quiz: question ${String(i + 1)}`;
+    const prompt = asText(q.prompt);
+    const explain = asText(q.explanation ?? q.explain);
+    if (prompt.length === 0 || explain.length === 0) {
+      problems.push(`${name} has no ${prompt.length === 0 ? 'prompt' : 'explanation'}, dropped`);
+      return;
+    }
+    if (prompt.length > maxText || explain.length > maxText) {
+      problems.push(`${name} is longer than ${String(maxText)} characters in a field, dropped`);
+      return;
+    }
+    const { pages, dropped } = clampPages(q.pages, pageCount);
+    if (dropped) problems.push(`${name} cited a page outside the deck, dropped`);
+    const type = q.type === 'short' ? 'short' : q.type === 'mc' ? 'mc' : null;
+    if (type === null) {
+      problems.push(`${name} has type "${String(q.type)}" (mc or short), dropped`);
+      return;
+    }
+    if (type === 'short') {
+      questions.push({ type, prompt, explain, pages });
+      return;
+    }
+    const texts = (Array.isArray(q.options) ? q.options : []).map((option) => asCell(option));
+    if (texts.length < minOptions || texts.length > maxOptions || texts.some((t) => t.length === 0 || t.length > maxText)) {
+      problems.push(`${name} has ${String(texts.length)} options (${String(minOptions)} to ${String(maxOptions)}, none empty), dropped`);
+      return;
+    }
+    // `answer` is 1-based, as a person counts; the draft carries the mark itself.
+    const answer = typeof q.answer === 'number' ? Math.trunc(q.answer) : Number.NaN;
+    if (!Number.isInteger(answer) || answer < 1 || answer > texts.length) {
+      problems.push(`${name} has no one right option (answer ${String(q.answer)} of ${String(texts.length)}), dropped`);
+      return;
+    }
+    if (new Set(texts.map((t) => t.toLowerCase())).size !== texts.length) {
+      problems.push(`${name} repeats an option, dropped`);
+      return;
+    }
+    questions.push({
+      type,
+      prompt,
+      options: texts.map((text, k) => ({ text, correct: k === answer - 1 })),
+      explain,
+      pages,
+    });
+  });
+  const kept = capped(questions, maxQuestions, 'quiz', problems);
+  if (kept.length < minQuestions) {
+    problems.push(`quiz: ${String(kept.length)} usable questions (at least ${String(minQuestions)} needed)`);
+    return { draft: null, problems };
+  }
+  if (!provenance) return { draft: null, problems };
+  return { draft: { kind: 'quiz', title: titleOf(record), questions: kept, prov: provenance }, problems };
+}
+
+export function validateInfographicDraft(
+  raw: unknown,
+  pageCount: number,
+  prov: Provenance,
+): { draft: InfographicDraft | null; problems: string[] } {
+  const problems: string[] = [];
+  const record = unwrap(raw, 'infographic');
+  if (!record) return { draft: null, problems: ['infographic: not an object'] };
+  const provenance = checkedProv(prov, pageCount, problems);
+  const layout = record.layout;
+  if (!isInfographicLayout(layout)) {
+    problems.push(`infographic: layout must be one of ${INFOGRAPHIC_LAYOUTS.join(', ')}`);
+    return { draft: null, problems };
+  }
+  const { minPanels, maxPanels, maxValue, maxHeading, maxBody } = INFOGRAPHIC_LIMITS;
+  // A stat is its number and a stop is its date: a panel with neither is not one of those.
+  const needsValue = layout === 'stats' || layout === 'timeline';
+  const panels: InfographicDraft['panels'] = [];
+  (Array.isArray(record.panels) ? record.panels : []).forEach((rawPanel, i) => {
+    const panel = asRecord(rawPanel) ?? {};
+    const name = `infographic: panel ${String(i + 1)}`;
+    const value = asCell(panel.value);
+    const heading = asText(panel.heading);
+    const body = asText(panel.body);
+    if (heading.length === 0) {
+      problems.push(`${name} has no heading, dropped`);
+      return;
+    }
+    if (needsValue && value.length === 0) {
+      problems.push(`${name} has no value, and a ${layout} layout needs one on every panel, dropped`);
+      return;
+    }
+    if (value.length > maxValue || heading.length > maxHeading || body.length > maxBody) {
+      problems.push(`${name} has a field over its length limit, dropped`);
+      return;
+    }
+    const { pages, dropped } = clampPages(panel.pages, pageCount);
+    if (dropped) problems.push(`${name} cited a page outside the deck, dropped`);
+    panels.push({ value: value.length > 0 ? value : null, heading, body, pages });
+  });
+  const kept = capped(panels, maxPanels, 'infographic', problems);
+  if (kept.length < minPanels) {
+    problems.push(`infographic: ${String(kept.length)} usable panels (at least ${String(minPanels)} needed)`);
+    return { draft: null, problems };
+  }
+  if (!provenance) return { draft: null, problems };
+  return { draft: { kind: 'infographic', layout, title: titleOf(record), panels: kept, prov: provenance }, problems };
+}
+
+const PAGES_SCHEMA = {
+  type: 'array',
+  items: { type: 'integer', minimum: 1 },
+  description: '1-based pages of this deck that this item comes from. Never a page the deck does not have.',
+};
+const INLINE_NOTE = 'Inline markup is **bold**, *italic*, `code` and $tex$ only.';
+
+export const FLASHCARDS_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['cards'],
+  additionalProperties: false,
+  properties: {
+    title: { type: ['string', 'null'], description: 'Optional: one line saying what the deck covers.' },
+    cards: {
+      type: 'array',
+      description: `${String(FLASHCARD_LIMITS.minCards)} to ${String(FLASHCARD_LIMITS.maxCards)} cards.`,
+      items: {
+        type: 'object',
+        required: ['front', 'back'],
+        additionalProperties: false,
+        properties: {
+          front: {
+            type: 'string',
+            description: `A term or a question, at most ${String(FLASHCARD_LIMITS.maxSide)} characters. ${INLINE_NOTE}`,
+          },
+          back: {
+            type: 'string',
+            description: `Its answer or definition, at most ${String(FLASHCARD_LIMITS.maxSide)} characters. ${INLINE_NOTE}`,
+          },
+          pages: PAGES_SCHEMA,
+        },
+      },
+    },
+  },
+};
+
+export const QUIZ_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['questions'],
+  additionalProperties: false,
+  properties: {
+    title: { type: ['string', 'null'], description: 'Optional: one line saying what the quiz covers.' },
+    questions: {
+      type: 'array',
+      description: `${String(QUIZ_LIMITS.minQuestions)} to ${String(QUIZ_LIMITS.maxQuestions)} questions.`,
+      items: {
+        type: 'object',
+        required: ['type', 'prompt', 'explanation'],
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', enum: ['mc', 'short'], description: 'mc: multiple choice. short: answered in the learner\'s own words.' },
+          prompt: { type: 'string', description: `The question, at most ${String(QUIZ_LIMITS.maxText)} characters. ${INLINE_NOTE}` },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            description: `mc only: ${String(QUIZ_LIMITS.minOptions)} to ${String(QUIZ_LIMITS.maxOptions)} options, one of them right, the others plausible and wrong. Leave out for short.`,
+          },
+          answer: { type: 'integer', minimum: 1, description: 'mc only: the 1-based number of the one right option.' },
+          explanation: {
+            type: 'string',
+            description: `The answer and why, from the slides, at most ${String(QUIZ_LIMITS.maxText)} characters. Shown only after the learner answers.`,
+          },
+          pages: PAGES_SCHEMA,
+        },
+      },
+    },
+  },
+};
+
+export const INFOGRAPHIC_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['layout', 'panels'],
+  additionalProperties: false,
+  properties: {
+    layout: {
+      type: 'string',
+      enum: [...INFOGRAPHIC_LAYOUTS],
+      description:
+        'timeline: dated stops in order (every panel needs a value, the date). steps: a numbered process. stats: big numbers (every panel needs a value). compare: two to four alternatives side by side.',
+    },
+    title: { type: ['string', 'null'], description: 'Optional: one line saying what the infographic shows.' },
+    panels: {
+      type: 'array',
+      description: `${String(INFOGRAPHIC_LIMITS.minPanels)} to ${String(INFOGRAPHIC_LIMITS.maxPanels)} panels.`,
+      items: {
+        type: 'object',
+        required: ['heading', 'body'],
+        additionalProperties: false,
+        properties: {
+          value: {
+            type: ['string', 'null'],
+            description: `The big number, year or label (at most ${String(INFOGRAPHIC_LIMITS.maxValue)} characters), for stats and timeline; otherwise null.`,
+          },
+          heading: { type: 'string', description: `At most ${String(INFOGRAPHIC_LIMITS.maxHeading)} characters. ${INLINE_NOTE}` },
+          body: { type: 'string', description: `One or two sentences, at most ${String(INFOGRAPHIC_LIMITS.maxBody)} characters. ${INLINE_NOTE}` },
+          pages: PAGES_SCHEMA,
         },
       },
     },

@@ -69,7 +69,10 @@ export type DocBlockDraft =
   /** An evidentiary slide or region, shown inline as a crop of the rendered page (brief §3). */
   | { kind: 'figure'; page: number; rect: Rect | null; caption: string; prov: Provenance }
   | TableDraft
-  | DiagramDraft;
+  | DiagramDraft
+  | FlashcardsDraft
+  | QuizDraft
+  | InfographicDraft;
 
 /**
  * A comparison table (2026-10-01). `columns` are the headings; every row has one cell per column.
@@ -105,6 +108,78 @@ export interface DiagramDraft {
   nodes: { id: string; label: string; parent?: string | null; group?: string | null; pages?: number[] }[];
   edges?: { from: string; to: string; label?: string | null }[];
   prov: Provenance;
+}
+
+export type InfographicLayout = 'timeline' | 'steps' | 'stats' | 'compare';
+export type QuizQuestionType = 'mc' | 'short';
+
+/**
+ * A short deck of flashcards (2026-10-01, notebooks §5.3): a front and a back each, both real
+ * editable text. The back is held until the learner flips the card (view chrome, never saved).
+ * Checked by `validateFlashcardsDraft`; the ingest never writes one.
+ */
+export interface FlashcardsDraft {
+  kind: 'flashcards';
+  title?: string | null;
+  cards: { front: string; back: string; pages?: number[] }[];
+  prov: Provenance;
+}
+
+/**
+ * A quiz of three to five questions. `mc` carries 3 to 4 `options`, exactly one `correct`;
+ * `short` carries none. `explain` is the answer and why, held back until the learner answers.
+ * Checked by `validateQuizDraft`.
+ */
+export interface QuizDraft {
+  kind: 'quiz';
+  title?: string | null;
+  questions: {
+    type: QuizQuestionType;
+    prompt: string;
+    options?: { text: string; correct: boolean }[];
+    explain: string;
+    pages?: number[];
+  }[];
+  prov: Provenance;
+}
+
+/**
+ * A structured visual summary, as data: panels with an optional big `value` (a year, a number),
+ * a heading and a body, rendered in code per `layout`. No image is ever generated (C9). Checked by
+ * `validateInfographicDraft`.
+ */
+export interface InfographicDraft {
+  kind: 'infographic';
+  layout: InfographicLayout;
+  title?: string | null;
+  panels: { value?: string | null; heading: string; body: string; pages?: number[] }[];
+  prov: Provenance;
+}
+
+/** A `flashcards` node read back (`flashcardsSpec`), sides as plain text. */
+export interface FlashcardsSpec {
+  title: string | null;
+  cards: { front: string; back: string; pages: number[] }[];
+}
+
+/** A `quiz` node read back (`quizSpec`). `correct` is the index in `options`, or null for a `short` question. */
+export interface QuizSpec {
+  title: string | null;
+  questions: {
+    type: QuizQuestionType;
+    prompt: string;
+    options: string[];
+    correct: number | null;
+    explain: string;
+    pages: number[];
+  }[];
+}
+
+/** An `infographic` node read back (`infographicSpec`). */
+export interface InfographicSpec {
+  layout: InfographicLayout;
+  title: string | null;
+  panels: { value: string; heading: string; body: string; pages: number[] }[];
 }
 
 /** A `table` node read back as plain text (`tableGrid`). */

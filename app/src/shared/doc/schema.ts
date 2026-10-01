@@ -41,7 +41,12 @@ import type {
   DiagramLayout,
   DiagramSpec,
   DocAuthor,
+  FlashcardsSpec,
+  InfographicLayout,
+  InfographicSpec,
   OutlineEntry,
+  QuizQuestionType,
+  QuizSpec,
   Rect,
   TableGrid,
 } from './types.js';
@@ -532,6 +537,177 @@ function childPages(node: Node): number[] {
   return Array.isArray(pages) ? [...(pages as number[])] : [];
 }
 
+// ── flashcards, a quiz, an infographic (2026-10-01; notebooks §5.3) ─────────────────────────
+//
+// All three follow the diagram: one addressable block (`BLOCK_ATTRS`, in `STRUCTURED`), children
+// that carry **no** `blockId` but their own `pages`, and every word an inline field, authored span
+// by span. The block says *what* is in it; the renderer decides how it looks (`pm/flashcards.ts`,
+// `pm/quiz.ts`, `pm/infographic.ts`), and whether the back of a card or the answer of a question
+// is showing is view chrome that is never saved. Nothing here is an image (C9).
+
+export const INFOGRAPHIC_LAYOUTS: readonly InfographicLayout[] = ['timeline', 'steps', 'stats', 'compare'];
+
+export function isInfographicLayout(value: unknown): value is InfographicLayout {
+  return typeof value === 'string' && (INFOGRAPHIC_LAYOUTS as readonly string[]).includes(value);
+}
+
+export function isQuizQuestionType(value: unknown): value is QuizQuestionType {
+  return value === 'mc' || value === 'short';
+}
+
+/** The block's own `title` attr, as the table's caption and the diagram's title are. */
+function titleDom(node: Node, attrs: Record<string, string>): Record<string, string> {
+  const title = node.attrs.title as string | null;
+  if (title) attrs['data-title'] = title;
+  return attrs;
+}
+
+/** A node whose content is one run of inline text and which says only *which field* it is. */
+function fieldSpec(marker: string): NodeSpec {
+  return {
+    content: 'inline*',
+    isolating: true,
+    parseDOM: [{ tag: `div[${marker}]` }],
+    toDOM: () => ['div', { [marker]: '' }, 0],
+  };
+}
+
+/** The `pages` (and reason) a child of one of these blocks carries, round-tripped through the DOM. */
+function childAttrsFrom(dom: AttrSource): Record<string, unknown> {
+  return { pages: readPages(dom), reason: dom.getAttribute('data-reason') };
+}
+
+function childDomAttrs(node: Node, marker: string): Record<string, string> {
+  const attrs: Record<string, string> = { [marker]: '' };
+  const pages = childPages(node);
+  if (pages.length > 0) attrs['data-pages'] = pages.join(',');
+  const reason = node.attrs.reason as string | null;
+  if (reason) attrs['data-reason'] = reason;
+  return attrs;
+}
+
+const CHILD_ATTRS = { pages: { default: [] as number[] }, reason: { default: null as string | null } };
+
+/** A deck of cards, each a front and a back. */
+const flashcards: NodeSpec = {
+  content: 'flashcard+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: { title: { default: null as string | null }, ...BLOCK_ATTRS },
+  parseDOM: [
+    {
+      tag: 'section[data-flashcards]',
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), title: dom.getAttribute('data-title') }),
+    },
+  ],
+  toDOM: (node) => ['section', titleDom(node, { ...blockDataAttrs(node), 'data-flashcards': '' }), 0],
+};
+
+const flashcard: NodeSpec = {
+  content: 'flashcard_front flashcard_back',
+  isolating: true,
+  attrs: { ...CHILD_ATTRS },
+  parseDOM: [{ tag: 'div[data-flashcard]', getAttrs: (dom: AttrSource) => childAttrsFrom(dom) }],
+  toDOM: (node) => ['div', childDomAttrs(node, 'data-flashcard'), 0],
+};
+
+/** A quiz: questions, each a prompt, options (multiple choice only) and the answer with its why. */
+const quiz: NodeSpec = {
+  content: 'quiz_question+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: { title: { default: null as string | null }, ...BLOCK_ATTRS },
+  parseDOM: [
+    {
+      tag: 'section[data-quiz]',
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), title: dom.getAttribute('data-title') }),
+    },
+  ],
+  toDOM: (node) => ['section', titleDom(node, { ...blockDataAttrs(node), 'data-quiz': '' }), 0],
+};
+
+const quiz_question: NodeSpec = {
+  content: 'quiz_prompt quiz_option* quiz_explain',
+  isolating: true,
+  attrs: { qtype: { default: 'mc' as QuizQuestionType }, ...CHILD_ATTRS },
+  parseDOM: [
+    {
+      tag: 'div[data-quiz-question]',
+      getAttrs: (dom: AttrSource) => {
+        const qtype = dom.getAttribute('data-qtype');
+        return { ...childAttrsFrom(dom), qtype: isQuizQuestionType(qtype) ? qtype : 'mc' };
+      },
+    },
+  ],
+  toDOM: (node) => ['div', { ...childDomAttrs(node, 'data-quiz-question'), 'data-qtype': node.attrs.qtype as string }, 0],
+};
+
+/** One choice. `correct` is the author's key to it: exactly one per multiple-choice question. */
+const quiz_option: NodeSpec = {
+  content: 'inline*',
+  isolating: true,
+  attrs: { correct: { default: false } },
+  parseDOM: [{ tag: 'div[data-quiz-option]', getAttrs: (dom: AttrSource) => ({ correct: dom.getAttribute('data-correct') === 'true' }) }],
+  toDOM: (node) => ['div', { 'data-quiz-option': '', 'data-correct': String(node.attrs.correct === true) }, 0],
+};
+
+/** A set of panels (timeline stops, steps, stats, columns), laid out by code from `layout`. */
+const infographic: NodeSpec = {
+  content: 'info_panel+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: {
+    layout: { default: 'steps' as InfographicLayout },
+    title: { default: null as string | null },
+    ...BLOCK_ATTRS,
+  },
+  parseDOM: [
+    {
+      tag: 'section[data-infographic]',
+      getAttrs: (dom: AttrSource) => {
+        const layout = dom.getAttribute('data-layout');
+        return {
+          ...readBlockAttrs(dom),
+          layout: isInfographicLayout(layout) ? layout : 'steps',
+          title: dom.getAttribute('data-title'),
+        };
+      },
+    },
+  ],
+  toDOM: (node) => [
+    'section',
+    titleDom(node, { ...blockDataAttrs(node), 'data-infographic': '', 'data-layout': node.attrs.layout as string }),
+    0,
+  ],
+};
+
+/** `info_value` is always present and may be empty: the big number or year of a stat or a stop. */
+const info_panel: NodeSpec = {
+  content: 'info_value info_heading info_body',
+  isolating: true,
+  attrs: { ...CHILD_ATTRS },
+  parseDOM: [{ tag: 'div[data-info-panel]', getAttrs: (dom: AttrSource) => childAttrsFrom(dom) }],
+  toDOM: (node) => ['div', childDomAttrs(node, 'data-info-panel'), 0],
+};
+
+/** The nodes of the three blocks that are plain inline fields, by name. */
+const FIELD_MARKERS = {
+  flashcard_front: 'data-flashcard-front',
+  flashcard_back: 'data-flashcard-back',
+  quiz_prompt: 'data-quiz-prompt',
+  quiz_explain: 'data-quiz-explain',
+  info_value: 'data-info-value',
+  info_heading: 'data-info-heading',
+  info_body: 'data-info-body',
+} as const;
+
+/** The top-level blocks that are a set of items, each item a fixed run of inline fields. */
+export const ITEM_BLOCKS = { flashcards: 'flashcard', quiz: 'quiz_question', infographic: 'info_panel' } as const;
+
+
 function parseRect(value: string | null): Rect | null {
   if (!value) return null;
   const parts = value.split(',').map((n) => Number.parseFloat(n));
@@ -658,6 +834,20 @@ export const notesSchema = new Schema({
     table_cell,
     diagram,
     diagram_node,
+    flashcards,
+    flashcard,
+    flashcard_front: fieldSpec(FIELD_MARKERS.flashcard_front),
+    flashcard_back: fieldSpec(FIELD_MARKERS.flashcard_back),
+    quiz,
+    quiz_question,
+    quiz_prompt: fieldSpec(FIELD_MARKERS.quiz_prompt),
+    quiz_option,
+    quiz_explain: fieldSpec(FIELD_MARKERS.quiz_explain),
+    infographic,
+    info_panel,
+    info_value: fieldSpec(FIELD_MARKERS.info_value),
+    info_heading: fieldSpec(FIELD_MARKERS.info_heading),
+    info_body: fieldSpec(FIELD_MARKERS.info_body),
     text,
   },
   marks: {
@@ -688,7 +878,7 @@ const CONTAINERS = new Set(['q_block']);
  * does not descend into them, and the text in them is reported against the table or the diagram —
  * which is what makes one learner-typed cell protect the whole block from an agent's replace.
  */
-const STRUCTURED = new Set(['table', 'diagram']);
+const STRUCTURED = new Set(['table', 'diagram', 'flashcards', 'quiz', 'infographic']);
 
 export function isStructuredBlock(node: Node): boolean {
   return STRUCTURED.has(node.type.name);
@@ -737,6 +927,66 @@ export function diagramSpec(node: Node): DiagramSpec {
     title: (node.attrs.title as string | null) || null,
     nodes,
     edges: asEdges(node.attrs.edges),
+  };
+}
+
+
+/** A `flashcards` node as plain text: each card's two sides, and its own pages. */
+export function flashcardsSpec(node: Node): FlashcardsSpec {
+  const cards: FlashcardsSpec['cards'] = [];
+  node.forEach((card) => {
+    cards.push({
+      front: card.firstChild?.textContent ?? '',
+      back: card.lastChild?.textContent ?? '',
+      pages: childPages(card),
+    });
+  });
+  return { title: (node.attrs.title as string | null) || null, cards };
+}
+
+/**
+ * A `quiz` node as plain text. `correct` is the index of the option marked correct (the first,
+ * should a hand-edit have marked several), and null for a short-answer question or an unmarked one.
+ */
+export function quizSpec(node: Node): QuizSpec {
+  const questions: QuizSpec['questions'] = [];
+  node.forEach((question) => {
+    const options: string[] = [];
+    let correct: number | null = null;
+    question.forEach((child) => {
+      if (child.type.name !== 'quiz_option') return;
+      if (child.attrs.correct === true && correct === null) correct = options.length;
+      options.push(child.textContent);
+    });
+    const qtype = question.attrs.qtype as unknown;
+    questions.push({
+      type: options.length > 0 && qtype !== 'short' ? 'mc' : 'short',
+      prompt: question.firstChild?.textContent ?? '',
+      options,
+      correct,
+      explain: question.lastChild?.textContent ?? '',
+      pages: childPages(question),
+    });
+  });
+  return { title: (node.attrs.title as string | null) || null, questions };
+}
+
+/** An `infographic` node as plain text: its layout, and each panel's value, heading and body. */
+export function infographicSpec(node: Node): InfographicSpec {
+  const panels: InfographicSpec['panels'] = [];
+  node.forEach((panel) => {
+    panels.push({
+      value: panel.child(0).textContent,
+      heading: panel.child(1).textContent,
+      body: panel.child(2).textContent,
+      pages: childPages(panel),
+    });
+  });
+  const layout = node.attrs.layout as unknown;
+  return {
+    layout: isInfographicLayout(layout) ? layout : 'steps',
+    title: (node.attrs.title as string | null) || null,
+    panels,
   };
 }
 
@@ -892,6 +1142,9 @@ function outlineText(node: Node): string {
   const limit = hasLearnerText(node) ? LEARNER_OUTLINE_WORDS : OUTLINE_WORDS;
   if (node.type.name === 'table') return truncateWords(tableText(node), limit);
   if (node.type.name === 'diagram') return truncateWords(diagramText(node), limit);
+  if (node.type.name === 'flashcards') return truncateWords(flashcardsText(node), limit);
+  if (node.type.name === 'quiz') return truncateWords(quizText(node), limit);
+  if (node.type.name === 'infographic') return truncateWords(infographicText(node), limit);
   // `\n` between a list's items so two bullets do not read as one sentence.
   return truncateWords(
     node.textBetween(0, node.content.size, '\n', ' '),
@@ -930,6 +1183,32 @@ export function diagramText(node: Node): string {
   const arrows = edges.map((e) => `${name(e.from)} -> ${name(e.to)}${e.label ? ` (${e.label})` : ''}`);
   const body = [listed.join(', '), arrows.join(', ')].filter((part) => part.length > 0).join('; ');
   return `${title ? `${title}: ` : ''}${body}`;
+}
+
+/** Flashcards on one line: `title: front = back || front = back`. */
+export function flashcardsText(node: Node): string {
+  const { title, cards } = flashcardsSpec(node);
+  return `${title ? `${title}: ` : ''}${cards.map((c) => `${c.front} = ${c.back}`).join(ROW_SEPARATOR)}`;
+}
+
+/**
+ * A quiz on one line. Options are listed and the correct one starred, then the explanation: the
+ * outline is the model's view of the doc, not the learner's, so nothing here is held back.
+ */
+export function quizText(node: Node): string {
+  const { title, questions } = quizSpec(node);
+  const lines = questions.map((q) => {
+    const options = q.options.map((o, i) => `${i === q.correct ? '*' : ''}${o}`).join(' / ');
+    return `${q.prompt}${options ? ` [${options}]` : ''}${q.explain ? ` -> ${q.explain}` : ''}`;
+  });
+  return `${title ? `${title}: ` : ''}${lines.join(ROW_SEPARATOR)}`;
+}
+
+/** An infographic on one line: `title (layout): value heading: body || …`. */
+export function infographicText(node: Node): string {
+  const { title, layout, panels } = infographicSpec(node);
+  const lines = panels.map((p) => `${[p.value, p.heading].filter((x) => x.length > 0).join(' ')}${p.body ? `: ${p.body}` : ''}`);
+  return `${title ? `${title} (${layout}): ` : `(${layout}) `}${lines.join(ROW_SEPARATOR)}`;
 }
 
 function entryFor(node: Node, path: string[]): OutlineEntry {

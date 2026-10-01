@@ -14,7 +14,7 @@ import type { Node } from 'prosemirror-model';
 import { EditorState } from 'prosemirror-state';
 import { inlineToNodes } from './inline.js';
 import { authorMark, notesSchema } from './schema.js';
-import type { DiagramEdge, DiagramLayout, DocAuthor } from './types.js';
+import type { DiagramEdge, DiagramLayout, DocAuthor, InfographicLayout } from './types.js';
 
 export const AT = 1_758_000_000_000;
 
@@ -102,6 +102,77 @@ export function diagram(
         { nodeId: n.id, parent: n.parent ?? null, group: n.group ?? null, pages: n.pages ?? [], reason: null },
         inlineOf(n.label, by, editId),
       ),
+    ),
+  );
+}
+
+const blockAttrsOf = (blockId: string, pages: number[]) => ({
+  blockId,
+  pages,
+  reason: pages.length > 0 ? null : 'asked for',
+  objectiveIds: [],
+});
+
+/** A deck of cards: `[front, back, pages?]`. */
+export function flashcards(
+  blockId: string,
+  cards: [Spans, Spans, number[]?][],
+  opts: { by?: DocAuthor; editId?: string | null; pages?: number[]; title?: string | null } = {},
+): Node {
+  const { by = 'ellie', editId = null, pages = [6], title = null } = opts;
+  const n = notesSchema.nodes;
+  return n.flashcards!.create(
+    { ...blockAttrsOf(blockId, pages), title },
+    cards.map(([front, back, own]) =>
+      n.flashcard!.create({ pages: own ?? [], reason: null }, [
+        n.flashcard_front!.create(null, inlineOf(front, by, editId)),
+        n.flashcard_back!.create(null, inlineOf(back, by, editId)),
+      ]),
+    ),
+  );
+}
+
+export interface QuestionFixture {
+  prompt: Spans;
+  options?: { text: Spans; correct?: boolean }[];
+  explain: Spans;
+  pages?: number[];
+}
+
+export function quiz(
+  blockId: string,
+  questions: QuestionFixture[],
+  opts: { by?: DocAuthor; editId?: string | null; pages?: number[]; title?: string | null } = {},
+): Node {
+  const { by = 'ellie', editId = null, pages = [6], title = null } = opts;
+  const n = notesSchema.nodes;
+  return n.quiz!.create(
+    { ...blockAttrsOf(blockId, pages), title },
+    questions.map((q) =>
+      n.quiz_question!.create({ qtype: (q.options?.length ?? 0) > 0 ? 'mc' : 'short', pages: q.pages ?? [], reason: null }, [
+        n.quiz_prompt!.create(null, inlineOf(q.prompt, by, editId)),
+        ...(q.options ?? []).map((o) => n.quiz_option!.create({ correct: o.correct === true }, inlineOf(o.text, by, editId))),
+        n.quiz_explain!.create(null, inlineOf(q.explain, by, editId)),
+      ]),
+    ),
+  );
+}
+
+export function infographic(
+  blockId: string,
+  panels: { value?: Spans; heading: Spans; body: Spans; pages?: number[] }[],
+  opts: { layout?: InfographicLayout; by?: DocAuthor; editId?: string | null; pages?: number[]; title?: string | null } = {},
+): Node {
+  const { layout = 'steps', by = 'ellie', editId = null, pages = [6], title = null } = opts;
+  const n = notesSchema.nodes;
+  return n.infographic!.create(
+    { ...blockAttrsOf(blockId, pages), layout, title },
+    panels.map((p) =>
+      n.info_panel!.create({ pages: p.pages ?? [], reason: null }, [
+        n.info_value!.create(null, inlineOf(p.value ?? '', by, editId)),
+        n.info_heading!.create(null, inlineOf(p.heading, by, editId)),
+        n.info_body!.create(null, inlineOf(p.body, by, editId)),
+      ]),
     ),
   );
 }

@@ -13,7 +13,7 @@
  *
  * | op on a block holding learner text | what happens |
  * |---|---|
- * | `replace_block` | becomes a **suggestion** — strike the block's text, offer the agent's (a `table` or a `diagram` is **dropped**, `rejected_guard`: see `applyBatch`) |
+ * | `replace_block` | becomes a **suggestion** — strike the block's text, offer the agent's (a `table`, `diagram`, `flashcards`, `quiz` or `infographic` is **dropped**, `rejected_guard`: see `applyBatch`) |
  * | `remove_block` | **dropped**, `rejected_guard` — nothing an agent says removes your writing |
  * | `append_to_block` | **relocated** to an `insert_after` of the same block |
  *
@@ -177,6 +177,43 @@ export function draftToNodes(
         );
         break;
       }
+      case 'flashcards': {
+        if (draft.cards.length === 0) break;
+        const cards = draft.cards.map((c) =>
+          schema.nodes.flashcard!.create({ pages: [...(c.pages ?? [])], reason: null }, [
+            schema.nodes.flashcard_front!.create(null, inline(c.front)),
+            schema.nodes.flashcard_back!.create(null, inline(c.back)),
+          ]),
+        );
+        out.push(schema.nodes.flashcards!.create({ ...attrs, title: draft.title ?? null }, cards));
+        break;
+      }
+      case 'quiz': {
+        if (draft.questions.length === 0) break;
+        const questions = draft.questions.map((q) => {
+          const options = (q.options ?? []).map((o) =>
+            schema.nodes.quiz_option!.create({ correct: o.correct }, inline(o.text)),
+          );
+          return schema.nodes.quiz_question!.create(
+            { qtype: options.length > 0 && q.type === 'mc' ? 'mc' : 'short', pages: [...(q.pages ?? [])], reason: null },
+            [schema.nodes.quiz_prompt!.create(null, inline(q.prompt)), ...options, schema.nodes.quiz_explain!.create(null, inline(q.explain))],
+          );
+        });
+        out.push(schema.nodes.quiz!.create({ ...attrs, title: draft.title ?? null }, questions));
+        break;
+      }
+      case 'infographic': {
+        if (draft.panels.length === 0) break;
+        const panels = draft.panels.map((p) =>
+          schema.nodes.info_panel!.create({ pages: [...(p.pages ?? [])], reason: null }, [
+            schema.nodes.info_value!.create(null, inline(p.value ?? '')),
+            schema.nodes.info_heading!.create(null, inline(p.heading)),
+            schema.nodes.info_body!.create(null, inline(p.body)),
+          ]),
+        );
+        out.push(schema.nodes.infographic!.create({ ...attrs, layout: draft.layout, title: draft.title ?? null }, panels));
+        break;
+      }
       default:
         break;
     }
@@ -219,6 +256,18 @@ function draftsToText(drafts: readonly DocBlockDraft[]): string {
         break;
       case 'diagram':
         parts.push(draft.title ?? '', draft.nodes.map((n) => n.label).join(', '));
+        break;
+      case 'flashcards':
+        parts.push(draft.title ?? '', ...draft.cards.map((c) => `${c.front} = ${c.back}`));
+        break;
+      case 'quiz':
+        parts.push(
+          draft.title ?? '',
+          ...draft.questions.map((q) => [q.prompt, ...(q.options ?? []).map((o) => o.text), q.explain].join(' ')),
+        );
+        break;
+      case 'infographic':
+        parts.push(draft.title ?? '', ...draft.panels.map((p) => [p.value ?? '', p.heading, p.body].join(' ')));
         break;
       default:
         break;

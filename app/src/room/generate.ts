@@ -6,18 +6,24 @@
  * `docedit.ts` beside it (`app/docs/NOTEBOOK-CONTRACT.md`). The code is as it was; only the kind
  * union now comes from `shared/doc/types.ts`.
  */
-import type { AgentDocOpBatch, GeneratedBlockKind, OutlineEntry, Provenance } from '../shared/doc/types.js';
+import type { AgentDocOpBatch, DocBlockDraft, GeneratedBlockKind, OutlineEntry, Provenance } from '../shared/doc/types.js';
 import {
   DIAGRAM_DRAFT_JSON_SCHEMA,
+  FLASHCARDS_DRAFT_JSON_SCHEMA,
+  INFOGRAPHIC_DRAFT_JSON_SCHEMA,
+  QUIZ_DRAFT_JSON_SCHEMA,
   TABLE_DRAFT_JSON_SCHEMA,
   validateDiagramDraft,
+  validateFlashcardsDraft,
+  validateInfographicDraft,
+  validateQuizDraft,
   validateTableDraft,
 } from '../shared/doc/validate.js';
 import { docEditMeta, outlineText, type DocEditDeps } from './docedit.js';
 import { extractJson } from './orchestrator.js';
 import type { LlmRequest } from './llm/types.js';
 
-// ── §5.7: a table or a diagram, asked for at a place in the notes ──────────
+// ── §5.7: a table, diagram, deck, quiz or infographic, asked for at a place in the notes ──
 
 /**
  * **What the learner may ask Ellie to draw into the notes** (brief §5.7, 2026-10-01).
@@ -50,9 +56,29 @@ export interface GenerateBlockInput {
 /** How much slide text the call is shown. A section can span several pages. */
 export const GENERATE_BLOCK_PASSAGE_CHARS = 6_000;
 
+/**
+ * Each kind's reply schema and its validator, in one place. The reply key is the kind's name.
+ * A quiz or a deck is a long answer (3 to 12 items, each with prose), so those two get a larger
+ * budget than the 2000 that a table or a diagram fits in.
+ */
+const KIND_SPECS: Record<
+  GeneratedBlockKind,
+  {
+    schema: Record<string, unknown>;
+    validate: (raw: unknown, pageCount: number, prov: Provenance) => { draft: DocBlockDraft | null; problems: string[] };
+    maxTokens: number;
+  }
+> = {
+  table: { schema: TABLE_DRAFT_JSON_SCHEMA, validate: validateTableDraft, maxTokens: 2000 },
+  diagram: { schema: DIAGRAM_DRAFT_JSON_SCHEMA, validate: validateDiagramDraft, maxTokens: 2000 },
+  flashcards: { schema: FLASHCARDS_DRAFT_JSON_SCHEMA, validate: validateFlashcardsDraft, maxTokens: 3500 },
+  quiz: { schema: QUIZ_DRAFT_JSON_SCHEMA, validate: validateQuizDraft, maxTokens: 4000 },
+  infographic: { schema: INFOGRAPHIC_DRAFT_JSON_SCHEMA, validate: validateInfographicDraft, maxTokens: 2500 },
+};
+
 function generateReplySchema(kind: GeneratedBlockKind): Record<string, unknown> {
   // Nested, so its own `$schema` key comes off: one dialect declaration, at the root.
-  const { $schema: _dialect, ...draft } = kind === 'table' ? TABLE_DRAFT_JSON_SCHEMA : DIAGRAM_DRAFT_JSON_SCHEMA;
+  const { $schema: _dialect, ...draft } = KIND_SPECS[kind].schema;
   void _dialect;
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
@@ -70,6 +96,62 @@ function generateReplySchema(kind: GeneratedBlockKind): Record<string, unknown> 
   };
 }
 
+
+/** What each block is, and how to build it from the section. */
+const KIND_BRIEFS: Record<GeneratedBlockKind, readonly string[]> = {
+  table: [
+    '**A comparison table.** Rows are the things being compared and columns are what they are',
+    'compared on; the first column names the thing. 2 to 6 columns, at most 12 rows, and every row',
+    'has exactly one cell per column. A cell is a few words, not a sentence: a term, a value, a',
+    'yes or no, a short phrase. Leave a cell empty ("") when neither the notes nor the slides say;',
+    'never fill one from general knowledge. Give each row the slide pages it came from.',
+  ],
+  diagram: [
+    '**A diagram, as nodes and arrows.** Choose the layout that fits what the section says:',
+    '`flow` for steps in an order (an edge from each step to the next); `hierarchy` for a thing',
+    'and its kinds or parts (each node but the root names its `parent`); `compare` for two to',
+    'four alternatives side by side (each node names the `group`, the alternative, it belongs',
+    'under); `cycle` for a loop that returns to its start (edges in order, the last back to the',
+    'first). 3 to 12 nodes. A label is at most eight words and is the slide’s own term where it',
+    'has one. Label an edge only when the relation is not obvious. Give each node the slide pages',
+    'it came from. Draw what the section says, not everything true about the topic.',
+  ],
+  flashcards: [
+    '**A deck of flashcards.** 3 to 12 cards, each a front and a back, for what a learner should',
+    'be able to recall: a term and its meaning, a question and its answer, a formula and what it',
+    'computes. A front is short and has one answer; a back is the answer in a sentence or less,',
+    'in the slides’ own words. One idea to a card; no two cards that give each other away. Give',
+    'each card the slide pages it came from.',
+  ],
+  quiz: [
+    '**A short quiz.** 3 to 5 questions that check understanding of this section, not recall of',
+    'wording. Use `mc` (multiple choice) where there is one clearly right answer: 3 or 4 options,',
+    'one right (`answer` is its 1-based number), the others plausible mistakes a learner could make,',
+    'all about the same length. Use `short` where the learner should answer in their own words;',
+    'give no options. For both, `explanation` is the answer and why, drawn from the slides; it is',
+    'held back until the learner has answered, so the prompt must not give it away. Give each',
+    'question the slide pages it came from.',
+  ],
+  infographic: [
+    '**An infographic, as data.** It is a titled set of 3 to 8 panels that the app draws; you',
+    'write only the words. Choose the layout the section supports: `timeline` for dated or ordered',
+    'stops (each panel’s `value` is its date or stage); `steps` for a process (no value); `stats`',
+    'for figures worth a callout (each panel’s `value` is the number, with its unit); `compare`',
+    'for two to four alternatives side by side (the heading names the alternative, no value). A',
+    'heading is a few words; a body is one or two sentences from the slides. Give each panel the',
+    'slide pages it came from. Never describe a picture: this is text only.',
+  ],
+};
+
+const DECLINE_RULES: Record<GeneratedBlockKind, string> = {
+  table: 'A section that compares fewer than two things, or on fewer than two properties, has no table in it.',
+  diagram: 'A section with a single idea and no order, parts or alternatives has no diagram in it.',
+  flashcards: 'A section with fewer than three things worth remembering has no deck in it.',
+  quiz: 'A section too thin to ask three different questions about has no quiz in it.',
+  infographic:
+    'A section with no sequence, process, figures or alternatives to lay out, or fewer than three panels’ worth, has no infographic in it.',
+};
+
 export function generateBlockPrompt(input: GenerateBlockInput): string {
   const lines = [
     `You are adding one ${input.kind} to the learner’s lecture notes, at a place they chose. It is`,
@@ -85,34 +167,11 @@ export function generateBlockPrompt(input: GenerateBlockInput): string {
   if (input.instruction && input.instruction.trim().length > 0) {
     lines.push('', 'WHAT THE LEARNER ASKED IT TO SHOW', '"""', input.instruction.trim(), '"""');
   }
-  if (input.kind === 'table') {
-    lines.push(
-      '',
-      '**A comparison table.** Rows are the things being compared and columns are what they are',
-      'compared on; the first column names the thing. 2 to 6 columns, at most 12 rows, and every row',
-      'has exactly one cell per column. A cell is a few words, not a sentence: a term, a value, a',
-      'yes or no, a short phrase. Leave a cell empty ("") when neither the notes nor the slides say;',
-      'never fill one from general knowledge. Give each row the slide pages it came from.',
-    );
-  } else {
-    lines.push(
-      '',
-      '**A diagram, as nodes and arrows.** Choose the layout that fits what the section says:',
-      '`flow` for steps in an order (an edge from each step to the next); `hierarchy` for a thing',
-      'and its kinds or parts (each node but the root names its `parent`); `compare` for two to',
-      'four alternatives side by side (each node names the `group`, the alternative, it belongs',
-      'under); `cycle` for a loop that returns to its start (edges in order, the last back to the',
-      'first). 3 to 12 nodes. A label is at most eight words and is the slide’s own term where it',
-      'has one. Label an edge only when the relation is not obvious. Give each node the slide pages',
-      'it came from. Draw what the section says, not everything true about the topic.',
-    );
-  }
+  lines.push('', ...KIND_BRIEFS[input.kind]);
   lines.push(
     '',
     `**If this section has nothing worth a ${input.kind}, answer \`{"make": false, "why": "…"}\`.**`,
-    input.kind === 'table'
-      ? 'A section that compares fewer than two things, or on fewer than two properties, has no table in it.'
-      : 'A section with a single idea and no order, parts or alternatives has no diagram in it.',
+    DECLINE_RULES[input.kind],
     'Every term in it must appear in the section or the slides above.',
   );
   return lines.join('\n');
@@ -130,13 +189,10 @@ export async function planGeneratedBlock(
   deps: DocEditDeps,
   input: GenerateBlockInput,
 ): Promise<{ batch: AgentDocOpBatch | null; reason: GeneratedBlockReason; problems: string[] }> {
-  // Day-0 stub for the kinds the blocks track is building (NOTEBOOK-CONTRACT.md, track N4).
-  if (input.kind !== 'table' && input.kind !== 'diagram') {
-    return { batch: null, reason: 'invalid', problems: [`${input.kind} is not built yet`] };
-  }
+  const spec = KIND_SPECS[input.kind];
   const request: LlmRequest = {
     model: deps.model,
-    max_tokens: 2000,
+    max_tokens: spec.maxTokens,
     system: [{ type: 'text', text: generateBlockPrompt(input) }],
     messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
     jsonSchema: generateReplySchema(input.kind),
@@ -154,10 +210,7 @@ export async function planGeneratedBlock(
     sectionPages.length > 0
       ? { pages: sectionPages, reason: null }
       : { pages: [], reason: `a ${input.kind} of this section of the notes` };
-  const checked =
-    input.kind === 'table'
-      ? validateTableDraft(parsed.table, pageCount, prov)
-      : validateDiagramDraft(parsed.diagram, pageCount, prov);
+  const checked = spec.validate(parsed[input.kind], pageCount, prov);
   if (checked.draft === null) return { batch: null, reason: 'invalid', problems: checked.problems };
 
   const why =
