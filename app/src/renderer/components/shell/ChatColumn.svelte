@@ -13,10 +13,15 @@
    * The strip is a real tablist: ←/→ (and Home/End) move between the three, and a two-finger
    * sideways swipe over the column does the same — unless what is under the fingers scrolls
    * sideways itself (a wide code block), when the swipe is a pan of that and nothing else.
+   *
+   * Under the tabs, **the context chip** (`docs/research/notebooks.md` §2): *Using 2 of 3
+   * sources*, ticked-and-ready over all, from the open notebook. It is on the column rather than
+   * in one tab because all three channels read the same ticked sources.
    */
   import { tabs, type ChatTab } from '../../lib/chatview.js';
   import { canScrollSideways, isSideways, stepTab } from '../../lib/layout.js';
   import { emptyLatch, pushHorizontal, type LatchState } from '../../lib/pdfview.js';
+  import { contextLine } from '../../lib/notebookview.js';
   import { store } from '../../lib/store.svelte.js';
   import DocChat from './DocChat.svelte';
   import PrivateThread from './PrivateThread.svelte';
@@ -32,6 +37,7 @@
   } = $props();
 
   const chat = store.chat;
+  const sources = $derived(store.notebook.view?.sources ?? null);
   const strip = $derived(
     tabs({
       threads: chat.threads,
@@ -142,6 +148,12 @@
     </button>
   </header>
 
+  {#if sources}
+    <div class="ctx">
+      <span class="chip" title="Ellie, Max and the overview read only the ticked sources.">{contextLine(sources)}</span>
+    </div>
+  {/if}
+
   <div class="body" id="chat-panel" role="tabpanel">
     {#if chat.tab === 'doc'}
       <DocChat {pages} {onjump} {onpage} />
@@ -228,6 +240,18 @@
   }
   .reset:hover:not(:disabled) { color: var(--text); border-color: #d4d4e2; }
   .reset:disabled { opacity: 0.5; cursor: default; }
+
+  .ctx { flex: none; display: flex; gap: 6px; padding: 8px 14px 4px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 2px 9px;
+    background: var(--indigo-tint);
+    color: var(--indigo);
+    font-size: 11.5px;
+    font-weight: 500;
+  }
 
   .body { flex: 1; min-height: 0; }
 </style>

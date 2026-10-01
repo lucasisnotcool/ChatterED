@@ -3,7 +3,7 @@
  * into editable fields, which is where the notes editor (ProseMirror) and the composer live.
  */
 import { describe, expect, it } from 'vitest';
-import { blockDrop, carriesFiles, filesToPaths, installDropGuard, noPathNotice } from './dropguard.js';
+import { blockDrop, carriesFiles, createFileDrop, filesToPaths, installDropGuard, noPathNotice } from './dropguard.js';
 
 describe('blockDrop', () => {
   it('refuses anything carrying files, even over the editor', () => {
@@ -172,5 +172,49 @@ describe('filesToPaths', () => {
     expect(noPathNotice([])).toBeNull();
     expect(noPathNotice(['clip.png'])).toBe('“clip.png” could not be added: save it to your Mac first, then drop it again.');
     expect(noPathNotice(['a', 'b'])).toContain('2 files could not be added');
+  });
+});
+
+describe('createFileDrop', () => {
+  const ev = (types: string[], files: { name: string }[] = []) => {
+    const e = {
+      dataTransfer: { types, dropEffect: 'none', files },
+      prevented: false,
+      stopped: false,
+      preventDefault() {
+        this.prevented = true;
+      },
+      stopPropagation() {
+        this.stopped = true;
+      },
+    };
+    return e;
+  };
+
+  it('is over while any child holds the drag, and drops the files once', () => {
+    const over: boolean[] = [];
+    const dropped: string[][] = [];
+    const zone = createFileDrop<{ name: string }>({ onover: (o) => over.push(o), ondrop: (f) => dropped.push(f.map((x) => x.name)) });
+    zone.dragenter(ev(['Files']));
+    zone.dragenter(ev(['Files'])); // a child
+    zone.dragleave(ev(['Files'])); // left the parent for the child
+    expect(over).toEqual([true]);
+    const o = ev(['Files']);
+    zone.dragover(o);
+    expect(o.prevented).toBe(true);
+    expect(o.dataTransfer.dropEffect).toBe('copy');
+    const d = ev(['Files'], [{ name: 'a.pdf' }]);
+    zone.drop(d);
+    expect(d.prevented && d.stopped).toBe(true);
+    expect(over).toEqual([true, false]);
+    expect(dropped).toEqual([['a.pdf']]);
+  });
+
+  it('ignores a drag with no files, leaving it to the editor and the guard', () => {
+    const zone = createFileDrop({ onover: () => undefined, ondrop: () => undefined });
+    const e = ev(['text/plain']);
+    zone.dragover(e);
+    zone.drop(e);
+    expect(e.prevented).toBe(false);
   });
 });

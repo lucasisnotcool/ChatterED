@@ -1,18 +1,20 @@
 <script lang="ts">
   /**
-   * ChatterED renderer root. Four destinations, one window, no URLs
-   * (architecture-mac.md: the renderer is a plain Svelte 5 SPA).
+   * ChatterED renderer root. One window, no URLs (architecture-mac.md: the renderer is a plain
+   * Svelte 5 SPA). Since #58 (`docs/research/notebooks.md`) home is the Notebooks grid and a
+   * notebook opens into the three-column shell; the folder vault, its finder and its topic sheet
+   * are gone.
    */
   import DebugDrawer from './components/DebugDrawer.svelte';
   import FirstRun from './components/FirstRun.svelte';
-  import Library from './components/Library.svelte';
   import NavRail from './components/NavRail.svelte';
+  import NotebookHome from './components/NotebookHome.svelte';
   import NoticeBanner from './components/NoticeBanner.svelte';
   import Room from './components/Room.svelte';
   import SessionSetup from './components/SessionSetup.svelte';
   import Settings from './components/Settings.svelte';
   import StatusBar from './components/StatusBar.svelte';
-  import TopicSheet from './components/TopicSheet.svelte';
+  import ThreeColumn from './components/shell/ThreeColumn.svelte';
   import TitleBar from './components/TitleBar.svelte';
   import Usage from './components/Usage.svelte';
   import { store } from './lib/store.svelte.js';
@@ -24,11 +26,13 @@
   void trial.whenOpen().then(() => store.init());
 
   /**
-   * ⌘K. Inside a room it is the whisper and Room.svelte owns it (product-design.md §C10 L1004);
-   * everywhere else it is the vault finder, which is what §B1's own header already advertises
-   * at L186. The two scopes cannot overlap, so the binding is made here and simply stands down
-   * while a room is open.
+   * A notebook deleted, or gone, while it is open (`notebook:changed` with a null view): the
+   * shell has nothing to show, so the route goes home rather than drawing an empty notebook.
    */
+  $effect(() => {
+    if (store.screen === 'notebook' && store.notebook.view === null) store.goHome();
+  });
+
   /**
    * **⌥⌘D — the researcher's turn log** (cui-standards-audit.md §10).
    *
@@ -49,12 +53,6 @@
       }
       return;
     }
-    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
-    if (store.screen === 'room' || store.screen === 'firstRun') return;
-    if (!store.vault?.rootPath) return;
-    e.preventDefault();
-    if (store.finderOpen) store.finderOpen = false;
-    else store.openFinder();
   }
 </script>
 
@@ -72,8 +70,13 @@
       <NavRail />
       {#if store.screen === 'loading'}
         <div class="loading"><span>Opening…</span></div>
-      {:else if store.screen === 'library'}
-        <Library />
+      {:else if store.screen === 'notebooks'}
+        <NotebookHome />
+      {:else if store.screen === 'notebook' && store.notebook.view}
+        <!-- Keyed, so opening another notebook remounts the shell and its stores reopen. -->
+        {#key store.notebook.view.id}
+          <ThreeColumn notebookId={store.notebook.view.id} />
+        {/key}
       {:else if store.screen === 'setup'}
         <SessionSetup />
       {:else if store.screen === 'settings'}
@@ -90,18 +93,17 @@
   {/if}
 </div>
 
-<!-- The topic sheet is reachable from the Library sidebar, from Settings ▸ Your files, and from
-     first run (opening a vault with no topics opens it), so it is mounted above the screen
-     router rather than inside one screen. -->
-{#if store.topicSheetOpen}
-  <TopicSheet />
-{/if}
-
 {#if store.debugOpen}
   <DebugDrawer />
 {/if}
 
 <NoticeBanner />
+{#if store.notebook.toast}
+  <!-- A refused file, a failed add: said for a few seconds, then gone (`notebookstore`). -->
+  {#key store.notebook.toast.token}
+    <div class="toast" role="status">{store.notebook.toast.text}</div>
+  {/key}
+{/if}
 <ResearchTrialLayer />
 {/if}
 
@@ -109,4 +111,19 @@
   .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
   .cols { flex: 1; display: flex; min-height: 0; min-width: 0; }
   .loading { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 60;
+    max-width: min(560px, 90vw);
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--text);
+    color: var(--pane);
+    font-size: 12.5px;
+    line-height: 1.45;
+    box-shadow: 0 8px 28px rgba(20, 20, 40, 0.18);
+  }
 </style>

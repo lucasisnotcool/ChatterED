@@ -395,34 +395,6 @@
       </div>
     </section>
 
-    <!-- §B7's "Sources" group, and the answer to "once a document is open there is no way in the
-         entire application to change vault" (ui-review-ux.md M5). -->
-    <section>
-      <h2>Your files</h2>
-      {#if store.vault?.rootPath}
-        <p class="status">{store.vault.displayName}</p>
-        <p class="quiet">{store.vault.rootPath}</p>
-        <p class="quiet">
-          {store.vault.totalFiles} readable {store.vault.totalFiles === 1 ? 'file' : 'files'} ·
-          {store.vault.topics.length} {store.vault.topics.length === 1 ? 'topic' : 'topics'}. ChatterED
-          reads them from disk; nothing is uploaded anywhere you didn't put it.
-        </p>
-      {:else}
-        <p class="quiet">No folder opened yet. ChatterED reads the course material already on this Mac.</p>
-      {/if}
-      <div class="acts">
-        <button type="button" class="btn" disabled={store.vaultBusy} onclick={() => void store.chooseVault()}>
-          {store.vaultBusy ? 'Reading…' : store.vault?.rootPath ? 'Change vault…' : 'Open a folder…'}
-        </button>
-        {#if store.vault?.rootPath}
-          <button type="button" class="btn" disabled={store.vaultBusy} onclick={() => void store.rescanVault()}>
-            Re-scan
-          </button>
-          <button type="button" class="btn-link" onclick={() => void store.openTopicSheet()}>Edit topics…</button>
-        {/if}
-      </div>
-    </section>
-
     <!-- BYOK (2026-09-25): every API provider's key, models and Test connection. -->
     <ProviderKeys {settings} />
 

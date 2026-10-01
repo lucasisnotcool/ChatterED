@@ -8,8 +8,8 @@
    * taxonomies of "a course" 76 px apart**, and the one on the left was a single fabricated
    * entry (ui-review-code.md §3, ui-review-ux.md M1/M2/M3).
    *
-   * So: 48 px, icons only, and the vault's own topic list next to it is the one taxonomy. The
-   * 120 px this gives back goes to the document.
+   * So: 48 px, icons only. The 120 px this gives back goes to the document. Since #58 the one
+   * taxonomy is the notebook (`docs/research/notebooks.md` §1), and Home is the Notebooks grid.
    *
    * **History is absent, not greyed.** The data is there — `sessions`, `rooms`, `ledger` — and
    * the screen is half a day's work, but a permanently disabled control teaches the learner that
@@ -22,10 +22,10 @@
   <button
     type="button"
     class="item"
-    class:active={store.screen === 'library'}
-    title="Library"
-    aria-label="Library"
-    onclick={() => (store.screen === 'room' ? store.leaveRoom() : (store.screen = 'library'))}
+    class:active={store.screen === 'notebooks' || store.screen === 'notebook'}
+    title="Notebooks"
+    aria-label="Notebooks"
+    onclick={() => store.goHome()}
   >
     <span class="icon" aria-hidden="true">⌂</span>
   </button>

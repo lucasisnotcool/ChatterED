@@ -1,8 +1,9 @@
 <script lang="ts">
   /**
-   * **The shell** (#48, `docs/research/collab-doc.md` §0): *file panel · doc · chats*.
+   * **The shell** (#48, `docs/research/collab-doc.md` §0): *sources · overview · chat* since the
+   * notebooks redesign (#58, `docs/research/notebooks.md` §8).
    *
-   * It is what a PDF opens into. The three columns are the brief's, and
+   * It is what a notebook opens into. The three columns are the brief's, and
    * the proportions say what the app is about: the document is the widest thing on screen and
    * the conversation sits beside it, calm and narrower, because this is a document the agents
    * are writing with you rather than a chat with a file attached.
@@ -13,14 +14,22 @@
    *    doc header") and the lesson-card popover it opens;
    *  - **the two seams with the editor** — `store.doc.scrollToBlock` for a lesson's Start and a
    *    span thread's jump, and the editor pane itself;
-   *  - **the map of the notes**, handed to the file panel: it needs the document column to read
-   *    the headings from and `jump` to go to one, and both are this component's;
-   *  - **the column sizes**, which are `layoutstore.svelte.ts`'s: both edges drag (the file
-   *    panel's is in `VaultSidebar`, so it is the same width beside the page viewer), and the
-   *    file panel closes from its edge, its toggle, or View ▸ Show/Hide Files (⌃⌘S).
+   *  - **the map of the notes**, handed to the sources panel: it needs the document column to
+   *    read the headings from and `jump` to go to one, and both are this component's;
+   *  - **the column sizes**, which are `layoutstore.svelte.ts`'s: both edges drag (the sources
+   *    panel's is in `SourcesPanel`), and the panel closes from its edge, its toggle, or View ▸
+   *    Show/Hide Files (⌃⌘S);
+   *  - **the drop zone** (`notebooks.md` §1): files dropped anywhere on the notebook window are
+   *    added to it, with an overlay that names the notebook while the drag is over it. The window
+   *    is marked `data-dropzone`, so the app-wide drop guard stands aside here and nowhere else.
+   *
+   * The doc header keeps the progress bar and the lesson path. The page viewer, Reveal in Finder
+   * and Close went with the vault: a source is a copy in app storage (§1, answer C), its slides
+   * are the citations' previews, and the breadcrumb in the title bar is the way home.
    */
   import { untrack } from 'svelte';
-  import type { DocumentView } from '../../../shared/types.js';
+  import { bridge } from '../../lib/bridge.js';
+  import { createFileDrop, filesToPaths, noPathNotice } from '../../lib/dropguard.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
   import { CHAT } from '../../lib/layout.js';
@@ -33,12 +42,13 @@
   import PacingStrip from '../PacingStrip.svelte';
   import PaneSplitter from '../PaneSplitter.svelte';
   import ProgressBar from './ProgressBar.svelte';
-  import VaultSidebar from '../VaultSidebar.svelte';
+  import SourcesPanel from '../SourcesPanel.svelte';
 
-  let { doc, onclose }: { doc: DocumentView; onclose: () => void } = $props();
+  let { notebookId }: { notebookId: string } = $props();
 
   /**
-   * The file's surfaces, all opened by the same gesture.
+   * The notebook's surfaces, all opened by the same gesture, all keyed on the notebook's id
+   * (contract C2): the chats and the progress bar here, the doc in `NotesPane`.
    *
    * `untrack` is not optional here. Both stores *read* their own `fileId` on the way in (that is
    * how they ignore a second open of the same file), so without it this effect would take a
@@ -46,7 +56,7 @@
    * the file it had just opened — which is exactly what the first browser run did.
    */
   $effect(() => {
-    const fileId = doc.fileId;
+    const fileId = notebookId;
     untrack(() => {
       void store.chat.open(fileId);
       void store.progress.load(fileId);
@@ -94,20 +104,45 @@
 
   /** The document column, which the map of the notes reads the headings from. */
   let docbody = $state<HTMLElement | null>(null);
+
+  /** Files are being dragged over the window: the overlay and the sources panel's box say so. */
+  let over = $state(false);
+  const name = $derived(store.notebook.view?.name ?? 'this notebook');
+
+  /**
+   * A drop anywhere on the notebook adds the files to it (§1). Paths come from the preload
+   * (`pathForFile`); a file with none (dragged out of another app's memory) is named in a notice
+   * rather than lost, and the rest of the drop still goes in.
+   */
+  const drop = createFileDrop<File>({
+    onover: (o) => (over = o),
+    ondrop: (files) => {
+      const { paths, refused } = filesToPaths(files, (f) => bridge().pathForFile(f));
+      store.notebook.say(noPathNotice(refused));
+      if (paths.length > 0) void store.notebook.addSources(paths);
+    },
+  });
 </script>
 
-<div class="shell">
+<div
+  class="shell"
+  data-dropzone
+  role="region"
+  aria-label="Notebook"
+  ondragenter={drop.dragenter}
+  ondragover={drop.dragover}
+  ondragleave={drop.dragleave}
+  ondrop={drop.drop}
+>
   {#if filesOpen}
-    <!-- The file panel is the shipped vault sidebar, re-hosted and not rebuilt: the tree, the
-         topics, the re-scan and the search all already work and the learner already knows them. -->
     <div class="files">
-      <VaultSidebar onopen={(file) => void store.openFile(file.id)} oncollapse={() => layout.setFilesOpen(false)}>
+      <SourcesPanel {over} oncollapse={() => layout.setFilesOpen(false)}>
         {#snippet below()}
-          <!-- The map of the open file's notes, under the tree. Its clicks are the same `jump` a
-               lesson card's Start and a span thread use. -->
+          <!-- The overview's outline, with each section's fill (§7). Its clicks are the same
+               `jump` a lesson card's Start and a span thread use. -->
           <NotesMap root={docbody} onjump={jump} />
         {/snippet}
-      </VaultSidebar>
+      </SourcesPanel>
     </div>
   {/if}
 
@@ -118,11 +153,9 @@
         class="mini"
         aria-pressed={filesOpen}
         aria-controls="files-panel"
-        title={filesOpen ? 'Hide your files (⌃⌘S)' : 'Show your files (⌃⌘S)'}
+        title={filesOpen ? 'Hide the sources (⌃⌘S)' : 'Show the sources (⌃⌘S)'}
         onclick={() => layout.toggleFiles()}
       >{filesOpen ? '⟨' : '⟩'}</button>
-
-      <span class="name" title={doc.relPath}>{doc.name}</span>
 
       <!-- The bar, in the doc header, where §6 puts it. The popover hangs off this wrapper. -->
       <div class="progress">
@@ -137,12 +170,6 @@
            on this file — so the header's own rule holds: nothing here may push the buttons over
            the chat column's tabs at 1100px. -->
       <CostCounter />
-
-      <button type="button" class="mini" onclick={() => (store.docView = 'viewer')}>Page viewer</button>
-      <button type="button" class="mini wide-only" onclick={() => void store.revealFile(doc.fileId)}>
-        Reveal in Finder
-      </button>
-      <button type="button" class="mini" onclick={onclose}>Close</button>
     </header>
 
     <div class="docbody" bind:this={docbody}>
@@ -158,7 +185,7 @@
       -->
       <PacingStrip />
       <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
-      <NotesPane fileId={doc.fileId} />
+      <NotesPane fileId={notebookId} />
     </div>
   </main>
 
@@ -174,10 +201,29 @@
   <div class="chats" id="chat-column" style:width={`${layout.chatWidth}px`}>
     <ChatColumn {pages} onjump={jump} onpage={goToPage} />
   </div>
+
+  {#if over}
+    <!-- Pointer-transparent, so the drag keeps landing on the zone underneath it. -->
+    <div class="overlay" aria-hidden="true">Drop to add to “{name}”</div>
+  {/if}
 </div>
 
 <style>
-  .shell { flex: 1; display: flex; min-width: 0; min-height: 0; }
+  .shell { position: relative; flex: 1; display: flex; min-width: 0; min-height: 0; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--indigo-tint) 88%, transparent);
+    border: 2px dashed var(--indigo);
+    color: var(--indigo);
+    font-size: 15px;
+    font-weight: 600;
+    pointer-events: none;
+  }
 
   .files { flex: none; display: flex; min-height: 0; }
 
@@ -206,22 +252,8 @@
     border-bottom: 1px solid var(--hairline);
     background: var(--ground);
   }
-  /*
-    Every item in this header must be able to give ground, or the row overflows its own column
-    and the buttons end up drawn over the chat's tabs — which is what 1100 px looked like in the
-    browser. The name ellipses, the bar has a floor of zero and a ceiling, and the one button
-    that is not a destination hides below 1280 px.
-  */
-  .name {
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 26ch;
-    flex: 0 1 auto;
-    min-width: 4ch;
-  }
+  /* Every item in this header must be able to give ground, or the row overflows its own column
+     and ends up drawn over the chat's tabs — which is what 1100 px looked like in the browser. */
   /* The bar is given room to be a bar: it is the one piece of chrome in this header that is
      about the learner rather than about the file, and it is the header's only flexible item —
      a spacer beside it would halve its width and squeeze the status line out of existence,
@@ -239,7 +271,5 @@
   @media (max-width: 1280px) {
     /* A narrow window gives the document the room first; the conversation keeps its floor. */
     .progress { max-width: 300px; }
-    .wide-only { display: none; }
-    .name { max-width: 16ch; }
   }
 </style>

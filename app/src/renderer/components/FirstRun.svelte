@@ -4,8 +4,9 @@
    * carries a backend card, because the study partners can run on the copy of Claude Code
    * already installed on this Mac and only fall back to a key if it cannot, issue #19).
    *
-   * Card 1 describes the collaborative notes doc (#48, `docs/research/collab-doc.md` §0 and §6),
-   * not the pre-#48 flow of slide crops it used to describe.
+   * Card 1 describes notebooks and the learning overview (#58, `docs/research/notebooks.md` §0),
+   * and card 3 says how a notebook starts. It used to open a folder vault; notebooks replaced it,
+   * so there is nothing to pick here any more and the card only explains.
    */
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
@@ -15,7 +16,6 @@
   let key = $state('');
   let saving = $state(false);
   let keyError = $state<string | null>(null);
-  let folder = $state<string | null>(null);
   let checking = $state(false);
   let showKeyField = $state(false);
   /**
@@ -62,19 +62,6 @@
       keyError = result.error ?? "That key didn't work.";
     }
   }
-
-  /**
-   * Card 3 opens the **vault**, through exactly the same call the Library uses.
-   *
-   * It used to call `chooseSlidesFolder()`, which wrote a `settings.slides_folder` row that
-   * nothing ever read back — so a learner pointed ChatterED at their files, pressed Start, and
-   * landed on a Library asking them to choose a folder (ui-review-ux.md m1). One picker, one
-   * concept, one row in the database.
-   */
-  async function pickFolder(): Promise<void> {
-    await store.chooseVault();
-    folder = store.vault?.rootPath ?? null;
-  }
 </script>
 
 <div class="screen">
@@ -86,15 +73,16 @@
     {#if card === 1}
       <h1>What this is</h1>
       <p>
-        Open a lecture deck and ChatterED writes it up as <strong>lecture notes</strong> you can read
-        without the slides. Every part of the notes says which slide it came from, and a diagram
-        stays in as the slide's own figure.
+        Add your lecture slides and notes to a <strong>notebook</strong>, and ChatterED writes a short
+        <strong>learning overview</strong> of them: a few minutes to read, every line citing the slide
+        it came from. You build the full notes from it, line by line.
       </p>
       <p>
-        Two study partners work in the notes beside you. <strong>Ellie</strong> explains: ask her
-        about anything and her answer is written into the notes where it belongs.
-        <strong>Max</strong> asks you one question at a time, and it is yours to answer first. Stuck?
-        Say so, and he gives you the answer and makes the next question easier.
+        Two study partners work in the notes beside you. <strong>Ellie</strong> explains: press
+        Explain or Example on any line, or ask her, and you get the full answer in the chat and one
+        line worth keeping in the notes. <strong>Max</strong> tests you when you press Quiz me, one
+        question at a time, and it is yours to answer first. Stuck? Say so, and he gives you the
+        answer and makes the next question easier.
       </p>
       <p>
         You can edit anything. Nothing you write is ever overwritten: if Ellie or Max want to change
@@ -169,21 +157,19 @@
         </button>
       </div>
     {:else}
-      <h1>Open your notes folder</h1>
+      <h1>Start a notebook</h1>
       <p>
-        Point ChatterED at the folder where your course material already lives — the whole tree,
-        not one module. It reads the files from disk; nothing is uploaded anywhere you didn't put
-        it, and there is no upload button anywhere in the app.
+        A notebook is the files for one week or one topic: slides, notes, Word, Markdown, text or
+        images. Drop them on the Notebooks screen, or press <strong>New notebook</strong> and pick
+        them.
       </p>
-      <p class="quiet">You pick which folders inside it are your topics next. The rest stays browsable.</p>
-      {#if folder}<p class="quiet">{folder}</p>{/if}
+      <p class="quiet">
+        ChatterED keeps its own copy of each file on this Mac, so moving or deleting the original
+        changes nothing. Nothing is uploaded anywhere. Tick which files count, and Ellie, Max and the
+        overview read only those.
+      </p>
       <div class="acts">
-        <button type="button" class="btn" disabled={store.vaultBusy} onclick={() => void pickFolder()}>
-          {store.vaultBusy ? 'Reading…' : folder ? 'Choose a different folder…' : 'Open a folder…'}
-        </button>
-        <button type="button" class="btn-primary" onclick={() => void store.completeFirstRun()}>
-          {folder ? 'Start' : 'Skip for now'}
-        </button>
+        <button type="button" class="btn-primary" onclick={() => void store.completeFirstRun()}>Start</button>
       </div>
     {/if}
   </section>

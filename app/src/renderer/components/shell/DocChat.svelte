@@ -17,7 +17,8 @@
   import type { MessageView } from '../../../shared/types.js';
   import type { ThreadView } from '../../../shared/doc/types.js';
   import { RECEIVED_LINE, pendingFor, receivedVisible, stopAllowed } from '../../lib/flowchat.js';
-  import { chatComposer, messagesOf } from '../../lib/chatview.js';
+  import { ASK_PLACEHOLDER, chatComposer, messagesOf } from '../../lib/chatview.js';
+  import { NOTEBOOK_ASK_PLACEHOLDER, greetingOf } from '../../lib/notebookview.js';
   import { clock, store } from '../../lib/store.svelte.js';
   import ChatMessage from './ChatMessage.svelte';
   import CostFooter from '../cost/CostFooter.svelte';
@@ -67,6 +68,17 @@
 
   const open = $derived(chat.openQuiz);
   const composer = $derived(chatComposer(open?.quiz ?? null));
+  /** §6: the notebook's own placeholder while nothing is open; the answering ones are unchanged. */
+  const placeholder = $derived(composer.placeholder === ASK_PLACEHOLDER ? NOTEBOOK_ASK_PLACEHOLDER : composer.placeholder);
+
+  /**
+   * **Ellie's greeting and the three starter questions** (§6, contract C10), from the overview's
+   * metadata (`OverviewMeta`, which the doc store holds). Read defensively: a doc from before the
+   * overview, or one still being written, has none, and the chat falls back to a static line. No
+   * model call and no room: a starter is sent as the learner's own question, and only that
+   * creates the room.
+   */
+  const welcome = $derived(greetingOf((store.doc as unknown as { overview?: unknown }).overview ?? null));
   const draft = $derived(chat.draft);
 
   /** Where the wait is drawn: the turn's own anchor, then the anchor last sent to. */
@@ -176,10 +188,20 @@
       <!-- Nothing has been asked yet. `chat:threads` creates no room, so this is genuinely an
            empty document rather than a conversation that failed to load. -->
       <div class="empty">
-        <p>Ellie and Max are reading the same notes you are.</p>
+        <article class="greeting">
+          <header><span class="dot" aria-hidden="true"></span><span class="who">Ellie</span></header>
+          <p>{welcome.greeting}</p>
+        </article>
+        {#if welcome.starters.length > 0}
+          <div class="starters" role="group" aria-label="Suggested questions">
+            {#each welcome.starters as question (question)}
+              <button type="button" onclick={() => chat.send(docId, question)}>{question}</button>
+            {/each}
+          </div>
+        {/if}
         <p class="sub">
-          Ask anything about the document and Ellie answers — then Max asks you one back. Name
-          one of them with <code>@Ellie</code> or <code>@Max</code> to get just that one.
+          Ask Ellie anything about the notebook. Press <b>Quiz me</b> on a line when you want Max to
+          test you. Name one of them with <code>@Ellie</code> or <code>@Max</code> to get just that one.
         </p>
       </div>
     {/if}
@@ -267,7 +289,7 @@
     <CostFooter anchorId={docId} />
 
     <MentionComposer
-      placeholder={draft ? 'Ask about this line…' : composer.placeholder}
+      placeholder={draft ? 'Ask about this line…' : placeholder}
       note={draft ? null : composer.note}
       pass={composer.pass && !draft}
       passing={chat.passing}
@@ -286,9 +308,31 @@
   .scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 10px 14px 4px; }
   .foot { flex: none; padding: 0 14px 10px; border-top: 1px solid var(--hairline); }
 
-  .empty { padding: 24px 6px; max-width: 42ch; }
-  .empty p { margin: 0 0 10px; font-size: 13px; line-height: 1.6; color: var(--text-2); }
-  .empty .sub { font-size: 12px; color: var(--muted); }
+  .empty { padding: 12px 0 8px; display: grid; gap: 10px; }
+  .empty p { margin: 0; font-size: 13px; line-height: 1.6; }
+  .empty .sub { font-size: 11.5px; line-height: 1.55; color: var(--text-2); max-width: 46ch; }
+  .greeting {
+    padding: 9px 11px;
+    background: var(--pane);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--peer);
+    border-radius: var(--radius);
+  }
+  .greeting header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .greeting .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--peer); }
+  .greeting .who { font-size: 12px; font-weight: 700; color: var(--peer); }
+  .starters { display: grid; gap: 6px; }
+  .starters button {
+    text-align: left;
+    border: 1px solid var(--hairline);
+    background: var(--pane);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text);
+  }
+  .starters button:hover { border-color: var(--indigo); }
   .empty code {
     font-size: 11.5px;
     background: var(--ground);

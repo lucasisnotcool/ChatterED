@@ -3,12 +3,10 @@
   import type { RoomSnapshot } from '../../shared/types.js';
   import { store } from '../lib/store.svelte.js';
   import Composer from './Composer.svelte';
-  import Finder from './Finder.svelte';
   import LedgerRail from './LedgerRail.svelte';
   import RecapCard from './RecapCard.svelte';
   import SourcePane from './SourcePane.svelte';
   import Thread from './Thread.svelte';
-  import VaultBrowser from './VaultBrowser.svelte';
   import WhisperPane from './WhisperPane.svelte';
 
   let { room }: { room: RoomSnapshot } = $props();
@@ -29,31 +27,7 @@
 
   function onkeydown(e: KeyboardEvent): void {
     const meta = e.metaKey || e.ctrlKey;
-    /**
-     * ⌘⇧S — "Show the room" (issue #22 decision 4). With the browser open on a document it
-     * posts; otherwise it opens the browser, because "show them this" and "go and find the
-     * thing to show them" are the same intention half a second apart.
-     */
-    if (meta && e.shiftKey && e.key.toLowerCase() === 's') {
-      e.preventDefault();
-      if (store.browserOpen && store.openDoc) store.showTheRoom();
-      else store.browserOpen = true;
-      return;
-    }
-    if (store.browserOpen) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        store.browserOpen = false;
-      }
-      // ⌘K belongs to the finder while the browser is over the room; App.svelte stands down in
-      // a room, so this is the one place that has to hand it over.
-      if (meta && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        if (store.finderOpen) store.finderOpen = false;
-        else store.openFinder();
-      }
-      return;
-    }
+    // ⌘⇧S ("Show the room") and the vault browser over the room went with the vault (#58).
     if (meta && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       openWhisper();
@@ -97,16 +71,6 @@
 
 <svelte:window {onkeydown} />
 
-{#if store.browserOpen}
-  <!-- The learner has gone to fetch something. The room keeps its state and its timers; this is
-       a trip to the shelf, not a different screen (issue #22 decision 4). -->
-  <div class="browser">
-    <VaultBrowser inRoom />
-  </div>
-  {#if store.finderOpen}
-    <Finder onopen={(fileId) => void store.openFile(fileId)} />
-  {/if}
-{:else}
 <div class="room" style="--rail: {railWidth}">
   <SourcePane material={room.material} />
 
@@ -127,11 +91,9 @@
     {/if}
   </div>
 </div>
-{/if}
 
 <style>
   .room { flex: 1; display: flex; min-width: 0; min-height: 0; }
-  .browser { flex: 1; display: flex; min-width: 0; min-height: 0; }
   .centre {
     position: relative;
     flex: 1;

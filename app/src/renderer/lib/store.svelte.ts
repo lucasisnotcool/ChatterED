@@ -10,24 +10,18 @@ import type {
   ConceptDraft,
   CreateSessionInput,
   DocumentView,
-  FinderHitView,
   RecapView,
   RelayAttribution,
   RoomEvent,
   RoomSnapshot,
-  SearchHitView,
   SessionSeed,
   SettingsPatch,
   SettingsView,
-  TopicCandidateView,
   TurnTraceView,
-  VaultTreeNode,
-  VaultView,
   WhisperThreadView,
 } from '../../shared/types.js';
 import type { ChatterEdApi } from '../../shared/ipc.js';
 import { bridge } from './bridge.js';
-import { validateRange } from './pdfview.js';
 import { isViewerCommand, runViewerCommand } from './viewer.js';
 import { layout } from './layoutstore.svelte.js';
 import {
@@ -47,6 +41,7 @@ import { DocStore } from './docstore.svelte.js';
 import { ChatStore } from './chatstore.svelte.js';
 import { ProgressStore } from './progressstore.svelte.js';
 import { NotebookStore } from './notebookstore.svelte.js';
+import type { NotebookView } from '../../shared/notebook.js';
 
 /**
  * Is a channel actually on the bridge?
@@ -127,6 +122,12 @@ function writeFlag(key: string, value: boolean): void {
 }
 
 /**
+ * **`'notebooks'` is home** (`docs/research/notebooks.md` §1, 2026-10-01): the grid of notebooks,
+ * the screen the app opens on after first run and consent. `'notebook'` is one notebook open in
+ * the shell, *sources · overview · chat* (§8). They replace `'library'`, the folder vault's
+ * browser. `'setup'` and `'room'` are the legacy paste-text sessions, reachable from the home's
+ * footer as they were from the Library, and not extended.
+ *
  * `'usage'` is the Usage page (#42 item D) — a **destination**, not a panel in Settings.
  *
  * Settings ▸ Usage is where the first counters landed, and it was the wrong home for them: a
@@ -136,7 +137,7 @@ function writeFlag(key: string, value: boolean): void {
  * nav rail and a reachable indicator in the title bar. The Settings section stays where it is —
  * it is where the rate card is edited, and that genuinely is a setting.
  */
-export type Screen = 'loading' | 'firstRun' | 'library' | 'setup' | 'room' | 'settings' | 'usage';
+export type Screen = 'loading' | 'firstRun' | 'notebooks' | 'notebook' | 'setup' | 'room' | 'settings' | 'usage';
 
 /** One shared 200 ms tick. The wait-line transitions across it, so it reads as continuous. */
 class Clock {
@@ -190,46 +191,6 @@ class Store {
    */
   setupFrom: SessionSeed | null = $state(null);
 
-  // ── The vault (issue #22) ──────────────────────────────────────────────
-  vault: VaultView | null = $state(null);
-  /** A topic id, 'other' for the unpromoted remainder, or null before anything is picked. */
-  selectedTopic: string | null = $state(null);
-  vaultTree: VaultTreeNode[] = $state([]);
-  vaultBusy = $state(false);
-  selectedFileId: string | null = $state(null);
-
-  /**
-   * The open document and the state a reference reads off it: which page is on screen, which
-   * range the learner marked, and what they last selected (issue #22 decisions 3 and 4).
-   */
-  openDoc: DocumentView | null = $state(null);
-  docBusy = $state(false);
-  docPage = $state(1);
-  docFrom: number | null = $state(null);
-  docTo: number | null = $state(null);
-  docSelection = $state('');
-  /** How many pages the open PDF has, bound out of the viewer so a range can be validated. */
-  docPageCount = $state(0);
-  /**
-   * Where each file was last scrolled to, by file id. VaultBrowser's docstring already promised
-   * that "the page they were on" survives closing a document; it only ever did while the pane
-   * stayed mounted (ui-review-code.md §5.5). Per-app-session and in memory: it is a convenience,
-   * not something worth a row in SQLite.
-   */
-  docScroll: Record<string, number> = $state({});
-  /** Set by a search hit so the PDF jumps to the page the snippet came from. */
-  pendingPage: number | null = $state(null);
-
-  /**
-   * How an open PDF is shown (#48).
-   *
-   * `'notes'` is the default and is the product: the three-column shell, *file panel · doc ·
-   * chats* (`collab-doc.md` §0). `'viewer'` is the page viewer — the document pane exactly as it
-   * shipped on 15 Sep, one click away in the doc header and not regressed, because a learner has
-   * to be able to look at the slide itself.
-   */
-  docView: 'notes' | 'viewer' = $state('notes');
-
   /** The ⌥⌘D debug drawer (audit §10). Closed, and empty, until it is opened. */
   debugOpen = $state(false);
   turnTraces: TurnTraceView[] = $state([]);
@@ -282,32 +243,11 @@ class Store {
 
   /**
    * The document behind the room's source pane — the slide being explained, as a page rather
-   * than as a paragraph of hyphenated pdf.js output (ui-review-ux.md M11).
-   *
-   * Held separately from `openDoc` on purpose: `openDoc` is what the learner is browsing, and
-   * bringing a second document over must not replace the slide the room is about.
+   * than as a paragraph of hyphenated pdf.js output (ui-review-ux.md M11). The legacy room's
+   * only; a notebook's sources are opened by the editor's slide previews.
    */
   roomSource: DocumentView | null = $state(null);
   roomSourceFor: string | null = $state(null);
-
-  /**
-   * The vault browser as an overlay over a live room (issue #22 decision 4). The learner goes
-   * and fetches something and comes back, which is what "bringing a document over" is; the
-   * room's three columns are not re-laid-out around a PDF.
-   */
-  browserOpen = $state(false);
-  topicSheetOpen = $state(false);
-  topicCandidates: TopicCandidateView[] = $state([]);
-
-  /** The ⌘K palette. Open only outside a room — inside one, ⌘K is the whisper (§C10). */
-  finderOpen = $state(false);
-  finderQuery = $state('');
-  finderHits: FinderHitView[] = $state([]);
-
-  /** The full-text search box in the Library header. */
-  searchQuery = $state('');
-  searchHits: SearchHitView[] = $state([]);
-  searching = $state(false);
 
   /** Settings, loaded on demand. Null until the Settings screen has been opened once. */
   settings: SettingsView | null = $state(null);
@@ -315,7 +255,6 @@ class Store {
   settingsError: string | null = $state(null);
 
   unsubscribe: (() => void) | null = null;
-  unsubscribeVault: (() => void) | null = null;
   unsubscribeCommands: (() => void) | null = null;
 
   /**
@@ -329,18 +268,18 @@ class Store {
       return;
     }
     switch (command) {
-      case 'vault.open':
-        void this.chooseVault();
+      // Notebooks (`notebooks.md` §1). File ▸ New Notebook is the home's button; File ▸ Add
+      // Sources… is the sources panel's, and with no notebook open it starts a new one, because
+      // "add these files" with nowhere to add them to means exactly that.
+      case 'notebook.new':
+        void this.newNotebook();
         break;
-      case 'vault.rescan':
-        if (this.vault?.rootPath) void this.rescanVault();
+      case 'notebook.addSources':
+        if (this.screen === 'notebook' && this.notebook.id) void this.notebook.pickAndAdd();
+        else void this.newNotebook();
         break;
-      case 'topics.edit':
-        if (this.vault?.rootPath) void this.openTopicSheet();
-        break;
-      case 'search.files':
-        // ⌘K is the whisper inside a room (§C10); the finder is not reachable from there.
-        if (this.screen !== 'room' && this.vault?.rootPath) this.openFinder();
+      case 'notebook.home':
+        this.goHome();
         break;
       case 'settings.open':
         void this.openSettings();
@@ -351,7 +290,7 @@ class Store {
       // The same calls the pane buttons make; the confirm is main's either way (2026-09-23).
       case 'notes.regenerate':
         if (!this.doc.fileId) {
-          this.notice = { level: 'info', text: 'Open a file’s notes first.' };
+          this.notice = { level: 'info', text: 'Open a notebook first.' };
           break;
         }
         void this.doc.regenerate().then((line) => {
@@ -360,7 +299,7 @@ class Store {
         break;
       case 'chat.reset':
         if (!this.chat.roomId) {
-          this.notice = { level: 'info', text: 'There is no conversation on this file to reset yet.' };
+          this.notice = { level: 'info', text: 'There is no conversation in this notebook to reset yet.' };
           break;
         }
         void this.chat.reset().then((line) => {
@@ -373,21 +312,18 @@ class Store {
   async init(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = bridge().onEvent((e) => this.apply(e));
-    // The scanner and the background indexer push; the renderer never polls for either.
-    this.unsubscribeVault?.();
-    this.unsubscribeVault = bridge().onVaultChanged((view) => {
-      this.vault = view;
-    });
+    // A source finishing its read, a checkbox, a rename: main pushes; the renderer never polls.
+    if (has('onNotebookChanged')) this.notebook.subscribe();
     this.unsubscribeCommands?.();
     this.unsubscribeCommands = bridge().onAppCommand((command) => this.runCommand(command));
     try {
       const boot = await bridge().bootstrap();
       this.boot = boot;
-      this.screen = boot.firstRun ? 'firstRun' : 'library';
-      await this.loadVault();
+      this.screen = boot.firstRun ? 'firstRun' : 'notebooks';
+      await this.notebook.loadList();
     } catch (err) {
       this.notice = { level: 'error', text: message(err) };
-      this.screen = 'library';
+      this.screen = 'notebooks';
     }
   }
 
@@ -488,7 +424,8 @@ class Store {
   async completeFirstRun(): Promise<void> {
     await run(this, () => bridge().completeFirstRun());
     if (this.boot) this.boot.firstRun = false;
-    this.screen = 'library';
+    this.screen = 'notebooks';
+    await this.notebook.loadList();
   }
 
   // ── Settings ─────────────────────────────────────────────────────────────
@@ -537,117 +474,63 @@ class Store {
     if (boot) this.boot = { ...boot, firstRun: this.boot?.firstRun ?? boot.firstRun };
   }
 
-  // ── The vault ────────────────────────────────────────────────────────────
-  async loadVault(): Promise<void> {
-    const view = await run(this, () => bridge().getVault());
+  // ── Notebooks (`docs/research/notebooks.md`, 2026-10-01) ────────────────────
+  /**
+   * **Open a notebook** into the shell. Main stamps it opened (the home sorts it first) and
+   * returns its view; the shell (`ThreeColumn`) then opens the doc, the chats and the progress
+   * bar with the notebook's id, which is the subject on all of them (contract C2). Opening a
+   * second notebook in place of the first closes the first (§4.7's file close, per notebook).
+   */
+  async openNotebook(notebookId: string): Promise<void> {
+    const leaving = this.notebook.id;
+    const view = await this.notebook.open(notebookId);
     if (!view) return;
-    this.vault = view;
-    if (this.selectedTopic === null) this.selectedTopic = view.topics[0]?.id ?? (view.rootPath ? 'other' : null);
-    if (this.selectedTopic !== null) await this.loadTree();
+    if (leaving !== null && leaving !== view.id) this.#leaveFile(leaving);
+    this.screen = 'notebook';
   }
 
-  async chooseVault(): Promise<void> {
-    this.vaultBusy = true;
-    const view = await run(this, () => bridge().chooseVault());
-    this.vaultBusy = false;
-    if (!view) return;
-    this.vault = view;
-    this.selectedTopic = view.topics[0]?.id ?? 'other';
-    await this.loadTree();
-    // A brand-new vault has no topics yet, and ticking them is the point of the screen.
-    if (view.topics.length === 0) await this.openTopicSheet();
+  /** **New notebook**: the picker, then the notebook, open. Cancelling makes nothing. */
+  async newNotebook(): Promise<void> {
+    const view = await this.notebook.pickAndCreate();
+    if (view) await this.openNotebook(view.id);
   }
 
-  async rescanVault(): Promise<void> {
-    this.vaultBusy = true;
-    const view = await run(this, () => bridge().rescanVault());
-    this.vaultBusy = false;
-    if (view) this.vault = view;
-    await this.loadTree();
-  }
-
-  async selectTopic(topic: string | null): Promise<void> {
-    this.selectedTopic = topic;
-    await this.loadTree();
-  }
-
-  async loadTree(): Promise<void> {
-    if (!this.vault?.rootPath || this.selectedTopic === null) {
-      this.vaultTree = [];
-      return;
-    }
-    const topicId = this.selectedTopic === 'other' ? null : this.selectedTopic;
-    const tree = await run(this, () => bridge().vaultTree({ topicId }));
-    this.vaultTree = tree ?? [];
-  }
-
-  async openTopicSheet(): Promise<void> {
-    const candidates = await run(this, () => bridge().topicCandidates());
-    this.topicCandidates = candidates ?? [];
-    this.topicSheetOpen = true;
-  }
-
-  async promoteTopics(relPaths: string[]): Promise<void> {
-    this.vaultBusy = true;
-    const view = await run(this, () => bridge().promoteTopics({ relPaths }));
-    this.vaultBusy = false;
-    this.topicSheetOpen = false;
-    if (!view) return;
-    this.vault = view;
-    const stillThere = view.topics.some((t) => t.id === this.selectedTopic);
-    if (!stillThere && this.selectedTopic !== 'other') this.selectedTopic = view.topics[0]?.id ?? 'other';
-    await this.loadTree();
-  }
-
-  // ── One document ─────────────────────────────────────────────────────────
-  async openFile(fileId: string, page: number | null = null): Promise<void> {
-    if (this.openDoc?.fileId === fileId) {
-      if (page !== null) this.pendingPage = page;
-      return;
-    }
-    this.docBusy = true;
-    this.selectedFileId = fileId;
-    this.pendingPage = page;
-    const doc = await run(this, () => bridge().openDocument({ fileId }));
-    this.docBusy = false;
-    if (!doc) return;
-    const leaving = this.openDoc?.fileId ?? null;
-    this.openDoc = doc;
-    // Opening another file in its place closes the one that was open (§4.7).
-    if (leaving !== null && leaving !== doc.fileId) this.#leaveFile(leaving);
+  /** Files dropped on the home (§1): a new notebook named after the first, open. */
+  async createNotebook(paths: string[]): Promise<NotebookView | null> {
+    const view = await this.notebook.create(paths);
+    if (view) await this.openNotebook(view.id);
+    return view;
   }
 
   /**
-   * **The learner closed a file** (brief §4.7: closure fires on idle *or* file close; #49). Main
-   * releases Max's open question on it, if the file's room is the open one, and the close does
-   * not wait for the turn. Only the two gestures that close a file call this: the doc header's
-   * Close and opening another file. Switching to the Page viewer or to Settings is not a close.
+   * **Home** — the breadcrumb's *Notebooks*, the rail's home, View ▸ Notebooks. Leaving a notebook
+   * closes it (§4.7: main releases Max's open question, without waiting for the turn); the room
+   * itself stays alive in main, and its transcript is the notebook's.
    */
-  #leaveFile(fileId: string): void {
-    if (has('chatCloseFile')) void quiet(() => bridge().chatCloseFile({ fileId }));
-  }
-
-  closeDoc(): void {
-    const leaving = this.openDoc?.fileId ?? null;
+  goHome(): void {
+    if (this.screen === 'room') {
+      this.leaveRoom();
+      return;
+    }
+    const leaving = this.notebook.id;
     if (leaving !== null) this.#leaveFile(leaving);
-    this.openDoc = null;
-    this.selectedFileId = null;
-    this.docSelection = '';
-    this.docFrom = null;
-    this.docTo = null;
-    this.docPageCount = 0;
-    this.pendingPage = null;
-    // The file and thread counters are the document's. The app's is not, and survives.
+    this.notebook.close();
+    // The notebook's and thread's counters are the notebook's. The app's is not, and survives.
     this.costFile = null;
     this.costThread = {};
     this.#costAsked.clear();
-    // The room itself is *not* closed: the actor stays on it in the main process, and the
-    // transcript is the document's. Only this renderer's view of it is dropped.
-    if (this.screen !== 'room') this.room = null;
+    this.screen = 'notebooks';
+    void this.notebook.loadList();
   }
 
-  revealFile(fileId: string): Promise<void | null> {
-    return run(this, () => bridge().revealFile({ fileId }));
+  /**
+   * **The learner closed a notebook** (brief §4.7: closure fires on idle *or* file close; #49).
+   * Main releases Max's open question on it, if its room is the open one, and the close does not
+   * wait for the turn. Only the two gestures that close a notebook call this: going home and
+   * opening another notebook. Switching to Settings or Usage is not a close.
+   */
+  #leaveFile(fileId: string): void {
+    if (has('chatCloseFile')) void quiet(() => bridge().chatCloseFile({ fileId }));
   }
 
   /**
@@ -736,13 +619,13 @@ class Store {
    * **Which document the counters are about.**
    *
    * The old flow's `flowFor` was the only answer while a PDF opened into `FlowCanvas`. Since #48
-   * it opens into the three-column shell, which sets `openDoc` and never set `flowFor` at all —
-   * so a file counter keyed on the flow's file silently stopped existing on the surface the app
-   * now actually has. `openDoc` is the whole of it, and one getter so no third surface has to
-   * remember the rule.
+   * it opens into the three-column shell, which never set `flowFor` at all — so a file counter
+   * keyed on the flow's file silently stopped existing on the surface the app now actually has.
+   * Since #58 the subject is the open notebook (contract C2): its id is the whole of it, and one
+   * getter so no third surface has to remember the rule.
    */
   get costFileId(): string | null {
-    return this.openDoc?.fileId ?? null;
+    return this.notebook.id;
   }
 
   /**
@@ -930,94 +813,10 @@ class Store {
     if (rows) this.turnTraces = rows;
   }
 
-  // ── Finding and searching ────────────────────────────────────────────────
-  openFinder(): void {
-    this.finderOpen = true;
-    this.finderQuery = '';
-    this.finderHits = [];
-  }
-
-  async runFinder(query: string): Promise<void> {
-    this.finderQuery = query;
-    if (query.trim().length === 0) {
-      this.finderHits = [];
-      return;
-    }
-    const hits = await run(this, () => bridge().findFiles({ query }));
-    // A slower keystroke's result must not overwrite a faster later one.
-    if (this.finderQuery === query) this.finderHits = hits ?? [];
-  }
-
-  async runSearch(query: string): Promise<void> {
-    this.searchQuery = query;
-    if (query.trim().length < 2) {
-      this.searchHits = [];
-      this.searching = false;
-      return;
-    }
-    this.searching = true;
-    const hits = await run(this, () => bridge().searchVault({ query }));
-    if (this.searchQuery !== query) return;
-    this.searchHits = hits ?? [];
-    this.searching = false;
-  }
-
-  clearSearch(): void {
-    this.searchQuery = '';
-    this.searchHits = [];
-    this.searching = false;
-  }
-
   goSetup(seed = ''): void {
     this.setupSeed = seed;
     this.setupFrom = null;
     this.screen = 'setup';
-  }
-
-  /**
-   * Session setup from the open document and its marked page range. Paste stays the fallback:
-   * this fills the same box, and nothing downstream knows the difference except the material
-   * row's provenance and the topic block in the prefix.
-   */
-  async setupFromFile(fileId: string, pageFrom: number | null, pageTo: number | null): Promise<void> {
-    const seed = await run(this, () => bridge().sessionSeed({ fileId, pageFrom, pageTo }));
-    if (!seed) return;
-    this.setupSeed = seed.text;
-    this.setupFrom = seed;
-    this.screen = 'setup';
-  }
-
-  /**
-   * "Show the room" — post the open document into the group chat as the learner.
-   *
-   * Deliberately not awaited. The main-process call does not resolve until the agent that
-   * answers has finished its latency floor and its generation, which is 9–12 s for the
-   * Challenger; waiting for that would leave the learner staring at the file they just showed
-   * with a spinner on the button. It is the same shape as `send()`: fire it, go back to the
-   * room, and let the reply arrive as an event. A failure still lands in the notice banner.
-   */
-  showTheRoom(): boolean {
-    const roomId = this.room?.roomId;
-    const doc = this.openDoc;
-    if (!roomId || !doc) return false;
-    // An inverted range resolves to no page text at all, so it never leaves the renderer.
-    const range = validateRange(this.docFrom, this.docTo, this.docPageCount);
-    if (!range.valid) {
-      this.notice = { level: 'error', text: range.error ?? 'That page range runs backwards.' };
-      return false;
-    }
-    const selection = this.docSelection.trim();
-    const payload = {
-      roomId,
-      fileId: doc.fileId,
-      pageFrom: doc.kind === 'pdf' ? (range.from ?? this.docPage) : null,
-      pageTo: doc.kind === 'pdf' ? (range.to ?? this.docPage) : null,
-      selection: selection.length > 0 ? selection : null,
-    };
-    this.browserOpen = false;
-    this.docSelection = '';
-    void run(this, () => bridge().showDocument(payload));
-    return true;
   }
 
   /**
@@ -1052,14 +851,14 @@ class Store {
   }
 
   leaveRoom(): void {
-    this.browserOpen = false;
     this.room = null;
     this.roomSource = null;
     this.roomSourceFor = null;
     this.recap = null;
     this.whisper = null;
     this.whisperOpen = false;
-    this.screen = 'library';
+    this.screen = 'notebooks';
+    void this.notebook.loadList();
   }
 
   // ── Session setup ────────────────────────────────────────────────────────

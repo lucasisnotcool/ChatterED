@@ -121,3 +121,60 @@ export function installDropGuard(target: Pick<Window, 'addEventListener'>): void
   target.addEventListener('dragover', guard as EventListener);
   target.addEventListener('drop', guard as EventListener);
 }
+
+/** The part of a `DragEvent` a drop zone reads. */
+export interface ZoneDragEvent {
+  dataTransfer: { types: Iterable<string>; dropEffect?: string; files?: Iterable<{ name: string }> | null } | null;
+  preventDefault(): void;
+  stopPropagation?(): void;
+}
+
+/**
+ * **A drop zone's four handlers** (`dragenter`, `dragover`, `dragleave`, `drop`), for an element
+ * marked `data-dropzone`.
+ *
+ * `dragenter` and `dragleave` fire for every child the pointer crosses, so "is a drag over me"
+ * is a depth count, not a boolean: entering a child is +1 before leaving the parent is −1, and
+ * the overlay would flicker on every row of the sources panel otherwise. Only drags that carry
+ * files count; a text drag over the zone is left to the editor and the guard. The handlers
+ * `stopPropagation` on a files drop, so a zone nested in another (the sources panel's box inside
+ * the notebook window) takes the drop once.
+ */
+export function createFileDrop<F extends { name: string }>(options: {
+  onover: (over: boolean) => void;
+  ondrop: (files: F[]) => void;
+}): {
+  dragenter: (e: ZoneDragEvent) => void;
+  dragover: (e: ZoneDragEvent) => void;
+  dragleave: (e: ZoneDragEvent) => void;
+  drop: (e: ZoneDragEvent) => void;
+} {
+  let depth = 0;
+  const files = (e: ZoneDragEvent) => carriesFiles(e.dataTransfer?.types);
+  return {
+    dragenter(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      depth += 1;
+      if (depth === 1) options.onover(true);
+    },
+    dragover(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    },
+    dragleave(e) {
+      if (!files(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) options.onover(false);
+    },
+    drop(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      e.stopPropagation?.();
+      depth = 0;
+      options.onover(false);
+      options.ondrop([...((e.dataTransfer?.files ?? []) as Iterable<F>)]);
+    },
+  };
+}

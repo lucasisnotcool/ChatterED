@@ -4,8 +4,9 @@
    *
    * The precedent is product-design.md §C6 L872 — the one existing source reference in the
    * transcript, "Your slide (p. 31) says X — going with that", whose click target scrolls the
-   * source pane. So: neutral, system-styled, carries a page reference, and clicking it opens the
-   * file at that page. It is deliberately *not* a bubble variant and not a tinted nudge card
+   * source pane. So: neutral, system-styled, carries a page reference. Since #58 the vault it
+   * opened into is gone, so the card names the file and the pages and opens nothing: a card from
+   * an old room still reads, and nothing on it promises a place it cannot go. It is deliberately *not* a bubble variant and not a tinted nudge card
    * (§C5 L796 forbids inventing a second such pattern), and it grows no action chips, because
    * §B3 L359 rules out anything in the transcript that produces an agent turn.
    *
@@ -14,7 +15,6 @@
    */
   import type { MessageReferenceView } from '../../shared/types.js';
   import { KIND_GLYPH } from '../lib/labels.js';
-  import { store } from '../lib/store.svelte.js';
 
   let { reference }: { reference: MessageReferenceView } = $props();
 
@@ -31,20 +31,14 @@
   const selection = $derived(reference.selection?.trim() ?? '');
   const clipped = $derived(selection.length > LONG && !expanded ? `${selection.slice(0, LONG)}…` : selection);
 
-  function open(): void {
-    if (!reference.fileId) return;
-    void store.openFile(reference.fileId, reference.pageFrom);
-    store.browserOpen = true;
-  }
 </script>
 
 <div class="doccard">
-  <button type="button" class="head" onclick={open} disabled={!reference.fileId} title={reference.relPath}>
+  <div class="head" title={reference.relPath}>
     <span class="glyph" aria-hidden="true">{KIND_GLYPH[reference.kind]}</span>
     <span class="name">{reference.fileName}</span>
     {#if where}<span class="page">{where}</span>{/if}
-    {#if !reference.fileId}<span class="gone">not in the vault any more</span>{/if}
-  </button>
+  </div>
 
   {#if selection.length > 0}
     <p class="quote">{clipped}</p>
@@ -75,12 +69,9 @@
     width: 100%;
     text-align: left;
   }
-  .head:not(:disabled):hover .name { color: var(--indigo); }
-  .head:disabled { cursor: default; }
   .glyph { color: var(--muted); font-size: 11px; }
   .name { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .page { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .gone { margin-left: auto; font-size: 11px; color: var(--muted); }
 
   .quote {
     margin: 7px 0 0;
