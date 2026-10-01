@@ -24,7 +24,15 @@ import type { PageWindow } from './windows.js';
  * prompt is re-ingested on next open rather than silently kept — unless the learner has edited
  * it, in which case their words win and it is left exactly as it is.
  */
-export const NOTES_PROMPT_VERSION = 3;
+export const NOTES_PROMPT_VERSION = 4;
+
+/**
+ * **The window ingest's own version**, frozen at 3 when the overview (`overview.ts`, 2026-10-01)
+ * took `NOTES_PROMPT_VERSION` to 4. The window ingest still serves a doc keyed on a file rather
+ * than a notebook, and must neither re-ingest every #48 doc because the overview's prompt moved
+ * nor write a version that would make its own docs look like unfinished overviews.
+ */
+export const WINDOW_NOTES_VERSION = 3;
 
 export const NOTES_SYSTEM = [
   'You are writing the lecture notes for one lecture, from the lecturer\'s own slides.',

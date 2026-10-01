@@ -14,12 +14,29 @@
  *    Everything else is history and is read from the log, not from the view.
  */
 import type { IpcHandle, DocHost } from '../dochost.js';
-import { IPC } from '../../shared/ipc.js';
-import type { DocEditStatus, NotesDocView, NotesRegenerateResult, PageImage, Suggestion } from '../../shared/doc/types.js';
+import { IPC, type NotesUpdateOverviewResult } from '../../shared/ipc.js';
+import type {
+  DocEditStatus,
+  NotesDocView,
+  NotesRegenerateResult,
+  OverviewMeta,
+  PageImage,
+  Suggestion,
+} from '../../shared/doc/types.js';
+import { isNotebookId, notebookContentKey } from '../../shared/notebook.js';
 import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/notes.js';
 import { log } from '../log.js';
 import { docFromJson, learnerSpans } from '../../shared/doc/schema.js';
 import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks, placeholderSuperseded } from './ingest.js';
+import {
+  ensureOverview,
+  overviewInFlight,
+  overviewPlaceholderSuperseded,
+  readySources,
+  setRecommendationStatus,
+  updateOverview,
+  type OverviewDeps,
+} from './overviewingest.js';
 import { clearPageImages, pageImageDir, storePageImages } from './pageimages.js';
 import { pageGeometry } from '../vault/pagecache.js';
 import { registerPageLinesIpc } from './pagelines.js';
@@ -42,7 +59,28 @@ function view(repo: NotesRepo, record: NotesDocRecord): NotesDocView {
       status: 'applied' as DocEditStatus,
     })),
     suggestions: repo.suggestions(record.id, 'open'),
-    // Day 0: the overview track (N2) reads `overview_json` here.
+    overview: record.overview,
+  };
+}
+
+/**
+ * **A notebook with no doc yet and nothing ready to write one from** (`notebooks.md` §2): status
+ * `none`, and nothing created. The editor calls `notes:ingest` again when a source turns ready.
+ */
+function noneView(host: DocHost, notebookId: string): NotesDocView {
+  const subject = host.notebooks.subject(notebookId);
+  return {
+    docId: '',
+    fileId: notebookId,
+    contentSha: notebookContentKey(notebookId),
+    title: subject?.name ?? 'Notebook',
+    pageCount: subject?.pageCount ?? 0,
+    version: 0,
+    doc: null,
+    ingest: { status: 'none', windowsDone: 0, windowsTotal: 0, withImages: false, error: null },
+    frozen: false,
+    edits: [],
+    suggestions: [],
     overview: null,
   };
 }
@@ -60,7 +98,37 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
     return record;
   };
 
+  /** What the overview run is given (`overviewingest.ts`), for this notebook, now. */
+  const overviewDeps = (notebookId: string, roomId: string | null): OverviewDeps => {
+    const backend = host.backend();
+    const subject = host.notebooks.subject(notebookId);
+    const first = subject ? readySources(subject)[0] : undefined;
+    return {
+      repo,
+      objectives: host.store.objectives,
+      llm:
+        backend.kind === 'scripted'
+          ? null
+          : host.llm(backend, { fileName: first?.name ?? null, contentSha: notebookContentKey(notebookId) }),
+      models: backend.models,
+      mode: backend.kind === 'scripted' ? 'scripted' : 'live',
+      userDataDir: host.userDataDir,
+      notebooks: host.notebooks,
+      emit: (event) => host.emit(event),
+      onTree: (tree) => host.emit({ type: 'objectives.tree', roomId, fileId: tree.fileId, tree }),
+      geometry: (input) => pageGeometry(input),
+    };
+  };
+
   handle<{ fileId: string }>(IPC.notesGet, async ({ fileId }) => {
+    if (isNotebookId(fileId)) {
+      const record = repo.byContentSha(notebookContentKey(fileId));
+      const subject = host.notebooks.subject(fileId);
+      // The placeholder written without a model reads as "nothing yet" once there is one, so the
+      // renderer takes its first-open path and `notes:ingest` writes the real overview.
+      if (subject && overviewPlaceholderSuperseded(overviewDeps(fileId, null), record, subject)) return null;
+      return record ? view(repo, record) : null;
+    }
     const { contentSha } = await host.fileBytesKey(fileId);
     const record = repo.byContentSha(contentSha);
     /**
@@ -75,6 +143,11 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
   });
 
   handle<{ fileId: string; force?: boolean }>(IPC.notesIngest, async ({ fileId, force }) => {
+    if (isNotebookId(fileId)) {
+      const roomId = await roomFor(fileId);
+      const record = await ensureOverview(overviewDeps(fileId, roomId), { notebookId: fileId, roomId }, { force: force === true });
+      return record ? view(repo, record) : noneView(host, fileId);
+    }
     const { contentSha, pageCount } = await host.fileBytesKey(fileId);
     const file = host.vault.fileRow(fileId);
     const backend = host.backend();
@@ -120,20 +193,25 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
    * regenerate.
    */
   handle<{ fileId: string }>(IPC.notesRegenerate, async ({ fileId }): Promise<NotesRegenerateResult> => {
-    const { contentSha } = await host.fileBytesKey(fileId);
+    const notebook = isNotebookId(fileId);
+    const contentSha = notebook ? notebookContentKey(fileId) : (await host.fileBytesKey(fileId)).contentSha;
     const record = repo.byContentSha(contentSha);
-    if (ingestInFlight(contentSha)) {
+    if (ingestInFlight(contentSha) || overviewInFlight(contentSha)) {
       return { confirmed: false, refused: 'busy', view: record ? view(repo, record) : null };
     }
 
-    const title = record?.title ?? titleFor(host.vault.fileRow(fileId)?.name ?? null);
+    const title =
+      record?.title ??
+      (notebook ? (host.notebooks.subject(fileId)?.name ?? 'Notebook') : titleFor(host.vault.fileRow(fileId)?.name ?? null));
     const learnerWords = record ? learnerWordsIn(record.doc) : 0;
     const agentEdits = record ? repo.edits(record.id, 'applied').length : 0;
     const lost: string[] = [];
     if (learnerWords > 0) lost.push(`the ${learnerWords} word${learnerWords === 1 ? '' : 's'} you wrote in them`);
     if (agentEdits > 0) lost.push(`${agentEdits} addition${agentEdits === 1 ? '' : 's'} from Ellie and Max`);
     const detail = [
-      'Ellie will rewrite these notes from the slides. Everything in the current notes is replaced' +
+      (notebook
+        ? 'Ellie will rewrite the overview from the ticked sources. Everything in the current notes is replaced'
+        : 'Ellie will rewrite these notes from the slides. Everything in the current notes is replaced') +
         (lost.length > 0 ? `, including ${lost.join(' and ')}.` : '.'),
       'Your conversation and your progress are kept. Questions Max wrote into the notes go with them.',
       'This cannot be undone.',
@@ -151,7 +229,11 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
 
     const cleared = record ? repo.clearForRegenerate(record.id) : { edits: 0, suggestions: 0 };
     // A re-render may be at a different width; half a deck at the old one is worse than none.
-    await clearPageImages(pageImageDir(host.userDataDir, contentSha));
+    // A notebook's images live under each source's own bytes (C1), shared with any other notebook
+    // holding the same file; they are cleared the same way and the renderer re-sends them.
+    for (const sha of notebook ? sourceShas(host, fileId) : [contentSha]) {
+      await clearPageImages(pageImageDir(host.userDataDir, sha));
+    }
     log().info('notes.regenerate', {
       file_id: fileId,
       doc_id: record?.id ?? null,
@@ -169,6 +251,11 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
   handle<{ fileId: string; images: PageImage[]; done: boolean }>(
     IPC.notesPageImages,
     async ({ fileId, images, done }) => {
+      if (isNotebookId(fileId)) {
+        const { stored, unplaced } = await storeNotebookPageImages(host, fileId, images);
+        if (done) log().info('notes.pageimages.done', { file_id: fileId, stored, unplaced });
+        return { stored };
+      }
       const { contentSha } = await host.fileBytesKey(fileId);
       const { stored } = await storePageImages(pageImageDir(host.userDataDir, contentSha), images);
       if (done) log().info('notes.pageimages.done', { file_id: fileId, stored });
@@ -178,6 +265,29 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
 
   // `notes:pageLines`: the chip preview's and the figure hotspots' read of pass 1.
   registerPageLinesIpc(host, handle);
+
+  /**
+   * **Update overview** (`notebooks.md` §2): the same call on the sources ticked now, with the
+   * learner's text and their kept agent edits carried over. Runs in the background; the renderer
+   * follows `notes.status` and re-reads the doc when it is `ready` again.
+   */
+  handle<{ fileId: string }>(IPC.notesUpdateOverview, async ({ fileId }): Promise<NotesUpdateOverviewResult> => {
+    if (!isNotebookId(fileId)) return { started: false, reason: 'no_doc' };
+    if (ingestInFlight(notebookContentKey(fileId))) return { started: false, reason: 'in_flight' };
+    const roomId = await roomFor(fileId);
+    return updateOverview(overviewDeps(fileId, roomId), { notebookId: fileId, roomId });
+  });
+
+  /** A section's recommended block was added or dismissed (§5.3). Null when the doc has no overview. */
+  handle<{ fileId: string; docId: string; recommendationId: string; status: 'added' | 'dismissed' }>(
+    IPC.notesSetRecommendation,
+    ({ docId, recommendationId, status }): OverviewMeta | null => {
+      if (status !== 'added' && status !== 'dismissed') throw new Error(`Unknown recommendation status: ${String(status)}`);
+      const overview = setRecommendationStatus({ repo }, { docId, recommendationId, status });
+      log().info('notes.recommendation', { doc_id: docId, recommendation_id: recommendationId, status, found: overview !== null });
+      return overview;
+    },
+  );
 
   handle<{ docId: string; baseVersion: number; doc: unknown; learnerTouched: boolean }>(
     IPC.notesSave,
@@ -252,4 +362,47 @@ export function learnerWordsIn(docJson: unknown): number {
 export function titleFor(fileName: string | null): string {
   const base = (fileName ?? '').replace(/\.[^.]+$/, '').trim();
   return base.length > 0 ? base : 'Lecture notes';
+}
+
+/** The content shas of a notebook's PDF sources that have been read: where their images live. */
+function sourceShas(host: DocHost, notebookId: string): string[] {
+  const subject = host.notebooks.subject(notebookId);
+  if (!subject) return [];
+  const out = new Set<string>();
+  for (const source of subject.sources) {
+    if (source.pageCount < 1) continue;
+    const sha = host.notebooks.locate(notebookId, source.pageBase + 1)?.contentSha;
+    if (sha) out.add(sha);
+  }
+  return [...out];
+}
+
+/**
+ * **Page images by notebook page** (contract C1). The renderer numbers them as the doc does; each
+ * is stored under its source's bytes and its own page, so `<userData>/notes-pages/<sourceSha>/
+ * p-<local>.jpg` is the same file a pre-024 open of that deck wrote, and a deck in two notebooks
+ * is rendered once. A page in a gap, or of a source not read yet, is not placed.
+ */
+export async function storeNotebookPageImages(
+  host: Pick<DocHost, 'notebooks' | 'userDataDir'>,
+  notebookId: string,
+  images: readonly PageImage[],
+): Promise<{ stored: number; unplaced: number }> {
+  const bySha = new Map<string, PageImage[]>();
+  let unplaced = 0;
+  for (const image of images) {
+    const located = host.notebooks.locate(notebookId, image.page);
+    if (!located?.contentSha) {
+      unplaced += 1;
+      continue;
+    }
+    const list = bySha.get(located.contentSha) ?? [];
+    list.push({ ...image, page: located.localPage });
+    bySha.set(located.contentSha, list);
+  }
+  let stored = 0;
+  for (const [sha, list] of bySha) {
+    stored += (await storePageImages(pageImageDir(host.userDataDir, sha), list)).stored;
+  }
+  return { stored, unplaced };
 }

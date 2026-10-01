@@ -31,6 +31,7 @@ import type {
   DocEditRecord,
   DocEditStatus,
   NotesIngestStatus,
+  OverviewMeta,
   Suggestion,
 } from '../../../shared/doc/types.js';
 
@@ -73,8 +74,27 @@ export interface NotesDocRecord {
   error: string | null;
   frozen: boolean;
   learnerTouched: boolean;
+  /**
+   * The learning overview's metadata (`notes_docs.overview_json`, migration 024): greeting,
+   * starter questions, recommendations, the fingerprint it was written from. **Null on a pre-024
+   * doc** (the #48 full notes, kept unchanged), and on an overview row still being written.
+   */
+  overview: OverviewMeta | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** What a finished overview writes in one go (`landOverview`). */
+export interface LandOverviewInput {
+  docId: string;
+  doc: unknown;
+  overview: OverviewMeta;
+  title: string;
+  pageCount: number;
+  windowsDone: number;
+  windowsTotal: number;
+  withImages: boolean;
+  model: string;
 }
 
 export interface CreateDocInput {
@@ -197,6 +217,16 @@ export interface NotesRepo {
    * Returns what was cleared, for the log.
    */
   clearForRegenerate(docId: string): { edits: number; suggestions: number };
+
+  /**
+   * **The overview landed** (`notebooks.md` §3.5): the whole document, its metadata, and the row
+   * marked `ready`, in one statement. Unconditional and version-bumping, like `appendWindow`: the
+   * editor is unmounted while an overview is written (status `pending`), and the renderer
+   * re-reads the row when it turns `ready`.
+   */
+  landOverview(input: LandOverviewInput, now: string): NotesDocRecord;
+  /** Rewrite only the metadata (a recommendation added or dismissed). Null when no such doc. */
+  setOverview(docId: string, overview: OverviewMeta, now: string): NotesDocRecord | null;
 }
 
 interface DocRow {
@@ -217,6 +247,8 @@ interface DocRow {
   error: string | null;
   frozen: number;
   learner_touched: number;
+  /** Migration 024. Absent from a row read through an older `SELECT` list; NULL on pre-024 docs. */
+  overview_json?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -265,6 +297,18 @@ function parseJson<T>(json: string | null, fallback: T): T {
   }
 }
 
+/**
+ * The stored overview, or null. A value that is not an object with the two arrays the renderer
+ * iterates is treated as absent: the doc still opens, it just offers no starters or cards.
+ */
+function parseOverview(json: string | null): OverviewMeta | null {
+  const parsed = parseJson<unknown>(json, null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const o = parsed as Partial<OverviewMeta>;
+  if (!Array.isArray(o.starterQuestions) || !Array.isArray(o.recommendations)) return null;
+  return parsed as OverviewMeta;
+}
+
 function toRecord(row: DocRow): NotesDocRecord {
   return {
     id: row.id,
@@ -284,6 +328,7 @@ function toRecord(row: DocRow): NotesDocRecord {
     error: row.error,
     frozen: row.frozen === 1,
     learnerTouched: row.learner_touched === 1,
+    overview: parseOverview(row.overview_json ?? null),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -460,7 +505,7 @@ export function notesRepo(db: SqlDatabase): NotesRepo {
                 version = version + 1, ingest_status = 'pending', ingest_version = @iv,
                 windows_done = 0, windows_total = @total, with_images = @images,
                 ingest_state = NULL, model = @model, error = NULL, learner_touched = 0,
-                updated_at = @now
+                overview_json = NULL, updated_at = @now
           WHERE id = @id`,
       ).run(
         bind({
@@ -602,6 +647,40 @@ export function notesRepo(db: SqlDatabase): NotesRepo {
         db.exec('ROLLBACK');
         throw err;
       }
+    },
+
+    landOverview(input, now) {
+      if (!read(input.docId)) throw new Error('That notes document does not exist.');
+      db.prepare(
+        `UPDATE notes_docs
+            SET doc_json = @doc, overview_json = @overview, title = @title, page_count = @pages,
+                version = version + 1, ingest_status = 'ready', windows_done = @done,
+                windows_total = @total, with_images = @images, ingest_state = NULL,
+                model = @model, error = NULL, updated_at = @now
+          WHERE id = @id`,
+      ).run(
+        bind({
+          doc: JSON.stringify(input.doc),
+          overview: JSON.stringify(input.overview),
+          title: input.title,
+          pages: input.pageCount,
+          done: input.windowsDone,
+          total: input.windowsTotal,
+          images: input.withImages ? 1 : 0,
+          model: input.model,
+          now,
+          id: input.docId,
+        }),
+      );
+      return toRecord(read(input.docId)!);
+    },
+
+    setOverview(docId, overview, now) {
+      if (!read(docId)) return null;
+      db.prepare('UPDATE notes_docs SET overview_json = @overview, updated_at = @now WHERE id = @id').run(
+        bind({ overview: JSON.stringify(overview), now, id: docId }),
+      );
+      return toRecord(read(docId)!);
     },
 
     objectiveBlocks(docId) {

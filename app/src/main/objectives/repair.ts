@@ -153,6 +153,14 @@ export function repairTree(input: {
   raw: readonly RawObjective[];
   /** The deck's page count; refs past it are dropped. Null when unknown: no upper bound. */
   pageCount?: number | null;
+  /**
+   * **A notebook's tree** (`notebooks.md` §3.1, contract C5): the overview's four to six
+   * objectives, flat. The 6–20 bound is §3's for a whole-deck tree and is relaxed here, so the cap
+   * is the overview's own; every parent edge is ignored, so the tree is depth 1; and the order is
+   * the overview's, because the "By the end you can" list is drawn in tree order and the model
+   * wrote it in the order it wants it read. Absent for every other tree, which keeps §3's rules.
+   */
+  notebook?: { maxObjectives: number };
 }): RepairResult {
   const notes: RepairNotes = {
     received: input.raw.length,
@@ -197,6 +205,7 @@ export function repairTree(input: {
     }
     seenIds.add(id);
     const key = text(raw.key) || title.toLowerCase();
+    const flat = input.notebook !== undefined;
     const nodeRefs = refs(raw.refs, input.pageCount ?? null, notes);
     const kind = text(raw.kind) === 'prerequisite' ? 'prerequisite' : 'objective';
     const quizSeeds = strings(raw.quiz_seeds, MAX_QUIZ_SEEDS);
@@ -221,16 +230,18 @@ export function repairTree(input: {
       assumedByDeck: kind === 'prerequisite' && nodeRefs.length === 0,
       order: 0,
       key,
-      parentKey: text(raw.parent_key) || null,
+      parentKey: flat ? null : text(raw.parent_key) || null,
       requiresKeys: strings(raw.requires_keys, 8),
       requiredByKeys: strings(raw.required_by_keys, 8),
     });
   }
 
   // ── pass 2: the cap. Objectives with the earliest refs survive; §3's 20 is a hard ceiling. ──
-  if (drafts.length > MAX_OBJECTIVES) {
-    const ranked = [...drafts].sort((a, b) => firstPage(a) - firstPage(b));
-    const keep = new Set(ranked.slice(0, MAX_OBJECTIVES).map((d) => d.id));
+  // A notebook's cap is the overview's, and there the model's own order decides who stays.
+  const cap = input.notebook?.maxObjectives ?? MAX_OBJECTIVES;
+  if (drafts.length > cap) {
+    const ranked = input.notebook ? drafts : [...drafts].sort((a, b) => firstPage(a) - firstPage(b));
+    const keep = new Set(ranked.slice(0, cap).map((d) => d.id));
     for (let i = drafts.length - 1; i >= 0; i -= 1) {
       if (keep.has(drafts[i]!.id)) continue;
       idByKey.delete(drafts[i]!.key);
@@ -297,7 +308,7 @@ export function repairTree(input: {
     if (requirers.length === 0) continue;
     sortKey.set(draft.id, Math.min(...requirers.map((r) => firstPage(r))) - 0.5);
   }
-  const ordered = [...drafts].sort((a, b) => {
+  const ordered = input.notebook ? [...drafts] : [...drafts].sort((a, b) => {
     const ka = sortKey.get(a.id)!;
     const kb = sortKey.get(b.id)!;
     if (ka !== kb) return ka - kb;

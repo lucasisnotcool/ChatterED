@@ -15,6 +15,7 @@
 import type { PageGeometry, Box } from '../../shared/segment/types.js';
 import type { LineRect, PageLinesView } from '../../shared/doc/cite.js';
 import { IPC } from '../../shared/ipc.js';
+import { isNotebookId } from '../../shared/notebook.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
 import { pageGeometry, type GeometryExtractor } from '../vault/pagecache.js';
 import { pageLines } from './extract.js';
@@ -78,8 +79,30 @@ export function clearPageLinesCache(): void {
   cache.clear();
 }
 
+/**
+ * **A notebook page's lines** (contract C1). The renderer asks with the notebook's id and a
+ * notebook page; the lines are the source's own, read from that source's PDF at its own page and
+ * cached under its bytes, so two notebooks holding one deck share the work. The view comes back
+ * numbered as it was asked. A page in a gap, a text or image source (no PDF geometry to outline),
+ * or a source not read yet is an empty view, never a throw: the preview then shows the page with
+ * no outline, as it does when nothing matches.
+ */
+export async function notebookPageLines(
+  host: Pick<DocHost, 'notebooks'>,
+  notebookId: string,
+  page: number,
+  extractor?: GeometryExtractor,
+): Promise<PageLinesView> {
+  const empty: PageLinesView = { page, width: 0, height: 0, lines: [], items: [] };
+  const located = host.notebooks.locate(notebookId, page);
+  if (!located || located.kind !== 'pdf' || !located.contentSha) return empty;
+  const view = await pageLinesFor({ filePath: located.path, contentSha: located.contentSha, page: located.localPage }, extractor);
+  return { ...view, page };
+}
+
 export function registerPageLinesIpc(host: DocHost, handle: IpcHandle): void {
   handle<{ fileId: string; page: number }>(IPC.notesPageLines, async ({ fileId, page }) => {
+    if (isNotebookId(fileId)) return notebookPageLines(host, fileId, page);
     const { contentSha } = await host.fileBytesKey(fileId);
     return pageLinesFor({ filePath: host.vault.sourcePath(fileId), contentSha, page });
   });

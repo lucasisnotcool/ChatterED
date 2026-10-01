@@ -18,7 +18,7 @@
  *  - **Append-only.** A window only ever adds after the previous window's last block
  *    (`appendWindow`), so it can never collide with a learner already editing higher up. That is
  *    what lets the doc open after window 1 instead of after window nine.
- *  - **Not repeated.** Cached on `content_sha` + `NOTES_PROMPT_VERSION`. A document the learner
+ *  - **Not repeated.** Cached on `content_sha` + `WINDOW_NOTES_VERSION`. A document the learner
  *    has edited (`learner_touched`) is **never** re-ingested over without an explicit force —
  *    009's `segments_touched` rule, and §5.4's "nothing the learner writes is ever overwritten".
  *  - **Not trusted.** Everything the model returns goes through `validateDrafts`: a block with
@@ -51,10 +51,10 @@ import { log } from '../log.js';
 import { extractNotesPages, type NotesPageExtract } from './extract.js';
 import { critique1Notes, placeholderNotes } from './fixture.js';
 import { countPageImages, pageImageDir, pageImagesFor } from './pageimages.js';
-import { NOTES_PROMPT_VERSION, NOTES_SYSTEM, draftWords, outlineLines, windowMessage, windowWordBudget } from './prompts.js';
+import { NOTES_PROMPT_VERSION, NOTES_SYSTEM, WINDOW_NOTES_VERSION, draftWords, outlineLines, windowMessage, windowWordBudget } from './prompts.js';
 import { inWindow, planWindows, type PageWindow } from './windows.js';
 
-export { NOTES_PROMPT_VERSION };
+export { NOTES_PROMPT_VERSION, WINDOW_NOTES_VERSION };
 
 /**
  * How many times one window is retried after a learner took the lane back.
@@ -127,7 +127,7 @@ export function notesAreCurrent(doc: NotesDocRecord | null, contentSha: string):
   if (!doc) return false;
   return (
     doc.contentSha === contentSha &&
-    doc.ingestVersion === NOTES_PROMPT_VERSION &&
+    doc.ingestVersion === WINDOW_NOTES_VERSION &&
     doc.ingestStatus === 'ready'
   );
 }
@@ -177,7 +177,7 @@ export async function ensureNotes(
       if (notesAreCurrent(existing, input.contentSha)) return existing!;
       /**
        * **The learner's edits win over a better prompt.** A document they have written in is never
-       * re-ingested over: `NOTES_PROMPT_VERSION` moving is not a reason to throw their words away,
+       * re-ingested over: `WINDOW_NOTES_VERSION` moving is not a reason to throw their words away,
        * and remaining windows on a resumed run still only append.
        */
       if (existing?.learnerTouched) return existing;
@@ -199,7 +199,7 @@ export async function ensureNotes(
   const resumable =
     !opts.force &&
     existing !== null &&
-    existing.ingestVersion === NOTES_PROMPT_VERSION &&
+    existing.ingestVersion === WINDOW_NOTES_VERSION &&
     existing.ingestState !== null &&
     existing.ingestState.done > 0 &&
     existing.ingestState.done < existing.ingestState.windows.length &&
@@ -226,7 +226,7 @@ export async function ensureNotes(
         title: input.title,
         pageCount: input.pageCount,
         fileId: input.fileId,
-        ingestVersion: NOTES_PROMPT_VERSION,
+        ingestVersion: WINDOW_NOTES_VERSION,
         // An estimate, corrected the moment pass 1 has run. It exists so the first status event
         // can say "1 of 6" rather than "1 of 0".
         windowsTotal: estimateWindows(input.pageCount),
@@ -245,7 +245,7 @@ export async function ensureNotes(
         pageCount: input.pageCount,
         doc: emptyDoc(input.title).toJSON(),
         ingestStatus: 'pending',
-        ingestVersion: NOTES_PROMPT_VERSION,
+        ingestVersion: WINDOW_NOTES_VERSION,
         windowsTotal: estimateWindows(input.pageCount),
         withImages,
         model: deps.models.orchestrator,
@@ -595,7 +595,7 @@ function writeFixture(
           title: input.title,
           pageCount: input.pageCount,
           fileId: input.fileId,
-          ingestVersion: NOTES_PROMPT_VERSION,
+          ingestVersion: WINDOW_NOTES_VERSION,
           windowsTotal: 1,
           withImages: false,
           model: 'fixture',
@@ -611,7 +611,7 @@ function writeFixture(
           pageCount: input.pageCount,
           doc,
           ingestStatus: 'pending',
-          ingestVersion: NOTES_PROMPT_VERSION,
+          ingestVersion: WINDOW_NOTES_VERSION,
           windowsTotal: 1,
           withImages: false,
           model: 'fixture',

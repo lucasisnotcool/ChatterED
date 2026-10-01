@@ -36,6 +36,7 @@ import type { LocalStore } from '../db/store.js';
 import type { LLMClient } from '../../room/llm/types.js';
 import type { ModelPlan } from '../../room/llm/models.js';
 import { matchFixtureDeck } from '../../room/llm/scripts.js';
+import { isNotebookId } from '../../shared/notebook.js';
 import { log } from '../log.js';
 import { critique1Tree } from './critique1.js';
 import { repairTree, type RawObjective } from './repair.js';
@@ -197,6 +198,16 @@ export function treeIsCurrent(tree: LearningTree | null, contentSha: string): bo
  */
 export async function ensureTree(deps: IngestDeps, input: IngestInput, opts: { force?: boolean } = {}): Promise<boolean> {
   const now = deps.now ?? (() => new Date().toISOString());
+  /**
+   * **A notebook's tree is the overview's** (`notebooks.md` §3.1, contract C5). The whole-deck
+   * ingest never runs for one: it would read a different set of pages and write a second tree
+   * over the objectives the "By the end you can" list is drawn from. Refused here as well as in
+   * the host, so no caller can get it wrong.
+   */
+  if (isNotebookId(input.fileId)) {
+    log().info('objectives.ingest.refused_notebook', { file_id: input.fileId });
+    return false;
+  }
   const existing = deps.store.objectives.tree(input.fileId);
   if (!opts.force && treeIsCurrent(existing, input.contentSha)) return false;
   if (inFlight.has(input.fileId)) return false;
