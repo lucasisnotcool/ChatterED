@@ -1,9 +1,9 @@
 /**
- * The window-level drop guard (release review P0-3). Files never drop anywhere; text drops only
+ * The window-level drop guard (release review P0-3). Files drop only on a drop zone; text drops only
  * into editable fields, which is where the notes editor (ProseMirror) and the composer live.
  */
 import { describe, expect, it } from 'vitest';
-import { blockDrop, installDropGuard } from './dropguard.js';
+import { blockDrop, carriesFiles, filesToPaths, installDropGuard, noPathNotice } from './dropguard.js';
 
 describe('blockDrop', () => {
   it('refuses anything carrying files, even over the editor', () => {
@@ -96,5 +96,81 @@ describe('installDropGuard', () => {
     const drop = dragEvent('drop', ['text/plain'], checkbox);
     win.fire('drop', drop);
     expect(drop.defaultPrevented).toBe(true);
+  });
+});
+
+describe('drop zones (notebooks.md §1)', () => {
+  /** A target inside an element marked `data-dropzone`, as the DOM's `closest` would find it. */
+  const inZone = (base: Record<string, unknown>) => ({
+    ...base,
+    closest: (selector: string) => (selector === '[data-dropzone]' ? {} : null),
+  });
+  const outside = (base: Record<string, unknown>) => ({ ...base, closest: () => null });
+
+  it('lets files through over a zone, and only over a zone', () => {
+    expect(blockDrop(['Files'], { editable: false, dropzone: true })).toBe(false);
+    expect(blockDrop(['Files'], { editable: true, dropzone: true })).toBe(false);
+    expect(blockDrop(['Files'], { editable: false, dropzone: false })).toBe(true);
+  });
+
+  it('still refuses a text or link drag on a zone’s chrome — a zone takes files, not words', () => {
+    expect(blockDrop(['text/uri-list'], { editable: false, dropzone: true })).toBe(true);
+    expect(blockDrop(['text/plain'], { editable: true, dropzone: true })).toBe(false);
+  });
+
+  it('stands aside entirely over a zone, so the zone’s “copy” cursor is not overwritten', () => {
+    const win = fakeWindow();
+    installDropGuard(win as never);
+    const over = dragEvent('dragover', ['Files'], inZone({ tagName: 'DIV', isContentEditable: false }));
+    win.fire('dragover', over);
+    expect(over.defaultPrevented).toBe(false);
+    expect(over.dataTransfer.dropEffect).toBe('copy');
+    const drop = dragEvent('drop', ['Files'], inZone({ tagName: 'P', isContentEditable: true }));
+    win.fire('drop', drop);
+    expect(drop.defaultPrevented).toBe(false);
+  });
+
+  it('refuses files outside every zone, as before', () => {
+    const win = fakeWindow();
+    installDropGuard(win as never);
+    const drop = dragEvent('drop', ['Files'], outside({ tagName: 'NAV', isContentEditable: false }));
+    win.fire('drop', drop);
+    expect(drop.defaultPrevented).toBe(true);
+  });
+});
+
+describe('carriesFiles', () => {
+  it('is true only for a drag that carries files', () => {
+    expect(carriesFiles(['Files', 'text/plain'])).toBe(true);
+    expect(carriesFiles(['text/plain'])).toBe(false);
+    expect(carriesFiles(null)).toBe(false);
+  });
+});
+
+describe('filesToPaths', () => {
+  const file = (name: string, path: string) => ({ name, path });
+  const pathFor = (f: { path: string }) => f.path;
+
+  it('turns a drop into absolute paths, once each', () => {
+    const out = filesToPaths([file('a.pdf', '/x/a.pdf'), file('b.md', '/x/b.md'), file('a.pdf', '/x/a.pdf')], pathFor);
+    expect(out).toEqual({ paths: ['/x/a.pdf', '/x/b.md'], refused: [] });
+  });
+
+  it('refuses, by name, a file with no path on disk — an empty string from the preload', () => {
+    const out = filesToPaths([file('a.pdf', '/x/a.pdf'), file('clip.png', '')], pathFor);
+    expect(out).toEqual({ paths: ['/x/a.pdf'], refused: ['clip.png'] });
+  });
+
+  it('treats a preload that throws like one with no path', () => {
+    const out = filesToPaths([file('a.pdf', '')], () => {
+      throw new Error('no webUtils');
+    });
+    expect(out).toEqual({ paths: [], refused: ['a.pdf'] });
+  });
+
+  it('says which file did not go in, and what to do', () => {
+    expect(noPathNotice([])).toBeNull();
+    expect(noPathNotice(['clip.png'])).toBe('“clip.png” could not be added: save it to your Mac first, then drop it again.');
+    expect(noPathNotice(['a', 'b'])).toContain('2 files could not be added');
   });
 });
