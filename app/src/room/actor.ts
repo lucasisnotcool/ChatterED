@@ -34,7 +34,7 @@ import {
   buildQuestionEdit,
   buildWhisperInsert,
   pagesCited,
-  planAnswerEdit,
+  planBlockNote,
   buildResolveEdit,
   planResolveEdit,
   planSuggestionEdit,
@@ -43,6 +43,7 @@ import {
 import { planGeneratedBlock, type GeneratedBlockKind } from './generate.js';
 import {
   ELLIE_CUE_SCHEMA,
+  blockActionBlock,
   cueCorrectionLines,
   clozeFeedbackBlock,
   docTextBlock,
@@ -127,6 +128,7 @@ import {
   type TesterMode,
 } from './flow.js';
 import {
+  blockActionDecision,
   classifyAgentTurn,
   closureDecision,
   decideTurn,
@@ -420,10 +422,15 @@ interface FailureRecord {
  * over-length log. Null for a turn with no word ceiling. Kept beside the actor rather than in the
  * prompt files because it is a measurement of them, not an instruction.
  */
-export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>, docChat: boolean): number | null {
+export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>): number | null {
   switch (decision.moveType) {
+    // The doc chat's 90-word short half is retired (`notebooks.md` §4.2): the chat answer is whole.
     case 'answer_then_teach':
-      return decision.role === 'peer' ? (docChat ? 90 : 180) : null;
+      return decision.role === 'peer' ? 180 : null;
+    // Explain and Example on a block (§4.1): the Teacher's usual size.
+    case 'block_explain':
+    case 'block_example':
+      return 180;
     case 'quiz_feedback':
     case 'own_question_feedback':
       return 100;
@@ -440,6 +447,51 @@ export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>,
     default:
       return null;
   }
+}
+
+/**
+ * **The line the chat reply ends with when a doc line landed** (`notebooks.md` §4.2), by the kind
+ * of block it went under: *Added one line under that bullet in "Heuristics".* Code-written, so it
+ * names what happened and never more. Each overview key idea is its own one-item `bullet_list`
+ * (contract C6), so a list reads as "that bullet".
+ */
+export function editNoteLine(kind: string | null, section: string | null): string {
+  const what =
+    kind === 'bullet_list' || kind === 'list_item'
+      ? 'that bullet'
+      : kind === 'ordered_list'
+        ? 'that list'
+        : kind === 'heading'
+          ? 'that heading'
+          : kind === 'paragraph'
+            ? 'that paragraph'
+            : 'that block';
+  const where = section && section.trim().length > 0 ? ` in \u201c${section.trim()}\u201d` : '';
+  return `Added one line under ${what}${where}.`;
+}
+
+/** Why a block action was refused (`NotesBlockActionResult.reason`). */
+export type BlockActionRefusal = 'no_doc' | 'busy' | 'question_open';
+
+/** What `RoomActor.blockAction` hands back as soon as the action is accepted or refused. */
+export interface BlockActionStart {
+  accepted: boolean;
+  /** The span thread the answer lands in; on `question_open`, the open question's thread. */
+  threadId: string | null;
+  reason: BlockActionRefusal | null;
+  /** Settles when the turn has (at once on a refusal). Never rejects for a failed turn: that is a card. */
+  turn: Promise<void>;
+}
+
+/**
+ * **The learner's row for an Explain or an Example** (`notebooks.md` §4.1), so the thread reads as
+ * a request and its answer. The quote is the block's own text, capped: it is the learner's
+ * selection in all but name, and a whole paragraph in a chat bubble is not a question.
+ */
+export function blockActionLine(kind: 'explain' | 'example', quote: string): string {
+  const body = quote.trim().replace(/\s+/g, ' ');
+  const capped = body.length <= 160 ? body : `${body.slice(0, 159).trimEnd()}\u2026`;
+  return kind === 'explain' ? `Explain: \u00ab${capped}\u00bb` : `Give me an example: \u00ab${capped}\u00bb`;
 }
 
 export class RoomActor {
@@ -706,8 +758,18 @@ export class RoomActor {
   #ownMarking = new Set<string>();
   /** The sitting whose recap has been posted (§4.8). One per sitting. */
   #recappedSession: string | null = null;
-  /** A §5.7 table or diagram is being drawn. One at a time. */
+  /**
+   * A §5.7 table or diagram is being drawn, or a block action (`notebooks.md` §4) is being answered.
+   * One at a time: two Ellie cursors writing at once is a race on the insert point, and a second
+   * press while the first answer is still coming is refused (`busy`) rather than queued.
+   */
   #generating = false;
+  /** Block actions answered so far, for their script cues (`block_explain:N`). */
+  #blockActions = 0;
+  /** The slide text main resolved for a block action's thread, for its doc line (§4.2). */
+  #actionPassage = new Map<string, string>();
+  /** True for the length of a Quiz me turn, so the question is pitched (§4.5) like a follow-up was. */
+  #blockQuiz = false;
   /** Cancels the closure tick. Null while the actor is stopped. */
   #stopClosureTick: (() => void) | null = null;
   /**
@@ -2087,6 +2149,132 @@ export class RoomActor {
     }
   }
 
+  /**
+   * **Explain, Example or Quiz me on one block of the overview** (`notebooks.md` §4, contract C7).
+   *
+   * Each block has **one** span thread (main finds it with `threads.forBlock` or creates it, and
+   * passes its id as `anchorId`), so every action on a block lands beside the last one, and the
+   * learner's own writing under it (`assessDocText`) is marked in the same place.
+   *
+   * - **Explain / Example** are Ellie's (`rule:block_action`). A synthetic learner row goes into
+   *   the thread first ("Explain: «…»"), so the transcript reads as a question and an answer, and
+   *   then one Teacher turn answers it in full. The ledger is not run on it (the row is the slide's
+   *   words, not the learner's, and §4.3 says actions fill nothing), and nothing follows it. Its
+   *   doc line is `#maybeDocEdit`'s, after the reply is out.
+   * - **Quiz me** is Max's, through `tryHere` (`rule:try_here`), so the question opens exactly as
+   *   "+ Try this" opened one, and its Q block is `buildQuestionEdit`'s under this block. One open
+   *   question at a time (§5.2): refused with `question_open` while his last one is open.
+   *
+   * **It resolves once the action is accepted**, not when the answer lands: the learner's row is
+   * written (Explain/Example) and the turn is running, so the chat can focus `threadId` at once.
+   * `turn` settles when the turn has; main persists the sitting on it, and tests await it.
+   */
+  async blockAction(input: {
+    kind: 'explain' | 'example' | 'quiz';
+    blockId: string;
+    /** The block's span thread: `threads.forBlock(roomId, blockId)`, or a new one. */
+    anchorId: string;
+    /** The block's text as the doc shows it. */
+    quote: string;
+    /** The block's pages, resolved by main (`contextFor` on the span thread). */
+    context?: ReferenceContext | null;
+    /** `objectiveForBlock`, or null when the block's pages map to none or to two. */
+    objectiveId: string | null;
+    /** The slide text of the block's pages, for the doc line. */
+    passage?: string | null;
+  }): Promise<BlockActionStart> {
+    const refuse = (reason: BlockActionRefusal, threadId: string | null = null): BlockActionStart => ({
+      accepted: false,
+      threadId,
+      reason,
+      turn: Promise.resolve(),
+    });
+    if (this.#retired || this.#docPort.docId() === null || !input.blockId || !input.anchorId) return refuse('no_doc');
+    if (input.kind === 'quiz' && quizOpen(this.#pendingQuiz)) {
+      // The open question's thread, so the chat can bring *it* into view instead.
+      return refuse('question_open', this.#anchorOfQuiz(this.#pendingQuiz!) ?? this.#pendingQuiz!.anchorId ?? null);
+    }
+    if (this.#generating || this.#pending !== null) return refuse('busy');
+    this.#generating = true;
+    const quote = input.quote.trim().replace(/\s+/g, ' ');
+    this.#registerThread(input.anchorId, 'span', { blockId: input.blockId, quote: quote.length > 0 ? quote : null });
+    if (input.context) this.#askContext.set(input.anchorId, input.context);
+    if (input.passage && input.passage.trim().length > 0) this.#actionPassage.set(input.anchorId, input.passage);
+    else this.#actionPassage.delete(input.anchorId);
+    this.#event('student', 'flow.block_action', {
+      kind: input.kind,
+      anchor_id: input.anchorId,
+      block_id: input.blockId,
+      objective_id: input.objectiveId,
+      chars: quote.length,
+    });
+
+    const release = (): void => {
+      this.#generating = false;
+    };
+    try {
+      if (input.kind === 'quiz') {
+        const objectiveId = input.objectiveId ?? this.#quizTargetFor(input.anchorId, input.blockId);
+        if (objectiveId === null) {
+          release();
+          return refuse('no_doc');
+        }
+        this.#blockQuiz = true;
+        const turn = this.tryHere({ anchorId: input.anchorId, objectiveId, context: input.context ?? undefined })
+          .then(() => undefined)
+          .finally(() => {
+            this.#blockQuiz = false;
+            release();
+          });
+        return { accepted: true, threadId: input.anchorId, reason: null, turn };
+      }
+
+      const body = blockActionLine(input.kind, quote);
+      let messageId: string | null = null;
+      await this.#mailbox.enqueue(() => {
+        this.#timer.cancel();
+        this.#typingUntil = 0;
+        this.#noteLearnerActivity('ask', input.anchorId);
+        const row = this.#insertMessage({
+          participantId: this.#studentParticipant().id,
+          body,
+          anchorId: input.anchorId,
+        });
+        messageId = row.id;
+        // A button, not a typed turn: nothing to classify, nobody named, and not an answer to
+        // Max's open question, which stays exactly where it was.
+        this.#lastLearnerTurn = null;
+        this.#lastMention = null;
+        this.#mentionRest = null;
+        this.#noteReply(row.id, false);
+        this.#event('student', 'message.send', { seq: row.seq, chars: body.length, anchor_id: input.anchorId, block_action: input.kind });
+        this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
+      });
+      this.#blockActions += 1;
+      const turn = this.#runAgentTurn('promote', {
+        anchorId: input.anchorId,
+        studentBody: body,
+        studentMessageId: messageId,
+        blockAction: input.kind,
+      }).finally(release);
+      return { accepted: true, threadId: input.anchorId, reason: null, turn };
+    } catch (err) {
+      release();
+      this.#blockQuiz = false;
+      throw err;
+    }
+  }
+
+  /**
+   * **Which objective Quiz me asks about when the block maps to none** (contract C7): the
+   * objective the block's page teaches, else the one its pages are cited under, else the
+   * follow-up's own pick (`#followupTarget`), which ends on the lowest-level objective in the pack.
+   */
+  #quizTargetFor(anchorId: string, blockId: string): string | null {
+    const entry = this.#docPort.outlineNear({ blockId }, 0).find((e) => e.blockId === blockId);
+    return this.#followupTarget(anchorId, entry?.pages ?? []);
+  }
+
   /** Private turns as the chat column renders them. Never `messages`, and never a group surface. */
   #privateTurns(threadId: string, agent: AgentAuthor): PrivateTurnView[] {
     return this.#d.store.whispers.forThread(threadId).map((row) => ({
@@ -2516,6 +2704,8 @@ export class RoomActor {
       lesson?: { objectiveId: string };
       /** **`rule:own_question`** (§5.6): the learner's own question, answered in its Q block. */
       ownQuestion?: boolean;
+      /** **`rule:block_action`** (`notebooks.md` §4): Explain or Example pressed on a block. */
+      blockAction?: 'explain' | 'example';
     } = {},
   ): Promise<void> {
     // A reset room starts nothing — not a chained follow-up, not a closure release (`retire()`).
@@ -2697,6 +2887,12 @@ export class RoomActor {
       (trigger === 'student_message' || trigger === 'promote') &&
       opts.showAnswer !== true &&
       opts.ownQuestion !== true &&
+      /**
+       * **Nor on a block action** (`notebooks.md` §4.3: *"Actions fill nothing"*). The row that
+       * asked is the slide's own words in a template, and a ledger that judged it would be scoring
+       * the deck as the learner's evidence.
+       */
+      opts.blockAction === undefined &&
       !answersCloze &&
       this.#lastLearnerTurn !== 'give_up';
     if (ledgerRuns) {
@@ -2748,6 +2944,8 @@ export class RoomActor {
          */
         opts.ownQuestion
         ? ownQuestionDecision()
+        : opts.blockAction
+        ? blockActionDecision(opts.blockAction)
         : opts.followup
         ? maxFollowupDecision(opts.followup.objectiveId)
         : opts.closure
@@ -3117,7 +3315,7 @@ export class RoomActor {
        * feedback at 155 against 100, his clarification at 115 against 80. Logged, not cut: a turn
        * truncated mid-sentence is worse than a long one, and the log is where the prompt gets tuned.
        */
-      const ceiling = wordCeilingOf(decision, this.#answerSplitsIntoNotes(decision));
+      const ceiling = wordCeilingOf(decision);
       const words = wordCount(text);
       if (ceiling !== null && words > ceiling) {
         turnLog.event('warn', 'turn.over_length', {
@@ -3600,7 +3798,6 @@ export class RoomActor {
         // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
         // clause, and the rule name is what tells them apart.
         byRule: decision.decidedBy,
-        docChat: this.#answerSplitsIntoNotes(decision),
         cloze: this.#clozeTurn(decision),
       },
     });
@@ -4012,9 +4209,9 @@ export class RoomActor {
           /**
            * **The form is read off what Max wrote** (§4.5, 2026-10-01). The pitch asked for a
            * blank; a question that came back without one is an open question and is marked as
-           * one. Only the follow-up is pitched, so only the follow-up can be a cloze.
+           * one. Only a pitched question (`#pitchedQuestion`) can be a cloze.
            */
-          ...(decision.decidedBy === 'rule:max_followup' &&
+          ...(this.#pitchedQuestion(decision) &&
           questionForm(this.#pitchInputs(decision.targetElementId).form, text) === 'cloze'
             ? { form: 'cloze' as const }
             : {}),
@@ -4337,6 +4534,8 @@ export class RoomActor {
         return quizCue('release', n);
       case 'rule:lesson_start':
         return `lesson:${n + 1}`;
+      case 'rule:block_action':
+        return `${decision.moveType}:${this.#blockActions}`;
       default:
         break;
     }
@@ -4430,6 +4629,35 @@ export class RoomActor {
       this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), edit_id: batch.editId });
       return false;
     }
+  }
+
+  /**
+   * **The chat reply ends with a short line naming the edit** (`notebooks.md` §4.2: *"Added one
+   * line under the bullet in §2."*). Written here, by code, and only once the edit was emitted:
+   * the model was told not to mention the notes, because the line may never land (Freeze, a
+   * failed call), and a reply that says it added something that is not there is worse than none.
+   *
+   * The reply has already been released when this runs, so the row is updated in place and the
+   * view re-emitted under the same id (the same path a regenerated summary card takes).
+   */
+  async #noteEditInChat(messageId: string, batch: AgentDocOpBatch): Promise<void> {
+    const op = batch.ops[0];
+    if (!messageId || op === undefined || op.op !== 'insert_after') return;
+    const entry = this.#docPort.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
+    const line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null));
+    await this.#mailbox.enqueue(() => {
+      if (this.#retired) return;
+      const row = this.#d.store.messages.get(messageId);
+      if (!row) return;
+      this.#d.store.messages.updateBody(messageId, `${row.body.trimEnd()}\n\n${line}`, this.#nowIso());
+      const updated = this.#d.store.messages.get(messageId)!;
+      const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
+      this.#d.transport.emit({
+        type: 'message.appended',
+        roomId: this.#d.roomId,
+        message: messageView(updated, participants, this.#d.roster, this.#d.store.messageRefs.forMessage(messageId)),
+      });
+    });
   }
 
   /**
@@ -4552,13 +4780,23 @@ export class RoomActor {
       }
       if (decision.moveType === 'quiz_answer' || decision.moveType === 'quiz_feedback') return;
       /**
-       * 5.1 — Ellie answered, and the notes may be missing it. Not on a lesson's **Start** (#49):
-       * that turn is told not to teach yet and to have the learner ask, so notes that teach it
-       * before they have asked are the lecture the turn was built not to give.
+       * **5.1, as `notebooks.md` §4.2 has it: one line under the block** (contract C7). Ellie's
+       * chat answer is whole; the notes get one sentence of at most `BLOCK_LINE_MAX_WORDS` words
+       * under the block it was asked on, from a separate call, after the reply has gone out.
+       *
+       *  - **Explain / Example** on a block: always a line (the button promised one), under that
+       *    block, which is the span thread's.
+       *  - **A doc-chat question** (`rule:ellie_answers`, `rule:mention`): under the span thread's
+       *    block when it was asked in one; in the doc chat, under the block the planner judges
+       *    best from the outline, or none if nothing fits.
+       *
+       * Not on a lesson's **Start** (#49), whose move is not one of these: it is told not to teach
+       * yet, so notes that teach it before they have asked are the lecture it was built not to give.
        */
-      if (decision.role === 'peer' && decision.moveType === 'answer_then_teach') {
-        // Recorded *before* the plan's model call, because `rule:max_followup` dispatches while
-        // that call is still out and his Q block is what needs these pages (see the field).
+      const blockMove = decision.moveType === 'block_explain' || decision.moveType === 'block_example';
+      if (decision.role === 'peer' && (decision.moveType === 'answer_then_teach' || blockMove)) {
+        // Recorded *before* the plan's model call: under the legacy loop `rule:max_followup`
+        // dispatches while that call is still out and his Q block needs these pages (see the field).
         this.#lastAnswerPages = pagesCited(text);
         const context = this.#askContext.get(anchorId ?? '');
         const pages = context?.page;
@@ -4566,34 +4804,27 @@ export class RoomActor {
           blockId,
           pages: typeof pages === 'number' ? [pages] : undefined,
         });
-        const { batch, pointsTo } = await planAnswerEdit(deps, {
+        const kind = decision.moveType === 'block_explain' ? 'explain' : decision.moveType === 'block_example' ? 'example' : 'answer';
+        const plan = await planBlockNote(deps, {
+          kind,
           answer: text,
-          // The chat said the short half (`#answerSplitsIntoNotes`); the notes edit writes the rest,
-          // and it cannot from the reply alone — it needs what was asked and what the slide says.
-          question: this.#learnerQuestionIn(anchorId),
-          passage: context?.scope === 'segment' ? context.passageText : null,
-          page: typeof pages === 'number' ? pages : null,
           blockId,
+          question: blockMove ? null : this.#learnerQuestionIn(anchorId),
+          passage: this.#actionPassage.get(anchorId ?? '') ?? (context?.scope === 'segment' ? context.passageText : null),
+          page: typeof pages === 'number' ? pages : null,
           outline,
-          // The learner highlighted this span and asked about it: the answer goes beside it, not
-          // wherever the planner finds tidier (`findings.md` §6).
-          pinAnchor: anchorId !== null && this.#threadKindOf(anchorId) === 'span' && blockId !== null,
         });
-        if (batch === null) {
-          // §5.1: "If the doc already says it, no edit; she points to the block instead."
-          if (pointsTo !== null) {
-            this.#d.transport.emit({
-              type: 'doc.cursor',
-              roomId: this.#d.roomId,
-              docId: this.#docPort.docId()!,
-              author: 'ellie',
-              blockId: pointsTo,
-              state: 'idle',
-            });
-          }
-          return;
-        }
-        await this.#emitDocEdit(batch, { objectiveId: null, messageId, turnId });
+        // How the line was had and how long it is, never the line.
+        this.#turnLog.event('info', 'doc.block_note', {
+          kind,
+          outcome: plan.outcome,
+          words: plan.words,
+          retried: plan.retried,
+          anchored: blockId !== null,
+        });
+        if (plan.batch === null) return;
+        const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId });
+        if (emitted) await this.#noteEditInChat(messageId, plan.batch);
       }
     } catch (err) {
       this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
@@ -4713,8 +4944,13 @@ export class RoomActor {
        * and the slide the learner is looking at are the same text.
        */
       const where = this.#whereNote(decision);
+      // Quiz me on a block is pitched as the follow-up was (§4.5): a blank after a release.
+      const pitch =
+        decision.decidedBy === 'rule:try_here' && this.#pitchedQuestion(decision)
+          ? pitchBlock(this.#pitchInputs(decision.targetElementId))
+          : undefined;
       return (
-        [where, quiz, ...this.#docExtras(decision)]
+        [where, quiz, pitch, ...this.#docExtras(decision)]
           .filter((b): b is string => typeof b === 'string' && b.length > 0)
           .join('\n\n') || undefined
       );
@@ -4784,6 +5020,23 @@ export class RoomActor {
         if (this.#lessonTarget === null) return undefined;
         blocks.push(lessonStartBlock(this.#lessonTarget));
         break;
+      case 'block_explain':
+      case 'block_example': {
+        // The block's own text is the thread's quote; its slide is the *where* block in front.
+        const anchor = this.#turnAnchorId;
+        const thread = anchor === null ? undefined : this.#threads.get(anchor);
+        const page = anchor === null ? null : (this.#askContext.get(anchor)?.page ?? null);
+        blocks.push(
+          blockActionBlock({
+            kind: decision.moveType === 'block_explain' ? 'explain' : 'example',
+            quote: thread?.quote ?? '',
+            page,
+          }),
+          // What she already knows of the learner, as on every Teacher turn.
+          this.#learnerNote(),
+        );
+        break;
+      }
       case 'quiz_answer': {
         const quiz = this.#pendingQuiz;
         blocks.push(
@@ -4806,22 +5059,6 @@ export class RoomActor {
     return [...head, ...blocks].join('\n\n');
   }
 
-  /**
-   * **Ellie's doc-chat answer is the short half, and the notes take the rest** (2026-09-23,
-   * `prompts.doc.ts` `ellieAnswersBlock`). Only while the notes can take it: a frozen doc drops
-   * every edit (§3), and an answer cut short for a notes edit that will never land is an answer
-   * the learner simply did not get.
-   */
-  #answerSplitsIntoNotes(decision: TurnDecision): boolean {
-    return (
-      decision.role === 'peer' &&
-      decision.moveType === 'answer_then_teach' &&
-      (decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention') &&
-      this.#docPort.docId() !== null &&
-      !this.#docPort.frozen()
-    );
-  }
-
   /** The learner's latest message in this thread: what the §5.1 notes edit is explaining. */
   #learnerQuestionIn(anchorId: string | null): string | null {
     const student = this.#studentParticipant().id;
@@ -4842,7 +5079,8 @@ export class RoomActor {
     const blocks: string[] = [];
     if (decision.moveType === 'answer_then_teach' && (decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention')) {
       const page = this.#turnAnchorId === null ? null : (this.#askContext.get(this.#turnAnchorId)?.page ?? null);
-      blocks.push(ellieAnswersBlock({ page, notesTakeTheRest: this.#answerSplitsIntoNotes(decision) }));
+      // C8: under `maxOnlyOnRequest` nobody asks next, so she is not told that Max does.
+      blocks.push(ellieAnswersBlock({ page, maxFollows: !this.#maxOnly }));
       const mention = this.#mentionNote();
       if (mention) blocks.push(mention);
     }
@@ -4939,10 +5177,21 @@ export class RoomActor {
    * the pitch asks for; for the feedback it is what the open question turned out to be.
    */
   #clozeTurn(decision: TurnDecision): boolean {
-    if (decision.moveType === 'quiz' && decision.decidedBy === 'rule:max_followup') {
+    if (this.#pitchedQuestion(decision)) {
       return this.#pitchInputs(decision.targetElementId).form === 'cloze';
     }
     return decision.moveType === 'quiz_feedback' && this.#pendingQuiz?.form === 'cloze';
+  }
+
+  /**
+   * **Which questions are pitched** (§4.5): the follow-up, and since `notebooks.md` §5.2 the one
+   * the learner asks for with Quiz me on a block, which is now the only door after a release.
+   * Without it, "give-up lowers the next question" (§5.2, unchanged) would have no question to
+   * lower. "+ Try this" on the legacy screen stays unpitched, as it was.
+   */
+  #pitchedQuestion(decision: TurnDecision): boolean {
+    if (decision.moveType !== 'quiz') return false;
+    return decision.decidedBy === 'rule:max_followup' || (decision.decidedBy === 'rule:try_here' && this.#blockQuiz);
   }
 
   /** The inputs §4.5's pitch is a pure function of, assembled where all three are reachable. */

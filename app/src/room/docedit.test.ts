@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planAnswerEdit, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planBlockNote, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, trimToWords, type DocEditDeps } from './docedit.js';
 import { generateBlockPrompt, planGeneratedBlock } from './generate.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
@@ -92,97 +92,147 @@ describe('outlineText', () => {
   });
 });
 
-describe('planAnswerEdit (§5.1)', () => {
-  it('adds nothing and points at the block when the notes already say it', async () => {
-    const d = deps({}, { edit: 'none', points_to: 'b_2' });
-    const out = await planAnswerEdit(d, { answer: 'An admissible heuristic never overestimates.', blockId: 'b_2', outline: OUTLINE });
-    expect(out.batch).toBeNull();
-    expect(out.pointsTo).toBe('b_2');
-  });
+/**
+ * **The one line under the block** (`notebooks.md` §4.2, contract C7), which replaced §5.1's
+ * 40–150-word planner. What is pinned: the limit is enforced in code (retry once, then cut at a
+ * clause, never mid-word), the line always lands under the block a button named, the provenance
+ * order, and that a doc-chat answer with no block may come back with nothing.
+ */
+describe('planBlockNote (notebooks §4.2)', () => {
+  /** A client that answers each call with the next reply in the list. */
+  function seq(replies: (Record<string, unknown> | Error)[]) {
+    const d = deps();
+    let i = 0;
+    d.llm = {
+      kind: 'scripted',
+      async complete(request) {
+        d.requests.push(request);
+        const reply = replies[Math.min(i, replies.length - 1)]!;
+        i += 1;
+        if (reply instanceof Error) throw reply;
+        return { text: JSON.stringify(reply), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
+      },
+    };
+    return d;
+  }
+  const LONG =
+    'An admissible heuristic never overestimates the true cost to the goal, which is why A* with it returns an optimal path, ' +
+    'and consistency adds the triangle inequality on top of that guarantee for graph search.';
 
-  it('inserts what is missing, authored by Ellie, with the cause the log reads', async () => {
-    const d = deps({}, {
-      edit: 'insert_after',
-      anchor_block_id: 'b_2',
-      why: 'the notes never define consistency',
-      blocks: [{ kind: 'paragraph', text: 'A consistent heuristic also satisfies the triangle inequality.', prov: { pages: [4], reason: null } }],
-    });
-    const out = await planAnswerEdit(d, { answer: 'On p. 4 …', blockId: 'b_2', outline: OUTLINE });
-    expect(out.batch).toMatchObject({
-      author: 'ellie',
-      cause: 'answer_missing',
-      focusBlockId: 'b_2',
-      why: 'the notes never define consistency',
-    });
-    expect(out.batch!.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_2' });
-  });
-
-  it('shows the planner the outline and the answer, and nothing else', async () => {
-    const d = deps({}, { edit: 'none', points_to: 'b_2' });
-    await planAnswerEdit(d, { answer: 'THE-ANSWER-TEXT', blockId: 'b_2', outline: OUTLINE });
-    const system = d.requests[0]!.system.map((b) => b.text).join('\n');
-    expect(system).toContain('THE-ANSWER-TEXT');
-    expect(system).toContain('b_2');
-    // It is a structured call, billed as the document's own cost (architect §2).
+  it('inserts one paragraph under the named block, by Ellie, with the block_action cause', async () => {
+    const d = seq([{ line: 'Admissibility is what makes A* tree search optimal.', why: 'the point most worth keeping' }]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'Long answer on p. 4.', blockId: 'b_2', outline: OUTLINE });
+    expect(out.outcome).toBe('written');
+    expect(out.batch).toMatchObject({ author: 'ellie', cause: 'block_action', focusBlockId: 'b_2' });
+    expect(out.batch!.ops).toEqual([
+      {
+        op: 'insert_after',
+        anchorBlockId: 'b_2',
+        blocks: [{ kind: 'paragraph', text: 'Admissibility is what makes A* tree search optimal.', prov: { pages: [4], reason: null } }],
+      },
+    ]);
     expect(d.requests[0]!.jsonSchema).toBeTypeOf('object');
     expect(d.requests[0]!.meta.costScope).toBe('docedit');
   });
 
-  /**
-   * **§5.4: learner text is worked around, not through.** The renderer's guard would catch this
-   * anyway — a `replace_block` over learner text becomes a suggestion — so what the downgrade
-   * saves is the surprise: an answer that was merely missing should not arrive as an Accept ·
-   * Reject on something the learner wrote.
-   */
-  it('downgrades a replace or an append over the learner’s own block to an insert beside it', async () => {
-    for (const edit of ['replace_block', 'append_to_block'] as const) {
-      const d = deps({}, {
-        edit,
-        block_id: 'b_mine',
-        text: 'and it is consistent too',
-        blocks: [{ kind: 'paragraph', text: 'and it is consistent too', prov: { pages: [4], reason: null } }],
-      });
-      const out = await planAnswerEdit(d, { answer: 'p. 4', blockId: 'b_mine', outline: OUTLINE });
-      expect(out.batch!.ops[0]!.op, edit).toBe('insert_after');
-    }
+  it('asks once more on an overflow, and takes the second line when it fits', async () => {
+    const d = seq([{ line: LONG, why: 'x' }, { line: 'Admissible heuristics never overestimate, so A* is optimal.', why: 'x' }]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
+    expect(d.requests).toHaveLength(2);
+    expect(d.requests[1]!.system[0]!.text).toContain('OVER THE LIMIT OF 25');
+    expect(out).toMatchObject({ outcome: 'written', retried: true });
+    expect(out.words).toBeLessThanOrEqual(25);
   });
 
-  /**
-   * Interview finding (`docs/research/interviews/findings.md` §6): the learner highlighted this
-   * span and asked about *it*. One interviewee complained specifically of additions landing in the
-   * wrong place, so the anchor is pinned and only the content is planned.
-   */
-  it('pins a span thread’s anchor, whatever the planner preferred', async () => {
-    const d = deps({}, {
-      edit: 'insert_after',
-      anchor_block_id: 'b_1',
-      blocks: [{ kind: 'paragraph', text: 'An addition.', prov: { pages: [4], reason: null } }],
+  it('cuts a second overflow at the last full clause within 25 words, never mid-word', async () => {
+    const d = seq([{ line: LONG, why: 'x' }, { line: LONG, why: 'x' }]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
+    expect(out.outcome).toBe('trimmed');
+    const text = (out.batch!.ops[0] as { blocks: { text: string }[] }).blocks[0]!.text;
+    expect(text).toBe('An admissible heuristic never overestimates the true cost to the goal, which is why A* with it returns an optimal path.');
+    expect(out.words).toBeLessThanOrEqual(25);
+  });
+
+  it('cuts at a word when no clause ends within the budget, and says so', () => {
+    const run = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ');
+    const cut = trimToWords(run, 25);
+    expect(cut.endsWith('word24…')).toBe(true);
+    expect(cut.split(' ')).toHaveLength(25);
+    expect(trimToWords('Short enough.', 25)).toBe('Short enough.');
+  });
+
+  it('always writes a line on a block action: the chat answer’s first notes-worthy sentence when the call fails', async () => {
+    const d = seq([new Error('cli exited 1')]);
+    const out = await planBlockNote(d, {
+      kind: 'example',
+      answer: 'Take the 8-puzzle with Manhattan distance as the heuristic for every tile. Do you see why?',
+      blockId: 'b_2',
+      outline: OUTLINE,
     });
-    const out = await planAnswerEdit(d, { answer: 'p. 4', blockId: 'b_2', outline: OUTLINE, pinAnchor: true });
+    expect(out.outcome).toBe('fallback');
     expect(out.batch!.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_2' });
   });
 
-  it('builds nothing when the model asked for an edit with no content', async () => {
-    const d = deps({}, { edit: 'insert_after', anchor_block_id: 'b_2', blocks: [] });
-    expect((await planAnswerEdit(d, { answer: 'x', blockId: 'b_2', outline: OUTLINE })).batch).toBeNull();
+  it('rejects a question for a line', async () => {
+    const d = seq([{ line: 'Why does admissibility matter?', why: 'x' }]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'Admissibility guarantees that A* returns an optimal path on trees.', blockId: 'b_2', outline: OUTLINE });
+    expect(out.outcome).toBe('fallback');
+    expect(JSON.stringify(out.batch)).not.toContain('?');
   });
 
-  /** 2026-09-23: the chat holds the short half, so this call writes the long half from the slide. */
-  it('is given the question and one page of the slide, and asked for what the chat left out', () => {
+  it('takes provenance from the line, then the block, then the answer, then a reason', async () => {
+    const noPages: OutlineEntry[] = [{ ...OUTLINE[1]!, pages: [] }];
+    const cases: [OutlineEntry[], string, string, unknown][] = [
+      [OUTLINE, 'A line (p. 7).', 'p. 9', { pages: [7], reason: null }],
+      [OUTLINE, 'A line here.', 'p. 9', { pages: [4], reason: null }],
+      [noPages, 'A line here.', 'see p. 9', { pages: [9], reason: null }],
+      [noPages, 'A line here.', 'no page', { pages: [], reason: 'a point Ellie added from her answer' }],
+    ];
+    for (const [outline, line, answer, prov] of cases) {
+      const out = await planBlockNote(seq([{ line, why: 'x' }]), { kind: 'explain', answer, blockId: 'b_2', outline });
+      const block = (out.batch!.ops[0] as { blocks: { text: string; prov: unknown }[] }).blocks[0]!;
+      expect(block.prov, line + answer).toEqual(prov);
+      // The marker is the chip's job, not the sentence's.
+      expect(block.text).not.toContain('p. 7');
+    }
+  });
+
+  it('lets a doc-chat answer with no block pick one from the outline, or write nothing', async () => {
+    const picked = await planBlockNote(seq([{ line: 'Consistency implies admissibility.', anchor_block_id: 'b_2', why: 'x' }]), {
+      kind: 'answer',
+      answer: 'a',
+      blockId: null,
+      outline: OUTLINE,
+    });
+    expect(picked.batch!.ops[0]).toMatchObject({ anchorBlockId: 'b_2' });
+    const none = await planBlockNote(seq([{ line: null, anchor_block_id: null, why: 'nothing fits' }]), {
+      kind: 'answer',
+      answer: 'a',
+      blockId: null,
+      outline: OUTLINE,
+    });
+    expect(none).toMatchObject({ batch: null, outcome: 'declined' });
+    // A pick that is not in the outline is not trusted.
+    const stray = await planBlockNote(seq([{ line: 'A line.', anchor_block_id: 'b_nowhere', why: 'x' }]), {
+      kind: 'answer',
+      answer: 'a',
+      blockId: null,
+      outline: OUTLINE,
+    });
+    expect(stray.batch).toBeNull();
+  });
+
+  it('shows the block, the slide, the question and the chat answer, and says what the line is', () => {
     const passage = 'An admissible heuristic never overestimates. '.repeat(100);
-    const prompt = answerEditPrompt({ answer: 'short reply', question: 'why admissible?', passage, page: 4, blockId: 'b_2', outline: OUTLINE });
+    const prompt = blockNotePrompt({ kind: 'example', answer: 'THE-CHAT', question: 'why?', passage, page: 4, blockId: 'b_2', outline: OUTLINE });
+    expect(prompt).toContain('THE BLOCK IT GOES DIRECTLY UNDER (b_2)');
     expect(prompt).toContain('THE SLIDE (p. 4)');
-    expect(prompt).toContain('why admissible?');
-    expect(prompt).toContain('Write what the chat left out');
-    expect(prompt).not.toContain(passage.trim());
+    expect(prompt).toContain('THE-CHAT');
+    expect(prompt).toContain('the example in brief');
+    expect(prompt).toContain('at most 25 words');
     expect(prompt).toContain(passage.slice(0, ANSWER_EDIT_PASSAGE_CHARS).trim());
-  });
-
-  it('still reads without a question or a slide (a lesson Start, a deck-wide ask)', () => {
-    const prompt = answerEditPrompt({ answer: 'short reply', blockId: 'b_2', outline: OUTLINE });
-    expect(prompt).not.toContain('THE SLIDE');
-    expect(prompt).not.toContain('WHAT THEY ASKED');
-    expect(prompt).toContain('short reply');
+    expect(prompt).not.toContain(passage.trim());
+    expect(blockNotePrompt({ kind: 'answer', answer: 'a', blockId: null, outline: OUTLINE })).toContain('anchor_block_id');
   });
 });
 

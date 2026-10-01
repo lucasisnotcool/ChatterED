@@ -29,41 +29,27 @@ import { NO_REMARKS } from './prompts.js';
 /**
  * What Ellie's answer owes the doc chat.
  *
- * **The chat holds the short half; the notes hold the long half** (2026-09-23, A1 report §1.4 and
- * DG4: *"Replies in chat are kept short while longer explainers are written into notes"*). Until
- * this date the chat was held to `attempt-first.md` §4's ~120 / 180 words and the notes got
- * whatever `planAnswerEdit` condensed out of the reply — so on the live app the lengths ran the
- * wrong way: chat replies at a median of 202 words, notes additions at ~80. The five-step shape
- * the Teacher is given cannot fit 120 words and it won every time.
+ * **The whole answer, in the chat** (`notebooks.md` §4.2, contract C7, 1 Oct 2026). From
+ * 2026-09-23 to this date the doc chat held the short half (~60 words, ceiling 90) and the §5.1
+ * edit wrote the long half into the notes. Lucas reversed it: *"the answer usually does not fit
+ * verbosely into the doc, so need two separate outputs for explaining to user vs. doc edit."* So
+ * the chat gets the full Teacher answer at the usual size (about 120, ceiling 180), and the notes
+ * get one line of at most 25 words, written by a separate call (`docedit.planBlockNote`) after
+ * this reply has gone out. The code, not this turn, says that a line was added, and only when it
+ * was, so the turn must not.
  *
- * So in the doc chat the shape is **split**: the answer, the plain meaning and one example go in
- * the chat; the rigorous version and how the slide uses it are written into the notes by the
- * §5.1 edit, which is now given the question and the slide rather than only the reply. When the
- * notes are **frozen** nothing reaches them, so `notesTakeTheRest: false` gives her the full
- * answer back.
+ * `maxFollows` is the #48 loop (`maxOnlyOnRequest: false`), where Max's follow-up comes next and
+ * Ellie leaves the question to him. Under `notebooks.md` §5.2 nobody asks next unless the learner
+ * presses Quiz me, and the line says only what she must not do.
  */
-export function ellieAnswersBlock(input: { page?: number | null; notesTakeTheRest?: boolean } = {}): string {
-  const lines =
-    input.notesTakeTheRest === false
-      ? [
-          'THIS IS THE DOC CHAT',
-          'Answer what they asked, in full, in your first sentence — then teach it. About 120 words,',
-          'ceiling 180. The notes are frozen, so this answer is the whole of it.',
-          'Do not end on a question. Max asks the next one.',
-        ]
-      : [
-          'THIS IS THE DOC CHAT — SHORT HERE, THE REST GOES INTO THE NOTES',
-          '**About 60 words, ceiling 90.** This replaces the lengths in house rule 3 and the five-step',
-          'shape for this turn. Say, in this order and nothing more:',
-          '  1. the answer to what they asked, in your first sentence;',
-          '  2. what it means in plain words, no notation;',
-          '  3. one concrete example or analogy, in a sentence.',
-          'As running prose: no labels on the parts ("Plainly:", "Analogy:"), no headings, no list.',
-          'The rigorous version, the conditions and how the slide uses it are written into the notes',
-          'beside where they asked, separately from this reply — **do not write them here**, and do not',
-          'say that you are adding anything to the notes.',
-          'Do not end on a question. Max asks the next one.',
-        ];
+export function ellieAnswersBlock(input: { page?: number | null; maxFollows?: boolean } = {}): string {
+  const lines = [
+    'THIS IS THE DOC CHAT',
+    'Answer what they asked, in full, in your first sentence — then teach it. About 120 words,',
+    'ceiling 180. This answer is the whole of it. Do not say that you are adding anything to the',
+    'notes; the app does that itself.',
+    input.maxFollows === true ? 'Do not end on a question. Max asks the next one.' : 'Do not end on a question.',
+  ];
   /**
    * **Answers stay anchored** (interview finding, `docs/research/interviews/findings.md` §6). All
    * three interviewees described the same drift: rounds of clarification that end up somewhere
@@ -82,6 +68,59 @@ export function ellieAnswersBlock(input: { page?: number | null; notesTakeTheRes
       'on it is one the learner cannot check, and three rounds later neither of you knows where it',
       'started.',
     );
+  }
+  return lines.join('\n');
+}
+
+// ── notebooks §4: Explain and Example on a block ──────────────────────────
+
+/**
+ * **Explain** and **Example** on a block of the overview (`notebooks.md` §4.1, contract C7).
+ *
+ * The chat half of the two outputs: Ellie's full answer, in the block's span thread. The doc half
+ * is a separate call (`docedit.planBlockNote`) for one line under the block, so nothing here is
+ * squeezed to fit the notes and nothing here mentions them. The block's slide text reaches the
+ * turn as the *where* block in front of this one; this says what the button asked for.
+ *
+ * - **Explain** is the Teacher's usual shape (`turnDirective`'s answer-first, then teach) at the
+ *   usual size: about 120 words, ceiling 180, grounded in the slide pages.
+ * - **Example** is one worked example, the slide's own when it has one, then one sentence on
+ *   what it shows: the overview is scaffolding (§3.3), and the worked case is what this is for.
+ *
+ * **Never a question at the end**, in either: §5.2 has Max ask only when the learner presses Quiz
+ * me, and a Teacher who ends on one is asking in his place.
+ */
+export function blockActionBlock(input: { kind: 'explain' | 'example'; quote: string; page?: number | null }): string {
+  const lines = [
+    input.kind === 'explain'
+      ? 'THE LEARNER PRESSED EXPLAIN ON THIS LINE OF THEIR NOTES'
+      : 'THE LEARNER PRESSED EXAMPLE ON THIS LINE OF THEIR NOTES',
+    '"""',
+    input.quote.trim(),
+    '"""',
+  ];
+  if (input.kind === 'explain') {
+    lines.push(
+      'Explain it in full, as you answer any question: what it says, in your first sentence; what it',
+      'means in plain words; one concrete example or analogy; then the rigorous version and how the',
+      'slide uses it, in the slide’s own notation. **About 120 words, ceiling 180.** Ground it in the',
+      'slide text above and cite it as p. N.',
+    );
+  } else {
+    lines.push(
+      'Work **one** example of it. Use the slide’s own example when it has one and say which page it',
+      'is on as p. N; when it has none, one small case of your own that the slide equips them for.',
+      'Go through it step by step, then end with **one sentence** on what the example shows about this',
+      'line. **About 120 words, ceiling 180.**',
+    );
+  }
+  lines.push(
+    'Start with the substance: no greeting, no "Great question", and do not restate the line first.',
+    'Do not say that you are adding anything to the notes; the app does that itself.',
+    '**Do not end on a question, and ask them nothing.** Max asks only when they press Quiz me.',
+  );
+  if (typeof input.page === 'number') {
+    lines.push(`This line is on p. ${input.page}: name it, and if you reach elsewhere in the deck, land it back there.`);
   }
   return lines.join('\n');
 }

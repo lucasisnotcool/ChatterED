@@ -19,6 +19,7 @@ import type { ConceptPack, MaterialRow } from './records.js';
 import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 import {
   docTextBlock,
+  blockActionBlock,
   ellieAnswersBlock,
   maxFollowupBlock,
   maxPromptBlock,
@@ -214,10 +215,14 @@ describe('length fits the job', () => {
         'max_prompt', 'lesson_start', 'mention_reply', 'teach_objective'].map((move) =>
         turnDirective({ agentRole: move === 'answer_then_teach' ? 'peer' : 'challenger', move, byRule: 'rule:max_followup' }),
       ),
-      turnDirective({ agentRole: 'peer', move: 'answer_then_teach', docChat: true }),
+      turnDirective({ agentRole: 'peer', move: 'block_explain' }),
+      turnDirective({ agentRole: 'peer', move: 'block_example' }),
+      turnDirective({ agentRole: 'challenger', move: 'quiz', byRule: 'rule:try_here', cloze: true }),
       ellieAnswersBlock({ page: 4 }),
       ellieAnswersBlock({}),
-      ellieAnswersBlock({ notesTakeTheRest: false }),
+      ellieAnswersBlock({ maxFollows: true }),
+      blockActionBlock({ kind: 'explain', quote: 'A line.', page: 4 }),
+      blockActionBlock({ kind: 'example', quote: 'A line.' }),
     ];
     for (const block of blocks) expect(block, block.slice(0, 80)).not.toContain('`');
     // The format itself is still asked for, in plain characters.

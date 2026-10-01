@@ -758,11 +758,6 @@ export interface TurnDirective {
    */
   byRule?: string;
   /**
-   * **The Teacher's answer in the doc chat, with the notes open to take the rest** (2026-09-23).
-   * Swaps the five-step shape for the short half of it; see `prompts.doc.ts` `ellieAnswersBlock`.
-   */
-  docChat?: boolean;
-  /**
    * **This turn asks, or marks, a fill-in-the-blank** (`collab-doc.md` §4.5, amended 2026-10-01).
    * The directive is the sentence nearest the generation, and both of the sentences it would
    * otherwise say (own words; a follow-up on the gap) are wrong for a blank.
@@ -778,20 +773,9 @@ export function turnDirective(d: TurnDirective): string {
   const bits = [`Your move this turn: ${d.move}.`];
   // The answer-first rule restated where the model reads last (#36). It is in the role block
   // too; the failure it fixes was six turns that each opened with a probe, and the turn
-  // directive is the sentence nearest the generation.
-  if (d.agentRole === 'peer' && d.move === 'answer_then_teach' && d.docChat === true) {
-    /**
-     * **The doc chat's split, restated where the model reads last** (2026-09-23). The five-step
-     * shape below is the sentence nearest the generation, so while it was here it beat every word
-     * count above it; in the doc chat the second half of the shape belongs to the notes
-     * (`prompts.doc.ts` `ellieAnswersBlock`, `docedit.ts` `answerEditPrompt`).
-     */
-    bits.push(
-      'Answer what they asked in your first sentence. No opening question. Then the plain meaning',
-      'and one example, and stop: about 60 words, 90 at most. The rigorous version goes into the',
-      'notes, not here. Plain running prose — no labels such as "Plainly:" or "Analogy:".',
-    );
-  } else if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
+  // directive is the sentence nearest the generation. The doc chat's short-half variant
+  // (2026-09-23) is retired by `notebooks.md` §4.2: the chat answer is whole again everywhere.
+  if (d.agentRole === 'peer' && d.move === 'answer_then_teach') {
     bits.push('Answer what they asked in your first sentence, then teach it. No opening question.');
     /**
      * **The shape, restated where the model reads last** (#41). Same argument as the answer-first
@@ -838,6 +822,33 @@ export function turnDirective(d: TurnDirective): string {
       'Give the answer to the question you asked, in full — and then, if they attempted it, one',
       'sentence on what their attempt already had of it. Cite the deck as p. N: “…” for each',
       'point. Under 150 words, and no new question.',
+    );
+  }
+  /**
+   * **Explain and Example on a block** (`notebooks.md` §4.1). The note carries the line and the
+   * shape (`prompts.doc.ts` `blockActionBlock`); this is the sentence nearest the generation.
+   */
+  if (d.move === 'block_explain') {
+    bits.push(
+      'The learner pressed Explain on a line of their notes. Explain it in full from the slide, about',
+      '120 words and 180 at most. No question anywhere in the turn.',
+    );
+  }
+  if (d.move === 'block_example') {
+    bits.push(
+      'The learner pressed Example on a line of their notes. Work one example, the slide’s own if it has',
+      'one, then one sentence on what it shows. About 120 words, 180 at most. No question anywhere in the turn.',
+    );
+  }
+  /**
+   * **Quiz me after a release asks for one blank too** (`notebooks.md` §5.2: give-up "lowers the
+   * next question", unchanged). Under `maxOnlyOnRequest` the follow-up below never runs, so the
+   * pitched question is the one the learner asks for on a block.
+   */
+  if (d.move === 'quiz' && d.byRule === 'rule:try_here' && d.cloze === true) {
+    bits.push(
+      'Ask **one** fill-in-the-blank: "Fill in the blank:" and then one sentence from the page with one',
+      'key term replaced by ____. One blank, nothing after the sentence, and do not give the term or a hint at it.',
     );
   }
   /** §4.2 row 1, second turn: one Socratic follow-up, pitched by `pitchBlock` in the note. */

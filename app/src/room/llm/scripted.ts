@@ -16,6 +16,7 @@ import type { LLMClient, LlmRequest, LlmResult } from './types.js';
 import { EMPTY_USAGE, LlmAbortedError } from './types.js';
 import type { ScriptSource } from './script.psd-hessian.js';
 import { PSD_HESSIAN_SCRIPT, pickScript, scriptNameForRequest, SCRIPTS } from './scripts.js';
+import { trimToWords } from '../docedit.js';
 
 export { PSD_HESSIAN_SCRIPT };
 
@@ -152,9 +153,18 @@ export class ScriptedClient implements LLMClient {
       // voice (pivot-spec.md §B1). The 120-word cap is applied by `reference.ts`, in code.
       case 'reference':
         return script.referenceBeatFor(cue)?.text ?? '';
+      /**
+       * **The one-line doc edit** (`notebooks.md` §4.2): no script carries one, so every scripted
+       * room gets a generic line built from the block it goes under. Before this, a docedit call
+       * fell through to the agent beats below and came back as prose, which the planner's parse
+       * rejected; that is still what every other docedit cue gets.
+       */
+      case 'docedit':
+        if (cue.startsWith('block_note:')) return JSON.stringify(scriptedBlockNote(request, cue));
+        return script.beatFor(cue)?.text ?? '';
       case 'group':
       default:
-        return script.beatFor(cue)?.text ?? '';
+        return script.beatFor(cue)?.text ?? scriptedBlockReply(request, cue);
     }
   }
 }
@@ -241,4 +251,55 @@ function lastStudentText(request: LlmRequest): string {
     }
   }
   return '';
+}
+
+// ── notebooks §4: the block actions, which no script was written for ────────
+
+/** The text between the first pair of `"""` after `header` in the request, or ''. */
+function quoted(request: LlmRequest, header: string): string {
+  const all = [...request.system.map((b) => b.text), ...request.messages.map((m) => m.content)].join('\n');
+  const at = all.indexOf(header);
+  if (at < 0) return '';
+  const open = all.indexOf('"""', at);
+  const close = open < 0 ? -1 : all.indexOf('"""', open + 3);
+  return open < 0 || close < 0 ? '' : all.slice(open + 3, close).trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * **Explain and Example in a scripted room** (`notebooks.md` §4.1). The scripts were written for
+ * the conversation, not for buttons on a line, so a block action gets a generic reply built from
+ * the line itself: plausible enough for the dev mock and the video's rehearsal, and plainly not
+ * a model. Any other cue with no beat stays empty, as it always has.
+ */
+export function scriptedBlockReply(request: LlmRequest, cue: string): string {
+  if (cue.startsWith('block_explain')) {
+    const line = quoted(request, 'THE LEARNER PRESSED EXPLAIN') || 'this line';
+    return [
+      `This line says: ${line}`,
+      'Put plainly, it names one idea from the slide and the condition it depends on. The slide’s own wording is the precise version, and the rest of the section builds on it.',
+    ].join('\n\n');
+  }
+  if (cue.startsWith('block_example')) {
+    const line = quoted(request, 'THE LEARNER PRESSED EXAMPLE') || 'this line';
+    return [
+      `Take the case the slide works through for: ${line}`,
+      'First, set up the situation the line describes. Then apply the rule it states, one step at a time. Last, check the result against the slide.',
+      'What the example shows: the line is a rule you can apply, not only a definition.',
+    ].join('\n\n');
+  }
+  return '';
+}
+
+/** A scripted one-line note: built from the block it goes under, at most 25 words. */
+export function scriptedBlockNote(request: LlmRequest, cue: string): Record<string, unknown> {
+  const kind = cue.slice('block_note:'.length);
+  const block = quoted(request, 'THE BLOCK IT GOES DIRECTLY UNDER');
+  // A doc-chat answer names no block, and the scripted planner does not pretend to choose one.
+  if (kind === 'answer' || block.length === 0) return { line: null, anchor_block_id: null, why: 'scripted: no line' };
+  const body = block.replace(/[.!?]+$/, '');
+  const line =
+    kind === 'example'
+      ? trimToWords(`For instance, the slide’s own case applies this directly: ${body}.`, 25)
+      : trimToWords(`In plain words: ${body}.`, 25);
+  return { line, why: 'scripted: the point most worth keeping' };
 }

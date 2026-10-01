@@ -849,38 +849,39 @@ describe('the doc-edit call', () => {
     expect(cursors.map((c) => c.type === 'doc.cursor' && c.state)).toContain('typing');
   });
 
-  /** §5.1's first clause: *"If the doc already says it, no edit; she points to the block."* */
-  it('adds nothing when the planner says the notes already say it', async () => {
-    const h = build();
+  /**
+   * `notebooks.md` §4.2 (C7): after a doc-chat question the notes get **one line**, under the block
+   * the planner judges best, and a plain doc-chat question may get none when nothing fits.
+   */
+  it('writes no line when nothing in the outline fits a doc-chat answer', async () => {
+    const h = build({}, { line: null, anchor_block_id: null, why: 'nothing here is about it' });
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
-    expect(h.doc.edits.some((e) => e.batch.cause === 'answer_missing')).toBe(false);
-    const idle = h.events.filter((e) => e.type === 'doc.cursor' && e.state === 'idle');
-    expect(idle).not.toHaveLength(0);
+    expect(h.doc.edits.some((e) => e.batch.cause === 'block_action' || e.batch.cause === 'answer_missing')).toBe(false);
+    // And the chat says nothing about an edit that did not happen.
+    expect(bodies(h).some((b) => b.includes('Added one line'))).toBe(false);
   });
 
-  it('inserts the missing answer with provenance when the planner says it is missing', async () => {
-    const h = build({}, {
-      edit: 'insert_after',
-      anchor_block_id: 'b_bbb',
-      why: 'the notes never say who pays',
-      blocks: [{ kind: 'paragraph', text: 'The learner carries the forwarding decision.', prov: { pages: [5], reason: null } }],
-    });
+  it('adds one line under the block the planner picked, with provenance, and the chat says so', async () => {
+    const h = build({}, { line: 'The learner carries the forwarding decision.', anchor_block_id: 'b_bbb', why: 'the notes never say who pays' });
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
 
-    const added = h.doc.edits.find((e) => e.batch.cause === 'answer_missing')!;
+    const added = h.doc.edits.find((e) => e.batch.cause === 'block_action')!;
     expect(added.batch.author).toBe('ellie');
-    expect(added.batch.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_bbb' });
+    expect(added.batch.ops).toEqual([
+      {
+        op: 'insert_after',
+        anchorBlockId: 'b_bbb',
+        blocks: [{ kind: 'paragraph', text: 'The learner carries the forwarding decision.', prov: { pages: [3], reason: null } }],
+      },
+    ]);
     expect(added.batch.why).toBe('the notes never say who pays');
+    const ellie = h.store.messages.forRoom(h.roomId).find((m) => m.decided_by === 'rule:ellie_answers')!;
+    expect(ellie.body.endsWith('Added one line under that paragraph in \u201cThe side channel\u201d.')).toBe(true);
   });
 
   /** Interview finding: a span thread's edit lands at that span's block, not where it is tidier. */
   it('pins a span thread’s edit to the span’s own block', async () => {
-    const h = build({}, {
-      edit: 'insert_after',
-      anchor_block_id: 'b_aaa',
-      why: 'somewhere tidier',
-      blocks: [{ kind: 'paragraph', text: 'An addition.', prov: { pages: [3], reason: null } }],
-    });
+    const h = build({}, { line: 'An addition beside the learner’s note.', anchor_block_id: 'b_aaa', why: 'somewhere tidier' });
     h.actor.noteSelection(SPAN);
     await settle(
       h.clock,
@@ -888,12 +889,10 @@ describe('the doc-edit call', () => {
     );
     await settle(h.clock, h.actor.sendMessage('so who pays it?', SPAN));
 
-    const added = h.doc.edits.find((e) => e.batch.cause === 'answer_missing');
-    if (added) {
-      expect(added.batch.ops[0]).toMatchObject({ anchorBlockId: 'b_mine' });
-      // And it adds beside the learner's block rather than over it.
-      expect(added.batch.ops[0]!.op).toBe('insert_after');
-    }
+    const added = h.doc.edits.find((e) => e.batch.cause === 'block_action')!;
+    expect(added.batch.ops[0]).toMatchObject({ anchorBlockId: 'b_mine' });
+    // And it adds beside the learner's block rather than over it.
+    expect(added.batch.ops[0]!.op).toBe('insert_after');
   });
 
   /** §3's Freeze: *"Edits that would have happened are dropped, not queued."* */
@@ -929,22 +928,24 @@ describe('the doc-edit call', () => {
   });
 
   /**
-   * **Short in the chat, the rest in the notes** (2026-09-23; A1 report §1.4 and DG4). The chat
-   * turn is told the short half and not the five-step shape, and the notes edit is given what the
-   * learner asked — it has to write the long half, and a 60-word reply is not enough to write it from.
+   * **The split is reversed** (`notebooks.md` §4.2, C7; it was 2026-09-23's short half in the
+   * chat). The chat turn is the full Teacher answer, five-step shape and all, and the notes call
+   * is given what the learner asked and asked for one line of at most 25 words.
    */
-  it('splits Ellie’s answer: the short half in the chat, the question handed to the notes edit', async () => {
+  it('answers in full in the chat, and asks the notes call for one line', async () => {
     const h = build();
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
     const ellie = prompts(h)[0]!;
-    expect(ellie).toContain('SHORT HERE, THE REST GOES INTO THE NOTES');
-    expect(ellie).toContain('about 60 words, 90 at most');
-    expect(ellie).not.toContain('use the shape');
+    expect(ellie).toContain('About 120 words,');
+    expect(ellie).toContain('use the shape');
+    expect(ellie).not.toContain('SHORT HERE');
+    // The legacy loop: Max still follows, so she leaves the question to him.
+    expect(ellie).toContain('Max asks the next one.');
     const edit = h.llm.requests.find((r) => r.meta.scope === 'docedit')!;
     const system = edit.system.map((b) => b.text).join('\n');
     expect(system).toContain('WHAT THEY ASKED');
     expect(system).toContain('what is the side channel?');
-    expect(system).toContain('Write what the chat left out');
+    expect(system).toContain('at most 25 words');
   });
 
   /**
@@ -970,9 +971,11 @@ describe('the doc-edit call', () => {
     const h = build({ docPort: frozen.port });
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
     const ellie = prompts(h)[0]!;
-    expect(ellie).toContain('The notes are frozen, so this answer is the whole of it.');
+    expect(ellie).toContain('This answer is the whole of it.');
     expect(ellie).toContain('use the shape');
     expect(ellie).not.toContain('SHORT HERE');
+    // Frozen: no notes call at all, and so nothing for the chat to announce.
+    expect(h.llm.requests.some((r) => r.meta.scope === 'docedit')).toBe(false);
   });
 });
 

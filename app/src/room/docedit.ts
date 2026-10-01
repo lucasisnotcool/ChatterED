@@ -5,7 +5,7 @@
  *
  * | # | Trigger | Edit |
  * |---|---|---|
- * | 5.1 | The learner asked, and what Ellie answered is **missing from the doc** | she inserts it, with provenance; if the doc already says it, no edit — she points at the block |
+ * | 5.1 | The learner asked in the doc chat, or pressed **Explain** / **Example** on a block (`notebooks.md` §4.2, which replaces §5.1's 40–150 words) | **one line** of at most `BLOCK_LINE_MAX_WORDS` words under the block, with provenance (`planBlockNote`) |
  * | 5.2 | Max asks a question the doc **does not already answer** | the question goes in as a **Q block** at the segment it is about |
  * | 5.3 | A Max question is **closed** — the learner's *Well done*, or a release | the answer goes in under the Q block, **once**, tagged with how it closed: on *you got this* the learner's own answer (theirs, verbatim) and at most one line of Max's; otherwise the correct answer, written as notes |
  *
@@ -15,7 +15,7 @@
  *    has landed, and a failure anywhere in here is swallowed. A doc edit that could fail a turn
  *    would make the document's ambitions the conversation's problem, which is exactly the trade
  *    `progress-tracking.md` §4.6 already refused for the ledger.
- * 2. **5.1 and 5.3 cost a model call; 5.2 does not.** 5.2 is built in code: the anchor comes from
+ * 2. **5.1 and 5.3 cost a model call (5.1 one more when its line runs over); 5.2 does not.** 5.2 is built in code: the anchor comes from
  *    the exchange's pages or the thread's block, and the question is the turn Max wrote. 5.3 used
  *    to be built in code too — Max's resolving turn, verbatim — and that is how the notes filled
  *    up with verdicts, second-person marking and follow-up questions (#49). The chat is about the
@@ -31,7 +31,6 @@
  */
 import type {
   AgentAuthor,
-  AgentDocOp,
   AgentDocOpBatch,
   DocBlockDraft,
   DocEditCause,
@@ -39,11 +38,12 @@ import type {
   Provenance,
   QResolution,
 } from '../shared/doc/types.js';
-import { DRAFT_BLOCK_JSON_SCHEMA, validateDrafts } from '../shared/doc/validate.js';
+import { BLOCK_LINE_MAX_WORDS } from '../shared/doc/types.js';
 import type { DocPort } from './docport.js';
 import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 import { extractJson } from './orchestrator.js';
 import type { LLMClient, LlmRequest } from './llm/types.js';
+import { wordCount } from './timer.js';
 
 // ── reading the deck out of what an agent said ─────────────────────────────
 
@@ -106,76 +106,7 @@ export function blocksFromTurn(text: string, prov: Provenance): DocBlockDraft[] 
   return blocks;
 }
 
-// ── 5.1: the answer that was missing from the doc ──────────────────────────
-
-/**
- * The structured reply (brief §5.1). Two shapes, and the *first* is the one the brief cares
- * about: **"if the doc already says it, no edit; she points to the block instead."** Without a way
- * to say that, every answer would append a near-duplicate paragraph and the notes would silt up
- * after ten questions.
- */
-export const DOC_EDIT_SCHEMA: Record<string, unknown> = {
-  $schema: 'http://json-schema.org/draft-07/schema#',
-  type: 'object',
-  required: ['edit'],
-  additionalProperties: false,
-  properties: {
-    edit: {
-      type: 'string',
-      enum: ['none', 'insert_after', 'append_to_block', 'replace_block'],
-      description:
-        "'none' when the notes already say this — then set points_to. Otherwise the op to apply.",
-    },
-    points_to: {
-      type: ['string', 'null'],
-      description: "With edit='none': the block id that already says it.",
-    },
-    anchor_block_id: {
-      type: ['string', 'null'],
-      description: "With edit='insert_after': the block id to insert after.",
-    },
-    block_id: {
-      type: ['string', 'null'],
-      description: "With edit='append_to_block' or 'replace_block': the block id to change.",
-    },
-    text: {
-      type: ['string', 'null'],
-      description: "With edit='append_to_block': one sentence to add to the end of that block.",
-    },
-    blocks: (DRAFT_BLOCK_JSON_SCHEMA.properties as Record<string, unknown>).blocks,
-    why: { type: 'string', description: 'One sentence, for the log and the Remove · Keep tooltip.' },
-  },
-};
-
-export interface AnswerEditInput {
-  /** The answer Ellie just gave, verbatim. */
-  answer: string;
-  /**
-   * **What the learner asked, and what the slide says** (2026-09-23). Since the doc chat's answer
-   * became the short half (`prompts.doc.ts` `ellieAnswersBlock`), the fuller explanation exists
-   * nowhere yet — this call writes it, and it cannot write it from a 60-word reply. Null on a turn
-   * with no learner question (a lesson Start) or no one page (a deck-scoped ask).
-   */
-  question?: string | null;
-  passage?: string | null;
-  page?: number | null;
-  /** The block the thread hangs off, when it has one (a span thread always does). */
-  blockId: string | null;
-  /**
-   * **A span thread's edit lands at that span's block, and nowhere the planner finds tidier**
-   * (interview finding, `docs/research/interviews/findings.md` §6).
-   *
-   * One interviewee complained specifically of additions landing in the wrong place; all three
-   * described answers drifting away from the slide through rounds of clarification. When the
-   * learner highlighted a span and asked about *it*, the answer belongs beside it — that is not a
-   * judgement a model should be asked to make, because the learner already made it when they
-   * highlighted. So the anchor is pinned and only the *content* is planned.
-   */
-  pinAnchor?: boolean;
-  /** The deck's page count, so a citation outside it is dropped rather than trusted. */
-  pageCount?: number;
-  outline: readonly OutlineEntry[];
-}
+// ── what every doc-edit call shares ────────────────────────────────────────
 
 /** What the planner is shown of the document, and all it is shown. */
 export function outlineText(outline: readonly OutlineEntry[]): string {
@@ -190,64 +121,8 @@ export function outlineText(outline: readonly OutlineEntry[]): string {
     .join('\n');
 }
 
-/** How much of the slide the planner is shown. A page, not a deck: the anchor already says where. */
+/** How much of the slide a planner is shown. A page, not a deck: the anchor already says where. */
 export const ANSWER_EDIT_PASSAGE_CHARS = 2_500;
-
-export function answerEditPrompt(input: AnswerEditInput): string {
-  const lines = [
-    'You are writing into the learner’s lecture notes the fuller explanation of something they just',
-    'asked about. In the chat they were given the short version; the notes are where the rest of it',
-    'lives. You answer with the JSON object alone — no prose, no fence.',
-    '',
-    'THE NOTES AROUND WHERE THEY ASKED',
-    outlineText(input.outline),
-  ];
-  if (input.passage && input.passage.trim().length > 0) {
-    const where = typeof input.page === 'number' ? ` (p. ${input.page})` : '';
-    lines.push('', `THE SLIDE${where}`, '"""', input.passage.trim().slice(0, ANSWER_EDIT_PASSAGE_CHARS), '"""');
-  }
-  if (input.question && input.question.trim().length > 0) {
-    lines.push('', 'WHAT THEY ASKED', '"""', input.question.trim(), '"""');
-  }
-  lines.push(
-    '',
-    'WHAT THE CHAT ALREADY TOLD THEM',
-    '"""',
-    input.answer,
-    '"""',
-    '',
-    '**Write what the chat left out**: the rigorous version — the formal statement, the conditions,',
-    'the properties that matter — and how this slide uses it, in the slide’s own notation. Do not',
-    'repeat the chat’s plain explanation or its example; the learner has just read them. **40–150',
-    'words**, one or two short paragraphs, or a paragraph and a `math` block. The notes are read',
-    'end to end, so the same rule holds here as everywhere in them: say what it teaches, not',
-    'everything true about it.',
-    '',
-    '**If the notes here already carry that fuller explanation, answer',
-    '`{"edit":"none","points_to":"<block id>"}`.** Near-duplicate paragraphs are how a set of notes',
-    'stops being readable. "Already carries it" means the idea is there, not that the wording',
-    'matches — and a block that only states the rule, without the why or the formal version, does',
-    'not carry it.',
-    '',
-    '**Formulas go in a `math` block.** Inline `$...$` is shown as its TeX source, not typeset, so',
-    'keep it to a single symbol (`$h$`, `$n$`); anything with a command or a sub/superscript —',
-    '`h(n) \\le h^*(n)` — is a `math` block of its own, with a sentence around it saying what it means.',
-    '',
-    'Write in the notes’ own voice — not a transcript of the chat, no "as I explained", no second',
-    'person. Open with the claim itself, not a stock opener ("Formally,", "In summary,", "Note that").',
-    'Prefer `insert_after` at the block it belongs beside. Use `append_to_block` for one',
-    'sentence that completes a block, and `replace_block` only when the block is actually wrong.',
-    '',
-    'A block marked "(the learner wrote in this block)" is **theirs**. You may insert after it; you',
-    'may not replace it or append to it — that becomes a suggestion they have to accept, which is',
-    'not what this turn is for.',
-    '',
-    'Every block you write needs provenance: `prov.pages` for the slides it comes from (the slide',
-    'above, and the `p. N` citations in the chat), or `prov.reason` saying why it is here when no',
-    'slide says it. A block with neither is rejected.',
-  );
-  return lines.join('\n');
-}
 
 export interface DocEditDeps {
   llm: LLMClient;
@@ -277,85 +152,298 @@ export function docEditMeta(deps: DocEditDeps): LlmRequest['meta'] {
   };
 }
 
+// ── notebooks §4.2: one line under the block (replaces §5.1's 40–150 words) ──
+
 /**
- * **5.1.** Returns the batch to emit, or null when nothing should be written — which covers three
- * different things, all of them normal: the doc already says it, the model declined, or the call
- * failed. A caller that cannot tell them apart is fine, because the response to all three is the
- * same: say nothing, edit nothing.
+ * **Two outputs, never one squeezed into the other** (`notebooks.md` §4.2, contract C7).
+ *
+ * Lucas, 1 Oct: *"the answer usually does not fit verbosely into the doc, so need two separate
+ * outputs for explaining to user vs. doc edit."* The chat gets Ellie's full answer; the notes get
+ * **one sentence of at most `BLOCK_LINE_MAX_WORDS` words**, written to stand on its own, directly
+ * under the block it was asked on. This is the call that writes that line, after the chat reply
+ * has been released (`actor.#maybeDocEdit`), so the chat never waits on it.
+ *
+ * It replaces `collab-doc.md` §5.1's planner (`planAnswerEdit`, retired here), which wrote the
+ * long half of a short chat answer into the notes, 40–150 words, or pointed at a block that
+ * already said it. Both halves of that are gone: the chat answer is whole again, and a block
+ * action **always** writes its line (the learner pressed a button asking for it). Only a plain
+ * doc-chat question with no block may come back with none, because nothing in the outline may fit.
+ *
+ * The word limit is **enforced in code**, not asked for and hoped: a reply over the limit is asked
+ * for once more, and a second overflow is cut to the last full clause within the limit, never
+ * mid-word. The model counts words badly and the limit is the brief's.
  */
-export async function planAnswerEdit(
-  deps: DocEditDeps,
-  input: AnswerEditInput,
-): Promise<{ batch: AgentDocOpBatch | null; pointsTo: string | null }> {
-  const request: LlmRequest = {
-    model: deps.model,
-    max_tokens: 1600,
-    system: [{ type: 'text', text: answerEditPrompt(input) }],
-    messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
-    jsonSchema: DOC_EDIT_SCHEMA,
-    meta: docEditMeta(deps),
-  };
-  const result = await deps.llm.complete(request);
-  const parsed = JSON.parse(extractJson(result.text)) as Record<string, unknown>;
-  const edit = typeof parsed.edit === 'string' ? parsed.edit : 'none';
-  const why = typeof parsed.why === 'string' && parsed.why.trim().length > 0 ? parsed.why.trim() : 'Ellie added what the notes were missing.';
-  if (edit === 'none') {
-    return { batch: null, pointsTo: typeof parsed.points_to === 'string' ? parsed.points_to : null };
-  }
+export const BLOCK_NOTE_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['line', 'why'],
+  additionalProperties: false,
+  properties: {
+    line: {
+      type: ['string', 'null'],
+      description: `One sentence of at most ${BLOCK_LINE_MAX_WORDS} words that stands in the notes on its own.`,
+    },
+    anchor_block_id: {
+      type: ['string', 'null'],
+      description: 'Only when no block was given: the block id from the outline the line belongs under, or null.',
+    },
+    why: { type: 'string', description: 'One short sentence, for the log and the Remove · Keep tooltip.' },
+  },
+};
 
-  const { blocks } = validateDrafts(parsed, input.pageCount ?? Number.MAX_SAFE_INTEGER);
-  const anchorBlockId =
-    input.pinAnchor === true && input.blockId !== null
-      ? input.blockId
-      : ((typeof parsed.anchor_block_id === 'string' ? parsed.anchor_block_id : null) ??
-        (typeof parsed.block_id === 'string' ? parsed.block_id : null) ??
-        input.blockId ??
-        input.outline.at(-1)?.blockId ??
-        null);
-  if (anchorBlockId === null) return { batch: null, pointsTo: null };
-  // A pinned anchor is the learner's own highlight, so the only op that can honour it is one that
-  // adds beside it: replacing or appending to the span they asked about is not "answering here".
-  const pinned = input.pinAnchor === true && input.blockId !== null;
+/** What the line is about: the two block actions, or an answer in the doc chat. */
+export type BlockNoteKind = 'explain' | 'example' | 'answer';
 
+export interface BlockNoteInput {
+  kind: BlockNoteKind;
+  /** Ellie's chat reply, verbatim: the substance the line is distilled from. */
+  answer: string;
   /**
-   * **Learner text is worked around, not through** (brief §5.4).
-   *
-   * The renderer's guard already handles this correctly — `replace_block` over learner text
-   * becomes an inline suggestion, `append_to_block` is relocated after the block — so nothing is
-   * unsafe without this. What it saves is the *surprise*: an answer that was merely missing should
-   * not arrive as an Accept · Reject on something the learner wrote. So a target the outline marks
-   * as theirs is downgraded to `insert_after` here, where the reason can be stated, and §6's
-   * `buildSuggestionEdit` stays the only deliberate producer of a suggestion.
+   * The block the line goes under. A block action and a span thread always have one; a plain
+   * doc-chat question has none, and then the planner picks one from the outline, or none.
    */
-  const targetIsLearners = pinned || input.outline.some((e) => e.blockId === anchorBlockId && e.learnerText);
+  blockId: string | null;
+  /** What the learner asked, on a doc-chat answer. */
+  question?: string | null;
+  /** The slide text of the block's pages, resolved by main. */
+  passage?: string | null;
+  page?: number | null;
+  outline: readonly OutlineEntry[];
+  /** The deck's (notebook's) page count, so a citation outside it is dropped. */
+  pageCount?: number;
+}
 
-  let op: AgentDocOp | null = null;
-  if (!targetIsLearners && edit === 'append_to_block' && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-    op = { op: 'append_to_block', blockId: anchorBlockId, text: parsed.text.trim() };
-  } else if (edit === 'append_to_block' && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-    op = {
-      op: 'insert_after',
-      anchorBlockId,
-      blocks: [{ kind: 'paragraph', text: parsed.text.trim(), prov: provenanceFor(input.answer, 'added beside the learner’s own note', input.pageCount) }],
-    };
-  } else if (blocks.length > 0) {
-    op =
-      edit === 'replace_block' && !targetIsLearners
-        ? { op: 'replace_block', blockId: anchorBlockId, blocks }
-        : { op: 'insert_after', anchorBlockId, blocks };
+export type BlockNoteOutcome =
+  /** Written as the model gave it. */
+  | 'written'
+  /** Over the limit twice, and cut to the last full clause within it. */
+  | 'trimmed'
+  /** The model's line could not be had; the first sentence of the chat answer that could stand in notes was used. */
+  | 'fallback'
+  /** A doc-chat answer, and nothing in the outline fits: no line, which is allowed there. */
+  | 'declined'
+  /** No block to put it under, or nothing usable at all. */
+  | 'none';
+
+const WHAT_THE_LINE_IS: Record<BlockNoteKind, string> = {
+  explain: 'Ellie has just explained this block in the chat. The line is **the point most worth keeping** from her explanation.',
+  example:
+    'Ellie has just worked an example of this block in the chat. The line is **the example in brief**: what the case is and what it shows.',
+  answer:
+    'The learner asked a question in the chat and Ellie answered it there in full. The line is **the point of her answer most worth keeping** in the notes.',
+};
+
+export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; words: number }): string {
+  const block = input.blockId === null ? null : (input.outline.find((e) => e.blockId === input.blockId) ?? null);
+  const lines = [
+    `You are adding ONE line to the learner’s notes. ${WHAT_THE_LINE_IS[input.kind]} The chat already holds the full`,
+    'version; the notes get one sentence. You answer with the JSON object alone — no prose, no fence.',
+  ];
+  if (input.blockId !== null) {
+    lines.push('', `THE BLOCK IT GOES DIRECTLY UNDER (${input.blockId})`, '"""', block?.text ?? '(not in the outline)', '"""');
   }
-  if (op === null) return { batch: null, pointsTo: null };
+  lines.push('', 'THE NOTES AROUND IT', outlineText(input.outline));
+  if (input.passage && input.passage.trim().length > 0) {
+    const where = typeof input.page === 'number' ? ` (p. ${input.page})` : '';
+    lines.push('', `THE SLIDE${where}`, '"""', input.passage.trim().slice(0, ANSWER_EDIT_PASSAGE_CHARS), '"""');
+  }
+  if (input.question && input.question.trim().length > 0) {
+    lines.push('', 'WHAT THEY ASKED', '"""', input.question.trim(), '"""');
+  }
+  lines.push(
+    '',
+    'WHAT ELLIE SAID IN THE CHAT',
+    '"""',
+    input.answer.trim(),
+    '"""',
+    '',
+    'THE LINE',
+    `- **One sentence, at most ${BLOCK_LINE_MAX_WORDS} words.** It is counted, and a longer one is cut.`,
+    '- It stands in the notes on its own, read weeks later: no "as I said", "as above", "here" or',
+    '  "this example"; no second person; no question; no mention of Ellie, Max, the chat or the learner.',
+    '- It adds to the block above it rather than restating it.',
+    '- No page citation in it (the notes show the page beside it), no heading, no list, no bold.',
+    '- Inline `$...$` shows as TeX source, so keep it to a single symbol.',
+    '- Open with the point itself, not a stock opener ("In summary,", "Note that", "Key point:").',
+  );
+  if (input.blockId === null) {
+    lines.push(
+      '',
+      'No block was named. Put the id of the block in the outline the line belongs directly under in',
+      '`anchor_block_id`. If nothing in the outline is about what was asked, answer',
+      '`{"line": null, "anchor_block_id": null, "why": "…"}`: a line is optional here, and one filed',
+      'under the wrong block is worse than none. A block marked "(the learner wrote in this block)"',
+      'may be chosen; the line goes after it and never changes it.',
+    );
+  }
+  if (retry) {
+    lines.push(
+      '',
+      `YOUR LAST LINE WAS ${retry.words} WORDS, OVER THE LIMIT OF ${BLOCK_LINE_MAX_WORDS}:`,
+      '"""',
+      retry.line,
+      '"""',
+      `Write it again as one sentence of at most ${BLOCK_LINE_MAX_WORDS} words. Keep the point; drop the rest.`,
+    );
+  }
+  return lines.join('\n');
+}
 
+/** Page markers the model was told not to write, taken out: the chip says it. */
+function stripPageMarkers(text: string): string {
+  return text
+    .replace(/\s*[([]\s*pp?\.\s*\d{1,4}(?:\s*[–\-—]\s*\d{1,4})?\s*[)\]]/gi, '')
+    .replace(/\s+([.,;:])/g, '$1')
+    .trim();
+}
+
+/**
+ * **Cut a line to `max` words at the last full clause, never mid-word** (`notebooks.md` §4.2).
+ *
+ * Words are counted the way the rest of the room counts them (`timer.wordCount`: a token with a
+ * letter or a digit). A clause ends at `,` `;` `:` `.` `!` `?` or before a dash. A clause cut that
+ * would leave fewer than a third of the budget is a fragment rather than a line, so the cut then
+ * falls at the last whole word within the limit and says so with an ellipsis.
+ */
+export function trimToWords(line: string, max: number = BLOCK_LINE_MAX_WORDS): string {
+  const text = line.trim().replace(/\s+/g, ' ');
+  if (wordCount(text) <= max) return text;
+  const tokens = text.split(' ');
+  let counted = 0;
+  let lastWithin = -1;
+  let clauseEnd = -1;
+  let clauseWords = 0;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (/[a-z0-9]/i.test(token)) counted += 1;
+    if (counted > max) break;
+    lastWithin = i;
+    const next = tokens[i + 1] ?? '';
+    if (/[,;:.!?]["”’)]*$/.test(token) || /^[—–-]+$/.test(next)) {
+      clauseEnd = i;
+      clauseWords = counted;
+    }
+  }
+  if (clauseEnd >= 0 && clauseWords >= Math.ceil(max / 3)) {
+    const kept = tokens.slice(0, clauseEnd + 1).join(' ').replace(/[,;:—–-]+$/, '').trim();
+    return /[.!?]["”’)]*$/.test(kept) ? kept : `${kept}.`;
+  }
+  const kept = tokens.slice(0, lastWithin + 1).join(' ').replace(/[,;:—–-]+$/, '').trim();
+  return `${kept}…`;
+}
+
+/** The first sentence of a turn that could stand in notes, cut to the limit. Empty when there is none. */
+export function fallbackNoteLine(answer: string): string {
+  const kept = notesFromTurn(answer);
+  if (kept.length === 0) return '';
+  const first = kept.split(/(?<=[.!?])\s+(?=[A-Z*`$“"(])/)[0] ?? '';
+  return first.trim().length === 0 ? '' : trimToWords(stripPageMarkers(first));
+}
+
+/** Read a reply's line, or null when there is no usable one (absent, empty, a question). */
+function readLine(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const line = stripPageMarkers(raw.replace(/\s+/g, ' ').trim());
+  if (line.length === 0 || line.includes('?')) return null;
+  return line;
+}
+
+/**
+ * **The one line, as a batch** (`notebooks.md` §4.2). Never throws: a call that fails, or a reply
+ * that cannot be read, falls back on a block action to the first sentence of the chat answer
+ * that could stand in notes (`notesFromTurn`'s filter), because the learner pressed a button that
+ * promised a line; on a doc-chat answer it writes nothing, which the brief allows there.
+ *
+ * Provenance, in order: the pages the line itself cites, else the block's own pages, else the
+ * pages the chat answer cited, else a reason — never neither (§3.4).
+ */
+export async function planBlockNote(
+  deps: DocEditDeps,
+  input: BlockNoteInput,
+): Promise<{ batch: AgentDocOpBatch | null; outcome: BlockNoteOutcome; words: number; retried: boolean }> {
+  const actionOnBlock = input.kind !== 'answer' && input.blockId !== null;
+  const ask = async (retry?: { line: string; words: number }) => {
+    const request: LlmRequest = {
+      model: deps.model,
+      max_tokens: 400,
+      system: [{ type: 'text', text: blockNotePrompt(input, retry) }],
+      messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
+      jsonSchema: BLOCK_NOTE_SCHEMA,
+      meta: { ...docEditMeta(deps), scriptCue: `block_note:${input.kind}` },
+    };
+    const result = await deps.llm.complete(request);
+    return JSON.parse(extractJson(result.text)) as Record<string, unknown>;
+  };
+
+  let parsed: Record<string, unknown> | null = null;
+  let line: string | null = null;
+  let outcome: BlockNoteOutcome = 'written';
+  let retried = false;
+  try {
+    parsed = await ask();
+    line = readLine(parsed.line);
+    if (line !== null && wordCount(line) > BLOCK_LINE_MAX_WORDS) {
+      retried = true;
+      const first = line;
+      try {
+        const again = readLine((await ask({ line: first, words: wordCount(first) })).line);
+        line = again ?? first;
+      } catch {
+        line = first;
+      }
+      if (wordCount(line) > BLOCK_LINE_MAX_WORDS) {
+        line = trimToWords(line);
+        outcome = 'trimmed';
+      }
+    }
+  } catch {
+    parsed = null;
+    line = null;
+  }
+
+  // The anchor: the block that was named, or the planner's pick from the outline for a doc-chat
+  // question that named none. A pick that is not in the outline is not trusted.
+  const picked = typeof parsed?.anchor_block_id === 'string' ? parsed.anchor_block_id : null;
+  const anchorBlockId =
+    input.blockId ?? (picked !== null && input.outline.some((e) => e.blockId === picked) ? picked : null);
+
+  if (line === null) {
+    if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried };
+    line = fallbackNoteLine(input.answer);
+    outcome = 'fallback';
+    if (line.length === 0) return { batch: null, outcome: 'none', words: 0, retried };
+  }
+  if (anchorBlockId === null) return { batch: null, outcome: input.blockId === null ? 'declined' : 'none', words: 0, retried };
+
+  const own = pagesCited(typeof parsed?.line === 'string' ? parsed.line : '', input.pageCount);
+  const blockPages = input.outline.find((e) => e.blockId === anchorBlockId)?.pages ?? [];
+  const answerPages = pagesCited(input.answer, input.pageCount);
+  const prov: Provenance =
+    own.length > 0
+      ? { pages: own, reason: null }
+      : blockPages.length > 0
+        ? { pages: [...blockPages], reason: null }
+        : answerPages.length > 0
+          ? { pages: answerPages, reason: null }
+          : { pages: [], reason: input.kind === 'example' ? 'an example Ellie gave' : 'a point Ellie added from her answer' };
+  const why =
+    typeof parsed?.why === 'string' && parsed.why.trim().length > 0
+      ? parsed.why.trim()
+      : input.kind === 'example'
+        ? 'Ellie added the example in brief.'
+        : 'Ellie added the point most worth keeping.';
   return {
     batch: {
       editId: deps.newId('edit'),
       author: 'ellie',
-      cause: 'answer_missing',
-      ops: [op],
+      cause: 'block_action',
+      ops: [{ op: 'insert_after', anchorBlockId, blocks: [{ kind: 'paragraph', text: line, prov }] }],
       focusBlockId: anchorBlockId,
       why,
     },
-    pointsTo: null,
+    outcome,
+    words: wordCount(line),
+    retried,
   };
 }
 
