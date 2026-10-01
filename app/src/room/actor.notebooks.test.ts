@@ -23,7 +23,7 @@ import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG, seedRoom } from '../test-support/db.js';
 import { rosterFor } from './agents.js';
 import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js';
-import { RoomActor, blockActionLine, editNoteLine, type RoomActorDeps } from './actor.js';
+import { BLOCK_ACTION_REQUEST, RoomActor, blockActionLine, editNoteLine, type RoomActorDeps } from './actor.js';
 import type { DocPort } from './docport.js';
 import { ScriptedClient } from './llm/scripted.js';
 import { NOTES_SCRIPT } from './llm/script.notes.js';
@@ -209,6 +209,25 @@ describe('blockAction: Explain and Example', () => {
     await act(h);
     expect(h.llm.requests.some((r) => r.meta.scope === 'ledger')).toBe(false);
     expect(rules(h)).toEqual(['rule:block_action']);
+    expect(rows(h)[0]!.decided_by).toBe(BLOCK_ACTION_REQUEST);
+  });
+
+  it('never lets a later ledger run judge the action’s row as the learner’s words', async () => {
+    const h = build();
+    await act(h);
+    // Quiz me runs the ledger with no new learner message: there is nothing of theirs to judge.
+    await act(h, { kind: 'quiz' });
+    expect(h.llm.requests.filter((r) => r.meta.scope === 'ledger')).toEqual([]);
+
+    // With a real message before it, that message is the one judged, never the action's row.
+    const g = build();
+    await settle(g.clock, g.actor.sendMessage('the side channel hides the turn from the other agent', DOC));
+    await act(g);
+    const action = rows(g).find((m) => m.decided_by === BLOCK_ACTION_REQUEST)!;
+    await act(g, { kind: 'quiz' });
+    const judged = g.llm.requests.filter((r) => r.meta.scope === 'ledger').map((r) => r.messages.at(-1)!.content);
+    expect(judged.length).toBeGreaterThan(0);
+    for (const directive of judged) expect(directive).not.toContain(action.id);
   });
 
   it('writes one line under the block, by Ellie, at most 25 words, with the block’s pages', async () => {
@@ -233,6 +252,7 @@ describe('blockAction: Explain and Example', () => {
     const h = build();
     await act(h);
     const ellie = rows(h).find((m) => m.decided_by === 'rule:block_action')!;
+    expect(ellie.anchor_id).toBe(SPAN);
     expect(ellie.body.endsWith(editNoteLine('bullet_list', 'The side channel'))).toBe(true);
     expect(editNoteLine('bullet_list', 'The side channel')).toBe('Added one line under that bullet in “The side channel”.');
     // Re-emitted under the same id, after the doc edit.

@@ -79,7 +79,16 @@ export interface MaterialsRepo {
     patch: Partial<
       Pick<
         MaterialRow,
-        'title' | 'extracted_text' | 'outline' | 'concept_pack' | 'pack_provenance' | 'pack_confirmed_at'
+        | 'title'
+        | 'extracted_text'
+        | 'outline'
+        | 'concept_pack'
+        | 'pack_provenance'
+        | 'pack_confirmed_at'
+        // A notebook's material is re-frozen in place when its ticked sources change (contract
+        // C4), and its virtual page range moves with them.
+        | 'page_to'
+        | 'page_count'
       >
     > & { token_count: number; cache_eligible: number; prefix_sha256: string },
   ): void;

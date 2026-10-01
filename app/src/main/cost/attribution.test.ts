@@ -551,7 +551,9 @@ describe('Ellie’s cue', () => {
    * does not use — so it is asserted on its own rather than assumed to be covered by `group`.
    */
   it('is billed like any other turn, to the thread and the turn that fired it', async () => {
-    const h = build();
+    // The cue needs Max's question open after Ellie's answer, which is the #48 follow-up: legacy
+    // since `notebooks.md` §5.2 (C8), so the flag is turned off for it.
+    const h = build({ maxOnlyOnRequest: false });
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
     const before = h.rows().length;
     // Max's question has waited past the reading time with no attempt: `rule:ellie_cue`.

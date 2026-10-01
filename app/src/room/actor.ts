@@ -470,6 +470,14 @@ export function editNoteLine(kind: string | null, section: string | null): strin
   return `Added one line under ${what}${where}.`;
 }
 
+/**
+ * **The marker on an Explain / Example learner row** (`messages.decided_by`). The row is the
+ * learner's in the transcript, but its words are the slide's in a template, so nothing that
+ * reads "the learner's latest message" as their own words may take it: the ledger skips it
+ * (`#updateLedger`), however much later it runs. Durable, so a relaunch keeps the distinction.
+ */
+export const BLOCK_ACTION_REQUEST = 'block_action:request';
+
 /** Why a block action was refused (`NotesBlockActionResult.reason`). */
 export type BlockActionRefusal = 'no_doc' | 'busy' | 'question_open';
 
@@ -2239,6 +2247,7 @@ export class RoomActor {
           participantId: this.#studentParticipant().id,
           body,
           anchorId: input.anchorId,
+          decidedBy: BLOCK_ACTION_REQUEST,
         });
         messageId = row.id;
         // A button, not a typed turn: nothing to classify, nobody named, and not an answer to
@@ -3854,6 +3863,12 @@ export class RoomActor {
     const participants = new Map(this.#d.store.participants.forRoom(this.#d.roomId).map((p) => [p.id, p]));
     const studentMessages = messages
       .filter((m) => participants.get(m.participant_id)?.kind === 'student')
+      /**
+       * **Not an Explain / Example row** (`notebooks.md` §4.3, *"Actions fill nothing"*). Its words
+       * are the slide's, and a Quiz me or a closure after it, which runs the ledger with no new
+       * message, would otherwise judge the deck as the learner's latest evidence.
+       */
+      .filter((m) => m.decided_by !== BLOCK_ACTION_REQUEST)
       .map((m) => ({ id: m.id, seq: m.seq, body: m.body }));
     const trigger = studentMessages.at(-1);
     if (!trigger) return;
