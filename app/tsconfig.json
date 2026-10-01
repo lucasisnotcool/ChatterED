@@ -17,5 +17,5 @@
     "noEmit": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts", "*.ts", "scripts/**/*.mjs"]
+  "include": ["src/**/*.ts", "sim/**/*.ts", "src/**/*.svelte", "tests/**/*.ts", "*.ts", "scripts/**/*.mjs"]
 }
