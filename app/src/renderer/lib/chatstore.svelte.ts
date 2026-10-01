@@ -486,7 +486,12 @@ export class ChatStore {
         break;
       }
       case 'message.appended': {
-        if (!this.messages.some((m) => m.id === e.message.id)) this.messages = [...this.messages, e.message];
+        // A repeat of an id **replaces** the message rather than being ignored: a block action
+        // re-sends Ellie's turn with the same id once its doc line has landed, with the sentence
+        // naming the edit appended (`notebooks.md` §4.2, N3). Span threads read this same list.
+        this.messages = this.messages.some((m) => m.id === e.message.id)
+          ? this.messages.map((m) => (m.id === e.message.id ? e.message : m))
+          : [...this.messages, e.message];
         const acked = ackIndex(this.pending, e.message);
         if (acked >= 0) this.pending = this.pending.filter((_, i) => i !== acked);
         // A landing agent turn ends whatever was streaming: one turn is in flight at a time, and

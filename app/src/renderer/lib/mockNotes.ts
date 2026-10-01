@@ -396,6 +396,18 @@ const SLOT_IDS = (() => {
   return set;
 })();
 
+/** The heading of the section a fixture block sits in ("Heuristics from relaxed problems"). */
+export function mockSectionOf(blockId: string): string | null {
+  let section: string | null = null;
+  let found: string | null = null;
+  docFromJson(FIXTURE.json).forEach((node) => {
+    const attrs = node.attrs as { blockId?: string; level?: number };
+    if (node.type.name === 'heading' && attrs.level === 2) section = node.textContent;
+    if (attrs.blockId === blockId) found = section;
+  });
+  return found;
+}
+
 /** The pages a fixture block cites, or [] for a block the fixture does not have. */
 export function mockPagesOf(blockId: string): number[] {
   return [...(FIXTURE.pagesOf.get(blockId) ?? [])];

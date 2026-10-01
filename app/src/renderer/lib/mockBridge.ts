@@ -62,6 +62,7 @@ import {
   mockNotesJson,
   mockOverviewMeta,
   mockPagesOf,
+  mockSectionOf,
   mockSources,
   // Renamed on the way in: this file already has a `mockObjectives`, and it is the *other* kind
   // — the learning-objective tree the retired panel drew (#38).
@@ -1025,7 +1026,9 @@ export function createMockBridge(): ChatterEdApi {
   }): void {
     questionSeq += 1;
     const questionId = `q_mock_${questionSeq}`;
-    think(max, 9000, input.body, { anchorId: input.threadId, decidedBy: 'rule:try_here' }, () => {
+    think(max, 9000, input.body, { anchorId: input.threadId, decidedBy: 'rule:try_here' }, () => later(0, () => {
+      // After Max's message and `turn.released` (N3's order): the thread with the quiz open,
+      // then the Q block in the doc.
       const t = thread(input.threadId);
       const quiz: DocQuizView = {
         quizMessageId: `m${seq + 1}`,
@@ -1042,7 +1045,7 @@ export function createMockBridge(): ChatterEdApi {
       };
       t.quiz = quiz;
       pushThread(t);
-      emitEdit({
+      later(300, () => emitEdit({
         author: 'max',
         cause: 'q_block',
         focusBlockId: input.anchorBlockId,
@@ -1057,9 +1060,9 @@ export function createMockBridge(): ChatterEdApi {
             prov: { pages: input.pages, reason: input.pages.length > 0 ? null : 'asked on Quiz me' },
           },
         ],
-      });
+      }));
       armCue(input.threadId);
-    });
+    }));
   }
 
   /** The block a question hangs off, by question id, so its resolution lands under it. */
@@ -1194,16 +1197,18 @@ export function createMockBridge(): ChatterEdApi {
       ELLIE_ANSWERS.find((a) => a.match.test(text)) ?? (docTurns <= 1 ? ELLIE_FALLBACK : ELLIE_ANSWERS[(docTurns - 2) % ELLIE_ANSWERS.length]!);
     const anchor = mockBlockOnPage(script.page);
     emitCursor('ellie', anchor, 'thinking');
-    think(
-      ellie,
-      4500,
-      `${script.body}\n\n*Added one line under the block it is about. Remove it if you don't want it.*`,
-      { anchorId: threadId, decidedBy: 'rule:ellie_answers' },
-      () => {
-        // §4.2: the full answer stays in the chat; the doc gets one line (≤ 25 words) under the
-        // block the question was about, with Keep / Remove. Max does **not** follow up (C8).
-        later(900, () => emitBlockLine(anchor, script.line, script.pages));
-      },
+    think(ellie, 4500, script.body, { anchorId: threadId, decidedBy: 'rule:ellie_answers' }, () =>
+      // §4.2: the full answer stays in the chat; the doc gets one line (≤ 25 words) under the
+      // block the question was about, with Keep / Remove, and the answer is re-sent with the
+      // same id naming the edit. Max does **not** follow up (C8).
+      later(900, () => {
+        if (!emitBlockLine(anchor, script.line, script.pages)) return;
+        const reply = messages.filter((m) => m.anchorId === threadId && m.speaker.kind === 'agent').at(-1);
+        if (!reply) return;
+        const section = mockSectionOf(anchor);
+        reply.body = `${reply.body}\n\nAdded one line under that bullet${section ? ` in “${section}”` : ''}.`;
+        emit({ type: 'message.appended', roomId: ROOM, message: { ...reply } });
+      }),
     );
   }
 
@@ -1225,10 +1230,19 @@ export function createMockBridge(): ChatterEdApi {
   }
 
   /**
-   * **Explain · Example · Quiz me** on one block (§4.1, C7). Explain and Example: the learner's
-   * press is posted in the block's own span thread, Ellie answers in full there, and one line goes
-   * under the block. Quiz me: Max's question in the thread and a Q block under the block. One
-   * action at a time per notebook (`busy`), one open question at a time (`question_open`).
+   * **Explain · Example · Quiz me** on one block (§4.1, C7), in the order N3's main emits it, so
+   * the editor and the chat are built against the real sequence:
+   *
+   *  - Explain / Example: the block's span thread (`chat.thread`, first time), the learner's row
+   *    (`Explain: «quote»`, `block_action:request`), `turn.received`, the call returns; then
+   *    Ellie's stream and message (`rule:block_action`) and `turn.released`; then her cursor and
+   *    the one-line `block_action` doc edit under the block; then **the same message id again**
+   *    with "Added one line under that bullet in “Section”." appended.
+   *  - Quiz me: no learner row; `turn.received`, Max's message (`rule:try_here`) in the block's
+   *    thread, `turn.released`, the thread with the quiz open, then the Q block.
+   *
+   * One action at a time per notebook (`busy`); one open question at a time (`question_open`,
+   * with that question's thread).
    */
   let blockActionBusy = false;
   function blockAction(input: { blockId: string; kind: 'explain' | 'example' | 'quiz'; quote: string }): {
@@ -1237,33 +1251,53 @@ export function createMockBridge(): ChatterEdApi {
     reason: 'busy' | 'question_open' | null;
   } {
     if (blockActionBusy) return { accepted: false, threadId: null, reason: 'busy' };
-    const open = [...chatThreadMap.values()].some((x) => x.quiz?.open);
-    if (input.kind === 'quiz' && open) return { accepted: false, threadId: null, reason: 'question_open' };
+    const openQ = [...chatThreadMap.values()].find((x) => x.quiz?.open);
+    if (input.kind === 'quiz' && openQ) return { accepted: false, threadId: openQ.threadId, reason: 'question_open' };
     const pages = mockPagesOf(input.blockId);
     const quote = input.quote.trim();
     const existing = [...chatThreadMap.values()].find((t) => t.kind === 'span' && t.blockId === input.blockId);
     const threadId = existing?.threadId ?? `${SPAN_THREAD_PREFIX}${hex12()}`;
     const t = thread(threadId, { kind: 'span', blockId: input.blockId, quote: quote.slice(0, 120) });
-    const verb = input.kind === 'explain' ? 'Explain' : input.kind === 'example' ? 'Example' : 'Quiz me';
-    post(verb, null, { anchorId: threadId });
-    pushThread(t);
+    if (!existing) pushThread(t);
     blockActionBusy = true;
+    const received = (messageId: string | null) =>
+      emit({
+        type: 'turn.received',
+        roomId: ROOM,
+        received: {
+          turnId: `turn_mock_${mockTurn + 1}`,
+          messageId: messageId ?? '',
+          anchorId: threadId,
+          receivedAt: iso(),
+          yieldMs: 0,
+          etaMs: null,
+          responder: null,
+        },
+      });
 
     if (input.kind === 'quiz') {
+      received(null);
       const p24 = /Max is admissible but weak|Max\(Cost\)/.test(quote);
       const objective = objectives.find((o) => o.blockIds.includes(input.blockId)) ?? objectives[0]!;
       questionAnchor.set(`q_mock_${questionSeq + 1}`, input.blockId);
+      const question = p24 ? MAX_QUESTION_P24 : MAX_QUESTION_GENERIC(quote, pages);
       askDocQuestion({
         threadId,
         objectiveId: p24 ? 'obj-abstraction' : objective.objectiveId,
         anchorBlockId: input.blockId,
-        body: `I put a question under that line. Answer it there or here, whichever you prefer.\n\n${p24 ? MAX_QUESTION_P24 : MAX_QUESTION_GENERIC(quote, pages)}`,
-        question: p24 ? MAX_QUESTION_P24 : MAX_QUESTION_GENERIC(quote, pages),
+        body: `I put a question under that line. Answer it there or here, whichever you prefer.\n\n${question}`,
+        question,
         pages: p24 ? [23, 24] : pages,
       });
-      later(9200, () => (blockActionBusy = false));
+      later(9400, () => (blockActionBusy = false));
       return { accepted: true, threadId, reason: null };
     }
+
+    const capped = quote.length > 160 ? `${quote.slice(0, 159)}…` : quote;
+    const ask = input.kind === 'explain' ? `Explain: «${capped}»` : `Give me an example: «${capped}»`;
+    const mine = post(ask, null, { anchorId: threadId, decidedBy: 'block_action:request' });
+    pushThread(t);
+    received(mine.id);
 
     const script = BLOCK_ACTIONS.find((a) => a.match.test(quote));
     const where = pages.length > 0 ? `p. ${pages.join(', ')}` : 'the slides';
@@ -1275,15 +1309,18 @@ export function createMockBridge(): ChatterEdApi {
       ? input.kind === 'explain' ? script.explainLine : script.exampleLine
       : `(Dev mock) One line worth keeping from ${where} would go here.`;
     emitCursor('ellie', input.blockId, 'thinking');
-    think(
-      ellie,
-      4500,
-      `${body}\n\n*Added one line under this line in the notes. Remove it if you don't want it.*`,
-      { anchorId: threadId, decidedBy: 'rule:block_action' },
-      () => {
+    think(ellie, 4500, body, { anchorId: threadId, decidedBy: 'rule:block_action' }, () =>
+      later(700, () => {
         blockActionBusy = false;
-        later(700, () => emitBlockLine(input.blockId, line, pages));
-      },
+        const editId = emitBlockLine(input.blockId, line, pages);
+        if (!editId) return;
+        // The same message again, now naming the edit (N3 re-sends it with the same id).
+        const reply = messages.filter((m) => m.anchorId === threadId && m.speaker.kind === 'agent').at(-1);
+        if (!reply) return;
+        const section = mockSectionOf(input.blockId);
+        reply.body = `${reply.body}\n\nAdded one line under that bullet${section ? ` in “${section}”` : ''}.`;
+        emit({ type: 'message.appended', roomId: ROOM, message: { ...reply } });
+      }),
     );
     return { accepted: true, threadId, reason: null };
   }

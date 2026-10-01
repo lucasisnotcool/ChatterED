@@ -64,20 +64,16 @@
       attempt — `rule:answer_withheld` is retired (§9), and a disclosure that describes the app as
       it used to be is worse than none.
 
-      The two doors are named in the order a learner meets them: `rule:max_followup` is the one
-      they will see on every question, and the time-based hand-off (`rule:handoff`, still live in
-      the actor) is the one that arrives out of a silence.
+      Since #58 (`notebooks.md` §5.2, contract C8) there is one door: the Tester asks only when the
+      learner presses **Quiz me**. The follow-up after every answer and the time-based hand-off are
+      off, so the paragraph that named them went with them.
     -->
     <p>
-      When you ask something, {teacher} answers and then {tester} asks you one question back. It is
-      yours to answer first — but say <em>I don't know</em>, or press <strong>Pass</strong>, and he
-      gives you the answer straight away and pitches the next one lower. Either way, only words you
-      wrote yourself move your progress.
-    </p>
-
-    <p>
-      {tester} is not listening the whole time. He also lets himself in by a rule you can see —
-      <strong>{profile.rule}</strong> — and you can send him away when he arrives.
+      Ask something and {teacher} answers, in full here and in one line in your notes. Press
+      <strong>Quiz me</strong> on a line and {tester} asks you one question about it. It is yours to
+      answer first — but say <em>I don't know</em>, or press <strong>Pass</strong>, and he gives you
+      the answer straight away and pitches the next one lower. Either way, only words you wrote
+      yourself move your progress.
     </p>
 
     <p>
@@ -89,7 +85,7 @@
       <p>
         This copy is running the <strong>scripted</strong> backend: what {teacher} and {tester} say is
         replayed from a fixed script rather than generated. Everything around it is real — the same
-        timer, the same hand-off rule and the same ledger, which still moves only on words you
+        timer, the same rules and the same ledger, which still moves only on words you
         typed yourself. Nothing is sent anywhere.
       </p>
     {/if}
