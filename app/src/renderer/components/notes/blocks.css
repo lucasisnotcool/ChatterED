@@ -242,7 +242,7 @@
   font-size: 13px;
   line-height: 1.5;
 }
-[data-quiz-prompt] { font-size: 14px; font-weight: 600; }
+[data-quiz-prompt] { margin-bottom: 8px; font-size: 14px; font-weight: 600; }
 [data-quiz-prompt]::before {
   content: 'Q' counter(nd-qz) '. ';
   color: var(--text-2);
