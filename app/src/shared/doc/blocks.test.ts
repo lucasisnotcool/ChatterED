@@ -28,6 +28,7 @@ import {
   validateFlashcardsDraft,
   validateInfographicDraft,
   validateQuizDraft,
+  placeAnswer,
   FLASHCARDS_DRAFT_JSON_SCHEMA,
   INFOGRAPHIC_DRAFT_JSON_SCHEMA,
   QUIZ_DRAFT_JSON_SCHEMA,
@@ -190,7 +191,9 @@ describe('validateQuizDraft', () => {
 
   it('turns `answer` into the one correct option', () => {
     const { draft } = validateQuizDraft({ questions: [mc(2), short, short] }, 10, PROV);
-    expect(draft?.questions[0]!.options!.map((o) => o.correct)).toEqual([false, true, false]);
+    const options = draft?.questions[0]!.options ?? [];
+    expect(options.filter((o) => o.correct).map((o) => o.text)).toEqual(['b']);
+    expect(options.map((o) => o.text).sort()).toEqual(['a', 'b', 'c']);
     expect(draft?.questions[1]).toMatchObject({ type: 'short', explain: 'Because.' });
     expect(draft?.questions[1]!.options).toBeUndefined();
   });
@@ -201,6 +204,16 @@ describe('validateQuizDraft', () => {
       expect(out.draft?.questions).toHaveLength(3);
       expect(out.problems.length).toBeGreaterThan(0);
     }
+  });
+
+  /** Live run, 1 Oct 2026: every question Sonnet wrote had its right answer first. */
+  it('decides where the right option sits, so it is not always first, and keeps it there', () => {
+    const prompts = Array.from({ length: 12 }, (_, n) => `Question number ${String(n)}?`);
+    const positions = prompts.map((prompt) => placeAnswer(['right', 'w1', 'w2', 'w3'], 0, prompt).findIndex((o) => o.correct));
+    expect(new Set(positions).size).toBeGreaterThan(2);
+    expect(placeAnswer(['right', 'w1', 'w2'], 0, 'Same?')).toEqual(placeAnswer(['right', 'w1', 'w2'], 0, 'Same?'));
+    // The wrong options keep their order around it.
+    expect(placeAnswer(['w1', 'right', 'w2', 'w3'], 1, 'Q').filter((o) => !o.correct).map((o) => o.text)).toEqual(['w1', 'w2', 'w3']);
   });
 
   it('refuses a quiz left with fewer than three questions, and cuts one to five', () => {

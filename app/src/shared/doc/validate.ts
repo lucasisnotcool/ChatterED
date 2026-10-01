@@ -577,6 +577,26 @@ export function validateFlashcardsDraft(
   return { draft: { kind: 'flashcards', title: titleOf(record), cards: kept, prov: provenance }, problems };
 }
 
+/**
+ * **Where the right option sits is decided here, not by the model.** In the live run of 1 Oct
+ * 2026 every multiple-choice question Sonnet wrote put the right answer first (three of three):
+ * a learner who noticed would never need to read the question. So the right option is moved to a
+ * position taken from a hash of the question (stable, so a re-validation of the same question
+ * does not move it), and the wrong ones keep their order around it. Pure.
+ */
+export function placeAnswer(texts: readonly string[], answerIndex: number, prompt: string): { text: string; correct: boolean }[] {
+  let hash = 2166136261;
+  for (let i = 0; i < prompt.length; i += 1) {
+    hash ^= prompt.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  const at = hash % texts.length;
+  const wrong = texts.filter((_, k) => k !== answerIndex);
+  const out = wrong.map((text) => ({ text, correct: false }));
+  out.splice(at, 0, { text: texts[answerIndex]!, correct: true });
+  return out;
+}
+
 export function validateQuizDraft(
   raw: unknown,
   pageCount: number,
@@ -630,7 +650,7 @@ export function validateQuizDraft(
     questions.push({
       type,
       prompt,
-      options: texts.map((text, k) => ({ text, correct: k === answer - 1 })),
+      options: placeAnswer(texts, answer - 1, prompt),
       explain,
       pages,
     });
