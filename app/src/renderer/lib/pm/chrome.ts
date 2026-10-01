@@ -5,7 +5,10 @@
  *
  * Everything the document shows that is *not* the document: the provenance chip on every block,
  * the agents' cursors, the Remove · Keep control on an applied edit, the Accept · Reject control
- * on a suggestion, and the persistent highlight on a span that has a thread.
+ * on a suggestion, and the persistent highlight on a span that has a thread. On a learning
+ * overview (`notebooks.md`, 2026-10-01) also: the action toolbar on each line (Explain · Example ·
+ * Quiz me · Ask…) with its "Ellie is writing…" or refusal under the block, the fills beside the
+ * objectives, a section's recommended block, and the note slot's placeholder.
  *
  * All of it is **decorations**, not nodes. That is the load-bearing decision of this file: a
  * control drawn as a decoration cannot be typed into, copied, saved, sent to a model or undone,
@@ -34,7 +37,29 @@ import { Decoration, DecorationSet, type EditorView } from 'prosemirror-view';
 import { Plugin, PluginKey, type EditorState, type Transaction } from 'prosemirror-state';
 import type { Node } from 'prosemirror-model';
 import { blockAttrs, blockPos, eachBlock } from '../../../shared/doc/schema.js';
-import type { AgentAuthor, DocEditRecord, QResolution, Rect, Suggestion } from '../../../shared/doc/types.js';
+import type {
+  AgentAuthor,
+  BlockActionKind,
+  DocEditRecord,
+  OverviewMeta,
+  QResolution,
+  Rect,
+  Suggestion,
+} from '../../../shared/doc/types.js';
+import type { NotebookSourceView } from '../../../shared/notebook.js';
+import {
+  BLOCK_KIND_NAME,
+  chipLabel,
+  fillMark,
+  fillsForItems,
+  hasToolbar,
+  isEmptyNoteSlot,
+  isNoteSlot,
+  isObjectivesList,
+  placeRecommendations,
+  showsChip,
+  type ObjectiveFillView,
+} from './overview.js';
 import { frontierOf, revealKey } from './reveal.js';
 import { attachCitePreview, closeSourcePopover, type SlideReader } from './sourcepop.js';
 
@@ -58,6 +83,20 @@ export interface SpanThreadView {
   quote: string;
 }
 
+/** An action on one block (`notebooks.md` §4.1): running, or refused with a line saying why. */
+export interface BlockActionView {
+  kind: BlockActionKind;
+  author: AgentAuthor;
+  state: 'running' | 'refused';
+  line: string;
+}
+
+/** A recommended block's card while it is being added, or after it could not be. */
+export interface RecommendationView {
+  state: 'adding' | 'refused';
+  line: string;
+}
+
 export interface ChromeContext {
   frozen: boolean;
   /** Hidden entirely while frozen (§3: "While frozen, no agent edits the doc"). */
@@ -79,6 +118,20 @@ export interface ChromeContext {
    * the chip is what it was before, a click that opens the whole slide.
    */
   reader?: SlideReader;
+
+  // ── the learning overview (`notebooks.md`). All optional: a doc without them is plain notes.
+
+  /** The open notebook's sources: chips read `Lecture p. 17 · Notes §3` (contract C1). */
+  sources?: readonly Pick<NotebookSourceView, 'name' | 'kind' | 'pageBase' | 'pageCount'>[];
+  /** The taught objectives in tree order, for the "By the end you can" fills (C5). */
+  objectives?: readonly ObjectiveFillView[];
+  /** For the recommended blocks (§5.3). */
+  overview?: OverviewMeta | null;
+  blockActions?: Readonly<Record<string, BlockActionView>>;
+  recommendationStates?: Readonly<Record<string, RecommendationView>>;
+  /** The toolbar. Without it, no toolbar is drawn. */
+  onBlockAction?: (blockId: string, kind: BlockActionKind) => void;
+  onRecommendation?: (id: string, action: 'add' | 'dismiss') => void;
 }
 
 // ── labels (pure — these are the tested part) ───────────────────────────────────────────────
@@ -171,8 +224,9 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
   eachBlock(doc, (node, pos, depth) => {
     if (depth > 0) return; // a q_block's children hang off the Q block's own chrome
     const { blockId, pages, reason } = blockAttrs(node);
-    if (!blockId) return;
-    const label = provenanceLabel(pages, reason);
+    // The overview's title, objectives and note slots carry no chip (C6): they are scaffolding.
+    if (!blockId || !showsChip(node)) return;
+    const label = chipLabel(pages, ctx.sources, () => provenanceLabel(pages, reason));
     const page = pages[0] ?? (node.type.name === 'slide_figure' ? (node.attrs.page as number) : null);
     const rect = node.type.name === 'slide_figure' ? ((node.attrs.rect as Rect | null) ?? null) : null;
     out.push(
@@ -214,6 +268,174 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
     );
   });
   return out;
+}
+
+// ── the learning overview ───────────────────────────────────────────────────────────────────
+
+/** The four actions, in the toolbar's order (§4.1). `who` is the agent the dot names. */
+const ACTIONS: { kind: BlockActionKind; label: string; who: AgentAuthor | null; title: string }[] = [
+  { kind: 'explain', label: 'Explain', who: 'ellie', title: 'Ellie explains this in the chat, and adds one line under it' },
+  { kind: 'example', label: 'Example', who: 'ellie', title: 'Ellie gives a worked example in the chat, and adds one line under it' },
+  { kind: 'quiz', label: 'Quiz me', who: 'max', title: 'Max asks you a question on this, here and in the chat' },
+  { kind: 'ask', label: 'Ask…', who: null, title: 'Ask your own question about this, in the chat' },
+];
+
+/**
+ * The agent's dot. **Not colour alone**: Ellie's is a solid dot, Max's a dashed ring, and the
+ * name is in the button's title and its accessible name.
+ */
+function agentDot(who: AgentAuthor): HTMLElement {
+  const dot = el('span', `nd-tool-dot nd-tool-dot-${who}`);
+  dot.setAttribute('aria-hidden', 'true');
+  return dot;
+}
+
+/**
+ * **The action toolbar** (§4.1), on every line it applies to (`hasToolbar`). Drawn like the chip:
+ * a widget inside the block, hidden until the block is hovered or holds the caret (notes.css),
+ * so it costs nothing until it is wanted and a tap or the keyboard reaches it without a hover.
+ */
+function blockToolbars(doc: Node, ctx: ChromeContext): Decoration[] {
+  const act = ctx.onBlockAction;
+  if (!act) return [];
+  const out: Decoration[] = [];
+  doc.forEach((node, offset) => {
+    if (!hasToolbar(node)) return;
+    const { blockId } = blockAttrs(node);
+    const busy = ctx.blockActions?.[blockId]?.state === 'running';
+    out.push(
+      widget(offset + 1, `tools:${blockId}:${busy ? 'busy' : 'idle'}`, -1, () => {
+        const holder = el('span', 'nd-tools-holder');
+        const bar = el('span', 'nd-tools');
+        bar.setAttribute('role', 'toolbar');
+        bar.setAttribute('aria-label', 'Work on this line');
+        for (const action of ACTIONS) {
+          const control = button(`nd-tool nd-tool-${action.kind}`, '', action.title, () => act(blockId, action.kind));
+          if (action.who) control.append(agentDot(action.who));
+          control.append(document.createTextNode(action.label));
+          control.setAttribute('aria-label', action.who ? `${action.label} (${AGENT_NAME[action.who]})` : action.label);
+          if (busy && action.kind !== 'ask') control.disabled = true;
+          bar.append(control);
+        }
+        holder.append(bar);
+        return holder;
+      }),
+    );
+  });
+  return out;
+}
+
+/** A widget **between** blocks: not editable, not selectable, and it eats its own events. */
+function between(pos: number, key: string, side: number, build: () => HTMLElement): Decoration {
+  return widget(pos, key, side, () => {
+    const node = build();
+    node.contentEditable = 'false';
+    return node;
+  });
+}
+
+/** "Ellie is writing…" under a block while its action runs, or the line saying why it was refused. */
+function blockActionLines(doc: Node, ctx: ChromeContext): Decoration[] {
+  const out: Decoration[] = [];
+  for (const [blockId, action] of Object.entries(ctx.blockActions ?? {})) {
+    const target = blockPos(doc, blockId);
+    if (!target) continue;
+    const end = target.pos + target.node.nodeSize;
+    if (end > doc.content.size || doc.resolve(end).depth !== 0) continue;
+    out.push(
+      between(end, `act:${blockId}:${action.state}:${action.line}`, -2, () => {
+        const line = el('div', `nd-actline nd-${action.author} nd-actline-${action.state}`);
+        line.setAttribute('role', 'status');
+        if (action.state === 'running') line.append(el('span', 'nd-writing-dot'));
+        line.append(document.createTextNode(action.line));
+        return line;
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * **The objectives' fills** (C5): a small bar beside each item of "By the end you can", from the
+ * progress view. The bar's *length* is the signal and the word beside it ("half", "done") says it
+ * again, so it is never colour alone.
+ */
+function objectiveDecorations(doc: Node, ctx: ChromeContext): Decoration[] {
+  const out: Decoration[] = [];
+  const objectives = ctx.objectives ?? [];
+  doc.forEach((node, offset) => {
+    if (!isObjectivesList(node)) return;
+    out.push(Decoration.node(offset, offset + node.nodeSize, { class: 'nd-objectives' }));
+    const items: string[] = [];
+    node.forEach((item) => items.push(item.textContent));
+    const fills = fillsForItems(items, objectives);
+    let index = 0;
+    node.forEach((_item, itemOffset) => {
+      const which = fills[index++] ?? null;
+      if (!which) return; // a line the learner added has nothing to fill
+      // Inside the list item, before its paragraph: notes.css sets it at the item's right edge.
+      const at = offset + 1 + itemOffset + 1;
+      const word = fillMark(which.fill);
+      out.push(
+        widget(at, `objfill:${String(at)}:${which.objectiveId}:${String(which.fill)}`, -1, () => {
+          const holder = el('span', 'nd-objfill');
+          holder.title = `${which.title}: ${word || 'not started'}`;
+          holder.setAttribute('role', 'img');
+          holder.setAttribute('aria-label', `Your own words on this objective: ${word || 'not started'}`);
+          const bar = el('span', 'nd-objfill-bar');
+          const fill = el('i', 'nd-objfill-in');
+          fill.style.width = `${String(which.fill * 100)}%`;
+          bar.append(fill);
+          holder.append(bar, el('span', 'nd-objfill-word', word === 'done' ? '✓ done' : word));
+          return holder;
+        }),
+      );
+    });
+  });
+  return out;
+}
+
+/**
+ * **A section's recommended block** (§5.3): a card at the end of its section naming the type, a
+ * title and one line, with **Add** and a dismiss. Not in the document: it is `OverviewMeta`'s,
+ * and it costs a line until the learner adds it.
+ */
+function recommendationCards(doc: Node, ctx: ChromeContext): Decoration[] {
+  const choose = ctx.onRecommendation;
+  if (!choose) return [];
+  return placeRecommendations(doc, ctx.overview ?? null).map(({ recommendation: rec, section }) => {
+    const state = ctx.recommendationStates?.[rec.id] ?? null;
+    return between(section.end, `rec:${rec.id}:${state?.state ?? 'offered'}:${state?.line ?? ''}`, -1, () => {
+      const card = el('div', 'nd-rec');
+      card.setAttribute('role', 'group');
+      card.setAttribute('aria-label', `Recommended: ${BLOCK_KIND_NAME[rec.kind]}`);
+      const head = el('div', 'nd-rec-head');
+      head.append(el('span', 'nd-rec-kind', `Recommended · ${BLOCK_KIND_NAME[rec.kind]}`));
+      const dismiss = button('nd-rec-dismiss', '✕', 'Not this one', () => choose(rec.id, 'dismiss'));
+      dismiss.setAttribute('aria-label', `Dismiss the recommended ${BLOCK_KIND_NAME[rec.kind].toLowerCase()}`);
+      head.append(dismiss);
+      const body = el('div', 'nd-rec-body');
+      const words = el('div', 'nd-rec-words');
+      words.append(el('div', 'nd-rec-title', rec.title), el('div', 'nd-rec-line', rec.description));
+      const add = button('nd-rec-add', state?.state === 'adding' ? 'Adding…' : 'Add', `Ellie makes this ${BLOCK_KIND_NAME[rec.kind].toLowerCase()} here`, () =>
+        choose(rec.id, 'add'),
+      );
+      if (state?.state === 'adding') {
+        add.disabled = true;
+        dismiss.disabled = true;
+      }
+      body.append(words, add);
+      card.append(head, body);
+      if (state) {
+        const line = el('div', `nd-rec-state nd-rec-state-${state.state}`);
+        line.setAttribute('role', 'status');
+        if (state.state === 'adding') line.append(el('span', 'nd-writing-dot'));
+        line.append(document.createTextNode(state.line));
+        card.append(line);
+      }
+      return card;
+    });
+  });
 }
 
 /**
@@ -371,6 +593,10 @@ function spanHighlights(doc: Node, ctx: ChromeContext): Decoration[] {
 function build(state: EditorState, ctx: ChromeContext): DecorationSet {
   return DecorationSet.create(state.doc, [
     ...provenanceChips(state.doc, ctx),
+    ...blockToolbars(state.doc, ctx),
+    ...blockActionLines(state.doc, ctx),
+    ...objectiveDecorations(state.doc, ctx),
+    ...recommendationCards(state.doc, ctx),
     ...editControls(state.doc, ctx),
     ...suggestionControls(state.doc, ctx),
     ...spanHighlights(state.doc, ctx),
@@ -414,6 +640,61 @@ export function chromePlugin(context: () => ChromeContext): Plugin<DecorationSet
         if (!threadId || !view.dom.contains(span)) return false;
         context().onFocusThread(threadId);
         return false; // the caret still lands where they clicked
+      },
+    },
+  });
+}
+
+// ── what follows the caret and the typing: the caret's block, and the note slots ────────────
+
+export const focusKey = new PluginKey<DecorationSet>('chattered:focus');
+
+/** The note slot's placeholder (C6). Shown by CSS from `data-placeholder` while the slot is empty. */
+export const NOTE_SLOT_PLACEHOLDER = 'Add your own note…';
+
+/**
+ * Two classes the chrome set cannot carry, because it is only rebuilt on structural changes and
+ * these change on every keystroke and every caret move:
+ *
+ *  - `nd-caret-block` on the top-level block holding the caret, so its toolbar shows without a
+ *    hover (§4.1: "a tap or the keyboard reaches it"). notes.css shows it only while the editor
+ *    has focus, so a learner reading with the pointer elsewhere sees one toolbar, not two.
+ *  - `nd-noteslot` on each note slot, plus `nd-noteslot-empty` and its placeholder while the
+ *    learner has not written in it. A class, not a widget: a widget in an empty paragraph would
+ *    sit where the caret goes. Once they type, the slot is their text like any other (the
+ *    authorship plugin marks it), and the placeholder is gone on the same keystroke.
+ *
+ * Cheap: one pass over the top-level blocks (an overview has a few dozen) per change.
+ */
+function focusDecorations(state: EditorState): DecorationSet {
+  const decorations: Decoration[] = [];
+  const caret = state.selection.$from.index(0);
+  state.doc.forEach((node, offset, index) => {
+    const classes: string[] = [];
+    const empty = isEmptyNoteSlot(node);
+    if (isNoteSlot(node)) classes.push(empty ? 'nd-noteslot nd-noteslot-empty' : 'nd-noteslot');
+    if (index === caret && hasToolbar(node)) classes.push('nd-caret-block');
+    if (classes.length === 0) return;
+    decorations.push(
+      Decoration.node(offset, offset + node.nodeSize, {
+        class: classes.join(' '),
+        ...(empty ? { 'data-placeholder': NOTE_SLOT_PLACEHOLDER } : {}),
+      }),
+    );
+  });
+  return DecorationSet.create(state.doc, decorations);
+}
+
+export function focusPlugin(): Plugin<DecorationSet> {
+  return new Plugin<DecorationSet>({
+    key: focusKey,
+    state: {
+      init: (_config, state) => focusDecorations(state),
+      apply: (tr, value, _old, next) => (tr.docChanged || tr.selectionSet ? focusDecorations(next) : value),
+    },
+    props: {
+      decorations(state): DecorationSet | undefined {
+        return focusKey.getState(state);
       },
     },
   });

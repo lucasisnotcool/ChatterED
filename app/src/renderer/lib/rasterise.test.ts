@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   PAGE_IMAGE_BATCH,
+  SlideSource,
   batches,
   cropBox,
+  ingestPages,
   pageNumbers,
+  pageTitle,
+  partPages,
   rasterSize,
   releaseDocument,
   sourceRect,
+  stepPage,
+  wrapWords,
+  type SlidePart,
 } from './rasterise.js';
 
 describe('rasterSize', () => {
@@ -137,5 +144,131 @@ describe('sourceRect', () => {
     expect(r.sx + r.sw).toBeLessThanOrEqual(canvas.width);
     expect(r.sy + r.sh).toBeLessThanOrEqual(canvas.height);
     expect(r.sw).toBeGreaterThan(0);
+  });
+});
+
+// ── the notebook's slides (contract C1) ─────────────────────────────────────────────────────
+
+function part(fileId: string, kind: SlidePart['kind'], pageBase: number, pageCount: number, name = `${fileId}.pdf`): SlidePart {
+  return { fileId, name, kind, pageBase, pageCount, enabled: true, status: 'ready' };
+}
+
+/** A lecture (1–5), a removed source's gap (6–7), Markdown notes (8–9) and a photo (10). */
+const PARTS: SlidePart[] = [
+  part('lecture', 'pdf', 0, 5, 'Lecture 4.pdf'),
+  part('notes', 'text', 7, 2, 'Week 2 notes.md'),
+  part('photo', 'image', 9, 1, 'Whiteboard.jpg'),
+];
+
+describe('partPages and stepPage: the modal pages across sources, over the gaps', () => {
+  it('lists every page still there, the gap left out', () => {
+    expect(partPages(PARTS)).toEqual([1, 2, 3, 4, 5, 8, 9, 10]);
+  });
+
+  it('steps across a source boundary and over a removed source', () => {
+    expect(stepPage(PARTS, 4, 1)).toBe(5);
+    expect(stepPage(PARTS, 5, 1)).toBe(8);
+    expect(stepPage(PARTS, 8, -1)).toBe(5);
+  });
+
+  it('stops at either end', () => {
+    expect(stepPage(PARTS, 10, 1)).toBeNull();
+    expect(stepPage(PARTS, 1, -1)).toBeNull();
+    expect(stepPage([], 1, 1)).toBeNull();
+  });
+
+  it('leaves a gap for the nearest page in the direction asked', () => {
+    expect(stepPage(PARTS, 6, 1)).toBe(8);
+    expect(stepPage(PARTS, 6, -1)).toBe(5);
+  });
+});
+
+describe('pageTitle: a whole page, named', () => {
+  it('names the source and its own page in a notebook of several', () => {
+    expect(pageTitle(PARTS, 3)).toBe('Lecture 4 p. 3');
+    expect(pageTitle(PARTS, 9)).toBe('Week 2 notes §2');
+    expect(pageTitle(PARTS, 10)).toBe('Whiteboard');
+  });
+
+  it('reads Slide N in a notebook of one PDF, as the modal always did', () => {
+    expect(pageTitle(PARTS.slice(0, 1), 3)).toBe('Slide 3');
+  });
+
+  it('says a removed source is gone', () => {
+    expect(pageTitle(PARTS, 6)).toBe('A removed source');
+  });
+});
+
+describe('ingestPages: what the ingest is shown as images', () => {
+  it('is the ticked, ready PDF and image pages, under notebook numbers', () => {
+    expect(ingestPages(PARTS)).toEqual([1, 2, 3, 4, 5, 10]);
+  });
+
+  it('leaves out an unticked source and one still being read', () => {
+    const parts = [{ ...PARTS[0]!, enabled: false }, PARTS[1]!, { ...PARTS[2]!, status: 'reading' as const }];
+    expect(ingestPages(parts)).toEqual([]);
+  });
+
+  it('can be limited to the sources an Update has not seen', () => {
+    expect(ingestPages(PARTS, (p) => p.fileId === 'photo')).toEqual([10]);
+  });
+});
+
+describe('wrapWords: a text page as a card', () => {
+  const byChars = (s: string): number => s.length;
+
+  it('fills each line up to the width', () => {
+    expect(wrapWords('one two three four', 9, byChars)).toEqual(['one two', 'three', 'four']);
+  });
+
+  it('keeps paragraphs apart with a blank line, and none at the end', () => {
+    expect(wrapWords('a b\n\nc', 10, byChars)).toEqual(['a b', '', 'c']);
+  });
+
+  it('gives a word longer than a line a line of its own', () => {
+    expect(wrapWords('a extraordinarily b', 5, byChars)).toEqual(['a', 'extraordinarily', 'b']);
+  });
+});
+
+describe('SlideSource over a notebook, without pixels', () => {
+  const opened: string[] = [];
+  const source = new SlideSource(PARTS, {
+    open: (fileId) => {
+      opened.push(fileId);
+      return Promise.resolve(fileId === 'notes' ? { bytes: null, text: 'First part.\n\nSecond part.' } : null);
+    },
+    paginate: (text) => text.split('\n\n'),
+  });
+
+  it('reports the notebook page count, gaps included', () => {
+    expect(source.pageCount).toBe(10);
+  });
+
+  it('reads a text source page by its own page, and opens the source once', async () => {
+    expect(await source.text(8)).toBe('First part.');
+    expect(await source.text(9)).toBe('Second part.');
+    expect(opened).toEqual(['notes']);
+    expect(await source.text(3)).toBeNull();
+  });
+
+  it('labels chips through the notebook', () => {
+    expect(source.citation([3, 4, 9])).toBe('Lecture 4 p. 3–4 · Week 2 notes §2');
+    expect(source.kindOf(10)).toBe('image');
+    expect(source.kindOf(6)).toBeNull();
+  });
+
+  it('gives no page for a gap', async () => {
+    expect(await source.canvas(6, 100)).toBeNull();
+  });
+
+  it('labels as before with no sources yet, rather than calling every page removed', () => {
+    expect(new SlideSource([], null).citation([3, 4])).toBe('p. 3–4');
+  });
+
+  it('forgets a source that was removed, and keeps the rest', async () => {
+    source.setSources(PARTS.slice(0, 2));
+    expect(source.pageCount).toBe(9);
+    expect(await source.text(8)).toBe('First part.');
+    expect(opened).toEqual(['notes']);
   });
 });

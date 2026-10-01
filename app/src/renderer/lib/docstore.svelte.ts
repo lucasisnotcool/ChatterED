@@ -29,8 +29,12 @@ import type {
   ChatterEdApi,
   GenerateBlockRefusal,
   NotesAnswerQuestionResult,
+  NotesBlockActionResult,
   NotesGenerateBlockResult,
+  NotesUpdateOverviewResult,
 } from '../../shared/ipc.js';
+import { isNotebookId, type NotebookView } from '../../shared/notebook.js';
+import { paginateText } from '../../shared/paginate.js';
 import { Node as PmNode } from 'prosemirror-model';
 import {
   applyBatch,
@@ -44,20 +48,31 @@ import { blockAttrs, blockPos, docFromJson, notesSchema } from '../../shared/doc
 import type {
   AgentAuthor,
   AgentDocOpBatch,
+  BlockActionKind,
+  GeneratedBlockKind,
   DocBlockDraft,
   DocEditRecord,
   DocEditStatus,
   NotesDocView,
   NotesIngestView,
   OverviewMeta,
+  ProgressView,
   Rect,
   Suggestion,
 } from '../../shared/doc/types.js';
 import { bridge } from './bridge.js';
-import { SlideSource, pageImages } from './rasterise.js';
+import { SlideSource, rasterPages, type SlidePart, type SourceContent } from './rasterise.js';
 import { learnerIsTyping, typingSchedule } from './typing.js';
 import { AGENT_TR, type Range, insertedRanges } from './pm/authorship.js';
-import { bumpChrome, type AgentCursorView, type ChromeContext, type SpanThreadView } from './pm/chrome.js';
+import {
+  bumpChrome,
+  type AgentCursorView,
+  type BlockActionView,
+  type ChromeContext,
+  type RecommendationView,
+  type SpanThreadView,
+} from './pm/chrome.js';
+import { blockQuote, notebookEmpty, objectiveFills, sectionSpans, unseenSources } from './pm/overview.js';
 import { reveal, revealText } from './pm/reveal.js';
 import { DocTextWatch, learnerTextByBlock } from './pm/doctext.js';
 import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
@@ -109,6 +124,68 @@ export type GenerateBlockOutcome = Omit<NotesGenerateBlockResult, 'reason'> & {
   reason: GenerateBlockRefusal | 'no_place' | null;
 };
 
+/** How long a refusal stays under its block or card before it goes on its own. */
+const REFUSAL_MS = 6_000;
+
+/**
+ * The longest a block shows "Ellie is writing…" after main accepted the action. It normally ends
+ * on the agent's own edit or its cursor going idle; this is the backstop for an answer that only
+ * reached the chat (the doc frozen, or the doc line refused by the guard).
+ */
+const BLOCK_ACTION_MS = 45_000;
+
+/** A block action main refused, in a line for under the block (`NotesBlockActionResult.reason`). */
+export function blockActionRefusal(reason: NotesBlockActionResult['reason'] | 'failed'): string {
+  switch (reason) {
+    case 'busy':
+      return 'Ellie is still answering. Try again when she has finished.';
+    case 'question_open':
+      return "Max's question is still open. Answer it or pass first.";
+    case 'no_doc':
+      return 'These notes are not saved yet. Try again in a moment.';
+    default:
+      return 'That did not work. Try again.';
+  }
+}
+
+/** Why a recommended block (or Insert) was not added, in a line for the card. */
+export function generateRefusal(reason: GenerateBlockOutcome['reason']): string {
+  switch (reason) {
+    case 'frozen':
+      return 'The notes are frozen. Unfreeze them to add this.';
+    case 'declined':
+      return 'Ellie found nothing in this section to make it from.';
+    case 'in_flight':
+      return 'Ellie is already making a block. Try again in a moment.';
+    case 'no_doc':
+    case 'no_place':
+      return 'These notes are not saved yet. Try again in a moment.';
+    default:
+      return 'Ellie could not make it this time. Try again.';
+  }
+}
+
+/** Why Update overview did not start, in a line for the notice bar. */
+export function updateRefusal(reason: NotesUpdateOverviewResult['reason']): string | null {
+  switch (reason) {
+    case 'in_flight':
+      return 'The overview is already being written.';
+    case 'no_sources':
+      return 'Tick a source first: the overview is written from the ticked sources.';
+    case 'no_doc':
+      return 'These notes are not open yet.';
+    default:
+      return null;
+  }
+}
+
+/** A source's content for the slides, through the bridge. A source that will not open is a blank page. */
+async function openSource(fileId: string): Promise<SourceContent | null> {
+  const view = await bridge().openDocument({ fileId });
+  if (view.error) return null;
+  return { bytes: view.bytes, text: view.text };
+}
+
 export class DocStore {
   // ── what the pane draws ───────────────────────────────────────────────────────────────────
   fileId = $state<string | null>(null);
@@ -130,6 +207,17 @@ export class DocStore {
    * legacy notebook's notes, `notebooks.md` §1), and while nothing is open.
    */
   overview = $state<OverviewMeta | null>(null);
+  /** Per block: an action running on it, or main's refusal of one (`notebooks.md` §4.1). */
+  blockActions = $state<Record<string, BlockActionView>>({});
+  /** Per recommendation: being added, or why it was not (§5.3). */
+  recommendationStates = $state<Record<string, RecommendationView>>({});
+  /** From Update overview's click until main has written the new overview (§2). */
+  updatingOverview = $state(false);
+  /**
+   * The banner the learner said **Not now** to (`overviewBanner`'s `fingerprint`), for the open
+   * notebook. It stays hidden until the sources change again.
+   */
+  bannerDismissed = $state<string | null>(null);
 
   loading = $state(false);
   error = $state<string | null>(null);
@@ -163,11 +251,27 @@ export class DocStore {
   /** The learner has put the caret somewhere in this view: Insert has a place to go (`insertTarget`). */
   #placed = false;
   #openToken = 0;
+  /**
+   * The open notebook (`store.notebook.view`, N5's), as a plain snapshot: the sources the slides
+   * are drawn from and the chips are labelled by. Set by `NotesPane` through `setNotebook`.
+   */
+  #notebook: NotebookView | null = null;
+  /** A first ingest is being started for a notebook that just got a ready source. */
+  #ingestStarting = false;
+  /** Update overview was accepted: the next `ready` replaces the doc with main's (`#settleAfterIngest`). */
+  #awaitingRewrite = false;
+  // Plain on purpose: what was dismissed per notebook for this session, and timer handles.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #dismissed = new Map<string, string>();
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #lineTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // ── wiring set by `NotesPane` from `store.chat` (T5), so neither store imports the other ──
   askAboutSpan: ((input: { blockId: string; quote: string }) => void) | null = null;
   focusThread: ((threadId: string) => void) | null = null;
   spanThreads: (() => readonly SpanThreadView[]) | null = null;
+  /** `store.progress.view` (N5's): the objectives list's fills (contract C5). */
+  progressView: (() => ProgressView | null) | null = null;
 
   // ── opening ───────────────────────────────────────────────────────────────────────────────
 
@@ -188,6 +292,12 @@ export class DocStore {
     this.#reset();
     this.fileId = fileId;
     this.loading = true;
+    this.bannerDismissed = this.#dismissed.get(fileId) ?? null;
+
+    if (isNotebookId(fileId)) {
+      await this.#openNotebook(fileId, token);
+      return;
+    }
 
     try {
       const slides = this.#openSlides(fileId, token);
@@ -233,6 +343,79 @@ export class DocStore {
       this.ingest = { ...this.ingest, status: 'failed', error: message(err) };
     } finally {
       if (token === this.#openToken) this.loading = false;
+    }
+  }
+
+  /**
+   * **Open a notebook's doc** (contract C2: the notebook id is the subject). The slides are the
+   * notebook's sources as one deck (`SlideSource`, C1), opened lazily page by page, so nothing
+   * here waits on bytes: an existing doc is drawn at once. With no doc yet, the overview is
+   * started only once a ticked source is ready (`#maybeStartIngest`); until then the pane says
+   * "Add a source to start" or "Reading your sources…" (`notebookEmpty`).
+   */
+  async #openNotebook(fileId: string, token: number): Promise<void> {
+    this.#slides = new SlideSource(this.#notebookParts(fileId), { open: openSource, paginate: paginateText });
+    this.slidesReady = true;
+    if (this.#notebook?.id === fileId) this.pageCount = this.#notebook.pageCount;
+    try {
+      const existing = has('notesGet') ? await bridge().notesGet({ fileId }) : null;
+      if (token !== this.#openToken) return;
+      if (existing) {
+        this.#adopt(existing);
+        return;
+      }
+    } catch (err) {
+      if (token !== this.#openToken) return;
+      this.error = message(err);
+      this.ingest = { ...this.ingest, status: 'failed', error: message(err) };
+      return;
+    } finally {
+      if (token === this.#openToken) this.loading = false;
+    }
+    await this.#maybeStartIngest();
+  }
+
+  #notebookParts(fileId: string | null): SlidePart[] {
+    const nb = this.#notebook;
+    return nb && nb.id === fileId ? nb.sources : [];
+  }
+
+  /**
+   * **The open notebook changed** (N5 pushes `notebook:changed`; `NotesPane` hands it here). The
+   * slides follow the sources, the chips are relabelled, and a notebook with no doc yet starts
+   * its overview the moment a ticked source is ready (§1: drop a file, and the overview comes).
+   * The overview itself is never rewritten from here: that is the banner's Update (§2).
+   */
+  setNotebook(view: NotebookView | null): void {
+    const plain = view ? ($state.snapshot(view) as NotebookView) : null;
+    this.#notebook = plain;
+    if (!plain || plain.id !== this.fileId) return;
+    this.#slides?.setSources(plain.sources);
+    if (!this.docId) this.pageCount = plain.pageCount;
+    this.#bump();
+    void this.#maybeStartIngest();
+  }
+
+  async #maybeStartIngest(): Promise<void> {
+    const fileId = this.fileId;
+    const nb = this.#notebook;
+    if (!fileId || !isNotebookId(fileId) || this.loading || this.docId || this.#ingestStarting) return;
+    if (this.ingest.status !== 'none' || !nb || nb.id !== fileId || notebookEmpty(nb) !== null) return;
+    if (!has('notesIngest')) return;
+    this.#ingestStarting = true;
+    const token = this.#openToken;
+    this.ingest = { ...EMPTY_INGEST, status: 'pending' };
+    try {
+      await this.#sendPageImages(fileId, token);
+      if (token !== this.#openToken) return;
+      const created = await bridge().notesIngest({ fileId });
+      if (token !== this.#openToken) return;
+      this.#adopt(created);
+    } catch (err) {
+      if (token !== this.#openToken) return;
+      this.ingest = { ...this.ingest, status: 'failed', error: message(err) };
+    } finally {
+      this.#ingestStarting = false;
     }
   }
 
@@ -344,6 +527,14 @@ export class DocStore {
     this.suggestions = [];
     this.cursors = [];
     this.overview = null;
+    this.blockActions = {};
+    this.recommendationStates = {};
+    this.updatingOverview = false;
+    this.bannerDismissed = null;
+    this.#awaitingRewrite = false;
+    this.#ingestStarting = false;
+    for (const timer of this.#lineTimers.values()) clearTimeout(timer);
+    this.#lineTimers.clear();
     this.error = null;
     this.rasterising = null;
     this.learnerTouched = false;
@@ -352,6 +543,18 @@ export class DocStore {
   }
 
   #adopt(view: NotesDocView): void {
+    /**
+     * A doc adopted over a mounted editor (the overview arriving after an Update, or a refetch
+     * once the ingest is ready) **replaces** it. The old view is let go here, so its teardown in
+     * `detach` cannot snapshot the old document back over the new JSON, and nothing of it is saved.
+     */
+    if (this.#view) {
+      this.#view = null;
+      if (this.#saveTimer) clearTimeout(this.#saveTimer);
+      this.#saveTimer = null;
+      this.#savePending = false;
+      this.#cancelAnimations();
+    }
     this.docId = view.docId;
     this.title = view.title;
     this.pageCount = view.pageCount;
@@ -405,13 +608,17 @@ export class DocStore {
    * will not rasterise must still open. The alternative is a file the app refuses to read because
    * one page had a broken font.
    */
-  async #sendPageImages(fileId: string, token: number): Promise<void> {
+  async #sendPageImages(fileId: string, token: number, only?: (part: SlidePart) => boolean): Promise<void> {
     if (!has('notesPageImages')) return;
-    const source = this.#slides ?? (await this.#waitForSlides(token));
+    // A notebook's slides exist from the start (they open lazily); a lone PDF's arrive later.
+    const source = this.#slides ?? (isNotebookId(fileId) ? null : await this.#waitForSlides(token));
     if (!source || token !== this.#openToken) return;
-    this.rasterising = { done: 0, total: source.pageCount };
+    // Notebook pages (C1): every page of the ticked PDF and image sources, or those `only` keeps.
+    const raster = source.ingestRaster(only);
+    if (raster.pages.length === 0) return;
+    this.rasterising = { done: 0, total: raster.pages.length };
     try {
-      await pageImages(source.pdfDoc, {
+      await rasterPages(raster, {
         onProgress: (done, total) => {
           if (token === this.#openToken) this.rasterising = { done, total };
         },
@@ -525,6 +732,15 @@ export class DocStore {
       onRejectSuggestion: (id) => void this.resolveSuggestion(id, 'rejected'),
       onOpenSlide: (page, rect) => this.openSlide(page, rect),
       onFocusThread: (threadId) => this.focusThread?.(threadId),
+      // The overview (`notebooks.md` §3–§5): chips through the notebook, the toolbar, the
+      // objectives' fills, and the recommended blocks.
+      sources: this.#notebookParts(this.fileId),
+      objectives: objectiveFills(this.progressView?.() ?? null),
+      overview: this.overview ? ($state.snapshot(this.overview) as OverviewMeta) : null,
+      blockActions: $state.snapshot(this.blockActions) as Record<string, BlockActionView>,
+      recommendationStates: $state.snapshot(this.recommendationStates) as Record<string, RecommendationView>,
+      onBlockAction: (blockId, kind) => void this.blockAction(blockId, kind),
+      onRecommendation: (id, action) => void this.recommendation(id, action),
     };
   }
 
@@ -561,21 +777,31 @@ export class DocStore {
 
   apply(e: RoomEvent): void {
     switch (e.type) {
-      case 'notes.status':
-        if (this.docId && e.docId !== this.docId) return;
-        if (!this.docId && this.fileId !== e.fileId) return;
+      case 'notes.status': {
+        const mine = this.docId ? e.docId === this.docId : this.fileId === e.fileId;
+        // During an Update the doc may come back under a new id: the notebook is what matters then.
+        if (!mine && !(this.#awaitingRewrite && e.fileId === this.fileId)) return;
+        const was = this.ingest.status;
         this.ingest = { ...e.ingest };
+        if (e.ingest.status === 'ready' && was !== 'ready') void this.#settleAfterIngest();
+        if (e.ingest.status === 'failed' && this.#awaitingRewrite) {
+          this.#awaitingRewrite = false;
+          this.updatingOverview = false;
+        }
         return;
+      }
       case 'notes.window':
         if (e.docId !== this.docId) return;
         this.appendIngestWindow(e.afterBlockId, e.blocks, e.nodes);
         return;
       case 'doc.edit':
         if (e.docId !== this.docId) return;
+        this.#settleBlockActions(e.batch.author);
         void this.applyAgentEdit(e.batch);
         return;
       case 'doc.cursor': {
         if (e.docId !== this.docId) return;
+        if (e.state === 'idle') this.#settleBlockActions(e.author);
         const rest = this.cursors.filter((c) => c.author !== e.author);
         this.cursors = e.state === 'idle' ? rest : [...rest, { author: e.author, blockId: e.blockId, state: e.state }];
         this.#bump();
@@ -591,6 +817,36 @@ export class DocStore {
       default:
         return;
     }
+  }
+
+  /**
+   * **The ingest (or an Update) finished.** Main wrote the overview's metadata with it, and the
+   * doc this store adopted at the start did not have it, so it is read now. The whole doc is taken
+   * too when this store has nothing better: after an Update (the old overview was taken down for
+   * it), with no editor mounted, or when the stored doc has blocks the live one never received
+   * and the learner has not typed — an overview may land in one write rather than in windows.
+   */
+  async #settleAfterIngest(): Promise<void> {
+    const fileId = this.fileId;
+    if (!fileId || !has('notesGet')) return;
+    const token = this.#openToken;
+    let view: NotesDocView | null;
+    try {
+      view = await bridge().notesGet({ fileId });
+    } catch {
+      return;
+    }
+    if (!view || token !== this.#openToken || fileId !== this.fileId) return;
+    const live = this.#view;
+    const stored = (view.doc as { content?: unknown[] } | null)?.content?.length ?? 0;
+    if (this.#awaitingRewrite || !live || (!this.learnerTouched && stored > live.state.doc.childCount)) {
+      this.#awaitingRewrite = false;
+      this.updatingOverview = false;
+      this.#adopt(view);
+      return;
+    }
+    this.overview = view.overview ? structuredClone(view.overview) : null;
+    this.#bump();
   }
 
   /**
@@ -943,8 +1199,9 @@ export class DocStore {
         }
       });
     }
-    const rest: number[] = [];
-    for (let page = 1; page <= this.pageCount; page++) if (!claimed.has(page)) rest.push(page);
+    // The slides' own pages when they know them: a notebook's gaps (removed sources) are not slides.
+    const all = this.#slides?.pages() ?? Array.from({ length: this.pageCount }, (_, i) => i + 1);
+    const rest = all.filter((page) => !claimed.has(page));
     const out = groups.filter((group) => group.pages.length > 0);
     out.forEach((group) => group.pages.sort((a, b) => a - b));
     if (rest.length > 0) out.push({ title: 'Not in the notes', pages: rest });
@@ -1047,18 +1304,216 @@ export class DocStore {
    * **Saved first**, as `answerQuestion` is: main reads the section from the *stored* document,
    * and the caret's block may be one the learner made within the save debounce.
    */
-  async generateBlock(kind: 'table' | 'diagram', instruction: string | null): Promise<GenerateBlockOutcome> {
+  async generateBlock(
+    kind: GeneratedBlockKind,
+    instruction: string | null,
+    /** The block to insert after; the caret's block when not given (Insert). A recommendation's is its section's last. */
+    at?: string,
+  ): Promise<GenerateBlockOutcome> {
     const fileId = this.fileId;
     const docId = this.docId;
     if (!fileId || !docId || !this.#view || !has('notesGenerateBlock')) {
       return { inserted: false, editId: null, reason: 'no_doc' };
     }
     if (this.frozen) return { inserted: false, editId: null, reason: 'frozen' };
-    const blockId = this.insertTarget();
+    const blockId = at ?? this.insertTarget();
     if (!blockId) return { inserted: false, editId: null, reason: 'no_place' };
     await this.#flushSave();
     const text = instruction?.trim() ?? '';
     return bridge().notesGenerateBlock({ fileId, docId, blockId, kind, instruction: text.length > 0 ? text : null });
+  }
+
+  // ── the overview's actions (`notebooks.md` §2, §4, §5.3) ──────────────────────────────────
+
+  /**
+   * **Explain · Example · Quiz me · Ask…** on one block (§4.1). Ask… opens the composer with the
+   * block quoted and goes no further (C7). The other three go to main (`notes:blockAction`),
+   * saved first because main reads the block from the stored doc. Accepted, the chat brings the
+   * block's thread into view and the block says "Ellie is writing…" until her edit arrives (or
+   * her cursor goes idle); refused, it says why in one line under the block.
+   */
+  async blockAction(blockId: string, kind: BlockActionKind): Promise<void> {
+    const view = this.#view;
+    const found = view ? blockPos(view.state.doc, blockId) : null;
+    if (!found) return;
+    const quote = blockQuote(found.node);
+    if (kind === 'ask') {
+      this.askAboutSpan?.({ blockId, quote });
+      return;
+    }
+    const fileId = this.fileId;
+    const docId = this.docId;
+    if (this.blockActions[blockId]?.state === 'running') return;
+    if (!fileId || !docId || !has('notesBlockAction')) {
+      this.#refuseBlock(blockId, kind, blockActionRefusal('no_doc'));
+      return;
+    }
+    const author: AgentAuthor = kind === 'quiz' ? 'max' : 'ellie';
+    this.#setBlockLine(blockId, { kind, author, state: 'running', line: kind === 'quiz' ? 'Max is asking…' : 'Ellie is writing…' }, BLOCK_ACTION_MS);
+    try {
+      await this.#flushSave();
+      const result = await bridge().notesBlockAction({ fileId, docId, blockId, kind, quote });
+      if (fileId !== this.fileId) return;
+      if (!result.accepted) {
+        this.#refuseBlock(blockId, kind, blockActionRefusal(result.reason));
+        return;
+      }
+      if (result.threadId) this.focusThread?.(result.threadId);
+      // Frozen: the answer is the chat's alone (§4.2), so there is no edit to wait for here.
+      if (this.frozen) this.#clearBlockLine(blockId);
+    } catch (err) {
+      if (fileId === this.fileId) this.#refuseBlock(blockId, kind, blockActionRefusal('failed'));
+      console.warn('notes: block action failed —', message(err));
+    }
+  }
+
+  #refuseBlock(blockId: string, kind: BlockActionKind, line: string): void {
+    this.#setBlockLine(blockId, { kind, author: kind === 'quiz' ? 'max' : 'ellie', state: 'refused', line }, REFUSAL_MS);
+  }
+
+  #setBlockLine(blockId: string, value: BlockActionView, ttl: number): void {
+    this.blockActions = { ...this.blockActions, [blockId]: value };
+    this.#bump();
+    const key = `block:${blockId}`;
+    const old = this.#lineTimers.get(key);
+    if (old) clearTimeout(old);
+    this.#lineTimers.set(key, setTimeout(() => this.#clearBlockLine(blockId), ttl));
+  }
+
+  #clearBlockLine(blockId: string): void {
+    const key = `block:${blockId}`;
+    const timer = this.#lineTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.#lineTimers.delete(key);
+    if (!(blockId in this.blockActions)) return;
+    const { [blockId]: _gone, ...rest } = this.blockActions;
+    this.blockActions = rest;
+    this.#bump();
+  }
+
+  /** The agent's edit landed, or its cursor went idle: what it was doing on a block is done. */
+  #settleBlockActions(author: AgentAuthor): void {
+    for (const [blockId, value] of Object.entries(this.blockActions)) {
+      if (value.state === 'running' && value.author === author) this.#clearBlockLine(blockId);
+    }
+  }
+
+  /**
+   * A section's **recommended block** (§5.3): **Add** generates it at the end of its section by
+   * the Insert path (`generateBlock`), then marks it added; **✕** marks it dismissed. The card
+   * goes as soon as main says so, from the `OverviewMeta` main returns.
+   */
+  async recommendation(id: string, action: 'add' | 'dismiss'): Promise<void> {
+    const fileId = this.fileId;
+    const docId = this.docId;
+    const rec = this.overview?.recommendations.find((r) => r.id === id);
+    if (!fileId || !docId || !rec || !has('notesSetRecommendation')) return;
+    if (this.recommendationStates[id]?.state === 'adding') return;
+    if (action === 'add') {
+      const view = this.#view;
+      const section = view ? sectionSpans(view.state.doc).find((s) => s.headingBlockId === rec.headingBlockId) : null;
+      if (!section) return;
+      this.#setRecLine(id, { state: 'adding', line: 'Ellie is making it…' }, BLOCK_ACTION_MS);
+      let outcome: GenerateBlockOutcome;
+      try {
+        outcome = await this.generateBlock(rec.kind, rec.description, section.lastBlockId);
+      } catch (err) {
+        outcome = { inserted: false, editId: null, reason: 'failed' };
+        console.warn('notes: recommended block failed —', message(err));
+      }
+      if (fileId !== this.fileId) return;
+      if (!outcome.inserted) {
+        this.#setRecLine(id, { state: 'refused', line: generateRefusal(outcome.reason) }, REFUSAL_MS);
+        return;
+      }
+    }
+    const status = action === 'add' ? 'added' : 'dismissed';
+    try {
+      const next = await bridge().notesSetRecommendation({ fileId, docId, recommendationId: id, status });
+      if (fileId !== this.fileId) return;
+      this.overview = next
+        ? structuredClone(next)
+        : this.overview && {
+            ...this.overview,
+            recommendations: this.overview.recommendations.map((r) => (r.id === id ? { ...r, status } : r)),
+          };
+    } catch (err) {
+      console.warn('notes: the recommendation was not marked —', message(err));
+    }
+    this.#clearRecLine(id);
+  }
+
+  #setRecLine(id: string, value: RecommendationView, ttl: number): void {
+    this.recommendationStates = { ...this.recommendationStates, [id]: value };
+    this.#bump();
+    const key = `rec:${id}`;
+    const old = this.#lineTimers.get(key);
+    if (old) clearTimeout(old);
+    this.#lineTimers.set(key, setTimeout(() => this.#clearRecLine(id), ttl));
+  }
+
+  #clearRecLine(id: string): void {
+    const key = `rec:${id}`;
+    const timer = this.#lineTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.#lineTimers.delete(key);
+    if (id in this.recommendationStates) {
+      const { [id]: _gone, ...rest } = this.recommendationStates;
+      this.recommendationStates = rest;
+    }
+    this.#bump();
+  }
+
+  /**
+   * **Update overview** (§2), and **Make overview** on a legacy doc: main rewrites the overview's
+   * own blocks from the sources ticked now and carries the learner's text over.
+   *
+   * Saved first, so the learner's latest words are in the stored doc main carries over from. The
+   * page images of the sources the overview has not seen go next. Then the editor is taken down
+   * (`pending`), as Regenerate does: nobody types into an overview that is about to be replaced,
+   * and nothing of it is saved over the new one. The new doc is read when main says `ready`
+   * (`#settleAfterIngest`). Returns a line for the learner when it could not start, or null.
+   */
+  async updateOverview(): Promise<string | null> {
+    const fileId = this.fileId;
+    if (!fileId || !this.docId || !has('notesUpdateOverview') || this.updatingOverview) return null;
+    const token = this.#openToken;
+    this.updatingOverview = true;
+    const before = { ...this.ingest };
+    try {
+      await this.#flushSave();
+      const unseen = unseenSources(this.overview?.fingerprint ?? null, this.#notebookParts(fileId));
+      await this.#sendPageImages(fileId, token, (part) => unseen.has(part.fileId));
+      if (token !== this.#openToken) return null;
+      if (this.#saveTimer) clearTimeout(this.#saveTimer);
+      this.#saveTimer = null;
+      this.#savePending = false;
+      this.#cancelAnimations();
+      this.#awaitingRewrite = true;
+      this.ingest = { ...this.ingest, status: 'pending', windowsDone: 0, error: null };
+      const result = await bridge().notesUpdateOverview({ fileId });
+      if (token !== this.#openToken) return null;
+      if (!result.started) {
+        this.#awaitingRewrite = false;
+        this.updatingOverview = false;
+        this.ingest = before;
+        return updateRefusal(result.reason);
+      }
+      return null;
+    } catch (err) {
+      if (token === this.#openToken) {
+        this.#awaitingRewrite = false;
+        this.updatingOverview = false;
+        this.ingest = before;
+      }
+      return message(err);
+    }
+  }
+
+  /** **Not now** on the banner: hidden until the sources change again (`overviewBanner`). */
+  dismissBanner(fingerprint: string): void {
+    this.bannerDismissed = fingerprint;
+    if (this.fileId) this.#dismissed.set(this.fileId, fingerprint);
   }
 
   // ── saving (§D5: optimistic, `baseVersion`) ───────────────────────────────────────────────

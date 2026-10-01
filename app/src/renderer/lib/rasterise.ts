@@ -27,6 +27,16 @@
  */
 
 import type { PageImage, Rect } from '../../shared/doc/types.js';
+import {
+  citationLabel,
+  locatePage,
+  pageRanges,
+  pagesOfSource,
+  shortSourceName,
+  virtualPageCount,
+  type NotebookSourceView,
+  type SourceKind,
+} from '../../shared/notebook.js';
 
 // ── the numbers ─────────────────────────────────────────────────────────────────────────────
 
@@ -279,9 +289,6 @@ export interface PageImagesOptions {
  * a deck cannot be opened. The count of what actually made it is the return value.
  */
 export async function pageImages(doc: PdfDoc, options: PageImagesOptions): Promise<number> {
-  const width = options.width ?? PAGE_IMAGE_WIDTH;
-  const quality = options.quality ?? PAGE_IMAGE_QUALITY;
-  const batchSize = options.batchSize ?? PAGE_IMAGE_BATCH;
   const total = doc.numPages;
   /**
    * **A deck with no page count is a wiring bug, not an empty deck.**
@@ -295,7 +302,26 @@ export async function pageImages(doc: PdfDoc, options: PageImagesOptions): Promi
   if (!Number.isInteger(total) || total < 1) {
     throw new Error(`pageImages: the document reports no pages (numPages=${String(total)})`);
   }
-  const groups = batches(pageNumbers(total), batchSize);
+  return rasterPages({ pages: pageNumbers(total), render: (page, width) => renderPage(doc, page, width) }, options);
+}
+
+/**
+ * Pages to rasterise for the ingest, under the numbers main files them by. For one PDF those are
+ * its own pages; for a notebook they are **notebook pages** (contract C1), and `render` is the
+ * composite's, which finds the source and its local page.
+ */
+export interface PageRaster {
+  pages: readonly number[];
+  render: (page: number, width: number) => Promise<HTMLCanvasElement | null>;
+}
+
+/** `pageImages` over any page list: the same batching, yielding and skip-on-failure. */
+export async function rasterPages(raster: PageRaster, options: PageImagesOptions): Promise<number> {
+  const width = options.width ?? PAGE_IMAGE_WIDTH;
+  const quality = options.quality ?? PAGE_IMAGE_QUALITY;
+  const batchSize = options.batchSize ?? PAGE_IMAGE_BATCH;
+  const total = raster.pages.length;
+  const groups = batches(raster.pages, batchSize);
 
   let sent = 0;
   let done = 0;
@@ -303,15 +329,17 @@ export async function pageImages(doc: PdfDoc, options: PageImagesOptions): Promi
     const images: PageImage[] = [];
     for (const page of groups[g]!) {
       try {
-        const canvas = await renderPage(doc, page, width);
-        const bytes = await encodeJpeg(canvas, quality);
-        if (bytes) {
+        const canvas = await raster.render(page, width);
+        const bytes = canvas ? await encodeJpeg(canvas, quality) : null;
+        if (canvas && bytes) {
           images.push({ page, mime: 'image/jpeg', width: canvas.width, height: canvas.height, bytes });
         }
         // Give the backing store back straight away: 66 pages of 1024 px bitmaps held at once
         // is the 901 MB failure the UI review measured on the viewer.
-        canvas.width = 0;
-        canvas.height = 0;
+        if (canvas) {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
       } catch {
         // Skipped. See the doc comment: images are optional, the ingest is not.
       }
@@ -328,7 +356,7 @@ export async function pageImages(doc: PdfDoc, options: PageImagesOptions): Promi
   return sent;
 }
 
-// ── the slide source: cached canvases for the carousel, the modal and inline figures ────────
+// ── one PDF: cached canvases for the carousel, the modal and inline figures ─────────────────
 
 interface CachedPage {
   canvas: HTMLCanvasElement;
@@ -336,7 +364,8 @@ interface CachedPage {
 }
 
 /**
- * One open PDF, with a small LRU of rendered pages.
+ * One open PDF, with a small LRU of rendered pages. Its page numbers are **the PDF's own**; the
+ * notebook's composite `SlideSource` below translates to them, and nothing else should hold one.
  *
  * Kept deliberately simple: pages are rendered at the width they are asked for, and a page
  * already rendered at least that wide is reused and scaled down by `drawImage` (which is what
@@ -344,7 +373,7 @@ interface CachedPage {
  * request is re-rendered, because upscaling a thumbnail into the modal is the one place the
  * "pixels, not a redraw" claim would visibly break.
  */
-export class SlideSource {
+export class PdfSlides {
   #doc: PdfDoc;
   #cache = new Map<number, CachedPage>();
   #inFlight = new Map<string, Promise<HTMLCanvasElement | null>>();
@@ -358,8 +387,8 @@ export class SlideSource {
     this.pageCount = doc.numPages;
   }
 
-  static async open(bytes: Uint8Array): Promise<SlideSource> {
-    return new SlideSource(await openPdf(bytes));
+  static async open(bytes: Uint8Array): Promise<PdfSlides> {
+    return new PdfSlides(await openPdf(bytes));
   }
 
   /**
@@ -471,5 +500,414 @@ export class SlideSource {
       }
       this.#cache.delete(oldest.value);
     }
+  }
+}
+
+// ── the notebook's slides: one virtual deck over several sources (`notebooks.md`, C1) ───────
+
+/**
+ * What the composite needs to know of a source. `NotebookSourceView` satisfies it; the legacy
+ * one-PDF path makes one up (`SlideSource.open`).
+ */
+export type SlidePart = Pick<
+  NotebookSourceView,
+  'fileId' | 'name' | 'kind' | 'pageBase' | 'pageCount' | 'enabled' | 'status'
+>;
+
+/** A source's bytes as `openDocument({ fileId })` hands them over: a PDF's or image's, or text. */
+export interface SourceContent {
+  bytes: Uint8Array | null;
+  text: string | null;
+}
+
+export interface SlideSourceDeps {
+  /** A source's content, by its file id. The renderer's is `bridge().openDocument`. */
+  open: (fileId: string) => Promise<SourceContent | null>;
+  /**
+   * A text source's pages: `shared/paginate.ts` `paginateText`, the same function main cuts the
+   * notebook pages with (contract C3), so a citation to `§2` shows the second page main read.
+   */
+  paginate: (text: string) => string[];
+}
+
+/** A text page's card, in the same units `size()` reports a PDF page in: a portrait sheet. */
+export const TEXT_CARD = { width: 600, height: 800 } as const;
+
+/** One source, once its content has arrived. */
+type Loaded =
+  | { kind: 'pdf'; pdf: PdfSlides }
+  | { kind: 'text'; pages: string[] }
+  | { kind: 'image'; image: CanvasImageSource; width: number; height: number }
+  | { kind: 'none' };
+
+/** The notebook page's source and its own page, or null for a gap. `locatePage`, typed for parts. */
+export function locatePart(parts: readonly SlidePart[], page: number): { part: SlidePart; localPage: number } | null {
+  const hit = locatePage(parts, page);
+  return hit ? { part: hit.source, localPage: hit.localPage } : null;
+}
+
+/** Every notebook page that names a slide still there, ascending: the gaps left out. */
+export function partPages(parts: readonly SlidePart[]): number[] {
+  return parts.flatMap((part) => pagesOfSource(part)).sort((a, b) => a - b);
+}
+
+/**
+ * The next page `delta` away that is not in a gap, or null at either end. The modal's Next and
+ * Previous: a removed source's pages are skipped rather than shown as a blank sheet.
+ */
+export function stepPage(parts: readonly SlidePart[], page: number, delta: number): number | null {
+  const all = partPages(parts);
+  if (all.length === 0) return null;
+  const at = all.indexOf(page);
+  if (at < 0) {
+    // From a gap: the nearest page in the direction asked.
+    const next = delta > 0 ? all.find((p) => p > page) : [...all].reverse().find((p) => p < page);
+    return next ?? null;
+  }
+  return all[at + delta] ?? null;
+}
+
+/**
+ * The words for one page, where a whole slide is named (the modal's bar, the preview's head, a
+ * thumbnail's label). One source: `Slide 3`, as it always read. Several: `Lecture-complex p. 3`,
+ * `Notes §2`, or an image's name. A page in a gap is `A removed source`.
+ */
+export function pageTitle(parts: readonly SlidePart[], page: number): string {
+  const hit = locatePart(parts, page);
+  if (!hit) return 'A removed source';
+  const { part, localPage } = hit;
+  if (parts.length <= 1) {
+    if (part.kind === 'text') return `Part ${String(localPage)}`;
+    if (part.kind === 'image') return shortSourceName(part.name, 40);
+    return `Slide ${String(localPage)}`;
+  }
+  const name = shortSourceName(part.name, 28);
+  if (part.kind === 'image') return name;
+  return part.kind === 'text' ? `${name} §${String(localPage)}` : `${name} p. ${String(localPage)}`;
+}
+
+/** The pages the ingest is shown as images: ticked, ready PDF and image sources (text it reads). */
+export function ingestPages(parts: readonly SlidePart[], only?: (part: SlidePart) => boolean): number[] {
+  return parts
+    .filter((p) => p.enabled && p.status === 'ready' && p.kind !== 'text' && (!only || only(p)))
+    .flatMap((part) => pagesOfSource(part))
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Lay words into lines no wider than `maxWidth`, by a measuring function (a canvas's
+ * `measureText` in the app, a character count in the tests). A word wider than a line gets a
+ * line to itself rather than being cut.
+ */
+export function wrapWords(text: string, maxWidth: number, measure: (s: string) => number): string[] {
+  const lines: string[] = [];
+  for (const paragraph of text.split(/\n+/)) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    let line = '';
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && measure(next) > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    lines.push('');
+  }
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+/**
+ * A text page drawn as a card, for the places that can only show a picture of a page: the
+ * carousel's thumbnails, an inline figure, the page images. The modal and the preview show the
+ * text itself (`SlideSource.text`), which can be read and selected.
+ */
+function drawTextCard(title: string, body: string, width: number): HTMLCanvasElement {
+  const w = Math.max(60, Math.round(width));
+  const scale = w / TEXT_CARD.width;
+  const h = Math.round(TEXT_CARD.height * scale);
+  const canvas = makeCanvas(w, h);
+  const context = canvas.getContext('2d');
+  if (!context) return canvas;
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, w, h);
+  const pad = 40 * scale;
+  context.fillStyle = '#6b6b80';
+  context.font = `600 ${String(18 * scale)}px -apple-system, system-ui, sans-serif`;
+  context.fillText(title, pad, pad + 14 * scale, w - pad * 2);
+  context.fillStyle = '#1d1d2c';
+  const size = 17 * scale;
+  context.font = `${String(size)}px -apple-system, system-ui, sans-serif`;
+  const lineHeight = size * 1.45;
+  const lines = wrapWords(body, w - pad * 2, (s) => context.measureText(s).width);
+  let y = pad + 56 * scale;
+  for (const line of lines) {
+    if (y > h - pad) break;
+    context.fillText(line, pad, y);
+    y += lineHeight;
+  }
+  return canvas;
+}
+
+/** An image's bytes as something `drawImage` takes. Null when the bytes are not an image. */
+async function decodeImage(bytes: Uint8Array): Promise<{ image: CanvasImageSource; width: number; height: number } | null> {
+  try {
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)]));
+    return { image: bitmap, width: bitmap.width, height: bitmap.height };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * **The notebook's slides, as one deck** (contract C1). Everything that shows a page — the chip's
+ * preview, the slide modal, the carousel, the inline figures, and the page images for the ingest —
+ * asks this for a **notebook page**, and only this translates: `locatePage` finds the source and
+ * its local page, and the source's own content is opened the first time one of its pages is
+ * asked for (a PDF's pages through `PdfSlides`, a text source's page as a card, an image as
+ * itself). The surface is the one the single-PDF `SlideSource` had, so the code that draws pages
+ * did not change when the deck became several files.
+ *
+ * Sources are swapped in with `setSources` as the notebook changes (a source added, ticked,
+ * removed); what was already opened is kept for the sources still there. A removed source's
+ * pages are a gap: `canvas` gives null, and `pageTitle` says the source is gone.
+ */
+export class SlideSource {
+  #parts: SlidePart[] = [];
+  #deps: SlideSourceDeps | null;
+  #loading = new Map<string, Promise<Loaded>>();
+  #loaded = new Map<string, Loaded>();
+  /** Text cards and image renders, keyed `page:width`. A handful, so no LRU beyond a cap. */
+  #drawn = new Map<string, HTMLCanvasElement>();
+  #destroyed = false;
+
+  constructor(parts: readonly SlidePart[], deps: SlideSourceDeps | null) {
+    this.#parts = [...parts];
+    this.#deps = deps;
+  }
+
+  /**
+   * **One PDF, as a deck of one source.** The path for a file that is not in a notebook (the dev
+   * harness, a pre-notebook build) and the shape everything was written against: the notebook
+   * page is the PDF page, and the labels read `Slide 3` / `p. 3` as they always did.
+   */
+  static async open(bytes: Uint8Array): Promise<SlideSource> {
+    const pdf = await PdfSlides.open(bytes);
+    const part: SlidePart = {
+      fileId: '',
+      name: 'Slides.pdf',
+      kind: 'pdf',
+      pageBase: 0,
+      pageCount: pdf.pageCount,
+      enabled: true,
+      status: 'ready',
+    };
+    const source = new SlideSource([part], null);
+    source.#loaded.set('', { kind: 'pdf', pdf });
+    return source;
+  }
+
+  /** The notebook pages in use, gaps included: the highest page any source still has. */
+  get pageCount(): number {
+    return virtualPageCount(this.#parts);
+  }
+
+  get parts(): readonly SlidePart[] {
+    return this.#parts;
+  }
+
+  /** The notebook changed. Content already opened is kept for every source still in it. */
+  setSources(parts: readonly SlidePart[]): void {
+    this.#parts = [...parts];
+    const keep = new Set(parts.map((p) => p.fileId));
+    for (const [fileId, loaded] of this.#loaded) {
+      if (keep.has(fileId)) continue;
+      if (loaded.kind === 'pdf') loaded.pdf.destroy();
+      this.#loaded.delete(fileId);
+      this.#loading.delete(fileId);
+    }
+    this.#drawn.clear();
+  }
+
+  pages(): number[] {
+    return partPages(this.#parts);
+  }
+
+  locate(page: number): { part: SlidePart; localPage: number } | null {
+    return locatePart(this.#parts, page);
+  }
+
+  title(page: number): string {
+    return pageTitle(this.#parts, page);
+  }
+
+  /**
+   * A chip's words for these notebook pages (`citationLabel`). With no sources known yet (the
+   * notebook view has not arrived) the plain `p. 3–4`, rather than calling every page removed.
+   */
+  citation(pages: readonly number[]): string {
+    if (this.#parts.length === 0) return pages.length > 0 ? `p. ${pageRanges(pages)}` : '';
+    return citationLabel(this.#parts, pages);
+  }
+
+  step(page: number, delta: number): number | null {
+    return stepPage(this.#parts, page, delta);
+  }
+
+  kindOf(page: number): SourceKind | null {
+    return this.locate(page)?.part.kind ?? null;
+  }
+
+  /** A text source's page, as text. Null for a page of any other kind, or a text not readable. */
+  async text(page: number): Promise<string | null> {
+    const hit = this.locate(page);
+    if (!hit || hit.part.kind !== 'text') return null;
+    const loaded = await this.#load(hit.part);
+    return loaded.kind === 'text' ? (loaded.pages[hit.localPage - 1] ?? null) : null;
+  }
+
+  /** The page's box in points (a PDF), pixels (an image) or the card's units. Null until measured. */
+  size(page: number): { width: number; height: number } | null {
+    const hit = this.locate(page);
+    if (!hit) return null;
+    if (hit.part.kind === 'text') return { ...TEXT_CARD };
+    const loaded = this.#loaded.get(hit.part.fileId);
+    if (!loaded) return null;
+    if (loaded.kind === 'pdf') return loaded.pdf.size(hit.localPage);
+    if (loaded.kind === 'image') return { width: loaded.width, height: loaded.height };
+    return null;
+  }
+
+  async measure(page: number): Promise<{ width: number; height: number }> {
+    const hit = this.locate(page);
+    if (!hit) return { ...TEXT_CARD };
+    const loaded = await this.#load(hit.part);
+    if (loaded.kind === 'pdf') return loaded.pdf.measure(hit.localPage);
+    if (loaded.kind === 'image') return { width: loaded.width, height: loaded.height };
+    return { ...TEXT_CARD };
+  }
+
+  /** The page at (at least) `width` px across, or null (a gap, or a source that would not open). */
+  async canvas(page: number, width: number): Promise<HTMLCanvasElement | null> {
+    if (this.#destroyed) return null;
+    const hit = this.locate(page);
+    if (!hit) return null;
+    const loaded = await this.#load(hit.part);
+    if (this.#destroyed) return null;
+    if (loaded.kind === 'pdf') return loaded.pdf.canvas(hit.localPage, width);
+    const key = `${String(page)}:${String(Math.round(width))}`;
+    const cached = this.#drawn.get(key);
+    if (cached) return cached;
+    let drawn: HTMLCanvasElement | null = null;
+    if (loaded.kind === 'text') {
+      drawn = drawTextCard(this.title(page), loaded.pages[hit.localPage - 1] ?? '', width);
+    } else if (loaded.kind === 'image') {
+      const w = Math.max(1, Math.round(width));
+      const h = Math.max(1, Math.round((w * loaded.height) / Math.max(1, loaded.width)));
+      drawn = makeCanvas(w, h);
+      drawn.getContext('2d')?.drawImage(loaded.image, 0, 0, w, h);
+    }
+    if (!drawn) return null;
+    if (this.#drawn.size >= SLIDE_CACHE) {
+      const oldest = this.#drawn.keys().next();
+      if (!oldest.done) this.#drawn.delete(oldest.value);
+    }
+    this.#drawn.set(key, drawn);
+    return drawn;
+  }
+
+  /** A crop of the page, as its own canvas. See `PdfSlides.crop`; the same arithmetic over any kind. */
+  async crop(page: number, rect: Rect | null, width: number, dpr = 1): Promise<HTMLCanvasElement | null> {
+    const hit = this.locate(page);
+    if (!hit) return null;
+    const loaded = await this.#load(hit.part);
+    if (loaded.kind === 'pdf') return loaded.pdf.crop(hit.localPage, rect, width, dpr);
+    const box = rect ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
+    const span = Math.max(0.02, box.x1 - box.x0);
+    const source = await this.canvas(page, Math.min(4096, Math.ceil((width * dpr) / span)));
+    if (!source) return null;
+    const css = cropBox(rect, await this.measure(page), width);
+    const out = makeCanvas(Math.round(css.w * dpr), Math.round(css.h * dpr));
+    const context = out.getContext('2d');
+    if (!context) return null;
+    const src = sourceRect(box, { width: source.width, height: source.height });
+    context.drawImage(source, src.sx, src.sy, src.sw, src.sh, 0, 0, out.width, out.height);
+    out.style.width = `${String(css.w)}px`;
+    out.style.height = `${String(css.h)}px`;
+    return out;
+  }
+
+  /**
+   * The page images the ingest is shown (contract C1: under **notebook** page numbers): every
+   * page of the ticked, ready PDF and image sources, or of those `only` lets through (the sources
+   * an Update overview has not seen). Text sources are left out: main reads their text.
+   */
+  ingestRaster(only?: (part: SlidePart) => boolean): PageRaster {
+    return {
+      pages: ingestPages(this.#parts, only),
+      render: async (page, width) => {
+        const hit = this.locate(page);
+        if (!hit) return null;
+        const loaded = await this.#load(hit.part);
+        if (loaded.kind === 'pdf') return renderPage(loaded.pdf.pdfDoc, hit.localPage, width);
+        if (loaded.kind !== 'image') return null;
+        // A fresh canvas, never the cached one: `rasterPages` zeroes what it is given.
+        const w = Math.max(1, Math.min(Math.round(width), loaded.width));
+        const h = Math.max(1, Math.round((w * loaded.height) / Math.max(1, loaded.width)));
+        const out = makeCanvas(w, h);
+        out.getContext('2d')?.drawImage(loaded.image, 0, 0, w, h);
+        return out;
+      },
+    };
+  }
+
+  destroy(): void {
+    this.#destroyed = true;
+    for (const loaded of this.#loaded.values()) {
+      if (loaded.kind === 'pdf') loaded.pdf.destroy();
+      if (loaded.kind === 'image' && 'close' in loaded.image) (loaded.image as ImageBitmap).close();
+    }
+    this.#loaded.clear();
+    this.#loading.clear();
+    this.#drawn.clear();
+  }
+
+  /** Open a source's content once. A failure is remembered as `none`: a degraded page, not an error. */
+  #load(part: SlidePart): Promise<Loaded> {
+    const done = this.#loaded.get(part.fileId);
+    if (done) return Promise.resolve(done);
+    const pending = this.#loading.get(part.fileId);
+    if (pending) return pending;
+    const deps = this.#deps;
+    const job = (async (): Promise<Loaded> => {
+      let loaded: Loaded = { kind: 'none' };
+      try {
+        const content = deps ? await deps.open(part.fileId) : null;
+        if (content && part.kind === 'pdf' && content.bytes) {
+          loaded = { kind: 'pdf', pdf: await PdfSlides.open(content.bytes) };
+        } else if (content && part.kind === 'text' && content.text !== null && deps) {
+          loaded = { kind: 'text', pages: deps.paginate(content.text) };
+        } else if (content && part.kind === 'image' && content.bytes) {
+          const image = await decodeImage(content.bytes);
+          if (image) loaded = { kind: 'image', ...image };
+        }
+      } catch {
+        loaded = { kind: 'none' };
+      }
+      if (this.#destroyed) {
+        if (loaded.kind === 'pdf') loaded.pdf.destroy();
+        return { kind: 'none' };
+      }
+      // Only kept if the source is still in the notebook: `setSources` may have dropped it.
+      if (this.#parts.some((p) => p.fileId === part.fileId)) this.#loaded.set(part.fileId, loaded);
+      this.#loading.delete(part.fileId);
+      return loaded;
+    })();
+    this.#loading.set(part.fileId, job);
+    return job;
   }
 }
