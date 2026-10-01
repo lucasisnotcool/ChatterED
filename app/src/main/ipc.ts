@@ -1051,7 +1051,19 @@ export class AppService {
       // Notebooks as subjects (NOTEBOOK-CONTRACT.md C1–C4): `notebooks/host.ts`.
       notebooks: this.#notebookHost,
       userDataDir: this.#d.userDataDir,
-      emit: (event) => this.emit(event),
+      emit: (event) => {
+        this.emit(event);
+        /**
+         * A notebook's tree is written by its overview (`notes/overviewingest.ts`, contract C5),
+         * which reaches the app only through this stream and not through `#onTree`. The tree is the
+         * room's concept pack, so an overview that lands while the notebook's room is open must
+         * swap the pack now, not at the next `openRoom` (track N2's request, #58).
+         */
+        if (event.type === 'objectives.tree' && event.tree.status === 'ready') {
+          const roomId = event.roomId ?? this.#roomIdForFile(event.fileId);
+          if (roomId !== null) this.#ensurePack(roomId);
+        }
+      },
       backend: () => this.backend(),
       llm: (resolved, material) => this.llm(resolved, material),
       openFlowRoom: async (fileId) => (await roomFor(fileId, true))!,
