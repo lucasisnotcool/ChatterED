@@ -160,6 +160,11 @@ export function fileKindFor(name: string): FileKind | null {
   return ext === 'md' || ext === 'markdown' ? 'markdown' : 'text';
 }
 
+/** `nb_<12 hex>`, the same shape as every other id the vault mints. */
+export function newNotebookId(): string {
+  return newVaultId(NOTEBOOK_ID_PREFIX.slice(0, -1));
+}
+
 let savepointSeq = 0;
 
 /** A savepoint, so it nests inside a caller's transaction (the legacy import is one). */
@@ -308,8 +313,8 @@ export class NotebookService {
   }
 
   /** The row alone. Exposed for the legacy import, which supplies its own name and stamps. */
-  createRow(input: { name: string; legacyFileId?: string | null; updatedAt?: string }): string {
-    const id = newVaultId(NOTEBOOK_ID_PREFIX.slice(0, -1));
+  createRow(input: { id?: string; name: string; legacyFileId?: string | null; updatedAt?: string }): string {
+    const id = input.id ?? newNotebookId();
     const now = this.#now();
     this.#repo.insert({
       id,

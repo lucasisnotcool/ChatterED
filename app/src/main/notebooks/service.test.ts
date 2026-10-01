@@ -16,12 +16,9 @@ import { hwmKey } from './repo.js';
 import type { NotebookChange } from '../../shared/notebook.js';
 import { notebookContentKey, TEXT_PAGE_WORDS } from '../../shared/notebook.js';
 import { paginateText } from '../../shared/paginate.js';
+import { TWO_PAGE_PDF } from './fixtures.test-support.js';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../db/migrations', import.meta.url));
-
-/** The hand-written two-page PDF from vault/service.test.ts: "Challenger", then "Hessian". */
-export const TWO_PAGE_PDF =
-  '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 7 0 R >> >> /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 42 >>\nstream\nBT /F1 24 Tf 20 100 Td (Challenger) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 7 0 R >> >> /Contents 6 0 R >>\nendobj\n6 0 obj\n<< /Length 39 >>\nstream\nBT /F1 24 Tf 20 100 Td (Hessian) Tj ET\nendstream\nendobj\n7 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\nxref\n0 8\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000121 00000 n \n0000000247 00000 n \n0000000338 00000 n \n0000000464 00000 n \n0000000552 00000 n \ntrailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n622\n%%EOF\n';
 
 let tmp = '';
 let outside = '';
