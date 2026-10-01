@@ -341,6 +341,24 @@ describe('the silence thresholds scale to what there was to read', () => {
     expect(h.fires.map((f) => f.stage)).toEqual([1, 2]);
   });
 
+  /** Live, 1 Oct 2026: two stage-2 nudges eleven seconds apart after a relaunch. */
+  it('arms nothing after a fill at stage 2, so stage 2 never fires twice', async () => {
+    const h = makeTimer();
+    const stages = silenceStagesMs(400);
+    h.timer.arm({ stages });
+    // The app was closed mid-window: the quiet is past stage 2 by the time the window is recovered.
+    h.clock.sleep(stages.stageTwoMs + 1_000);
+    h.timer.recover();
+    expect(h.fires.map((f) => f.stage)).toEqual([2]);
+    h.timer.arm({ keepCumulativeIdle: true });
+    expect(h.timer.snapshot.deadlineTs).toBeNull();
+    await h.clock.run(10 * 60_000);
+    expect(h.fires.map((f) => f.stage)).toEqual([2]);
+    // Anything the learner or an agent does next arms a fresh window as before.
+    h.timer.arm({ stages });
+    expect(h.timer.snapshot.deadlineTs).toBe(h.clock.now() + stages.stageOneMs);
+  });
+
   it('falls back to the room config when nothing has said otherwise', () => {
     const h = makeTimer();
     h.timer.arm();

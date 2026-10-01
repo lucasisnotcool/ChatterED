@@ -268,10 +268,23 @@ export class SilenceTimer {
      * (45 + 45 = 90), which is why this arithmetic was never needed before and why it changes
      * nothing for a room still running on them.
      */
-    this.#state.deadlineTs =
-      this.#carriedIdleMs > 0
+    /**
+     * **Nothing is owed after stage 2.** A fill made *at* stage 2 used to re-arm a window of the
+     * 1 s floor, because the quiet already carried was past stage 2: it fired again at once, and
+     * only the two-fires cap stopped a third. Live (1 Oct 2026) that cap had been spent the other
+     * way: reopened after the app was closed mid-window, the room's recovered window fell back to
+     * the config's stage-2 threshold, the first late fire was already stage 2, and Ellie posted
+     * two near-identical stage-2 restatements eleven seconds apart, the second taking the floor
+     * from the learner's Quiz me. Stage 2 is the last nudge of a silence, so a fill at it arms
+     * no window; the next one is armed by whatever the learner or an agent does next.
+     */
+    const pastStageTwo = opts.keepCumulativeIdle === true && this.#carriedIdleMs >= this.#state.stageTwoMs;
+    this.#state.deadlineTs = pastStageTwo
+      ? null
+      : this.#carriedIdleMs > 0
         ? now + Math.max(1_000, this.#state.stageTwoMs - this.#carriedIdleMs)
         : now + this.#state.stageOneMs;
+    if (pastStageTwo) this.#state.windowStartTs = null;
     this.#state.windowExtensionMs = 0;
     this.#persist(now, true);
     this.#hooks.changed(this.snapshot);
