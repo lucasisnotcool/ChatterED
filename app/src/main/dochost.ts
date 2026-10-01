@@ -16,6 +16,7 @@ import type { LocalStore } from './db/store.js';
 import type { ResolvedBackend } from './llm/backend.js';
 import type { SegmentService } from './vault/segments.js';
 import type { VaultService } from './vault/service.js';
+import type { NotebookSourceView, SourceKind } from '../shared/notebook.js';
 
 /** The wrapper `register()` builds: logs `ipc.error` with the channel, then re-throws. */
 export type IpcHandle = <T>(channel: string, fn: (payload: T) => unknown) => void;
@@ -25,6 +26,12 @@ export interface DocHost {
   readonly store: LocalStore;
   readonly vault: VaultService;
   readonly segments: SegmentService;
+  /**
+   * **Notebooks as subjects** (`docs/research/notebooks.md`; added 2026-10-01 by the lead, frozen,
+   * implemented by track N1 in `src/main/notebooks/`). Every doc-path module that used to resolve
+   * a file id through `vault` resolves a notebook id here; see `app/docs/NOTEBOOK-CONTRACT.md`.
+   */
+  readonly notebooks: NotebookHost;
   /** `app.getPath('userData')`. Page images for the refine pass live under it. */
   readonly userDataDir: string;
 
@@ -71,6 +78,50 @@ export interface DocHost {
    * learner message opens a fresh room.
    */
   retireFlowRoom(roomId: string, reason: string): void;
+}
+
+/**
+ * **What the doc path may ask about a notebook.** Every page here is a notebook page
+ * (`shared/notebook.ts`): the sources laid end to end at their fixed bases.
+ */
+export interface NotebookHost {
+  /** The notebook, or null when the id is not a notebook's (or it was deleted). */
+  subject(notebookId: string): NotebookSubject | null;
+  /**
+   * The ticked, ready sources' text laid end to end, each under a `=== SOURCE: <name> ===` line
+   * and each page under a `[p. N]` line where N is the **notebook** page, so a model's citation is
+   * already a notebook page. Capped at the vault's `DECK_TEXT_CAP`; `truncated` says it was.
+   */
+  deckText(notebookId: string): { text: string; truncated: boolean };
+  /** The text of a run of notebook pages, from any source whether ticked or not. '' for a gap. */
+  textFor(input: { notebookId: string; pageFrom: number; pageTo: number }): string;
+  /**
+   * Where a notebook page lives: the source's file id (what `vault`, `segments` and the page
+   * cache take), its own page number, the copy's absolute path, its kind, and its content sha
+   * once read. Null for a gap or out of range.
+   */
+  locate(notebookId: string, page: number): LocatedPage | null;
+}
+
+export interface NotebookSubject {
+  readonly id: string;
+  readonly name: string;
+  /** `notebookContentKey(id)`: what `notes_docs` and `quiz_outcomes` are keyed on. */
+  readonly contentKey: string;
+  /** Every source, in the order added, whatever its state. */
+  readonly sources: readonly NotebookSourceView[];
+  /** `virtualPageCount(sources)`. */
+  readonly pageCount: number;
+  /** `contextFingerprint(sources)`. */
+  readonly fingerprint: string;
+}
+
+export interface LocatedPage {
+  fileId: string;
+  localPage: number;
+  path: string;
+  kind: SourceKind;
+  contentSha: string | null;
 }
 
 export interface ConfirmRequest {

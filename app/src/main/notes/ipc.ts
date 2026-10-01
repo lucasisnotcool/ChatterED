@@ -42,6 +42,8 @@ function view(repo: NotesRepo, record: NotesDocRecord): NotesDocView {
       status: 'applied' as DocEditStatus,
     })),
     suggestions: repo.suggestions(record.id, 'open'),
+    // Day 0: the overview track (N2) reads `overview_json` here.
+    overview: null,
   };
 }
 

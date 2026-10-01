@@ -27,6 +27,7 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
+import type { AddSourcesResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
 import type { PageLinesView } from './doc/cite.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
@@ -44,13 +45,16 @@ import type { TrialApi } from './trial.js';
 
 import type {
   AgentAuthor,
+  BlockActionKind,
   ChatResetResult,
   ChatView,
   DocEditStatus,
+  GeneratedBlockKind,
   NotesDocView,
   NotesRegenerateResult,
   PageImage,
   PrivateTurnView,
+  OverviewMeta,
   ProgressView,
   Suggestion,
 } from './doc/types.js';
@@ -173,6 +177,26 @@ export const IPC = {
   // Progress. Bodies in `src/main/docroom/progress.ts`.
   progressGet: 'progress:get',
   progressStart: 'progress:start',
+
+  // ── notebooks (`docs/research/notebooks.md`, 2026-10-01) ─────────────────────────────────
+  // Bodies in `src/main/notebooks/ipc.ts`. See `app/docs/NOTEBOOK-CONTRACT.md`.
+  notebookList: 'notebook:list',
+  notebookGet: 'notebook:get',
+  notebookCreate: 'notebook:create',
+  notebookRename: 'notebook:rename',
+  notebookDelete: 'notebook:delete',
+  notebookOpen: 'notebook:open',
+  notebookPickFiles: 'notebook:pickFiles',
+  notebookAddSources: 'notebook:addSources',
+  notebookSetEnabled: 'notebook:setEnabled',
+  notebookRemoveSource: 'notebook:removeSource',
+  /** main → renderer: a notebook or one of its sources changed (added, read, ticked, removed). */
+  notebookChanged: 'notebook:changed',
+  // The overview. Bodies in `src/main/notes/ipc.ts`.
+  notesUpdateOverview: 'notes:updateOverview',
+  notesSetRecommendation: 'notes:setRecommendation',
+  // Block actions. Body in `src/main/docroom/ipc.ts`.
+  notesBlockAction: 'notes:blockAction',
 } as const;
 
 export interface ChatterEdApi {
@@ -603,6 +627,96 @@ export interface ChatterEdApi {
     fileId: string;
     objectiveId: string;
   }): Promise<{ roomId: string; threadId: string; blockId: string | null }>;
+
+  // ── notebooks (`docs/research/notebooks.md`, 2026-10-01) ─────────────────────────────────
+  //
+  // **On every notes / chat / progress / objectives channel above, `fileId` is the notebook's
+  // id (`nb_…`)** — the subject the doc, the room and the tree belong to. The name stays because
+  // it is wired through forty call sites and renaming it buys nothing. Page numbers on those
+  // channels are notebook pages (`shared/notebook.ts`). `openDocument({ fileId })` still takes a
+  // *source's* file id, and is how the renderer gets a source's bytes for its slides.
+
+  /** The Notebooks home: every notebook, most recently opened first. */
+  notebookList(): Promise<NotebookSummary[]>;
+  notebookGet(input: { notebookId: string }): Promise<NotebookView | null>;
+  /**
+   * A new notebook. With `paths`, those files are added as its first sources and the name
+   * defaults to the first file's name without its extension; with none it is "Untitled notebook".
+   */
+  notebookCreate(input: { name?: string | null; paths?: string[] }): Promise<AddSourcesResult>;
+  notebookRename(input: { notebookId: string; name: string }): Promise<NotebookView>;
+  /** Main asks the learner to confirm (a native sheet). Deletes the copies, never the originals. */
+  notebookDelete(input: { notebookId: string }): Promise<{ deleted: boolean }>;
+  /** The learner opened it: stamps `opened_at` so the home sorts it first. */
+  notebookOpen(input: { notebookId: string }): Promise<NotebookView>;
+  /** The native multi-file picker, filtered to `SOURCE_EXTENSIONS`. Empty when cancelled. */
+  notebookPickFiles(): Promise<{ paths: string[] }>;
+  /**
+   * Copy files into the notebook (`notebooks.md` §1). Returns as soon as the copies exist; each
+   * source is then read in the background (`status: 'reading'` → `'ready'` or `'failed'`), and
+   * every step is pushed on `notebook:changed`.
+   */
+  notebookAddSources(input: { notebookId: string; paths: string[] }): Promise<AddSourcesResult>;
+  /** The checkboxes, and **All** (`notebooks.md` §2). */
+  notebookSetEnabled(input: { notebookId: string; fileIds: string[]; enabled: boolean }): Promise<NotebookView>;
+  /** Main asks the learner to confirm. Deletes the copy; its pages become a gap, never reused. */
+  notebookRemoveSource(input: { notebookId: string; fileId: string }): Promise<{ removed: boolean; notebook: NotebookView }>;
+  onNotebookChanged(listener: (change: NotebookChange) => void): () => void;
+  /**
+   * The absolute path of a file dropped on the window. Electron's sandboxed renderer has no
+   * `File.path`; the preload asks `webUtils.getPathForFile`. Empty string for a file with no path
+   * (dragged out of another app's memory), which the renderer then refuses.
+   */
+  pathForFile(file: File): string;
+
+  /**
+   * **Update overview** (`notebooks.md` §2): rewrite the overview from the sources ticked now.
+   * Only the overview's own AI-written blocks are replaced; learner text and agent edits the
+   * learner kept are carried over under the section with the matching heading, or under a final
+   * *Earlier notes* heading. Runs in the background like the first ingest (`notes.status`).
+   */
+  notesUpdateOverview(input: { fileId: string }): Promise<NotesUpdateOverviewResult>;
+  /** A section's recommended block was added (after `notesGenerateBlock` inserted it) or dismissed. */
+  notesSetRecommendation(input: {
+    fileId: string;
+    docId: string;
+    recommendationId: string;
+    status: 'added' | 'dismissed';
+  }): Promise<OverviewMeta | null>;
+  /**
+   * **Explain, Example or Quiz me on one block** (`notebooks.md` §4). Explain and Example: Ellie's
+   * full answer in the block's span thread, and a separate one-line doc edit under the block
+   * (`cause: 'block_action'`). Quiz me: Max's question in that thread and as a Q block under it.
+   * Ask… never comes here: the renderer opens the composer with the block quoted.
+   */
+  notesBlockAction(input: NotesBlockActionInput): Promise<NotesBlockActionResult>;
+}
+
+export interface NotesUpdateOverviewResult {
+  started: boolean;
+  /** `in_flight`: an ingest or update is already running. `no_sources`: nothing is ticked. */
+  reason: 'in_flight' | 'no_sources' | 'no_doc' | null;
+}
+
+export interface NotesBlockActionInput {
+  fileId: string;
+  docId: string;
+  blockId: string;
+  kind: Exclude<BlockActionKind, 'ask'>;
+  /** The block's text as the doc shows it: the span thread's quote. */
+  quote: string;
+}
+
+export interface NotesBlockActionResult {
+  accepted: boolean;
+  roomId: string | null;
+  /** The span thread the answer lands in, so the chat can bring it into view. */
+  threadId: string | null;
+  /**
+   * `no_doc`: no doc, or the block has no id yet. `busy`: an answer on this notebook is still being
+   * written. `question_open`: Quiz me while Max's question is still open (one at a time, §5.2).
+   */
+  reason: 'no_doc' | 'busy' | 'question_open' | null;
 }
 
 export interface NotesAnswerQuestionInput {
@@ -648,7 +762,7 @@ export interface NotesGenerateBlockInput {
   docId: string;
   /** The block the cursor is in: the section it belongs to is the source, and the insert point. */
   blockId: string;
-  kind: 'table' | 'diagram';
+  kind: GeneratedBlockKind;
   /** What it should show, in the learner's words. Optional: empty means "whatever fits best". */
   instruction: string | null;
 }

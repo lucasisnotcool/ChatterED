@@ -364,7 +364,13 @@ export type AppCommand =
   /** View ▸ Show or Hide Files — the shell's file panel (`layoutstore.svelte.ts`). */
   | 'files.toggle'
   /** File ▸ Export Research Data… — handled by the trial store, not `store.runCommand`. */
-  | 'research.export';
+  | 'research.export'
+  /** File ▸ New Notebook (`docs/research/notebooks.md` §1). */
+  | 'notebook.new'
+  /** File ▸ Add Sources… — the picker, into the open notebook. */
+  | 'notebook.addSources'
+  /** View ▸ Notebooks — the home grid. */
+  | 'notebook.home';
 
 export interface RecentSession {
   roomId: string;

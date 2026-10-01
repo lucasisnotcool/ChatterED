@@ -8,6 +8,13 @@
  */
 import type { ChatterEdApi } from '../../shared/ipc.js';
 import { createMockTrial } from './mockTrial.js';
+import {
+  contextFingerprint,
+  type AddSourcesResult,
+  type NotebookSourceView,
+  type NotebookSummary,
+  type NotebookView,
+} from '../../shared/notebook.js';
 /**
  * **The real classifier, imported and not copied** (issue #47, `attempt-first.md` §2.2).
  *
@@ -655,6 +662,8 @@ export function createMockBridge(): ChatterEdApi {
       frozen: notes.frozen,
       edits: notes.edits.filter((e) => e.status === 'applied'),
       suggestions: notes.suggestions.filter((s) => s.status === 'open'),
+      // Day 0 (NOTEBOOK-CONTRACT.md): the shell track (N5) fills a mock overview.
+      overview: null,
     };
   }
 
@@ -1890,8 +1899,100 @@ export function createMockBridge(): ChatterEdApi {
     // `vite dev` has no window to be fullscreen; the traffic lights are never drawn there.
     onAppCommand() { return () => undefined; },
     onWindowState(listener) { listener({ fullScreen: false }); return () => undefined; },
+
+    // ── Notebooks: day-0 stubs (NOTEBOOK-CONTRACT.md). The shell track (N5) owns these and makes
+    // them a real in-memory model; until then the one mock notebook is the one mock file.
+    async notebookList(): Promise<NotebookSummary[]> {
+      return [mockNotebookSummary()];
+    },
+    async notebookGet() {
+      return mockNotebookView();
+    },
+    async notebookCreate(): Promise<AddSourcesResult> {
+      return { notebook: mockNotebookView(), added: [], refused: [] };
+    },
+    async notebookRename(input) {
+      return { ...mockNotebookView(), name: input.name };
+    },
+    async notebookDelete() {
+      return { deleted: false };
+    },
+    async notebookOpen() {
+      return mockNotebookView();
+    },
+    async notebookPickFiles() {
+      return { paths: [] };
+    },
+    async notebookAddSources(): Promise<AddSourcesResult> {
+      return { notebook: mockNotebookView(), added: [], refused: [] };
+    },
+    async notebookSetEnabled() {
+      return mockNotebookView();
+    },
+    async notebookRemoveSource() {
+      return { removed: false, notebook: mockNotebookView() };
+    },
+    onNotebookChanged() {
+      return () => undefined;
+    },
+    pathForFile() {
+      return '';
+    },
+    async notesUpdateOverview() {
+      return { started: false, reason: 'no_doc' as const };
+    },
+    async notesSetRecommendation() {
+      return null;
+    },
+    async notesBlockAction() {
+      return { accepted: false, roomId: null, threadId: null, reason: 'no_doc' as const };
+    },
   };
 }
+
+/** The day-0 mock notebook: one source, the mock deck, at base 0. */
+const MOCK_NOTEBOOK_ID = 'nb_mock00000000';
+
+function mockNotebookView(): NotebookView {
+  const sources: NotebookSourceView[] = [
+    {
+      fileId: MOCK_NOTEBOOK_SOURCE_ID,
+      name: 'CS3249 Lecture 4.pdf',
+      kind: 'pdf',
+      pageBase: 0,
+      pageCount: 66,
+      enabled: true,
+      status: 'ready',
+      error: null,
+      addedAt: '2026-10-01T00:00:00.000Z',
+    },
+  ];
+  return {
+    id: MOCK_NOTEBOOK_ID,
+    name: 'CS3249 · Lecture 4',
+    sources,
+    pageCount: 66,
+    contextFingerprint: contextFingerprint(sources),
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+  };
+}
+
+function mockNotebookSummary(): NotebookSummary {
+  return {
+    id: MOCK_NOTEBOOK_ID,
+    name: 'CS3249 · Lecture 4',
+    sourceCount: 1,
+    enabledCount: 1,
+    subtitle: null,
+    fill: null,
+    updatedAt: '2026-10-01T00:00:00.000Z',
+    openedAt: null,
+  };
+}
+
+/** Day 0 only: the id the mock vault gives its one file. N5 replaces this wiring. */
+const MOCK_NOTEBOOK_SOURCE_ID = 'f_mock_source';
 
 // ── The cost fixtures (#42 item E) ──────────────────────────────────────────
 //

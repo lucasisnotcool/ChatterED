@@ -10,7 +10,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, generateBlockPrompt, notesFromTurn, outlineText, pagesCited, planAnswerEdit, planGeneratedBlock, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, answerEditPrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planAnswerEdit, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, type DocEditDeps } from './docedit.js';
+import { generateBlockPrompt, planGeneratedBlock } from './generate.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 

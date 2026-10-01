@@ -13,6 +13,7 @@
  * deep in an IPC wrapper.
  */
 
+import type { GeneratedBlockKind } from '../../shared/doc/types.js';
 import type { RoomActor } from '../../room/actor.js';
 import type { AgentAuthor, PrivateTurnView, ThreadView } from '../../shared/doc/types.js';
 import type { ReferenceContext } from '../../room/reference.js';
@@ -57,7 +58,7 @@ export interface DocActorMethods {
   /** A table or diagram the learner asked for at a block (brief §5.7). An ordinary agent edit. */
   generateBlock(input: {
     blockId: string;
-    kind: 'table' | 'diagram';
+    kind: GeneratedBlockKind;
     instruction: string | null;
     passage?: string | null;
     pageCount?: number;

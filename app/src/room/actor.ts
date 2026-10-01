@@ -36,12 +36,11 @@ import {
   pagesCited,
   planAnswerEdit,
   buildResolveEdit,
-  planGeneratedBlock,
   planResolveEdit,
-  type GeneratedBlockKind,
   planSuggestionEdit,
   type DocEditDeps,
 } from './docedit.js';
+import { planGeneratedBlock, type GeneratedBlockKind } from './generate.js';
 import {
   ELLIE_CUE_SCHEMA,
   cueCorrectionLines,

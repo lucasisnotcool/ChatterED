@@ -46,6 +46,7 @@ import { applyDelta, updateBelongs } from './cost.js';
 import { DocStore } from './docstore.svelte.js';
 import { ChatStore } from './chatstore.svelte.js';
 import { ProgressStore } from './progressstore.svelte.js';
+import { NotebookStore } from './notebookstore.svelte.js';
 
 /**
  * Is a channel actually on the bridge?
@@ -156,6 +157,8 @@ class Store {
   readonly doc = new DocStore();
   readonly chat = new ChatStore();
   readonly progress = new ProgressStore();
+  /** The open notebook (`notebooks.md`, 2026-10-01). Owned by track N5. */
+  readonly notebook = new NotebookStore();
 
   screen: Screen = $state('loading');
   boot: Bootstrap | null = $state(null);

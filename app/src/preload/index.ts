@@ -2,10 +2,11 @@
  * The preload allowlist. `contextIsolation` is on, so this is the only surface the renderer
  * has: a fixed set of channels, no `ipcRenderer`, no Node, no filesystem.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC, type ChatterEdApi } from '../shared/ipc.js';
 import type { AppCommand, RoomEvent, VaultView, WindowState } from '../shared/types.js';
 import type { CostUpdate } from '../shared/cost.js';
+import type { NotebookChange } from '../shared/notebook.js';
 import { trialApi } from './trial.js';
 
 const api: ChatterEdApi = {
@@ -116,6 +117,36 @@ const api: ChatterEdApi = {
       ipcRenderer.removeListener(IPC.vaultChanged, handler);
     };
   },
+  // Notebooks (`docs/research/notebooks.md`, 2026-10-01).
+  notebookList: () => ipcRenderer.invoke(IPC.notebookList),
+  notebookGet: (input) => ipcRenderer.invoke(IPC.notebookGet, input),
+  notebookCreate: (input) => ipcRenderer.invoke(IPC.notebookCreate, input),
+  notebookRename: (input) => ipcRenderer.invoke(IPC.notebookRename, input),
+  notebookDelete: (input) => ipcRenderer.invoke(IPC.notebookDelete, input),
+  notebookOpen: (input) => ipcRenderer.invoke(IPC.notebookOpen, input),
+  notebookPickFiles: () => ipcRenderer.invoke(IPC.notebookPickFiles),
+  notebookAddSources: (input) => ipcRenderer.invoke(IPC.notebookAddSources, input),
+  notebookSetEnabled: (input) => ipcRenderer.invoke(IPC.notebookSetEnabled, input),
+  notebookRemoveSource: (input) => ipcRenderer.invoke(IPC.notebookRemoveSource, input),
+  onNotebookChanged: (listener) => {
+    const handler = (_event: unknown, payload: NotebookChange) => listener(payload);
+    ipcRenderer.on(IPC.notebookChanged, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC.notebookChanged, handler);
+    };
+  },
+  // Electron's documented replacement for the sandbox's missing `File.path`. A path, never bytes:
+  // main copies the file itself, so a 200 MB deck never crosses IPC.
+  pathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
+  },
+  notesUpdateOverview: (input) => ipcRenderer.invoke(IPC.notesUpdateOverview, input),
+  notesSetRecommendation: (input) => ipcRenderer.invoke(IPC.notesSetRecommendation, input),
+  notesBlockAction: (input) => ipcRenderer.invoke(IPC.notesBlockAction, input),
   onAppCommand: (listener) => {
     const handler = (_event: unknown, payload: AppCommand) => listener(payload);
     ipcRenderer.on(IPC.appCommand, handler);

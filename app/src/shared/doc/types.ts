@@ -33,7 +33,11 @@ export const SPAN_THREAD_PREFIX = 'span_';
  * slide says it, or both. **Neither ⇒ the block is rejected by validation.**
  */
 export interface Provenance {
-  /** 1-based page numbers of the source deck. */
+  /**
+   * 1-based page numbers of the source deck. In a notebook (`docs/research/notebooks.md`) these
+   * are **notebook pages**: the sources laid end to end at their fixed bases
+   * (`shared/notebook.ts` `locatePage` turns one back into a source and its own page).
+   */
   pages: number[];
   reason: string | null;
 }
@@ -179,7 +183,12 @@ export type DocEditCause =
   | 'q_block' // §5.2
   | 'q_resolved' // §5.3
   | 'whisper_insert' // §4.1 "insert into the document"
-  | 'suggestion'; // §5.4 — a conflict with learner text, re-expressed
+  | 'suggestion' // §5.4 — a conflict with learner text, re-expressed
+  /**
+   * `notebooks.md` §4.2: the one line (≤ `BLOCK_LINE_MAX_WORDS` words) Ellie writes under a
+   * block beside an Explain or an Example, and after any doc-chat question. Migration 024.
+   */
+  | 'block_action';
 
 export interface AgentDocOpBatch {
   editId: string;
@@ -261,6 +270,63 @@ export interface NotesDocView {
   edits: DocEditRecord[];
   /** Status `open` only. */
   suggestions: Suggestion[];
+  /** The overview's metadata (`notebooks.md` §3, §5.3, §6). Null on a pre-024 doc. */
+  overview: OverviewMeta | null;
+}
+
+// ── the learning overview (`docs/research/notebooks.md`, 2026-10-01) ──────────────────────────
+
+/** The longest a block action's doc line may be (`notebooks.md` §4.2). Enforced in code. */
+export const BLOCK_LINE_MAX_WORDS = 25;
+
+/**
+ * **The learner's own-note slot under each overview section** (`notebooks.md` §3.1). An ordinary
+ * empty `paragraph` whose `reason` is exactly this string and whose `pages` are the section's,
+ * so typing in it maps to the section's objectives like any learner text. The renderer shows a
+ * placeholder in it while it is empty and never draws a provenance chip on it. Not a new node:
+ * the guard, the author marks and the doc-text path all work on it as they are.
+ */
+export const NOTE_SLOT_REASON = 'your note';
+
+/** Every block type Ellie can generate on request (Insert, or a section's recommendation). */
+export type GeneratedBlockKind = 'table' | 'diagram' | 'flashcards' | 'quiz' | 'infographic';
+
+/** The four per-block actions (`notebooks.md` §4.1). `ask` never reaches main: it opens the composer. */
+export type BlockActionKind = 'explain' | 'example' | 'quiz' | 'ask';
+
+/**
+ * **A section's recommended block** (`notebooks.md` §5.3): a card under the section naming the
+ * type, a title, and one line of what it would hold, with Add. Written with the overview; costs
+ * nothing until the learner adds it. Not document content: it lives in `OverviewMeta`.
+ */
+export interface OverviewRecommendation {
+  /** Stable id, for marking it added or dismissed. */
+  id: string;
+  /** The section's heading block: the card is drawn at the end of that section. */
+  headingBlockId: string;
+  kind: GeneratedBlockKind;
+  /** "Planning heuristics and abstractions". At most about 8 words. */
+  title: string;
+  /** "Active recall cards on h_max, h_add, h_FF…". One line. Sent as the generation instruction. */
+  description: string;
+  status: 'offered' | 'added' | 'dismissed';
+}
+
+export interface OverviewMeta {
+  /** Bumped when the overview's shape changes, so the renderer can tell an old one. */
+  version: number;
+  /** `contextFingerprint` of the sources it was written from (`shared/notebook.ts`). */
+  fingerprint: string;
+  /** ISO time it was written. */
+  writtenAt: string;
+  /** Exactly three (`notebooks.md` §6, answer D), shown under Ellie's greeting. */
+  starterQuestions: string[];
+  /** Ellie's one-line greeting above them. */
+  greeting: string;
+  recommendations: OverviewRecommendation[];
+  /** Words written against the computed budget (§3.2), for the log and the Usage page. */
+  words: number;
+  wordBudget: number;
 }
 
 export interface ThreadView {

@@ -976,6 +976,13 @@ export class AppService {
       store: this.#d.store,
       vault: this.#vault,
       segments: this.#segments,
+      // Day 0 (NOTEBOOK-CONTRACT.md): track N1 replaces this with the NotebookService.
+      notebooks: {
+        subject: () => null,
+        deckText: () => ({ text: '', truncated: false }),
+        textFor: () => '',
+        locate: () => null,
+      },
       userDataDir: this.#d.userDataDir,
       emit: (event) => this.emit(event),
       backend: () => this.backend(),
