@@ -14,7 +14,7 @@
  */
 
 import type { GeneratedBlockKind } from '../../shared/doc/types.js';
-import type { RoomActor } from '../../room/actor.js';
+import type { BlockActionStart, RoomActor } from '../../room/actor.js';
 import type { AgentAuthor, PrivateTurnView, ThreadView } from '../../shared/doc/types.js';
 import type { ReferenceContext } from '../../room/reference.js';
 
@@ -63,6 +63,19 @@ export interface DocActorMethods {
     passage?: string | null;
     pageCount?: number;
   }): Promise<{ inserted: boolean; editId: string | null; reason: 'no_doc' | 'frozen' | 'declined' | 'failed' | 'in_flight' | null }>;
+  /**
+   * **Explain, Example or Quiz me on a block** (`notebooks.md` §4, contract C7). Resolves once the
+   * action is accepted or refused; `turn` settles when the answer has landed.
+   */
+  blockAction(input: {
+    kind: 'explain' | 'example' | 'quiz';
+    blockId: string;
+    anchorId: string;
+    quote: string;
+    context?: ReferenceContext | null;
+    objectiveId: string | null;
+    passage?: string | null;
+  }): Promise<BlockActionStart>;
   openPrivate(agent: AgentAuthor): { threadId: string; turns: PrivateTurnView[] };
   sendPrivate(threadId: string, text: string): Promise<void>;
   /** The one path from a private thread to the shared document (brief §4.1). */

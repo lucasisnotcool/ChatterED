@@ -136,4 +136,15 @@ describe('threadsRepo', () => {
 
     expect(r.forRoom('room_a').map((t) => t.threadId)).toEqual([DOC_ANCHOR_ID, 'span_bbbbbbbbbbbb']);
   });
+
+  it('removes one row, and only that room’s', () => {
+    const r = repo();
+    for (const roomId of ['room_a', 'room_b']) {
+      r.createSpanThread({ roomId, docId: 'doc_1', threadId: 'span_cccccccccccc', blockId: 'b_1', quote: 'q', now: T0 });
+    }
+    r.remove('room_a', 'span_cccccccccccc');
+    expect(r.get('room_a', 'span_cccccccccccc')).toBeNull();
+    expect(r.forBlock('room_a', 'b_1')).toBeNull();
+    expect(r.get('room_b', 'span_cccccccccccc')).not.toBeNull();
+  });
 });

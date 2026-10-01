@@ -73,6 +73,13 @@ export class FakeActor {
     this.#record('generateBlock', args);
     return { inserted: true, editId: 'edit_gen', reason: null };
   };
+  /** What `blockAction` answers with. A test sets it to a refusal to drive that path. */
+  blockActionResult: { accepted: boolean; threadId: string | null; reason: 'no_doc' | 'busy' | 'question_open' | null } | null = null;
+  blockAction: DocActorMethods['blockAction'] = async (...args) => {
+    this.#record('blockAction', args);
+    const result = this.blockActionResult ?? { accepted: true, threadId: args[0].anchorId, reason: null };
+    return { ...result, turn: Promise.resolve() };
+  };
   openPrivate: DocActorMethods['openPrivate'] = (...args) => {
     this.#record('openPrivate', args);
     return { threadId: 'wthread_1', turns: this.privateTurns };
@@ -125,6 +132,11 @@ export interface FakeHost {
   confirms: ConfirmRequest[];
   /** Every `retireFlowRoom` call, in order. */
   retired: { roomId: string; reason: string }[];
+  /** What `notebooks.textFor` answers (contract C2), and every read it was asked for. */
+  notebookPageText: string;
+  notebookReads: { notebookId: string; pageFrom: number; pageTo: number }[];
+  /** Every `vault.textFor` read, so a test can tell a notebook id never reached the vault. */
+  vaultReads: { fileId: string; pageFrom: number; pageTo: number }[];
 }
 
 export interface FakeHostOptions {
@@ -171,6 +183,9 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     confirmAnswer: boolean;
     confirms: ConfirmRequest[];
     retired: { roomId: string; reason: string }[];
+    notebookPageText: string;
+    notebookReads: { notebookId: string; pageFrom: number; pageTo: number }[];
+    vaultReads: { fileId: string; pageFrom: number; pageTo: number }[];
   } = {
     tree: null,
     states: [],
@@ -181,6 +196,9 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     confirmAnswer: true,
     confirms: [],
     retired: [],
+    notebookPageText: 'The notebook pages the block came from.',
+    notebookReads: [],
+    vaultReads: [],
   };
 
   const room = { roomId: seeded.roomId, actor: actor as unknown as never };
@@ -190,11 +208,24 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     store,
     userDataDir: '/tmp/chattered-test',
     vault: {
-      textFor: async () => state.pageText,
+      textFor: async (input: { fileId: string; pageFrom: number; pageTo: number }) => {
+        state.vaultReads.push(input);
+        return state.pageText;
+      },
       deckText: async () => ({ text: 'The whole deck.', pages: 12, truncated: false }),
       topPages: () => [],
     },
     segments: {},
+    /** `DocHost.notebooks` (contract C2): pages are notebook pages, read by notebook id. */
+    notebooks: {
+      subject: () => null,
+      deckText: () => ({ text: 'The notebook deck: [p. 1] … [p. 12] …', truncated: false }),
+      textFor: (input: { notebookId: string; pageFrom: number; pageTo: number }) => {
+        state.notebookReads.push(input);
+        return state.notebookPageText;
+      },
+      locate: () => null,
+    },
     emit: (event: RoomEvent) => {
       events.push(event);
     },
@@ -259,6 +290,18 @@ export function fakeHost(opts: FakeHostOptions = {}): FakeHost {
     },
     get pageText() {
       return state.pageText;
+    },
+    get notebookPageText() {
+      return state.notebookPageText;
+    },
+    set notebookPageText(value: string) {
+      state.notebookPageText = value;
+    },
+    get notebookReads() {
+      return state.notebookReads;
+    },
+    get vaultReads() {
+      return state.vaultReads;
     },
     set pageText(value: string) {
       state.pageText = value;

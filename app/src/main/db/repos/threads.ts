@@ -100,6 +100,12 @@ export interface ThreadsRepo {
   /** Late-bind the objective: the tree can land after the thread was opened. */
   setObjective(roomId: string, threadId: string, objectiveId: string | null): void;
   resolve(roomId: string, threadId: string, at: string): void;
+  /**
+   * Delete a registry row. Only for a span thread that was minted for a learner action the actor
+   * then refused (`notes:blockAction`'s `busy` / `question_open`), so nothing was ever said in it;
+   * an empty thread left behind would sit in the chat column with nothing in it.
+   */
+  remove(roomId: string, threadId: string): void;
 }
 
 function toRecord(row: ThreadRow): ThreadRecord {
@@ -246,6 +252,10 @@ export function threadsRepo(db: SqlDatabase): ThreadsRepo {
       db.prepare(
         'UPDATE notes_threads SET resolved_at = @at WHERE room_id = @r AND thread_id = @t',
       ).run({ at, r: roomId, t: threadId });
+    },
+
+    remove(roomId, threadId) {
+      db.prepare('DELETE FROM notes_threads WHERE room_id = @r AND thread_id = @t').run({ r: roomId, t: threadId });
     },
   };
 }

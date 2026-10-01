@@ -380,6 +380,8 @@ describe('notes:generateBlock', () => {
       kind: 'table',
       instruction: 'by cost',
       passage: 'THE PAGES OF THE SECTION',
+      // `fileBytesKey`'s page count, which main's handler used to leave out.
+      pageCount: 12,
     });
   });
 
@@ -624,5 +626,100 @@ describe('chat:reset', () => {
     expect(fx.actor.last('closeOpenQuestion')).toBeUndefined();
     const view = await table.call<ChatView>('chat:threads', { fileId: 'f_deck' });
     expect(view.roomId).toBeNull();
+  });
+});
+
+// ── notebooks (`notebooks.md`, contract C2 and C7) ───────────────────────
+
+const NB = 'nb_test';
+
+describe('notes:blockAction', () => {
+  const base = { fileId: 'f_deck', docId: 'doc_deck', blockId: 'b_2', kind: 'explain' as const, quote: 'The Hessian test decides it on the interior.' };
+  type Out = { accepted: boolean; roomId: string | null; threadId: string | null; reason: string | null };
+
+  it('opens the room, mints the block’s span thread and asks the actor, with its pages resolved here', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o2', { refs: [{ page: 2 }] })]);
+    fx.pageText = 'THE SLIDE OF THE BLOCK';
+    const out = await wire(fx).call<Out>('notes:blockAction', base);
+
+    expect(out).toMatchObject({ accepted: true, roomId: fx.roomId, reason: null });
+    expect(out.threadId).toMatch(/^span_/);
+    const args = fx.actor.last('blockAction')!.args[0] as Record<string, unknown>;
+    expect(args).toMatchObject({
+      kind: 'explain',
+      blockId: 'b_2',
+      anchorId: out.threadId,
+      quote: base.quote,
+      objectiveId: 'o2',
+      passage: 'THE SLIDE OF THE BLOCK',
+    });
+    expect(args.context).toMatchObject({ scope: 'segment', passageText: 'THE SLIDE OF THE BLOCK' });
+    const row = fx.db.prepare("SELECT block_id, objective_id FROM notes_threads WHERE thread_id = @t").get<{ block_id: string; objective_id: string }>({
+      t: out.threadId,
+    })!;
+    expect(row).toEqual({ block_id: 'b_2', objective_id: 'o2' });
+  });
+
+  it('reuses the block’s one span thread for every action on it', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const table = wire(fx);
+    const first = await table.call<Out>('notes:blockAction', base);
+    const second = await table.call<Out>('notes:blockAction', { ...base, kind: 'quiz' });
+    expect(second.threadId).toBe(first.threadId);
+    expect(fx.db.prepare("SELECT COUNT(*) AS n FROM notes_threads WHERE kind = 'span'").get<{ n: number }>({})!.n).toBe(1);
+  });
+
+  it('passes the actor’s refusal through, and leaves no empty thread behind', async () => {
+    for (const reason of ['busy', 'question_open'] as const) {
+      const fx = fakeHost({ doc: deck() });
+      fx.actor.blockActionResult = { accepted: false, threadId: reason === 'question_open' ? 'span_open' : null, reason };
+      const out = await wire(fx).call<Out>('notes:blockAction', base);
+      expect(out).toEqual({ accepted: false, roomId: fx.roomId, threadId: reason === 'question_open' ? 'span_open' : null, reason });
+      expect(fx.db.prepare("SELECT COUNT(*) AS n FROM notes_threads WHERE kind = 'span'").get<{ n: number }>({})!.n).toBe(0);
+    }
+  });
+
+  it('refuses without a block or a document, before any room is opened', async () => {
+    const fx = fakeHost({ doc: deck() });
+    expect((await wire(fx).call<Out>('notes:blockAction', { ...base, blockId: '' })).reason).toBe('no_doc');
+    const empty = fakeHost();
+    expect((await wire(empty).call<Out>('notes:blockAction', base)).reason).toBe('no_doc');
+    expect(fx.opened).toEqual([]);
+    expect(empty.opened).toEqual([]);
+    expect(fx.actor.calls).toEqual([]);
+  });
+});
+
+describe('notebook-aware page text (C2)', () => {
+  const notebook = () => fakeHost({ doc: deck(), fileId: NB, contentSha: `nb:${NB}` });
+
+  it('reads a span thread’s pages from the notebook, never the vault', async () => {
+    const fx = notebook();
+    fx.notebookPageText = 'NOTEBOOK PAGE 2';
+    await wire(fx).call('chat:openSpan', { fileId: NB, blockId: 'b_2', quote: 'the Hessian test', question: 'Why?' });
+    expect(fx.notebookReads).toEqual([{ notebookId: NB, pageFrom: 2, pageTo: 2 }]);
+    expect(fx.vaultReads).toEqual([]);
+    const context = fx.actor.last('sendMessage')!.args[2] as { scope: string; passageText: string };
+    expect(context).toMatchObject({ scope: 'segment', passageText: 'NOTEBOOK PAGE 2' });
+  });
+
+  it('answers the doc chat from the notebook’s deck text', async () => {
+    const fx = notebook();
+    await wire(fx).call('chat:send', { fileId: NB, text: 'what is this about?' });
+    const context = fx.actor.last('sendMessage')!.args[2] as { scope: string; passageText: string };
+    expect(context).toMatchObject({ scope: 'deck', passageText: 'The notebook deck: [p. 1] … [p. 12] …' });
+    expect(fx.vaultReads).toEqual([]);
+  });
+
+  it('reads a generated block’s section and a block action’s slide from the notebook too', async () => {
+    const fx = notebook();
+    fx.notebookPageText = 'NOTEBOOK SECTION';
+    const table = wire(fx);
+    await table.call('notes:generateBlock', { fileId: NB, docId: 'doc_deck', blockId: 'b_2', kind: 'table', instruction: null });
+    expect(fx.actor.last('generateBlock')!.args[0]).toMatchObject({ passage: 'NOTEBOOK SECTION', pageCount: 12 });
+    await table.call('notes:blockAction', { fileId: NB, docId: 'doc_deck', blockId: 'b_2', kind: 'example', quote: 'x' });
+    expect(fx.actor.last('blockAction')!.args[0]).toMatchObject({ passage: 'NOTEBOOK SECTION' });
+    expect(fx.vaultReads).toEqual([]);
   });
 });

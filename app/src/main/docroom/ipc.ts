@@ -1,6 +1,6 @@
 /**
  * The chats' IPC bodies (#48). **Track T6 owns this file** — the lead placed only the hook.
- * Channels: `notes:docText`, `notes:answerQuestion`, `notes:generateBlock`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
+ * Channels: `notes:docText`, `notes:answerQuestion`, `notes:generateBlock`, `notes:blockAction`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
  * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`, `chat:closeFile`. See `app/docs/COLLAB-CONTRACT.md`.
  *
  * **Three things these handlers decide, and the renderer does not.**
@@ -27,9 +27,13 @@ import type { AgentAuthor, ChatResetResult, ChatView, ThreadView } from '../../s
 import type {
   NotesAnswerQuestionInput,
   NotesAnswerQuestionResult,
+  NotesBlockActionInput,
+  NotesBlockActionResult,
   NotesGenerateBlockInput,
   NotesGenerateBlockResult,
 } from '../../shared/ipc.js';
+import { isNotebookId } from '../../shared/notebook.js';
+import { scopeShownFor } from '../../shared/scope.js';
 import { referenceContext, saveFlowState } from '../flowroom.js';
 import type { ReferenceContext } from '../../room/reference.js';
 import type { RoomActor } from '../../room/actor.js';
@@ -93,6 +97,19 @@ export function resetDocTextState(): void {
   assessing.clear();
 }
 
+/**
+ * **The text of a run of pages, by notebook page** (contract C2, `notebooks.md` §1).
+ *
+ * On every doc-path channel `fileId` is now the **notebook** id, and a block's `pages` are
+ * notebook pages (C1), so the text comes from `DocHost.notebooks`, which knows which source each
+ * page lives in. A plain vault file id (a room or a test from before notebooks) still reads the
+ * vault, page for page, as it always has.
+ */
+async function pageText(host: DocHost, fileId: string, pageFrom: number, pageTo: number): Promise<string> {
+  if (isNotebookId(fileId)) return host.notebooks.textFor({ notebookId: fileId, pageFrom, pageTo });
+  return host.vault.textFor({ fileId, pageFrom, pageTo });
+}
+
 /** The material a room was opened on: where the deck's outline and its file id are kept. */
 function materialFor(host: DocHost, roomId: string): { fileId: string | null; outline: string } {
   const room = host.store.rooms.get(roomId);
@@ -129,7 +146,7 @@ async function contextFor(
       if (pages.length > 0) {
         const from = Math.min(...pages);
         const to = Math.max(...pages);
-        const text = await host.vault.textFor({ fileId: input.fileId, pageFrom: from, pageTo: to });
+        const text = await pageText(host, input.fileId, from, to);
         return segmentContext({
           text,
           page: from,
@@ -141,6 +158,22 @@ async function contextFor(
       }
       // A block with no pages (bridging material the ingest wrote itself) falls through to the
       // deck rather than being answered from page 1 by accident.
+    }
+
+    /**
+     * **A notebook's deck is its ticked sources** (C4): `DocHost.notebooks.deckText`, with each
+     * page under its notebook `[p. N]` marker. The vault's resolver below knows file ids only and
+     * would find nothing for an `nb_…` id. The whole-deck shape is the same as the vault's.
+     */
+    if (isNotebookId(input.fileId)) {
+      const deck = host.notebooks.deckText(input.fileId);
+      return {
+        scope: 'deck',
+        passageText: deck.text,
+        outline: outline.trim(),
+        retrievedPages: [],
+        scopeShown: scopeShownFor({ scope: 'deck' }),
+      };
     }
 
     return await referenceContext(
@@ -530,22 +563,15 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
       reason,
     });
     if (!input.blockId) return refuse('no_doc');
-    const contentSha = await host.fileBytesKey(input.fileId).then(
-      (k) => k.contentSha,
-      () => null,
-    );
-    const opened = openNotesDoc(host.db, { contentSha, fileId: input.fileId });
+    const key = await host.fileBytesKey(input.fileId).catch(() => null);
+    const opened = openNotesDoc(host.db, { contentSha: key?.contentSha ?? null, fileId: input.fileId });
     if (!opened?.doc) return refuse('no_doc');
 
     const pages = sectionPagesForBlock(opened.doc, input.blockId);
     let passage: string | null = null;
     if (pages.length > 0) {
       try {
-        passage = await host.vault.textFor({
-          fileId: input.fileId,
-          pageFrom: Math.min(...pages),
-          pageTo: Math.max(...pages),
-        });
+        passage = await pageText(host, input.fileId, Math.min(...pages), Math.max(...pages));
       } catch {
         // The notes of the section are still a source; losing the slides is not losing the call.
         passage = null;
@@ -560,10 +586,89 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         kind: input.kind,
         instruction: input.instruction?.trim() ? input.instruction.trim() : null,
         passage,
+        // The notebook's virtual page count (C2), so a citation past the last page is dropped.
+        ...(key ? { pageCount: key.pageCount } : {}),
       });
     } finally {
       host.persistFlow();
     }
+  });
+
+  /**
+   * **Explain, Example or Quiz me on a block** (`notebooks.md` §4, contract C7).
+   *
+   * Main decides what it decides for every turn: the room (a learner action opens it), the
+   * block's **one** span thread (`forBlock`, else a new one: every action on a block lands in the
+   * same thread, beside the learner's own writing there), the objective (`objectiveForBlock`, once,
+   * here), and what the model is shown (the block's pages, by notebook page). The actor decides
+   * whether it can answer now (`busy`, `question_open`) and answers.
+   *
+   * **It returns as soon as the action is accepted**, before the answer lands, with the thread id
+   * the chat focuses (N6). Everything after arrives on the event stream as any turn does. A thread
+   * minted for an action the actor refused is removed again, so no empty thread is left behind.
+   */
+  handle<NotesBlockActionInput>('notes:blockAction', async (input): Promise<NotesBlockActionResult> => {
+    const refuse = (
+      reason: NotesBlockActionResult['reason'],
+      roomId: string | null = null,
+      threadId: string | null = null,
+    ): NotesBlockActionResult => ({ accepted: false, roomId, threadId, reason });
+    if (!input.blockId) return refuse('no_doc');
+    const key = await host.fileBytesKey(input.fileId).catch(() => null);
+    const opened = openNotesDoc(host.db, { contentSha: key?.contentSha ?? null, fileId: input.fileId });
+    if (!opened?.doc) return refuse('no_doc');
+
+    const { roomId, actor } = await host.openFlowRoom(input.fileId);
+    const repo = threads();
+    const objectiveId = objectiveForBlock(host.objectivesTree(input.fileId), opened.doc, input.blockId);
+    const existing = repo.forBlock(roomId, input.blockId);
+    const threadId = existing?.threadId ?? newId(SPAN_THREAD_PREFIX.replace(/_$/, ''));
+    const thread =
+      existing ??
+      repo.createSpanThread({
+        roomId,
+        docId: opened.row.docId,
+        threadId,
+        blockId: input.blockId,
+        quote: cap(input.quote, QUOTE_CAP),
+        objectiveId,
+        now: now(),
+      });
+    if (existing && !existing.objectiveId && objectiveId) repo.setObjective(roomId, threadId, objectiveId);
+
+    // The block's pages, read once: the turn's *where* and the doc line's slide are the same text.
+    const context = await contextFor(host, { roomId, fileId: input.fileId, thread, question: input.quote });
+    const target = docActor(actor);
+    const discard = (): void => {
+      if (!existing) repo.remove(roomId, threadId);
+    };
+    let started: Awaited<ReturnType<DocActor['blockAction']>>;
+    try {
+      started = await requireActorMethod(target, 'blockAction').call(target, {
+        kind: input.kind,
+        blockId: input.blockId,
+        anchorId: threadId,
+        quote: input.quote,
+        context,
+        objectiveId,
+        passage: context?.scope === 'segment' ? context.passageText : null,
+      });
+    } catch (err) {
+      discard();
+      throw err;
+    }
+    if (!started.accepted) {
+      discard();
+      return refuse(started.reason, roomId, started.threadId);
+    }
+    host.persistFlow();
+    void started.turn
+      .catch(() => undefined)
+      .then(() => {
+        // This room's sitting, and only while it is still the open one (see `closeFileQuestions`).
+        if (host.currentActor() === actor) host.persistFlow();
+      });
+    return { accepted: true, roomId, threadId, reason: null };
   });
 
   /**
