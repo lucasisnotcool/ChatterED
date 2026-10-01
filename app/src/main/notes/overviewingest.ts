@@ -47,7 +47,7 @@ import type { NotesDocRecord, NotesRepo } from '../db/repos/notes.js';
 import { newDocId } from '../db/repos/notes.js';
 import type { ObjectivesRepo } from '../db/repos/objectives.js';
 import { log } from '../log.js';
-import { notebookTreeRecord, objectivesFromOverview } from '../objectives/overviewtree.js';
+import { carryStates, notebookTreeRecord, objectivesFromOverview } from '../objectives/overviewtree.js';
 import { carryOver } from './carry.js';
 import { extractNotesPages } from './extract.js';
 import { critique1OverviewRaw, placeholderOverviewRaw } from './fixture.js';
@@ -585,7 +585,22 @@ function land(
     now(),
   );
 
-  // Regenerate keeps the states whose ids still match; the rest are about objectives now gone.
+  // The learner's progress on an objective the update reworded goes to the objective that now
+  // teaches the same pages (`carryStates`); only what has no successor is pruned.
+  const carried = carryStates(deps.objectives.tree(input.notebookId)?.objectives ?? [], objectives, deps.objectives.states(input.notebookId));
+  for (const { from, toId } of carried) {
+    const there = deps.objectives.state(input.notebookId, toId);
+    if (!there || there.level < from.level) {
+      deps.objectives.setLevel({
+        fileId: input.notebookId,
+        objectiveId: toId,
+        level: from.level,
+        evidenceMessageIds: from.evidenceMessageIds,
+        movedAt: from.lastMovedAt ?? now(),
+      });
+    }
+    if (from.taughtAt && !there?.taughtAt) deps.objectives.markTaught({ fileId: input.notebookId, objectiveId: toId, at: from.taughtAt });
+  }
   const dropped = deps.objectives.pruneStates(input.notebookId, objectives.map((o) => o.id));
   const tree = deps.objectives.upsertTree(
     notebookTreeRecord({ notebookId: input.notebookId, contentKey, model: landing.model, generatedAt: now(), objectives }),
@@ -605,6 +620,7 @@ function land(
     suggestionsCleared: cleared.suggestions,
     recommendations: meta.recommendations.length,
     ideasCut,
+    statesCarried: carried.length,
   });
   return record;
 }
@@ -625,6 +641,7 @@ function logLanding(
     suggestionsCleared: number;
     recommendations: number;
     ideasCut: number;
+    statesCarried: number;
   },
 ): void {
   log().info('notes.overview', {
@@ -668,6 +685,7 @@ function logLanding(
     edits_cleared: extra.editsCleared,
     suggestions_cleared: extra.suggestionsCleared,
     states_dropped: extra.statesDropped,
+    states_carried: extra.statesCarried,
   });
 }
 

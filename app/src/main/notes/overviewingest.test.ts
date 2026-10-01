@@ -390,6 +390,25 @@ describe('Update overview (§2)', () => {
     expect(h.repo.byId(first.id)!.ingestStatus).toBe('ready');
   });
 
+  /** Live run, 1 Oct 2026: a half fill went back to zero when an update reworded its objective. */
+  it('carries progress from a reworded objective to the one that teaches the same pages', async () => {
+    const reworded = () => {
+      const raw = JSON.parse(answer()) as { objectives: { title: string }[] };
+      raw.objectives[0]!.title = 'Show that h_max never overestimates';
+      return JSON.stringify(raw);
+    };
+    const h = harness((_, n) => (n === 1 ? answer() : reworded()));
+    await run(h);
+    const before = h.store.objectives.tree(NB)!.objectives[0]!;
+    h.store.objectives.setLevel({ fileId: NB, objectiveId: before.id, level: 2, evidenceMessageIds: ['m_1'], movedAt: T0 });
+    await updateOverview(h.deps, { notebookId: NB, roomId: null });
+    await overviewInFlight(KEY);
+    const after = h.store.objectives.tree(NB)!.objectives[0]!;
+    expect(after.id).not.toBe(before.id);
+    expect(h.store.objectives.state(NB, before.id)).toBeNull();
+    expect(h.store.objectives.state(NB, after.id)).toMatchObject({ level: 2, evidenceMessageIds: ['m_1'] });
+  });
+
   it('turns a legacy doc into an overview, carrying the learner\'s text', async () => {
     const h = harness();
     const old = notesSchema.nodes.doc!.create(null, [
