@@ -36,6 +36,9 @@ import type {
   AgentDocOpBatch,
   DiagramDraft,
   DocEditRecord,
+  FlashcardsDraft,
+  InfographicDraft,
+  QuizDraft,
   DocQuizView,
   NotesDocView,
   PrivateTurnView,
@@ -617,6 +620,74 @@ export function createMockBridge(): ChatterEdApi {
     edges: [],
     prov: { pages: [28, 32], reason: null },
   };
+
+  /**
+   * What Insert ▸ Flashcards / Quiz / Infographic and a section's recommendation draw (N4's
+   * kinds, §5.3), from pages the fixture overview actually cites. The quiz's answers are held
+   * back by the node view until the learner answers; the infographic is data, never an image (C9).
+   */
+  const MOCK_FLASHCARDS: FlashcardsDraft = {
+    kind: 'flashcards',
+    title: 'Planning heuristics',
+    prov: { pages: [16, 17, 18], reason: null },
+    cards: [
+      { front: 'Delete relaxation', back: 'Ignore delete effects, so facts **never become false**.', pages: [16, 17] },
+      { front: 'h_max', back: 'The cost of the hardest subgoal. Admissible, but weak.', pages: [17] },
+      { front: 'h_add', back: 'The sum of the subgoal costs. More informed, not always admissible.', pages: [17] },
+      { front: 'h_FF', back: 'Actions in a greedily built relaxed plan. Inadmissible; the usual guide for greedy search.', pages: [18] },
+    ],
+  };
+
+  const MOCK_QUIZ: QuizDraft = {
+    kind: 'quiz',
+    title: 'Check yourself: relaxed heuristics',
+    prov: { pages: [17, 18, 23], reason: null },
+    questions: [
+      {
+        type: 'mc',
+        prompt: 'Which of these heuristics is admissible?',
+        options: [
+          { text: 'h_max', correct: true },
+          { text: 'h_FF', correct: false },
+          { text: 'h_add, always', correct: false },
+        ],
+        explain: 'h_max only takes the single hardest subgoal, so it can never overestimate (p. 17).',
+        pages: [17],
+      },
+      {
+        type: 'short',
+        prompt: 'Why can h_FF overestimate?',
+        explain: 'Its relaxed plan is built greedily, so it can be longer than the optimal relaxed plan (p. 18).',
+        pages: [18],
+      },
+      {
+        type: 'short',
+        prompt: 'When does Sum(Cost) overestimate?',
+        explain: 'When subgoals interact positively: work shared by two subgoals is counted twice (p. 23).',
+        pages: [23],
+      },
+    ],
+  };
+
+  const MOCK_INFOGRAPHIC: InfographicDraft = {
+    kind: 'infographic',
+    layout: 'stats',
+    title: 'What abstraction buys in air cargo',
+    prov: { pages: [22], reason: null },
+    panels: [
+      { value: '10^405', heading: 'States, as given', body: '10 airports, 50 planes and 200 cargos.', pages: [22] },
+      { value: '10^11', heading: 'After abstraction', body: 'Assume 5 airports and drop the irrelevant At fluents.', pages: [22] },
+    ],
+  };
+
+  /** The draft each generated kind inserts. */
+  const MOCK_GENERATED = {
+    table: MOCK_TABLE,
+    diagram: MOCK_DIAGRAM,
+    flashcards: MOCK_FLASHCARDS,
+    quiz: MOCK_QUIZ,
+    infographic: MOCK_INFOGRAPHIC,
+  } as const;
 
   function notesIngestView() {
     return {
@@ -1639,9 +1710,9 @@ export function createMockBridge(): ChatterEdApi {
       }
     },
     /**
-     * **Insert ▸ Table / Diagram** (2026-10-01), with main's refusals: frozen, and one at a time.
-     * Otherwise Ellie thinks at the block for a moment and the block arrives as an ordinary
-     * `insert_after` batch of a real `TableDraft` or `DiagramDraft`, so dev mode runs the same
+     * **Insert ▸ Table / Diagram / Flashcards / Quiz / Infographic** (2026-10-01), with main's
+     * refusals: frozen, and one at a time. Otherwise Ellie thinks at the block for a moment and the
+     * block arrives as an ordinary `insert_after` batch of the matching draft, so dev mode runs the same
      * apply path, guard and typing animation a real one does. The call resolves after the edit is
      * out, as main's does. An instruction with "nothing" in it declines, so that line can be seen.
      */
@@ -1660,11 +1731,14 @@ export function createMockBridge(): ChatterEdApi {
           author: 'ellie',
           cause: 'answer_missing',
           focusBlockId: blockId,
-          why:
-            kind === 'table'
-              ? 'You asked for a table: the section compares three heuristics on how they are built.'
-              : 'You asked for a diagram: p. 28 and p. 32 are a refinement, so it is drawn as a hierarchy.',
-          ops: [{ op: 'insert_after', anchorBlockId: blockId, blocks: [structuredClone(kind === 'table' ? MOCK_TABLE : MOCK_DIAGRAM)] }],
+          why: {
+            table: 'You asked for a table: the section compares three heuristics on how they are built.',
+            diagram: 'You asked for a diagram: p. 28 and p. 32 are a refinement, so it is drawn as a hierarchy.',
+            flashcards: 'You asked for flashcards: one card per heuristic, front and back.',
+            quiz: 'You asked for a quiz: three questions on the relaxed heuristics, answers held back.',
+            infographic: 'You asked for an infographic: p. 22 is two numbers, so it is drawn as stats.',
+          }[kind],
+          ops: [{ op: 'insert_after', anchorBlockId: blockId, blocks: [structuredClone(MOCK_GENERATED[kind])] }],
         });
         if (!editId) {
           // Frozen while she was thinking: dropped, not queued (contract D4).
