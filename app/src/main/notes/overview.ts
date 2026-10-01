@@ -650,7 +650,7 @@ export function validateOverview(
   const ledePages = pagesOf(lede?.pages);
 
   // ── the chat's half (§6): a greeting and exactly three starters ──
-  let greeting = text(root.greeting).split('\n')[0] ?? '';
+  let greeting = text(typeof root.greeting === 'string' ? root.greeting.trim().split('\n')[0] : '');
   if (greeting.length === 0) {
     greeting = 'I have read these sources too. Where do you want to start?';
     repairs.greetingFilled = true;
