@@ -121,8 +121,8 @@ Hovering (or focusing) a block in the overview shows a small toolbar:
 | **Quiz me** | Max | his question, then feedback as now | the Q block under the block (as #56: the learner answers in place or in chat) |
 | **Ask…** | either | the composer opens with the block quoted; the learner types the question | as for any doc-chat question |
 
-Each section's key ideas also show **Explain · Example · Quiz me** as a row of small buttons, for
-touch and for learners who do not hover.
+The toolbar also shows on the block that holds the caret, so a tap or the keyboard reaches it
+without a hover.
 
 ### 4.2 Two outputs, never one squeezed into the other
 
