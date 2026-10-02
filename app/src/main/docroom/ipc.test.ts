@@ -185,6 +185,28 @@ describe('chat:openSpan', () => {
     expect(fx.actor.last('sendMessage')!.args[0]).toBe('What does that mean?');
   });
 
+  /**
+   * `notebooks.md` §4.2, amended 2026-10-02: the actor is told the thread's block before the
+   * turn, so Ellie's doc edit is filed under the line asked about, not where a planner guessed.
+   */
+  it('tells the actor the span thread\'s block and quote before the turn, and again on a later message', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const table = wire(fx);
+    const { threadId } = await table.call<{ threadId: string }>('chat:openSpan', {
+      fileId: 'f_deck',
+      blockId: 'b_2',
+      quote: 'the Hessian test decides it',
+      question: 'What does that mean?',
+    });
+    const methods = fx.actor.calls.map((c) => c.method);
+    expect(methods.indexOf('noteSpanThread')).toBeGreaterThanOrEqual(0);
+    expect(methods.indexOf('noteSpanThread')).toBeLessThan(methods.indexOf('sendMessage'));
+    expect(fx.actor.last('noteSpanThread')!.args[0]).toEqual({ threadId, blockId: 'b_2', quote: 'the Hessian test decides it' });
+
+    await table.call('chat:send', { fileId: 'f_deck', threadId, text: 'and in general?' });
+    expect(fx.actor.calls.filter((c) => c.method === 'noteSpanThread')).toHaveLength(2);
+  });
+
   it('refuses an un-minted block id before it creates a room', async () => {
     const fx = fakeHost({ doc: deck() });
     await expect(

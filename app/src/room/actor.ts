@@ -35,6 +35,7 @@ import {
   buildWhisperInsert,
   pagesCited,
   planBlockNote,
+  type NoteKind,
   buildResolveEdit,
   planResolveEdit,
   planSuggestionEdit,
@@ -456,7 +457,7 @@ export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>)
  * names what happened and never more. Each overview key idea is its own one-item `bullet_list`
  * (contract C6), so a list reads as "that bullet".
  */
-export function editNoteLine(kind: string | null, section: string | null): string {
+export function editNoteLine(kind: string | null, section: string | null, note: NoteKind = 'point'): string {
   const what =
     kind === 'bullet_list' || kind === 'list_item'
       ? 'that bullet'
@@ -468,7 +469,9 @@ export function editNoteLine(kind: string | null, section: string | null): strin
             ? 'that paragraph'
             : 'that block';
   const where = section && section.trim().length > 0 ? ` in \u201c${section.trim()}\u201d` : '';
-  return `Added one line under ${what}${where}.`;
+  // `notebooks.md` §4.2, amended 2026-10-02: the note is named for what it is.
+  const added = note === 'background' ? 'Added a background note' : note === 'detail' ? 'Added the details' : 'Added one line';
+  return `${added} under ${what}${where}.`;
 }
 
 /**
@@ -2162,6 +2165,20 @@ export class RoomActor {
     } finally {
       this.#generating = false;
     }
+  }
+
+  /**
+   * **A span thread's block and quote, from main** (`notebooks.md` §4.2, amended 2026-10-02).
+   *
+   * Highlight and Ask… threads are created in main (`chat:openSpan`), and `sendMessage` registers a
+   * thread by id alone, so the actor knew such a thread as block-less. Ellie's doc edit for a
+   * question asked there was then planned as a doc-chat question with no block, and on the first
+   * research paper it was filed under the title summary instead of the line asked about. Main
+   * calls this before the turn; a block action registers its own block and does not need it.
+   */
+  noteSpanThread(input: { threadId: string; blockId: string; quote: string | null }): void {
+    if (!input.threadId || !input.blockId) return;
+    this.#registerThread(input.threadId, 'span', { blockId: input.blockId, quote: input.quote });
   }
 
   /**
@@ -4718,11 +4735,11 @@ export class RoomActor {
    * The reply has already been released when this runs, so the row is updated in place and the
    * view re-emitted under the same id (the same path a regenerated summary card takes).
    */
-  async #noteEditInChat(messageId: string, batch: AgentDocOpBatch): Promise<void> {
+  async #noteEditInChat(messageId: string, batch: AgentDocOpBatch, note: NoteKind = 'point'): Promise<void> {
     const op = batch.ops[0];
     if (!messageId || op === undefined || op.op !== 'insert_after') return;
     const entry = this.#docPort.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
-    const line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null));
+    const line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null), note);
     await this.#mailbox.enqueue(() => {
       if (this.#retired) return;
       const row = this.#d.store.messages.get(messageId);
@@ -4898,6 +4915,7 @@ export class RoomActor {
         // How the line was had and how long it is, never the line.
         this.#turnLog.event('info', 'doc.block_note', {
           kind,
+          note_kind: plan.noteKind,
           outcome: plan.outcome,
           words: plan.words,
           retried: plan.retried,
@@ -4905,7 +4923,7 @@ export class RoomActor {
         });
         if (plan.batch === null) return;
         const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId });
-        if (emitted) await this.#noteEditInChat(messageId, plan.batch);
+        if (emitted) await this.#noteEditInChat(messageId, plan.batch, plan.noteKind);
       }
     } catch (err) {
       this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });

@@ -255,6 +255,9 @@ describe('blockAction: Explain and Example', () => {
     expect(ellie.anchor_id).toBe(SPAN);
     expect(ellie.body.endsWith(editNoteLine('bullet_list', 'The side channel'))).toBe(true);
     expect(editNoteLine('bullet_list', 'The side channel')).toBe('Added one line under that bullet in “The side channel”.');
+    // notebooks.md §4.2, amended 2026-10-02: the note is named for what it is.
+    expect(editNoteLine('bullet_list', 'The side channel', 'background')).toBe('Added a background note under that bullet in “The side channel”.');
+    expect(editNoteLine('paragraph', null, 'detail')).toBe('Added the details under that paragraph.');
     // Re-emitted under the same id, after the doc edit.
     const order = h.events
       .map((e, i) => ({ e, i }))
@@ -368,6 +371,25 @@ describe('blockAction: Quiz me', () => {
     expect(asked.body).toBe(QUESTION);
     expect(note).toContain(`"${QUESTION}"`);
     expect(note).not.toContain('A correct demonstration contains');
+  });
+
+  /**
+   * **A question typed in a highlight or Ask… thread** (`notebooks.md` §4.2, amended 2026-10-02).
+   * Main creates those threads; once it has told the actor the block, Ellie's doc edit is planned
+   * against that block and filed under it, as a block action's is.
+   */
+  it('files the doc edit for a question in a main-made span thread under that thread\'s block', async () => {
+    const h = build({}, (r) =>
+      r.meta.scope === 'docedit'
+        ? JSON.stringify({ line: 'A side channel never reaches the shared context.', anchor_block_id: 'b_head', why: 'the point' })
+        : null,
+    );
+    h.actor.noteSpanThread({ threadId: 'span_c0000000001', blockId: 'b_idea', quote: BULLET_TEXT });
+    await settle(h.clock, h.actor.sendMessage('how does the side channel stay private?', 'span_c0000000001'));
+    const plan = h.llm.requests.find((r) => r.meta.scope === 'docedit')!.system.map((b) => b.text).join('\n');
+    expect(plan).toContain('THE BLOCK IT GOES DIRECTLY UNDER (b_idea)');
+    const edit = h.doc.edits.find((e) => e.batch.author === 'ellie')!;
+    expect(edit.batch.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_idea' });
   });
 
   it('refuses a second Quiz me while Max’s question is open, and names that question’s thread', async () => {

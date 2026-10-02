@@ -49,6 +49,9 @@ export class FakeActor {
   sendMessage: DocActorMethods['sendMessage'] = async (...args) => {
     this.#record('sendMessage', args);
   };
+  noteSpanThread: DocActorMethods['noteSpanThread'] = (...args) => {
+    this.#record('noteSpanThread', args);
+  };
   pass: DocActorMethods['pass'] = async (...args) => {
     this.#record('pass', args);
     return { released: true, refused: null };

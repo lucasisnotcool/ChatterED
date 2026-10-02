@@ -28,6 +28,12 @@ export interface DocActorMethods {
   ): Promise<void>;
   /** The **Pass** control on Max's open question (brief §4.4). */
   pass(anchorId: string): Promise<{ released: boolean; refused: string | null }>;
+  /**
+   * **A span thread's block, told to the actor before its first turn** (`notebooks.md` §4.2,
+   * 2026-10-02). Main creates highlight and Ask… threads; without this the actor saw them as
+   * block-less and filed Ellie's doc edit wherever the planner guessed.
+   */
+  noteSpanThread(input: { threadId: string; blockId: string; quote: string | null }): void;
   /** A lesson card's Start: Ellie announces the objective and prompts for a question (§6). */
   startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void>;
   /**

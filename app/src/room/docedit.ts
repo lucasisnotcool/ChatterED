@@ -173,15 +173,48 @@ export function docEditMeta(deps: DocEditDeps): LlmRequest['meta'] {
  * for once more, and a second overflow is cut to the last full clause within the limit, never
  * mid-word. The model counts words badly and the limit is the brief's.
  */
+/**
+ * **What the note is, decided by what the exchange uncovered** (`notebooks.md` §4.2, amended
+ * 2026-10-02). On the first research paper the learner asked how fine-tuning works; two thirds of
+ * Ellie's answer explained what the notes took for granted, and the 25-word line kept the paper's
+ * recipe instead, so the notes never showed the gap that was filled. Lucas: the filled gap should
+ * be *"evidenced in the doc, so that user can revise"*.
+ *
+ *  - `background`: the notes assume something they never explain, and Ellie explained it;
+ *  - `detail`: the source gives specifics the notes skip, and the answer brought them out;
+ *  - `point`: otherwise, the one sentence most worth keeping (the 1 Oct line).
+ */
+export type NoteKind = 'background' | 'detail' | 'point';
+export const NOTE_KINDS: readonly NoteKind[] = ['background', 'detail', 'point'];
+
+/** Each kind's ceiling, enforced in code as the 25 words were. */
+export const NOTE_MAX_WORDS: Record<NoteKind, number> = {
+  background: 90,
+  detail: 50,
+  point: BLOCK_LINE_MAX_WORDS,
+};
+
+/**
+ * Provenance for a background note (§3.4). Not "the source assumes": on the first paper's run two of
+ * three background notes explained what the paper itself covers a page or two away, so the claim
+ * the reason makes has to be one that is true either way.
+ */
+export const BACKGROUND_REASON = 'background Ellie added';
+
 export const BLOCK_NOTE_SCHEMA: Record<string, unknown> = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
-  required: ['line', 'why'],
+  required: ['note_kind', 'line', 'why'],
   additionalProperties: false,
   properties: {
+    note_kind: {
+      type: 'string',
+      enum: [...NOTE_KINDS],
+      description: 'background, detail or point: what the exchange uncovered.',
+    },
     line: {
       type: ['string', 'null'],
-      description: `One sentence of at most ${BLOCK_LINE_MAX_WORDS} words that stands in the notes on its own.`,
+      description: `The note itself, standing in the notes on its own: background at most ${NOTE_MAX_WORDS.background} words, detail at most ${NOTE_MAX_WORDS.detail}, a point one sentence of at most ${NOTE_MAX_WORDS.point}.`,
     },
     anchor_block_id: {
       type: ['string', 'null'],
@@ -225,19 +258,19 @@ export type BlockNoteOutcome =
   /** No block to put it under, or nothing usable at all. */
   | 'none';
 
-const WHAT_THE_LINE_IS: Record<BlockNoteKind, string> = {
-  explain: 'Ellie has just explained this block in the chat. The line is **the point most worth keeping** from her explanation.',
+const WHAT_HAPPENED: Record<BlockNoteKind, string> = {
+  explain: 'Ellie has just explained this block in the chat.',
   example:
-    'Ellie has just worked an example of this block in the chat. The line is **the example in brief**: what the case is and what it shows.',
-  answer:
-    'The learner asked a question in the chat and Ellie answered it there in full. The line is **the point of her answer most worth keeping** in the notes.',
+    'Ellie has just worked an example of this block in the chat. Unless it uncovered a gap, its note is **the example in brief**, as a detail: what the case is and what it shows.',
+  answer: 'The learner asked a question in the chat and Ellie answered it there in full.',
 };
 
-export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; words: number }): string {
+export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; words: number; max: number }): string {
   const block = input.blockId === null ? null : (input.outline.find((e) => e.blockId === input.blockId) ?? null);
   const lines = [
-    `You are adding ONE line to the learner’s notes. ${WHAT_THE_LINE_IS[input.kind]} The chat already holds the full`,
-    'version; the notes get one sentence. You answer with the JSON object alone — no prose, no fence.',
+    `You are adding ONE note to the learner’s notes. ${WHAT_HAPPENED[input.kind]} The chat keeps the full`,
+    'answer; the notes keep what the learner will need when they revise from them weeks later.',
+    'You answer with the JSON object alone — no prose, no fence.',
   ];
   if (input.blockId !== null) {
     lines.push('', `THE BLOCK IT GOES DIRECTLY UNDER (${input.blockId})`, '"""', block?.text ?? '(not in the outline)', '"""');
@@ -245,7 +278,7 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
   lines.push('', 'THE NOTES AROUND IT', outlineText(input.outline));
   if (input.passage && input.passage.trim().length > 0) {
     const where = typeof input.page === 'number' ? ` (p. ${input.page})` : '';
-    lines.push('', `THE SLIDE${where}`, '"""', input.passage.trim().slice(0, ANSWER_EDIT_PASSAGE_CHARS), '"""');
+    lines.push('', `THE SOURCE PAGE${where}`, '"""', input.passage.trim().slice(0, ANSWER_EDIT_PASSAGE_CHARS), '"""');
   }
   if (input.question && input.question.trim().length > 0) {
     lines.push('', 'WHAT THEY ASKED', '"""', input.question.trim(), '"""');
@@ -257,14 +290,26 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
     input.answer.trim(),
     '"""',
     '',
-    'THE LINE',
-    `- **One sentence, at most ${BLOCK_LINE_MAX_WORDS} words.** It is counted, and a longer one is cut.`,
+    'WHAT KIND OF NOTE: decide from what this exchange uncovered, in this order.',
+    `- **background**, at most ${NOTE_MAX_WORDS.background} words: the question or the answer shows the notes assume`,
+    '  something they never explain (a term, a method, a prerequisite), and Ellie explained it. Write',
+    '  that explanation as a self-contained note: what it is and how it works, in two to four',
+    '  sentences, so that someone revising who still lacks the background can follow the notes. Take',
+    '  it from what Ellie said, not from your own knowledge. If the learner asked what something is,',
+    '  or how it works "in general", this is the kind.',
+    `- **detail**, at most ${NOTE_MAX_WORDS.detail} words: the source gives specifics the notes skip, and the answer`,
+    '  brought them out (an equation and what its terms are, settings, numbers, the steps of a method).',
+    '  Write the specifics themselves, not a sentence about them.',
+    `- **point**, one sentence of at most ${NOTE_MAX_WORDS.point} words: otherwise, the point most worth keeping.`,
+    'Never restate the block or the notes around it: what the notes already say is not the note.',
+    '',
+    'HOW IT READS',
+    '- Every limit is counted, and a longer note is cut.',
     '- It stands in the notes on its own, read weeks later: no "as I said", "as above", "here" or',
     '  "this example"; no second person; no question; no mention of Ellie, Max, the chat or the learner.',
-    '- It adds to the block above it rather than restating it.',
     '- No page citation in it (the notes show the page beside it), no heading, no list, no bold.',
     '- Inline `$...$` shows as TeX source, so keep it to a single symbol.',
-    '- Open with the point itself, not a stock opener ("In summary,", "Note that", "Key point:").',
+    '- Open with the substance itself, not a stock opener ("In summary,", "Note that", "Key point:").',
   );
   if (input.blockId === null) {
     lines.push(
@@ -279,11 +324,11 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
   if (retry) {
     lines.push(
       '',
-      `YOUR LAST LINE WAS ${retry.words} WORDS, OVER THE LIMIT OF ${BLOCK_LINE_MAX_WORDS}:`,
+      `YOUR LAST NOTE WAS ${retry.words} WORDS, OVER ITS LIMIT OF ${retry.max}:`,
       '"""',
       retry.line,
       '"""',
-      `Write it again as one sentence of at most ${BLOCK_LINE_MAX_WORDS} words. Keep the point; drop the rest.`,
+      `Write it again, same kind, in at most ${retry.max} words. Keep the substance; drop the rest.`,
     );
   }
   return lines.join('\n');
@@ -340,11 +385,16 @@ export function fallbackNoteLine(answer: string): string {
   return first.trim().length === 0 ? '' : trimToWords(stripPageMarkers(first));
 }
 
-/** Read a reply's line, or null when there is no usable one (absent, empty, a question). */
-function readLine(raw: unknown): string | null {
+/**
+ * Read a reply's note, or null when there is no usable one (absent, empty, a question). A
+ * background or detail note of several sentences may mention a question mark in passing; only a
+ * point, which is one sentence, is refused for carrying one.
+ */
+function readLine(raw: unknown, kind: NoteKind = 'point'): string | null {
   if (typeof raw !== 'string') return null;
   const line = stripPageMarkers(raw.replace(/\s+/g, ' ').trim());
-  if (line.length === 0 || line.includes('?')) return null;
+  if (line.length === 0) return null;
+  if (kind === 'point' ? line.includes('?') : /\?\s*$/.test(line)) return null;
   return line;
 }
 
@@ -360,12 +410,12 @@ function readLine(raw: unknown): string | null {
 export async function planBlockNote(
   deps: DocEditDeps,
   input: BlockNoteInput,
-): Promise<{ batch: AgentDocOpBatch | null; outcome: BlockNoteOutcome; words: number; retried: boolean }> {
+): Promise<{ batch: AgentDocOpBatch | null; outcome: BlockNoteOutcome; words: number; retried: boolean; noteKind: NoteKind }> {
   const actionOnBlock = input.kind !== 'answer' && input.blockId !== null;
-  const ask = async (retry?: { line: string; words: number }) => {
+  const ask = async (retry?: { line: string; words: number; max: number }) => {
     const request: LlmRequest = {
       model: deps.model,
-      max_tokens: 400,
+      max_tokens: 700,
       system: [{ type: 'text', text: blockNotePrompt(input, retry) }],
       messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
       jsonSchema: BLOCK_NOTE_SCHEMA,
@@ -379,20 +429,24 @@ export async function planBlockNote(
   let line: string | null = null;
   let outcome: BlockNoteOutcome = 'written';
   let retried = false;
+  let noteKind: NoteKind = 'point';
   try {
     parsed = await ask();
-    line = readLine(parsed.line);
-    if (line !== null && wordCount(line) > BLOCK_LINE_MAX_WORDS) {
+    // A reply without a kind is the 1 Oct line, and is held to its 25 words.
+    noteKind = NOTE_KINDS.includes(parsed.note_kind as NoteKind) ? (parsed.note_kind as NoteKind) : 'point';
+    const max = NOTE_MAX_WORDS[noteKind];
+    line = readLine(parsed.line, noteKind);
+    if (line !== null && wordCount(line) > max) {
       retried = true;
       const first = line;
       try {
-        const again = readLine((await ask({ line: first, words: wordCount(first) })).line);
+        const again = readLine((await ask({ line: first, words: wordCount(first), max })).line, noteKind);
         line = again ?? first;
       } catch {
         line = first;
       }
-      if (wordCount(line) > BLOCK_LINE_MAX_WORDS) {
-        line = trimToWords(line);
+      if (wordCount(line) > max) {
+        line = trimToWords(line, max);
         outcome = 'trimmed';
       }
     }
@@ -408,20 +462,25 @@ export async function planBlockNote(
     input.blockId ?? underHeading(deps, picked !== null && input.outline.some((e) => e.blockId === picked) ? picked : null, input.outline);
 
   if (line === null) {
-    if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried };
+    if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried, noteKind };
     line = fallbackNoteLine(input.answer);
     outcome = 'fallback';
-    if (line.length === 0) return { batch: null, outcome: 'none', words: 0, retried };
+    noteKind = 'point';
+    if (line.length === 0) return { batch: null, outcome: 'none', words: 0, retried, noteKind };
   }
-  if (anchorBlockId === null) return { batch: null, outcome: input.blockId === null ? 'declined' : 'none', words: 0, retried };
+  if (anchorBlockId === null) return { batch: null, outcome: input.blockId === null ? 'declined' : 'none', words: 0, retried, noteKind };
 
   const own = pagesCited(typeof parsed?.line === 'string' ? parsed.line : '', input.pageCount);
   const blockPages = input.outline.find((e) => e.blockId === anchorBlockId)?.pages ?? [];
   const answerPages = pagesCited(input.answer, input.pageCount);
+  // A background note is Ellie's explanation rather than the source's text, so it is not cited to
+  // the source's pages unless it names one itself: the reason says where it came from (§3.4).
   const prov: Provenance =
     own.length > 0
       ? { pages: own, reason: null }
-      : blockPages.length > 0
+      : noteKind === 'background'
+        ? { pages: [], reason: BACKGROUND_REASON }
+        : blockPages.length > 0
         ? { pages: [...blockPages], reason: null }
         : answerPages.length > 0
           ? { pages: answerPages, reason: null }
@@ -444,6 +503,7 @@ export async function planBlockNote(
     outcome,
     words: wordCount(line),
     retried,
+    noteKind,
   };
 }
 

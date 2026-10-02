@@ -267,6 +267,9 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
 
     const context = await contextFor(host, { roomId, fileId: input.fileId, thread, question: input.text });
     const target = docActor(actor);
+    if (thread?.kind === 'span' && thread.blockId && actorHas(target, 'noteSpanThread')) {
+      target.noteSpanThread({ threadId, blockId: thread.blockId, quote: thread.quote ?? null });
+    }
     try {
       await target.sendMessage(input.text, threadId, context ?? undefined);
     } finally {
@@ -318,6 +321,9 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         question: input.question,
       });
       const target = docActor(actor);
+      if (actorHas(target, 'noteSpanThread')) {
+        target.noteSpanThread({ threadId, blockId: input.blockId, quote: cap(input.quote, QUOTE_CAP) });
+      }
       try {
         await target.sendMessage(input.question, threadId, context ?? undefined);
       } finally {

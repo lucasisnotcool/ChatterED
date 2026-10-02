@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planBlockNote, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, trimToWords, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planBlockNote, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, trimToWords, type DocEditDeps } from './docedit.js';
 import { generateBlockPrompt, planGeneratedBlock } from './generate.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
@@ -139,7 +139,7 @@ describe('planBlockNote (notebooks §4.2)', () => {
     const d = seq([{ line: LONG, why: 'x' }, { line: 'Admissible heuristics never overestimate, so A* is optimal.', why: 'x' }]);
     const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
     expect(d.requests).toHaveLength(2);
-    expect(d.requests[1]!.system[0]!.text).toContain('OVER THE LIMIT OF 25');
+    expect(d.requests[1]!.system[0]!.text).toContain('OVER ITS LIMIT OF 25');
     expect(out).toMatchObject({ outcome: 'written', retried: true });
     expect(out.words).toBeLessThanOrEqual(25);
   });
@@ -239,13 +239,64 @@ describe('planBlockNote (notebooks §4.2)', () => {
     const passage = 'An admissible heuristic never overestimates. '.repeat(100);
     const prompt = blockNotePrompt({ kind: 'example', answer: 'THE-CHAT', question: 'why?', passage, page: 4, blockId: 'b_2', outline: OUTLINE });
     expect(prompt).toContain('THE BLOCK IT GOES DIRECTLY UNDER (b_2)');
-    expect(prompt).toContain('THE SLIDE (p. 4)');
+    expect(prompt).toContain('THE SOURCE PAGE (p. 4)');
     expect(prompt).toContain('THE-CHAT');
     expect(prompt).toContain('the example in brief');
     expect(prompt).toContain('at most 25 words');
     expect(prompt).toContain(passage.slice(0, ANSWER_EDIT_PASSAGE_CHARS).trim());
     expect(prompt).not.toContain(passage.trim());
     expect(blockNotePrompt({ kind: 'answer', answer: 'a', blockId: null, outline: OUTLINE })).toContain('anchor_block_id');
+  });
+
+  /**
+   * `notebooks.md` §4.2, amended 2026-10-02: the note follows what the exchange uncovered. A gap
+   * the notes assumed becomes a background note of up to 90 words, labelled as background rather
+   * than cited to the source; specifics become a detail of up to 50; otherwise the 25-word point.
+   */
+  const BACKGROUND =
+    'Fine-tuning continues training a pretrained model on a small task-specific dataset, so it adapts to the task instead of learning from scratch. ' +
+    'LoRA freezes the original weights and trains small low-rank matrices added to them, which makes fine-tuning an 8-billion-parameter model affordable.';
+
+  it('says in the prompt what each kind is for, with its limit', () => {
+    const prompt = blockNotePrompt({ kind: 'answer', answer: 'a', question: 'how is fine-tuning done in general?', blockId: 'b_2', outline: OUTLINE });
+    expect(prompt).toContain('**background**, at most 90 words');
+    expect(prompt).toContain('**detail**, at most 50 words');
+    expect(prompt).toContain('**point**, one sentence of at most 25 words');
+    expect(prompt.replace(/\s+/g, ' ')).toContain('what the notes already say is not the note');
+  });
+
+  it('writes a background note of up to 90 words, labelled as background the source assumes', async () => {
+    const d = seq([{ note_kind: 'background', line: BACKGROUND, why: 'the gap the question uncovered' }]);
+    const out = await planBlockNote(d, { kind: 'answer', answer: 'Fine-tuning means… (p. 5)', blockId: 'b_2', outline: OUTLINE });
+    expect(out).toMatchObject({ outcome: 'written', retried: false, noteKind: 'background' });
+    expect(out.words).toBeGreaterThan(25);
+    expect(out.batch!.ops[0]).toMatchObject({
+      op: 'insert_after',
+      anchorBlockId: 'b_2',
+      blocks: [{ kind: 'paragraph', text: BACKGROUND, prov: { pages: [], reason: BACKGROUND_REASON } }],
+    });
+  });
+
+  it('holds a detail note to 50 words and a reply with no kind to the 25-word point', async () => {
+    const long = `${BACKGROUND} ${BACKGROUND}`;
+    const detail = await planBlockNote(seq([{ note_kind: 'detail', line: long, why: 'x' }, { note_kind: 'detail', line: long, why: 'x' }]), {
+      kind: 'explain',
+      answer: 'a',
+      blockId: 'b_2',
+      outline: OUTLINE,
+    });
+    expect(detail).toMatchObject({ outcome: 'trimmed', noteKind: 'detail' });
+    expect(detail.words).toBeLessThanOrEqual(NOTE_MAX_WORDS.detail);
+    expect(detail.batch!.ops[0]).toMatchObject({ blocks: [{ prov: { pages: [4], reason: null } }] });
+
+    const point = await planBlockNote(seq([{ line: BACKGROUND, why: 'x' }, { line: BACKGROUND, why: 'x' }]), {
+      kind: 'explain',
+      answer: 'a',
+      blockId: 'b_2',
+      outline: OUTLINE,
+    });
+    expect(point.noteKind).toBe('point');
+    expect(point.words).toBeLessThanOrEqual(25);
   });
 });
 
