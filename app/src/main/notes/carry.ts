@@ -13,7 +13,9 @@
  *    learner typed into an ingest paragraph keeps that paragraph's ingest words too: splitting it
  *    would move their sentence away from what it was written against;
  *  - a block an agent edit the learner **kept** created or touched (`notes_doc_edits.status =
- *    'kept'`, its `blockIds`) is carried whole;
+ *    'kept'`, its `blockIds`) is carried whole, and so is **one of Ellie's notes** still in the
+ *    doc (`cause: 'block_action'`, applied and not removed; the caller passes both sets as one,
+ *    2026-10-02);
  *  - everything else was written by the ingest, or by an agent edit still pending or never kept,
  *    and is dropped. Those are the overview's own blocks and what Regenerate also drops.
  *

@@ -321,7 +321,8 @@ describe('Update overview (§2)', () => {
     const mine = notesSchema.nodes.paragraph!.create({ blockId: 'b_mine', pages: [9], reason: null, objectiveIds: [] }, notesSchema.text('A thought about nothing in particular.', mark('user')));
     const kept = notesSchema.nodes.paragraph!.create({ blockId: 'b_kept', pages: [3], reason: null, objectiveIds: [] }, notesSchema.text('Ellie: kept line.', mark('ellie', 'e_kept')));
     const applied = notesSchema.nodes.paragraph!.create({ blockId: 'b_applied', pages: [3], reason: null, objectiveIds: [] }, notesSchema.text('Ellie: never kept.', mark('ellie', 'e_applied')));
-    nodes.splice(slotAt, 1, kept, applied, slot);
+    const maxEdit = notesSchema.nodes.paragraph!.create({ blockId: 'b_max', pages: [3], reason: null, objectiveIds: [] }, notesSchema.text('Max: never kept.', [authorMark('max', 'e_max', 1)]));
+    nodes.splice(slotAt, 1, kept, applied, maxEdit, slot);
     // A paragraph after the lede, under no section: it can only go under Earlier notes.
     nodes.splice(2, 0, mine);
     const next = notesSchema.nodes.doc!.create(null, nodes);
@@ -331,7 +332,8 @@ describe('Update overview (§2)', () => {
       .prepare(
         `INSERT INTO notes_doc_edits (edit_id, doc_id, room_id, author, cause, ops_json, why, status, block_ids, doc_version, created_at)
          VALUES ('e_kept', @doc, NULL, 'ellie', 'block_action', '[]', '', 'kept', '["b_kept"]', 1, 'now'),
-                ('e_applied', @doc, NULL, 'ellie', 'block_action', '[]', '', 'applied', '["b_applied"]', 1, 'now')`,
+                ('e_applied', @doc, NULL, 'ellie', 'block_action', '[]', '', 'applied', '["b_applied"]', 1, 'now'),
+                ('e_max', @doc, NULL, 'max', 'q_resolved', '[]', '', 'applied', '["b_max"]', 1, 'now')`,
       )
       .run({ doc: docId });
     return { mine: mine.toJSON(), slot: slot.toJSON() };
@@ -361,16 +363,20 @@ describe('Update overview (§2)', () => {
     expect(carriedSlot.content).toEqual((slot as { content: unknown }).content);
     expect(json).toContainEqual(mine);
     const blocks = topLevel(updated.doc);
-    // The slot stands in the new Heuristics section; the kept line is just above it.
+    // The slot stands in the new Heuristics section; the kept line, then Ellie's note the learner
+    // never kept or removed (notebooks.md §2, amended 2026-10-02), are just above it.
     const heur = blocks.findIndex((b) => b.text === 'Heuristics');
     const keptAt = blocks.findIndex((b) => b.id === 'b_kept');
+    const appliedAt = blocks.findIndex((b) => b.id === 'b_applied');
     const slotAt = blocks.findIndex((b) => b.text.startsWith('My own'));
     expect(keptAt).toBeGreaterThan(heur);
-    expect(slotAt).toBe(keptAt + 1);
+    expect(appliedAt).toBe(keptAt + 1);
+    expect(slotAt).toBe(appliedAt + 1);
     expect(blocks[slotAt + 1]!.type).toBe('heading');
-    // The never-kept edit is gone, from the doc and from the edits table.
-    expect(blocks.some((b) => b.id === 'b_applied')).toBe(false);
-    expect(h.repo.edits(first.id).map((e) => e.editId)).toEqual(['e_kept']);
+    // Max's never-kept edit is gone from the doc and the edits table; Ellie's carried note keeps
+    // its edit row, so its Remove · Keep still works.
+    expect(blocks.some((b) => b.id === 'b_max')).toBe(false);
+    expect(h.repo.edits(first.id).map((e) => e.editId).sort()).toEqual(['e_applied', 'e_kept']);
     // The unmatched learner paragraph is under a final Earlier notes.
     const earlier = blocks.findIndex((b) => b.text === EARLIER_NOTES_HEADING);
     expect(earlier).toBeGreaterThan(slotAt);

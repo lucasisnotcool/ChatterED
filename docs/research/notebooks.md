@@ -54,6 +54,10 @@ first *short* pass, and the rest of the notes grow from what the learner chose t
   agent edits the learner kept, carry over under the section with the matching heading, or, when no
   section matches, under a final *Earlier notes* heading. The learner-text guard applies as it
   does to every agent edit.
+  *Amended 2026-10-02 (Lucas's decision):* Ellie's notes (§4.2) that the learner has neither kept
+  nor removed carry over too, with their Remove · Keep intact. A background note records a gap a
+  question filled, for revision; losing it because the learner never pressed Keep loses exactly
+  that. Max's unkept edits still go.
 
 ## 3. The learning overview
 

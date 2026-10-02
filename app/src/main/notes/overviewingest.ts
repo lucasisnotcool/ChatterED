@@ -564,12 +564,22 @@ function land(
   } catch {
     old = null;
   }
-  const kept = new Set(deps.repo.edits(docId, 'kept').flatMap((e) => e.blockIds));
+  /**
+   * Kept agent edits, and **Ellie's notes the learner has not removed** (`notebooks.md` §2 and
+   * §4.2, amended 2026-10-02). A background note is the record of a gap a question filled, kept
+   * for revision; dropping it because the learner never pressed Keep loses exactly that.
+   */
+  const ellieNotes = deps.repo.edits(docId, 'applied').filter((e) => e.author === 'ellie' && e.cause === 'block_action');
+  const kept = new Set([...deps.repo.edits(docId, 'kept').flatMap((e) => e.blockIds), ...ellieNotes.flatMap((e) => e.blockIds)]);
   const { nodes, stats } = carryOver(old, minted.nodes, kept);
   const doc = notesSchema.nodes.doc!.create(null, nodes).toJSON();
 
   // Pending and applied agent edits point at blocks that are gone (as Regenerate drops them).
-  const cleared = deps.repo.clearForRegenerate(docId);
+  // Ellie's carried notes keep their edit rows, so Remove · Keep still works on them.
+  const cleared = deps.repo.clearForRegenerate(
+    docId,
+    ellieNotes.map((e) => e.editId),
+  );
 
   const meta = overviewMeta({
     overview,

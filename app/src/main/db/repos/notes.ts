@@ -216,7 +216,11 @@ export interface NotesRepo {
    * already decided are history and stay. The objective→block map is a cache and is emptied.
    * Returns what was cleared, for the log.
    */
-  clearForRegenerate(docId: string): { edits: number; suggestions: number };
+  /**
+   * `keepEditIds`: applied edits whose blocks an Update overview carried over (Ellie's notes,
+   * 2026-10-02), so their Remove · Keep still works. Regenerate passes none.
+   */
+  clearForRegenerate(docId: string, keepEditIds?: readonly string[]): { edits: number; suggestions: number };
 
   /**
    * **The overview landed** (`notebooks.md` §3.5): the whole document, its metadata, and the row
@@ -631,12 +635,14 @@ export function notesRepo(db: SqlDatabase): NotesRepo {
       }
     },
 
-    clearForRegenerate(docId) {
+    clearForRegenerate(docId, keepEditIds = []) {
       db.exec('BEGIN');
       try {
+        const keep = Object.fromEntries(keepEditIds.map((id, i) => [`k${i}`, id]));
+        const spare = keepEditIds.length > 0 ? ` AND edit_id NOT IN (${Object.keys(keep).map((k) => `@${k}`).join(', ')})` : '';
         const edits = db
-          .prepare(`DELETE FROM notes_doc_edits WHERE doc_id = @doc AND status IN ('pending', 'applied')`)
-          .run({ doc: docId });
+          .prepare(`DELETE FROM notes_doc_edits WHERE doc_id = @doc AND status IN ('pending', 'applied')${spare}`)
+          .run({ doc: docId, ...keep });
         const suggestions = db
           .prepare(`DELETE FROM notes_suggestions WHERE doc_id = @doc AND status = 'open'`)
           .run({ doc: docId });
