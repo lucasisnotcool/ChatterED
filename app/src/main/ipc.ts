@@ -70,6 +70,7 @@ import { SegmentService, type SplitInput } from './vault/segments.js';
 import type { ConfirmRequest, DocHost } from './dochost.js';
 import { registerNotesIpc } from './notes/ipc.js';
 import { createDocPort } from './notes/docport.js';
+import { sourceProfile } from './notes/overview.js';
 import { registerDocRoomIpc } from './docroom/ipc.js';
 import { buildProgress, registerProgressIpc } from './docroom/progress.js';
 import { outcomesRepo } from './db/repos/outcomes.js';
@@ -536,6 +537,8 @@ export class AppService {
       flowState: this.#flowStateFor(roomId, material.file_id, pack),
       flowProfile: this.flowProfile(),
       replySpeed: this.replySpeed(),
+      // notebooks.md §3.2, amended 2026-10-02: a paper is "the paper" to the agents, not "the slide".
+      sourceGenre: sourceProfile(material.extracted_text ?? '').genre,
       newId,
       // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
       // all stamped with the turn id the LLM calls underneath them carry too.

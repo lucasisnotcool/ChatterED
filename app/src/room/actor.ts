@@ -324,6 +324,11 @@ export interface RoomActorDeps {
    * `false` is the #48 loop, kept as legacy coverage: the tests that pin it pass it explicitly.
    */
   maxOnlyOnRequest?: boolean;
+  /**
+   * **Slides or prose** (`notebooks.md` §3.2, amended 2026-10-02), read by main off the room's
+   * material with the overview's own `sourceProfile`. Absent is slides, as every room was.
+   */
+  sourceGenre?: 'slides' | 'prose';
 }
 
 interface PendingTurn {
@@ -3888,6 +3893,7 @@ export class RoomActor {
         // clause, and the rule name is what tells them apart.
         byRule: decision.decidedBy,
         cloze: this.#clozeTurn(decision),
+        sourceGenre: this.#d.sourceGenre,
       },
     });
     request.meta.scriptCue = cue;

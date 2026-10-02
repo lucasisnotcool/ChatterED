@@ -101,10 +101,11 @@ export function blockActionBlock(input: { kind: 'explain' | 'example'; quote: st
   ];
   if (input.kind === 'explain') {
     lines.push(
-      'Explain it in full, as you answer any question: what it says, in your first sentence; what it',
-      'means in plain words; one concrete example or analogy; then the rigorous version and how the',
-      'slide uses it, in the slide’s own notation. **About 120 words, ceiling 180.** Ground it in the',
-      'slide text above and cite it as p. N.',
+      'Explain it in full: what it says, in your first sentence; what it means in plain words; then the',
+      'rigorous version and how the source uses it, in its own notation. An example or analogy only',
+      'when the line is abstract enough to need one, and then one sentence of it: a method or a result',
+      'is better shown with the source’s own numbers than with an analogy. **About 120 words, 150 at',
+      'most.** Ground it in the page text above and cite it as p. N.',
     );
   } else {
     lines.push(

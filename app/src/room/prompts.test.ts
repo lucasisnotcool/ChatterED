@@ -594,3 +594,25 @@ describe('whereBlock', () => {
     expect(block).toContain('no method, notation or format the deck only names');
   });
 });
+
+/**
+ * `notebooks.md` §3.2, amended 2026-10-02: on a paper the agents are told, nearest the generation,
+ * that it is "the paper", not "the slide"; and Explain is shorter, its analogy optional.
+ */
+describe('a paper, not slides', () => {
+  it('tells every agent the source is a paper only when it is one', () => {
+    const prose = turnDirective({ agentRole: 'peer', move: 'answer_then_teach', sourceGenre: 'prose' });
+    expect(prose).toContain('Refer to it as "the paper" or by page (p. N), never as "the slide"');
+    expect(turnDirective({ agentRole: 'challenger', move: 'quiz', sourceGenre: 'prose' })).toContain('The source is a paper');
+    expect(turnDirective({ agentRole: 'peer', move: 'answer_then_teach' })).not.toContain('The source is a paper');
+    expect(turnDirective({ agentRole: 'peer', move: 'answer_then_teach', sourceGenre: 'slides' })).not.toContain('The source is a paper');
+  });
+
+  it('holds Explain to 150 words and makes its analogy optional', () => {
+    expect(turnDirective({ agentRole: 'peer', move: 'block_explain' })).toContain('**150 at most**');
+    const block = flat(blockActionBlock({ kind: 'explain', quote: 'LLMKT fine-tunes an LLM.', page: 5 }));
+    expect(block).toContain('An example or analogy only when the line is abstract enough to need one');
+    expect(block).toContain('**About 120 words, 150 at most.**');
+    expect(block).not.toContain('one concrete example or analogy;');
+  });
+});

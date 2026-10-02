@@ -803,6 +803,12 @@ export interface TurnDirective {
    * otherwise say (own words; a follow-up on the gap) are wrong for a blank.
    */
   cloze?: boolean;
+  /**
+   * **The source is a paper or a reading, not slides** (`notebooks.md` §3.2, amended 2026-10-02).
+   * The role blocks say "slide" throughout; on the first paper Ellie wrote "the slide doesn't
+   * explain it". Said here, nearest the generation, rather than rewriting every block.
+   */
+  sourceGenre?: 'slides' | 'prose';
 }
 
 /**
@@ -869,9 +875,11 @@ export function turnDirective(d: TurnDirective): string {
    * shape (`prompts.doc.ts` `blockActionBlock`); this is the sentence nearest the generation.
    */
   if (d.move === 'block_explain') {
+    // 2026-10-02: both Explains on the first paper ran to about 215 words against a 180 ceiling,
+    // a fifth of it a mandatory analogy. The ceiling is lowered and the analogy made optional.
     bits.push(
-      'The learner pressed Explain on a line of their notes. Explain it in full from the slide, about',
-      '120 words and 180 at most. No question anywhere in the turn.',
+      'The learner pressed Explain on a line of their notes. Explain it in full from the source, about',
+      '120 words and **150 at most**. No question anywhere in the turn.',
     );
   }
   if (d.move === 'block_example') {
@@ -985,6 +993,12 @@ export function turnDirective(d: TurnDirective): string {
   // (`quizBlock`'s THIS TURN IS ABOUT), so he is not handed the bare id (sim harness, 2026-10-01).
   if (d.targetElementId && d.agentRole !== 'challenger') bits.push(`Aim it at ${d.targetElementId}.`);
   if (d.note) bits.push(d.note);
+  if (d.sourceGenre === 'prose') {
+    bits.push(
+      'The source is a paper, not slides: where these instructions say "slide" or "deck", read "the',
+      'paper". Refer to it as "the paper" or by page (p. N), never as "the slide" or "the deck".',
+    );
+  }
   bits.push('Reply with the message only — no preamble, no name prefix, no stage directions.');
   return bits.join(' ');
 }
