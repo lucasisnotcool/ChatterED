@@ -67,10 +67,11 @@ import {
   mintOverview,
   overviewMessage,
   overviewMeta,
-  overviewWordBudget,
+  overviewPolicy,
   pageTextsOf,
   sourceWordsOf,
   validateOverview,
+  type OverviewPolicy,
   type OverviewRepairs,
 } from './overview.js';
 
@@ -383,8 +384,10 @@ async function runOverview(
     if (sources.length === 0) throw new Error('no ticked source is ready to read');
 
     const deck = deps.notebooks.deckText(input.notebookId);
-    const sourceWords = sourceWordsOf(deck.text);
-    const budget = overviewWordBudget(sourceWords);
+    // §3.2, amended 2026-10-02: slides or prose, read off the text, and the budget from the body.
+    const policy = overviewPolicy(deck.text);
+    const sourceWords = policy.bodyWords;
+    const budget = policy.budget;
     const steps = deck.truncated ? sources.length + 1 : 1;
     let done = 0;
     const progress = (): void => {
@@ -440,6 +443,7 @@ async function runOverview(
               condensed: deck.truncated,
               sourceWords,
               budget,
+              genre: policy.genre,
               imagePages: images.map((i) => i.page),
             }),
           },
@@ -461,6 +465,7 @@ async function runOverview(
       deckText: deck.text,
       sourceWords,
       budget,
+      policy,
       model: deps.models.orchestrator,
       withImages: images.length > 0,
       steps,
@@ -504,6 +509,8 @@ interface Landing {
   deckText: string;
   sourceWords: number;
   budget: number;
+  /** Slides or prose, and the caps that follow (§3.2, amended 2026-10-02). */
+  policy: Pick<OverviewPolicy, 'genre' | 'maxSections' | 'maxIdeas' | 'referenceWords'>;
   model: string;
   withImages: boolean;
   steps: number;
@@ -531,6 +538,8 @@ function land(
     pageExists: (page) => deps.notebooks.locate(input.notebookId, page) !== null,
     pageTexts: pageTextsOf(landing.deckText),
     fallbackTitle: subject.name,
+    maxSections: landing.policy.maxSections,
+    maxIdeas: landing.policy.maxIdeas,
   });
   const { repairs } = checked;
   if (!checked.overview) throw new Error('the model returned no usable section');
@@ -569,6 +578,7 @@ function land(
     writtenAt: now(),
     words: minted.words,
     wordBudget: landing.budget,
+    genre: landing.policy.genre,
   });
   const record = deps.repo.landOverview(
     {
@@ -654,13 +664,15 @@ function logLanding(
     words: record.overview?.words ?? 0,
     budget_words: landing.budget,
     source_words: landing.sourceWords,
+    genre: landing.policy.genre,
+    reference_words: landing.policy.referenceWords,
     condensed: landing.condensed,
     with_images: landing.withImages,
     output_tokens: landing.outputTokens,
     sections: extra.sections,
     objectives: extra.objectives,
     recommendations: extra.recommendations,
-    thin_sections: extra.sections < overviewSectionRange(landing.budget).min,
+    thin_sections: extra.sections < overviewSectionRange(landing.budget, landing.policy.genre).min,
     thin_objectives: extra.objectives < OVERVIEW_MIN_OBJECTIVES,
     repaired: {
       pages_dropped: repairs.pagesDropped,
@@ -721,12 +733,13 @@ async function landFixture(
   try {
     const { raw, fixture } = fixtureRaw(deps, subject);
     const deck = deps.notebooks.deckText(input.notebookId);
-    const sourceWords = sourceWordsOf(deck.text);
+    const policy = overviewPolicy(deck.text);
     land(deps, input, subject, docId, mode, {
       raw,
       deckText: deck.text,
-      sourceWords,
-      budget: overviewWordBudget(sourceWords),
+      sourceWords: policy.bodyWords,
+      budget: policy.budget,
+      policy,
       model: 'fixture',
       withImages: false,
       steps: 1,

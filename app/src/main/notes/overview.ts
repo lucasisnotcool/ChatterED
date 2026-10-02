@@ -82,7 +82,18 @@ export interface OverviewPartLimits {
  * key ideas share the rest, about 2.3 to a section, never under 10 words each (a phrase) nor over
  * 28 (two short sentences). At the brief's 350 that is 11 words an idea.
  */
-export function overviewPartLimits(budget: number): OverviewPartLimits {
+export function overviewPartLimits(budget: number, genre: SourceGenre = 'slides'): OverviewPartLimits {
+  if (genre === 'prose') {
+    /**
+     * **A paper's parts** (§3.2, amended 2026-10-02). The fixed parts are a longer lede (50), six
+     * objective titles of 10, eight headings of 8 and eight takeaways of 20, about 330 words; the
+     * ideas share the rest at about three to a section, never under 15 words (a paper's idea names
+     * a method or a result, which a phrase cannot) nor over 40.
+     */
+    const fixed = 50 + 6 * 10 + 8 * 8 + 8 * 20;
+    const idea = Math.max(15, Math.min(40, Math.floor((budget - fixed) / (8 * 3))));
+    return { lede: 50, objective: 10, heading: 8, takeaway: 20, idea };
+  }
   const fixed = 35 + 5 * 10 + 6 * 6 + 6 * 12;
   const idea = Math.max(10, Math.min(28, Math.floor((budget - fixed) / (6 * 2.3))));
   return { lede: 35, objective: 10, heading: 6, takeaway: 12, idea };
@@ -125,6 +136,123 @@ export function pageTextsOf(deckText: string): Map<number, string> {
   return out;
 }
 
+// ── the kind of source (§3.2, amended 2026-10-02) ─────────────────────────────────────────────
+
+/**
+ * **Slides or prose.** The budget above was calibrated on slide decks, at about 80 words a slide;
+ * a research paper is about 750 words a page, and on the first one (arXiv 2409.16490, 15 pages)
+ * the overview came out at 406 words, the method and results reduced to phrases. Which one a
+ * source is, is read off its own text: words per page of body, references left out.
+ */
+export type SourceGenre = 'slides' | 'prose';
+
+/** Words per page of body at or above which a source reads as prose: slides ~80, a paper ~750. */
+export const PROSE_WORDS_PER_PAGE = 300;
+
+/** A line that is only a references heading ("References", "6 Bibliography", "Works Cited"). */
+const REFERENCES_LINE = /^\s*(?:\d+(?:\.\d+)*\.?\s+)?(references|bibliography|works cited)\s*$/i;
+
+export interface SourceProfile {
+  genre: SourceGenre;
+  /** Words of the sources' bodies: what the budget is computed from. */
+  bodyWords: number;
+  /** Words after a References heading, left out of the budget. */
+  referenceWords: number;
+  /** Body words per page with any body text, over the prose sources and slide sources together. */
+  wordsPerPage: number;
+}
+
+function lineWords(text: string): number {
+  return text.split(/\s+/).filter((w) => w.length > 0).length;
+}
+
+/**
+ * **One pass over the deck text**: each source's words, split into body and references, and its
+ * own words per page. A references heading counts only in the second half of its source's pages,
+ * so a "References" slide in the middle of a lecture does not swallow the rest of it. The
+ * notebook is prose when its prose sources carry at least half of its body words. Pure.
+ */
+export function sourceProfile(deckText: string): SourceProfile {
+  type Line = { page: number | null; text: string };
+  const sources: Line[][] = [[]];
+  let page: number | null = null;
+  for (const raw of deckText.split('\n')) {
+    if (SOURCE_LINE.test(raw)) {
+      sources.push([]);
+      page = null;
+      continue;
+    }
+    const marker = PAGE_LINE.exec(raw);
+    if (marker) {
+      page = Number(marker[1]);
+      sources.at(-1)!.push({ page, text: marker[2] ?? '' });
+      continue;
+    }
+    sources.at(-1)!.push({ page, text: raw });
+  }
+
+  let bodyWords = 0;
+  let referenceWords = 0;
+  let proseWords = 0;
+  let pagesWithBody = 0;
+  for (const lines of sources) {
+    const pages = lines.map((l) => l.page).filter((p): p is number => p !== null);
+    if (lines.length === 0) continue;
+    const first = pages.length > 0 ? Math.min(...pages) : 0;
+    const last = pages.length > 0 ? Math.max(...pages) : 0;
+    let refsAt = -1;
+    lines.forEach((line, i) => {
+      if (REFERENCES_LINE.test(line.text) && (line.page ?? first) >= first + (last - first) / 2) refsAt = i;
+    });
+    let body = 0;
+    const bodyPages = new Set<number>();
+    lines.forEach((line, i) => {
+      const n = lineWords(line.text);
+      if (refsAt >= 0 && i >= refsAt) {
+        referenceWords += n;
+        return;
+      }
+      body += n;
+      if (n > 0 && line.page !== null) bodyPages.add(line.page);
+    });
+    bodyWords += body;
+    pagesWithBody += bodyPages.size;
+    if (bodyPages.size > 0 && body / bodyPages.size >= PROSE_WORDS_PER_PAGE) proseWords += body;
+  }
+  const genre: SourceGenre = bodyWords > 0 && proseWords * 2 >= bodyWords ? 'prose' : 'slides';
+  return { genre, bodyWords, referenceWords, wordsPerPage: pagesWithBody > 0 ? Math.round(bodyWords / pagesWithBody) : 0 };
+}
+
+/** A paper's budget: about a tenth of its body's words, between these, rounded to ten. */
+export const OVERVIEW_PROSE_BUDGET_PER_WORD = 0.1;
+export const OVERVIEW_PROSE_BUDGET_FLOOR = 400;
+export const OVERVIEW_PROSE_BUDGET_CEILING = 1_200;
+
+export function proseWordBudget(bodyWords: number): number {
+  const rounded = Math.round((OVERVIEW_PROSE_BUDGET_PER_WORD * Math.max(0, bodyWords)) / 10) * 10;
+  return Math.min(OVERVIEW_PROSE_BUDGET_CEILING, Math.max(OVERVIEW_PROSE_BUDGET_FLOOR, rounded));
+}
+
+export interface OverviewPolicy extends SourceProfile {
+  budget: number;
+  maxSections: number;
+  maxIdeas: number;
+}
+
+/** **Everything the overview's size follows from**, read off the deck text the call is given. Pure. */
+export function overviewPolicy(deckText: string): OverviewPolicy {
+  const profile = sourceProfile(deckText);
+  if (profile.genre === 'prose') {
+    return {
+      ...profile,
+      budget: proseWordBudget(profile.bodyWords),
+      maxSections: OVERVIEW_PROSE_MAX_SECTIONS,
+      maxIdeas: OVERVIEW_PROSE_MAX_IDEAS,
+    };
+  }
+  return { ...profile, budget: overviewWordBudget(profile.bodyWords), maxSections: OVERVIEW_MAX_SECTIONS, maxIdeas: OVERVIEW_MAX_IDEAS };
+}
+
 // ── the counts (§3.1) ─────────────────────────────────────────────────────────────────────────
 
 export const OVERVIEW_MIN_OBJECTIVES = 4;
@@ -142,13 +270,17 @@ export const OVERVIEW_MAX_RECOMMENDATIONS = 4;
  * to eight asked for). So: a budget up to 250 gets three to five; up to 400 gets four to seven;
  * beyond, the brief's five to eight. The ceiling of 8 never moves.
  */
-export function overviewSectionRange(budget: number): { min: number; max: number } {
+export function overviewSectionRange(budget: number, genre: SourceGenre = 'slides'): { min: number; max: number } {
+  if (genre === 'prose') return { min: OVERVIEW_MIN_SECTIONS, max: OVERVIEW_PROSE_MAX_SECTIONS };
   if (budget <= 250) return { min: 3, max: 5 };
   if (budget <= 400) return { min: 4, max: 7 };
   return { min: OVERVIEW_MIN_SECTIONS, max: OVERVIEW_MAX_SECTIONS };
 }
 export const OVERVIEW_MIN_IDEAS = 2;
 export const OVERVIEW_MAX_IDEAS = 3;
+/** A paper's sections and ideas (§3.2, amended 2026-10-02): its own sections, up to four ideas each. */
+export const OVERVIEW_PROSE_MAX_SECTIONS = 10;
+export const OVERVIEW_PROSE_MAX_IDEAS = 4;
 export const OVERVIEW_MAX_CRITERIA = 4;
 export const OVERVIEW_MAX_QUIZ_SEEDS = 3;
 /** Answer D: exactly three, under Ellie's greeting. */
@@ -259,6 +391,8 @@ export interface OverviewPromptInput {
   /** Words of the sources themselves, for the budget line. */
   sourceWords: number;
   budget: number;
+  /** Slides unless the sources read as prose (`overviewPolicy`). */
+  genre?: SourceGenre;
   /** The notebook pages whose images are attached, when any are. */
   imagePages: readonly number[];
 }
@@ -290,16 +424,39 @@ export function overviewMessage(input: OverviewPromptInput): string {
       input.deckText,
     ].join('\n'),
   );
-  const limits = overviewPartLimits(input.budget);
-  const range = overviewSectionRange(input.budget);
+  const genre = input.genre ?? 'slides';
+  const limits = overviewPartLimits(input.budget, genre);
+  const range = overviewSectionRange(input.budget, genre);
+  if (genre === 'prose') {
+    /**
+     * **A paper is not a deck** (§3.2, amended 2026-10-02). The system prompt is written for
+     * slides; this is the part of the user message that says what changes for prose, and it is the
+     * last thing the model reads before it writes.
+     */
+    parts.push(
+      [
+        'THESE SOURCES ARE PROSE: a paper or a reading, not slides. Where the instructions say "slides",',
+        'read "the paper\'s pages", and in what you write say "the paper", never "the slides".',
+        'A paper\'s substance is its problem, its method, its data and its results, so the map has to',
+        'show them: name the method\'s components and steps, the datasets, the baselines, the headline',
+        'results with their numbers, and the limitations, each with its page. That is still the map: say',
+        'what each is and where; do not derive, re-explain or work an example. Sections follow the',
+        'paper\'s own sections. Leave the references out.',
+      ].join('\n'),
+    );
+  }
   parts.push(
     `Write the overview now. The sources say about ${input.sourceWords} words;` +
       ` **everything you write is at most ${input.budget} words**, and fewer when they teach less.` +
-      ` Four to six objectives, ${range.min} to ${range.max} sections in the sources' order, two or three cited` +
-      ` ideas each, exactly three starter questions. Blanks (____) only where a slide itself leaves one.` +
+      ` Four to six objectives, ${range.min} to ${range.max} sections in the sources' order,` +
+      (genre === 'prose' ? ' two to four cited ideas each,' : ' two or three cited ideas each,') +
+      ' exactly three starter questions.' +
+      (genre === 'prose' ? '' : ' Blanks (____) only where a slide itself leaves one.') +
       `\n\nWORD LIMITS, each a ceiling: lede ${limits.lede} words; each objective title ${limits.objective};` +
       ` each heading ${limits.heading}; each takeaway ${limits.takeaway}; each key idea ${limits.idea}.` +
-      ` Two ideas per section unless the section really needs a third.`,
+      (genre === 'prose'
+        ? ' Three ideas per section is usual; a fourth only where the section has a fourth result or step.'
+        : ' Two ideas per section unless the section really needs a third.'),
   );
   return parts.join('\n\n');
 }
@@ -494,6 +651,9 @@ export interface ValidateOverviewContext {
   pageTexts?: ReadonlyMap<number, string>;
   /** The title when the model gave none: the notebook's name. */
   fallbackTitle: string;
+  /** `OverviewPolicy.maxSections` and `.maxIdeas`; the slide caps when absent. */
+  maxSections?: number;
+  maxIdeas?: number;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -628,7 +788,7 @@ export function validateOverview(
         repairs.ideasDropped += 1;
         continue;
       }
-      if (out.length === OVERVIEW_MAX_IDEAS) {
+      if (out.length === (ctx.maxIdeas ?? OVERVIEW_MAX_IDEAS)) {
         repairs.ideasDropped += 1;
         continue;
       }
@@ -678,7 +838,7 @@ export function validateOverview(
       repairs.sectionsDropped += 1;
       continue;
     }
-    if (sections.length === OVERVIEW_MAX_SECTIONS) {
+    if (sections.length === (ctx.maxSections ?? OVERVIEW_MAX_SECTIONS)) {
       repairs.sectionsOverCap += 1;
       continue;
     }
@@ -946,6 +1106,7 @@ export function overviewMeta(input: {
   writtenAt: string;
   words: number;
   wordBudget: number;
+  genre?: SourceGenre;
 }): OverviewMeta {
   return {
     version: OVERVIEW_META_VERSION,
@@ -956,5 +1117,6 @@ export function overviewMeta(input: {
     recommendations: recommendationsFor(input.overview, input.headingIds),
     words: input.words,
     wordBudget: input.wordBudget,
+    ...(input.genre ? { genre: input.genre } : {}),
   };
 }

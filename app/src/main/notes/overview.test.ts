@@ -27,6 +27,11 @@ import {
   sourceWordsOf,
   validateOverview,
   type ValidOverview,
+  overviewPolicy,
+  proseWordBudget,
+  sourceProfile,
+  OVERVIEW_PROSE_MAX_IDEAS,
+  OVERVIEW_PROSE_MAX_SECTIONS,
 } from './overview.js';
 import { critique1OverviewRaw } from './fixture.js';
 
@@ -497,5 +502,64 @@ describe('the budget kept in code (§3.2: a ceiling)', () => {
     tiny.overview.sections.forEach((s, i) => {
       expect(s.ideas.length).toBe(Math.min(2, overview!.sections[i]!.ideas.length));
     });
+  });
+});
+
+/**
+ * **Slides or prose** (`notebooks.md` §3.2, amended 2026-10-02). The first research paper got a
+ * slide deck's budget and shape; the policy is now read off the text.
+ */
+describe('overviewPolicy', () => {
+  const words = (n: number, w = 'word') => Array.from({ length: n }, () => w).join(' ');
+  const deck = (pages: string[]) => pages.map((body, i) => `[p. ${i + 1}] ${body}`).join('\n');
+
+  it('reads a deck of short pages as slides and keeps the slide budget', () => {
+    const text = deck(Array.from({ length: 40 }, () => words(80)));
+    const policy = overviewPolicy(text);
+    expect(policy.genre).toBe('slides');
+    expect(policy.bodyWords).toBe(3200);
+    expect(policy.budget).toBe(overviewWordBudget(3200));
+    expect(policy.maxIdeas).toBe(3);
+  });
+
+  it('reads a paper as prose, leaves its references out, and gives it the prose budget and caps', () => {
+    const pages = Array.from({ length: 11 }, () => words(700));
+    pages.push(`References\n${words(500, 'ref')}`, words(600, 'ref'));
+    const policy = overviewPolicy(deck(pages));
+    expect(policy).toMatchObject({ genre: 'prose', bodyWords: 7700, referenceWords: 1101 });
+    expect(policy.budget).toBe(proseWordBudget(7700));
+    expect(policy.budget).toBe(770);
+    expect(policy.maxSections).toBe(OVERVIEW_PROSE_MAX_SECTIONS);
+    expect(policy.maxIdeas).toBe(OVERVIEW_PROSE_MAX_IDEAS);
+  });
+
+  it('does not let a References slide in the first half of a deck swallow the rest of it', () => {
+    const pages = Array.from({ length: 20 }, () => words(60));
+    pages[3] = 'References';
+    expect(sourceProfile(deck(pages)).referenceWords).toBe(0);
+  });
+
+  it('keeps the prose budget between its floor and ceiling', () => {
+    expect(proseWordBudget(1_000)).toBe(400);
+    expect(proseWordBudget(40_000)).toBe(1_200);
+  });
+
+  it('tells the model a paper is prose, and asks for its method, data and results', () => {
+    const message = overviewMessage({
+      notebookName: 'p',
+      sourceNames: ['p.pdf'],
+      deckText: '[p. 1] x',
+      condensed: false,
+      sourceWords: 7700,
+      budget: 770,
+      genre: 'prose',
+      imagePages: [],
+    }).replace(/\s+/g, ' ');
+    expect(message).toContain('THESE SOURCES ARE PROSE');
+    expect(message).toContain('the headline results with their numbers');
+    expect(message).toContain('two to four cited ideas each');
+    expect(message).not.toContain('Blanks (____)');
+    const slides = overviewMessage({ notebookName: 'd', sourceNames: ['d.pdf'], deckText: '[p. 1] x', condensed: false, sourceWords: 3000, budget: 300, imagePages: [] });
+    expect(slides).not.toContain('THESE SOURCES ARE PROSE');
   });
 });

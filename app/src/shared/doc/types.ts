@@ -402,6 +402,8 @@ export interface OverviewMeta {
   /** Words written against the computed budget (§3.2), for the log and the Usage page. */
   words: number;
   wordBudget: number;
+  /** Which budget policy it was written under (§3.2, amended 2026-10-02). Absent before then. */
+  genre?: 'slides' | 'prose';
 }
 
 export interface ThreadView {
