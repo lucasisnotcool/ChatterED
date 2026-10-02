@@ -82,6 +82,23 @@ ceiling of about 600), against about 9,500 for the #48 notes on the same deck. T
 in code from the ticked sources' word counts, as `windowWordBudget` was, and the ingest logs words
 written against it. It is a ceiling: a deck with less to say gets less.
 
+**Amended 2026-10-02 (Lucas's decision): the budget follows the kind of source.** The figures above
+were calibrated on slide decks, at about 80 words a slide. A research paper is about 750 words a page,
+and on the first one (a 15-page arXiv paper, about 9,800 words) the overview came out at 406 words:
+nine sections of a one-line lede and two ten-word bullets, with the method, data and results reduced
+to phrases and no numbers. For a learner that is not a map of a paper. So the budget is set per
+source, from its own text:
+
+- **Slides** (under 300 words a page): as above, unchanged.
+- **Prose**, a paper or a reading (300 words a page or more): about a tenth of the body's words,
+  between 400 and 1,200, with five to ten sections in the paper's own order and two to four key
+  ideas each. The ideas may carry the paper's own specifics: the method's components, the datasets,
+  the baselines, the headline results with their numbers, the limitations. It is still the map, not
+  the working (§3.3): it names and places, and does not derive or re-explain. The overview says "the
+  paper", not "the slides".
+- **References are not the source's words.** Everything after a source's References heading is
+  left out of the word count for both kinds.
+
 ### 3.3 Scaffolding, not answers
 
 The overview is bare-minimum scaffolding: what each idea is and where it is on the slides, not the
@@ -143,6 +160,27 @@ The chat message ends with a short note naming the edit: *Added one line under t
 **The same holds for any question in the doc chat.** `collab-doc.md` §5.1 had Ellie write the long
 half of her answer, 40–150 words, into the doc. It is now the same one line of at most 25 words,
 under the block the question was about, with the same controls. The full answer stays in the chat.
+
+**Amended 2026-10-02 (Lucas's decision): what the notes get follows what the exchange
+uncovered.** On the first research paper, a learner asked how fine-tuning works in general and then
+in the paper. Two thirds of Ellie's answer explained what fine-tuning and LoRA are, which the notes
+took for granted; the 25-word line kept the paper's recipe, which the notes nearly said already. The
+gap was found and filled, and the notes did not show it, so revising from them hits the same gap
+again. Lucas: the filled gap should be *"evidenced in the doc, so that user can revise"*. So the doc
+edit is one of three, chosen by the call that writes it:
+
+- **Background**, when the question or the answer shows the notes assume something they never
+  explain (a term, a method, a prerequisite) and Ellie explained it: a self-contained note of what
+  it is and how it works, **at most 90 words**, under the block that assumed it, with the reason
+  *background Ellie added* as its provenance unless it cites a page itself.
+- **Detail**, when the source gives specifics the notes skip and the answer brought them out (an
+  equation, a setting, a number, a step): the specifics themselves, **at most 50 words**.
+- **Point**, otherwise: the one sentence most worth keeping, **at most 25 words**, as before.
+
+Each limit is enforced in code as the 25 words were. The chat answer stays whole; the doc edit is
+still Ellie's, with Keep and Remove; and nothing about it fills the bar (§4.3): only the learner's
+own words do. A question asked in a thread on a block (a highlight or Ask…) files its edit under
+that block, as a block action does.
 
 ### 4.3 What does not fill the bar
 
