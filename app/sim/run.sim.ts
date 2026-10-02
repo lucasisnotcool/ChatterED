@@ -52,7 +52,12 @@ function notebookIdFor(title: string, db: string): string {
 }
 
 async function runStep(sim: SimRoom, learner: SimLearner, step: Step, index: number): Promise<StepLog> {
-  const block = step.do === 'lesson' ? { blockId: '', text: `lesson: ${step.objective}` } : sim.findBlock(step.line);
+  const block =
+    step.do === 'lesson'
+      ? { blockId: '', text: `lesson: ${step.objective}` }
+      : step.do === 'overview'
+        ? { blockId: '', text: 'Update overview' }
+        : sim.findBlock(step.line);
   const fromSeq = Math.max(0, ...sim.messages().map((m) => m.seq));
   const log: StepLog = { step: index, do: step.do, line: block.text, threadId: null, refused: null, fromSeq, toSeq: fromSeq, moves: [] };
   try {
@@ -71,6 +76,16 @@ async function stepBody(
   log: StepLog,
 ): Promise<void> {
   const { docId } = sim.doc();
+
+  if (step.do === 'overview') {
+    const before = sim.overviewMeta();
+    const done = await sim.updateOverview();
+    const after = sim.overviewMeta();
+    log.refused = done.reason;
+    log.line = `Update overview: ${before?.words ?? '?'} of ${before?.wordBudget ?? '?'} words (${before?.genre ?? 'slides, before 2 Oct'}) → ${after?.words ?? '?'} of ${after?.wordBudget ?? '?'} (${after?.genre ?? '?'})`;
+    await sim.idle();
+    return;
+  }
 
   if (step.do === 'lesson') {
     const objective = (await sim.objectives()).find((o) => o.title.toLowerCase().includes(step.objective.toLowerCase()));
@@ -369,6 +384,7 @@ describe('simulation', () => {
         if (!binary) throw new Error('the Claude CLI was not found');
         const learner = new SimLearner(scenario.persona, new ClaudeCliClient({ binary }), outDir, LEARNER_MODEL);
         const steps: StepLog[] = [];
+        writeFileSync(join(outDir, 'notes-before.md'), sim.docText());
         try {
           for (const [i, step] of scenario.steps.entries()) {
             const log = await runStep(sim, learner, step, i);

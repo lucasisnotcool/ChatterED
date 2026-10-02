@@ -15,7 +15,9 @@ export type Step =
   /** Start on a lesson card (the objective whose title contains `objective`), then up to `rounds` moves. */
   | { do: 'lesson'; objective: string; rounds?: number }
   /** A typed question in the line's thread (a new span thread if it has none). */
-  | { do: 'ask'; line: string; text: string };
+  | { do: 'ask'; line: string; text: string }
+  /** **Update overview**: the overview rewritten from the sources, its words and budget recorded. */
+  | { do: 'overview' };
 
 export interface Scenario {
   id: string;
@@ -99,6 +101,28 @@ const NOVICE: Persona = {
   readsNotes: false,
 };
 
+/** Knows ML basics, not LLM fine-tuning or knowledge tracing: the reader the paper assumes away. */
+const ML_READER: Persona = {
+  id: 'ml-reader',
+  summary: 'A third-year CS student who has taken an introductory machine-learning course and is reading this paper for a seminar.',
+  knows: [
+    'Neural networks are trained by gradient descent on a loss such as cross entropy.',
+    'What a pretrained language model like GPT or Llama is, as a user of one.',
+    'What accuracy, F1 and AUC measure.',
+  ],
+  gaps: [
+    'How fine-tuning an LLM works, and what LoRA is.',
+    'What knowledge tracing is, and what DKT or BKT are.',
+    'What a knowledge component (KC) is.',
+  ],
+  misconceptions: ['Believes fine-tuning means training a new model from scratch on the task data.'],
+  style: 'Two or three sentences, casual but careful.',
+  giveUp: 'Asks what a term means when a question depends on one they do not know; presses Pass after two failed tries.',
+  readsNotes: true,
+};
+
+const PAPER = 'Knowledge Tracing in Tutor-Student Dialogues Using LLMs';
+
 export const SCENARIOS: Scenario[] = [
   {
     id: 's1-sequence',
@@ -169,6 +193,21 @@ export const SCENARIOS: Scenario[] = [
     notebook: PLANNING,
     persona: MID,
     steps: [{ do: 'lesson', objective: "ADD/DEL", rounds: 3 }],
+  },
+  {
+    id: 'p1-paper-gaps',
+    title: 'A research paper read by someone missing its background',
+    purpose:
+      'notebooks.md 3.2 and 4.2, amended 2 Oct. When a question uncovers background the notes assume (fine-tuning, LoRA, knowledge tracing, KCs), does the doc get a background note under the line asked about, labelled as background, rather than a one-line restatement? Is the paper\'s overview, rewritten under the prose policy, a map with its method, data and results?',
+    notebook: PAPER,
+    persona: ML_READER,
+    steps: [
+      { do: 'ask', line: 'LLMKT fine-tunes Llama-3.1-8B-Instruct', text: 'how is LLM finetuning done in general, then specifically for this paper?' },
+      { do: 'explain', line: 'Multi-KC turns lead to a compensatory' },
+      { do: 'ask', line: 'Three stages: identify KCs', text: 'what is a knowledge component, and what is knowledge tracing actually predicting?' },
+      { do: 'quiz', line: 'LLMKT fine-tunes Llama-3.1-8B-Instruct', rounds: 2 },
+      { do: 'overview' },
+    ],
   },
   {
     id: 's5-explain-then-quiz',

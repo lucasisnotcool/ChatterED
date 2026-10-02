@@ -210,6 +210,31 @@ export class SimRoom {
     return usageIn(this.#db, since);
   }
 
+  /** The notes doc's stored overview record: words written, the budget, and the policy. */
+  overviewMeta(): { words?: number; wordBudget?: number; genre?: string; writtenAt?: string } | null {
+    const row = this.#db
+      .prepare('SELECT overview_json FROM notes_docs WHERE file_id = @file')
+      .get<{ overview_json: string | null }>({ file: this.notebookId });
+    return row?.overview_json ? (JSON.parse(row.overview_json) as { words?: number; wordBudget?: number; genre?: string; writtenAt?: string }) : null;
+  }
+
+  /** **Update overview**, as the button runs it, and wait for the rewritten overview to land. */
+  async updateOverview(timeoutMs = 600_000): Promise<{ started: boolean; reason: string | null }> {
+    const before = this.overviewMeta()?.writtenAt ?? null;
+    const started = await this.call<{ started: boolean; reason: string | null }>('notes:updateOverview', { fileId: this.notebookId });
+    if (!started.started) return started;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1_000));
+      const row = this.#db
+        .prepare('SELECT ingest_status, error FROM notes_docs WHERE file_id = @file')
+        .get<{ ingest_status: string; error: string | null }>({ file: this.notebookId });
+      if (row?.ingest_status === 'failed') return { started: true, reason: `failed: ${row.error ?? ''}` };
+      if (row?.ingest_status === 'ready' && (this.overviewMeta()?.writtenAt ?? null) !== before) return started;
+    }
+    return { started: true, reason: 'timed out' };
+  }
+
   /** The notebook's learning objectives, as the progress bar's lesson cards list them. */
   async objectives(): Promise<{ objectiveId: string; title: string }[]> {
     const view = await this.call<{ objectives: { objectiveId: string; title: string }[] }>('progress:get', { fileId: this.notebookId });
@@ -402,9 +427,21 @@ export function resetNotebook(db: SqlDatabase, notebookId: string): void {
     .get<{ id: string; content_sha: string; doc_json: string; version: number }>({ file: notebookId });
   if (!row) throw new Error(`notebook ${notebookId} has no notes doc in the copy`);
   const json = JSON.parse(row.doc_json) as { content?: unknown[] };
+  // Who wrote a block's text, by its author marks: a block written only by Ellie or Max after the
+  // ingest is an addition from an earlier sitting, and goes with the reset.
+  const authors = (node: unknown, acc = new Set<string>()): Set<string> => {
+    const n = node as { marks?: { type?: string; attrs?: { by?: string } }[]; content?: unknown[] };
+    for (const m of n.marks ?? []) if (m.type === 'author' && m.attrs?.by) acc.add(m.attrs.by);
+    for (const c of n.content ?? []) authors(c, acc);
+    return acc;
+  };
+  const agentsOnly = (node: unknown): boolean => {
+    const by = authors(node);
+    return by.size > 0 && [...by].every((a) => a === 'ellie' || a === 'max');
+  };
   const strip = (nodes: unknown[] | undefined): unknown[] | undefined =>
     nodes
-      ?.filter((n) => (n as { type?: string }).type !== 'q_block')
+      ?.filter((n) => (n as { type?: string }).type !== 'q_block' && !agentsOnly(n))
       .map((n) => {
         const node = n as { content?: unknown[] };
         return node.content ? { ...node, content: strip(node.content) } : node;
