@@ -22,7 +22,7 @@
  * of the same rule, for the race.
  */
 
-import { EditorState, NodeSelection } from 'prosemirror-state';
+import { EditorState, NodeSelection, TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { RoomEvent } from '../../shared/types.js';
 import type {
@@ -44,7 +44,7 @@ import {
   removeEdit,
 } from '../../shared/doc/ops.js';
 import { acceptSuggestion, rejectSuggestion } from '../../shared/doc/suggest.js';
-import { blockAttrs, blockPos, docFromJson, newBlockId, notesSchema } from '../../shared/doc/schema.js';
+import { blockAttrs, blockPos, docFromJson, imageParagraph, newBlockId, notesSchema } from '../../shared/doc/schema.js';
 import type {
   AgentAuthor,
   AgentDocOpBatch,
@@ -1322,6 +1322,29 @@ export class DocStore {
     });
   }
 
+  /**
+   * **An image's click** (2026-10-03): its slide in a window, with the image's crop as an editable
+   * box; a moved or resized box is written back to the image (`pm/image.ts`). Insert from that
+   * window goes after the image's own block.
+   */
+  openImage(input: {
+    page: number;
+    rect: Rect | null;
+    anchor: HTMLElement;
+    blockId: string | null;
+    onRecrop: (rect: Rect | null) => void;
+  }): void {
+    openSlideWindow({
+      anchor: input.anchor,
+      pages: [input.page],
+      rect: input.rect,
+      rectPage: input.page,
+      reader: this.#slideReader(),
+      crop: { onChange: input.onRecrop },
+      onInsert: (target) => this.insertSlide(target.page, target.rect, input.blockId),
+    });
+  }
+
   /** Close every slide window. */
   closeSlide(): void {
     closeAllSlideWindows();
@@ -1362,17 +1385,11 @@ export class DocStore {
     }
     if (pos === null && this.#placed) pos = state.selection.$from.depth > 0 ? state.selection.$from.after(1) : null;
     if (pos === null) pos = state.doc.content.size;
-    // With its id now, not at the authorship stamp's leisure: the strips and chips key on it.
-    const figure = notesSchema.nodes.slide_figure!.create({
-      blockId: newBlockId(),
-      page,
-      rect,
-      caption: '',
-      evidentiary: true,
-      pages: [page],
-    });
-    const tr = state.tr.insert(pos, figure);
-    tr.setSelection(NodeSelection.create(tr.doc, pos)).scrollIntoView();
+    // A paragraph holding the image, in line with text (2026-10-03), with its id now, not at the
+    // authorship stamp's leisure: the strips and the chips key on it.
+    const tr = state.tr.insert(pos, imageParagraph(page, rect, newBlockId()));
+    // The image selected, its corner handles showing: the next thing a learner does is size it.
+    tr.setSelection(NodeSelection.create(tr.doc, pos + 1)).scrollIntoView();
     view.dispatch(tr);
     view.focus();
     return true;
@@ -1434,6 +1451,27 @@ export class DocStore {
     const view = this.#view;
     if (!view || !this.#placed) return null;
     return insertTargetId(view.state);
+  }
+
+  /**
+   * **A press in the margin beside the notes** (2026-10-03): the caret goes to that end of the line
+   * level with it, as in Word, rather than nowhere. Most useful beside a wide image, where the line
+   * has no room of its own to click into. False when it was not beside a line.
+   */
+  placeCaretBeside(x: number, y: number): boolean {
+    const view = this.#view;
+    if (!view) return false;
+    const box = view.dom.getBoundingClientRect();
+    if (y < box.top || y > box.bottom) return false;
+    const left = Math.min(Math.max(x, box.left + 1), box.right - 1);
+    const hit = view.posAtCoords({ left, top: y });
+    if (!hit) return false;
+    const at = view.state.doc.resolve(hit.pos);
+    if (!at.parent.isTextblock) return false;
+    const pos = x >= box.right ? at.end() : x <= box.left ? at.start() : hit.pos;
+    view.focus();
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+    return true;
   }
 
   /**

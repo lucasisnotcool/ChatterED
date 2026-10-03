@@ -1,5 +1,8 @@
 import {
   CASCADE,
+  CROP_EDIT_MIN,
+  HANDLES,
+  WHOLE_SLIDE,
   GAP,
   KEEP_VISIBLE,
   BAR_HEIGHT,
@@ -13,10 +16,16 @@ import {
   clampWindow,
   dragRect,
   fitSlide,
+  handleAt,
   intersect,
+  moveRect,
   placeBeside,
   rectPercent,
+  resizeRect,
+  sameRect,
+  settleCrop,
   usableCrop,
+  wholeSlide,
   windowKey,
   type Box,
 } from './slidegeom.js';
@@ -249,6 +258,21 @@ describe('windowKey: the keys a focused slide window takes', () => {
     expect(windowKey({ key: 'c', metaKey: true })).toBeNull();
     expect(windowKey({ key: 'a' })).toBeNull();
   });
+  it('Shift+arrows nudge an editable crop, and only then', () => {
+    const nudge = { nudge: true };
+    expect(windowKey({ key: 'ArrowLeft', shiftKey: true }, nudge)).toBe('nudge-left');
+    expect(windowKey({ key: 'ArrowRight', shiftKey: true }, nudge)).toBe('nudge-right');
+    expect(windowKey({ key: 'ArrowUp', shiftKey: true }, nudge)).toBe('nudge-up');
+    expect(windowKey({ key: 'ArrowDown', shiftKey: true }, nudge)).toBe('nudge-down');
+    // Plain arrows still navigate with a box on the page; Shift without one is ignored, as before.
+    expect(windowKey({ key: 'ArrowLeft' }, nudge)).toBe('deck-prev');
+    expect(windowKey({ key: 'ArrowRight', shiftKey: true })).toBe('deck-next');
+    expect(windowKey({ key: 'Escape', shiftKey: true }, nudge)).toBe('close');
+    // ⌘ / Ctrl / Alt still leave the key alone, Shift or not.
+    expect(windowKey({ key: 'ArrowLeft', shiftKey: true, metaKey: true }, nudge)).toBeNull();
+    expect(windowKey({ key: 'ArrowUp', shiftKey: true, altKey: true }, nudge)).toBeNull();
+    expect(windowKey({ key: 'ArrowDown', shiftKey: true, ctrlKey: true }, nudge)).toBeNull();
+  });
 });
 
 describe('a new window beside its chip', () => {
@@ -258,5 +282,84 @@ describe('a new window beside its chip', () => {
     expect(spot.side).toBe('left');
     expect(spot.left).toBe(1100 - GAP - WINDOW_SIZE.width);
     expect(spot.top).toBe(400);
+  });
+});
+
+// ── an image's crop, edited in the window (3 Oct 2026, third cut) ─────────────────────────────
+
+/** Rects compared to six places: the cases below add and subtract decimals. */
+const near = (a: { x0: number; y0: number; x1: number; y1: number }, b: typeof a): void => {
+  for (const k of ['x0', 'y0', 'x1', 'y1'] as const) expect(a[k], k).toBeCloseTo(b[k], 6);
+};
+
+describe('moveRect: drag inside the box', () => {
+  const r = { x0: 0.2, y0: 0.3, x1: 0.5, y1: 0.6 };
+  it('moves the box and keeps its size', () => {
+    near(moveRect(r, 0.1, -0.1), { x0: 0.3, y0: 0.2, x1: 0.6, y1: 0.5 });
+  });
+  it('stops at every edge of the slide, still the same size', () => {
+    near(moveRect(r, -1, -1), { x0: 0, y0: 0, x1: 0.3, y1: 0.3 });
+    near(moveRect(r, 1, 1), { x0: 0.7, y0: 0.7, x1: 1, y1: 1 });
+    near(moveRect(r, 0.9, 0), { x0: 0.7, y0: 0.3, x1: 1, y1: 0.6 }); // slides along the right edge
+  });
+  it('cannot move the whole slide anywhere', () => {
+    expect(moveRect(WHOLE_SLIDE, 0.2, -0.3)).toEqual({ x0: 0, y0: 0, x1: 1, y1: 1 });
+  });
+});
+
+describe('resizeRect: the eight handles', () => {
+  const r = { x0: 0.2, y0: 0.3, x1: 0.6, y1: 0.7 };
+  it('moves only the edges a handle names; the opposite corner or edge stays put', () => {
+    expect(resizeRect(r, 'se', { x: 0.8, y: 0.9 })).toEqual({ x0: 0.2, y0: 0.3, x1: 0.8, y1: 0.9 });
+    expect(resizeRect(r, 'nw', { x: 0.1, y: 0.1 })).toEqual({ x0: 0.1, y0: 0.1, x1: 0.6, y1: 0.7 });
+    expect(resizeRect(r, 'ne', { x: 0.9, y: 0.2 })).toEqual({ x0: 0.2, y0: 0.2, x1: 0.9, y1: 0.7 });
+    expect(resizeRect(r, 'sw', { x: 0.0, y: 0.8 })).toEqual({ x0: 0.0, y0: 0.3, x1: 0.6, y1: 0.8 });
+  });
+  it('an edge handle moves one axis, whatever the pointer does on the other', () => {
+    expect(resizeRect(r, 'e', { x: 0.9, y: 0.05 })).toEqual({ ...r, x1: 0.9 });
+    expect(resizeRect(r, 'w', { x: 0.1, y: 0.95 })).toEqual({ ...r, x0: 0.1 });
+    expect(resizeRect(r, 'n', { x: 0.95, y: 0.1 })).toEqual({ ...r, y0: 0.1 });
+    expect(resizeRect(r, 's', { x: 0.05, y: 0.9 })).toEqual({ ...r, y1: 0.9 });
+  });
+  it('dragged across the opposite edge, stops at the minimum size instead of flipping', () => {
+    near(resizeRect(r, 'e', { x: 0.0, y: 0.5 }), { ...r, x1: 0.2 + CROP_EDIT_MIN });
+    near(resizeRect(r, 'n', { x: 0.5, y: 1.0 }), { ...r, y0: 0.7 - CROP_EDIT_MIN });
+    near(resizeRect(r, 'nw', { x: 0.9, y: 0.9 }), { x0: 0.6 - CROP_EDIT_MIN, y0: 0.7 - CROP_EDIT_MIN, x1: 0.6, y1: 0.7 });
+    near(resizeRect(r, 'se', { x: 0.2, y: 0.3 }, 0.1), { x0: 0.2, y0: 0.3, x1: 0.3, y1: 0.4 });
+  });
+  it('never leaves the slide', () => {
+    expect(resizeRect(r, 'nw', { x: -0.5, y: -0.2 })).toEqual({ x0: 0, y0: 0, x1: 0.6, y1: 0.7 });
+    expect(resizeRect(r, 'se', { x: 1.4, y: 1.1 })).toEqual({ x0: 0.2, y0: 0.3, x1: 1, y1: 1 });
+  });
+  it('is a no-op when a handle is dropped where it was picked up', () => {
+    for (const h of HANDLES) expect(resizeRect(r, h, handleAt(r, h)), h).toEqual(r);
+  });
+});
+
+describe('handleAt: where each handle sits', () => {
+  it('corners at the corners, edges at their middles', () => {
+    const r = { x0: 0.2, y0: 0.4, x1: 0.6, y1: 0.8 };
+    expect(handleAt(r, 'nw')).toEqual({ x: 0.2, y: 0.4 });
+    expect(handleAt(r, 'se')).toEqual({ x: 0.6, y: 0.8 });
+    near({ x0: handleAt(r, 'n').x, y0: handleAt(r, 'n').y, x1: handleAt(r, 'e').x, y1: handleAt(r, 'e').y }, { x0: 0.4, y0: 0.4, x1: 0.6, y1: 0.6 });
+  });
+});
+
+describe('wholeSlide and settleCrop: what is stored', () => {
+  it('no crop, and a crop within half a percent of every edge, is the whole slide', () => {
+    expect(wholeSlide(null)).toBe(true);
+    expect(wholeSlide(WHOLE_SLIDE)).toBe(true);
+    expect(wholeSlide({ x0: 0.004, y0: 0.003, x1: 0.997, y1: 0.996 })).toBe(true);
+    expect(wholeSlide({ x0: 0.01, y0: 0, x1: 1, y1: 1 })).toBe(false);
+    expect(wholeSlide({ x0: 0, y0: 0, x1: 1, y1: 0.98 })).toBe(false);
+  });
+  it('stores the whole slide as no crop, and anything else rounded to four places', () => {
+    expect(settleCrop({ x0: 0.001, y0: 0, x1: 0.999, y1: 1 })).toBeNull();
+    expect(settleCrop({ x0: 0.123456, y0: 0.2 + 0.1, x1: 0.70000001, y1: 0.9 })).toEqual({ x0: 0.1235, y0: 0.3, x1: 0.7, y1: 0.9 });
+  });
+  it('sameRect compares exactly, null included', () => {
+    expect(sameRect(null, null)).toBe(true);
+    expect(sameRect(null, WHOLE_SLIDE)).toBe(false);
+    expect(sameRect({ x0: 0.1, y0: 0.2, x1: 0.3, y1: 0.4 }, { x0: 0.1, y0: 0.2, x1: 0.3, y1: 0.4 })).toBe(true);
   });
 });

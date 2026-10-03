@@ -146,6 +146,49 @@
   pointer-events: none;
 }
 
+/* An image's crop, editable (opened from a slide figure in the notes): the same yellow outline
+   and the same slight dimming, but a thing to grab — move inside, eight handles to resize, as an
+   image is cropped in Word. Border-box, so the yellow lies exactly on the stored crop. Over the
+   text layer (z 2), so a drag on it never starts a selection; outside it the slide reads as ever. */
+.nd-sp-edit {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  border: 2px solid #ffd44d;
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px rgb(18 18 30 / 10%);
+  cursor: move;
+  touch-action: none;
+}
+.nd-sp-h {
+  position: absolute;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1.5px solid #b8890a;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(20 20 40 / 25%);
+}
+/* A bigger target than the square drawn: a handle is grabbed by eye, not by the pixel. */
+.nd-sp-h::before { content: ''; position: absolute; inset: -5px; }
+.nd-sp-h-nw, .nd-sp-h-n, .nd-sp-h-ne { top: -5.5px; }
+.nd-sp-h-sw, .nd-sp-h-s, .nd-sp-h-se { bottom: -5.5px; }
+.nd-sp-h-nw, .nd-sp-h-w, .nd-sp-h-sw { left: -5.5px; }
+.nd-sp-h-ne, .nd-sp-h-e, .nd-sp-h-se { right: -5.5px; }
+.nd-sp-h-n, .nd-sp-h-s { left: calc(50% - 4.5px); }
+.nd-sp-h-e, .nd-sp-h-w { top: calc(50% - 4.5px); }
+.nd-sp-h-n, .nd-sp-h-s { cursor: ns-resize; }
+.nd-sp-h-e, .nd-sp-h-w { cursor: ew-resize; }
+.nd-sp-h-nw, .nd-sp-h-se { cursor: nwse-resize; }
+.nd-sp-h-ne, .nd-sp-h-sw { cursor: nesw-resize; }
+/* Mid-drag: the text layer is out of the way, and the outline reads as held. */
+.nd-sp-editing .textLayer { pointer-events: none; }
+.nd-sp-editing .nd-sp-edit { border-color: #f5c400; }
+/* "Insert into notes" has its own crop tool; the box steps aside while it is open. */
+.nd-sp-cropping .nd-sp-edit { display: none; }
+
 /* A text source's page: its words, selectable. */
 .nd-sp-textpage {
   align-self: stretch;

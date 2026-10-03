@@ -302,6 +302,11 @@
   <div class="nd-scroll" bind:this={scroller} bind:clientWidth={paneWidth} {onwheel}>
     <div
       class="nd-sheet"
+      role="presentation"
+      onmousedown={(e) => {
+        // Only a press on the sheet itself, beside the notes: not one inside them or on a strip.
+        if (e.target === e.currentTarget && e.button === 0 && doc.placeCaretBeside(e.clientX, e.clientY)) e.preventDefault();
+      }}
       style:zoom={layout.notesZoom === 1 ? null : String(layout.notesZoom)}
       style:--nd-gutter={`${gutter}px`}
     >

@@ -26,6 +26,14 @@
  *    with the region the block was matched to, when there is one); the window says *what*
  *    (`onInsert({ page, rect })`) and the editor decides how a `slide_figure` goes in. The window
  *    stays open afterwards, as everything about it does until it is closed.
+ *  - **An image's crop, edited in place** (third cut): opened from a slide figure in the notes
+ *    (`crop`), the figure's region is not just outlined but a box with eight handles, as an image
+ *    is cropped in Word. Drag inside to move it, a corner to resize freely, an edge along one axis;
+ *    Shift+arrows nudge it; "Whole slide" takes the crop off. Each finished gesture tells the
+ *    editor once (`crop.onChange`), and the box stays where it was put, because it *is* the
+ *    image's crop now. Only on the figure's own page: step away and the slide is read as any
+ *    other; step back and the box is there again. "Insert into notes" still works beside it: its
+ *    crop tool hides the box while it is open, and starts from the box's region.
  *
  * The windows are appended to `document.body` and are `position: fixed`, outside ProseMirror's DOM
  * and outside the zoomed sheet: never clipped by a scroller, never scaled by the notes zoom, never
@@ -35,7 +43,10 @@ import { bestRegion } from '../../../shared/doc/cite.js';
 import type { Rect } from '../../../shared/doc/types.js';
 import type { SlideSource } from '../rasterise.js';
 import {
+  HANDLES,
   MARGIN,
+  NUDGE,
+  WHOLE_SLIDE,
   WINDOW_MIN,
   WINDOW_SIZE,
   cascade,
@@ -44,11 +55,18 @@ import {
   clampWindow,
   dragRect,
   fitSlide,
+  handleAt,
+  moveRect,
   placeBeside,
   rectPercent,
+  resizeRect,
+  sameRect,
+  settleCrop,
   usableCrop,
+  wholeSlide,
   windowKey,
   type Box,
+  type Handle,
   type Point,
 } from './slidegeom.js';
 import type { SlideReader } from './sourcepop.js';
@@ -72,11 +90,20 @@ export interface SlideWindowOptions {
   reason?: string | null;
   /** Absent: no Insert action. `rect` null = the whole slide. */
   onInsert?: (target: { page: number; rect: Rect | null }) => void;
+  /**
+   * The window was opened from an image in the notes: its crop is shown as an editable box on
+   * `rectPage` (move it by dragging inside, resize by its 8 handles — corners free, edges one axis),
+   * and `onChange` is called once per completed gesture (pointerup) with the new normalised rect, or
+   * null when the box covers the whole slide (within ~0.5%). Not offered on other pages.
+   */
+  crop?: { onChange: (rect: Rect | null) => void };
 }
 
 /** Re-render the slide once a resize holds still, not on every frame of it. */
 const RERENDER_DELAY_MS = 140;
 const SIZE_KEY = 'chattered.slideWindowSize';
+/** Room round the slide for an editable crop's handles, which stand 5.5 px out (`slidewindow.css`). */
+const HANDLE_ROOM = 7;
 
 // ── the open windows ────────────────────────────────────────────────────────────────────────
 
@@ -202,7 +229,15 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   const insert = options.onInsert
     ? button('nd-sp-primary', 'Insert into notes', 'Put this slide, or a part of it, into the notes', () => startCrop())
     : null;
+  const wholeBtn = options.crop
+    ? button('nd-sp-whole', 'Whole slide', 'Show the whole slide in the notes, uncropped', () => {
+        editRect = { ...WHOLE_SLIDE };
+        commit();
+      })
+    : null;
+  if (wholeBtn) wholeBtn.hidden = true;
   foot.append(deckPrev, deckNext, el('span', 'nd-sp-spacer'));
+  if (wholeBtn) foot.append(wholeBtn);
   if (insert) foot.append(insert);
 
   const cropBar = el('div', 'nd-sp-foot nd-sp-cropbar');
@@ -233,10 +268,27 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   const sel = el('span', 'nd-sp-sel');
   crop.append(sel);
 
+  // The image's crop, when the window was opened from one (`options.crop`). `cropRect` is what the
+  // editor was last told (or was given), and what the box shows on a return to `rectPage`;
+  // `editRect` is the box as it stands mid-gesture. The whole slide is held as a rect here, so the
+  // box has something to draw, and is told to the editor as null (`settleCrop`).
+  let cropRect: Rect = options.rect ? { ...options.rect } : { ...WHOLE_SLIDE };
+  let editRect: Rect = cropRect;
+  const edit = el('div', 'nd-sp-edit');
+  edit.title = 'Drag to move the crop; drag a handle to resize it';
+  for (const handle of HANDLES) {
+    const knob = el('span', `nd-sp-h nd-sp-h-${handle}`);
+    knob.dataset.handle = handle;
+    edit.append(knob);
+  }
+
   /** Size the slide to the stage, in its own shape. Returns its width. */
   const fit = (): number => {
     if (aspect === null) return 0;
-    const box = fitSlide({ width: stage.clientWidth, height: stage.clientHeight }, aspect);
+    // An editable crop's handles straddle its edges, so a whole-slide crop's would be half cut
+    // off by the stage: leave them room.
+    const inset = options.crop ? 2 * HANDLE_ROOM : 0;
+    const box = fitSlide({ width: stage.clientWidth - inset, height: stage.clientHeight - inset }, aspect);
     slide.style.width = `${String(box.width)}px`;
     slide.style.height = `${String(box.height)}px`;
     return box.width;
@@ -256,6 +308,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
 
   /** The region on this page: a figure's own crop, else the block's text matched to the slide's lines. */
   const findRegion = async (at: number): Promise<Found> => {
+    if (options.crop && at === rectPage) return { rect: cropRect, quote: '' };
     if (options.rect && at === rectPage) return { rect: options.rect, quote: '' };
     if (!options.text) return { rect: null, quote: '' };
     const view = await reader.pageLines(at).catch(() => null);
@@ -265,8 +318,24 @@ export function openSlideWindow(options: SlideWindowOptions): void {
     return { rect: { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h }, quote: region.quote };
   };
 
+  /** Is the image's crop editable here: opened from an image, on its page, with the slide drawn? */
+  const canEdit = (): boolean => !!options.crop && page === rectPage && !isText && aspect !== null;
+
+  const paintEdit = (): void => {
+    Object.assign(edit.style, rectPercent(editRect));
+    if (wholeBtn) wholeBtn.hidden = !canEdit() || wholeSlide(editRect);
+  };
+
   const paintRect = (): void => {
     mark.remove();
+    edit.remove();
+    if (canEdit()) {
+      // The editable box replaces the outline: the same yellow, with handles.
+      paintEdit();
+      slide.append(edit);
+      return;
+    }
+    if (wholeBtn) wholeBtn.hidden = true;
     if (!found.rect || isText) return;
     Object.assign(mark.style, rectPercent(found.rect));
     slide.append(mark);
@@ -321,8 +390,11 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   const draw = (): void => {
     const mine = ++token;
     const source = reader.slides();
+    // A gesture or nudge cut short by a page change still counts: the box is where it was left.
+    endEdit();
     paintNav(source);
     stopCrop();
+    if (wholeBtn) wholeBtn.hidden = true;
     found = { rect: null, quote: '' };
     quote.hidden = true;
     quote.textContent = '';
@@ -450,6 +522,81 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   crop.addEventListener('pointerup', endDrag);
   crop.addEventListener('pointercancel', endDrag);
 
+  // ── the image's crop, edited ──
+  /** A drag on the box: by which handle (or the body, to move it), from where, from what box. */
+  let gesture: { handle: Handle | 'move'; from: Point; start: Rect } | null = null;
+  /** Shift+arrow nudges not yet told to the editor: they are, once the key is let go. */
+  let nudging = false;
+
+  /** Tell the editor the box's new crop, once, if it changed; the box settles on what was stored. */
+  function commit(): void {
+    if (!options.crop) return;
+    const stored = settleCrop(editRect);
+    const next = stored ?? { ...WHOLE_SLIDE };
+    editRect = next;
+    if (page === rectPage) found = { rect: next, quote: '' };
+    if (sameRect(next, cropRect)) {
+      if (edit.isConnected) paintEdit();
+      return;
+    }
+    cropRect = next;
+    if (edit.isConnected) paintEdit();
+    options.crop.onChange(stored);
+  }
+
+  /** Finish whatever gesture or nudge is under way, keeping where it got to. */
+  function endEdit(): void {
+    if (!gesture && !nudging) return;
+    gesture = null;
+    nudging = false;
+    node.classList.remove('nd-sp-editing');
+    commit();
+  }
+
+  edit.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || cropping || !canEdit()) return;
+    // No text selection starts under the box, and the press is not the title bar's, so the
+    // window stays where it is.
+    event.preventDefault();
+    // Captured by the handle itself (or the box), so the pointer keeps that one's cursor for the
+    // whole drag; its events still bubble here.
+    const target = event.target as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const handle = target.dataset.handle as Handle | undefined;
+    gesture = { handle: handle ?? 'move', from: toPoint(event), start: editRect };
+    node.classList.add('nd-sp-editing');
+  });
+  edit.addEventListener('pointermove', (event) => {
+    if (!gesture) return;
+    const at = toPoint(event);
+    const dx = at.x - gesture.from.x;
+    const dy = at.y - gesture.from.y;
+    if (gesture.handle === 'move') editRect = moveRect(gesture.start, dx, dy);
+    else {
+      // The handle follows the pointer by the distance moved, not to the pointer itself, so a
+      // handle grabbed off-centre does not jump.
+      const from = handleAt(gesture.start, gesture.handle);
+      editRect = resizeRect(gesture.start, gesture.handle, { x: from.x + dx, y: from.y + dy });
+    }
+    paintEdit();
+  });
+  edit.addEventListener('pointerup', endEdit);
+  edit.addEventListener('pointercancel', endEdit);
+  edit.addEventListener('lostpointercapture', endEdit);
+
+  /** Shift+arrow: the box moves by `NUDGE`, told to the editor when the key comes up. */
+  const nudge = (dx: number, dy: number): void => {
+    editRect = moveRect(editRect, dx, dy);
+    nudging = true;
+    paintEdit();
+  };
+  node.addEventListener('keyup', (event) => {
+    if (nudging && (event.key === 'Shift' || event.key.startsWith('Arrow'))) endEdit();
+  });
+  node.addEventListener('focusout', (event) => {
+    if (!node.contains(event.relatedTarget as Node | null)) endEdit();
+  });
+
   // ── the frame on screen: place, move, resize ──
   let frame = { left: 0, top: 0, ...clampSize(savedSize(), viewportBox()) };
 
@@ -546,7 +693,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   });
 
   node.addEventListener('keydown', (event) => {
-    const action = windowKey(event);
+    const action = windowKey(event, { nudge: canEdit() && !cropping && edit.isConnected });
     if (action === null) return;
     // Not the editor's: these keys belong to the window that has focus.
     event.preventDefault();
@@ -554,7 +701,11 @@ export function openSlideWindow(options: SlideWindowOptions): void {
     if (action === 'close') {
       if (cropping) stopCrop();
       else live.close();
-    } else if (!cropping) {
+    } else if (action === 'nudge-left') nudge(-NUDGE, 0);
+    else if (action === 'nudge-right') nudge(NUDGE, 0);
+    else if (action === 'nudge-up') nudge(0, -NUDGE);
+    else if (action === 'nudge-down') nudge(0, NUDGE);
+    else if (!cropping) {
       if (action === 'deck-prev') step(-1);
       else if (action === 'deck-next') step(1);
       else if (action === 'cited-prev') go(citedStep(pages, page, -1));
@@ -578,6 +729,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
     front,
     close: () => {
       if (!open.delete(live)) return;
+      endEdit();
       token++;
       if (rerenderTimer) clearTimeout(rerenderTimer);
       resizeObserver.disconnect();

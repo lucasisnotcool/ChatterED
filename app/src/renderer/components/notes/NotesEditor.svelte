@@ -15,7 +15,7 @@
   import { untrack } from 'svelte';
   import { EditorState } from 'prosemirror-state';
   import { EditorView } from 'prosemirror-view';
-  import { docFromJson } from '../../../shared/doc/schema.js';
+  import { docFromJson, inlineFigures } from '../../../shared/doc/schema.js';
   import type { DocStore } from '../../lib/docstore.svelte.js';
   import { authorship } from '../../lib/pm/authorship.js';
   import { chromePlugin, focusPlugin } from '../../lib/pm/chrome.js';
@@ -52,7 +52,8 @@
       if (json === null || json === undefined) return;
       try {
         const state = EditorState.create({
-          doc: docFromJson(json),
+          // A figure saved as a block before 3 Oct is opened as an image in a line (`inlineFigures`).
+          doc: inlineFigures(docFromJson(json)),
           plugins: [
             authorship({ onLearnerEdit: (at) => doc.onLearnerEdit(at) }),
             revealPlugin(),
@@ -77,6 +78,7 @@
             slides: () => doc.slides(),
             onOpenSlide: (page, rect, anchor, afterBlockId) => doc.openSlide(page, rect, anchor, afterBlockId ?? null),
             onInsertSlide: (target, afterBlockId) => void doc.insertSlide(target.page, target.rect, afterBlockId),
+            onOpenImage: (input) => doc.openImage(input),
             onAnswerQuestion: (answer) => doc.answerQuestion(answer),
             pageLines,
             onAskAboutFigure: (input) => onAskAboutFigure?.(input),

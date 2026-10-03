@@ -138,14 +138,13 @@ export function draftToNodes(
         out.push(schema.nodes.math_block!.create({ ...attrs, tex: draft.tex }));
         break;
       case 'figure':
+        // In line with text (2026-10-03): a paragraph holding the image, carrying the block's id
+        // and provenance, as `inlineFigures` turns an older document's figures into.
         out.push(
-          schema.nodes.slide_figure!.create({
-            ...attrs,
-            page: draft.page,
-            rect: draft.rect,
-            caption: draft.caption,
-            evidentiary: true,
-          }),
+          schema.nodes.paragraph!.create(
+            { ...attrs, pages: (attrs.pages as number[]).length > 0 ? attrs.pages : [draft.page] },
+            schema.nodes.slide_image!.create({ page: draft.page, rect: draft.rect, caption: draft.caption, width: null }),
+          ),
         );
         break;
       case 'table': {

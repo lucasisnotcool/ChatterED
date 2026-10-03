@@ -894,6 +894,56 @@
 }
 .nd-figure-stage:hover .nd-hot-hint { opacity: 0.92; }
 
+/* ── images in line with text (`pm/image.ts`, 2026-10-03) ── */
+
+.nd-editor .nd-img {
+  position: relative;
+  display: inline-block;
+  vertical-align: bottom;
+  max-width: 100%;
+  /* Room on each side of the line to click into: the caret goes beside the image, as in Word. */
+  margin: 2px 6px;
+  line-height: 0;
+  cursor: pointer;
+}
+.nd-img-frame {
+  display: block;
+  width: 100%;
+  min-height: 24px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #eef0f5;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+.nd-img-frame canvas { display: block; }
+.nd-img:hover .nd-img-frame { box-shadow: 0 0 0 1px #c7c7e8; }
+.nd-img-selected .nd-img-frame,
+.nd-img-resizing .nd-img-frame { box-shadow: 0 0 0 2px var(--indigo); }
+/* Over the image: every label shows where it is, as on a figure. */
+.nd-img:hover .nd-hot { outline-color: rgb(79 70 229 / 30%); border-bottom-color: transparent; }
+.nd-img .nd-hot-hint { display: none; }
+/* Diagonal handles only: a corner drag keeps the image's shape. */
+.nd-img-handle {
+  position: absolute;
+  z-index: 3;
+  display: none;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--indigo);
+  border-radius: 2px;
+  background: #fff;
+  touch-action: none;
+}
+/* On hover too: a click opens the slide's window, so resizing must not need one first. */
+.nd-img:hover .nd-img-handle,
+.nd-img-selected .nd-img-handle,
+.nd-img-resizing .nd-img-handle { display: block; }
+.nd-img-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.nd-img-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.nd-img-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.nd-img-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
 .nd-hotpop { max-width: 260px; }
 .nd-hotpop-label { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .nd-hotpop-where { color: var(--muted); font-size: 10.5px; }

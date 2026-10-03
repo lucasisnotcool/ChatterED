@@ -186,6 +186,92 @@ export function rectPercent(rect: Rect): { left: string; top: string; width: str
   };
 }
 
+// ── an image's crop, edited in the window (2026-10-03, third cut) ───────────────────────────
+//
+// A slide figure in the notes is an inline image the learner can crop, as in Word. Its window
+// shows the crop as a box with eight handles: drag inside to move it, a corner to resize it freely,
+// an edge to resize it along one axis. The box never leaves the slide and never shrinks below
+// `CROP_EDIT_MIN`; a box within `WHOLE_TOLERANCE` of every edge *is* the whole slide, stored as no
+// crop at all.
+
+/**
+ * The smallest an image's crop may be resized to, as a fraction of the slide on each side. Twice
+ * `MIN_CROP`: a box this size is still about 20 px in a default window, so it can be grabbed again.
+ */
+export const CROP_EDIT_MIN = 0.04;
+
+/** How near every edge a crop must be to count as the whole slide: half a percent, below a hand's precision. */
+export const WHOLE_TOLERANCE = 0.005;
+
+/** How far one Shift+arrow nudges the box, as a fraction of the slide. */
+export const NUDGE = 0.01;
+
+/** The whole slide, as a crop. */
+export const WHOLE_SLIDE: Readonly<Rect> = Object.freeze({ x0: 0, y0: 0, x1: 1, y1: 1 });
+
+/** A resize handle, by compass point: the edges it moves. North is the top (y down). */
+export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+/** All eight, clockwise from the top-left corner. */
+export const HANDLES: readonly Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+/**
+ * The box moved by `dx`, `dy`, its size kept, and stopped at the slide's edge: a drag past the
+ * edge slides the box along it rather than squashing it.
+ */
+export function moveRect(rect: Rect, dx: number, dy: number): Rect {
+  const w = Math.min(1, rect.x1 - rect.x0);
+  const h = Math.min(1, rect.y1 - rect.y0);
+  const x0 = Math.max(0, Math.min(rect.x0 + dx, 1 - w));
+  const y0 = Math.max(0, Math.min(rect.y0 + dy, 1 - h));
+  return { x0, y0, x1: Math.min(1, x0 + w), y1: Math.min(1, y0 + h) };
+}
+
+/** Where a handle sits on the box: a corner, or the middle of an edge. */
+export function handleAt(rect: Rect, handle: Handle): Point {
+  const x = handle.includes('w') ? rect.x0 : handle.includes('e') ? rect.x1 : (rect.x0 + rect.x1) / 2;
+  const y = handle.includes('n') ? rect.y0 : handle.includes('s') ? rect.y1 : (rect.y0 + rect.y1) / 2;
+  return { x, y };
+}
+
+/**
+ * **The box with `handle` dragged to `point`.** The edges the handle names follow the point; the
+ * opposite edge or corner stays put. An edge handle moves one axis only (the point's other
+ * coordinate is ignored), a corner both. An edge dragged across its opposite stops `min` short of
+ * it instead of flipping the box, and no edge leaves the slide.
+ */
+export function resizeRect(rect: Rect, handle: Handle, point: Point, min = CROP_EDIT_MIN): Rect {
+  let { x0, y0, x1, y1 } = rect;
+  if (handle.includes('w')) x0 = Math.max(0, Math.min(point.x, x1 - min));
+  if (handle.includes('e')) x1 = Math.min(1, Math.max(point.x, x0 + min));
+  if (handle.includes('n')) y0 = Math.max(0, Math.min(point.y, y1 - min));
+  if (handle.includes('s')) y1 = Math.min(1, Math.max(point.y, y0 + min));
+  return { x0, y0, x1, y1 };
+}
+
+/** Is this crop the whole slide? No crop is; so is one within `tolerance` of every edge. */
+export function wholeSlide(rect: Rect | null, tolerance = WHOLE_TOLERANCE): boolean {
+  if (rect === null) return true;
+  return rect.x0 <= tolerance && rect.y0 <= tolerance && rect.x1 >= 1 - tolerance && rect.y1 >= 1 - tolerance;
+}
+
+/**
+ * **The crop as it is stored**: null for the whole slide (`wholeSlide`), otherwise clamped to the
+ * slide and rounded to four places, so a doc attribute reads `0.1234` rather than a pointer's
+ * `0.12340000000000001`, and what the window goes on showing is exactly what was stored.
+ */
+export function settleCrop(rect: Rect, tolerance = WHOLE_TOLERANCE): Rect | null {
+  if (wholeSlide(rect, tolerance)) return null;
+  const r = (v: number): number => Math.round(unit(v) * 10000) / 10000;
+  return { x0: r(rect.x0), y0: r(rect.y0), x1: r(rect.x1), y1: r(rect.y1) };
+}
+
+/** The same crop, exactly. */
+export function sameRect(a: Rect | null, b: Rect | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.x0 === b.x0 && a.y0 === b.y0 && a.x1 === b.x1 && a.y1 === b.y1;
+}
+
 // ── the window's own geometry (2026-10-03, second cut) ───────────────────────────────────────
 
 /** A window's place and size, in viewport px. */
@@ -246,15 +332,45 @@ export function fitSlide(area: { width: number; height: number }, aspect: number
   return { width, height: Math.floor(width * aspect) };
 }
 
-export type WindowKey = 'deck-prev' | 'deck-next' | 'cited-prev' | 'cited-next' | 'close';
+export type WindowKey =
+  | 'deck-prev'
+  | 'deck-next'
+  | 'cited-prev'
+  | 'cited-next'
+  | 'close'
+  | 'nudge-left'
+  | 'nudge-right'
+  | 'nudge-up'
+  | 'nudge-down';
 
 /**
  * **The keys, with a slide window focused** (Lucas, 3 Oct 2026): ← → step through the deck, ↑ ↓
  * through the slides the block cites (or the section's strip), Esc closes. With a modifier held
  * the key is not the window's: ⌘← and friends keep their meaning in a text selection.
+ *
+ * Shift is the one exception, and only when `nudge` says an image's crop is being edited on this
+ * page: Shift+arrow nudges the box by `NUDGE`, as it would move a shape in a slide editor. Without
+ * an editable box Shift is ignored, as it always was, so Shift+→ still steps the deck.
  */
-export function windowKey(event: { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean }): WindowKey | null {
+export function windowKey(
+  event: { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean },
+  options: { nudge?: boolean } = {},
+): WindowKey | null {
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  if (event.shiftKey && options.nudge) {
+    switch (event.key) {
+      case 'ArrowLeft':
+        return 'nudge-left';
+      case 'ArrowRight':
+        return 'nudge-right';
+      case 'ArrowUp':
+        return 'nudge-up';
+      case 'ArrowDown':
+        return 'nudge-down';
+      default:
+        break;
+    }
+  }
   switch (event.key) {
     case 'ArrowLeft':
       return 'deck-prev';

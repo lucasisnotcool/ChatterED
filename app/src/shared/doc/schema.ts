@@ -34,7 +34,7 @@
  * it from an `appendTransaction`; every reader here treats `''` as "no id" and never matches it.
  */
 
-import { Fragment, Mark, Node, Schema, type MarkSpec, type NodeSpec } from 'prosemirror-model';
+import { Fragment, Mark, Node, Schema, type MarkSpec, type NodeSpec, type NodeType } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
 import type {
   DiagramEdge,
@@ -344,6 +344,54 @@ const slide_figure: NodeSpec = {
     const caption = node.attrs.caption as string;
     if (caption) attrs['data-caption'] = caption;
     return ['figure', attrs];
+  },
+};
+
+/**
+ * **A slide, or a crop of one, inside a line of text** (2026-10-03), placed as Word places an image
+ * "in line with text": the caret stands on either side of it, Backspace after it deletes it,
+ * Backspace before it at the start of a line joins the line to the one above (taking the image
+ * with it), it is dragged to any text position, and a selection across it cuts, copies and pastes
+ * it with the words. `slide_figure`, a block between paragraphs, could do none of that.
+ *
+ * `width` is its displayed width in CSS px at 100 % zoom, set by its corner handles (the height
+ * follows the crop's shape); null fits the column. `rect` is the crop of the page, as on a figure.
+ * The paragraph around it carries the block id and the provenance, so an agent still addresses it
+ * as a block and its chip still cites its page (`inlineFigures`).
+ */
+const slide_image: NodeSpec = {
+  inline: true,
+  group: 'inline',
+  atom: true,
+  draggable: true,
+  selectable: true,
+  attrs: {
+    page: { default: 1 },
+    rect: { default: null as Rect | null },
+    width: { default: null as number | null },
+    caption: { default: '' },
+  },
+  parseDOM: [
+    {
+      tag: 'span[data-slide-page]',
+      getAttrs: (dom: AttrSource) => {
+        const width = Number.parseInt(dom.getAttribute('data-width') ?? '', 10);
+        return {
+          page: Number.parseInt(dom.getAttribute('data-slide-page') ?? '1', 10) || 1,
+          rect: parseRect(dom.getAttribute('data-rect')),
+          width: Number.isFinite(width) && width > 0 ? width : null,
+          caption: dom.getAttribute('data-caption') ?? '',
+        };
+      },
+    },
+  ],
+  toDOM: (node) => {
+    const rect = node.attrs.rect as Rect | null;
+    const attrs: Record<string, string> = { class: 'nd-img', 'data-slide-page': String(node.attrs.page as number) };
+    if (rect) attrs['data-rect'] = `${rect.x0},${rect.y0},${rect.x1},${rect.y1}`;
+    if (typeof node.attrs.width === 'number') attrs['data-width'] = String(node.attrs.width);
+    if (node.attrs.caption) attrs['data-caption'] = node.attrs.caption as string;
+    return ['span', attrs];
   },
 };
 
@@ -835,6 +883,7 @@ export const notesSchema = new Schema({
     math_block,
     q_block,
     slide_figure,
+    slide_image,
     table,
     table_row,
     table_cell,
@@ -1139,6 +1188,16 @@ function truncateWords(text: string, limit = OUTLINE_WORDS): string {
   return `${words.slice(0, limit).join(' ')}…`;
 }
 
+/** `[slide p. 41]` for each image in a block: an image is a citation, and the outline should say so. */
+function imageMarkers(node: Node): string {
+  const marks: string[] = [];
+  node.descendants((child) => {
+    if (child.type.name === 'slide_image') marks.push(`[slide p. ${String(child.attrs.page as number)}]`);
+    return !child.isLeaf;
+  });
+  return marks.join(' ');
+}
+
 function outlineText(node: Node): string {
   if (node.type.name === 'slide_figure') {
     const caption = node.attrs.caption as string;
@@ -1152,10 +1211,9 @@ function outlineText(node: Node): string {
   if (node.type.name === 'quiz') return truncateWords(quizText(node), limit);
   if (node.type.name === 'infographic') return truncateWords(infographicText(node), limit);
   // `\n` between a list's items so two bullets do not read as one sentence.
-  return truncateWords(
-    node.textBetween(0, node.content.size, '\n', ' '),
-    limit,
-  );
+  const text = node.textBetween(0, node.content.size, '\n', ' ');
+  const images = imageMarkers(node);
+  return truncateWords(images ? `${images} ${text}`.trim() : text, limit);
 }
 
 /**
@@ -1387,4 +1445,65 @@ export function assignMissingBlockIds(tr: Transaction): Transaction | null {
     tr.setNodeMarkup(fix.pos, undefined, { ...fix.node.attrs, blockId: newBlockId() }, fix.node.marks);
   }
   return tr;
+}
+
+// ── images in line with text (2026-10-03) ─────────────────────────────────────────────────────
+
+/**
+ * **Every `slide_figure` block as a paragraph holding a `slide_image`** (2026-10-03). The figure's
+ * block id, pages and reason move to the paragraph, so an agent's edit addressed to the figure
+ * still finds it, its chip still cites the same page, and its section keeps it. Applied when a
+ * document is opened in the editor (and saved back as it is on the next save), and by the ops that
+ * write an agent's figure (`ops.ts`), so the block form only survives in documents nobody has
+ * opened since. Returns the same document when there is nothing to convert.
+ */
+export function inlineFigures(doc: Node): Node {
+  const image = notesSchema.nodes.slide_image!;
+  const paragraph = notesSchema.nodes.paragraph!;
+  let changed = false;
+  const convert = (fragment: Fragment): Fragment => {
+    const out: Node[] = [];
+    fragment.forEach((node) => {
+      if (node.type.name === 'slide_figure') {
+        changed = true;
+        out.push(figureParagraph(node, image, paragraph));
+        return;
+      }
+      if (node.isBlock && !node.isTextblock && !node.isLeaf) {
+        const inner = convert(node.content);
+        out.push(inner === node.content ? node : node.copy(inner));
+        return;
+      }
+      out.push(node);
+    });
+    return changed ? Fragment.from(out) : fragment;
+  };
+  const content = convert(doc.content);
+  return changed ? doc.copy(content) : doc;
+}
+
+function figureParagraph(figure: Node, image: NodeType, paragraph: NodeType): Node {
+  const { blockId, pages, reason, objectiveIds } = blockAttrs(figure);
+  const page = figure.attrs.page as number;
+  return paragraph.create(
+    { blockId, pages: pages.length > 0 ? pages : [page], reason, objectiveIds },
+    image.create({ page, rect: (figure.attrs.rect as Rect | null) ?? null, width: null, caption: (figure.attrs.caption as string) ?? '' }),
+  );
+}
+
+/**
+ * A new image's width: a crop at the width it had on a 560 px slide, so a one-line formula comes
+ * in small and a whole slide at a readable size — never narrower than 160 px.
+ */
+export function defaultImageWidth(rect: Rect | null, full = 560): number {
+  const span = rect ? Math.max(0, Math.min(1, rect.x1 - rect.x0)) : 1;
+  return Math.max(160, Math.round(full * span));
+}
+
+/** A paragraph holding one slide image: what Insert into notes puts in (2026-10-03). */
+export function imageParagraph(page: number, rect: Rect | null, blockId: string): Node {
+  return notesSchema.nodes.paragraph!.create(
+    { blockId, pages: [page], reason: null, objectiveIds: [] },
+    notesSchema.nodes.slide_image!.create({ page, rect, width: defaultImageWidth(rect) }),
+  );
 }

@@ -37,6 +37,7 @@ import { hotspotQuestion, hotspotsIn, type PageLinesView } from '../../../shared
 import { drawHotspots, toLineRect } from './sourcepop.js';
 import { TableView } from './tableview.js';
 import { editBlock } from './math.js';
+import { SlideImageView } from './image.js';
 import { diagramNodeViews } from './diagram.js';
 import { flashcardNodeViews } from './flashcards.js';
 import { infographicNodeViews } from './infographic.js';
@@ -58,6 +59,17 @@ export interface NodeViewContext {
    * figure after `afterBlockId` (the block the slide was opened from), or the caret's block.
    */
   onInsertSlide?: (target: { page: number; rect: Rect | null }, afterBlockId: string | null) => void;
+  /**
+   * **An image's click** (2026-10-03): its slide in a window whose yellow box is the image's crop,
+   * editable there; `onRecrop` writes a new crop back to the image.
+   */
+  onOpenImage?: (input: {
+    page: number;
+    rect: Rect | null;
+    anchor: HTMLElement;
+    blockId: string | null;
+    onRecrop: (rect: Rect | null) => void;
+  }) => void;
   /** Submit on a Q block: the learner's answer, in place, goes to main to be marked. */
   onAnswerQuestion: (input: QuestionAnswer) => Promise<NotesAnswerQuestionResult>;
   /** A slide's own text with its boxes: what a figure's hotspots are built from. Optional. */
@@ -613,6 +625,7 @@ export function nodeViews(ctx: NodeViewContext): Record<
   return {
     math_block: (node, view, getPos) => new MathBlockView(node, view, getPos),
     slide_figure: (node) => new SlideFigureView(node, ctx),
+    slide_image: (node, view, getPos) => new SlideImageView(node, view, getPos, ctx),
     q_block: (node, view, getPos) => new QBlockView(node, view, getPos, ctx),
     table: (node, view, getPos) => new TableView(node, view, getPos, ctx),
     ...diagramNodeViews(ctx),

@@ -24,6 +24,7 @@ import { notesSchema } from '../../../shared/doc/schema.js';
 import { blockKitPlugin } from './blockkit.js';
 import { diagramPlugin } from './diagram.js';
 import { editFormula, mathInputRules, mathPlugin } from './math.js';
+import { imageKeysPlugin } from './image.js';
 import { readAloudPlugin } from './readaloud.js';
 import { tableGuard, tableKeymap } from './table.js';
 import { tableChrome } from './tableview.js';
@@ -85,6 +86,8 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
     // Formulas typeset at rest, stepped over as one unit, edited in a popover (`math.ts`). Ahead of
     // every keymap, so its arrow and delete keys at a formula's edge are seen first.
     mathPlugin(),
+    // Images in line with text: Backspace after one deletes it, ← → step over it (`image.ts`).
+    imageKeysPlugin(),
     // Inside a table cell, first: Tab, Enter, the arrows and the deletes are the table's (`table.ts`).
     keymap(tableKeymap()),
     // Inside a diagram node, also first: Enter, Tab and the deletes never split or merge a box (`diagram.ts`).

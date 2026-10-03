@@ -101,11 +101,14 @@ describe('rule 1 — the ops that only add', () => {
     const { doc, result } = run([{ op: 'insert_after', anchorBlockId: 'b_2', blocks }]);
     expect(result.status).toBe('applied');
     const kinds = [4, 5, 6, 7, 8, 9].map((i) => doc.child(i).type.name);
-    expect(kinds).toEqual(['heading', 'bullet_list', 'ordered_list', 'code_block', 'math_block', 'slide_figure']);
+    // A figure goes in line with text (2026-10-03): a paragraph, cited to its page, holding the image.
+    expect(kinds).toEqual(['heading', 'bullet_list', 'ordered_list', 'code_block', 'math_block', 'paragraph']);
     expect(doc.child(5).childCount).toBe(2); // two bullets
     expect(doc.child(7).attrs.lang).toBe('python');
     expect(doc.child(8).attrs.tex).toContain('\\max_a');
-    expect(doc.child(9).attrs.page).toBe(6);
+    expect(doc.child(9).attrs.pages).toEqual([6]);
+    expect(doc.child(9).firstChild?.type.name).toBe('slide_image');
+    expect(doc.child(9).firstChild?.attrs).toMatchObject({ page: 6, caption: 'The loop' });
     doc.check();
   });
 

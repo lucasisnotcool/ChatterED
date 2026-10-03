@@ -141,6 +141,17 @@ marker.
     - **Text.** The slide's text is real text, so it can be selected and copied.
     - **Hover.** Hovering a chip shows a small peek: the slide, the matched region and the quote,
       with nothing to click.
+  - **Images sit in the line, as in Word** (2026-10-03, later):
+    - A slide in the notes is an image inside a paragraph, not a block between paragraphs. The
+      paragraph carries the block id and the citation; a figure saved as a block is converted when
+      the notes are opened.
+    - The caret can stand on either side of an image, with room to click there. Backspace after it
+      deletes it; Backspace before it at the start of a line moves the line up onto the one above.
+    - It can be dragged to any text position, and cut, copied and pasted with the words around it.
+    - Its four corners resize it in proportion.
+    - A click opens its slide in a window whose yellow box is the image's crop; moving or resizing
+      that box re-crops the image.
+    Code: `pm/image.ts`, `schema.ts` (`slide_image`, `inlineFigures`).
   - **Insert into notes**: from the window, the whole slide or a dragged crop goes into the notes
     as a slide figure, after the block it was opened from. It is the learner's own edit, so it is
     undoable, and it counts towards that section's slides.
