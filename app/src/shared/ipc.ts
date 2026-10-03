@@ -22,6 +22,7 @@ import type {
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AddSourcesResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
+import type { FolderView } from './folders.js';
 import type { PageLinesView } from './doc/cite.js';
 import type { SlideOverride } from './doc/slidegroups.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
@@ -177,6 +178,13 @@ export const IPC = {
   notebookAddSources: 'notebook:addSources',
   notebookSetEnabled: 'notebook:setEnabled',
   notebookRemoveSource: 'notebook:removeSource',
+  // Folders (`docs/research/search.md` §1, 2026-10-03). Bodies in `src/main/notebooks/ipc.ts`.
+  notebookMove: 'notebook:move',
+  folderList: 'folder:list',
+  folderCreate: 'folder:create',
+  folderRename: 'folder:rename',
+  folderMove: 'folder:move',
+  folderDelete: 'folder:delete',
   /** main → renderer: a notebook or one of its sources changed (added, read, ticked, removed). */
   notebookChanged: 'notebook:changed',
   // The overview. Bodies in `src/main/notes/ipc.ts`.
@@ -603,7 +611,7 @@ export interface ChatterEdApi {
    * A new notebook. With `paths`, those files are added as its first sources and the name
    * defaults to the first file's name without its extension; with none it is "Untitled notebook".
    */
-  notebookCreate(input: { name?: string | null; paths?: string[] }): Promise<AddSourcesResult>;
+  notebookCreate(input: { name?: string | null; paths?: string[]; folderId?: string | null }): Promise<AddSourcesResult>;
   notebookRename(input: { notebookId: string; name: string }): Promise<NotebookView>;
   /** Main asks the learner to confirm (a native sheet). Deletes the copies, never the originals. */
   notebookDelete(input: { notebookId: string }): Promise<{ deleted: boolean }>;
@@ -621,6 +629,19 @@ export interface ChatterEdApi {
   notebookSetEnabled(input: { notebookId: string; fileIds: string[]; enabled: boolean }): Promise<NotebookView>;
   /** Main asks the learner to confirm. Deletes the copy; its pages become a gap, never reused. */
   notebookRemoveSource(input: { notebookId: string; fileId: string }): Promise<{ removed: boolean; notebook: NotebookView }>;
+
+  // ── folders (`docs/research/search.md` §1, 2026-10-03) ─────────────────────────────────────
+  /** Into a folder, or to the top level with `folderId: null`. A move is not an edit. */
+  notebookMove(input: { notebookId: string; folderId: string | null }): Promise<NotebookView>;
+  /** Every folder; the renderer arranges the tree (`shared/folders.ts`). */
+  folderList(): Promise<FolderView[]>;
+  /** A new folder at the end of its siblings; with no name, "Untitled folder" (numbered if taken). */
+  folderCreate(input: { name?: string | null; parentId?: string | null }): Promise<FolderView>;
+  folderRename(input: { folderId: string; name: string }): Promise<FolderView>;
+  /** Refused, with a sentence, if it would put a folder inside itself. */
+  folderMove(input: { folderId: string; parentId: string | null }): Promise<FolderView>;
+  /** Its notebooks and subfolders move up one level first; no notebook is ever deleted by this. */
+  folderDelete(input: { folderId: string }): Promise<{ deleted: boolean; movedNotebooks: number; movedFolders: number }>;
   onNotebookChanged(listener: (change: NotebookChange) => void): () => void;
   /**
    * The absolute path of a file dropped on the window. Electron's sandboxed renderer has no

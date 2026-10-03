@@ -57,9 +57,9 @@ describe('registerNotebookIpc', () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('registers every notebook channel', () => {
+  it('registers every notebook and folder channel', () => {
     const channels = Object.entries(IPC)
-      .filter(([k]) => k.startsWith('notebook') && k !== 'notebookChanged')
+      .filter(([k]) => (k.startsWith('notebook') || k.startsWith('folder')) && k !== 'notebookChanged')
       .map(([, v]) => v);
     expect([...handlers.keys()].sort()).toEqual([...channels].sort());
   });
@@ -75,5 +75,23 @@ describe('registerNotebookIpc', () => {
     const list = (await handlers.get(IPC.notebookList)!(undefined)) as NotebookSummary[];
     expect(list).toMatchObject([{ name: 'picked', sourceCount: 1, enabledCount: 1 }]);
     await expect(async () => handlers.get(IPC.notebookGet)!({ notebookId: 'f_123' })).rejects.toThrow(/Not a notebook/);
+  });
+
+  it('creates, moves and deletes folders, and refuses an id that is not a folder', async () => {
+    const top = (await handlers.get(IPC.folderCreate)!({ name: 'CS4246' })) as { id: string };
+    const sub = (await handlers.get(IPC.folderCreate)!({ parentId: top.id })) as { id: string; name: string };
+    expect(sub.name).toBe('Untitled folder');
+    const made = (await handlers.get(IPC.notebookCreate)!({ name: 'Week 3', folderId: sub.id })) as AddSourcesResult;
+    const listed = (await handlers.get(IPC.notebookList)!(undefined)) as NotebookSummary[];
+    expect(listed.find((n) => n.id === made.notebook.id)!.folderId).toBe(sub.id);
+    await handlers.get(IPC.notebookMove)!({ notebookId: made.notebook.id, folderId: null });
+    expect(() => handlers.get(IPC.folderMove)!({ folderId: top.id, parentId: sub.id })).toThrow(/inside itself/);
+    expect(() => handlers.get(IPC.folderMove)!({ folderId: '../etc', parentId: null })).toThrow(/Not a folder id/);
+    expect(() => handlers.get(IPC.notebookMove)!({ notebookId: made.notebook.id, folderId: 'top' })).toThrow(/Not a folder id/);
+    // A made-up folder id on create is the top level, not an error: the folder may have just gone.
+    const loose = (await handlers.get(IPC.notebookCreate)!({ name: 'x', folderId: 'nonsense' })) as AddSourcesResult;
+    expect(loose.notebook.id).toMatch(/^nb_/);
+    expect(await handlers.get(IPC.folderDelete)!({ folderId: top.id })).toEqual({ deleted: true, movedNotebooks: 0, movedFolders: 1 });
+    expect(((await handlers.get(IPC.folderList)!(undefined)) as { parentId: string | null }[]).map((f) => f.parentId)).toEqual([null]);
   });
 });

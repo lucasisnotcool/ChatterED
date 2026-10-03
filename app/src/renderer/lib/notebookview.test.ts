@@ -13,8 +13,8 @@ import {
   patchList,
   refusalNotice,
   sourceMeta,
-  typeBadge,
-} from './notebookview.js';
+  typeBadge, folderNotebookCount, moveTargets, notebooksIn } from './notebookview.js';
+import type { FolderView } from '../../shared/folders.js';
 
 function source(over: Partial<NotebookSourceView> = {}): NotebookSourceView {
   return {
@@ -116,6 +116,7 @@ describe('patchList', () => {
     fill: 0.2,
     updatedAt: '2026-09-01T00:00:00.000Z',
     openedAt: null,
+    folderId: null,
   });
   const view = (id: string): NotebookView => ({
     id,
@@ -164,5 +165,50 @@ describe('refusalNotice', () => {
       'Export it as a PDF first. (2 more not added.)',
     );
     expect(refusalNotice([r('a.key', '')])).toBe('“a.key” was not added.');
+  });
+});
+
+describe('folders on the home', () => {
+  const fv = (id: string, parentId: string | null, name = id): FolderView => ({
+    id,
+    parentId,
+    name,
+    ord: 0,
+    createdAt: '2026-10-03T00:00:00.000Z',
+    updatedAt: '2026-10-03T00:00:00.000Z',
+  });
+  const folders = [fv('fd_cs', null, 'CS4246'), fv('fd_plan', 'fd_cs', 'Planning'), fv('fd_dec', 'fd_cs', 'Decision making'), fv('fd_other', null, 'CS3249')];
+  const nb = (id: string, folderId: string | null): NotebookSummary => ({
+    id,
+    name: id,
+    sourceCount: 1,
+    enabledCount: 1,
+    subtitle: null,
+    fill: null,
+    updatedAt: '2026-10-03T00:00:00.000Z',
+    openedAt: null,
+    folderId,
+  });
+  const list = [nb('nb_a', null), nb('nb_b', 'fd_cs'), nb('nb_c', 'fd_plan'), nb('nb_d', 'fd_plan')];
+
+  it('shows a folder’s own notebooks, and counts its subfolders’ on its tile', () => {
+    expect(notebooksIn(list, null).map((n) => n.id)).toEqual(['nb_a']);
+    expect(notebooksIn(list, 'fd_plan').map((n) => n.id)).toEqual(['nb_c', 'nb_d']);
+    expect(folderNotebookCount(folders, list, 'fd_cs')).toBe(3);
+    expect(folderNotebookCount(folders, list, 'fd_other')).toBe(0);
+  });
+
+  it('offers a notebook every folder but the one it is in, indented as a tree', () => {
+    expect(moveTargets(folders, { currentParent: 'fd_plan' })).toEqual([
+      { folderId: null, label: 'Notebooks (top level)', depth: 0 },
+      { folderId: 'fd_other', label: 'CS3249', depth: 0 },
+      { folderId: 'fd_cs', label: 'CS4246', depth: 0 },
+      { folderId: 'fd_dec', label: 'Decision making', depth: 1 },
+    ]);
+  });
+
+  it('never offers a folder itself or anything inside it', () => {
+    const targets = moveTargets(folders, { folderId: 'fd_cs', currentParent: null }).map((t) => t.folderId);
+    expect(targets).toEqual(['fd_other']);
   });
 });

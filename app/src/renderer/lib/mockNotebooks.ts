@@ -31,6 +31,13 @@ import {
   type NotebookView,
   type SourceRefusal,
 } from '../../shared/notebook.js';
+import {
+  childFolders,
+  freshFolderName,
+  moveFolderRefusal,
+  subtreeFolderIds,
+  type FolderView,
+} from '../../shared/folders.js';
 
 interface Held {
   id: string;
@@ -43,6 +50,7 @@ interface Held {
   createdAt: string;
   updatedAt: string;
   openedAt: string | null;
+  folderId?: string | null;
 }
 
 export interface MockNotebookDeps {
@@ -161,7 +169,85 @@ export class MockNotebooks {
         fill: this.#deps.fillOf?.(n.id) ?? n.fill,
         updatedAt: n.updatedAt,
         openedAt: n.openedAt,
+        folderId: n.folderId ?? null,
       }));
+  }
+
+  // ── Folders: the same rules as main's service, through `shared/folders.ts` ──
+  readonly #folders = new Map<string, FolderView>();
+
+  folders(): FolderView[] {
+    return [...this.#folders.values()].map((f) => ({ ...f }));
+  }
+
+  #folder(id: string): FolderView {
+    const f = this.#folders.get(id);
+    if (!f) throw new Error('That folder no longer exists.');
+    return f;
+  }
+
+  createFolder(input: { name?: string | null; parentId?: string | null }): FolderView {
+    const parentId = input.parentId ? this.#folder(input.parentId).id : null;
+    const siblings = childFolders(this.folders(), parentId);
+    const at = this.#now();
+    const id = `fd_${globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const folder: FolderView = {
+      id,
+      parentId,
+      name: input.name?.trim() || freshFolderName(siblings),
+      ord: siblings.length === 0 ? 0 : Math.max(...siblings.map((x) => x.ord)) + 1,
+      createdAt: at,
+      updatedAt: at,
+    };
+    this.#folders.set(id, folder);
+    return { ...folder };
+  }
+
+  renameFolder(folderId: string, name: string): FolderView {
+    const f = this.#folder(folderId);
+    if (!name.trim()) throw new Error('A folder needs a name.');
+    f.name = name.trim();
+    return { ...f };
+  }
+
+  moveFolder(folderId: string, parentId: string | null): FolderView {
+    const f = this.#folder(folderId);
+    const refusal = moveFolderRefusal(this.folders(), folderId, parentId);
+    if (refusal) throw new Error(refusal);
+    f.parentId = parentId;
+    return { ...f };
+  }
+
+  deleteFolder(folderId: string): { deleted: boolean; movedNotebooks: number; movedFolders: number } {
+    const f = this.#folders.get(folderId);
+    if (!f) return { deleted: false, movedNotebooks: 0, movedFolders: 0 };
+    let movedNotebooks = 0;
+    let movedFolders = 0;
+    for (const n of this.#held.values()) {
+      if (n.folderId !== folderId) continue;
+      n.folderId = f.parentId;
+      movedNotebooks += 1;
+    }
+    for (const c of this.#folders.values()) {
+      if (c.parentId !== folderId) continue;
+      c.parentId = f.parentId;
+      movedFolders += 1;
+    }
+    this.#folders.delete(folderId);
+    return { deleted: true, movedNotebooks, movedFolders };
+  }
+
+  moveNotebook(notebookId: string, folderId: string | null): NotebookView {
+    const n = this.#get(notebookId);
+    n.folderId = folderId ? this.#folder(folderId).id : null;
+    const view = this.view(n.id)!;
+    this.#deps.push({ notebookId: n.id, view });
+    return view;
+  }
+
+  scopeNotebookIds(folderId: string | null): string[] {
+    const inScope = folderId === null ? null : subtreeFolderIds(this.folders(), folderId);
+    return [...this.#held.values()].filter((n) => inScope === null || (n.folderId != null && inScope.has(n.folderId))).map((n) => n.id);
   }
 
   #get(id: string): Held {
@@ -177,12 +263,13 @@ export class MockNotebooks {
     return view;
   }
 
-  create(input: { name?: string | null; paths?: string[] }): AddSourcesResult {
+  create(input: { name?: string | null; paths?: string[]; folderId?: string | null }): AddSourcesResult {
     const id = `${NOTEBOOK_ID_PREFIX}${globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
     const first = input.paths?.[0];
     const named = input.name?.trim() || (first ? baseName(first).replace(/\.[^.]+$/, '') : '') || 'Untitled notebook';
     const at = this.#now();
-    this.#held.set(id, { id, name: named, sources: [], highest: 0, subtitle: null, fill: null, createdAt: at, updatedAt: at, openedAt: at });
+    const folderId = input.folderId && this.#folders.has(input.folderId) ? input.folderId : null;
+    this.#held.set(id, { id, name: named, sources: [], highest: 0, subtitle: null, fill: null, createdAt: at, updatedAt: at, openedAt: at, folderId });
     if (input.paths && input.paths.length > 0) return this.addSources({ notebookId: id, paths: input.paths });
     return { notebook: this.view(id)!, added: [], refused: [] };
   }

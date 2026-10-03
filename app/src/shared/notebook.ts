@@ -92,6 +92,8 @@ export interface NotebookSummary {
   fill: number | null;
   updatedAt: string;
   openedAt: string | null;
+  /** The folder it sits in (`shared/folders.ts`), or null at the top level. */
+  folderId: string | null;
 }
 
 /** Pushed on `notebook:changed` whenever a notebook or one of its sources changed. */

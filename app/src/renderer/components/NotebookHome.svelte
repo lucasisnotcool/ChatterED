@@ -30,6 +30,8 @@
   import { registerViewer, type ViewerCommand } from '../lib/viewer.js';
   import { clock, store } from '../lib/store.svelte.js';
   import type { NotebookSummary } from '../../shared/notebook.js';
+  import { childFolders, folderPath, type FolderView } from '../../shared/folders.js';
+  import { folderNotebookCount, moveTargets, notebooksIn, type MoveTarget } from '../lib/notebookview.js';
 
   const nb = store.notebook;
   const recents = $derived((store.boot?.recentSessions ?? []).slice(0, 3));
@@ -44,25 +46,126 @@
     },
   });
 
-  /** The card whose menu is open, and where. One at a time. */
-  let menu = $state<{ id: string; x: number; y: number } | null>(null);
+  // ── Folders (`docs/research/search.md` §1) ──
+  const path = $derived(folderPath(nb.folders, nb.folderId));
+  const here = $derived(path.at(-1) ?? null);
+  const subfolders = $derived(childFolders(nb.folders, nb.folderId));
+  const shown = $derived(notebooksIn(nb.list, nb.folderId));
+
+  /** The card or folder whose menu is open, and where. One at a time. `moving`: the Move to… list. */
+  let menu = $state<{ kind: 'notebook' | 'folder'; id: string; x: number; y: number; moving: boolean } | null>(null);
   /** The card being renamed in place. */
   let renaming = $state<string | null>(null);
   let draft = $state('');
+  /** The folder being renamed in place (a new folder starts here, name selected). */
+  let renamingFolder = $state<string | null>(null);
+  let folderDraft = $state('');
 
-  function openMenu(n: NotebookSummary, x: number, y: number): void {
-    menu = { id: n.id, x, y };
+  function openMenu(kind: 'notebook' | 'folder', id: string, x: number, y: number): void {
+    menu = { kind, id, x, y, moving: false };
   }
 
   function oncontext(e: MouseEvent, n: NotebookSummary): void {
     e.preventDefault();
-    openMenu(n, e.clientX, e.clientY);
+    openMenu('notebook', n.id, e.clientX, e.clientY);
   }
 
   function onmore(e: MouseEvent, n: NotebookSummary): void {
     e.stopPropagation();
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu(n, r.right - 4, r.bottom + 4);
+    openMenu('notebook', n.id, r.right - 4, r.bottom + 4);
+  }
+
+  function onfoldercontext(e: MouseEvent, f: FolderView): void {
+    e.preventDefault();
+    openMenu('folder', f.id, e.clientX, e.clientY);
+  }
+
+  function onfoldermore(e: MouseEvent, f: FolderView): void {
+    e.stopPropagation();
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openMenu('folder', f.id, r.right - 4, r.bottom + 4);
+  }
+
+  // Read through these, never through `menu.kind` in the template: when a click clears `menu`,
+  // the template's constants are evaluated once more before the block goes.
+  const menuNotebook = $derived(menu?.kind === 'notebook' ? nb.list.find((x) => x.id === menu?.id) : undefined);
+  const menuFolder = $derived(menu?.kind === 'folder' ? nb.folders.find((x) => x.id === menu?.id) : undefined);
+  const menuTargets = $derived(menu?.moving ? targetsFor(menu) : []);
+
+  function targetsFor(m: NonNullable<typeof menu>): MoveTarget[] {
+    if (m.kind === 'notebook') {
+      return moveTargets(nb.folders, { currentParent: nb.list.find((n) => n.id === m.id)?.folderId ?? null });
+    }
+    return moveTargets(nb.folders, { folderId: m.id, currentParent: nb.folders.find((f) => f.id === m.id)?.parentId ?? null });
+  }
+
+  async function moveTo(m: NonNullable<typeof menu>, folderId: string | null): Promise<void> {
+    menu = null;
+    if (m.kind === 'notebook') await nb.moveNotebook(m.id, folderId);
+    else await nb.moveFolder(m.id, folderId);
+  }
+
+  function countLabel(folderId: string): string {
+    const n = folderNotebookCount(nb.folders, nb.list, folderId);
+    return n === 1 ? '1 notebook' : `${n} notebooks`;
+  }
+
+  async function newFolder(): Promise<void> {
+    const folder = await nb.createFolder();
+    if (!folder) return;
+    renamingFolder = folder.id;
+    folderDraft = folder.name;
+  }
+
+  function startFolderRename(f: FolderView): void {
+    menu = null;
+    renamingFolder = f.id;
+    folderDraft = f.name;
+  }
+
+  async function commitFolderRename(): Promise<void> {
+    const id = renamingFolder;
+    renamingFolder = null;
+    if (id && folderDraft.trim()) await nb.renameFolder(id, folderDraft);
+  }
+
+  // ── Dragging a notebook or folder onto a folder or a breadcrumb step ──
+  const NOTEBOOK_TYPE = 'application/x-chattered-notebook';
+  const FOLDER_TYPE = 'application/x-chattered-folder';
+  /** The folder (or 'top') under a drag that can land there. */
+  let dropOn = $state<string | null>(null);
+
+  function ondragstartItem(e: DragEvent, type: string, id: string): void {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.setData(type, id);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function dragged(e: DragEvent): { type: 'notebook' | 'folder'; id: string } | null {
+    const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
+    if (types.includes(NOTEBOOK_TYPE)) return { type: 'notebook', id: e.dataTransfer!.getData(NOTEBOOK_TYPE) };
+    if (types.includes(FOLDER_TYPE)) return { type: 'folder', id: e.dataTransfer!.getData(FOLDER_TYPE) };
+    return null;
+  }
+
+  function ondragoverTarget(e: DragEvent, folderId: string | null): void {
+    // Only our own cards and tiles; files from Finder are the home's own drop.
+    if (!dragged(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    dropOn = folderId ?? 'top';
+  }
+
+  async function ondropTarget(e: DragEvent, folderId: string | null): Promise<void> {
+    const d = dragged(e);
+    dropOn = null;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (d.type === 'notebook') await nb.moveNotebook(d.id, folderId);
+    else if (d.id !== folderId) await nb.moveFolder(d.id, folderId);
   }
 
   function startRename(n: NotebookSummary): void {
@@ -109,6 +212,7 @@
   }
 
   function onwindowkey(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && renamingFolder) renamingFolder = null;
     if (e.key === 'Escape' && menu) menu = null;
   }
 </script>
@@ -129,18 +233,101 @@
 >
   <div class="inner" style:zoom={layout.homeZoom}>
     <header class="top">
-      <h1>Notebooks</h1>
-      <button type="button" class="new" disabled={nb.busy} onclick={() => void store.newNotebook()}>
-        <span aria-hidden="true">＋</span> {nb.busy ? 'Adding…' : 'New notebook'}
-      </button>
+      {#if path.length > 0}
+        <nav class="crumbs" aria-label="Folder">
+          <button
+            type="button"
+            class="crumb"
+            class:drop={dropOn === 'top'}
+            onclick={() => nb.setFolder(null)}
+            ondragover={(e) => ondragoverTarget(e, null)}
+            ondragleave={() => (dropOn = null)}
+            ondrop={(e) => void ondropTarget(e, null)}
+          >Notebooks</button>
+          {#each path.slice(0, -1) as step (step.id)}
+            <span class="sep" aria-hidden="true">›</span>
+            <button
+              type="button"
+              class="crumb"
+              class:drop={dropOn === step.id}
+              onclick={() => nb.setFolder(step.id)}
+              ondragover={(e) => ondragoverTarget(e, step.id)}
+              ondragleave={() => (dropOn = null)}
+              ondrop={(e) => void ondropTarget(e, step.id)}
+            >{step.name}</button>
+          {/each}
+          <span class="sep" aria-hidden="true">›</span>
+        </nav>
+      {/if}
+      <h1>{here?.name ?? 'Notebooks'}</h1>
+      <div class="actions">
+        <button type="button" class="new" onclick={() => void newFolder()}>
+          <span aria-hidden="true">＋</span> New folder
+        </button>
+        <button type="button" class="new" disabled={nb.busy} onclick={() => void store.newNotebook()}>
+          <span aria-hidden="true">＋</span> {nb.busy ? 'Adding…' : 'New notebook'}
+        </button>
+      </div>
     </header>
     <p class="hint">
-      Drop files anywhere on this screen to start a notebook from them. Each notebook keeps its own
-      copy of its sources, so moving or deleting the originals changes nothing here.
+      Drop files anywhere on this screen to start a notebook from them{here ? ` in ${here.name}` : ''}. Each
+      notebook keeps its own copy of its sources, so moving or deleting the originals changes nothing here.
+      Drag a notebook onto a folder to move it.
     </p>
 
+    {#if subfolders.length > 0}
+      <div class="folders" aria-label="Folders">
+        {#each subfolders as f (f.id)}
+          <div class="cardwrap">
+            {#if renamingFolder === f.id}
+              <div class="folder editing">
+                <span class="ficon" aria-hidden="true"></span>
+                <input
+                  class="rename"
+                  aria-label="Folder name"
+                  bind:value={folderDraft}
+                  use:focusSelect
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter') void commitFolderRename();
+                    if (e.key === 'Escape') renamingFolder = null;
+                  }}
+                  onblur={() => void commitFolderRename()}
+                />
+              </div>
+            {:else}
+              <button
+                type="button"
+                class="folder"
+                class:drop={dropOn === f.id}
+                draggable="true"
+                onclick={() => nb.setFolder(f.id)}
+                oncontextmenu={(e) => onfoldercontext(e, f)}
+                ondragstart={(e) => ondragstartItem(e, FOLDER_TYPE, f.id)}
+                ondragover={(e) => ondragoverTarget(e, f.id)}
+                ondragleave={() => (dropOn = null)}
+                ondrop={(e) => void ondropTarget(e, f.id)}
+              >
+                <span class="ficon" aria-hidden="true"></span>
+                <span class="fname">
+                  <span class="t">{f.name}</span>
+                  <span class="s">{countLabel(f.id)}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="more"
+                aria-label={`More for ${f.name}`}
+                aria-haspopup="menu"
+                onclick={(e) => onfoldermore(e, f)}
+              >⋯</button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     <div class="grid">
-      {#each nb.list as n (n.id)}
+      {#each shown as n (n.id)}
         <div class="cardwrap">
           {#if renaming === n.id}
             <div class="card editing">
@@ -161,8 +348,10 @@
             <button
               type="button"
               class="card"
+              draggable="true"
               onclick={() => void store.openNotebook(n.id)}
               oncontextmenu={(e) => oncontext(e, n)}
+              ondragstart={(e) => ondragstartItem(e, NOTEBOOK_TYPE, n.id)}
             >
               <span class="t">{n.name}</span>
               <span class="s">{cardLine(n, clock.ms)}</span>
@@ -191,6 +380,8 @@
 
     {#if nb.listed && nb.list.length === 0}
       <p class="empty">No notebooks yet. Start one with your lecture slides and notes for a week.</p>
+    {:else if nb.listed && here && shown.length === 0 && subfolders.length === 0}
+      <p class="empty">This folder is empty. Drag notebooks onto it from the level above, or drop files here to start one in it.</p>
     {/if}
 
     <footer class="legacy">
@@ -205,14 +396,46 @@
     </footer>
   </div>
 
-  {#if menu}
-    {@const target = nb.list.find((x) => x.id === menu!.id)}
-    {#if target}
-      <div class="menu" role="menu" style:left={`${menu.x}px`} style:top={`${menu.y}px`}>
+  {#if menu && (menuNotebook || menuFolder)}
+    <div class="menu" role="menu" style:left={`${menu.x}px`} style:top={`${menu.y}px`}>
+      {#if menu.moving}
+        <span class="mhead">Move to</span>
+        {#each menuTargets as t (t.folderId ?? 'top')}
+          <button
+            type="button"
+            role="menuitem"
+            style:padding-left={`${10 + t.depth * 14}px`}
+            onclick={(e) => {
+              e.stopPropagation();
+              if (menu) void moveTo(menu, t.folderId);
+            }}
+          >{t.label}</button>
+        {:else}
+          <span class="mnone">No other folder yet.</span>
+        {/each}
+      {:else if menuNotebook}
+        {@const target = menuNotebook}
         <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); startRename(target); }}>Rename…</button>
+        <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); if (menu) menu = { ...menu, moving: true }; }}>Move to…</button>
         <button type="button" role="menuitem" class="danger" onclick={(e) => { e.stopPropagation(); void remove(target.id); }}>Delete…</button>
-      </div>
-    {/if}
+      {:else if menuFolder}
+        {@const folder = menuFolder}
+        <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); startFolderRename(folder); }}>Rename…</button>
+        <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); if (menu) menu = { ...menu, moving: true }; }}>Move to…</button>
+        <button
+          type="button"
+          role="menuitem"
+          class="danger"
+          title="Its notebooks and folders move up one level. No notebook is deleted."
+          onclick={(e) => {
+            e.stopPropagation();
+            const id = folder.id;
+            menu = null;
+            void nb.deleteFolder(id);
+          }}
+        >Delete folder</button>
+      {/if}
+    </div>
   {/if}
 
   {#if over}
@@ -231,10 +454,15 @@
     margin: 0 auto;
   }
 
-  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .top { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  .crumbs { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; font-size: 14px; color: var(--text-2); }
+  .crumb { padding: 2px 6px; border-radius: 6px; color: var(--text-2); }
+  .crumb:hover { background: var(--pane); color: var(--indigo); }
+  .crumb.drop { background: var(--indigo-tint); color: var(--indigo); outline: 1.5px dashed var(--indigo); }
+  .crumbs .sep { color: var(--muted); }
+  .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   .new {
-    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -249,6 +477,27 @@
   .new:disabled { opacity: 0.6; cursor: default; }
   .hint { margin: 0; font-size: 12.5px; color: var(--text-2); max-width: 70ch; }
 
+  .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .folder {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+    background: var(--pane);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 11px 14px;
+    min-width: 0;
+  }
+  .folder:hover { border-color: var(--indigo); }
+  .folder.drop { border-color: var(--indigo); background: var(--indigo-tint); }
+  .folder.editing { border-color: var(--indigo); }
+  .folder .rename { flex: 1; min-width: 0; }
+  .ficon { position: relative; width: 28px; height: 22px; border-radius: 4px; background: var(--indigo-tint); flex: none; margin-top: 3px; }
+  .ficon::before { content: ''; position: absolute; left: 0; top: -4px; width: 12px; height: 6px; border-radius: 3px 3px 0 0; background: var(--indigo-tint); }
+  .fname { display: grid; min-width: 0; }
+  .fname .t { padding-right: 18px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
   .cardwrap { position: relative; min-width: 0; }
   .card {
@@ -331,6 +580,8 @@
   }
   .menu button { text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 12.5px; }
   .menu button:hover { background: var(--ground); }
+  .menu .mhead { padding: 4px 10px 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+  .menu .mnone { padding: 6px 10px; font-size: 12.5px; color: var(--text-2); }
   .menu .danger { color: #8a2708; }
 
   .overlay {

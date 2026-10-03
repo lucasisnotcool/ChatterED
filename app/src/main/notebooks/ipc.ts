@@ -11,6 +11,7 @@
 import { isAbsolute } from 'node:path';
 import { IPC } from '../../shared/ipc.js';
 import { SOURCE_EXTENSIONS } from '../../shared/notebook.js';
+import { isFolderId } from '../../shared/folders.js';
 import type { IpcHandle } from '../dochost.js';
 import type { NotebookService } from './service.js';
 
@@ -37,6 +38,16 @@ function requireId(raw: unknown): string {
   return raw;
 }
 
+function requireFolderId(raw: unknown): string {
+  if (!isFolderId(raw)) throw new Error('Not a folder id.');
+  return raw;
+}
+
+/** A folder id, or null for the top level. Anything else is refused rather than read as "top". */
+function folderOrTop(raw: unknown): string | null {
+  return raw === null || raw === undefined ? null : requireFolderId(raw);
+}
+
 export interface NotebookIpcDeps {
   service: NotebookService;
   handle: IpcHandle;
@@ -47,10 +58,11 @@ export interface NotebookIpcDeps {
 export function registerNotebookIpc({ service, handle, pickFiles }: NotebookIpcDeps): void {
   handle(IPC.notebookList, () => service.list());
   handle<{ notebookId: string }>(IPC.notebookGet, (input) => service.get(requireId(input?.notebookId)));
-  handle<{ name?: string | null; paths?: string[] }>(IPC.notebookCreate, (input) =>
+  handle<{ name?: string | null; paths?: string[]; folderId?: string | null }>(IPC.notebookCreate, (input) =>
     service.create({
       name: typeof input?.name === 'string' ? input.name : null,
       paths: cleanPaths(input?.paths),
+      folderId: isFolderId(input?.folderId) ? input.folderId : null,
     }),
   );
   handle<{ notebookId: string; name: string }>(IPC.notebookRename, (input) =>
@@ -69,6 +81,23 @@ export function registerNotebookIpc({ service, handle, pickFiles }: NotebookIpcD
       input?.enabled === true,
     ),
   );
+  handle<{ notebookId: string; folderId: string | null }>(IPC.notebookMove, (input) =>
+    service.moveNotebook(requireId(input?.notebookId), folderOrTop(input?.folderId)),
+  );
+  handle(IPC.folderList, () => service.folders());
+  handle<{ name?: string | null; parentId?: string | null }>(IPC.folderCreate, (input) =>
+    service.createFolder({
+      name: typeof input?.name === 'string' ? input.name : null,
+      parentId: folderOrTop(input?.parentId),
+    }),
+  );
+  handle<{ folderId: string; name: string }>(IPC.folderRename, (input) =>
+    service.renameFolder(requireFolderId(input?.folderId), typeof input?.name === 'string' ? input.name : ''),
+  );
+  handle<{ folderId: string; parentId: string | null }>(IPC.folderMove, (input) =>
+    service.moveFolder(requireFolderId(input?.folderId), folderOrTop(input?.parentId)),
+  );
+  handle<{ folderId: string }>(IPC.folderDelete, (input) => service.deleteFolder(requireFolderId(input?.folderId)));
   handle<{ notebookId: string; fileId: string }>(IPC.notebookRemoveSource, (input) =>
     service.removeSource(requireId(input?.notebookId), typeof input?.fileId === 'string' ? input.fileId : ''),
   );

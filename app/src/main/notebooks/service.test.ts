@@ -342,3 +342,77 @@ describe('the home card', () => {
     expect(card.fill).toBe(0.5);
   });
 });
+
+describe('folders (docs/research/search.md §1)', () => {
+  it('nests folders, names new ones so they do not clash, and lists them', () => {
+    const cs = service.createFolder({ name: 'CS4246' });
+    expect(cs.id).toMatch(/^fd_[0-9a-f]{12}$/);
+    const a = service.createFolder({ parentId: cs.id });
+    const b = service.createFolder({ parentId: cs.id });
+    expect([a.name, b.name]).toEqual(['Untitled folder', 'Untitled folder 2']);
+    expect(service.renameFolder(a.id, ' Planning ').name).toBe('Planning');
+    expect(() => service.renameFolder(a.id, '  ')).toThrow(/needs a name/);
+    expect(service.folders().map((f) => [f.name, f.parentId])).toEqual(
+      expect.arrayContaining([['CS4246', null], ['Planning', cs.id], ['Untitled folder 2', cs.id]]),
+    );
+    expect(() => service.createFolder({ parentId: 'fd_000000000000' })).toThrow(/no longer exists/);
+  });
+
+  it('makes a notebook in the folder the learner is in, and moves it without calling it an edit', async () => {
+    const cs = service.createFolder({ name: 'CS4246' });
+    const { notebook } = await service.create({ name: 'Week 3', folderId: cs.id });
+    expect(service.list().find((n) => n.id === notebook.id)!.folderId).toBe(cs.id);
+    const before = service.list().find((n) => n.id === notebook.id)!.updatedAt;
+    service.moveNotebook(notebook.id, null);
+    const after = service.list().find((n) => n.id === notebook.id)!;
+    expect(after.folderId).toBeNull();
+    expect(after.updatedAt).toBe(before);
+    expect(() => service.moveNotebook(notebook.id, 'fd_000000000000')).toThrow(/no longer exists/);
+  });
+
+  it('refuses to move a folder inside itself, and moves it anywhere else', () => {
+    const top = service.createFolder({ name: 'CS4246' });
+    const mid = service.createFolder({ name: 'Planning', parentId: top.id });
+    const low = service.createFolder({ name: 'Week 3', parentId: mid.id });
+    expect(() => service.moveFolder(top.id, low.id)).toThrow(/inside itself/);
+    expect(() => service.moveFolder(top.id, top.id)).toThrow(/inside itself/);
+    expect(service.moveFolder(low.id, null).parentId).toBeNull();
+    expect(service.moveFolder(low.id, top.id).parentId).toBe(top.id);
+  });
+
+  it('deletes a folder by moving its notebooks and subfolders up one level, never deleting a notebook', async () => {
+    const top = service.createFolder({ name: 'CS4246' });
+    const mid = service.createFolder({ name: 'Planning', parentId: top.id });
+    const low = service.createFolder({ name: 'Week 3', parentId: mid.id });
+    const { notebook } = await service.create({ name: 'Lecture-complex', folderId: mid.id });
+    changes.length = 0;
+    expect(service.deleteFolder(mid.id)).toEqual({ deleted: true, movedNotebooks: 1, movedFolders: 1 });
+    expect(service.get(notebook.id)).not.toBeNull();
+    expect(service.list().find((n) => n.id === notebook.id)!.folderId).toBe(top.id);
+    expect(service.folders().find((f) => f.id === low.id)!.parentId).toBe(top.id);
+    expect(service.folders().some((f) => f.id === mid.id)).toBe(false);
+    expect(changes.map((c) => c.notebookId)).toEqual([notebook.id]);
+    expect(service.deleteFolder(mid.id)).toEqual({ deleted: false, movedNotebooks: 0, movedFolders: 0 });
+  });
+
+  it('scopes search to a folder and everything under it', async () => {
+    const top = service.createFolder({ name: 'CS4246' });
+    const mid = service.createFolder({ name: 'Planning', parentId: top.id });
+    const other = service.createFolder({ name: 'CS3249' });
+    const a = (await service.create({ name: 'a', folderId: top.id })).notebook.id;
+    const b = (await service.create({ name: 'b', folderId: mid.id })).notebook.id;
+    const c = (await service.create({ name: 'c', folderId: other.id })).notebook.id;
+    const d = (await service.create({ name: 'd' })).notebook.id;
+    expect(service.scopeNotebookIds(top.id).sort()).toEqual([a, b].sort());
+    expect(service.scopeNotebookIds(mid.id)).toEqual([b]);
+    expect(service.scopeNotebookIds(null).sort()).toEqual([a, b, c, d].sort());
+    expect(service.scopeNotebookIds('fd_000000000000')).toEqual([]);
+  });
+
+  it('keeps a notebook visible at the top level if its folder row is ever deleted behind the service’s back', async () => {
+    const top = service.createFolder({ name: 'CS4246' });
+    const { notebook } = await service.create({ name: 'a', folderId: top.id });
+    db.prepare('DELETE FROM folders WHERE id = @id').run({ id: top.id });
+    expect(service.list().find((n) => n.id === notebook.id)!.folderId).toBeNull();
+  });
+});

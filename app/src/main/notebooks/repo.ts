@@ -25,6 +25,7 @@
 import type { SqlDatabase } from '../db/driver.js';
 import { insert, plain, plainAll } from '../db/sql.js';
 import type { FileKind } from '../vault/kinds.js';
+import type { FolderView } from '../../shared/folders.js';
 import {
   contextFingerprint,
   virtualPageCount,
@@ -41,6 +42,28 @@ export interface NotebookRow {
   updated_at: string;
   opened_at: string | null;
   legacy_file_id: string | null;
+  /** Migration 026: the folder it sits in, or null at the top level. */
+  folder_id?: string | null;
+}
+
+export interface FolderRow {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  ord: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export function folderView(row: FolderRow): FolderView {
+  return {
+    id: row.id,
+    name: row.name,
+    parentId: row.parent_id,
+    ord: row.ord,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 export interface SourceRow {
@@ -117,6 +140,21 @@ export interface NotebooksRepo {
 
   /** `view()` for one notebook, or null. */
   view(id: string): NotebookView | null;
+
+  // ── Folders (migration 026) ──
+  folders(): FolderRow[];
+  folder(id: string): FolderRow | undefined;
+  insertFolder(row: FolderRow): void;
+  renameFolder(id: string, name: string, now: string): void;
+  setFolderParent(id: string, parentId: string | null, ord: number, now: string): void;
+  /** The row only. The service has already moved its contents up. */
+  removeFolder(id: string): void;
+  setNotebookFolder(notebookId: string, folderId: string | null): void;
+  /** Notebooks directly in `folderId` (null: the top level). */
+  notebooksIn(folderId: string | null): string[];
+  /** Notebooks in `folderId` or any folder under it; every notebook for null. */
+  subtreeNotebookIds(folderId: string | null): string[];
+  nextFolderOrd(parentId: string | null): number;
 }
 
 const SOURCE_SELECT = `SELECT s.*, f.kind AS file_kind, f.sha256 AS sha256, f.rel_path AS rel_path
@@ -184,6 +222,41 @@ export function notebooksRepo(db: SqlDatabase): NotebooksRepo {
       ).run({ k: hwmKey(notebookId), v: String(value), t: now });
     },
     clearHighWater: (notebookId) => void db.prepare('DELETE FROM settings WHERE key = @k').run({ k: hwmKey(notebookId) }),
+
+    folders: () => plainAll(db.prepare('SELECT * FROM folders ORDER BY ord, name, id').all<FolderRow>()),
+    folder: (id) => plain(db.prepare('SELECT * FROM folders WHERE id = @id').get<FolderRow>({ id })),
+    insertFolder: (row) => insert(db, 'folders', row as unknown as Record<string, unknown>),
+    renameFolder: (id, name, now) =>
+      void db.prepare('UPDATE folders SET name = @name, updated_at = @now WHERE id = @id').run({ id, name, now }),
+    setFolderParent: (id, parentId, ord, now) =>
+      void db
+        .prepare('UPDATE folders SET parent_id = @p, ord = @ord, updated_at = @now WHERE id = @id')
+        .run({ id, p: parentId, ord, now }),
+    removeFolder: (id) => void db.prepare('DELETE FROM folders WHERE id = @id').run({ id }),
+    // A move is not an edit: `updated_at` ("edited today" on the card) is left alone.
+    setNotebookFolder: (notebookId, folderId) =>
+      void db.prepare('UPDATE notebooks SET folder_id = @f WHERE id = @id').run({ id: notebookId, f: folderId }),
+    notebooksIn: (folderId) =>
+      db
+        .prepare('SELECT id FROM notebooks WHERE folder_id IS @f ORDER BY id')
+        .all<{ id: string }>({ f: folderId })
+        .map((r) => r.id),
+    subtreeNotebookIds(folderId) {
+      if (folderId === null) return db.prepare('SELECT id FROM notebooks ORDER BY id').all<{ id: string }>().map((r) => r.id);
+      return db
+        .prepare(
+          `WITH RECURSIVE sub(id) AS (
+             SELECT @f UNION SELECT folders.id FROM folders JOIN sub ON folders.parent_id = sub.id
+           )
+           SELECT n.id FROM notebooks n JOIN sub ON n.folder_id = sub.id ORDER BY n.id`,
+        )
+        .all<{ id: string }>({ f: folderId })
+        .map((r) => r.id);
+    },
+    nextFolderOrd: (parentId) =>
+      (db
+        .prepare('SELECT COALESCE(MAX(ord), -1) AS m FROM folders WHERE parent_id IS @p')
+        .get<{ m: number }>({ p: parentId })?.m ?? -1) + 1,
 
     view(id) {
       const row = repo.get(id);

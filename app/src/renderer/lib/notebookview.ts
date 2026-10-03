@@ -14,6 +14,7 @@ import {
   type NotebookView,
   type SourceRefusal,
 } from '../../shared/notebook.js';
+import { childFolders, subtreeFolderIds, type FolderView } from '../../shared/folders.js';
 import type { OverviewMeta } from '../../shared/doc/types.js';
 
 type ContextSource = Pick<NotebookSourceView, 'enabled' | 'status'>;
@@ -181,4 +182,48 @@ export function greetingOf(overview: unknown): { greeting: string; starters: str
     .map((q) => q.trim())
     .slice(0, 3);
   return { greeting, starters };
+}
+
+// ── Folders on the home (`docs/research/search.md` §1) ─────────────────────────────────────
+
+/** The notebooks shown in a folder (null: the top level), in the list's order. */
+export function notebooksIn(list: readonly NotebookSummary[], folderId: string | null): NotebookSummary[] {
+  return list.filter((n) => (n.folderId ?? null) === folderId);
+}
+
+/** How many notebooks a folder holds, its subfolders included: the count on its tile. */
+export function folderNotebookCount(
+  folders: readonly FolderView[],
+  list: readonly NotebookSummary[],
+  folderId: string,
+): number {
+  const inside = subtreeFolderIds(folders, folderId);
+  return list.filter((n) => n.folderId !== null && inside.has(n.folderId)).length;
+}
+
+export interface MoveTarget {
+  /** Null is the top level. */
+  folderId: string | null;
+  label: string;
+  depth: number;
+}
+
+/**
+ * "Move to…": the top level, then every folder as an indented tree. For a folder being moved,
+ * itself and everything under it are left out (a folder cannot go inside itself), and so is the
+ * place it already is.
+ */
+export function moveTargets(folders: readonly FolderView[], moving: { folderId?: string; currentParent: string | null }): MoveTarget[] {
+  const blocked = moving.folderId ? subtreeFolderIds(folders, moving.folderId) : new Set<string>();
+  const out: MoveTarget[] = [];
+  if (moving.currentParent !== null) out.push({ folderId: null, label: 'Notebooks (top level)', depth: 0 });
+  const walk = (parentId: string | null, depth: number): void => {
+    for (const f of childFolders(folders, parentId)) {
+      if (blocked.has(f.id)) continue;
+      if (f.id !== moving.currentParent) out.push({ folderId: f.id, label: f.name, depth });
+      walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
 }

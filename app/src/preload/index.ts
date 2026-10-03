@@ -113,6 +113,12 @@ const api: ChatterEdApi = {
   notebookAddSources: (input) => ipcRenderer.invoke(IPC.notebookAddSources, input),
   notebookSetEnabled: (input) => ipcRenderer.invoke(IPC.notebookSetEnabled, input),
   notebookRemoveSource: (input) => ipcRenderer.invoke(IPC.notebookRemoveSource, input),
+  notebookMove: (input) => ipcRenderer.invoke(IPC.notebookMove, input),
+  folderList: () => ipcRenderer.invoke(IPC.folderList),
+  folderCreate: (input) => ipcRenderer.invoke(IPC.folderCreate, input),
+  folderRename: (input) => ipcRenderer.invoke(IPC.folderRename, input),
+  folderMove: (input) => ipcRenderer.invoke(IPC.folderMove, input),
+  folderDelete: (input) => ipcRenderer.invoke(IPC.folderDelete, input),
   onNotebookChanged: (listener) => {
     const handler = (_event: unknown, payload: NotebookChange) => listener(payload);
     ipcRenderer.on(IPC.notebookChanged, handler);

@@ -61,7 +61,15 @@ import {
   type NotebookView,
   type SourceRefusal,
 } from '../../shared/notebook.js';
-import { notebooksRepo, sourceView, type NotebooksRepo, type SourceRecord } from './repo.js';
+import {
+  childFolders,
+  FOLDER_ID_PREFIX,
+  freshFolderName,
+  MAX_FOLDER_NAME_CHARS,
+  moveFolderRefusal,
+  type FolderView,
+} from '../../shared/folders.js';
+import { folderView, notebooksRepo, sourceView, type NotebooksRepo, type SourceRecord } from './repo.js';
 
 /** Converted to text on import with macOS `textutil` (`SOURCE_EXTENSIONS` in shared/notebook.ts). */
 export const CONVERT_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'docx', 'rtf']);
@@ -161,6 +169,11 @@ export function fileKindFor(name: string): FileKind | null {
 }
 
 /** `nb_<12 hex>`, the same shape as every other id the vault mints. */
+/** `fd_<12 hex>`, minted the same way as a notebook's id. */
+export function newFolderId(): string {
+  return newVaultId(FOLDER_ID_PREFIX.slice(0, -1));
+}
+
 export function newNotebookId(): string {
   return newVaultId(NOTEBOOK_ID_PREFIX.slice(0, -1));
 }
@@ -268,6 +281,7 @@ export class NotebookService {
         // "Last edited" is the notebook's or its doc's, whichever moved last.
         updatedAt: doc && doc.updated_at > row.updated_at ? doc.updated_at : row.updated_at,
         openedAt: row.opened_at,
+        folderId: row.folder_id ?? null,
       };
     });
   }
@@ -301,11 +315,13 @@ export class NotebookService {
    * A new notebook. With `paths`, they are its first sources and the name defaults to the first
    * file's name without its extension; with none it is "Untitled notebook".
    */
-  async create(input: { name?: string | null; paths?: string[] }): Promise<AddSourcesResult> {
+  async create(input: { name?: string | null; paths?: string[]; folderId?: string | null }): Promise<AddSourcesResult> {
     const paths = input.paths ?? [];
     const typed = (input.name ?? '').trim();
     const name = (typed || (paths[0] ? nameFromPath(paths[0]) : DEFAULT_NOTEBOOK_NAME)).slice(0, MAX_NAME_CHARS);
-    const id = this.createRow({ name });
+    // Made in the folder the learner is looking at; a folder deleted meanwhile means the top level.
+    const folderId = input.folderId && this.#repo.folder(input.folderId) ? input.folderId : null;
+    const id = this.createRow({ name, folderId });
     log().info('notebook.created', { notebook_id: id, paths: paths.length });
     if (paths.length > 0) return this.addSources(id, paths);
     this.#emit(id);
@@ -313,7 +329,7 @@ export class NotebookService {
   }
 
   /** The row alone. Exposed for the legacy import, which supplies its own name and stamps. */
-  createRow(input: { id?: string; name: string; legacyFileId?: string | null; updatedAt?: string }): string {
+  createRow(input: { id?: string; name: string; legacyFileId?: string | null; updatedAt?: string; folderId?: string | null }): string {
     const id = input.id ?? newNotebookId();
     const now = this.#now();
     this.#repo.insert({
@@ -323,6 +339,7 @@ export class NotebookService {
       updated_at: input.updatedAt ?? now,
       opened_at: null,
       legacy_file_id: input.legacyFileId ?? null,
+      folder_id: input.folderId ?? null,
     });
     return id;
   }
@@ -369,6 +386,98 @@ export class NotebookService {
     this.#onDeleted(notebookId);
     this.#onChanged({ notebookId, view: null });
     return { deleted: true };
+  }
+
+  // ── Folders (`docs/research/search.md` §1) ────────────────────────────────────────────────
+
+  folders(): FolderView[] {
+    return this.#repo.folders().map(folderView);
+  }
+
+  #requireFolder(folderId: string): FolderView {
+    const row = this.#repo.folder(folderId);
+    if (!row) throw new Error('That folder no longer exists.');
+    return folderView(row);
+  }
+
+  #parentOrTop(parentId: string | null | undefined): string | null {
+    if (!parentId) return null;
+    this.#requireFolder(parentId);
+    return parentId;
+  }
+
+  /** A new folder at the end of its siblings, named so it does not clash with one of them. */
+  createFolder(input: { name?: string | null; parentId?: string | null }): FolderView {
+    const parentId = this.#parentOrTop(input.parentId);
+    const siblings = childFolders(this.folders(), parentId);
+    const typed = (input.name ?? '').trim().slice(0, MAX_FOLDER_NAME_CHARS);
+    const now = this.#now();
+    const id = newFolderId();
+    this.#repo.insertFolder({
+      id,
+      parent_id: parentId,
+      name: typed || freshFolderName(siblings),
+      ord: this.#repo.nextFolderOrd(parentId),
+      created_at: now,
+      updated_at: now,
+    });
+    log().info('folder.created', { folder_id: id });
+    return this.#requireFolder(id);
+  }
+
+  renameFolder(folderId: string, name: string): FolderView {
+    this.#requireFolder(folderId);
+    const trimmed = name.trim().slice(0, MAX_FOLDER_NAME_CHARS);
+    if (trimmed.length === 0) throw new Error('A folder needs a name.');
+    this.#repo.renameFolder(folderId, trimmed, this.#now());
+    return this.#requireFolder(folderId);
+  }
+
+  /** Into another folder or to the top level. Refuses a move that would put it inside itself. */
+  moveFolder(folderId: string, parentId: string | null): FolderView {
+    const folder = this.#requireFolder(folderId);
+    const target = this.#parentOrTop(parentId);
+    if (folder.parentId === target) return folder;
+    const refusal = moveFolderRefusal(this.folders(), folderId, target);
+    if (refusal) throw new Error(refusal);
+    this.#repo.setFolderParent(folderId, target, this.#repo.nextFolderOrd(target), this.#now());
+    log().info('folder.moved', { folder_id: folderId });
+    return this.#requireFolder(folderId);
+  }
+
+  /**
+   * Delete a folder. Its notebooks and subfolders move up one level first, in the same
+   * transaction: a folder delete never deletes a notebook, so it needs no confirmation sheet.
+   */
+  deleteFolder(folderId: string): { deleted: boolean; movedNotebooks: number; movedFolders: number } {
+    const row = this.#repo.folder(folderId);
+    if (!row) return { deleted: false, movedNotebooks: 0, movedFolders: 0 };
+    const up = row.parent_id;
+    const notebooks = this.#repo.notebooksIn(folderId);
+    const subfolders = childFolders(this.folders(), folderId);
+    inSavepoint(this.#db, () => {
+      for (const id of notebooks) this.#repo.setNotebookFolder(id, up);
+      const now = this.#now();
+      for (const f of subfolders) this.#repo.setFolderParent(f.id, up, this.#repo.nextFolderOrd(up), now);
+      this.#repo.removeFolder(folderId);
+    });
+    log().info('folder.deleted', { folder_id: folderId, notebooks: notebooks.length, folders: subfolders.length });
+    for (const id of notebooks) this.#emit(id);
+    return { deleted: true, movedNotebooks: notebooks.length, movedFolders: subfolders.length };
+  }
+
+  /** A notebook into a folder, or to the top level with null. */
+  moveNotebook(notebookId: string, folderId: string | null): NotebookView {
+    this.#require(notebookId);
+    this.#repo.setNotebookFolder(notebookId, this.#parentOrTop(folderId));
+    log().info('notebook.moved', { notebook_id: notebookId });
+    return this.#emit(notebookId)!;
+  }
+
+  /** The notebooks search covers from `folderId`: it and every folder under it (null: all). */
+  scopeNotebookIds(folderId: string | null): string[] {
+    if (folderId !== null && !this.#repo.folder(folderId)) return [];
+    return this.#repo.subtreeNotebookIds(folderId);
   }
 
   // ── Sources ───────────────────────────────────────────────────────────────────────────────

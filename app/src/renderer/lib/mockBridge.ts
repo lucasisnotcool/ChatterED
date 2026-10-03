@@ -2265,6 +2265,24 @@ export function createMockBridge(): ChatterEdApi {
     async notebookRemoveSource(input) {
       return notebooks.model.removeSource(input);
     },
+    async notebookMove({ notebookId, folderId }) {
+      return notebooks.model.moveNotebook(notebookId, folderId);
+    },
+    async folderList() {
+      return notebooks.model.folders();
+    },
+    async folderCreate(input) {
+      return notebooks.model.createFolder(input);
+    },
+    async folderRename({ folderId, name }) {
+      return notebooks.model.renameFolder(folderId, name);
+    },
+    async folderMove({ folderId, parentId }) {
+      return notebooks.model.moveFolder(folderId, parentId);
+    },
+    async folderDelete({ folderId }) {
+      return notebooks.model.deleteFolder(folderId);
+    },
     onNotebookChanged(listener) {
       notebookListeners.add(listener);
       return () => notebookListeners.delete(listener);

@@ -19,6 +19,7 @@
  */
 
 import type { AddSourcesResult, NotebookSummary, NotebookView } from '../../shared/notebook.js';
+import type { FolderView } from '../../shared/folders.js';
 import { bridge } from './bridge.js';
 import { patchList, refusalNotice } from './notebookview.js';
 
@@ -29,11 +30,107 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const HOME_FOLDER_KEY = 'chattered.home.folder';
+
+function readHomeFolder(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(HOME_FOLDER_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
 export class NotebookStore {
   /** The notebook open in the shell, as main last pushed it. Null on the home screen. */
   view: NotebookView | null = $state(null);
   /** The home grid. */
   list: NotebookSummary[] = $state([]);
+
+  // ── Folders (`docs/research/search.md` §1) ──────────────────────────────────────────────
+  folders: FolderView[] = $state([]);
+  /** The folder the home is showing; null is the top level. Kept per install. */
+  folderId: string | null = $state(readHomeFolder());
+
+  setFolder(folderId: string | null): void {
+    this.folderId = folderId;
+    try {
+      if (folderId) globalThis.localStorage?.setItem(HOME_FOLDER_KEY, folderId);
+      else globalThis.localStorage?.removeItem(HOME_FOLDER_KEY);
+    } catch {
+      // A denied store only forgets where the home was.
+    }
+  }
+
+  async loadFolders(): Promise<void> {
+    try {
+      this.folders = await bridge().folderList();
+      // The folder the home remembered was deleted: the top level.
+      if (this.folderId && !this.folders.some((f) => f.id === this.folderId)) this.setFolder(null);
+    } catch (err) {
+      this.say(message(err));
+    }
+  }
+
+  /** A new folder inside the one on screen. Returns it so the home can open its name for typing. */
+  async createFolder(name?: string): Promise<FolderView | null> {
+    try {
+      const folder = await bridge().folderCreate({ name: name ?? null, parentId: this.folderId });
+      await this.loadFolders();
+      return folder;
+    } catch (err) {
+      this.say(message(err));
+      return null;
+    }
+  }
+
+  async renameFolder(folderId: string, name: string): Promise<void> {
+    if (!name.trim()) return;
+    try {
+      await bridge().folderRename({ folderId, name: name.trim() });
+      await this.loadFolders();
+    } catch (err) {
+      this.say(message(err));
+    }
+  }
+
+  async moveFolder(folderId: string, parentId: string | null): Promise<void> {
+    try {
+      await bridge().folderMove({ folderId, parentId });
+      await this.loadFolders();
+    } catch (err) {
+      this.say(message(err));
+    }
+  }
+
+  /** Its notebooks and subfolders move up a level; the toast says where they went. */
+  async deleteFolder(folderId: string): Promise<void> {
+    const folder = this.folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const into = this.folders.find((f) => f.id === folder.parentId)?.name ?? 'Notebooks';
+    try {
+      const result = await bridge().folderDelete({ folderId });
+      if (!result.deleted) return;
+      if (this.folderId === folderId) this.setFolder(folder.parentId);
+      await Promise.all([this.loadFolders(), this.loadList()]);
+      const moved = result.movedNotebooks + result.movedFolders;
+      this.say(moved === 0 ? `Deleted “${folder.name}”.` : `Deleted “${folder.name}”. What was in it is now in ${into}.`);
+    } catch (err) {
+      this.say(message(err));
+    }
+  }
+
+  async moveNotebook(notebookId: string, folderId: string | null): Promise<void> {
+    const before = this.list.find((n) => n.id === notebookId);
+    if (!before || before.folderId === folderId) return;
+    // Moved on screen at once; the list is reloaded from main after.
+    this.list = this.list.map((n) => (n.id === notebookId ? { ...n, folderId } : n));
+    try {
+      await bridge().notebookMove({ notebookId, folderId });
+    } catch (err) {
+      this.say(message(err));
+    }
+    await this.loadList();
+  }
 
   /** The open notebook's id: what the doc, chat and progress stores are opened with. */
   get id(): string | null {
@@ -80,7 +177,9 @@ export class NotebookStore {
 
   async loadList(): Promise<void> {
     try {
-      this.list = await bridge().notebookList();
+      // Folders come with the list: every place that refreshes the home refreshes both.
+      const [list] = await Promise.all([bridge().notebookList(), this.loadFolders()]);
+      this.list = list;
     } catch (err) {
       this.say(message(err));
     } finally {
@@ -113,7 +212,7 @@ export class NotebookStore {
     if (this.busy) return null;
     this.busy = true;
     try {
-      const result = await bridge().notebookCreate({ paths: [...paths] });
+      const result = await bridge().notebookCreate({ paths: [...paths], folderId: this.folderId });
       this.say(refusalNotice(result.refused));
       void this.loadList();
       return result.notebook;
