@@ -40,6 +40,7 @@ import {
 import { clearPageImages, pageImageDir, storePageImages } from './pageimages.js';
 import { pageGeometry } from '../vault/pagecache.js';
 import { registerPageLinesIpc } from './pagelines.js';
+import { registerPageTextsIpc } from './pagetexts.js';
 
 /** The document as the renderer sees it. */
 function view(repo: NotesRepo, record: NotesDocRecord): NotesDocView {
@@ -265,6 +266,26 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
 
   // `notes:pageLines`: the chip preview's and the figure hotspots' read of pass 1.
   registerPageLinesIpc(host, handle);
+  // `notes:pageTexts`: every page's indexed text, for the slide strips' grouping.
+  registerPageTextsIpc(host, handle);
+
+  /**
+   * **The learner's slide moves** (migration 025). The grouping itself is computed in the
+   * renderer (`shared/doc/slidegroups.ts`); only a move the learner made is stored, and every set
+   * returns the whole list so the renderer never has to merge.
+   */
+  handle<{ docId: string }>(IPC.notesSlideGroups, ({ docId }) => repo.slideOverrides(docId));
+
+  handle<{ docId: string; page: number; key: string | null; title: string }>(
+    IPC.notesSetSlideGroup,
+    ({ docId, page, key, title }) => {
+      requireDoc(docId);
+      if (key !== null && (typeof key !== 'string' || key === '')) throw new Error('A slide group needs a key.');
+      repo.setSlideOverride({ docId, page, key, title: typeof title === 'string' ? title : '' }, new Date().toISOString());
+      log().info('notes.slide_group', { doc_id: docId, page, key, reset: key === null });
+      return repo.slideOverrides(docId);
+    },
+  );
 
   /**
    * **Update overview** (`notebooks.md` §2): the same call on the sources ticked now, with the

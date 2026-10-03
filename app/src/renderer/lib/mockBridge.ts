@@ -7,6 +7,7 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 import type { ChatterEdApi } from '../../shared/ipc.js';
+import type { SlideOverride } from '../../shared/doc/slidegroups.js';
 import { createMockTrial } from './mockTrial.js';
 import {
   contextFingerprint,
@@ -556,6 +557,8 @@ export function createMockBridge(): ChatterEdApi {
   };
   /** Objectives, and their fills. The one number the whole progress surface is drawn from. */
   let objectives: ProgressObjectiveView[] = fixtureObjectives();
+  /** The learner's slide moves between strips (`notesSetSlideGroup`), in page order. */
+  let slideMoves: SlideOverride[] = [];
   let editSeq = 0;
   let questionSeq = 0;
   let docTurns = 0;
@@ -1671,6 +1674,25 @@ export function createMockBridge(): ChatterEdApi {
     /** No PDF behind the mock, so no text geometry: the chip previews a whole page, no hotspots. */
     async notesPageLines({ page }) {
       return { page, width: 0, height: 0, lines: [], items: [] };
+    },
+    /**
+     * No text behind the mock deck either: every page is a key with '' for its text, so the slide
+     * strips group on the structural rules alone (`shared/doc/slidegroups.ts`), as they would for
+     * a scanned deck.
+     */
+    async notesPageTexts({ fileId }) {
+      if (fileId !== notes.fileId) return {};
+      return Object.fromEntries(Array.from({ length: notes.pageCount }, (_, i) => [i + 1, '']));
+    },
+    /** The learner's slide moves, held for the session like everything else here. */
+    async notesSlideGroups({ docId }) {
+      return docId === notes.docId ? slideMoves.map((m) => ({ ...m })) : [];
+    },
+    async notesSetSlideGroup({ docId, page, key, title }) {
+      if (docId !== notes.docId) throw new Error('That document does not exist.');
+      slideMoves = slideMoves.filter((m) => m.page !== page);
+      if (key !== null) slideMoves = [...slideMoves, { page, key, title }].sort((a, b) => a.page - b.page);
+      return slideMoves.map((m) => ({ ...m }));
     },
     /**
      * Optimistic save. The conflict branch is real — pass a stale `baseVersion` and the stored

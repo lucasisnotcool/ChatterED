@@ -184,3 +184,31 @@ describe('the objective→block cache', () => {
     expect(repo.objectiveBlocks(docId)).toEqual([{ objectiveId: 'o_1', blockId: 'b_5', ord: 0 }]);
   });
 });
+
+describe("the learner's slide moves (migration 025)", () => {
+  it('upserts one move per page, lists them in page order, and deletes on a null key', () => {
+    const { repo, docId } = repoWithDoc();
+    repo.setSlideOverride({ docId, page: 19, key: 'b_heur', title: 'Heuristics' }, T0);
+    repo.setSlideOverride({ docId, page: 4, key: 'opening', title: '' }, T0);
+    repo.setSlideOverride({ docId, page: 19, key: 'b_abs', title: 'State abstraction' }, T1);
+    expect(repo.slideOverrides(docId)).toEqual([
+      { page: 4, key: 'opening', title: '' },
+      { page: 19, key: 'b_abs', title: 'State abstraction' },
+    ]);
+    repo.setSlideOverride({ docId, page: 4, key: null, title: '' }, T1);
+    expect(repo.slideOverrides(docId)).toEqual([{ page: 19, key: 'b_abs', title: 'State abstraction' }]);
+    expect(repo.slideOverrides('doc_other')).toEqual([]);
+  });
+
+  it('refuses a page that is not one', () => {
+    const { repo, docId } = repoWithDoc();
+    expect(() => repo.setSlideOverride({ docId, page: 0, key: 'other', title: '' }, T0)).toThrow(/Not a page/);
+  });
+
+  it('survives a Regenerate, because a move is remapped by the heading text', () => {
+    const { repo, docId } = repoWithDoc();
+    repo.setSlideOverride({ docId, page: 7, key: 'b_x', title: 'Heuristics' }, T0);
+    repo.clearForRegenerate(docId);
+    expect(repo.slideOverrides(docId)).toEqual([{ page: 7, key: 'b_x', title: 'Heuristics' }]);
+  });
+});

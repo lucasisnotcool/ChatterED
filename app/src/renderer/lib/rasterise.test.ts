@@ -12,6 +12,7 @@ import {
   releaseDocument,
   sourceRect,
   stepPage,
+  textLayerScale,
   wrapWords,
   type SlidePart,
 } from './rasterise.js';
@@ -74,6 +75,20 @@ describe('cropBox', () => {
       w: 360,
       h: 1,
     });
+  });
+});
+
+describe('textLayerScale: the text layer sits exactly over the canvas', () => {
+  it('is CSS px per point, upscaling as freely as it downscales', () => {
+    expect(textLayerScale(720, 520)).toBeCloseTo(520 / 720);
+    // A small page shown large: unlike `rasterSize`, no ×4 cap, or the words would drift.
+    expect(textLayerScale(100, 760)).toBeCloseTo(7.6);
+  });
+
+  it('falls back to 1 for a page or width it cannot use', () => {
+    expect(textLayerScale(0, 520)).toBe(1);
+    expect(textLayerScale(720, 0)).toBe(1);
+    expect(textLayerScale(Number.NaN, 520)).toBe(1);
   });
 });
 
@@ -263,6 +278,13 @@ describe('SlideSource over a notebook, without pixels', () => {
 
   it('labels as before with no sources yet, rather than calling every page removed', () => {
     expect(new SlideSource([], null).citation([3, 4])).toBe('p. 3–4');
+  });
+
+  it('gives no text layer for a text page or a gap, and leaves the container alone', async () => {
+    // Never touched on these paths, so a bare object stands in for the element.
+    const container = {} as HTMLElement;
+    expect(await source.textLayer(8, container, 520)).toBe(false);
+    expect(await source.textLayer(6, container, 520)).toBe(false);
   });
 
   it('forgets a source that was removed, and keeps the rest', async () => {

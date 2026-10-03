@@ -48,8 +48,16 @@ import '../../components/notes/blocks.css';
 export interface NodeViewContext {
   /** The open deck, once its bytes have arrived. Null while it is still loading. */
   slides: () => SlideSource | null;
-  /** A figure's click: open the in-doc modal at that page, outlining the rect. */
-  onOpenSlide: (page: number, rect: Rect | null) => void;
+  /**
+   * A figure’s click: a slide window beside `anchor`, outlining the rect (2026-10-03: it was
+   * the in-doc modal). `afterBlockId` is where an Insert from it goes.
+   */
+  onOpenSlide: (page: number, rect: Rect | null, anchor?: HTMLElement, afterBlockId?: string | null) => void;
+  /**
+   * **Insert into notes**, from a slide window (2026-10-03): the whole slide or a crop of it, as a
+   * figure after `afterBlockId` (the block the slide was opened from), or the caret's block.
+   */
+  onInsertSlide?: (target: { page: number; rect: Rect | null }, afterBlockId: string | null) => void;
   /** Submit on a Q block: the learner's answer, in place, goes to main to be marked. */
   onAnswerQuestion: (input: QuestionAnswer) => Promise<NotesAnswerQuestionResult>;
   /** A slide's own text with its boxes: what a figure's hotspots are built from. Optional. */
@@ -169,7 +177,8 @@ class SlideFigureView implements NodeView {
     this.#frame.addEventListener('mousedown', (event) => event.preventDefault());
     this.#frame.addEventListener('click', (event) => {
       event.preventDefault();
-      ctx.onOpenSlide(this.#node.attrs.page as number, (this.#node.attrs.rect as Rect | null) ?? null);
+      const blockId = (this.#node.attrs.blockId as string | null) ?? null;
+      ctx.onOpenSlide(this.#node.attrs.page as number, (this.#node.attrs.rect as Rect | null) ?? null, this.#frame, blockId);
     });
     // The frame and the hotspot layer share one box. The layer is a sibling and not a child: a
     // repaint replaces the frame's children, and a button may not hold buttons.

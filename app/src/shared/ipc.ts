@@ -23,6 +23,7 @@ import type {
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AddSourcesResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
 import type { PageLinesView } from './doc/cite.js';
+import type { SlideOverride } from './doc/slidegroups.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
   CostAnalytics,
@@ -142,6 +143,11 @@ export const IPC = {
   notesRegenerate: 'notes:regenerate',
   /** One slide's text lines with their boxes. Body in `src/main/notes/pagelines.ts`. */
   notesPageLines: 'notes:pageLines',
+  /** Every page's text, for the slide strips. Body in `src/main/notes/pagetexts.ts`. */
+  notesPageTexts: 'notes:pageTexts',
+  /** The learner's slide moves between strips (migration 025). Bodies in `src/main/notes/ipc.ts`. */
+  notesSlideGroups: 'notes:slideGroups',
+  notesSetSlideGroup: 'notes:setSlideGroup',
   // The chats. Bodies in `src/main/docroom/ipc.ts`.
   notesDocText: 'notes:docText',
   notesAnswerQuestion: 'notes:answerQuestion',
@@ -465,6 +471,21 @@ export interface ChatterEdApi {
    * ingest's pass 1, cached per file and page.
    */
   notesPageLines(input: { fileId: string; page: number }): Promise<PageLinesView>;
+  /**
+   * **Every page's text** for a file or a notebook (notebook pages: each source at its base), from
+   * the vault's index: what `shared/doc/slidegroups.ts` reads to place the slides no block cites.
+   * Every page of every source is a key; a page with no text (an image, a scan) is ''. One call
+   * per file; the text changes only when a source is added or re-read.
+   */
+  notesPageTexts(input: { fileId: string }): Promise<Record<number, string>>;
+  /** The learner's slide moves for this doc, in page order (`slideGroups`'s `overrides`). */
+  notesSlideGroups(input: { docId: string }): Promise<SlideOverride[]>;
+  /**
+   * Move one slide to a strip: `key` is the section heading's `blockId`, or 'opening' / 'other';
+   * `title` is the heading's text, so the move outlives a regenerated overview's new block ids.
+   * `key: null` puts the slide back where the doc places it. Returns the new full list.
+   */
+  notesSetSlideGroup(input: { docId: string; page: number; key: string | null; title: string }): Promise<SlideOverride[]>;
   /**
    * Persist the renderer's doc. Optimistic: `baseVersion` must be the stored version, else the
    * stored doc comes back as a conflict and the renderer rebases.

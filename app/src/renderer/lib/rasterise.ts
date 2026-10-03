@@ -157,6 +157,19 @@ export function cropBox(
   return { w, h: Math.max(1, Math.round((w * hPt) / wPt)) };
 }
 
+/**
+ * The pdf.js viewport scale at which a page `pageWidthPt` points wide is laid out `cssWidth`
+ * CSS px wide: the text layer's `--total-scale-factor` (`textLayer` below).
+ *
+ * **Not** `rasterSize`'s scale. That one is a raster's, in device pixels, and it refuses to
+ * upscale past ×4; a text layer is laid out in CSS px and has to sit exactly over the canvas
+ * whatever the canvas was rendered at, so it takes the width it is asked for and nothing else.
+ */
+export function textLayerScale(pageWidthPt: number, cssWidth: number): number {
+  if (!(pageWidthPt > 0) || !(cssWidth > 0)) return 1;
+  return cssWidth / pageWidthPt;
+}
+
 // ── pdf.js ──────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -181,6 +194,11 @@ interface PdfPage {
     promise: Promise<void>;
     cancel(): void;
   };
+  /**
+   * The page's text runs and their geometry: what the text layer lays out (`PdfSlides.textLayer`).
+   * Optional only so a test's stub page need not invent one.
+   */
+  getTextContent?(): Promise<unknown>;
 }
 
 /**
@@ -470,6 +488,50 @@ export class PdfSlides {
     out.style.width = `${css.w}px`;
     out.style.height = `${css.h}px`;
     return out;
+  }
+
+  /**
+   * **The page's words, selectable, over its pixels** (the slide windows, `pm/slidewindow.ts`).
+   *
+   * pdf.js's own `TextLayer`: one transparent, absolutely placed span per text run, sized so a
+   * selection drawn across them lands on the words the canvas shows, which is what lets a learner
+   * copy a definition off a slide instead of retyping it. `container` is emptied and filled, and
+   * given the CSS variables pdf.js's layout reads (`--total-scale-factor`, the `--scale-round-*`
+   * steps its `round()` sizing uses); the rules that make the spans transparent and positioned
+   * are the caller's stylesheet (`slidewindow.css`, copied from `pdf_viewer.css`).
+   *
+   * Resolves false — and leaves the container empty — when the page has no text layer to give:
+   * out of range, destroyed, or a pdf.js failure. A slide with no selectable text is still a
+   * slide, so nothing above this may fail for want of one.
+   */
+  async textLayer(page: number, container: HTMLElement, cssWidth: number): Promise<boolean> {
+    if (this.#destroyed || page < 1 || page > this.pageCount) return false;
+    try {
+      const pdfjs = await import('pdfjs-dist');
+      const proxy = await this.#doc.getPage(page);
+      if (!proxy.getTextContent) return false;
+      const unit = proxy.getViewport({ scale: 1 });
+      const scale = textLayerScale(unit.width, cssWidth);
+      // Typed loosely in `PdfPage`; it is pdf.js's own `PageViewport`, which is what `TextLayer`
+      // checks for before it sizes the container.
+      const viewport = proxy.getViewport({ scale }) as unknown as ConstructorParameters<
+        typeof pdfjs.TextLayer
+      >[0]['viewport'];
+      const content = (await proxy.getTextContent()) as ConstructorParameters<
+        typeof pdfjs.TextLayer
+      >[0]['textContentSource'];
+      if (this.#destroyed) return false;
+      container.replaceChildren();
+      container.style.setProperty('--scale-factor', String(scale));
+      container.style.setProperty('--total-scale-factor', String(scale));
+      container.style.setProperty('--scale-round-x', '1px');
+      container.style.setProperty('--scale-round-y', '1px');
+      await new pdfjs.TextLayer({ textContentSource: content, container, viewport }).render();
+      return true;
+    } catch {
+      container.replaceChildren();
+      return false;
+    }
   }
 
   destroy(): void {
@@ -839,6 +901,21 @@ export class SlideSource {
     out.style.width = `${String(css.w)}px`;
     out.style.height = `${String(css.h)}px`;
     return out;
+  }
+
+  /**
+   * The page's selectable text layer, laid out `cssWidth` CSS px wide into `container`. See
+   * `PdfSlides.textLayer`; the notebook page is translated here, as `canvas()` does. False for
+   * any page that is not a PDF's: a text source's page is shown as its words already, and an
+   * image has no words to select.
+   */
+  async textLayer(page: number, container: HTMLElement, cssWidth: number): Promise<boolean> {
+    if (this.#destroyed) return false;
+    const hit = this.locate(page);
+    if (!hit) return false;
+    const loaded = await this.#load(hit.part);
+    if (this.#destroyed || loaded.kind !== 'pdf') return false;
+    return loaded.pdf.textLayer(hit.localPage, container, cssWidth);
   }
 
   /**

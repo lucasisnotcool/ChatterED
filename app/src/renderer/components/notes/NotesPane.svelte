@@ -4,7 +4,9 @@
    *
    * Self-sufficient by contract: given a `fileId` it loads the notes, rasterises and hands over
    * the page images, starts the ingest if there are none, renders the document, saves it, and
-   * hosts the carousel and the slide modal. T5 mounts this and passes nothing else.
+   * hosts the list a dragged slide is dropped on (2026-10-03: the carousel and the slide modal it
+   * hosted are gone; each section has its own strip, `pm/slidestrip.ts`, and a slide opens in a
+   * window beside what was clicked, `pm/slidewindow.ts`). T5 mounts this and passes nothing else.
    *
    * It also wires the two cross-track calls, here rather than in the store, so that neither
    * `docstore.svelte.ts` nor `chatstore.svelte.ts` imports the other:
@@ -38,8 +40,7 @@
   import InsertControl from './InsertControl.svelte';
   import ListenControl from './ListenControl.svelte';
   import NotesEditor from './NotesEditor.svelte';
-  import SlideCarousel from './SlideCarousel.svelte';
-  import SlideModal from './SlideModal.svelte';
+  import SlideRegroup from './SlideRegroup.svelte';
   import type { SpanThreadView } from '../../lib/pm/chrome.js';
   import './notes.css';
   import './table.css';
@@ -192,7 +193,7 @@
     if (c === 'zoom.in') setZoom(zoomIn(layout.notesZoom, NOTES_ZOOM));
     else if (c === 'zoom.out') setZoom(zoomOut(layout.notesZoom, NOTES_ZOOM));
     else if (c === 'zoom.reset' || c === 'fit.width' || c === 'fit.page') setZoom(1);
-    // page.next / page.prev: the notes are not paged. The slide modal answers them when it is up.
+    // page.next / page.prev: the notes are not paged.
   }
   $effect(() => registerViewer(command));
 
@@ -406,24 +407,19 @@
             Ellie is still writing — window {doc.ingest.windowsDone} of {doc.ingest.windowsTotal}
           </p>
         {/if}
-
-        <SlideCarousel
-          source={doc.slides()}
-          sections={() => doc.sections()}
-          pageCount={doc.slides()?.pages().length ?? doc.pageCount}
-          onopen={(page) => doc.openSlide(page, null)}
-        />
       {/if}
     </div>
   </div>
-</div>
 
-{#if doc.modal}
-  <SlideModal
-    source={doc.slides()}
-    page={doc.modal.page}
-    rect={doc.modal.rect}
-    pageCount={doc.pageCount}
-    onclose={() => doc.closeSlide()}
-  />
-{/if}
+  {#if doc.slideDrag}
+    <SlideRegroup
+      groups={doc.slideGroupList()}
+      page={doc.slideDrag.page}
+      from={doc.slideDrag.from}
+      source={doc.slides()}
+      top={scroller?.offsetTop ?? 0}
+      ondrop={(key, title) => void doc.moveSlide(doc.slideDrag?.page ?? 0, key, title)}
+      oncancel={() => (doc.slideDrag = null)}
+    />
+  {/if}
+</div>

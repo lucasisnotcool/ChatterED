@@ -727,52 +727,58 @@
   animation: nd-shimmer 1.4s ease-in-out infinite;
 }
 
-/* ── the carousel (§3) ──────────────────────────────────────────────────── */
+/* ── each section's slides (`pm/slidestrip.ts`, 2026-10-03) ─────────────── */
 
-.nd-carousel {
-  max-width: var(--nd-column);
-  margin: 40px auto 0;
-  border-top: 1px solid var(--hairline);
-  padding-top: 12px;
+.nd-strip {
+  margin: 2px 0 22px;
+  user-select: none;
 }
-.nd-carousel-toggle {
-  display: flex;
+.nd-strip-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 7px;
+  padding: 3px 8px 3px 4px;
+  border-radius: 6px;
   font-size: 11px;
   color: var(--text-2);
 }
-.nd-carousel-toggle:hover { color: var(--text); }
-.nd-carousel-caret { color: var(--muted); font-size: 9px; }
-.nd-carousel-count { color: var(--muted); margin-left: auto; }
-.nd-carousel-section { margin-top: 16px; }
-.nd-carousel-head {
-  font-size: 10.5px;
-  font-variant-caps: all-small-caps;
-  letter-spacing: 0.08em;
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 7px;
+.nd-strip-toggle:hover { background: #eef0f5; color: var(--text); }
+.nd-strip-caret { color: var(--muted); font-size: 9px; width: 9px; }
+.nd-strip-name { font-weight: 600; }
+.nd-strip-pages { color: var(--muted); }
+.nd-strip-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
 }
-.nd-thumbs { display: flex; flex-wrap: wrap; gap: 10px; }
-.nd-thumb {
-  width: 132px;
+.nd-strip-thumb {
+  position: relative;
+  display: block;
+  padding: 0;
   border: 1px solid var(--hairline);
   border-radius: 6px;
   overflow: hidden;
   background: #eef0f5;
-  padding: 0;
-  line-height: 0;
-  position: relative;
+  cursor: grab;
+  text-align: left;
 }
-.nd-thumb:hover { border-color: #c7c7e8; }
-.nd-thumb canvas { display: block; width: 100%; height: auto; }
-.nd-thumb-blank { height: 76px; }
-.nd-thumb-label {
+.nd-strip-thumb:hover { border-color: #c7c7e8; box-shadow: 0 2px 8px rgb(20 20 40 / 8%); }
+.nd-strip-thumb:active { cursor: grabbing; }
+.nd-strip-frame { display: block; min-height: 84px; line-height: 0; }
+.nd-strip-frame canvas { display: block; width: 100%; height: auto; }
+.nd-strip-text {
+  display: block;
+  padding: 8px;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.nd-strip-label {
   position: absolute;
-  left: 4px;
-  bottom: 4px;
+  left: 5px;
+  bottom: 5px;
   padding: 0 5px;
   border-radius: 3px;
   background: rgb(20 20 40 / 62%);
@@ -780,74 +786,58 @@
   font-size: 9.5px;
   line-height: 1.6;
 }
+/* A slide the learner moved here: their call, marked so they can find it again. */
+.nd-strip-moved { border-color: var(--indigo); }
+.nd-strip-moved .nd-strip-label { background: var(--indigo); }
 
-/* ── the in-doc slide modal (§3) ────────────────────────────────────────── */
+/* ── where a dragged slide goes (`SlideRegroup.svelte`) ── */
 
-.nd-modal-veil {
-  position: fixed;
+.nd { position: relative; }
+.nd-regroup {
+  position: absolute;
   inset: 0;
-  background: rgb(18 18 30 / 52%);
-  display: flex;
-  flex-direction: column;
-  z-index: 60;
-}
-.nd-modal-bar {
-  background: rgb(12 12 22 / 55%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  color: #fff;
-  font-size: 11.5px;
-}
-.nd-modal-bar button {
-  color: #fff;
-  border: 1px solid rgb(255 255 255 / 28%);
-  border-radius: 6px;
-  padding: 2px 9px;
-  font-size: 11px;
-}
-.nd-modal-bar button:hover { background: rgb(255 255 255 / 14%); }
-.nd-modal-bar button:disabled { opacity: 0.35; cursor: default; }
-.nd-modal-spacer { flex: 1 1 auto; }
-.nd-modal-stage {
-  flex: 1 1 auto;
-  min-height: 0;
+  z-index: 30;
   overflow: auto;
-  padding: 0 20px 24px;
-  display: flex;
-  /* `safe`: a slide zoomed wider than the stage starts at its left edge. Plain `center` pushed
-     the overflow off both sides, and the left half could not be scrolled to. */
-  justify-content: safe center;
-  align-items: flex-start;
+  padding: 24px max(24px, calc((100% - var(--nd-column)) / 2));
+  background: rgb(246 246 250 / 97%);
+  backdrop-filter: blur(2px);
 }
-.nd-modal-page {
-  /* Its width is the zoom's (SlideModal.svelte): a flex item that shrank to the stage would
-     never overflow it, and a zoomed slide could never be panned. */
+.nd-regroup-head { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; }
+.nd-regroup-preview {
   flex: none;
-  position: relative;
-  background: #fff;
-  border-radius: 4px;
-  box-shadow: 0 18px 50px rgb(0 0 0 / 38%);
+  width: 120px;
+  min-height: 68px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #eef0f5;
   line-height: 0;
 }
-.nd-modal-page canvas { display: block; width: 100%; height: auto; }
-.nd-modal-rect {
-  position: absolute;
-  border: 2px solid #ffd44d;
-  border-radius: 3px;
-  box-shadow: 0 0 0 9999px rgb(18 18 30 / 34%);
-  pointer-events: none;
+.nd-regroup-preview canvas { width: 100%; height: auto; display: block; }
+.nd-regroup-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.nd-regroup-hint { margin: 4px 0 0; font-size: 11.5px; color: var(--text-2); }
+.nd-regroup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nd-regroup-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px dashed #d4d4e2;
+  border-radius: var(--radius);
+  background: var(--pane);
+  transition: border-color 0.1s, background-color 0.1s;
 }
+.nd-regroup-name { flex: 1; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.nd-regroup-pages { font-size: 11px; color: var(--muted); }
+.nd-regroup-here { opacity: 0.6; }
+.nd-regroup-over { border-color: var(--indigo); border-style: solid; background: var(--indigo-tint); }
 
-/* ══ THE CITATION PREVIEW AND THE FIGURE'S HOTSPOTS (pm/sourcepop.ts) ═════════════════════
-   One section, appended 2026-10-01. Both popovers are `position: fixed` children of `.nd`, placed
-   in code at the anchor's viewport box: outside the scroller (never clipped) and outside the
-   zoomed sheet (never scaled). */
 
+/* ── a small popover outside the document (`pm/sourcepop.ts`: a hotspot's Ask) ── */
+/* The slide windows and the peek have their own sheet (`slidewindow.css`). */
 .nd-pop {
   position: fixed;
-  /* Over the document's own floating cards (4), under the slide modal (60). */
+  /* Over the document's own floating cards (4). */
   z-index: 40;
   padding: 10px;
   border-radius: var(--radius);
@@ -859,59 +849,6 @@
   color: var(--text-2);
   user-select: none;
 }
-
-/* ── the provenance chip's preview ── */
-
-.nd-cite { width: 286px; }
-.nd-cite-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.nd-cite-where { font-weight: 600; color: var(--text); }
-.nd-cite-count { flex: 1 1 auto; color: var(--muted); font-size: 10.5px; }
-.nd-cite-turn {
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  padding: 0 7px;
-  line-height: 1.5;
-  color: var(--text-2);
-}
-.nd-cite-turn:hover { border-color: #c7c7e8; color: var(--indigo); }
-.nd-cite-thumb {
-  display: block;
-  position: relative;
-  width: 100%;
-  /* Holds the box open at a slide's usual shape until the page has rendered. */
-  min-height: 80px;
-  padding: 0;
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  overflow: hidden;
-  background: #eef0f5;
-  line-height: 0;
-}
-.nd-cite-thumb.nd-cite-ready { min-height: 0; }
-.nd-cite-thumb:hover { border-color: #c7c7e8; }
-.nd-cite-thumb canvas { display: block; width: 100%; height: auto; }
-/* The modal's outline (`.nd-modal-rect`), at thumbnail weight. */
-.nd-cite-rect {
-  position: absolute;
-  border: 2px solid #ffd44d;
-  border-radius: 2px;
-  box-shadow: 0 0 0 9999px rgb(18 18 30 / 22%);
-  pointer-events: none;
-}
-.nd-cite-quote {
-  margin: 8px 0 0;
-  padding: 0 0 0 8px;
-  border-left: 2px solid var(--hairline);
-  color: var(--text-2);
-  white-space: pre-line;
-  /* A few lines at most, whatever the slide's line lengths are. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  overflow: hidden;
-}
-.nd-cite-quote[hidden] { display: none; }
-.nd-cite-reason { margin-top: 6px; color: var(--muted); font-size: 10.5px; }
 
 /* ── hotspots on an inline figure ── */
 
@@ -1496,32 +1433,6 @@
 .nd-rec-add:disabled { opacity: 0.6; cursor: default; }
 .nd-rec-state { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11.5px; color: var(--nd-ellie); }
 .nd-rec-state-refused { color: var(--text-2); }
-
-/* ── a text source's page, as words (C1) ────────────────────────────────── */
-
-.nd-cite-text {
-  display: block;
-  max-height: 180px;
-  overflow: auto;
-  padding: 10px 12px;
-  background: var(--pane);
-  color: var(--text);
-  font-size: 11.5px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  text-align: left;
-}
-.nd-modal-text {
-  position: absolute;
-  inset: 0;
-  overflow: auto;
-  padding: 7% 8%;
-  color: var(--text);
-  font-size: 15px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  user-select: text;
-}
 
 /* A chip in a notebook of several sources: the name shortens, the page never does. */
 /* Several sources: the name gives way long before the page does (it shrinks a hundred times

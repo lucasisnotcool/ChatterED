@@ -1,0 +1,299 @@
+/* ══ SLIDE WINDOWS (lib/pm/slidewindow.ts) ═════════════════════════════════════════════════
+   3 Oct 2026, second cut: the popover beside a chip became a window that floats over the app,
+   moved by its title bar and resized from its corner, open until it is closed. Self-contained:
+   it does not lean on notes.css, because the windows live on <body>, outside the notes pane.
+   Place and size are set in code (`slidegeom.ts`). */
+
+.nd-sw {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d9d9e6;
+  border-radius: 10px;
+  background: var(--pane);
+  box-shadow: 0 14px 40px rgb(20 20 40 / 18%), 0 2px 6px rgb(20 20 40 / 8%);
+  font-family: var(--font);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  user-select: none;
+  overflow: hidden;
+  outline: none;
+}
+/* The window the keys go to. */
+.nd-sw:focus-within,
+.nd-sw:focus { border-color: #b9b6ee; box-shadow: 0 16px 44px rgb(20 20 40 / 22%), 0 0 0 3px var(--indigo-tint); }
+.nd-sw-moving,
+.nd-sw-resizing { box-shadow: 0 20px 50px rgb(20 20 40 / 26%); }
+.nd-sw-moving { cursor: grabbing; }
+/* A brief glow after an insert: the window stays, so it says the insert happened. */
+.nd-sw-inserted { box-shadow: 0 0 0 3px rgb(15 123 108 / 35%), 0 14px 40px rgb(20 20 40 / 18%); }
+
+.nd-sw-bar {
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: #f7f7fb;
+  cursor: grab;
+  min-height: 36px;
+  box-sizing: border-box;
+}
+.nd-sw-moving .nd-sw-bar { cursor: grabbing; }
+.nd-sw-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 0;
+}
+.nd-sw > .nd-sp-foot { padding: 8px 10px 10px; }
+.nd-sw-close { font-size: 14px; line-height: 1.2; }
+.nd-sw-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, #c9c9d8 50%, #c9c9d8 58%, transparent 58%, transparent 70%, #c9c9d8 70%, #c9c9d8 78%, transparent 78%);
+  touch-action: none;
+}
+
+.nd-sw-bar,
+.nd-sp-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+.nd-sp-foot { flex-wrap: wrap; }
+.nd-sp-foot[hidden] { display: none; }
+.nd-sp-spacer { flex: 1 1 auto; }
+.nd-sp-where {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* The cited pages' ‹ 2 of 3 ›: a pill, so it reads as one control and not as the deck's own
+   Previous / Next, which live in the footer in words. */
+.nd-sp-cited {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: var(--indigo-tint);
+  color: var(--indigo);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.nd-sp-cited:empty { display: none; }
+.nd-sp-cited .nd-sp-btn { border-color: transparent; background: transparent; color: inherit; }
+.nd-sp-count { padding: 0 2px; }
+.nd-sp-hint { color: var(--muted); }
+
+.nd-sp-btn {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 1px 8px;
+  background: var(--pane);
+  color: var(--text-2);
+  font: inherit;
+  line-height: 1.6;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nd-sp-btn:hover:not(:disabled) { border-color: #c7c7e8; color: var(--indigo); }
+.nd-sp-btn:disabled { opacity: 0.45; cursor: default; }
+.nd-sp-btn[hidden] { display: none; }
+.nd-sp-icon { padding: 1px 6px; }
+.nd-sp-back { font-size: 10.5px; }
+.nd-sp-primary { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+.nd-sp-primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+
+/* ── the slide ── */
+
+.nd-sp-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #eef0f5;
+}
+/* Sized in code to the stage, in the slide's own shape (`fitSlide`). */
+.nd-sp-slide { position: relative; flex: none; box-shadow: 0 0 0 1px var(--hairline); background: #fff; }
+.nd-sp-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.nd-sp-empty { padding: 16px; color: var(--muted); }
+
+/* The region the block was drawn from: the modal's outline, dimming the rest only slightly,
+   because here the rest of the slide is there to be read. */
+.nd-sp-rect {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid #ffd44d;
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px rgb(18 18 30 / 10%);
+  pointer-events: none;
+}
+
+/* A text source's page: its words, selectable. */
+.nd-sp-textpage {
+  align-self: stretch;
+  flex: 1 1 auto;
+  padding: 12px 14px;
+  overflow: auto;
+  background: var(--pane);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  user-select: text;
+  cursor: text;
+}
+
+.nd-sp-quote {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid #ffd44d;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  user-select: text;
+}
+.nd-sp-quote[hidden] { display: none; }
+.nd-sp-reason { color: var(--muted); font-size: 10.5px; }
+
+/* ── crop mode ── */
+
+.nd-sp-crop {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  cursor: crosshair;
+  touch-action: none;
+}
+.nd-sp-cropping .nd-sp-crop { display: block; }
+.nd-sp-cropping .nd-sp-rect { display: none; }
+.nd-sp-cropping .nd-sp-slide { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.nd-sp-sel {
+  position: absolute;
+  border: 2px dashed var(--indigo);
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px rgb(18 18 30 / 38%);
+  pointer-events: none;
+}
+.nd-sp-sel[hidden] { display: none; }
+
+/* ── pdf.js's text layer ──
+   The essential rules of `.textLayer` in pdfjs-dist 6.3.289 `web/pdf_viewer.css`, copied and
+   scoped rather than importing the viewer's whole stylesheet (annotation layers, editors, the
+   toolbar). pdf.js writes `--min-font-size` and each span's `--font-height`, `--scale-x`,
+   `--rotate` and position; `SlideSource.textLayer` writes `--total-scale-factor`. The spans are
+   transparent: the canvas under them is what the learner sees, and they are what a selection
+   lands on. */
+
+.nd-sw .textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: clip;
+  opacity: 1;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  user-select: text;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.nd-sw .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.nd-sw .textLayer > :not(.markedContent),
+.nd-sw .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.nd-sw .textLayer .markedContent { display: contents; }
+.nd-sw .textLayer span[role='img'] { user-select: none; cursor: default; }
+.nd-sw .textLayer ::selection { background: rgb(79 70 229 / 28%); color: transparent; }
+.nd-sw .textLayer br::selection { background: transparent; }
+.nd-sw .textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.nd-sw .textLayer.selecting .endOfContent { top: 0; }
+
+
+
+/* ── the peek beside a chip (`sourcepop.ts`): small, nothing to click ── */
+
+.nd-peek {
+  position: fixed;
+  z-index: 70;
+  width: 280px;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+  box-shadow: 0 6px 20px rgb(20 20 40 / 12%);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-2);
+  pointer-events: none;
+}
+.nd-peek-where { font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.nd-peek-more { font-weight: 400; color: var(--muted); }
+.nd-peek-frame { position: relative; line-height: 0; border-radius: 4px; overflow: hidden; background: #eef0f5; min-height: 60px; }
+.nd-peek-frame canvas { display: block; width: 100%; height: auto; }
+.nd-peek-text { padding: 8px; line-height: 1.45; white-space: pre-wrap; color: var(--text); max-height: 180px; overflow: hidden; }
+.nd-peek-rect {
+  position: absolute;
+  border: 2px solid #ffd44d;
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px rgb(18 18 30 / 10%);
+}
+.nd-peek-quote {
+  margin-top: 6px;
+  padding-left: 7px;
+  border-left: 2px solid #ffd44d;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.nd-peek-quote[hidden] { display: none; }
+.nd-peek-hint { margin-top: 5px; color: var(--muted); font-size: 10px; }

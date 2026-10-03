@@ -859,7 +859,7 @@ class DiagramNodeView implements NodeView {
       event.preventDefault();
       event.stopPropagation();
       if (openRegion) openRegion();
-      else this.#ctx.onOpenSlide(first, null);
+      else this.#ctx.onOpenSlide(first, null, chip);
     });
     const pageLines = this.#ctx.pageLines;
     if (pageLines) {
@@ -871,6 +871,8 @@ class DiagramNodeView implements NodeView {
         figure: null,
         reader: { slides: this.#ctx.slides, pageLines },
         onOpenSlide: this.#ctx.onOpenSlide,
+        // After the block the chip is on: its nearest ancestor with an id.
+        onInsert: this.#ctx.onInsertSlide ? (target) => this.#ctx.onInsertSlide?.(target, chip.closest('[data-block-id]')?.getAttribute('data-block-id') ?? null) : undefined,
       });
       chip.title = '';
       chip.setAttribute('aria-label', `Open the source slide (${label})`);

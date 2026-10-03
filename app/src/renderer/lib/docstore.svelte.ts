@@ -22,7 +22,7 @@
  * of the same rule, for the race.
  */
 
-import { EditorState } from 'prosemirror-state';
+import { EditorState, NodeSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { RoomEvent } from '../../shared/types.js';
 import type {
@@ -44,7 +44,7 @@ import {
   removeEdit,
 } from '../../shared/doc/ops.js';
 import { acceptSuggestion, rejectSuggestion } from '../../shared/doc/suggest.js';
-import { blockAttrs, blockPos, docFromJson, notesSchema } from '../../shared/doc/schema.js';
+import { blockAttrs, blockPos, docFromJson, newBlockId, notesSchema } from '../../shared/doc/schema.js';
 import type {
   AgentAuthor,
   AgentDocOpBatch,
@@ -78,6 +78,11 @@ import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
 import { setReading } from './pm/readaloud.js';
 import { insertTargetId } from './pm/insertat.js';
 import { editFormula } from './pm/math.js';
+import { bumpStrips, type StripContext } from './pm/slidestrip.js';
+import { closeAllSlideWindows, openSlideWindow } from './pm/slidewindow.js';
+import type { SlideReader } from './pm/sourcepop.js';
+import { pageLinesFor } from './pagelines.js';
+import { slideGroups, type SlideGroup, type SlideOverride } from '../../shared/doc/slidegroups.js';
 import { learnerTextByBlock } from './pm/doctext.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
@@ -109,9 +114,19 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export interface SlideModalTarget {
-  page: number;
-  rect: Rect | null;
+/**
+ * The three calls the slide groups need (2026-10-03), read off the bridge defensively: a preload
+ * from before them (a dev build mid-reload) has none, and the strips then group by the document
+ * alone and keep the learner's moves for this session only.
+ */
+interface SlideGroupsApi {
+  notesPageTexts?: (input: { fileId: string }) => Promise<Record<number, string>>;
+  notesSlideGroups?: (input: { docId: string }) => Promise<SlideOverride[]>;
+  notesSetSlideGroup?: (input: { docId: string; page: number; key: string | null; title: string }) => Promise<SlideOverride[]>;
+}
+
+function slideApi(): SlideGroupsApi {
+  return bridge() as unknown as SlideGroupsApi;
 }
 
 /**
@@ -225,8 +240,11 @@ export class DocStore {
   savedAt = $state(0);
   /** True once the learner has typed anything at all into this document. */
   learnerTouched = $state(false);
-  /** The in-doc slide modal (§3), or null. */
-  modal = $state<SlideModalTarget | null>(null);
+  /**
+   * **A slide being dragged to another section** (2026-10-03): the notes show only the sections'
+   * titles to drop it on (`SlideRegroup.svelte`) until it is dropped or let go.
+   */
+  slideDrag = $state<{ page: number; from: string } | null>(null);
   /** Bumped whenever a *different* document has been loaded and the view must remount. */
   epoch = $state(0);
   slidesReady = $state(false);
@@ -235,6 +253,15 @@ export class DocStore {
   #view: EditorView | null = null;
   #docJson: unknown = null;
   #slides: SlideSource | null = null;
+  /** The learner's slide moves for this document, and the deck's page texts the grouping reads. */
+  #slideOverrides: SlideOverride[] = [];
+  #pageTexts: Map<number, string> | null = null;
+  /** Bumped when either changes, so the memo below knows. */
+  #slideInputs = 0;
+  #groupsMemo: { doc: PmNode; inputs: number; groups: SlideGroup[] } | null = null;
+  /** Which strips the learner has opened, by group key. Plain: only the strips' rebuild reads it. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #openStrips = new Set<string>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   #savePending = false;
   /** Settles when the save now in flight has finished. Null when none is. */
@@ -539,7 +566,14 @@ export class DocStore {
     this.error = null;
     this.rasterising = null;
     this.learnerTouched = false;
-    this.modal = null;
+    this.slideDrag = null;
+    this.#slideOverrides = [];
+    this.#pageTexts = null;
+    this.#slideInputs++;
+    this.#groupsMemo = null;
+    this.#openStrips.clear();
+    // The windows read this deck's pages: a different notebook takes them with it.
+    closeAllSlideWindows();
     this.ingest = { ...EMPTY_INGEST };
   }
 
@@ -568,6 +602,7 @@ export class DocStore {
     this.overview = view.overview ? structuredClone(view.overview) : null;
     this.#docJson = view.doc;
     this.epoch++;
+    void this.#loadSlideInputs(view.docId);
   }
 
   async #openSlides(fileId: string, token: number): Promise<void> {
@@ -726,7 +761,8 @@ export class DocStore {
       onKeepEdit: (editId) => void this.keepAgentEdit(editId),
       onAcceptSuggestion: (id) => void this.resolveSuggestion(id, 'accepted'),
       onRejectSuggestion: (id) => void this.resolveSuggestion(id, 'rejected'),
-      onOpenSlide: (page, rect) => this.openSlide(page, rect),
+      onOpenSlide: (page, rect, anchor, afterBlockId) => this.openSlide(page, rect, anchor, afterBlockId ?? null),
+      onInsertSlide: (target, afterBlockId) => void this.insertSlide(target.page, target.rect, afterBlockId),
       onFocusThread: (threadId) => this.focusThread?.(threadId),
       // The overview (`notebooks.md` §3–§5): chips through the notebook, the toolbar, the
       // objectives' fills, and the recommended blocks.
@@ -1158,59 +1194,188 @@ export class DocStore {
     }
   }
 
+  // ── each section's slides (2026-10-03) ──────────────────────────────────────────────────
+
+  /** The learner's moves and the page texts, for the document just adopted. Best effort. */
+  async #loadSlideInputs(docId: string): Promise<void> {
+    const api = slideApi();
+    const fileId = this.fileId;
+    const [overrides, texts] = await Promise.all([
+      api.notesSlideGroups ? api.notesSlideGroups({ docId }).catch(() => null) : Promise.resolve(null),
+      api.notesPageTexts && fileId ? api.notesPageTexts({ fileId }).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (this.docId !== docId) return;
+    if (overrides) this.#slideOverrides = overrides;
+    // A plain Map on purpose: only the grouping reads it, and nothing renders it.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    if (texts) this.#pageTexts = new Map(Object.entries(texts).map(([page, text]) => [Number(page), text]));
+    this.#slideInputs++;
+    this.#bumpStrips();
+  }
+
   /**
-   * The carousel's grouping (§3: "all slides, collapsed and labelled, **grouped by the section
-   * of the notes they feed**").
-   *
-   * Walked from the live document rather than stored, because the learner can retitle a heading
-   * or move a paragraph and the grouping has to follow. A page that no block claims lands in a
-   * trailing "Not in the notes" group, which is the carousel quietly answering R3's and R4's
-   * failure — *what did the ingest leave out?* — without anybody having to ask.
+   * **Which slides go under which section** (`shared/doc/slidegroups.ts`). Memoised per document
+   * and per change to the inputs, because the strips ask on every rebuild and the answer only
+   * changes when the blocks, the learner's moves or the page texts do.
    */
-  sections(): { title: string; pages: number[] }[] {
-    const view = this.#view;
-    const groups: { title: string; pages: number[] }[] = [];
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local scratch set
-    const claimed = new Set<number>();
-    if (view) {
-      let current: { title: string; pages: number[] } | null = null;
-      view.state.doc.forEach((node) => {
-        const level = node.type.name === 'heading' ? (node.attrs.level as number) : null;
-        if (level !== null && level <= 2) {
-          current = { title: node.textContent.trim() || 'Untitled section', pages: [] };
-          groups.push(current);
-        }
-        const pages = node.type.name === 'slide_figure'
-          ? [node.attrs.page as number]
-          : blockAttrs(node).pages;
-        for (const page of pages) {
-          if (!Number.isInteger(page) || page < 1) continue;
-          claimed.add(page);
-          if (!current) {
-            current = { title: 'Opening', pages: [] };
-            groups.push(current);
-          }
-          if (!current.pages.includes(page)) current.pages.push(page);
-        }
-      });
-    }
-    // The slides' own pages when they know them: a notebook's gaps (removed sources) are not slides.
+  slideGroupsFor(doc: PmNode): SlideGroup[] {
+    const memo = this.#groupsMemo;
+    if (memo && memo.doc === doc && memo.inputs === this.#slideInputs) return memo.groups;
     const all = this.#slides?.pages() ?? Array.from({ length: this.pageCount }, (_, i) => i + 1);
-    const rest = all.filter((page) => !claimed.has(page));
-    const out = groups.filter((group) => group.pages.length > 0);
-    out.forEach((group) => group.pages.sort((a, b) => a - b));
-    if (rest.length > 0) out.push({ title: 'Not in the notes', pages: rest });
-    return out;
+    const texts = this.#pageTexts;
+    const groups = slideGroups({
+      doc,
+      pages: all,
+      pageText: texts ? (page) => texts.get(page) ?? null : undefined,
+      overrides: this.#slideOverrides,
+    });
+    this.#groupsMemo = { doc, inputs: this.#slideInputs, groups };
+    return groups;
   }
 
-  // ── the slide modal (§3) ──────────────────────────────────────────────────────────────────
-
-  openSlide(page: number, rect: Rect | null = null): void {
-    this.modal = { page, rect };
+  /** The groups of the document on screen, for the drop targets while a slide is dragged. */
+  slideGroupList(): SlideGroup[] {
+    const view = this.#view;
+    return view ? this.slideGroupsFor(view.state.doc) : [];
   }
 
+  /** What the strips plugin reads (`pm/slidestrip.ts`). */
+  stripContext(): StripContext {
+    return {
+      groups: (doc) => this.slideGroupsFor(doc),
+      slides: () => this.#slides,
+      isOpen: (key) => this.#openStrips.has(key),
+      onToggle: (key) => {
+        if (this.#openStrips.has(key)) this.#openStrips.delete(key);
+        else this.#openStrips.add(key);
+        this.#bumpStrips();
+      },
+      onOpen: (group, page, anchor) => {
+        openSlideWindow({
+          anchor,
+          pages: group.pages,
+          index: Math.max(0, group.pages.indexOf(page)),
+          reader: this.#slideReader(),
+          // A slide inserted from a section's strip goes at the end of that section.
+          onInsert: (target) => this.insertSlide(target.page, target.rect, group.lastBlockId),
+        });
+      },
+      onDragStart: (group, page) => {
+        this.slideDrag = { page, from: group.key };
+      },
+      onDragEnd: () => {
+        this.slideDrag = null;
+      },
+    };
+  }
+
+  /**
+   * **A slide dropped on a section** (§3b): the learner's call, kept for this document and over
+   * every later regrouping (main remaps it by heading text when Update overview rewrites the
+   * headings). Shown at once; the stored list main sends back replaces it.
+   */
+  async moveSlide(page: number, key: string, title: string): Promise<void> {
+    this.slideDrag = null;
+    const docId = this.docId;
+    if (!docId) return;
+    this.#slideOverrides = [...this.#slideOverrides.filter((o) => o.page !== page), { page, key, title }];
+    this.#slideInputs++;
+    this.#bumpStrips();
+    const api = slideApi();
+    if (!api.notesSetSlideGroup) return;
+    try {
+      const stored = await api.notesSetSlideGroup({ docId, page, key, title });
+      if (this.docId !== docId) return;
+      this.#slideOverrides = stored;
+      this.#slideInputs++;
+      this.#bumpStrips();
+    } catch (err) {
+      console.warn('notes: the slide move was not saved —', message(err));
+    }
+  }
+
+  #bumpStrips(): void {
+    const view = this.#view;
+    if (!view) return;
+    view.dispatch(bumpStrips(view.state.tr).setMeta('addToHistory', false));
+  }
+
+  #slideReader(): SlideReader {
+    return { slides: () => this.#slides, pageLines: (page) => pageLinesFor(this.fileId, page) };
+  }
+
+  // ── a slide, beside what was clicked (2026-10-03) ─────────────────────────────────────────
+
+  /**
+   * Open a slide in a window beside `anchor` (a chip, a figure, a thumbnail), which stays, moves
+   * and resizes until the learner closes it (`pm/slidewindow.ts`). The in-doc modal this replaced
+   * covered the notes. A slide already open in a window comes to the front instead. With no anchor
+   * (the dev harness's buttons) it opens by the notes column's right edge.
+   */
+  openSlide(page: number, rect: Rect | null = null, anchor?: HTMLElement, afterBlockId: string | null = null): void {
+    openSlideWindow({
+      anchor: anchor ?? this.#fallbackAnchor(),
+      pages: [page],
+      rect,
+      reader: this.#slideReader(),
+      onInsert: (target) => this.insertSlide(target.page, target.rect, afterBlockId),
+    });
+  }
+
+  /** Close every slide window. */
   closeSlide(): void {
-    this.modal = null;
+    closeAllSlideWindows();
+  }
+
+  #fallback: HTMLElement | null = null;
+
+  #fallbackAnchor(): HTMLElement {
+    const column = this.#view?.dom.closest<HTMLElement>('.nd') ?? document.body;
+    const box = column.getBoundingClientRect();
+    this.#fallback ??= document.createElement('span');
+    const anchor = this.#fallback;
+    anchor.className = 'nd-slide-fallback';
+    anchor.style.cssText = `position:fixed;width:1px;height:1px;left:${String(Math.round(box.right - 40))}px;top:${String(Math.round(box.top + 90))}px;`;
+    if (!anchor.isConnected) document.body.append(anchor);
+    return anchor;
+  }
+
+  /**
+   * **Insert a slide, or a crop of one, into the notes** (2026-10-03): a `slide_figure` after the
+   * block it was opened from, or the caret's block, or at the end. The learner's own edit, so it is
+   * undoable and saved like typing; the figure's page counts towards the section it lands in.
+   */
+  insertSlide(page: number, rect: Rect | null, afterBlockId: string | null = null): boolean {
+    const view = this.#view;
+    if (!view) return false;
+    const state = view.state;
+    let pos: number | null = null;
+    if (afterBlockId) {
+      state.doc.forEach((node, offset) => {
+        if (pos === null && node.attrs.blockId === afterBlockId) pos = offset + node.nodeSize;
+      });
+      // A block inside a container (a Q block's paragraph): after its top-level container.
+      if (pos === null) {
+        const hit = blockPos(state.doc, afterBlockId);
+        if (hit) pos = state.doc.resolve(hit.pos).after(1);
+      }
+    }
+    if (pos === null && this.#placed) pos = state.selection.$from.depth > 0 ? state.selection.$from.after(1) : null;
+    if (pos === null) pos = state.doc.content.size;
+    // With its id now, not at the authorship stamp's leisure: the strips and chips key on it.
+    const figure = notesSchema.nodes.slide_figure!.create({
+      blockId: newBlockId(),
+      page,
+      rect,
+      caption: '',
+      evidentiary: true,
+      pages: [page],
+    });
+    const tr = state.tr.insert(pos, figure);
+    tr.setSelection(NodeSelection.create(tr.doc, pos)).scrollIntoView();
+    view.dispatch(tr);
+    view.focus();
+    return true;
   }
 
   // ── §6: the learner's own doc text ────────────────────────────────────────────────────────

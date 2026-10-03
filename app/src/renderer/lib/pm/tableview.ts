@@ -41,7 +41,7 @@ import {
 
 export interface TableViewContext {
   /** A row chip's click: open the in-doc slide modal at the row's first page. */
-  onOpenSlide: (page: number, rect: Rect | null) => void;
+  onOpenSlide: (page: number, rect: Rect | null, anchor?: HTMLElement, afterBlockId?: string | null) => void;
 }
 
 /** On the node view's root while the cursor is in the table: the toolbar shows. */
@@ -129,7 +129,7 @@ export class TableView implements NodeView {
       if (!chip || !this.dom.contains(chip)) return;
       event.preventDefault();
       const page = Number.parseInt(chip.dataset.page ?? '', 10);
-      if (Number.isInteger(page) && page > 0) ctx.onOpenSlide(page, null);
+      if (Number.isInteger(page) && page > 0) ctx.onOpenSlide(page, null, chip, blockAttrs(this.#node).blockId || null);
     });
 
     this.#paint();

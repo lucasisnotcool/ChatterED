@@ -1,41 +1,42 @@
 /**
  * ────────────────────────────────────────────────────────────────────────────────────────────
- * THE SLIDE, WITHIN REACH OF THE NOTES: THE CITATION PREVIEW AND THE FIGURE'S HOTSPOTS (§3)
+ * THE SLIDE, WITHIN REACH OF THE NOTES: THE CITATION CHIP AND THE FIGURE'S HOTSPOTS (§3)
  * ────────────────────────────────────────────────────────────────────────────────────────────
  *
- * Two small popovers, both chrome and both outside the document:
+ * Two pieces of chrome, both outside the document:
  *
- *  - **the citation preview**, on a provenance chip's hover: a thumbnail of the slide with the
- *    region the block was drawn from outlined, and the slide's own words for it. The chip's
- *    click still opens the modal (`chrome.ts`), now with that region outlined there too.
+ *  - **the citation chip's slide**: `attachCitePreview` gives a provenance chip a **peek** on
+ *    hover — a small thumbnail of the cited slide beside the chip, the region the block was drawn
+ *    from outlined, its words quoted under it, nothing to click — and its click opens the slide in
+ *    a window of its own (`slidewindow.ts`, 3 Oct 2026), which stays until it is closed. The name
+ *    and the options are kept so the three chip builders (`chrome.ts`, `blockkit.ts`,
+ *    `diagram.ts`) did not have to change with it.
  *  - **a figure's hotspots**: the slide's own text labels inside an inline crop, each a button
  *    over the pixels. A click offers "Ask Ellie about this", which opens a span thread on the
  *    figure's block.
  *
  * **Neither asks a model where anything is.** The region comes from `bestRegion` and the labels
  * from `hotspotsIn` (`shared/doc/cite.ts`), both over the PDF's own text geometry. When no region
- * matches, the preview is the whole slide with no outline and no quote.
+ * matches, the slide is shown whole with no outline and no quote.
  *
- * The popover element is appended to the notes pane (`.nd`), not inside ProseMirror's DOM and not
- * inside the zoomed sheet: it is `position: fixed` at the anchor's viewport box, so it is never
- * clipped by the scroller, never scaled by the notes zoom, and never seen by the editor.
+ * The popover elements are appended to the notes pane (`.nd`), not inside ProseMirror's DOM and
+ * not inside the zoomed sheet: they are `position: fixed` at the anchor's viewport box, so they
+ * are never clipped by the scroller, never scaled by the notes zoom, and never seen by the
+ * editor. Only one is up at a time, across both files: each closes the other.
  */
-import { bestRegion, type Hotspot, type LineRect, type PageLinesView } from '../../../shared/doc/cite.js';
+import type { Hotspot, LineRect, PageLinesView } from '../../../shared/doc/cite.js';
 import type { Rect } from '../../../shared/doc/types.js';
 import type { SlideSource } from '../rasterise.js';
+import { bestRegion } from '../../../shared/doc/cite.js';
+import { MARGIN, placeBeside, rectPercent } from './slidegeom.js';
+import { openSlideWindow } from './slidewindow.js';
 
-/** What both popovers read the slide through. Supplied by `NotesEditor.svelte`. */
+/** What the slide popover and the figure's hotspots read the slide through. Supplied by `NotesEditor.svelte`. */
 export interface SlideReader {
   slides: () => SlideSource | null;
   pageLines: (page: number) => Promise<PageLinesView | null>;
 }
 
-/** The thumbnail's width in CSS px. The popover is this plus its padding (notes.css). */
-const THUMB_WIDTH = 264;
-/** Hover intent: long enough that a pointer crossing the gutter does not open one. */
-const OPEN_DELAY_MS = 260;
-/** Long enough to travel from the chip into the popover. */
-const CLOSE_DELAY_MS = 180;
 const EDGE = 8;
 
 export function toRect(r: LineRect): Rect {
@@ -80,17 +81,21 @@ interface Floating {
 
 let current: Floating | null = null;
 
-/** Close whichever popover is up. Safe to call when none is. */
+/**
+ * Close whichever small popover is up, the hotspot's or a chip's peek. Safe to call when none is.
+ * `chrome.ts` calls it as the editor goes. The slide **windows** are not closed by it: they stay
+ * until the learner closes them (`slidewindow.ts`).
+ */
 export function closeSourcePopover(): void {
   const was = current;
   current = null;
   was?.dispose();
+  closePeek();
 }
 
 /**
- * `start` hangs the popover from the anchor's left edge; `end` from its right, which is what a
- * chip wants: it sits in the right gutter, and a preview hung from its left would lie over the
- * chat column instead of over the notes it is about.
+ * `start` hangs the popover from the anchor's left edge; `end` from its right. Only the hotspots
+ * use this now, from `start`.
  */
 type Align = 'start' | 'end';
 
@@ -143,177 +148,167 @@ function show(anchor: HTMLElement, node: HTMLElement, align: Align, onClosed?: (
   };
 }
 
-// ── the citation preview ────────────────────────────────────────────────────────────────────
+// ── the citation chip ───────────────────────────────────────────────────────────────────────
 
 export interface CitePreviewOptions {
   /** The pages the block cites, in order. Never empty: a chip with no page has no preview. */
   pages: readonly number[];
   /** `added: …`, when the block carries one. Shown under the slide. */
   reason: string | null;
-  /** The block's text *now*, read on each hover: the learner may have edited it since the chip was built. */
+  /** The block's text *now*, read per page shown: the learner may have edited it since the chip was built. */
   text: () => string;
   /** A `slide_figure`'s own page and crop: its region is that crop, and nothing is matched. */
   figure: { page: number; rect: Rect | null } | null;
   reader: SlideReader;
-  onOpenSlide: (page: number, rect: Rect | null) => void;
+  /**
+   * **No longer called.** The chip's click used to open the slide modal here; it now opens a slide
+   * window. Optional and ignored, so the callers that still pass it compile until they stop.
+   */
+  onOpenSlide?: (page: number, rect: Rect | null) => void;
+  /**
+   * The window's "Insert into notes": put `page` (cropped to `rect`, or whole when null) into
+   * the document as a `slide_figure` at this block. Absent: no Insert action is offered.
+   */
+  onInsert?: (target: { page: number; rect: Rect | null }) => void;
 }
 
-interface Found {
-  rect: Rect | null;
-  quote: string;
+// ── the peek ────────────────────────────────────────────────────────────────────────────────
+
+/** The peek's width in CSS px: a thumbnail, not a reading surface (the window is that). */
+const PEEK_WIDTH = 280;
+/** Hover intent: long enough that a pointer crossing the gutter does not open one. */
+const PEEK_DELAY_MS = 260;
+
+let peek: { anchor: HTMLElement; node: HTMLElement; dispose: () => void } | null = null;
+
+function closePeek(): void {
+  const was = peek;
+  peek = null;
+  was?.dispose();
 }
 
 /**
- * Give a provenance chip its preview. Returns the chip's click: open the modal at the first page,
- * with the matched region outlined.
+ * **The peek** (3 Oct 2026): the cited slide, small, beside the chip, with the region the block was
+ * drawn from outlined and its words quoted. It takes no pointer events, so it never gets in the
+ * way of the line being read, and it goes as soon as the pointer leaves the chip, the notes
+ * scroll, or anything is pressed.
+ */
+function showPeek(chip: HTMLElement, options: CitePreviewOptions): void {
+  closePeek();
+  if (!chip.isConnected) return;
+  const page = options.pages[0];
+  if (page === undefined) return;
+  const source = options.reader.slides();
+  const node = el('div', 'nd-peek');
+  node.setAttribute('role', 'tooltip');
+  const where = el('div', 'nd-peek-where', source ? source.title(page) : `Slide ${String(page)}`);
+  if (options.pages.length > 1) where.append(el('span', 'nd-peek-more', ` · and ${String(options.pages.length - 1)} more`));
+  const frame = el('div', 'nd-peek-frame');
+  const quote = el('div', 'nd-peek-quote');
+  quote.hidden = true;
+  node.append(where, frame, quote, el('div', 'nd-peek-hint', 'Click to open'));
+
+  const place = (): void => {
+    const view = { left: 0, top: 0, right: globalThis.innerWidth, bottom: globalThis.innerHeight };
+    const at = chip.getBoundingClientRect();
+    const spot = placeBeside(at, { width: PEEK_WIDTH, height: node.offsetHeight }, view, MARGIN);
+    node.style.left = `${String(spot.left)}px`;
+    node.style.top = `${String(spot.top)}px`;
+  };
+
+  let alive = true;
+  if (source?.kindOf(page) === 'text') {
+    void source.text(page).then((text) => {
+      if (!alive) return;
+      frame.append(el('div', 'nd-peek-text', (text ?? '').slice(0, 600)));
+      place();
+    });
+  } else if (source) {
+    const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
+    void source.canvas(page, Math.round(PEEK_WIDTH * dpr)).then((rendered) => {
+      if (!alive || !rendered) return;
+      // The cache owns its canvas and a window may be showing it: copy, never adopt.
+      const copy = document.createElement('canvas');
+      copy.width = Math.round(PEEK_WIDTH * dpr);
+      copy.height = Math.round((copy.width * rendered.height) / Math.max(1, rendered.width));
+      copy.getContext('2d')?.drawImage(rendered, 0, 0, copy.width, copy.height);
+      frame.prepend(copy);
+      place();
+    });
+    const region = options.figure && options.figure.page === page ? Promise.resolve({ rect: options.figure.rect, quote: '' }) : findRegion(options, page);
+    void region.then((found) => {
+      if (!alive) return;
+      if (found.rect) {
+        const mark = el('span', 'nd-peek-rect');
+        Object.assign(mark.style, rectPercent(found.rect));
+        frame.append(mark);
+      }
+      if (found.quote) {
+        quote.textContent = found.quote;
+        quote.hidden = false;
+        place();
+      }
+    });
+  }
+
+  const off = (): void => closePeek();
+  document.body.append(node);
+  place();
+  window.addEventListener('scroll', off, true);
+  window.addEventListener('mousedown', off, true);
+  window.addEventListener('keydown', off, true);
+  peek = {
+    anchor: chip,
+    node,
+    dispose: () => {
+      alive = false;
+      window.removeEventListener('scroll', off, true);
+      window.removeEventListener('mousedown', off, true);
+      window.removeEventListener('keydown', off, true);
+      node.remove();
+    },
+  };
+}
+
+async function findRegion(options: CitePreviewOptions, page: number): Promise<{ rect: Rect | null; quote: string }> {
+  const view = await options.reader.pageLines(page).catch(() => null);
+  const region = view ? bestRegion(options.text(), view.lines) : null;
+  return region ? { rect: toRect(region.rect), quote: region.quote } : { rect: null, quote: '' };
+}
+
+/**
+ * Give a provenance chip its peek on hover, and return its click: the slide in a window of its
+ * own (`slidewindow.ts`), paging through the pages the block cites. The caller keeps owning the
+ * chip's click listener and calls this from it.
  */
 export function attachCitePreview(chip: HTMLElement, options: CitePreviewOptions): () => void {
-  const { pages, reader } = options;
-  let openTimer: ReturnType<typeof setTimeout> | null = null;
-  let closeTimer: ReturnType<typeof setTimeout> | null = null;
-  let token = 0;
-
-  /** The region for one page. Recomputed per call; the lines behind it are cached. */
-  const find = async (page: number): Promise<Found> => {
-    if (options.figure && options.figure.page === page) return { rect: options.figure.rect, quote: '' };
-    const view = await reader.pageLines(page).catch(() => null);
-    const region = view ? bestRegion(options.text(), view.lines) : null;
-    return region ? { rect: toRect(region.rect), quote: region.quote } : { rect: null, quote: '' };
-  };
-
+  let timer: ReturnType<typeof setTimeout> | null = null;
   const cancel = (): void => {
-    if (openTimer) clearTimeout(openTimer);
-    if (closeTimer) clearTimeout(closeTimer);
-    openTimer = closeTimer = null;
+    if (timer) clearTimeout(timer);
+    timer = null;
   };
-  const isUp = (): boolean => current !== null && current.anchor === chip;
-  const closeSoon = (): void => {
-    cancel();
-    closeTimer = setTimeout(() => {
-      if (isUp()) closeSourcePopover();
-    }, CLOSE_DELAY_MS);
-  };
-
-  const build = (): void => {
-    if (!chip.isConnected) return;
-    const pop = el('div', 'nd-pop nd-cite');
-    pop.setAttribute('role', 'tooltip');
-    const head = el('div', 'nd-cite-head');
-    const where = el('span', 'nd-cite-where');
-    const count = el('span', 'nd-cite-count');
-    head.append(where, count);
-    let index = 0;
-    let found: Found = { rect: null, quote: '' };
-    const thumb = button('nd-cite-thumb', '', 'Open this slide', () => {
-      const page = pages[index]!;
-      const rect = found.rect;
-      closeSourcePopover();
-      options.onOpenSlide(page, rect);
-    });
-    const quote = el('blockquote', 'nd-cite-quote');
-    pop.append(head, thumb, quote);
-    if (options.reason) pop.append(el('div', 'nd-cite-reason', `added: ${options.reason}`));
-
-    const draw = (): void => {
-      const page = pages[index]!;
-      const mine = ++token;
-      const source = reader.slides();
-      // `Slide 12` in a notebook of one PDF; `Lecture p. 12` or `Notes §2` in one of several (C1).
-      where.textContent = source ? source.title(page) : `Slide ${String(page)}`;
-      count.textContent = pages.length > 1 ? `${String(index + 1)} of ${String(pages.length)}` : '';
-      thumb.replaceChildren();
-      thumb.classList.remove('nd-cite-ready');
-      quote.textContent = '';
-      quote.hidden = true;
-      found = { rect: null, quote: '' };
-
-      /**
-       * A text source's page is shown as its words, not as a picture of them: at this size a
-       * drawn card is unreadable, and the words are the whole of what the page is. The quote is
-       * left out, because the page itself is the quote.
-       */
-      if (source?.kindOf(page) === 'text') {
-        void source.text(page).then((text) => {
-          if (mine !== token || !pop.isConnected) return;
-          thumb.append(el('span', 'nd-cite-text', text ?? 'This part of the source could not be read.'));
-          thumb.classList.add('nd-cite-ready');
-          place(pop, chip, 'end');
-        });
-        return;
-      }
-
-      const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
-      const canvas = source ? source.canvas(page, Math.round(THUMB_WIDTH * dpr)).catch(() => null) : Promise.resolve(null);
-      void Promise.all([canvas, find(page)]).then(([rendered, region]) => {
-        if (mine !== token || !pop.isConnected) return;
-        found = region;
-        if (rendered) {
-          // The cache owns its canvas and the carousel may be showing it: copy, never adopt.
-          const copy = document.createElement('canvas');
-          copy.width = Math.round(THUMB_WIDTH * dpr);
-          copy.height = Math.round((copy.width * rendered.height) / Math.max(1, rendered.width));
-          copy.getContext('2d')?.drawImage(rendered, 0, 0, copy.width, copy.height);
-          thumb.append(copy);
-          thumb.classList.add('nd-cite-ready');
-          if (region.rect) {
-            const mark = el('span', 'nd-cite-rect');
-            mark.style.left = `${String(region.rect.x0 * 100)}%`;
-            mark.style.top = `${String(region.rect.y0 * 100)}%`;
-            mark.style.width = `${String((region.rect.x1 - region.rect.x0) * 100)}%`;
-            mark.style.height = `${String((region.rect.y1 - region.rect.y0) * 100)}%`;
-            thumb.append(mark);
-          }
-        }
-        if (region.quote) {
-          quote.textContent = region.quote;
-          quote.hidden = false;
-        }
-        // The box grew once the slide arrived; it may need to flip above the chip.
-        place(pop, chip, 'end');
-      });
-    };
-
-    if (pages.length > 1) {
-      const turn = (delta: number): void => {
-        index = (index + delta + pages.length) % pages.length;
-        draw();
-      };
-      head.append(
-        button('nd-cite-turn', '‹', 'The previous slide this block cites', () => turn(-1)),
-        button('nd-cite-turn', '›', 'The next slide this block cites', () => turn(1)),
-      );
-    }
-    pop.addEventListener('mouseenter', cancel);
-    pop.addEventListener('mouseleave', closeSoon);
-
-    show(chip, pop, 'end', () => {
-      token++;
-    });
-    draw();
-  };
-
   chip.addEventListener('mouseenter', () => {
     cancel();
-    if (isUp()) return;
-    openTimer = setTimeout(build, OPEN_DELAY_MS);
+    timer = setTimeout(() => showPeek(chip, options), PEEK_DELAY_MS);
   });
-  chip.addEventListener('mouseleave', closeSoon);
-  chip.addEventListener('focus', () => {
+  chip.addEventListener('mouseleave', () => {
     cancel();
-    if (!isUp()) build();
+    if (peek?.anchor === chip) closePeek();
   });
-  chip.addEventListener('blur', closeSoon);
-
+  chip.setAttribute('aria-haspopup', 'dialog');
   return () => {
     cancel();
-    if (isUp()) closeSourcePopover();
-    const page = pages[0]!;
-    // The modal opens on the region, so it waits for the match: one cached lookup after a hover,
-    // and a hover nearly always came first. A failure opens the whole slide, as it always did.
-    void find(page).then(
-      (region) => options.onOpenSlide(page, region.rect),
-      () => options.onOpenSlide(page, null),
-    );
+    closePeek();
+    openSlideWindow({
+      anchor: chip,
+      pages: options.pages,
+      reader: options.reader,
+      text: options.text,
+      rect: options.figure?.rect ?? null,
+      ...(options.figure ? { rectPage: options.figure.page } : {}),
+      reason: options.reason,
+      ...(options.onInsert ? { onInsert: options.onInsert } : {}),
+    });
   };
 }
 
@@ -356,6 +351,7 @@ export function drawHotspots(layer: HTMLElement, options: HotspotOptions): void 
         );
       }
       hot.classList.add('nd-hot-open');
+      closePeek();
       show(hot, pop, 'start', () => hot.classList.remove('nd-hot-open'));
     });
     hot.setAttribute('aria-label', `${spot.label}: a label in this figure`);

@@ -186,3 +186,31 @@ describe('the notes channels on a notebook', () => {
     expect(out.view!.overview).not.toBeNull();
   });
 });
+
+// ── the learner's slide moves (migration 025) ────────────────────────────────────────────────
+
+describe('notes:slideGroups and notes:setSlideGroup', () => {
+  it('stores a move, returns the whole list each time, and forgets it on a null key', async () => {
+    const table = wire(fakeHost({ doc: deck() }));
+    expect(await table.call(IPC.notesSlideGroups, { docId: DOC_ID })).toEqual([]);
+    expect(await table.call(IPC.notesSetSlideGroup, { docId: DOC_ID, page: 9, key: 'b_1', title: 'Convexity' })).toEqual([
+      { page: 9, key: 'b_1', title: 'Convexity' },
+    ]);
+    expect(await table.call(IPC.notesSetSlideGroup, { docId: DOC_ID, page: 2, key: 'other', title: '' })).toEqual([
+      { page: 2, key: 'other', title: '' },
+      { page: 9, key: 'b_1', title: 'Convexity' },
+    ]);
+    expect(await table.call(IPC.notesSetSlideGroup, { docId: DOC_ID, page: 9, key: null, title: '' })).toEqual([
+      { page: 2, key: 'other', title: '' },
+    ]);
+    expect(await table.call(IPC.notesSlideGroups, { docId: DOC_ID })).toEqual([{ page: 2, key: 'other', title: '' }]);
+  });
+
+  it('refuses a document that does not exist, and an empty key', async () => {
+    const table = wire(fakeHost({ doc: deck() }));
+    await expect(async () => table.call(IPC.notesSetSlideGroup, { docId: 'doc_nope', page: 1, key: 'other', title: '' })).rejects.toThrow(
+      /does not exist/,
+    );
+    await expect(async () => table.call(IPC.notesSetSlideGroup, { docId: DOC_ID, page: 1, key: '', title: '' })).rejects.toThrow(/needs a key/);
+  });
+});

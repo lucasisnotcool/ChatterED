@@ -121,11 +121,42 @@ marker.
   - Code: `app/src/renderer/lib/pm/math.ts`, `matheditor.ts`, `mathpaste.ts`, and
     `app/src/shared/doc/tex.ts`.
 - **Provenance chip** on each block: `p. 12` or `added: bridges p. 12 and p. 13`. A click opens the
-  source slide in the in-doc modal.
+  source slide in the in-doc modal (since 2026-10-03, a popover beside the chip; see below).
 - **Inline slide figures** for evidentiary slides or regions (a crop of the rendered page, as
   before: pixels, not a redraw).
 - **Slide carousel**: all slides, collapsed and labelled, grouped by the section of the notes they
   feed. A click expands one into an interactive in-doc modal (zoom, previous/next).
+
+  *Amended 2026-10-03 (slides).* The modal and the carousel at the bottom of the notes are gone.
+  The slides are now the most informative thing beside the notes, so they sit with the notes:
+  - **A slide opens in a window of its own beside what was clicked**: a chip, a figure or a
+    thumbnail. *Revised the same evening (Lucas's call):* the first cut was a popover that closed
+    once its chip scrolled away. The window instead floats anywhere over the app, moved by its title
+    bar and resized from its corner, and stays until it is closed:
+    - **Several windows** can be open at once, so two slides can be compared. Clicking a slide that
+      is already open brings its window to the front.
+    - **Keys** work while a window is focused: ← → step through the deck, ↑ ↓ step through the
+      slides the block cites (or the section's strip), and Esc closes it.
+    - **Size.** A new window opens at the last size the learner chose. Positions are not kept.
+    - **Text.** The slide's text is real text, so it can be selected and copied.
+    - **Hover.** Hovering a chip shows a small peek: the slide, the matched region and the quote,
+      with nothing to click.
+  - **Insert into notes**: from the window, the whole slide or a dragged crop goes into the notes
+    as a slide figure, after the block it was opened from. It is the learner's own edit, so it is
+    undoable, and it counts towards that section's slides.
+  - **Each section ends with its own collapsed "Slides" strip**, and the opening slides sit under
+    the objectives. Each slide is in exactly one section. The grouping is code, not a model
+    (`shared/doc/slidegroups.ts`):
+    - Cited pages go to the section that cites them most strongly.
+    - The overview's title and objectives list are not sections, because the list cites every
+      objective's pages. That is how p. 41 of the complex v4.0 deck came to be filed under the
+      title and under two other sections.
+    - A page no block cites is placed by its position in the deck. A divider goes to the section
+      after it; anything else goes to the neighbour whose words it shares.
+    - References and appendix pages go to "Other slides".
+  - **Dragging a thumbnail** turns the notes into a list of section titles to drop it on. A drop
+    is the learner's correction and is kept for that document (`notes_slide_groups`, migration
+    025). After Update overview it is remapped by heading text.
 - **Highlight + Ctrl+E**: a question anchored to the span. It opens a thread in the chat column
   tied to that span; Ellie answers by default, `@Max` works, and the edit rules of §5 apply at that
   spot. The span keeps a highlight that jumps to its thread.

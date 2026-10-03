@@ -22,6 +22,7 @@
   import { nodeViews, submitAnswerAtSelection } from '../../lib/pm/nodeviews.js';
   import { revealPlugin } from '../../lib/pm/reveal.js';
   import { editorPlugins } from '../../lib/pm/setup.js';
+  import { slideStripPlugin } from '../../lib/pm/slidestrip.js';
   import { pageLinesFor } from '../../lib/pagelines.js';
 
   let {
@@ -58,6 +59,8 @@
             chromePlugin(() => ({ ...doc.chromeContext(), reader: { slides: () => doc.slides(), pageLines } })),
             // The caret's block (its toolbar shows without a hover) and the note slots' placeholder.
             focusPlugin(),
+            // Each section's slides, in a collapsed strip at the section's end (`slidestrip.ts`).
+            slideStripPlugin(() => doc.stripContext()),
             ...editorPlugins({
               onAskAboutSelection: () => doc.askAboutSelection(),
               onSaveNow: () => {
@@ -72,7 +75,8 @@
           state,
           nodeViews: nodeViews({
             slides: () => doc.slides(),
-            onOpenSlide: (page, rect) => doc.openSlide(page, rect),
+            onOpenSlide: (page, rect, anchor, afterBlockId) => doc.openSlide(page, rect, anchor, afterBlockId ?? null),
+            onInsertSlide: (target, afterBlockId) => void doc.insertSlide(target.page, target.rect, afterBlockId),
             onAnswerQuestion: (answer) => doc.answerQuestion(answer),
             pageLines,
             onAskAboutFigure: (input) => onAskAboutFigure?.(input),

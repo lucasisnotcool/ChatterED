@@ -113,8 +113,13 @@ export interface ChromeContext {
   onKeepEdit: (editId: string) => void;
   onAcceptSuggestion: (suggestionId: string) => void;
   onRejectSuggestion: (suggestionId: string) => void;
-  /** The provenance chip's click: open the slide modal at that page. */
-  onOpenSlide: (page: number, rect: Rect | null) => void;
+  /** The provenance chip's click: a slide window beside the chip (2026-10-03: it was the modal). */
+  onOpenSlide: (page: number, rect: Rect | null, anchor?: HTMLElement, afterBlockId?: string | null) => void;
+  /**
+   * **Insert into notes**, from a slide window (2026-10-03): the whole slide or a crop of it, as a
+   * figure after `afterBlockId` (the block the slide was opened from), or the caret's block.
+   */
+  onInsertSlide?: (target: { page: number; rect: Rect | null }, afterBlockId: string | null) => void;
   onFocusThread: (threadId: string) => void;
   /**
    * The chip's hover preview reads the slide through this (`sourcepop.ts`). Optional: without it
@@ -242,7 +247,7 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
         let openRegion: (() => void) | null = null;
         const chip = button('nd-chip', label, reason ? reason : `Open the source slide (${label})`, () => {
           if (openRegion) openRegion();
-          else if (page !== null) ctx.onOpenSlide(page, rect);
+          else if (page !== null) ctx.onOpenSlide(page, rect, chip, blockId);
         });
         if (page !== null && ctx.reader) {
           const figure = node.type.name === 'slide_figure' ? { page: node.attrs.page as number, rect } : null;
@@ -258,6 +263,7 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
             figure,
             reader: ctx.reader,
             onOpenSlide: ctx.onOpenSlide,
+            onInsert: ctx.onInsertSlide ? (target) => ctx.onInsertSlide?.(target, blockId) : undefined,
           });
           // The preview says what the tooltip said, and the two would sit on top of each other.
           chip.title = '';

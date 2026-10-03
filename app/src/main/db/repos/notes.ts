@@ -34,6 +34,7 @@ import type {
   OverviewMeta,
   Suggestion,
 } from '../../../shared/doc/types.js';
+import type { SlideOverride } from '../../../shared/doc/slidegroups.js';
 
 /** The ingest statuses a row may actually hold. `none` is the *absence* of a row, not a value. */
 export type StoredIngestStatus = Exclude<NotesIngestStatus, 'none'>;
@@ -214,6 +215,7 @@ export interface NotesRepo {
    * Agent edits still wearing their colour (or never applied) and open suggestions address block
    * ids the new ingest will not have, so they are deleted; edits and suggestions the learner
    * already decided are history and stay. The objective→block map is a cache and is emptied.
+   * The learner's slide moves (`notes_slide_groups`) stay: they are remapped by heading text.
    * Returns what was cleared, for the log.
    */
   /**
@@ -231,6 +233,17 @@ export interface NotesRepo {
   landOverview(input: LandOverviewInput, now: string): NotesDocRecord;
   /** Rewrite only the metadata (a recommendation added or dismissed). Null when no such doc. */
   setOverview(docId: string, overview: OverviewMeta, now: string): NotesDocRecord | null;
+
+  /**
+   * **The learner's slide moves** (migration 025): every page they moved to another strip, in
+   * page order. Applied over the computed groups by `shared/doc/slidegroups.ts`.
+   */
+  slideOverrides(docId: string): SlideOverride[];
+  /**
+   * Move one slide (an upsert on the page), or with `key` null put it back where the doc places
+   * it. **Not cleared by `clearForRegenerate`**: the title is how a move outlives new block ids.
+   */
+  setSlideOverride(input: { docId: string; page: number; key: string | null; title: string }, now: string): void;
 }
 
 interface DocRow {
@@ -687,6 +700,27 @@ export function notesRepo(db: SqlDatabase): NotesRepo {
         bind({ overview: JSON.stringify(overview), now, id: docId }),
       );
       return toRecord(read(docId)!);
+    },
+
+    slideOverrides(docId) {
+      return plainAll(
+        db
+          .prepare('SELECT page, group_key, group_title FROM notes_slide_groups WHERE doc_id = @doc ORDER BY page')
+          .all<{ page: number; group_key: string; group_title: string }>({ doc: docId }),
+      ).map((r) => ({ page: r.page, key: r.group_key, title: r.group_title }));
+    },
+
+    setSlideOverride({ docId, page, key, title }, now) {
+      if (!Number.isInteger(page) || page < 1) throw new Error(`Not a page: ${String(page)}`);
+      if (key === null) {
+        db.prepare('DELETE FROM notes_slide_groups WHERE doc_id = @doc AND page = @page').run({ doc: docId, page });
+        return;
+      }
+      db.prepare(
+        `INSERT INTO notes_slide_groups (doc_id, page, group_key, group_title, at)
+         VALUES (@doc, @page, @key, @title, @now)
+         ON CONFLICT (doc_id, page) DO UPDATE SET group_key = @key, group_title = @title, at = @now`,
+      ).run(bind({ doc: docId, page, key, title, now }));
     },
 
     objectiveBlocks(docId) {
