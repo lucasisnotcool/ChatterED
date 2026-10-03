@@ -59,6 +59,7 @@
  */
 import katex from 'katex';
 import { escapeHtml } from './markdown.js';
+import { normaliseTexDelimiters } from '../../shared/doc/tex.js';
 
 /** The rule `reference.ts` draws between the answer and the hand-back line. */
 export const RULE_LINE = '───';
@@ -140,8 +141,10 @@ function code(content: string, pages: readonly number[]): string {
  */
 function inline(text: string, pages: readonly number[]): string {
   const parts: string[] = [];
-  // A code span is tried first at any position, so `$x$` inside backticks stays literal.
-  const re = /`([^`\n]+)`|\$\$([^$]+)\$\$|\$([^$\n]+)\$/g;
+  // A code span is tried first at any position, so `$x$` inside backticks stays literal. Inline
+  // maths follows Pandoc's rule (no space just inside the dollars, no digit after the closing one),
+  // so "$5 and $6" is money (2026-10-03).
+  const re = /`([^`\n]+)`|\$\$([^$]+)\$\$|\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g;
   let last = 0;
   for (const match of text.matchAll(re)) {
     const at = match.index;
@@ -271,7 +274,8 @@ export function aiBody(body: string, options: AiTextOptions = {}): AiBody {
  */
 export function paragraphs(text: string, options: AiTextOptions = {}): string {
   const pages = options.pages ?? [];
-  return blockify(text.trim().split('\n')).map((b) => renderBlock(b, pages)).join('');
+  // `\(…\)` and `\[…\]` are read as `$…$` and `$$…$$` (2026-10-03): they reached the learner raw.
+  return blockify(normaliseTexDelimiters(text).trim().split('\n')).map((b) => renderBlock(b, pages)).join('');
 }
 
 /**

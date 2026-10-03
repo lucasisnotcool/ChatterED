@@ -8,6 +8,7 @@ import App from './App.svelte';
 import { mount } from 'svelte';
 import { bridgeAvailable, prepareBridge } from './lib/bridge.js';
 import { installDropGuard } from './lib/dropguard.js';
+import { installCopyTex } from './lib/copytex.js';
 import { TRIAL_CONTACT_EMAIL } from '../shared/trial.js';
 
 /**
@@ -81,6 +82,8 @@ function fatalScreen(target: HTMLElement): void {
 }
 
 installDropGuard(window);
+// A formula copied out of the chat comes out as its TeX, not KaTeX's doubled text (`copytex.ts`).
+installCopyTex();
 await prepareBridge(); // dev only: the mock, when there is no Electron
 const root = document.getElementById('app')!;
 if (bridgeAvailable()) {

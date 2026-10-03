@@ -103,6 +103,23 @@ marker.
 
 - A normal rich-text editor: headings, paragraphs, lists, bold/italic, code, maths (KaTeX), inline
   slide figures. Fully editable by the learner.
+
+  *Amended 2026-10-03 (maths).* Inline maths was only styled, so the learner read raw source such as
+  `h_{\max}`, and display maths could not be edited at all. Now:
+  - **Every formula is typeset**, inline and display. At rest, the arrow keys step over a formula
+    as one unit, and Backspace highlights it before deleting it.
+  - **A formula is edited in a popover.** It opens on a click, on ⌘⇧E, or on Insert ▸ Formula; for a
+    display formula, also on `$$` and a space. The field is MathLive's, so a learner who knows no
+    LaTeX types `/` for a fraction, `^` for a power and names like `alpha` or `>=`. The LaTeX
+    source is one click away, and typing `$x^2$` directly also works. What is stored is always the
+    TeX, and the text stays the author's, so the guard and the doc-text assessment are unchanged.
+  - **Copy and paste.** A copy puts `$…$` and `$$…$$` on the clipboard as plain text. A paste reads
+    `$…$`, `$$…$$`, `\(…\)` and `\[…\]`, and recovers the TeX from rendered maths on a web page
+    (KaTeX, MathJax, MathML), instead of the doubled characters a rendered formula copies as. Agent
+    text with `\(…\)` or `\[…\]`, in the notes or the chat, is read the same way.
+  - **Money stays money.** Inline dollars follow Pandoc's rule, so "$5 and $6" is not a formula.
+  - Code: `app/src/renderer/lib/pm/math.ts`, `matheditor.ts`, `mathpaste.ts`, and
+    `app/src/shared/doc/tex.ts`.
 - **Provenance chip** on each block: `p. 12` or `added: bridges p. 12 and p. 13`. A click opens the
   source slide in the in-doc modal.
 - **Inline slide figures** for evidentiary slides or regions (a crop of the rendered page, as
@@ -176,6 +193,22 @@ Ellie's answer to a new learner question simply stands, and Max's open question 
   He gives it in at most 80 words and re-asks. Code un-counts the attempt (no outcome, no fill, no
   notes edit), and the question stays open.
 
+- **Amended 2026-10-03 (Lucas's complex v4.0 run): the follow-ups end.** One three-part question on
+  the p. 4 `Fly` action was marked *Partly there* six times. Each answer was marked on its own
+  against the whole question, so an answer to one follow-up could never be complete. Each follow-up
+  was narrower than the last, ending on which line declares the parameters. And `:action ?`, a
+  guess at what Max wanted, got another open question. What changed:
+  - **Max asks for one thing.** A question in parts is marked part by part, and every missing part
+    becomes a follow-up.
+  - **From the second try, the answers are marked together** against the question Max first asked.
+    A follow-up asks only for part of that question, never for something it did not ask.
+  - **Two open follow-ups, then a blank.** Past two open follow-ups on one question, or after a
+    guess (a few words ending in a question mark), a follow-up that is still owed is one
+    fill-in-the-blank on what is missing (§4.5). It is marked as a blank, so the term fills nothing
+    beyond what the earlier answers earned. A correct term closes the question as *you got this*.
+  Code: `core/pitch.ts` (`followUpPlan`, `isGuess`, `OPEN_FOLLOW_UPS`), `prompts.doc.ts`
+  (`followUpBlock`), `flow.ts` (`followUpBlank`).
+
 All of the above are rules in the orchestrator, decided in code before any model is consulted, as
 today. The model writes the words of a turn; it never decides whether an answer is due.
 
@@ -193,22 +226,6 @@ it) and the learner has not attempted:
    At most 50 words.
 
 This fires **once per question**. After it, silence is left alone until the closure rule (§4.7).
-- **Amended 2026-10-03 (Lucas's complex v4.0 run): the follow-ups end.** One three-part question on
-  the p. 4 `Fly` action was marked *Partly there* six times. Each answer was marked on its own
-  against the whole question, so an answer to one follow-up could never be complete. Each follow-up
-  was narrower than the last, ending on which line declares the parameters. And `:action ?`, a
-  guess at what Max wanted, got another open question. What changed:
-  - **Max asks for one thing.** A question in parts is marked part by part, and every missing part
-    becomes a follow-up.
-  - **From the second try, the answers are marked together** against the question Max first asked.
-    A follow-up asks only for part of that question, never for something it did not ask.
-  - **Two open follow-ups, then a blank.** Past two open follow-ups on one question, or after a
-    guess (a few words ending in a question mark), a follow-up that is still owed is one
-    fill-in-the-blank on what is missing (§4.5). It is marked as a blank, so the term fills nothing
-    beyond what the earlier answers earned. A correct term closes the question as *you got this*.
-  Code: `core/pitch.ts` (`followUpPlan`, `isGuess`, `OPEN_FOLLOW_UPS`), `prompts.doc.ts`
-  (`followUpBlock`), `flow.ts` (`followUpBlank`).
-
 This is the peer of Xu et al. (2026): something to improve on, in place of an answer.
 
 ### 4.4 Releasing the answer
@@ -264,6 +281,10 @@ Code: `core/pitch.ts` (`QuestionForm`, `questionForm`, `pitchBlock`), `prompts.d
 (`maxFollowupBlock`, `clozeFeedbackBlock`), migration 023. Only `rule:max_followup` is pitched, so
 only the follow-up can be a blank.
 
+*Amended 2026-10-03:* a blank is also how a run of *Partly there* ends: the third follow-up on one
+question, or the follow-up to a guess, is one blank (§4.2). Its verdict is recorded with
+`form: 'cloze'` for the same reason as above.
+
 ### 4.6 Size
 
 Max's turns stay at the `attempt-first.md` §4 sizes (feedback under 100; released answer under 150).
@@ -281,10 +302,6 @@ can land, so she gives the full answer at the old size. Code: `prompts.doc.ts` `
 
 ### 4.7 Closure: nothing is left hanging
 
-*Amended 2026-10-03:* a blank is also how a run of *Partly there* ends: the third follow-up on one
-question, or the follow-up to a guess, is one blank (§4.2). Its verdict is recorded with
-`form: 'cloze'` for the same reason as above.
-
 Two invariants, enforced by rule, not by prompt:
 
 - **No question Max asked is left without its answer.** If a question is still open when the flow
@@ -293,6 +310,10 @@ Two invariants, enforced by rule, not by prompt:
 - **No mistake Ellie made is left uncorrected.** If Ellie's cue contained a mistake and the thread
   ends by any path, the resolving Max turn corrects it explicitly. The cue turn records
   `hasMistake` and the claim, so the rule can check that the correction happened.
+  *Amended 2026-10-03:* the correction is asked of the **first** Max turn after the cue (a
+  feedback turn, a release or closure), **once**. It used to be repeated on every feedback turn
+  until the question closed, six times in one run. A mistake is a claim the page contradicts, not
+  a doubt. If the page shows her flagged claim is right, Max says so rather than inventing a fault.
 
 ### 4.8 Where to look next (2026-10-01)
 
@@ -310,10 +331,6 @@ pages as `p. N`, which the chat already links into the notes.
 - *Answer shown* means the last thing that happened on that objective this sitting was a release.
 
 ## 5. Live agent editing
-  *Amended 2026-10-03:* the correction is asked of the **first** Max turn after the cue (a
-  feedback turn, a release or closure), **once**. It used to be repeated on every feedback turn
-  until the question closed, six times in one run. A mistake is a claim the page contradicts, not
-  a doubt. If the page shows her flagged claim is right, Max says so rather than inventing a fault.
 
 Agents are visibly present: a labelled cursor each, green for Ellie, red for Max. An edit is typed
 in at reading speed with the cursor, not pasted, and the doc scrolls to it only if the learner is
@@ -449,6 +466,12 @@ Code: `room/docedit.ts` (`planGeneratedBlock`), `actor.generateBlock`, `notes:ge
      Q block under the objective's first block. If Max already has a question open, step 3 is
      skipped and Ellie points the learner back to it.
 
+  *Amended 2026-10-03:* "the objective's first block" is its first **section heading** (the
+  scroll target), and the Q block goes under the block below that heading. The "By the end you
+  can" list is cited to every objective's pages, so it used to be every objective's first block,
+  and every lesson's question was filed at the top of the notes. It is no longer counted as any
+  objective's block.
+
   *Revised 2026-10-01 (Lucas's decision).* Step 3 used to be "has Ellie prompt the learner to ask
   a question to begin". A lesson now opens on Max's first question on the objective, which is how
   the learner clears it.
@@ -466,12 +489,6 @@ and keeps the doc correct. **One design decision**: what comes before the answer
 take and a prompt aimed at the learner, by rule, and a give-up lowers the next question instead of
 being refused. **One limitation**: the doc is AI-written and re-typeset, so its fidelity rests on
 provenance the learner has to click; nothing verifies the notes against the slide in code.
-  *Amended 2026-10-03:* "the objective's first block" is its first **section heading** (the
-  scroll target), and the Q block goes under the block below that heading. The "By the end you
-  can" list is cited to every objective's pages, so it used to be every objective's first block,
-  and every lesson's question was filed at the top of the notes. It is no longer counted as any
-  objective's block.
-
 
 ## 8. Implementation shape (binding on the build)
 

@@ -77,6 +77,7 @@ import { reveal, revealText } from './pm/reveal.js';
 import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
 import { setReading } from './pm/readaloud.js';
 import { insertTargetId } from './pm/insertat.js';
+import { editFormula } from './pm/math.js';
 import { learnerTextByBlock } from './pm/doctext.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
@@ -1268,6 +1269,18 @@ export class DocStore {
     const view = this.#view;
     if (!view || !this.#placed) return null;
     return insertTargetId(view.state);
+  }
+
+  /**
+   * **Insert ▸ Formula** (2026-10-03): the formula editor at the caret, as ⌘⇧E opens it
+   * (`pm/math.ts`). The learner's own, not Ellie's: nothing is generated. False when there is no
+   * caret in the notes yet, or it is somewhere a formula cannot go.
+   */
+  writeFormula(): boolean {
+    const view = this.#view;
+    if (!view || !this.#placed) return false;
+    view.focus();
+    return editFormula(view.state, view.dispatch, view);
   }
 
   /**

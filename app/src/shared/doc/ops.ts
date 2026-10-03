@@ -47,6 +47,7 @@ import {
   textRuns,
 } from './schema.js';
 import { suggestReplaceOnTr } from './suggest.js';
+import { displayMathOf } from './tex.js';
 import type {
   AgentDocOp,
   AgentDocOpBatch,
@@ -99,9 +100,16 @@ export function draftToNodes(
       case 'heading':
         out.push(schema.nodes.heading!.create({ ...attrs, level: draft.level }, inline(draft.text)));
         break;
-      case 'paragraph':
-        out.push(schema.nodes.paragraph!.create(attrs, inline(draft.text)));
+      case 'paragraph': {
+        // A paragraph that is one display formula is a formula block (2026-10-03).
+        const display = displayMathOf(draft.text);
+        out.push(
+          display !== null
+            ? schema.nodes.math_block!.create({ ...attrs, tex: display })
+            : schema.nodes.paragraph!.create(attrs, inline(draft.text)),
+        );
         break;
+      }
       case 'bullets':
       case 'numbers': {
         const items = draft.items

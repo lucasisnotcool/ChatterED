@@ -32,6 +32,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
     "better-sqlite3": "^13.0.3",
+    "mathlive": "^0.111.0",
+    "mathml-to-latex": "^1.8.0",
     "pdfjs-dist": "^6.3.289",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-dropcursor": "^1.8.3",

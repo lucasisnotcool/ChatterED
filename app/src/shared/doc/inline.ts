@@ -24,6 +24,7 @@
 
 import type { Fragment, Mark, Node, Schema } from 'prosemirror-model';
 import { authorMark } from './schema.js';
+import { normaliseTexDelimiters } from './tex.js';
 import type { DocAuthor } from './types.js';
 
 /**
@@ -41,7 +42,17 @@ interface Token {
 }
 
 const CODE = /`([^`\n]+)`/;
-const MATH = /\$([^$\n]+)\$/;
+/**
+ * `$$x$$` inside a line is inline maths too (2026-10-03): matched first, or `$x$` inside it left a
+ * stray `$` on each side. A line that is *only* a display formula becomes a `math_block` instead
+ * (`ops.ts`, `tex.displayMathOf`).
+ */
+const DISPLAY = /\$\$([^$\n]+?)\$\$/;
+/**
+ * No space just inside either `$`, and no digit after the closing one, so "$5 and $6" is money
+ * and not a formula (the chat's rule, `markdown.ts`).
+ */
+const MATH = /\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/;
 const STRONG = /\*\*(?!\s)((?:[^*]|\*(?!\*))+?)(?<!\s)\*\*/;
 const EM = /(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)/;
 
@@ -61,6 +72,7 @@ function tokenise(text: string, wearing: Omit<Token, 'text' | 'tex'>): Token[] {
 
   const attempts: { re: RegExp; make: (inner: string) => Token[] }[] = [
     { re: CODE, make: (inner) => [{ text: inner, ...wearing, code: true, tex: null }] },
+    { re: DISPLAY, make: (inner) => [{ text: inner.trim(), ...wearing, tex: inner.trim() }] },
     { re: MATH, make: (inner) => [{ text: inner, ...wearing, tex: inner }] },
     { re: STRONG, make: (inner) => tokenise(inner, { ...wearing, strong: true }) },
     { re: EM, make: (inner) => tokenise(inner, { ...wearing, em: true }) },
@@ -104,7 +116,7 @@ export function inlineToNodes(
  * and how an agent's inserted text keeps the author mark the batch already minted.
  */
 export function inlineToNodesWith(schema: Schema, text: string, marks: readonly Mark[]): Node[] {
-  const tokens = tokenise(text, { strong: false, em: false, code: false });
+  const tokens = tokenise(normaliseTexDelimiters(text), { strong: false, em: false, code: false });
   const nodes: Node[] = [];
   for (const token of tokens) {
     if (token.text.length === 0) continue;
@@ -184,18 +196,34 @@ export function nodesToInline(fragment: Fragment): string {
     tokens = [];
   };
 
+  /** The `math_inline` mark of the last token pushed, so a formula split across text nodes is one. */
+  let lastMath: Mark | null = null;
   fragment.forEach((node) => {
     if (node.isText) {
       const math = has(node.marks, 'math_inline');
+      /**
+       * **The text is the formula's source, not the mark's `tex`** (2026-10-03). The text is what
+       * the learner sees and edits; the attr is what it was written as and goes stale on the first
+       * keystroke. And one formula is often several text nodes (a learner edit inside Ellie's
+       * formula splits it by author), each of which used to emit the whole `tex` again.
+       */
+      const previous = tokens.at(-1);
+      if (math !== null && lastMath !== null && math.eq(lastMath) && previous?.tex !== null && previous !== undefined) {
+        previous.text += node.text ?? '';
+        previous.tex = previous.text;
+        return;
+      }
+      lastMath = math;
       tokens.push({
         text: node.text ?? '',
         strong: has(node.marks, 'strong') !== null,
         em: has(node.marks, 'em') !== null,
         code: has(node.marks, 'code') !== null,
-        tex: math ? ((math.attrs.tex as string) || (node.text ?? '')) : null,
+        tex: math ? (node.text ?? '') : null,
       });
       return;
     }
+    lastMath = null;
     if (node.type.name === 'math_block') {
       tokens.push({ text: '', strong: false, em: false, code: false, tex: node.attrs.tex as string });
       return;

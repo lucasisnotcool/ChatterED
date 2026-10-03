@@ -206,14 +206,50 @@
 }
 .nd-editor .ProseMirror pre code { background: none; padding: 0; }
 
-/* Inline maths is *styled*, not typeset: a mark cannot have a node view, and replacing the
-   text would put the source out of the cursor's reach. See `pm/nodeviews.ts`. */
-.nd-editor .math-inline {
-  font-family: 'KaTeX_Math', Georgia, 'Times New Roman', serif;
-  font-style: italic;
-  font-size: 1.03em;
-  color: #26264a;
+/* ── maths (`pm/math.ts`, 2026-10-03) ── */
+/* At rest a formula's source is hidden and KaTeX stands in for it. The caret cannot enter
+   hidden text, so the arrows step over a formula as one unit. */
+.nd-editor .nd-math-hidden { display: none; }
+.nd-editor .nd-math {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 1px;
+  transition: background-color 0.12s;
 }
+.nd-editor .nd-math:hover { background: var(--indigo-tint); }
+.nd-editor .nd-math .katex { font-size: 1.05em; }
+/* One Backspace away from being deleted. */
+.nd-editor .nd-math-armed { background: #fde8e8; box-shadow: 0 0 0 1px #e8a3a3; }
+.nd-editor .nd-math-editing { background: var(--indigo-tint); box-shadow: 0 0 0 1px #c7c7e8; }
+.nd-editor .nd-math-error { color: var(--challenger); font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+
+/* The source, shown in place while the caret is inside it, with its preview under it. */
+.nd-editor .nd-math-src {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.88em;
+  font-style: normal;
+  background: #f1f1f6;
+  border-radius: 3px;
+  padding: 1px 2px;
+}
+.nd-editor .nd-math-preview-anchor { position: relative; display: inline-block; width: 0; height: 1em; vertical-align: baseline; }
+.nd-editor .nd-math-preview {
+  position: absolute;
+  top: 1.5em;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--pane);
+  box-shadow: 0 6px 20px rgb(20 20 40 / 9%);
+  user-select: none;
+}
+.nd-editor .nd-math-hint { font-size: 11px; color: var(--text-2); font-family: var(--font); }
 
 .nd-mathblock {
   margin: 0 0 18px;
@@ -221,6 +257,70 @@
   overflow-x: auto;
   text-align: center;
 }
+.nd-mathblock { cursor: pointer; border-radius: var(--radius); transition: background-color 0.12s; }
+.nd-mathblock:hover { background: #f7f7fb; }
+.nd-mathblock-selected { box-shadow: 0 0 0 2px #c7c7e8; }
+.nd-mathblock-empty { color: var(--text-2); font-size: 12.5px; font-style: italic; }
+
+/* The formula editor (`pm/matheditor.ts`): MathLive's field, the LaTeX under it on request. */
+.nd-matheditor {
+  width: min(440px, calc(100vw - 16px));
+  padding: 10px 12px;
+  font-size: 12px;
+  user-select: text;
+}
+.nd-matheditor-field {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 8px;
+  font-size: 19px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  --primary-color: var(--indigo);
+  --selection-background-color: var(--indigo-tint);
+  --caret-color: var(--indigo);
+}
+/* The labelled Symbols button under the field replaces MathLive's own keyboard icon. */
+.nd-matheditor-field::part(virtual-keyboard-toggle) { display: none; }
+.nd-matheditor-field:focus { outline: none; }
+.nd-matheditor-field:focus-within { border-color: #c7c7e8; box-shadow: 0 0 0 3px var(--indigo-tint); }
+.nd-matheditor-source {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  resize: vertical;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: #fafafc;
+}
+.nd-matheditor-hint { margin: 8px 0 0; color: var(--text-2); line-height: 1.45; }
+.nd-matheditor-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.nd-matheditor-spacer { flex: 1; }
+.nd-matheditor-link {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted transparent;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.nd-matheditor-link:hover, .nd-matheditor-link.nd-on { color: var(--indigo); border-bottom-color: var(--indigo); }
+.nd-matheditor-done {
+  padding: 3px 12px;
+  border: 1px solid var(--indigo);
+  border-radius: 6px;
+  background: var(--indigo);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
 .nd-mathblock.nd-math-error {
   text-align: left;
   color: var(--challenger);

@@ -13,4 +13,5 @@ individual assignment says so in that assignment.
 | `docs/report/assignment1-final.md`, `docs/report/figures/` | ChatterED A1 report as submitted (22 Sep 2026) | Lucas | 2026-09-23 | Word for word (the L- evidence) |
 | `AGENTS.md`, `SCOPE.md`, `tools/check-scope.sh`, `.github/workflows/scope.yml`, `docs/evidence/`, this file | Team setup, carried over from `lucasisnotcool/cs3249-group` (archived) | Lucas, with Claude Code | 2026-10-01 | Valerie to review |
 | `app/sim/` | Simulation harness: the real app headless, a simulated learner with a persona, Claude Code as judge | Lucas, with Claude Code | 2026-10-01 | Shared tooling; run outputs stay outside the repo |
+| `app/src/renderer/lib/pm/math.ts`, `matheditor.ts`, `mathpaste.ts`, `app/src/shared/doc/tex.ts` | Maths in the notes: typeset formulas, a MathLive formula editor, copy and paste of TeX | Lucas, with Claude Code | 2026-10-03 | Uses MathLive and mathml-to-latex (MIT), credited in the app's third-party notices |
 | `docs/evidence/N-nudge-a1-report.md` | Nudge A1 report as submitted | Valerie | to add | |

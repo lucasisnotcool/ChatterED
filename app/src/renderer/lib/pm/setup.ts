@@ -23,6 +23,7 @@ import type { Command, Plugin } from 'prosemirror-state';
 import { notesSchema } from '../../../shared/doc/schema.js';
 import { blockKitPlugin } from './blockkit.js';
 import { diagramPlugin } from './diagram.js';
+import { editFormula, mathInputRules, mathPlugin } from './math.js';
 import { readAloudPlugin } from './readaloud.js';
 import { tableGuard, tableKeymap } from './table.js';
 import { tableChrome } from './tableview.js';
@@ -79,8 +80,11 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
   const saveNow: Command = () => keys.onSaveNow();
 
   return [
-    inputRules({ rules: [headingRule(), bulletRule(), orderedRule(), codeRule()] }),
+    inputRules({ rules: [headingRule(), bulletRule(), orderedRule(), codeRule(), ...mathInputRules()] }),
     history(),
+    // Formulas typeset at rest, stepped over as one unit, edited in a popover (`math.ts`). Ahead of
+    // every keymap, so its arrow and delete keys at a formula's edge are seen first.
+    mathPlugin(),
     // Inside a table cell, first: Tab, Enter, the arrows and the deletes are the table's (`table.ts`).
     keymap(tableKeymap()),
     // Inside a diagram node, also first: Enter, Tab and the deletes never split or merge a box (`diagram.ts`).
@@ -94,6 +98,8 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
       'Mod-b': toggleMark(marks.strong!),
       'Mod-i': toggleMark(marks.em!),
       'Mod-`': toggleMark(marks.code!),
+      // Notion's key for an inline formula: edit the one at the caret, or write one.
+      'Mod-Shift-e': editFormula,
       'Mod-e': askAbout,
       'Mod-s': saveNow,
       'Mod-Enter': keys.submitAnswer,

@@ -282,3 +282,20 @@ describe('a p. N the deck actually has', () => {
     expect(body.html).toContain('data-page="5"');
   });
 });
+
+/** 2026-10-03: the LaTeX delimiters reached the learner raw, and money could become a formula. */
+describe('maths in a chat turn', () => {
+  it('typesets \\(…\\) and \\[…\\] as it does $…$ and $$…$$', () => {
+    const html = paragraphs('so \\(h_{\\max}\\) is admissible:\n\n\\[h(s) \\le h^*(s)\\]');
+    expect(html).toContain('class="katex"');
+    expect(html).toContain('katex-display');
+    expect(html).not.toContain('\\(');
+    expect(html).not.toContain('\\[');
+  });
+
+  it('reads "$5 and $6" as money', () => {
+    const html = paragraphs('It costs $5 and $6 to check.');
+    expect(html).not.toContain('katex');
+    expect(html).toContain('$5 and $6');
+  });
+});

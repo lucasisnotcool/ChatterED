@@ -2,6 +2,7 @@
   /**
    * **Insert ▸ Table / Diagram / Flashcards / Quiz / Infographic** (2026-10-01; notebooks §5.3):
    * ask Ellie for one of the five of the section the caret is in, placed after the block it is in.
+   * Above them, **Formula** (2026-10-03) opens the formula editor at the caret: the learner's own.
    *
    * The header's control and the glue around `doc.generateBlock`: a five-item menu, then a
    * one-line prompt that is optional ("whatever fits best" when empty), then the call. The call
@@ -83,6 +84,12 @@
     field?.focus();
   }
 
+  /** Formula is the learner's own: the editor opens at the caret, and Ellie is not asked. */
+  function writeFormula(): void {
+    phase = 'closed';
+    if (!doc.writeFormula()) say('Click where it should go first');
+  }
+
   function cancel(): void {
     if (phase !== 'busy') phase = 'closed';
   }
@@ -152,7 +159,7 @@
       ? 'The notes are not open yet.'
       : doc.frozen
         ? 'The notes are frozen, so Ellie cannot add to them.'
-        : 'Ask Ellie for a table, diagram, flashcards, quiz or infographic of this section, after the block your cursor is in.'}
+        : 'Write a formula, or ask Ellie for a table, diagram, flashcards, quiz or infographic of this section, after the block your cursor is in.'}
     onmousedown={keepCursor}
     onclick={toggleMenu}
   >
@@ -161,6 +168,10 @@
 
   {#if phase === 'menu'}
     <span class="ni-pop ni-menu" role="menu">
+      <button type="button" role="menuitem" onmousedown={keepCursor} onclick={writeFormula}>
+        Formula <span class="ni-key">⌘⇧E</span>
+      </button>
+      <span class="ni-sep" role="separator"></span>
       {#each BLOCK_KINDS as option (option)}
         <button type="button" role="menuitem" onmousedown={keepCursor} onclick={() => void choose(option)}>
           {blockKindLabel(option)}
@@ -221,6 +232,8 @@
     border-radius: 5px;
     color: var(--text);
   }
+  .ni-key { margin-left: 8px; color: var(--muted); font-size: 10.5px; }
+  .ni-sep { height: 1px; margin: 3px 6px; background: var(--hairline); }
   .ni-menu button:hover,
   .ni-menu button:focus-visible { background: var(--indigo-tint); color: var(--indigo); }
 

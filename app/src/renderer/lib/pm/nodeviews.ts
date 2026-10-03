@@ -18,11 +18,9 @@
  *    2026-10-01 it is also where the learner answers (a footer with Answer here and Submit), and
  *    a question may be the learner's own (`askedBy: 'user'`, "You asked").
  *
- * **`math_inline` is a mark, not a node**, so it cannot have a node view at all; it is styled as
- * maths (KaTeX's own italic face) and left editable, which is the honest trade — a mark view that
- * replaced its own text with KaTeX output would make the source unreachable to the cursor. The
- * closed inline subset writes display maths for anything worth typesetting, and that path is
- * real. Noted as a limitation rather than faked.
+ * **`math_inline` is a mark, not a node**, so it cannot have a node view at all. Since 2026-10-03
+ * it is typeset by a decoration instead (`math.ts`), with its source hidden at rest and edited in
+ * the formula popover, so the text stays the learner's or the agent's words underneath.
  */
 
 import katex from 'katex';
@@ -38,6 +36,7 @@ import type { SlideSource } from '../rasterise.js';
 import { hotspotQuestion, hotspotsIn, type PageLinesView } from '../../../shared/doc/cite.js';
 import { drawHotspots, toLineRect } from './sourcepop.js';
 import { TableView } from './tableview.js';
+import { editBlock } from './math.js';
 import { diagramNodeViews } from './diagram.js';
 import { flashcardNodeViews } from './flashcards.js';
 import { infographicNodeViews } from './infographic.js';
@@ -73,14 +72,34 @@ function typeset(target: HTMLElement, tex: string, display: boolean): void {
   }
 }
 
+/**
+ * A display formula: KaTeX, and a click opens the formula editor on it (`math.ts`, 2026-10-03).
+ * It used to be read-only, so a learner could not fix a formula, or write one, at all.
+ */
 class MathBlockView implements NodeView {
   readonly dom: HTMLElement;
   #tex: string;
 
-  constructor(node: Node) {
+  constructor(node: Node, view: EditorView, getPos: () => number | undefined) {
     this.dom = document.createElement('div');
-    this.dom.className = 'nd-mathblock';
     this.#tex = (node.attrs.tex as string) || '';
+    this.#draw();
+    this.dom.addEventListener('mousedown', (event) => {
+      if (!view.editable) return;
+      event.preventDefault();
+      const pos = getPos();
+      if (pos !== undefined) editBlock(view, pos);
+    });
+  }
+
+  #draw(): void {
+    this.dom.className = 'nd-mathblock';
+    this.dom.title = 'Click to edit this formula';
+    if (this.#tex.trim().length === 0) {
+      this.dom.textContent = 'An empty formula. Click to write one.';
+      this.dom.classList.add('nd-mathblock-empty');
+      return;
+    }
     typeset(this.dom, this.#tex, true);
   }
 
@@ -89,10 +108,17 @@ class MathBlockView implements NodeView {
     const tex = (node.attrs.tex as string) || '';
     if (tex !== this.#tex) {
       this.#tex = tex;
-      this.dom.className = 'nd-mathblock';
-      typeset(this.dom, tex, true);
+      this.#draw();
     }
     return true;
+  }
+
+  selectNode(): void {
+    this.dom.classList.add('nd-mathblock-selected');
+  }
+
+  deselectNode(): void {
+    this.dom.classList.remove('nd-mathblock-selected');
   }
 
   /** An atom: ProseMirror must not look inside it for a selection or a mutation. */
@@ -576,7 +602,7 @@ export function nodeViews(ctx: NodeViewContext): Record<
   (node: Node, view: EditorView, getPos: () => number | undefined) => NodeView
 > {
   return {
-    math_block: (node) => new MathBlockView(node),
+    math_block: (node, view, getPos) => new MathBlockView(node, view, getPos),
     slide_figure: (node) => new SlideFigureView(node, ctx),
     q_block: (node, view, getPos) => new QBlockView(node, view, getPos, ctx),
     table: (node, view, getPos) => new TableView(node, view, getPos, ctx),
