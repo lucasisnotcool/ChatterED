@@ -81,6 +81,10 @@ import { describeUrl, type IpcSenderLike } from './security.js';
 import { NotebookService } from './notebooks/service.js';
 import { createNotebookHost, type NotebookHostImpl } from './notebooks/host.js';
 import { PICKER_FILTERS, registerNotebookIpc } from './notebooks/ipc.js';
+import { createEmbedder, type Embedder } from './search/embedder.js';
+import { SearchIndex } from './search/index.js';
+import { registerSearchIpc } from './search/ipc.js';
+import { resolveModelDir } from './search/modelpath.js';
 import { importLegacyNotebooks } from './notebooks/legacy.js';
 import { ensureManagedVault, isManagedVault } from './vault/managed.js';
 import { isNotebookId, notebookContentKey } from '../shared/notebook.js';
@@ -119,6 +123,15 @@ function roomLog(roomId: string): TurnLog {
   return wrap(log());
 }
 
+/** Where the bundled model is. '' (keyword-only search) wherever Electron cannot say, as in tests. */
+function searchModelDir(): string {
+  try {
+    return resolveModelDir({ packaged: app.isPackaged === true, resourcesPath: process.resourcesPath ?? '', appPath: app.getAppPath() });
+  } catch {
+    return '';
+  }
+}
+
 export class AppService {
   readonly #d: IpcDeps;
   readonly #apiKey: ApiKeyStore;
@@ -127,6 +140,9 @@ export class AppService {
   readonly #vault: VaultService;
   readonly #segments: SegmentService;
   readonly #notebooks: NotebookService;
+  /** Search (`docs/research/search.md`): the embedding process and the index over every notebook. */
+  readonly #embedder: Embedder;
+  readonly #search: SearchIndex;
   readonly #notebookHost: NotebookHostImpl;
   readonly #cost: CostLedger;
   /** Running app-level totals since launch, so `cost.updated` needs no second query per call. */
@@ -160,9 +176,24 @@ export class AppService {
     this.#notebooks = new NotebookService({
       db: deps.db,
       root: join(deps.userDataDir, 'notebooks'),
-      onChanged: (change) => this.#d.getWindow()?.webContents.send(IPC.notebookChanged, change),
+      onChanged: (change) => {
+        this.#d.getWindow()?.webContents.send(IPC.notebookChanged, change);
+        // A source read, removed or renamed changes what search holds for the notebook.
+        this.#search?.touch(change.notebookId);
+      },
       confirm: (input) => this.#confirm(input),
       onDeleted: (notebookId) => this.#retireNotebookRoom(notebookId),
+    });
+    /**
+     * **Search.** The model ships in the app (Resources/models, or app/models in dev), so search
+     * works offline. The embedding process starts on first use and stops when idle; without the
+     * model files, search answers by keyword.
+     */
+    this.#embedder = createEmbedder({ modelDir: searchModelDir() });
+    this.#search = new SearchIndex({
+      db: deps.db,
+      embedder: this.#embedder,
+      scope: (folderId) => this.#notebooks.scopeNotebookIds(folderId),
     });
     this.#notebookHost = createNotebookHost(deps.db, { absPath: (rel) => this.#notebooks.absPath(rel) });
     /**
@@ -258,6 +289,11 @@ export class AppService {
       log().error('notebook.legacy_import_crashed', { class: errorClass(err), cause: (err as Error).message.slice(0, 300) });
     }
     this.#notebooks.resumeReading();
+    try {
+      this.#search.start();
+    } catch (err) {
+      log().error('search.start_failed', { class: errorClass(err), cause: (err as Error).message.slice(0, 300) });
+    }
   }
 
   /** A deleted notebook's room is retired, as New Conversation retires one; its rows stay. */
@@ -618,6 +654,8 @@ export class AppService {
     this.#actor = null;
     this.#vault.dispose();
     this.#notebooks.dispose();
+    this.#search.dispose();
+    this.#embedder.dispose();
   }
 
   // ── The conversation inside the flow (issue #25, §3.3 track B) ───────────
@@ -1164,6 +1202,7 @@ export class AppService {
     registerNotesIpc(docHost, handle);
     registerDocRoomIpc(docHost, handle);
     registerProgressIpc(docHost, handle);
+    registerSearchIpc({ index: this.#search, handle });
     // Notebooks (`docs/research/notebooks.md`): the home, the sources panel and the drop path.
     registerNotebookIpc({
       service: this.#notebooks,

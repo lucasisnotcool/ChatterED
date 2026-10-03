@@ -47,3 +47,53 @@ export interface BlockUnit {
   embedText: string;
   hash: string;
 }
+
+// ── What a search returns (`main/search/index.ts`, channel `search:query`) ─────────────────────
+
+export interface SearchHit {
+  /** The chunk's key: stable while its text is. */
+  key: string;
+  kind: 'note' | 'page';
+  notebookId: string;
+  notebookName: string;
+  /** The notes doc's title, or the deck's file name for a slide. */
+  title: string;
+  /** Notes: the heading path (and the learner's label). Slides: the deck's name. */
+  section: string[];
+  /** Notes: the section it is under. Slides: the slide's first line, its title. */
+  heading: string;
+  /** Two lines' worth of the hit's text: the highlighted block's, for a note. */
+  snippet: string;
+  /** Cosine similarity (semantic) or BM25 (keyword). Comparable only within one result. */
+  score: number;
+  /**
+   * The notebook page for the slides column. A slide hit: its own page. A note hit: of the pages
+   * it came from, the one the query matches best; null when it cites none.
+   */
+  page: number | null;
+  /**
+   * The block for the notes column to scroll to and highlight. A note hit: the best-matching block
+   * of the group. A slide hit: the best block of the notes that cite that page; null if none do.
+   */
+  blockId: string | null;
+  blockIds: string[];
+  /** The same slide in another notebook of the scope, folded into this hit. */
+  alsoIn: { notebookId: string; notebookName: string; page: number }[];
+}
+
+export interface SearchResult {
+  query: string;
+  hits: SearchHit[];
+  /** `keyword` when the embedding model is unavailable: the hits are word matches only. */
+  mode: 'semantic' | 'keyword';
+  /** Chunks in scope still waiting for their vector (matched by keyword meanwhile). */
+  pending: number;
+  ms: number;
+}
+
+export interface SearchStatus {
+  notebooks: number;
+  chunks: number;
+  pending: number;
+  semantic: boolean;
+}

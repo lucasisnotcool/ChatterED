@@ -119,6 +119,8 @@ const api: ChatterEdApi = {
   folderRename: (input) => ipcRenderer.invoke(IPC.folderRename, input),
   folderMove: (input) => ipcRenderer.invoke(IPC.folderMove, input),
   folderDelete: (input) => ipcRenderer.invoke(IPC.folderDelete, input),
+  searchQuery: (input) => ipcRenderer.invoke(IPC.searchQuery, input),
+  searchStatus: (input) => ipcRenderer.invoke(IPC.searchStatus, input),
   onNotebookChanged: (listener) => {
     const handler = (_event: unknown, payload: NotebookChange) => listener(payload);
     ipcRenderer.on(IPC.notebookChanged, handler);

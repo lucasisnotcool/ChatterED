@@ -2283,6 +2283,13 @@ export function createMockBridge(): ChatterEdApi {
     async folderDelete({ folderId }) {
       return notebooks.model.deleteFolder(folderId);
     },
+    // Search has no model or index in the dev mock: it says so rather than inventing hits.
+    async searchQuery({ query }) {
+      return { query: query.trim(), hits: [], mode: 'keyword' as const, pending: 0, ms: 0 };
+    },
+    async searchStatus({ folderId }) {
+      return { notebooks: notebooks.model.scopeNotebookIds(folderId).length, chunks: 0, pending: 0, semantic: false };
+    },
     onNotebookChanged(listener) {
       notebookListeners.add(listener);
       return () => notebookListeners.delete(listener);

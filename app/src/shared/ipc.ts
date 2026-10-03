@@ -23,6 +23,7 @@ import type {
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AddSourcesResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
 import type { FolderView } from './folders.js';
+import type { SearchResult, SearchStatus } from './search/types.js';
 import type { PageLinesView } from './doc/cite.js';
 import type { SlideOverride } from './doc/slidegroups.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
@@ -185,6 +186,9 @@ export const IPC = {
   folderRename: 'folder:rename',
   folderMove: 'folder:move',
   folderDelete: 'folder:delete',
+  // Search (`docs/research/search.md` §4-§5). Bodies in `src/main/search/ipc.ts`.
+  searchQuery: 'search:query',
+  searchStatus: 'search:status',
   /** main → renderer: a notebook or one of its sources changed (added, read, ticked, removed). */
   notebookChanged: 'notebook:changed',
   // The overview. Bodies in `src/main/notes/ipc.ts`.
@@ -642,6 +646,12 @@ export interface ChatterEdApi {
   folderMove(input: { folderId: string; parentId: string | null }): Promise<FolderView>;
   /** Its notebooks and subfolders move up one level first; no notebook is ever deleted by this. */
   folderDelete(input: { folderId: string }): Promise<{ deleted: boolean; movedNotebooks: number; movedFolders: number }>;
+
+  // ── search (`docs/research/search.md` §4-§5, 2026-10-03) ───────────────────────────────────
+  /** Slides and notes of the notebooks in `folderId` and below (null: all), best match first. */
+  searchQuery(input: { query: string; folderId: string | null; limit?: number }): Promise<SearchResult>;
+  /** How much of that scope is indexed, and whether the model is there (else keyword only). */
+  searchStatus(input: { folderId: string | null }): Promise<SearchStatus>;
   onNotebookChanged(listener: (change: NotebookChange) => void): () => void;
   /**
    * The absolute path of a file dropped on the window. Electron's sandboxed renderer has no
