@@ -14,10 +14,11 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && npm run build:main && npm run build:renderer && npm run notices",
+    "build": "npm run clean && npm run models && npm run build:main && npm run build:renderer && npm run notices",
     "build:main": "tsc -p tsconfig.main.json && node scripts/copy-assets.mjs && node scripts/bundle-preload.mjs",
     "build:renderer": "vite build --sourcemap hidden",
     "notices": "node scripts/third-party-notices.mjs",
+    "models": "node scripts/fetch-model.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig tsconfig.json --threshold error",
     "lint": "eslint src scripts",
     "test": "vitest run",
@@ -31,6 +32,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
+    "@huggingface/transformers": "4.3.0",
     "better-sqlite3": "^13.0.3",
     "mathlive": "^0.111.0",
     "mathml-to-latex": "^1.8.0",

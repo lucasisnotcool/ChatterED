@@ -19,6 +19,7 @@ service-account*.json
 node_modules/
 dist/
 out/
+app/models/
 *.tsbuildinfo
 build/Release
 coverage/
