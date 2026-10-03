@@ -87,7 +87,6 @@ export async function ensurePack(deps: PackDeps, roomId: string): Promise<boolea
   if (!room) return false;
   const material = deps.store.materials.get(room.material_id);
   if (!material) return false;
-  if (packBelongsToDeck(material)) return false;
 
   /**
    * **The tree is the pack** (issue #38; the argument is in `objectives/pack.ts`).
@@ -95,6 +94,13 @@ export async function ensurePack(deps: PackDeps, roomId: string): Promise<boolea
    * A flow room whose file has a learning-objective tree runs on that tree: one element per
    * objective, `element.id` = `objective.id`, so the ledger's rules are untouched and the states
    * the panel draws are a mirror of ledger rows that already carry the right ids.
+   *
+   * **Checked before `packBelongsToDeck`**, because an `elicited` pack can still be the wrong
+   * one: a pack built from an *earlier* tree, or drafted before the tree landed. When the tree is regenerated (#58's short overview
+   * replaced the 20-objective trees with six new ids), the room kept the old pack, the actor's
+   * `#objectiveOf` found none of the new ids in it, and every *Well done* was filed with a null
+   * objective — the lesson cards never filled (`room_a9f16cf90640`, 2026-10-03). So a ready tree
+   * whose ids differ from the pack's replaces it, and one whose ids match is a no-op.
    *
    * And when the tree is only *coming*, this returns without drafting. `draftConcept` would
    * spend a second minute of Sonnet on the same deck to produce five claims with different ids,
@@ -104,15 +110,20 @@ export async function ensurePack(deps: PackDeps, roomId: string): Promise<boolea
   const tree = material.file_id ? deps.store.objectives.tree(material.file_id) : null;
   if (tree?.status === 'ready' && tree.objectives.length > 0) {
     const pack = packFromTree(tree, material.title);
+    // A fixture's own `fixed` pack is kept as before; the scripted video runs on its ids.
+    const keep = material.pack_provenance === 'elicited' ? sameElements(material, pack) : packBelongsToDeck(material);
+    if (keep) return false;
     swapIn(deps, { roomId, material, pack, topic: room.topic, now: now() });
     log().info('pack.from_tree', {
       room_id: roomId,
       material_id: material.id,
       file_id: material.file_id,
       elements: pack.elements.length,
+      was: (JSON.parse(material.concept_pack) as ConceptPack).concept_id,
     });
     return true;
   }
+  if (packBelongsToDeck(material)) return false;
   if (tree !== null && tree.status !== 'failed') {
     if (material.pack_provenance === 'fixed') demoteToPending(deps, material, room.topic, now());
     return false;
@@ -259,6 +270,12 @@ function demoteToPending(deps: PackDeps, material: MaterialRow, topic: string, n
     file: material.file_path,
     was: JSON.parse(material.concept_pack).concept_id as string,
   });
+}
+
+/** Whether the material's pack already has exactly these element ids, in this order. */
+function sameElements(material: MaterialRow, pack: ConceptPack): boolean {
+  const current = (JSON.parse(material.concept_pack) as ConceptPack).elements.map((e) => e.id);
+  return current.length === pack.elements.length && pack.elements.every((e, i) => e.id === current[i]);
 }
 
 function swapIn(

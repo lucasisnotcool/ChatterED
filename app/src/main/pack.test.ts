@@ -22,6 +22,9 @@ import { EMPTY_USAGE, type LLMClient, type LlmRequest } from '../room/llm/types.
 import type { ConceptPack } from '../room/records.js';
 import { stableJson } from '../room/prompts.js';
 import { ensurePack, packBelongsToDeck, packFromDraft } from './pack.js';
+import { critique1Tree } from './objectives/critique1.js';
+import { packFromTree } from './objectives/pack.js';
+import type { LearningTree } from '../shared/objectives.js';
 
 const CS4246_CLAIMS = {
   title: 'Search and planning',
@@ -204,6 +207,74 @@ describe('the repair room_6a9609d5c6fb needed, through the actor', () => {
       seeded.roomId,
     );
     expect(llm.calls[0]!.messages[0]!.content).toContain('p. 14 — A* search');
+  });
+});
+
+describe('a room whose tree was regenerated', () => {
+  /**
+   * `room_a9f16cf90640` (2026-10-03): its pack came from a 20-objective tree on 19 Sep; on 1 Oct
+   * the file's tree was regenerated as #58's short overview, with six new ids. The pack was
+   * `elicited`, so `ensurePack` returned before it looked at the tree, the actor's `#objectiveOf`
+   * found none of the lesson ids in its pack, and every *Well done* was filed with a null
+   * objective. The lesson cards never filled.
+   */
+  const FILE = 'nb_regenerated';
+  const NOW = '2026-10-03T07:00:00.000Z';
+  const treeWith = (suffix: string, version: number): LearningTree => ({
+    fileId: FILE,
+    contentSha: `nb:${FILE}`,
+    generatedAt: NOW,
+    model: 'sonnet',
+    version,
+    status: 'ready',
+    objectives: critique1Tree(FILE).map((o) => ({ ...o, id: `${o.id}${suffix}` })),
+  });
+  const deps = (seeded: ReturnType<typeof seedRoom>, onReady?: (pack: ConceptPack) => void) => ({
+    store: seeded.store,
+    pairing: 'ellie_peer' as const,
+    models: API_PLAN,
+    mode: 'live' as const,
+    llm: draftingClient(),
+    onReady: onReady ? ({ pack }: { pack: ConceptPack }) => onReady(pack) : undefined,
+    now: () => NOW,
+  });
+
+  it('replaces a pack built from the old tree with the new tree, ledger and actor included', async () => {
+    const oldPack = packFromTree(treeWith('-old', 2), 'Classical planning');
+    const seeded = seedRoom(undefined, [], { pack: oldPack, fileId: FILE, title: 'Classical planning' });
+    seeded.store.materials.refreeze(seeded.materialId, {
+      pack_provenance: 'elicited',
+      token_count: 4600,
+      cache_eligible: 1,
+      prefix_sha256: 'old',
+    });
+    const fresh = treeWith('-new', 1);
+    seeded.store.objectives.upsertTree({ ...fresh, promptVersion: 1, error: null }, NOW);
+    const actor = actorOn(seeded, oldPack);
+
+    const swapped = await ensurePack(deps(seeded, (pack) => actor.rebind({ pack })), seeded.roomId);
+
+    expect(swapped).toBe(true);
+    const ids = fresh.objectives.map((o) => o.id).sort();
+    const material = seeded.store.materials.get(seeded.materialId)!;
+    expect((JSON.parse(material.concept_pack) as ConceptPack).elements.map((e) => e.id).sort()).toEqual(ids);
+    expect(seeded.store.ledger.forSession(seeded.sessionId).map((r) => r.element_id).sort()).toEqual(ids);
+    expect(actor.snapshot().ledger.rows.map((r) => r.elementId).sort()).toEqual(ids);
+  });
+
+  it('leaves a pack that already matches its tree alone', async () => {
+    const tree = treeWith('', 1);
+    const seeded = seedRoom(undefined, [], { pack: packFromTree(tree, 'Classical planning'), fileId: FILE });
+    seeded.store.materials.refreeze(seeded.materialId, {
+      pack_provenance: 'elicited',
+      token_count: 4600,
+      cache_eligible: 1,
+      prefix_sha256: 'frozen',
+    });
+    seeded.store.objectives.upsertTree({ ...tree, promptVersion: 1, error: null }, NOW);
+
+    expect(await ensurePack(deps(seeded), seeded.roomId)).toBe(false);
+    expect(seeded.store.materials.get(seeded.materialId)!.prefix_sha256).toBe('frozen');
   });
 });
 

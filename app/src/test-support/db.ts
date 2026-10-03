@@ -60,6 +60,8 @@ export interface SeedRoomOptions {
   materialText?: string;
   fileName?: string | null;
   title?: string;
+  /** The `files` row the material reads, so a test can give it a learning-objective tree. */
+  fileId?: string | null;
 }
 
 export function seedRoom(
@@ -114,7 +116,7 @@ export function seedRoom(
       title: opts.title ?? 'Convexity and the Hessian',
       source_kind: 'pasted_text',
       file_path: opts.fileName ?? null,
-    file_id: null,
+      file_id: opts.fileId ?? null,
       file_sha256: null,
       file_mtime: null,
       page_from: null,
