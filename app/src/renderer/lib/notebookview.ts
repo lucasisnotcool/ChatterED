@@ -227,3 +227,16 @@ export function moveTargets(folders: readonly FolderView[], moving: { folderId?:
   walk(null, 0);
   return out;
 }
+
+/** Every folder as an indented tree, for the search scope menu. */
+export function folderTree(folders: readonly FolderView[]): MoveTarget[] {
+  const out: MoveTarget[] = [];
+  const walk = (parentId: string | null, depth: number): void => {
+    for (const f of childFolders(folders, parentId)) {
+      out.push({ folderId: f.id, label: f.name, depth });
+      walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
+}

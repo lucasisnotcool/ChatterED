@@ -76,6 +76,7 @@ import { blockQuote, notebookEmpty, objectiveFills, sectionSpans, unseenSources 
 import { reveal, revealText } from './pm/reveal.js';
 import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
 import { setReading } from './pm/readaloud.js';
+import { setSearchHit } from './pm/searchhit.js';
 import { insertTargetId } from './pm/insertat.js';
 import { editFormula } from './pm/math.js';
 import { bumpStrips, type StripContext } from './pm/slidestrip.js';
@@ -193,7 +194,7 @@ export function updateRefusal(reason: NotesUpdateOverviewResult['reason']): stri
 }
 
 /** A source's content for the slides, through the bridge. A source that will not open is a blank page. */
-async function openSource(fileId: string): Promise<SourceContent | null> {
+export async function openSource(fileId: string): Promise<SourceContent | null> {
   const view = await bridge().openDocument({ fileId });
   if (view.error) return null;
   return { bytes: view.bytes, text: view.text };
@@ -264,6 +265,11 @@ export class DocStore {
   #openStrips = new Set<string>();
   #saveTimer: ReturnType<typeof setTimeout> | null = null;
   #savePending = false;
+  /**
+   * The document as it was when the view went away with a save still owed (`detach`). A save that
+   * runs with no view writes this, and only to the doc it came from.
+   */
+  #detached: { docId: string; doc: unknown } | null = null;
   /** Settles when the save now in flight has finished. Null when none is. */
   #saveSettled: Promise<void> | null = null;
   // A plain Map on purpose: these are timer handles, nothing renders them, and making them
@@ -720,13 +726,22 @@ export class DocStore {
    */
   detach(): void {
     if (this.#view) this.#docJson = this.#view.state.doc.toJSON();
-    this.#view = null;
-    this.#cancelAnimations();
+    // A save still owed is started **before** the view goes: `#save` reads the document from the
+    // view, and with no view it used to return at once, so an edit made in the last 800 ms before
+    // an unmount (leaving a notebook, the search page switching notebooks) was never written. A
+    // save already in flight leaves its tail to the snapshot.
+    const owed = Boolean(this.#saveTimer) || this.#savePending;
     if (this.#saveTimer) {
       clearTimeout(this.#saveTimer);
       this.#saveTimer = null;
+    }
+    if (owed && this.docId) {
+      this.#detached = { docId: this.docId, doc: this.#docJson };
+      this.#savePending = false;
       void this.#save();
     }
+    this.#view = null;
+    this.#cancelAnimations();
   }
 
   /** Called by the host after every transaction it dispatched. */
@@ -1125,6 +1140,35 @@ export class DocStore {
     if (options.flash === false) return;
     element.classList.add('nd-flash');
     setTimeout(() => element.classList.remove('nd-flash'), 1_400);
+  }
+
+  /** Everything on screen written to main, waiting for it (the search page, before it switches notebooks). */
+  async flush(): Promise<void> {
+    await this.#flushSave();
+  }
+
+  /** The caret at the start of a block, the editor focused (the search page's ↵). False if not found. */
+  placeCaret(blockId: string): boolean {
+    const view = this.#view;
+    if (!view) return false;
+    const target = blockPos(view.state.doc, blockId);
+    if (!target) return false;
+    view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(target.pos + 1))).scrollIntoView());
+    view.focus();
+    return true;
+  }
+
+  /**
+   * The search page's hit, highlighted until another is picked: a decoration set by a steps-free
+   * transaction (`pm/searchhit.ts`), so nothing is saved or undoable. False when no editor or no
+   * such block yet (the doc is still loading): the caller tries again.
+   */
+  markSearchHit(blockId: string | null): boolean {
+    const view = this.#view;
+    if (!view) return false;
+    if (blockId && !blockPos(view.state.doc, blockId)) return false;
+    view.dispatch(setSearchHit(view.state.tr, blockId));
+    return true;
   }
 
   /** T5 → T4: "insert into the document" needs to know where the learner's caret is. */
@@ -1761,7 +1805,8 @@ export class DocStore {
 
   async #save(): Promise<void> {
     const view = this.#view;
-    if (!view || !this.docId || !has('notesSave')) return;
+    const detached = !view && this.#detached && this.#detached.docId === this.docId ? this.#detached : null;
+    if ((!view && !detached) || !this.docId || !has('notesSave')) return;
     if (this.saving) {
       // One save in flight at a time; the tail is coalesced into a single follow-up.
       this.#savePending = true;
@@ -1776,12 +1821,17 @@ export class DocStore {
       const result = await bridge().notesSave({
         docId: this.docId,
         baseVersion: this.version,
-        doc: view.state.doc.toJSON(),
+        doc: view ? view.state.doc.toJSON() : detached!.doc,
         learnerTouched: this.learnerTouched,
       });
       if (result.ok) {
         this.version = result.version;
         this.savedAt = Date.now();
+        if (!view && this.#detached === detached) this.#detached = null;
+      } else if (!view) {
+        // No view to rebase into: what was on screen is the authority (§D5), saved on top.
+        this.version = result.version;
+        this.#savePending = true;
       } else {
         this.#rebase(result.version, result.doc);
       }

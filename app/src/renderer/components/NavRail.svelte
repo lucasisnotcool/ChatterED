@@ -30,6 +30,20 @@
     <span class="icon" aria-hidden="true">⌂</span>
   </button>
 
+  <!-- Search (`docs/research/search.md` §5): directly under Notebooks, a page of its own. -->
+  <button
+    type="button"
+    class="item"
+    class:active={store.screen === 'search'}
+    title="Search all notebooks (⇧⌘F)"
+    aria-label="Search"
+    onclick={() => void store.openSearch()}
+  >
+    <svg class="icon svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.8" /><path d="M10.6 10.6 14 14" stroke-linecap="round" />
+    </svg>
+  </button>
+
   <span class="spacer"></span>
 
   <!-- Usage (#42 item D). A real item with its own screen, next to Settings rather than inside
@@ -93,4 +107,5 @@
     background: var(--indigo);
   }
   .icon { font-size: 15px; line-height: 1; }
+  .icon.svg { width: 15px; height: 15px; }
 </style>

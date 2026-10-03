@@ -154,6 +154,13 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
       submenu: [
         // The home grid (`notebooks.md` §1). The title bar's "Notebooks ›" does the same.
         { label: 'Notebooks', click: send('notebook.home') },
+        // Search (`docs/research/search.md` §5). ⇧⌘F is "find in all files" in every editor; ⌘J ⌘K
+        // ⌘L are the search page's three columns, left to right, under three neighbouring keys.
+        // On any other screen the three do nothing.
+        { label: 'Search All Notebooks', accelerator: 'CommandOrControl+Shift+F', click: send('search.open') },
+        { label: 'Show or Hide Slides', accelerator: 'CommandOrControl+J', click: send('search.toggleSlides') },
+        { label: 'Show or Hide Notes', accelerator: 'CommandOrControl+K', click: send('search.toggleNotes') },
+        { label: 'Show or Hide Results', accelerator: 'CommandOrControl+L', click: send('search.toggleHits') },
         { type: 'separator' },
         // Two entries for zoom in: ⌘+ on a US layout arrives as `=` without shift, and an
         // accelerator registered as `Plus` alone does not catch it.

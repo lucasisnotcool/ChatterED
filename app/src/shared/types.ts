@@ -366,7 +366,13 @@ export type AppCommand =
   /** File ▸ Add Sources… — the picker, into the open notebook. */
   | 'notebook.addSources'
   /** View ▸ Notebooks — the home grid. */
-  | 'notebook.home';
+  | 'notebook.home'
+  /** View ▸ Search All Notebooks (⇧⌘F) — the search page (`docs/research/search.md` §5). */
+  | 'search.open'
+  /** View ▸ Show or Hide Slides / Notes / Results (⌘J ⌘K ⌘L) — the search page's columns. */
+  | 'search.toggleSlides'
+  | 'search.toggleNotes'
+  | 'search.toggleHits';
 
 export interface RecentSession {
   roomId: string;

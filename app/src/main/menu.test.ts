@@ -116,6 +116,19 @@ describe('the application menu', () => {
     expect(zoomIns[1]!.visible).toBe(false);
   });
 
+  it('opens search with ⇧⌘F and toggles its three columns with ⌘J ⌘K ⌘L', () => {
+    const { template, sent } = harness(false);
+    const view = submenu(template, 'View');
+    const keyOf = (label: string) => view.find((i) => i.label === label)?.accelerator;
+    expect(keyOf('Search All Notebooks')).toBe('CommandOrControl+Shift+F');
+    expect(keyOf('Show or Hide Slides')).toBe('CommandOrControl+J');
+    expect(keyOf('Show or Hide Notes')).toBe('CommandOrControl+K');
+    expect(keyOf('Show or Hide Results')).toBe('CommandOrControl+L');
+    click(template, 'View', 'Search All Notebooks');
+    click(template, 'View', 'Show or Hide Notes');
+    expect(sent).toEqual(['search.open', 'search.toggleNotes']);
+  });
+
   it('offers both fits and both page turns', () => {
     const { template, sent } = harness(false);
     const labels = items(template, 'View');
@@ -380,6 +393,10 @@ describe('what the menu is allowed to say', () => {
       'chat.reset',
       'files.toggle',
       'research.export',
+      'search.open',
+      'search.toggleSlides',
+      'search.toggleNotes',
+      'search.toggleHits',
     ]);
     for (const menu of ['File', 'View', 'help']) {
       for (const item of submenu(template, menu)) {

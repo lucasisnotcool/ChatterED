@@ -30,7 +30,8 @@
 
   const onHome = $derived(store.screen === 'notebooks');
   const open = $derived(store.screen === 'notebook' ? store.notebook.view : null);
-  const crumbs = $derived(onHome || open !== null);
+  const onSearch = $derived(store.screen === 'search');
+  const crumbs = $derived(onHome || onSearch || open !== null);
 
   let renaming = $state(false);
   let draft = $state('');
@@ -76,6 +77,8 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <b class="name no-drag" title="Double-click to rename" ondblclick={startRename} aria-current="page">{open.name}</b>
         {/if}
+      {:else if onSearch}
+        <b class="name" aria-current="page">Search</b>
       {:else}
         <b class="name" aria-current="page">Notebooks</b>
       {/if}

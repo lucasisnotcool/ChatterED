@@ -25,6 +25,7 @@ import { blockKitPlugin } from './blockkit.js';
 import { diagramPlugin } from './diagram.js';
 import { editFormula, mathInputRules, mathPlugin } from './math.js';
 import { imageKeysPlugin } from './image.js';
+import { searchHitPlugin } from './searchhit.js';
 import { readAloudPlugin } from './readaloud.js';
 import { tableGuard, tableKeymap } from './table.js';
 import { tableChrome } from './tableview.js';
@@ -122,6 +123,8 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
     gapCursor(),
     // The block being read aloud: a decoration only (`readaloud.ts`).
     readAloudPlugin(),
+    // The search page's picked hit: a decoration only (`searchhit.ts`).
+    searchHitPlugin(),
     // Every table stays a rectangle; its row chips and toolbar state (`table.ts`, `tableview.ts`).
     tableGuard(),
     tableChrome(),

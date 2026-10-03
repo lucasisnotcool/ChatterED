@@ -40,6 +40,7 @@ import { DocStore } from './docstore.svelte.js';
 import { ChatStore } from './chatstore.svelte.js';
 import { ProgressStore } from './progressstore.svelte.js';
 import { NotebookStore } from './notebookstore.svelte.js';
+import { SearchStore } from './searchstore.svelte.js';
 import type { NotebookView } from '../../shared/notebook.js';
 import { regenerateCommand } from './pm/overview.js';
 
@@ -137,7 +138,7 @@ function writeFlag(key: string, value: boolean): void {
  * nav rail and a reachable indicator in the title bar. The Settings section stays where it is —
  * it is where the rate card is edited, and that genuinely is a setting.
  */
-export type Screen = 'loading' | 'firstRun' | 'notebooks' | 'notebook' | 'setup' | 'room' | 'settings' | 'usage';
+export type Screen = 'loading' | 'firstRun' | 'notebooks' | 'notebook' | 'search' | 'setup' | 'room' | 'settings' | 'usage';
 
 /** One shared 200 ms tick. The wait-line transitions across it, so it reads as continuous. */
 class Clock {
@@ -160,6 +161,10 @@ class Store {
   readonly progress = new ProgressStore();
   /** The open notebook (`notebooks.md`, 2026-10-01). Owned by track N5. */
   readonly notebook = new NotebookStore();
+  /** The search page (`docs/research/search.md` §5): kept across visits. */
+  readonly search = new SearchStore();
+  /** Bumped to ask the search page to put the cursor in its box (⇧⌘F, the rail). */
+  searchFocus = $state(0);
 
   screen: Screen = $state('loading');
   boot: Bootstrap | null = $state(null);
@@ -274,6 +279,18 @@ class Store {
         break;
       case 'notebook.home':
         this.goHome();
+        break;
+      case 'search.open':
+        void this.openSearch();
+        break;
+      case 'search.toggleSlides':
+        if (this.screen === 'search') this.search.toggle('slides');
+        break;
+      case 'search.toggleNotes':
+        if (this.screen === 'search') this.search.toggle('notes');
+        break;
+      case 'search.toggleHits':
+        if (this.screen === 'search') this.search.toggle('hits');
         break;
       case 'settings.open':
         void this.openSettings();
@@ -484,6 +501,24 @@ class Store {
     if (!view) return;
     if (leaving !== null && leaving !== view.id) this.#leaveFile(leaving);
     this.screen = 'notebook';
+  }
+
+  /**
+   * **The search page** (`docs/research/search.md` §5): the rail's second item, ⇧⌘F. Its scope
+   * starts as the folder the learner came from (the open notebook's, or the home's). Leaving a
+   * notebook for it closes the notebook as going home does; the doc saves on the way out.
+   * Coming back keeps the query, the picked hit and the columns.
+   */
+  async openSearch(): Promise<void> {
+    this.searchFocus += 1;
+    if (this.screen === 'search') return;
+    const leaving = this.screen === 'notebook' ? this.notebook.id : null;
+    const from = leaving ? (this.notebook.list.find((n) => n.id === leaving)?.folderId ?? null) : this.notebook.folderId;
+    if (leaving !== null) this.#leaveFile(leaving);
+    this.search.setScope(from);
+    this.screen = 'search';
+    void this.notebook.loadList();
+    void this.search.refreshStatus();
   }
 
   /** **New notebook**: the picker, then the notebook, open. Cancelling makes nothing. */

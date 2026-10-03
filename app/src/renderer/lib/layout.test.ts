@@ -10,6 +10,7 @@ import {
   GUTTER_FULL,
   blockAnchorDelta,
   canScrollSideways,
+  dragOvershoots,
   dragSize,
   isSideways,
   keySize,
@@ -196,5 +197,14 @@ describe('swiping along the tab strip', () => {
     expect(stepTab(tabs, 'ellie', -1)).toBe('doc');
     expect(stepTab(tabs, 'max', 1)).toBe('max');
     expect(stepTab(tabs, 'doc', -1)).toBe('doc');
+  });
+});
+
+describe('dragging past the maximum', () => {
+  it('closes the panel on the other side only after the slack', () => {
+    const b = { min: 220, max: 600, initial: 400 };
+    expect(dragOvershoots(500, 0, 100 + 72, 1, b)).toBe(false);
+    expect(dragOvershoots(500, 0, 100 + 73, 1, b)).toBe(true);
+    expect(dragOvershoots(500, 0, -200, -1, b)).toBe(true);
   });
 });

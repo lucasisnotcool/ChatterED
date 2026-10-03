@@ -58,6 +58,14 @@ export function dragSize(
 }
 
 /**
+ * A drag past the panel's **maximum** by the same slack: the panel on the splitter's other side
+ * has been squeezed below what is usable, and closes (the search page's slides | notes edge).
+ */
+export function dragOvershoots(start: number, startX: number, x: number, sign: GrowSign, bounds: PanelBounds): boolean {
+  return start + (x - startX) * sign > bounds.max + COLLAPSE_SLACK;
+}
+
+/**
  * The keyboard's half of a splitter (the WAI-ARIA window-splitter pattern): arrows move it by a
  * small step, Shift by a large one, Home and End go to the ends. The arrows move the *splitter*,
  * so → grows a panel on its left and shrinks one on its right. `null` means the key is not one

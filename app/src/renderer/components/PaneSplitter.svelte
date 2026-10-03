@@ -16,7 +16,7 @@
    * While a drag is live the root element carries `.resizing`, which the global stylesheet uses
    * to hold the cursor and stop the drag from selecting the document under it.
    */
-  import { dragSize, keySize, type GrowSign, type PanelBounds } from '../lib/layout.js';
+  import { dragOvershoots, dragSize, keySize, type GrowSign, type PanelBounds } from '../lib/layout.js';
 
   let {
     size,
@@ -26,6 +26,8 @@
     controls,
     onsize,
     oncollapse,
+    oncollapseOther,
+    wide = false,
   }: {
     size: number;
     bounds: PanelBounds;
@@ -38,6 +40,13 @@
     onsize: (size: number) => void;
     /** Given only for a panel that may be closed from its edge. */
     oncollapse?: () => void;
+    /**
+     * Given when the panel on the splitter's **other** side may be closed: dragging this panel
+     * past its maximum by the collapse slack squeezes that one below usable, and closes it.
+     */
+    oncollapseOther?: () => void;
+    /** A 14 px grab zone with a handle that is always drawn (the search page's dividers). */
+    wide?: boolean;
   } = $props();
 
   let dragging = $state(false);
@@ -59,6 +68,14 @@
     setResizing(true);
 
     const move = (ev: PointerEvent): void => {
+      if (oncollapseOther && dragOvershoots(start, startX, ev.clientX, sign, bounds)) {
+        if (!collapsed) {
+          collapsed = true;
+          end();
+          oncollapseOther();
+        }
+        return;
+      }
       const next = dragSize(start, startX, ev.clientX, sign, bounds, Boolean(oncollapse));
       if (next.collapse) {
         if (!collapsed) {
@@ -106,6 +123,7 @@
 <div
   class="splitter"
   class:dragging
+  class:wide
   role="separator"
   tabindex="0"
   aria-label={label}
@@ -124,6 +142,25 @@
 ></div>
 
 <style>
+  /* The search page's dividers: a wider zone, and a handle always drawn so it can be found. */
+  .splitter.wide { width: 14px; margin: 0 -7px; }
+  .splitter.wide::after { left: 5px; width: 4px; }
+  .splitter.wide::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 4px;
+    width: 6px;
+    height: 36px;
+    transform: translateY(-50%);
+    border-radius: 3px;
+    background: var(--pane);
+    border: 1px solid var(--hairline);
+    z-index: 1;
+  }
+  .splitter.wide:hover::before,
+  .splitter.wide.dragging::before,
+  .splitter.wide:focus-visible::before { border-color: var(--indigo); background: var(--indigo-tint); }
   /* A 7 px hit area over a 1 px line: easy to grab, and it draws nothing until it is found. */
   .splitter {
     flex: none;

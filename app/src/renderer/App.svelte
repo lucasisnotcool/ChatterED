@@ -9,6 +9,7 @@
   import FirstRun from './components/FirstRun.svelte';
   import NavRail from './components/NavRail.svelte';
   import NotebookHome from './components/NotebookHome.svelte';
+  import SearchScreen from './components/search/SearchScreen.svelte';
   import NoticeBanner from './components/NoticeBanner.svelte';
   import Room from './components/Room.svelte';
   import SessionSetup from './components/SessionSetup.svelte';
@@ -77,6 +78,8 @@
         {#key store.notebook.view.id}
           <ThreeColumn notebookId={store.notebook.view.id} />
         {/key}
+      {:else if store.screen === 'search'}
+        <SearchScreen />
       {:else if store.screen === 'setup'}
         <SessionSetup />
       {:else if store.screen === 'settings'}
