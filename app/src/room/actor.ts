@@ -51,6 +51,7 @@ import {
   ownQuestionBlock,
   ellieAnswersBlock,
   ellieCueBlock,
+  followUpBlock,
   learnerNotesBlock,
   lessonStartBlock,
   maxFollowupBlock,
@@ -100,6 +101,7 @@ import { classifyLearnerTurn, quizCue, type LearnerTurnKind } from '../core/atte
 import {
   FLOW,
   answerQuiz,
+  answersBlank,
   attemptsOf,
   feedbackDue,
   handOffDue,
@@ -159,6 +161,8 @@ import {
 } from './prompts.js';
 import {
   DEFAULT_PITCH,
+  followUpPlan,
+  hasBlank,
   notePitch,
   pitchBlock,
   pitchInputs,
@@ -167,6 +171,7 @@ import {
   type PitchInputs,
   type PitchOutcome,
   type PitchState,
+  type QuestionForm,
 } from '../core/pitch.js';
 import { progressFill } from '../shared/doc/progress.js';
 import { FOCUS_RECAP_RULE, focusRecap, focusRecapText } from './focusrecap.js';
@@ -2973,7 +2978,7 @@ export class RoomActor {
      * objective behind it and fills nothing either (§5.6). Judging either would move the evidence
      * record on something the bar is built not to count.
      */
-    const answersCloze = this.#pendingQuiz?.form === 'cloze' && feedbackDue(this.#pendingQuiz);
+    const answersCloze = answersBlank(this.#pendingQuiz) && feedbackDue(this.#pendingQuiz);
     const ledgerRuns =
       (trigger === 'student_message' || trigger === 'promote') &&
       opts.showAnswer !== true &&
@@ -3893,6 +3898,7 @@ export class RoomActor {
         // clause, and the rule name is what tells them apart.
         byRule: decision.decidedBy,
         cloze: this.#clozeTurn(decision),
+        followUpBlank: this.#followUpBlankTurn(decision),
         sourceGenre: this.#d.sourceGenre,
       },
     });
@@ -4354,7 +4360,17 @@ export class RoomActor {
       // what tells the composer to ask for the next attempt or to say the question is done.
       const answered = this.#pendingQuiz.answerMessageId;
       this.#beforeAttempt = null;
-      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text), feedbackVerdict3(text));
+      /**
+       * Read before the mark lands (2026-10-03): whether the answer just marked was to a blank,
+       * whether this turn was asked to end on one, and whether it was asked to correct Ellie.
+       */
+      const markedBlank = answersBlank(this.#pendingQuiz);
+      const askedBlank = markedBlank || this.#followUpBlankTurn(decision);
+      const cueCorrected = cueMistakeToCorrect(this.#pendingQuiz) !== null;
+      this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text), feedbackVerdict3(text), {
+        followUpBlank: askedBlank && hasBlank(text),
+        cueCorrected,
+      });
       /**
        * **One outcome row per verdict** (#48, brief §6). The progress bar is a pure function of
        * these (`shared/doc/progress.progressFill`), which is the whole reason they exist as rows
@@ -4368,6 +4384,8 @@ export class RoomActor {
         releasedBy: null,
         messageId: answered,
         source: this.#docTextTarget !== null ? 'doc_text' : 'chat',
+        // A blank follow-up's term fills nothing, as a cloze question's does (§4.5).
+        ...(markedBlank ? { form: 'cloze' as const } : {}),
       });
       this.#emitThread(this.#anchorOfQuiz(this.#pendingQuiz));
     }
@@ -4565,6 +4583,8 @@ export class RoomActor {
     releasedBy: 'give_up' | 'pass' | 'closure' | null;
     messageId: string | null;
     source: 'chat' | 'doc_text';
+    /** The form of what was marked, when it is not the question's own: a blank follow-up. */
+    form?: QuestionForm;
   }): void {
     const quiz = this.#pendingQuiz;
     if (quiz === null) return;
@@ -4598,7 +4618,7 @@ export class RoomActor {
       attemptIndex,
       ownWords,
       // §4.5: a cloze verdict is a row like any other, and `progressFill` skips it by this field.
-      form: quiz.form ?? 'open',
+      form: input.form ?? quiz.form ?? 'open',
     };
     this.#outcomes.push({ ...outcome, id: this.#d.newId('qo'), contentSha: '', createdAt: this.#nowIso() });
     try {
@@ -5202,7 +5222,16 @@ export class RoomActor {
       // §6: the attempt came out of the document rather than out of the composer.
       if (this.#docTextTarget !== null) blocks.push(docTextBlock({ blockQuote: this.#docTextTarget.text }));
       // §4.5: a blank is marked on its one term, and its way on is where to look, not a follow-up.
-      if (this.#pendingQuiz?.form === 'cloze') blocks.push(clozeFeedbackBlock());
+      const quiz = this.#pendingQuiz;
+      if (answersBlank(quiz)) {
+        blocks.push(clozeFeedbackBlock({ followUp: quiz?.form !== 'cloze' }));
+      } else if (quiz !== null) {
+        // 2026-10-03: from the second try the answers are marked together; past two open follow-ups,
+        // or after a guess, the follow-up is a blank.
+        const plan = followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText });
+        const note = followUpBlock({ attempts: attemptsOf(quiz), together: plan.together, guess: plan.guess, blank: plan.form === 'cloze' });
+        if (note) blocks.push(note);
+      }
       /**
        * **§4.7's second invariant, carried on whichever Max turn resolves the question.** A
        * feedback turn that ends a question Ellie guessed wrongly at must correct her claim
@@ -5294,7 +5323,18 @@ export class RoomActor {
     if (this.#pitchedQuestion(decision)) {
       return this.#pitchInputs(decision.targetElementId).form === 'cloze';
     }
-    return decision.moveType === 'quiz_feedback' && this.#pendingQuiz?.form === 'cloze';
+    return decision.moveType === 'quiz_feedback' && answersBlank(this.#pendingQuiz);
+  }
+
+  /**
+   * **Does this feedback turn end, if it ends on a follow-up, on a blank?** (2026-10-03,
+   * `core/pitch.followUpPlan`.) Only on an open question whose open follow-ups are used up, or
+   * whose answer was a guess; a blank already being marked has its own way on.
+   */
+  #followUpBlankTurn(decision: TurnDecision): boolean {
+    const quiz = this.#pendingQuiz;
+    if (decision.moveType !== 'quiz_feedback' || quiz === null || answersBlank(quiz)) return false;
+    return followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText }).form === 'cloze';
   }
 
   /**

@@ -193,6 +193,22 @@ it) and the learner has not attempted:
    At most 50 words.
 
 This fires **once per question**. After it, silence is left alone until the closure rule (§4.7).
+- **Amended 2026-10-03 (Lucas's complex v4.0 run): the follow-ups end.** One three-part question on
+  the p. 4 `Fly` action was marked *Partly there* six times. Each answer was marked on its own
+  against the whole question, so an answer to one follow-up could never be complete. Each follow-up
+  was narrower than the last, ending on which line declares the parameters. And `:action ?`, a
+  guess at what Max wanted, got another open question. What changed:
+  - **Max asks for one thing.** A question in parts is marked part by part, and every missing part
+    becomes a follow-up.
+  - **From the second try, the answers are marked together** against the question Max first asked.
+    A follow-up asks only for part of that question, never for something it did not ask.
+  - **Two open follow-ups, then a blank.** Past two open follow-ups on one question, or after a
+    guess (a few words ending in a question mark), a follow-up that is still owed is one
+    fill-in-the-blank on what is missing (§4.5). It is marked as a blank, so the term fills nothing
+    beyond what the earlier answers earned. A correct term closes the question as *you got this*.
+  Code: `core/pitch.ts` (`followUpPlan`, `isGuess`, `OPEN_FOLLOW_UPS`), `prompts.doc.ts`
+  (`followUpBlock`), `flow.ts` (`followUpBlank`).
+
 This is the peer of Xu et al. (2026): something to improve on, in place of an answer.
 
 ### 4.4 Releasing the answer
@@ -265,6 +281,10 @@ can land, so she gives the full answer at the old size. Code: `prompts.doc.ts` `
 
 ### 4.7 Closure: nothing is left hanging
 
+*Amended 2026-10-03:* a blank is also how a run of *Partly there* ends: the third follow-up on one
+question, or the follow-up to a guess, is one blank (§4.2). Its verdict is recorded with
+`form: 'cloze'` for the same reason as above.
+
 Two invariants, enforced by rule, not by prompt:
 
 - **No question Max asked is left without its answer.** If a question is still open when the flow
@@ -290,6 +310,10 @@ pages as `p. N`, which the chat already links into the notes.
 - *Answer shown* means the last thing that happened on that objective this sitting was a release.
 
 ## 5. Live agent editing
+  *Amended 2026-10-03:* the correction is asked of the **first** Max turn after the cue (a
+  feedback turn, a release or closure), **once**. It used to be repeated on every feedback turn
+  until the question closed, six times in one run. A mistake is a claim the page contradicts, not
+  a doubt. If the page shows her flagged claim is right, Max says so rather than inventing a fault.
 
 Agents are visibly present: a labelled cursor each, green for Ellie, red for Max. An edit is typed
 in at reading speed with the cursor, not pasted, and the doc scrolls to it only if the learner is
@@ -442,6 +466,12 @@ and keeps the doc correct. **One design decision**: what comes before the answer
 take and a prompt aimed at the learner, by rule, and a give-up lowers the next question instead of
 being refused. **One limitation**: the doc is AI-written and re-typeset, so its fidelity rests on
 provenance the learner has to click; nothing verifies the notes against the slide in code.
+  *Amended 2026-10-03:* "the objective's first block" is its first **section heading** (the
+  scroll target), and the Q block goes under the block below that heading. The "By the end you
+  can" list is cited to every objective's pages, so it used to be every objective's first block,
+  and every lesson's question was filed at the top of the notes. It is no longer counted as any
+  objective's block.
+
 
 ## 8. Implementation shape (binding on the build)
 

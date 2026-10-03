@@ -679,6 +679,14 @@ export function quizBlock(input: {
     'A good question makes them use the idea: apply it to a case the page or the notes work through,',
     'predict what happens, or say why it holds. Not one whose answer is a word or phrase printed in',
     'the notes, and not an either/or between two terms.',
+    /**
+     * **One thing** (live run, 2026-10-03). *"Say what has to be true before it runs and what is
+     * true afterwards. Then tell me whether each of those facts comes from the domain or from the
+     * problem, and why"* is three questions. Each answer covered one part, so each was *Partly
+     * there*, and each verdict owed a follow-up: six marks on one question.
+     */
+    'Ask for **one** thing. A question in parts (what holds before, what after, and where each comes',
+    'from) is marked part by part, and every part an answer leaves out becomes another follow-up.',
   );
   if (seeds.length > 0) {
     lines.push(
@@ -803,6 +811,11 @@ export interface TurnDirective {
    * otherwise say (own words; a follow-up on the gap) are wrong for a blank.
    */
   cloze?: boolean;
+  /**
+   * **This feedback turn's follow-up, if it owes one, is a blank** (2026-10-03,
+   * `core/pitch.followUpPlan`): the third try at an open question, or a guess.
+   */
+  followUpBlank?: boolean;
   /**
    * **The source is a paper or a reading, not slides** (`notebooks.md` §3.2, amended 2026-10-02).
    * The role blocks say "slide" throughout; on the first paper Ellie wrote "the slide doesn't
@@ -970,8 +983,14 @@ export function turnDirective(d: TurnDirective): string {
     bits.push(
       `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
       'the question you asked, not the whole objective: nothing it did not ask for is missing, and a',
-      'complete answer to it is Well done. Unless it is Well done, your last sentence is one follow-up',
-      'question on the gap, and there is no other question in the turn.',
+      'complete answer to it is Well done.',
+      ...(d.followUpBlank === true
+        ? [
+            'Unless it is Well done, do not ask another open question: your last sentence is one',
+            'fill-in-the-blank, "Fill in the blank:" and then one sentence from the page with the key term',
+            'of what is still missing replaced by ____. One blank, nothing after it, and do not give the term.',
+          ]
+        : ['Unless it is Well done, your last sentence is one follow-up question on the gap, and there is', 'no other question in the turn.']),
       `Only if the message asks for background and tries no answer at all: first line **${UNMARKED_OPENER}**,`,
       'then that background in at most 80 words, with a toy example that is not your question\u2019s case',
       'and without answering it, then the same question again \u2014 and no verdict.',

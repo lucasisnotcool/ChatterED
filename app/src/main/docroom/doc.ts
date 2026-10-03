@@ -256,3 +256,40 @@ export function blockIdsForObjective(
   const pages = pagesOfObjective(objective);
   return pages.length === 0 ? [] : blocksForPages(doc, pages);
 }
+
+/**
+ * **Where a lesson starts** (live run, 3 Oct 2026): the objective's first section heading, which
+ * Start scrolls to, and the block the lesson's question is filed under and the doc chat is pinned
+ * to.
+ *
+ * It used to be the objective's first block, whatever it was. That was the objectives list, cited
+ * to every objective's pages, so all three lessons' Q blocks went in at the top of the notes; and a
+ * block an agent added there inherited those pages, so it too became "the first block" of every
+ * objective. A section heading carries its section's pages and nothing else.
+ *
+ * The anchor is the block under the heading, never the heading itself: a Q block between a heading
+ * and its takeaway reads as the section's first line (the rule `docedit.underHeading` keeps for
+ * Ellie's lines). With no heading among the blocks, both are the first block, as before.
+ */
+export function lessonBlocks(doc: Node | null, blockIds: readonly string[]): { scrollTo: string | null; anchor: string | null } {
+  const first = blockIds[0] ?? null;
+  if (doc === null || first === null) return { scrollTo: first, anchor: first };
+  const heading = blockIds.find((id) => blockPos(doc, id)?.node.type.name === 'heading') ?? null;
+  if (heading === null) return { scrollTo: first, anchor: first };
+  let seen = false;
+  let done = false;
+  let under: string | null = null;
+  doc.forEach((node) => {
+    if (done) return;
+    const { blockId } = blockAttrs(node);
+    if (!seen) {
+      seen = blockId === heading;
+      return;
+    }
+    // A Q block under the heading is an earlier question, not the section's text: look past it.
+    if (node.type.name === 'q_block') return;
+    done = true;
+    if (node.type.name !== 'heading' && blockId) under = blockId;
+  });
+  return { scrollTo: heading, anchor: under ?? heading };
+}

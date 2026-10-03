@@ -23,6 +23,7 @@ import type { AgentProfile } from '../shared/types.js';
 import { teacherName, testerName } from './agents.js';
 import { VERDICT_OPENERS } from './flow.js';
 import { NO_REMARKS } from './prompts.js';
+import { OPEN_FOLLOW_UPS } from '../core/pitch.js';
 
 // ── §4.2 row 1, first turn: Ellie answers ──────────────────────────────────
 
@@ -312,7 +313,9 @@ export function ellieCueBlock(input: { question: string; roster: readonly AgentP
     '- Hedged, and in the first person: "I think…", "isn’t it something like…", "I’d probably say…".',
     '- **Part of it right, and never the whole of it.** You may leave out the half that matters.',
     '- You may include **one** plausible mistake — the kind a student makes, not a silly one. If',
-    '  you do, set `has_mistake` and put the wrong claim in `claim`, in one clause.',
+    '  you do, set `has_mistake` and put the wrong claim in `claim`, in one clause. A mistake is a',
+    '  claim the page contradicts. Being unsure is not one: if everything you said is true, however',
+    '  hedged, `has_mistake` is false.',
     `- Never the full correct answer. ${max} has not marked anything yet and you are not marking it.`,
     '- No question at the end. You are offering something, not asking for something.',
     '',
@@ -404,10 +407,16 @@ export function releaseBlock(input: {
  */
 export function cueCorrectionLines(claim: string, ellieName: string): string[] {
   return [
-    `**Correct ${ellieName}’s guess explicitly.** She said, in effect: "${claim}" — and that is wrong.`,
-    'Say so in one clause, say what is right instead, and do not let it stand as if nobody had',
-    'noticed. She was thinking aloud as a classmate; being wrong out loud is the point of that, and',
-    'leaving it uncorrected is the one thing it must not cost.',
+    `**Correct ${ellieName}’s guess explicitly, once.** She said, in effect: "${claim}", and flagged`,
+    'it as her mistake. Say in one clause what is wrong with it and what is right instead, and do not',
+    'let it stand as if nobody had noticed. She was thinking aloud as a classmate; being wrong out',
+    'loud is the point of that, and leaving it uncorrected is the one thing it must not cost.',
+    /**
+     * **Unless the page says she was right** (live run, 2026-10-03). Her flagged claim, that "P1 at
+     * SFO" comes from the problem's `:init`, was true, and "and that is wrong" had Max argue a
+     * distinction the deck does not draw, in six turns running.
+     */
+    'If the page shows the claim is in fact right, say she was right instead; never invent a fault.',
   ];
 }
 
@@ -489,17 +498,61 @@ export function mentionReplyBlock(): string {
  * follow-up about the gap. A blank has one term in it, so the mark is whether that term is right,
  * and the way on from a wrong one is where on the page to look, not a second question.
  */
-export function clozeFeedbackBlock(): string {
+export function clozeFeedbackBlock(input: { followUp?: boolean } = {}): string {
   const [done, , notYet] = VERDICT_OPENERS;
   const bare = (v: string): string => v.replace(/\.$/, '');
   return [
-    'YOUR QUESTION WAS A FILL-IN-THE-BLANK',
+    ...(input.followUp === true
+      ? [
+          'YOUR LAST FOLLOW-UP WAS A FILL-IN-THE-BLANK',
+          'Their message answers that blank, not the whole question above. Mark the term, and only it.',
+        ]
+      : ['YOUR QUESTION WAS A FILL-IN-THE-BLANK']),
     `Mark the term they gave. **${done}** if it is the term, a plain synonym of it, or the term with`,
     `a harmless slip in spelling. Otherwise **${notYet}** A blank has no *Partly there*.`,
     `After ${bare(done)}: the completed sentence, quoted once with its page, and nothing else.`,
     `After ${bare(notYet)}: do not give the term. Say in one sentence where on the page to look, and`,
     'repeat the sentence with its blank so they can try again. No other question. Under 60 words.',
   ].join('\n');
+}
+
+/**
+ * **The second try onwards, and the blank that ends the run** (live run, 2026-10-03;
+ * `core/pitch.followUpPlan`).
+ *
+ * One question on the p. 4 `Fly` action was marked *Partly there* six times. Each answer was
+ * marked alone against the whole question, so an answer to one follow-up could never be complete;
+ * each follow-up asked for something narrower, ending on which line declares the parameters; and
+ * `:action ?`, a guess at what Max wanted, got another open question. So from the second try the
+ * answers are marked together, and past two open follow-ups, or after a guess, the follow-up is
+ * one blank. Nothing when neither applies: the first try's feedback is the ordinary one.
+ */
+export function followUpBlock(input: { attempts: number; together: boolean; guess: boolean; blank: boolean }): string | undefined {
+  if (!input.together && !input.blank) return undefined;
+  const lines = [`THIS IS THEIR TRY ${input.attempts} AT THIS QUESTION`];
+  if (input.together) {
+    lines.push(
+      'Mark everything they have written on it since you asked it, **taken together**, against the',
+      'question you asked (above), not against your follow-ups. If together it answers that question,',
+      'it is **Well done**, even where a follow-up of yours went further than the question did. A',
+      'follow-up asks only for a part of the question you asked, never for something it did not ask.',
+    );
+  }
+  if (input.guess) {
+    lines.push(
+      'Their answer is a few words ending in a question mark: they are guessing at what you want, not',
+      'answering it. Another open question asks them to guess again.',
+    );
+  }
+  if (input.blank) {
+    lines.push(
+      `${input.guess ? 'So unless' : `They have had ${OPEN_FOLLOW_UPS} open follow-ups on it already. Unless`} it is Well done,`,
+      'your follow-up is **one fill-in-the-blank**, not another open question: "Fill in the blank:" and',
+      'one sentence from the page about the one thing still missing, with its key term replaced by',
+      '____. One blank, nothing after the sentence, and do not give the term or a hint at it.',
+    );
+  }
+  return lines.join('\n');
 }
 
 /**

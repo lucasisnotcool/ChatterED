@@ -23,10 +23,13 @@ import {
   verdict3Of,
   VERDICT_OPENERS,
   answerQuiz,
+  answersBlank,
   answerShownOf,
   attemptsOf,
   closureDue,
+  cueMistakeToCorrect,
   markAnswerShown,
+  markCueGiven,
   qResolutionOf,
   quizOpen,
   openQuiz,
@@ -893,5 +896,35 @@ describe('Not marked.', () => {
     expect(verdictOf(quiz)).toBe('partial');
     expect(feedbackDue(quiz)).toBe(false);
     expect(attemptsOf(unmarkAttempt(openQuiz({ quizMessageId: 'm1', elementId: 'R1' }, 0)))).toBe(0);
+  });
+});
+
+/** Live run, 2026-10-03: a blank follow-up on an open question, and Ellie corrected once. */
+describe('a blank follow-up, and the correction of Ellie’s guess', () => {
+  const t = 1_000;
+  const asked = () => answerQuiz(openQuiz({ quizMessageId: 'm_1', elementId: 'R1' }, t), 'm_2', { attempt: true });
+
+  it('records a blank follow-up only when the verdict leaves the question open', () => {
+    expect(answersBlank(asked())).toBe(false);
+    const partly = markFeedbackGiven(asked(), 'partial', 'partial', { followUpBlank: true });
+    expect(partly.followUpBlank).toBe(true);
+    expect(answersBlank(partly)).toBe(true);
+    expect(markFeedbackGiven(asked(), 'complete', 'complete', { followUpBlank: true }).followUpBlank).toBe(false);
+    // A turn that wrote no blank opens an open follow-up, whatever the turn before it asked.
+    expect(markFeedbackGiven(partly, 'partial', 'partial').followUpBlank).toBe(false);
+  });
+
+  it('a cloze question is a blank to answer, with or without the flag', () => {
+    expect(answersBlank({ ...asked(), form: 'cloze' })).toBe(true);
+    expect(answersBlank(null)).toBe(false);
+  });
+
+  it('stops asking for the correction once a feedback turn has carried it', () => {
+    const cued = markCueGiven(asked(), { at: t, hasMistake: true, claim: 'it comes from :init' });
+    expect(cueMistakeToCorrect(cued)).toBe('it comes from :init');
+    const corrected = markFeedbackGiven(cued, 'partial', 'partial', { cueCorrected: true });
+    expect(cueMistakeToCorrect(corrected)).toBeNull();
+    // And it stays corrected through the next mark.
+    expect(cueMistakeToCorrect(markFeedbackGiven(corrected, 'partial', 'partial'))).toBeNull();
   });
 });

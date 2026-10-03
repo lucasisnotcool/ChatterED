@@ -190,6 +190,58 @@ export function questionForm(asked: QuestionForm, text: string): QuestionForm {
   return asked === 'cloze' && hasBlank(text) ? 'cloze' : 'open';
 }
 
+/**
+ * **Open follow-ups Max may ask on one question before the next is a blank** (live run,
+ * 2026-10-03). Every *Partly there* ends on a follow-up, and nothing ended the run of them: one
+ * question on the p. 4 `Fly` action was marked six times, each follow-up narrower than the last,
+ * until it asked which line of the action declares its parameters, a word the objective never
+ * needed. Two open follow-ups are the learner's two chances to say it in their own words; past
+ * that, what is still missing is asked as one term.
+ */
+export const OPEN_FOLLOW_UPS = 2;
+
+/** Up to this many words, ending in a question mark, is a guess rather than an answer. */
+const GUESS_MAX_WORDS = 4;
+
+/**
+ * **A guess at what Max wants** (2026-10-03): a few words ending in a question mark, such as
+ * `:action ?`. It is an attempt (`attempt.ts`: a hedged answer is not a clarification), but it
+ * says the learner cannot tell what the question is after, and another open question in reply
+ * asks them to guess again.
+ */
+export function isGuess(answer: string | null | undefined): boolean {
+  const text = (answer ?? '').trim();
+  if (!text.endsWith('?')) return false;
+  const words = text.split(/\s+/).filter((w) => /[a-z0-9]/i.test(w));
+  return words.length > 0 && words.length <= GUESS_MAX_WORDS;
+}
+
+export interface FollowUpPlan {
+  /** The form of the follow-up the feedback ends on, if it is not *Well done*. */
+  form: QuestionForm;
+  /**
+   * True from the second try on: the answers are marked **together** against the question Max
+   * first asked. Marked one at a time, each answer covers only the part its follow-up asked for,
+   * so no single answer is ever a complete answer to the first question.
+   */
+  together: boolean;
+  /** The answer being marked is a guess (`isGuess`). */
+  guess: boolean;
+}
+
+/**
+ * The feedback turn's plan. `attempts` counts the try being marked, so it is 1 on the first
+ * answer. The follow-up is a blank past `OPEN_FOLLOW_UPS` tries, or after a guess.
+ */
+export function followUpPlan(input: { attempts: number; answer: string | null | undefined }): FollowUpPlan {
+  const guess = isGuess(input.answer);
+  return {
+    form: input.attempts > OPEN_FOLLOW_UPS || guess ? 'cloze' : 'open',
+    together: input.attempts >= 2,
+    guess,
+  };
+}
+
 /** One resolved question on this file, newest last. The only history the pitch reads. */
 export interface PitchOutcome {
   objectiveId: string | null;

@@ -460,8 +460,8 @@ describe('rule:ellie_answers, then rule:max_followup', () => {
 
 describe('rule:ellie_cue and rule:max_prompt', () => {
   /** The threshold is `clamp(2 × words / 238 wpm, 120 s, 300 s)`, unchanged from #47 §5. */
-  async function silentAfterQuestion() {
-    const h = build();
+  async function silentAfterQuestion(reply?: Reply) {
+    const h = build({}, null, reply);
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
     // Past stage 1, then past stage 2, with nothing typed. Two runs, because stage 2's window is
     // armed by stage 1's own fill landing (`#armTimer(true)`).
@@ -534,6 +534,22 @@ describe('rule:ellie_cue and rule:max_prompt', () => {
     expect(feedback).toContain('Correct');
     expect(feedback).toContain('same context window');
     expect(feedback).toContain('leaving it uncorrected is the one thing it must not cost');
+  });
+
+  /** Live run, 2026-10-03: the same correction in six feedback turns on one question. */
+  it('corrects Ellie once, not on every feedback turn after it', async () => {
+    const partly = (request: LlmRequest) =>
+      request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK')
+        ? 'Partly there. You have who pays it, p. 3. When do they pay it?'
+        : null;
+    const h = await silentAfterQuestion(partly);
+    await settle(h.clock, h.actor.sendMessage('the learner pays it, when they decide to forward', DOC));
+    expect(prompts(h).at(-1)).toContain('same context window');
+
+    await settle(h.clock, h.actor.sendMessage('they pay it at the moment of forwarding the reply', DOC));
+    expect(rules(h).at(-1)).toBe('rule:quiz_feedback');
+    expect(prompts(h).at(-1)).not.toContain('same context window');
+    expect(h.actor.flowSnapshot().pendingQuiz?.cueCorrected).toBe(true);
   });
 
   it('carries the same correction on a release, when the learner gives up instead', async () => {
@@ -1380,6 +1396,82 @@ describe('the fill-in-the-blank after a release', () => {
     const last = prompts(h).filter((p) => p.includes('HOW HARD THIS QUESTION SHOULD BE')).at(-1)!;
     expect(last).toContain('Now ask for it in their own words');
     expect(last).not.toContain('You may go harder');
+  });
+});
+
+// ── 2026-10-03: two open follow-ups, then a blank; a guess gets a blank ────────────────────
+
+describe('the follow-up after Partly there', () => {
+  const BLANK = 'Partly there. You have who pays it. Fill in the blank: the side channel is private from the rest of the ____.';
+  const marking = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK');
+  const reply: Reply = (request) => {
+    if (!marking(request)) return null;
+    const prompt = request.messages.at(-1)!.content;
+    if (prompt.includes('YOUR LAST FOLLOW-UP WAS A FILL-IN-THE-BLANK')) return 'Well done. "Private from the rest of the group." p. 3.';
+    if (prompt.includes('one fill-in-the-blank')) return BLANK;
+    return 'Partly there. You have part of it, p. 3. Who else can read it?';
+  };
+  const ANSWERS = [
+    'the side channel is a private thread with one agent',
+    'the agent can read it but nobody else in the room',
+    'it stays out of the main chat for everyone',
+  ];
+
+  async function threeTries() {
+    const h = build({}, null, reply);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    for (const answer of ANSWERS) await settle(h.clock, h.actor.sendMessage(answer, DOC));
+    return h;
+  }
+
+  it('asks the first two follow-ups open, and marks the second try with the first', async () => {
+    const h = build({}, null, reply);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage(ANSWERS[0]!, DOC));
+    expect(prompts(h).at(-1)).not.toContain('THIS IS THEIR TRY');
+    expect(flat(prompts(h).at(-1)!)).toContain('your last sentence is one follow-up question on the gap');
+
+    await settle(h.clock, h.actor.sendMessage(ANSWERS[1]!, DOC));
+    const second = flat(prompts(h).at(-1)!);
+    expect(second).toContain('THIS IS THEIR TRY 2');
+    expect(second).toContain('taken together');
+    expect(second).not.toContain('one fill-in-the-blank');
+  });
+
+  it('makes the third follow-up a blank, and marks the blank as one', async () => {
+    const h = await threeTries();
+    const third = flat(prompts(h).at(-1)!);
+    expect(third).toContain('They have had 2 open follow-ups on it already');
+    expect(third).toContain('do not ask another open question');
+    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(true);
+
+    const ledgerCalls = () => h.llm.requests.filter((r) => r.meta.scope === 'ledger').length;
+    const before = ledgerCalls();
+    await settle(h.clock, h.actor.sendMessage('group', DOC));
+    expect(prompts(h).at(-1)).toContain('YOUR LAST FOLLOW-UP WAS A FILL-IN-THE-BLANK');
+    expect(ledgerCalls()).toBe(before);
+
+    // Three Partly theres on the learner's own words, then the term: it fills what the words earned.
+    const verdicts = h.doc.outcomes.filter((o) => o.kind === 'verdict');
+    expect(verdicts.map((o) => [o.verdict, o.form])).toEqual([
+      ['partial', 'open'],
+      ['partial', 'open'],
+      ['partial', 'open'],
+      ['complete', 'cloze'],
+    ]);
+    expect(progressFill(verdicts.map((o) => ({ ...o, id: 'x', contentSha: 's', createdAt: 't' })))).toBe(0.5);
+    expect(h.actor.docThreads().find((t) => t.quiz)?.quiz?.resolution).toBe('you_got_this');
+  });
+
+  it('answers a guess with a blank, on the first try', async () => {
+    const h = build({}, null, reply);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage(':action ?', DOC));
+    const prompt = flat(prompts(h).at(-1)!);
+    expect(prompt).toContain('they are guessing at what you want');
+    expect(prompt).toContain('one fill-in-the-blank');
+    expect(prompt).not.toContain('taken together');
   });
 });
 

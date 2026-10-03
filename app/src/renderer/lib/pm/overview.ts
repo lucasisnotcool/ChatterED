@@ -18,6 +18,7 @@ import type { Node } from 'prosemirror-model';
 import { blockAttrs, isStructuredBlock } from '../../../shared/doc/schema.js';
 import {
   NOTE_SLOT_REASON,
+  OBJECTIVES_REASON,
   type OverviewMeta,
   type OverviewRecommendation,
   type ProgressFill,
@@ -29,7 +30,7 @@ import { taughtObjectives } from '../progressview.js';
 /** C6: the title heading's reason. */
 export const TITLE_REASON = 'title';
 /** C5, C6: the "By the end you can" heading and the list under it. */
-export const OBJECTIVES_REASON = 'objectives';
+export { OBJECTIVES_REASON };
 
 // ── the blocks ──────────────────────────────────────────────────────────────────────────────
 

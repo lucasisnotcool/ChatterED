@@ -15,7 +15,10 @@ import { describe, expect, it } from 'vitest';
 import {
   CLOZE_BLANK,
   DEFAULT_PITCH,
+  followUpPlan,
   hasBlank,
+  isGuess,
+  OPEN_FOLLOW_UPS,
   notePitch,
   pitchBlock,
   pitchInputs,
@@ -323,5 +326,43 @@ describe('the cloze form', () => {
     expect(questionForm('cloze', 'Fill in the blank: a ____ never overestimates.')).toBe('cloze');
     expect(questionForm('cloze', 'In one sentence, what is a heuristic?')).toBe('open');
     expect(questionForm('open', 'What goes in ____ here?')).toBe('open');
+  });
+});
+
+/**
+ * **The follow-up after a Partly there** (live run, 2026-10-03): six verdicts on one question, the
+ * last follow-up asking for a keyword, and `:action ?` answered with another open question.
+ */
+describe('isGuess', () => {
+  it('reads a few words ending in a question mark as a guess', () => {
+    expect(isGuess(':action ?')).toBe(true);
+    expect(isGuess('is it parameters?')).toBe(true);
+    expect(isGuess('  the domain?  ')).toBe(true);
+  });
+
+  it('does not read an answer, or a long hedged one, as a guess', () => {
+    expect(isGuess('It comes from p.5 under init')).toBe(false);
+    expect(isGuess('is it an action, or a series of actions that lead to the goal?')).toBe(false);
+    expect(isGuess('?')).toBe(false);
+    expect(isGuess('')).toBe(false);
+    expect(isGuess(null)).toBe(false);
+  });
+});
+
+describe('followUpPlan', () => {
+  it('asks open follow-ups for the first two tries, then a blank', () => {
+    expect(OPEN_FOLLOW_UPS).toBe(2);
+    expect(followUpPlan({ attempts: 1, answer: 'preconditions are At, Plane and Airport' }).form).toBe('open');
+    expect(followUpPlan({ attempts: 2, answer: 'false: At(P1 SFO), true: At(P1 SIN)' }).form).toBe('open');
+    expect(followUpPlan({ attempts: 3, answer: 'It comes from p.5 under init' }).form).toBe('cloze');
+  });
+
+  it('answers a guess with a blank, on any try', () => {
+    expect(followUpPlan({ attempts: 1, answer: ':action ?' })).toEqual({ form: 'cloze', together: false, guess: true });
+  });
+
+  it('marks the answers together from the second try', () => {
+    expect(followUpPlan({ attempts: 1, answer: 'x' }).together).toBe(false);
+    expect(followUpPlan({ attempts: 2, answer: 'x' }).together).toBe(true);
   });
 });

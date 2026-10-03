@@ -50,6 +50,7 @@ import type {
   Rect,
   TableGrid,
 } from './types.js';
+import { OBJECTIVES_REASON } from './types.js';
 
 /**
  * What a `parseDOM` handler below actually touches: one method.
@@ -1298,13 +1299,19 @@ export function docOutlineNear(doc: Node, blockId: string | null, radius = 6): O
   return [...picked].sort((a, b) => a - b).map((index) => rows[index]!.entry);
 }
 
-/** The blocks that came from any of these pages — the objective bar's `blockIds` (§6). */
+/**
+ * The blocks that came from any of these pages — the objective bar's `blockIds` (§6).
+ *
+ * **Not the objectives list** (live run, 3 Oct 2026). It carries every objective's pages, so it
+ * matched every objective and, being near the top, came first: Start scrolled to it, and every
+ * lesson's Q block and Ellie's notes in that lesson were filed under it.
+ */
 export function blocksForPages(doc: Node, pages: readonly number[]): string[] {
   const wanted = new Set(pages);
   const ids: string[] = [];
   eachBlock(doc, (node) => {
-    const { blockId } = blockAttrs(node);
-    if (!blockId) return;
+    const { blockId, reason } = blockAttrs(node);
+    if (!blockId || reason === OBJECTIVES_REASON) return;
     if (node.type.name === 'slide_figure' && wanted.has(node.attrs.page as number)) {
       ids.push(blockId);
       return;

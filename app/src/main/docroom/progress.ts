@@ -22,7 +22,7 @@ import { notesRepo } from '../db/repos/notes.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
 import { threadsRepo } from '../db/repos/threads.js';
 import { docActor, requireActorMethod } from './actorport.js';
-import { blockIdsForObjective, notesDocRow, openNotesDoc, pagesOfObjective } from './doc.js';
+import { blockIdsForObjective, lessonBlocks, notesDocRow, openNotesDoc, pagesOfObjective } from './doc.js';
 
 /** The outcome that earned an objective its fill: the best verdict, and the earliest of those. */
 function bestOutcome(outcomes: readonly QuizOutcome[]): QuizOutcome | null {
@@ -189,8 +189,9 @@ export function registerProgressIpc(host: DocHost, handle: IpcHandle): void {
    * A lesson card's **Start** (brief §6): one press, three things.
    *
    * Ellie's message and the prompt to ask are the actor's (`startLesson`); the scroll is the
-   * renderer's, and it needs a target, so the objective's first block comes back with the call
-   * rather than being looked up again on the other side of the IPC boundary.
+   * renderer's, and it needs a target, so the objective's first section heading (`lessonBlocks`)
+   * comes back with the call rather than being looked up again on the other side of the IPC
+   * boundary.
    *
    * **This creates the room**, like the first chat message does: pressing Start is asking to be
    * taught, and a lesson with nowhere to happen is not one.
@@ -207,7 +208,7 @@ export function registerProgressIpc(host: DocHost, handle: IpcHandle): void {
     );
     const docRow = notesDocRow(host.db, { contentSha, fileId: input.fileId });
     const doc = docRow ? openNotesDoc(host.db, { contentSha: docRow.contentSha })?.doc ?? null : null;
-    const blockId = blockIdsForObjective(host.db, doc, docRow?.docId ?? null, objective)[0] ?? null;
+    const { scrollTo: blockId, anchor } = lessonBlocks(doc, blockIdsForObjective(host.db, doc, docRow?.docId ?? null, objective));
 
     threadsRepo(host.db).ensureDocThread({
       roomId,
@@ -221,7 +222,7 @@ export function registerProgressIpc(host: DocHost, handle: IpcHandle): void {
       await requireActorMethod(target, 'startLesson').call(target, {
         objectiveId: objective.id,
         anchorId: DOC_ANCHOR_ID,
-        blockId,
+        blockId: anchor,
       });
     } finally {
       host.persistFlow();

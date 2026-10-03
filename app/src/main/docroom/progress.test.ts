@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { docOf, para } from '../../shared/doc/fixture.test-support.js';
+import { docOf, heading, para } from '../../shared/doc/fixture.test-support.js';
 import type { QuizOutcome } from '../../shared/doc/types.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
 import { fakeHost, handlerTable, objective, type FakeHost } from './fakehost.test-support.js';
@@ -227,6 +227,24 @@ describe('progress:get / progress:start', () => {
       .prepare('SELECT thread_id, kind FROM notes_threads WHERE room_id = @r')
       .all<{ thread_id: string; kind: string }>({ r: fx.roomId });
     expect([...threads]).toEqual([{ thread_id: 'doc', kind: 'doc' }]);
+  });
+
+  it('Start scrolls to the section heading and files the lesson under the block below it (3 Oct 2026)', async () => {
+    const fx = fakeHost({
+      doc: docOf(
+        para('b_obj', 'Describe a planning problem in PDDL.', 'ingest', null, [1, 2, 3]),
+        heading('h_pddl', 2, 'Classical planning in PDDL', [2]),
+        para('b_take', 'A domain plus a problem is searched for a plan.', 'ingest', null, [2]),
+      ),
+    });
+    fx.setTree([objective('o2', { refs: [{ page: 2 }] })]);
+    const table = handlerTable();
+    registerProgressIpc(fx.host, table.handle);
+
+    const out = await table.call<{ blockId: string | null }>('progress:start', { fileId: 'f_deck', objectiveId: 'o2' });
+
+    expect(out.blockId).toBe('h_pddl');
+    expect(fx.actor.last('startLesson')?.args[0]).toMatchObject({ blockId: 'b_take' });
   });
 
   it('refuses a Start for an objective that is not in the tree', async () => {

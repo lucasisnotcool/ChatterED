@@ -34,7 +34,7 @@ import type {
   OverviewMeta,
   OverviewRecommendation,
 } from '../../shared/doc/types.js';
-import { NOTE_SLOT_REASON } from '../../shared/doc/types.js';
+import { NOTE_SLOT_REASON, OBJECTIVES_REASON } from '../../shared/doc/types.js';
 import { notesSchema } from '../../shared/doc/schema.js';
 import { draftToNodes } from '../../shared/doc/ops.js';
 import { draftWords } from './prompts.js';
@@ -294,7 +294,7 @@ export const RECOMMENDATION_KINDS: readonly GeneratedBlockKind[] = ['table', 'di
 export const BLANK = '____';
 
 /** Provenance reasons the overview's own structural blocks carry (contract C6). */
-export const OBJECTIVES_REASON = 'objectives';
+export { OBJECTIVES_REASON };
 export const TITLE_REASON = 'title';
 /** A lede whose pages were all invalid still summarises the sources; it says so. */
 export const LEDE_REASON = 'summarises the sources';

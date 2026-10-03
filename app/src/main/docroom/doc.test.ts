@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { docOf, para } from '../../shared/doc/fixture.test-support.js';
+import { docOf, heading, para } from '../../shared/doc/fixture.test-support.js';
 import { notesSchema } from '../../shared/doc/schema.js';
 import { fakeHost, objective } from './fakehost.test-support.js';
 import {
   blockIdsForObjective,
+  lessonBlocks,
   objectiveForBlock,
   openNotesDoc,
   pagesForBlock,
@@ -189,6 +190,62 @@ describe('blockIdsForObjective', () => {
       'b_4',
     ]);
     expect(blockIdsForObjective(host.db, doc, 'doc_deck', objective('o9', { refs: [] }))).toEqual([]);
+  });
+});
+
+/** The overview's "By the end you can" list: cited to every objective's pages (contract C6). */
+function objectivesList(blockId: string, pages: number[]) {
+  return notesSchema.nodes.paragraph!.create(
+    { blockId, pages, reason: 'objectives', objectiveIds: [] },
+    notesSchema.text('Describe a planning problem. Compare heuristics.'),
+  );
+}
+
+describe('the objectives list is not an objective’s block (live run, 3 Oct 2026)', () => {
+  it('is left out of the page intersection, though it cites every page', () => {
+    const { host } = fakeHost({ doc: deck() });
+    const doc = docOf(objectivesList('b_obj', [1, 2, 3]), ...deck().children);
+    expect(blockIdsForObjective(host.db, doc, null, objective('o2', { refs: [{ page: 2 }] }))).toEqual(['b_2', 'b_4']);
+  });
+});
+
+describe('lessonBlocks', () => {
+  const sectioned = () =>
+    docOf(
+      objectivesList('b_obj', [1, 2, 3]),
+      // An agent's line filed under the list before the fix, which inherited its pages.
+      para('b_stray', 'A note that picked up every page.', 'ellie', null, [1, 2, 3]),
+      heading('h_pddl', 2, 'Classical planning in PDDL', [2, 3]),
+      para('b_take', 'A domain plus a problem is searched for a plan.', 'ingest', null, [2, 3]),
+      para('b_idea', 'Air cargo split into domain and problem.', 'ingest', null, [2]),
+    );
+
+  it('scrolls to the objective’s first section heading and files under the block below it', () => {
+    expect(lessonBlocks(sectioned(), ['b_stray', 'h_pddl', 'b_take', 'b_idea'])).toEqual({
+      scrollTo: 'h_pddl',
+      anchor: 'b_take',
+    });
+  });
+
+  it('looks past a Q block already under the heading', () => {
+    const doc = docOf(
+      heading('h_pddl', 2, 'Classical planning in PDDL', [2]),
+      notesSchema.nodes.q_block!.create({ blockId: 'q_old', questionId: 'q1', askedBy: 'max', status: 'open' }, [
+        para('q_old_p', 'An earlier question?', 'max'),
+      ]),
+      para('b_take', 'The takeaway.', 'ingest', null, [2]),
+    );
+    expect(lessonBlocks(doc, ['h_pddl', 'b_take'])).toEqual({ scrollTo: 'h_pddl', anchor: 'b_take' });
+  });
+
+  it('keeps the heading when another heading follows it', () => {
+    const doc = docOf(heading('h_a', 2, 'A', [2]), heading('h_b', 2, 'B', [3]));
+    expect(lessonBlocks(doc, ['h_a'])).toEqual({ scrollTo: 'h_a', anchor: 'h_a' });
+  });
+
+  it('falls back to the first block when no heading carries the objective', () => {
+    expect(lessonBlocks(deck(), ['b_2', 'b_4'])).toEqual({ scrollTo: 'b_2', anchor: 'b_2' });
+    expect(lessonBlocks(deck(), [])).toEqual({ scrollTo: null, anchor: null });
   });
 });
 

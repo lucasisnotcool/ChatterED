@@ -880,6 +880,24 @@ export interface PendingQuiz {
    * answer. Absent on every question asked before this build, which were all `open`.
    */
   form?: QuestionForm;
+  /**
+   * **The follow-up now open is a fill-in-the-blank** (2026-10-03, `core/pitch.followUpPlan`), on
+   * an open question: after two open follow-ups, or after a guess, Max asks what is still missing
+   * as one term. The next answer is marked as a blank, and its verdict is recorded as one, so the
+   * term fills nothing beyond what the earlier answers earned.
+   */
+  followUpBlank?: boolean;
+  /**
+   * **Ellie's guess has been corrected** (§4.7). The correction is asked of the first feedback turn
+   * after her cue, which may not be the turn that resolves the question; this stops every later
+   * feedback turn correcting it again (six times in the 3 Oct run).
+   */
+  cueCorrected?: boolean;
+}
+
+/** The answer now owed is to a blank: a cloze question, or a blank follow-up on an open one. */
+export function answersBlank(quiz: PendingQuiz | null): boolean {
+  return quiz?.form === 'cloze' || quiz?.followUpBlank === true;
 }
 
 /**
@@ -1009,6 +1027,8 @@ export function openQuiz(
     releasedBy: null,
     hadPartial: false,
     resolvedInDoc: false,
+    followUpBlank: false,
+    cueCorrected: false,
   };
 }
 
@@ -1057,8 +1077,21 @@ export function markFeedbackGiven(
   verdict: QuizVerdict | null = null,
   /** #48: the three-valued verdict, for the outcome row and the progress fill. */
   verdict3: QuizVerdict3 | null = null,
+  /**
+   * 2026-10-03: `followUpBlank`, the turn ended on a blank it was asked for; `cueCorrected`, the
+   * turn was asked to correct Ellie's guess. A *Well done* opens no follow-up, blank or not.
+   */
+  extra: { followUpBlank?: boolean; cueCorrected?: boolean } = {},
 ): PendingQuiz {
-  return { ...quiz, feedbackGiven: true, verdict, verdict3, hadPartial: quiz.hadPartial === true || verdict3 === 'partial' };
+  return {
+    ...quiz,
+    feedbackGiven: true,
+    verdict,
+    verdict3,
+    hadPartial: quiz.hadPartial === true || verdict3 === 'partial',
+    followUpBlank: verdict !== 'complete' && extra.followUpBlank === true,
+    cueCorrected: quiz.cueCorrected === true || extra.cueCorrected === true,
+  };
 }
 
 /**
@@ -1104,13 +1137,14 @@ export function cueGiven(quiz: PendingQuiz | null): boolean {
 }
 
 /**
- * **An uncorrected Ellie mistake** (brief §4.7). True when the cue carried one and the question is
- * still open, which is the condition the resolving Max turn's directive has to carry. It is read
- * by the actor when it builds the directive, and asserted in a test — the invariant is "the
- * resolving turn corrects it", and the only thing code can enforce is that it was *asked to*.
+ * **An uncorrected Ellie mistake** (brief §4.7). True when the cue carried one and no feedback turn
+ * has been asked to correct it yet, which is the condition the next Max turn's directive carries.
+ * It is read by the actor when it builds the directive, and asserted in a test — the invariant is
+ * "it is corrected before the question ends", and the only thing code can enforce is that a turn
+ * was *asked to*.
  */
 export function cueMistakeToCorrect(quiz: PendingQuiz | null): string | null {
-  if (!quiz || quiz.cueHasMistake !== true) return null;
+  if (!quiz || quiz.cueHasMistake !== true || quiz.cueCorrected === true) return null;
   const claim = quiz.cueClaim;
   return typeof claim === 'string' && claim.trim().length > 0 ? claim.trim() : null;
 }

@@ -363,6 +363,13 @@ export const BLOCK_LINE_MAX_WORDS = 25;
  */
 export const NOTE_SLOT_REASON = 'your note';
 
+/**
+ * **The overview's "By the end you can" heading and list** (contract C6). The list is cited to the
+ * union of every objective's pages, so it is a table of contents for the file, not notes from
+ * any one page: `blocksForPages` leaves it out, or it would be the first block of every objective.
+ */
+export const OBJECTIVES_REASON = 'objectives';
+
 /** Every block type Ellie can generate on request (Insert, or a section's recommendation). */
 export type GeneratedBlockKind = 'table' | 'diagram' | 'flashcards' | 'quiz' | 'infographic';
 
