@@ -8,13 +8,14 @@
  * a conversation, and the menu's `files.toggle` is the only thing outside the panels that
  * touches it.
  */
-import { CHAT, FILES, NOTES_ZOOM, clamp, readZoom, type PanelBounds } from './layout.js';
+import { CHAT, FILES, HOME_ZOOM, NOTES_ZOOM, clamp, readZoom, type PanelBounds } from './layout.js';
 
 const KEYS = {
   filesOpen: 'chattered.files.open',
   filesWidth: 'chattered.files.width',
   chatWidth: 'chattered.chat.width',
   notesZoom: 'chattered.notes.zoom',
+  homeZoom: 'chattered.home.zoom',
   mapOpen: 'chattered.notesmap.open',
 } as const;
 
@@ -45,6 +46,7 @@ export class LayoutStore {
   filesWidth = $state(readWidth(KEYS.filesWidth, FILES));
   chatWidth = $state(readWidth(KEYS.chatWidth, CHAT));
   notesZoom = $state(readZoom(read(KEYS.notesZoom), NOTES_ZOOM));
+  homeZoom = $state(readZoom(read(KEYS.homeZoom), HOME_ZOOM));
   /** The map of the notes in the file panel: open until the learner folds it away. */
   mapOpen = $state(read(KEYS.mapOpen) !== 'false');
 
@@ -73,6 +75,11 @@ export class LayoutStore {
   }
 
   /** Rounded to the percent, so a pinch does not persist `1.3472918`. */
+  setHomeZoom(zoom: number): void {
+    this.homeZoom = Math.round(clamp(zoom, HOME_ZOOM.min, HOME_ZOOM.max) * 100) / 100;
+    write(KEYS.homeZoom, String(this.homeZoom));
+  }
+
   setNotesZoom(zoom: number): void {
     this.notesZoom = Math.round(clamp(zoom, NOTES_ZOOM.min, NOTES_ZOOM.max) * 100) / 100;
     write(KEYS.notesZoom, String(this.notesZoom));

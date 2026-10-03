@@ -13,12 +13,21 @@
    * Rename and Delete live on a card's context menu (right-click, or the ⋯ that appears on hover
    * and on focus, so neither is mouse-only). Delete is main's to confirm, with a native sheet.
    *
+   * **Zoom and centring.** On a large display the grid sat as a small block in the top-left
+   * corner. The column is centred, and ⌘+ / ⌘− / ⌘0 (View ▸ Zoom, routed through
+   * `lib/viewer.ts`) and a trackpad pinch scale it, cards and text together, as CSS `zoom` on the
+   * column. The level is kept per install (`layout.homeZoom`), like the notes zoom.
+   *
    * **The legacy paste-text sessions** (`'setup'`, `'room'`) are reachable from a quiet footer, as
    * they were from the Library's, and are not extended (#58).
    */
   import { bridge } from '../lib/bridge.js';
   import { createFileDrop, filesToPaths, noPathNotice } from '../lib/dropguard.js';
+  import { HOME_ZOOM, zoomIn, zoomOut } from '../lib/layout.js';
+  import { layout } from '../lib/layoutstore.svelte.js';
   import { cardLine, fillWidth } from '../lib/notebookview.js';
+  import { pinchScale } from '../lib/pdfview.js';
+  import { registerViewer, type ViewerCommand } from '../lib/viewer.js';
   import { clock, store } from '../lib/store.svelte.js';
   import type { NotebookSummary } from '../../shared/notebook.js';
 
@@ -78,6 +87,27 @@
     el.select();
   }
 
+  function zoom(c: ViewerCommand): void {
+    if (c === 'zoom.in') layout.setHomeZoom(zoomIn(layout.homeZoom, HOME_ZOOM));
+    else if (c === 'zoom.out') layout.setHomeZoom(zoomOut(layout.homeZoom, HOME_ZOOM));
+    else if (c === 'zoom.reset' || c === 'fit.width' || c === 'fit.page') layout.setHomeZoom(1);
+  }
+  $effect(() => registerViewer(zoom));
+
+  /** A macOS pinch is a `wheel` with `ctrlKey`, folded into one change per frame. */
+  let pinch: number | null = null;
+  function onwheel(e: WheelEvent): void {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const first = pinch === null;
+    pinch = pinchScale(pinch ?? layout.homeZoom, e.deltaY);
+    if (!first) return;
+    requestAnimationFrame(() => {
+      if (pinch !== null) layout.setHomeZoom(pinch);
+      pinch = null;
+    });
+  }
+
   function onwindowkey(e: KeyboardEvent): void {
     if (e.key === 'Escape' && menu) menu = null;
   }
@@ -95,8 +125,9 @@
   ondragover={drop.dragover}
   ondragleave={drop.dragleave}
   ondrop={drop.drop}
+  onwheel={onwheel}
 >
-  <div class="inner">
+  <div class="inner" style:zoom={layout.homeZoom}>
     <header class="top">
       <h1>Notebooks</h1>
       <button type="button" class="new" disabled={nb.busy} onclick={() => void store.newNotebook()}>
@@ -191,7 +222,14 @@
 
 <style>
   .home { position: relative; flex: 1; overflow-y: auto; min-width: 0; min-height: 0; background: var(--ground); }
-  .inner { padding: 26px 28px 40px; display: grid; gap: 16px; align-content: start; max-width: 1160px; }
+  .inner {
+    padding: 26px 28px 40px;
+    display: grid;
+    gap: 16px;
+    align-content: start;
+    max-width: 1160px;
+    margin: 0 auto;
+  }
 
   .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 20px; font-weight: 600; }

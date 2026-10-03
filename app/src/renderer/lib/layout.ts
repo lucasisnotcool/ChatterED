@@ -104,6 +104,12 @@ function ladder(steps: readonly number[]): ZoomLadder {
  */
 export const NOTES_ZOOM = ladder([0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]);
 
+/**
+ * The Notebooks home. On a large display at 100 % the grid is a small block of cards; ⌘+ and a
+ * pinch scale the whole column, cards and text together, the way a browser zooms a page.
+ */
+export const HOME_ZOOM = ladder([0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]);
+
 /** The slide modal, in units of "the whole slide, visible" — the ladder it already had. */
 export const SLIDE_ZOOM = ladder([0.6, 0.8, 1, 1.35, 1.8, 2.4]);
 

@@ -3,6 +3,7 @@ import {
   CHAT,
   COLLAPSE_SLACK,
   FILES,
+  HOME_ZOOM,
   NOTES_ZOOM,
   SLIDE_ZOOM,
   GUTTER_FLOOR,
@@ -69,6 +70,14 @@ describe('the zoom ladders', () => {
     expect(zoomOut(1, NOTES_ZOOM)).toBe(0.9);
     expect(zoomIn(NOTES_ZOOM.max, NOTES_ZOOM)).toBe(NOTES_ZOOM.max);
     expect(zoomOut(NOTES_ZOOM.min, NOTES_ZOOM)).toBe(NOTES_ZOOM.min);
+  });
+
+  it('gives the Notebooks home its own ladder, from 80 % to the large-print 200 %', () => {
+    expect(zoomIn(1, HOME_ZOOM)).toBe(1.1);
+    expect(zoomOut(1, HOME_ZOOM)).toBe(0.9);
+    expect(HOME_ZOOM.min).toBe(0.8);
+    expect(HOME_ZOOM.max).toBe(2);
+    expect(readZoom('7', HOME_ZOOM)).toBe(2);
   });
 
   it('steps from wherever a pinch left it, to the next rung rather than a rung further', () => {
