@@ -345,3 +345,127 @@ export function sheetGuardBlock(unsolved: readonly string[]): string {
     'lecture’s example and say that Hint, or Show answer, on the part will help with the part itself.',
   ].join('\n');
 }
+
+// ── The tutorial as the main view (2026-10-04, Lucas: "make the tutorial the main view") ───────
+
+/** The header of the block a turn reads while the sheet is the learner's main view. */
+export const TUTORIAL_FOCUS_HEADER = 'THE LEARNER IS WORKING ON A TUTORIAL SHEET';
+
+/** One part of the sheet, as the focus block lists it. Never its key. */
+export interface FocusPart {
+  label: string;
+  /** The sheet's words for the part. */
+  prompt: string;
+  /** Checked correct, or shown: no longer the learner's to solve. */
+  solved: boolean;
+  /** The headings of the notes sections it is linked to. */
+  notesHeadings: readonly string[];
+  /** The lecture pages it is linked to (notebook pages). */
+  pages: readonly number[];
+}
+
+/**
+ * **What a turn is told while the tutorial is the main view** (`docs/research/tutorials.md` §2,
+ * 2026-10-04). The sheet fills the middle of the screen and the lecture notes are a click away, so
+ * a question in the notebook chat, or on a line of the sheet, is about the sheet. Built by main
+ * (`tutorial/focus.ts`) from the saved sheet, the parts' records and their links; never the key.
+ *
+ * - `parts`: the sheet's parts, in order, each with its status and where its material is.
+ * - `current`: the part the line asked about is in, with its problem and its linked notes blocks
+ *   and lecture pages (as a tutor turn gets them); null for the notebook chat or a line outside
+ *   every part.
+ * - `notes`: the lecture notes blocks the sheet's parts link to, for the notebook chat: the notes
+ *   the agents would otherwise only reach with the notes on screen.
+ *
+ * The slides' own text is in every turn already (the room's material is the notebook's lecture and
+ * tutorial sources); this block names the pages, and quotes them for the current part.
+ */
+export interface TutorialFocusInput {
+  title: string;
+  parts: readonly FocusPart[];
+  current: {
+    label: string;
+    prompt: string;
+    notes: readonly { blockId: string; heading: string | null; text: string }[];
+    slides: readonly { page: number; label: string; text: string }[];
+  } | null;
+  notes: readonly { blockId: string; heading: string | null; text: string }[];
+}
+
+const FOCUS_MAX_PARTS = 24;
+const FOCUS_PROMPT_CHARS = 280;
+const FOCUS_MAX_NOTES = 8;
+
+function pagesLine(pages: readonly number[]): string {
+  return [...new Set(pages)]
+    .sort((a, b) => a - b)
+    .map((p) => `p. ${p}`)
+    .join(', ');
+}
+
+function notesLines(notes: TutorialFocusInput['notes'], max: number): string[] {
+  return notes
+    .filter((n) => n.text.trim().length > 0 || (n.heading ?? '').trim().length > 0)
+    .slice(0, max)
+    .map((n) => {
+      const heading = n.heading?.trim() ? `under “${n.heading.trim()}”` : 'a block of the notes';
+      return `- ${heading}: ${clip(n.text, NOTE_CHARS) || '(a heading)'}`;
+    });
+}
+
+export function tutorialFocusBlock(input: TutorialFocusInput): string {
+  const sections: string[][] = [
+    [
+      `${TUTORIAL_FOCUS_HEADER}: ${input.title.trim() || 'Tutorial'}`,
+      'The sheet is the main view on their screen; the lecture notes are one click away. Read a question',
+      'as being about the sheet unless it is plainly about something else, and teach from the lecture:',
+      'the notes below and the slides in the course material above, cited as p. N. The sheet asks; the',
+      'lecture teaches. Max checks a part and gives its hints: for a verdict on their answer, or help',
+      'with a part itself, point them to **Check** or **Help** on that part.',
+    ],
+  ];
+
+  const parts = input.parts.slice(0, FOCUS_MAX_PARTS);
+  if (parts.length > 0) {
+    const lines = ['ITS PARTS'];
+    for (const p of parts) {
+      const where = [
+        p.notesHeadings.length > 0 ? `notes: ${p.notesHeadings.map((h) => `“${h}”`).join(', ')}` : '',
+        p.pages.length > 0 ? `lecture ${pagesLine(p.pages)}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const prompt = clip(p.prompt.replace(/\s+/g, ' '), FOCUS_PROMPT_CHARS);
+      lines.push(`- ${p.label.trim()} (${p.solved ? 'done' : 'still theirs to solve'}): "${prompt}"${where ? ` · ${where}` : ''}`);
+    }
+    if (input.parts.length > parts.length) lines.push(`…and ${input.parts.length - parts.length} more parts.`);
+    sections.push(lines);
+  }
+
+  const current = input.current;
+  if (current) {
+    const lines = [
+      `THE LINE THEY ASKED ABOUT IS IN ${current.label.trim()}`,
+      'The sheet asks:',
+      '"""',
+      current.prompt.trim() || '(the part has no words of its own)',
+      '"""',
+    ];
+    const notes = notesLines(current.notes, MAX_NOTES);
+    const slides = current.slides.slice(0, MAX_SLIDES);
+    if (notes.length > 0 || slides.length > 0) {
+      lines.push('Where the lecture teaches what it uses:', ...notes);
+      for (const s of slides) {
+        const label = s.label.trim() ? ` (${s.label.trim()})` : '';
+        lines.push(`Lecture p. ${s.page}${label} reads:`, '"""', clip(s.text, SLIDE_CHARS) || '(almost no text on this page)', '"""');
+      }
+    }
+    sections.push(lines);
+  }
+
+  const notes = notesLines(input.notes, FOCUS_MAX_NOTES);
+  if (notes.length > 0) {
+    sections.push(['THE LECTURE NOTES THE SHEET DRAWS ON (the learner’s notes, a click away behind the sheet)', ...notes]);
+  }
+  return sections.map((s) => s.join('\n')).join('\n\n');
+}

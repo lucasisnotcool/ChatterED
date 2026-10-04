@@ -23,7 +23,7 @@
   import type { ThreadView } from '../../../shared/doc/types.js';
   import { RECEIVED_LINE, pendingFor, receivedVisible, stopAllowed, type PendingSend } from '../../lib/flowchat.js';
   import { ASK_PLACEHOLDER, REPLY_PLACEHOLDER, chatComposer, composeTarget, messagesOf } from '../../lib/chatview.js';
-  import { NOTEBOOK_ASK_PLACEHOLDER, greetingOf } from '../../lib/notebookview.js';
+  import { NOTEBOOK_ASK_PLACEHOLDER, TUTORIAL_ASK_PLACEHOLDER, greetingOf } from '../../lib/notebookview.js';
   import { clock, store } from '../../lib/store.svelte.js';
   import ChatMessage from './ChatMessage.svelte';
   import CostFooter from '../cost/CostFooter.svelte';
@@ -84,7 +84,13 @@
   const composer = $derived(chatComposer(target.answering ? (open?.quiz ?? null) : null));
   /** §6: the notebook's own placeholder while nothing is open; the answering ones are unchanged. */
   const placeholder = $derived(
-    composer.placeholder !== ASK_PLACEHOLDER ? composer.placeholder : replyThread ? REPLY_PLACEHOLDER : NOTEBOOK_ASK_PLACEHOLDER,
+    composer.placeholder !== ASK_PLACEHOLDER
+      ? composer.placeholder
+      : replyThread
+        ? REPLY_PLACEHOLDER
+        : chat.mainTutorial
+          ? TUTORIAL_ASK_PLACEHOLDER
+          : NOTEBOOK_ASK_PLACEHOLDER,
   );
 
   let foot = $state<HTMLElement | null>(null);

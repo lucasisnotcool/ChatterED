@@ -52,6 +52,36 @@ when the sheet opens. To get out of a part or any other component, there are thr
 
 Something pasted on such a line lands beside the component, not inside it.
 
+**The tutorial as the main view** (2026-10-04, decided by Lucas: *"add a swap"*). The group
+project is scoped to working a tutorial sheet, with the lecture in support. In a notebook that has
+a tutorial, *Main view: Lecture notes · Tutorial* in the doc header swaps the two. It is added, not
+a replacement: it is off by default, it is per notebook, and it is remembered (with which tutorial)
+with the other panel state. *Lecture notes* switches back, and the tutorial is docked beside the
+notes again, as before the swap.
+
+- **The sheet fills the middle column.** Its header loses Pop out and ×, and gains **Notes**.
+- **The notes are hidden, one click away.** They open as a window over the app, moved, resized
+  and kept as the tutorial's own window is. A window was chosen over a tab because the point is to
+  read the notes while answering the sheet. The notes open from **Notes**, from a part's *From
+  the notes* (scrolled to the block), from the map of the notes, and from a lesson's Start. Escape
+  or × closes them. They stay mounted while hidden, so the sheet's citations, headings and slide
+  windows keep working. Slides still open in slide windows. *Close* on the tutorial's source row
+  goes back to the notes.
+- **The sheet is what the chat is about.** The notebook chat's placeholder says so. Every message,
+  Ask… and Explain or Example on a line of the sheet tells main which tutorial is in front. Main
+  then gives the turn one more block (`main/tutorial/focus.ts`, `prompts.tutor.tutorialFocusBlock`):
+  - the sheet's title and its parts, each marked done or still the learner's, with the notes
+    sections and lecture pages each one links to;
+  - for a line inside a part, that part's problem, plus its linked notes blocks and lecture pages,
+    quoted as a tutor turn has them;
+  - for the notebook chat, the lecture-notes blocks that the sheet's parts link to.
+
+  The slides' text stays in every turn, as before (the room's material). The block never carries
+  a key. The sheet's guard still follows it on every turn while a part is unsolved. A typed reply
+  in a part's thread still goes to Max. Hint, Refresher, Check and Show answer are unchanged.
+  With the swap off, nothing is sent and nothing changes. An agent's doc line from the notebook
+  chat still goes into the notes (§4's rule against lines inside unsolved parts is kept).
+
 ## 3. The sheet as blocks (answer **"Sheet + answer slots"**)
 
 - The sheet's words are `ingest`-authored blocks with `reason: 'sheet'`, cited to the tutorial's

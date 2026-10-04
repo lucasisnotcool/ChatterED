@@ -134,6 +134,12 @@ export class TutorialStore {
   // ── wiring set by the shell, so this store imports neither the chat nor the main notes ──
   /** Bring a thread into view in the chat column (`store.chat.focusThread`). */
   focusThread: ((threadId: string) => void) | null = null;
+  /**
+   * **The notes, from the sheet, while the tutorial is the main view** (2026-10-04): open the notes'
+   * window over the app, and with a block scroll to it. Set by the shell; null when the notes are
+   * on screen anyway.
+   */
+  openNotes: ((blockId: string | null) => void) | null = null;
 
   // ── plain fields ─────────────────────────────────────────────────────────────────────────
   #notebook: NotebookView | null = null;

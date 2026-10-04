@@ -841,3 +841,100 @@ describe('a block action on a tutorial sheet’s line', () => {
     expect(fx.notebookReads).toEqual([{ notebookId: NB, pageFrom: 9, pageTo: 9 }]);
   });
 });
+
+// ── the tutorial as the main view (2026-10-04, `tutorials.md` §2; `tutorial/focus.ts`) ──────────
+
+describe('the tutorial as the main view: the focus each turn is told', () => {
+  const TUT_KEY = `nb:${NB}:tut:f_tut`;
+  type FocusInput = Parameters<NonNullable<DocHost['tutorialFocus']>>[0];
+  const withTutorial = () => {
+    const fx = fakeHost({ doc: deck(), fileId: NB, contentSha: `nb:${NB}` });
+    fx.db
+      .prepare(
+        `INSERT INTO notes_docs (id, content_sha, file_id, title, page_count, version, doc_json, ingest_status, ingest_version, created_at, updated_at)
+         VALUES ('doc_tut', @sha, 'f_tut', 'Tutorial 1', 12, 1, @json, 'ready', 1, @now, @now)`,
+      )
+      .run({
+        sha: TUT_KEY,
+        json: JSON.stringify(docOf(para('b_t1', 'Give a valid plan.', 'ingest', null, [9])).toJSON()),
+        now: '2026-10-03T10:00:00.000Z',
+      });
+    const asked: FocusInput[] = [];
+    (fx.host as { tutorialFocus?: DocHost['tutorialFocus'] }).tutorialFocus = (input: FocusInput) => {
+      asked.push(input);
+      return `FOCUS on ${input.fileId} at ${input.blockId ?? 'the sheet'}`;
+    };
+    return { fx, asked };
+  };
+  const focusCalls = (fx: FakeHost) => fx.actor.calls.filter((c) => c.method === 'noteTutorialFocus').map((c) => c.args[0]);
+
+  it('tells the notebook chat about the sheet in front, before the turn', async () => {
+    const { fx, asked } = withTutorial();
+    await wire(fx).call('chat:send', { fileId: NB, text: 'what is this sheet about?', mainTutorial: 'f_tut' });
+    expect(asked).toEqual([{ notebookId: NB, fileId: 'f_tut', blockId: null }]);
+    expect(focusCalls(fx)).toEqual([{ threadId: 'doc', block: 'FOCUS on f_tut at the sheet' }]);
+    const methods = fx.actor.calls.map((c) => c.method);
+    expect(methods.indexOf('noteTutorialFocus')).toBeLessThan(methods.indexOf('sendMessage'));
+    // The deck is still the turn's context: the slides reach it as before.
+    expect(fx.actor.last('sendMessage')!.args[2]).toMatchObject({ scope: 'deck' });
+  });
+
+  it('clears it when the swap is off, and builds nothing', async () => {
+    const { fx, asked } = withTutorial();
+    await wire(fx).call('chat:send', { fileId: NB, text: 'and now?' });
+    expect(asked).toEqual([]);
+    expect(focusCalls(fx)).toEqual([{ threadId: 'doc', block: null }]);
+  });
+
+  it('gives Explain on a line of that sheet the line’s block, and nothing on the notes or another sheet', async () => {
+    const { fx, asked } = withTutorial();
+    const table = wire(fx);
+    const out = await table.call<{ threadId: string }>('notes:blockAction', {
+      fileId: NB,
+      docId: 'doc_tut',
+      docKey: TUT_KEY,
+      blockId: 'b_t1',
+      kind: 'explain',
+      quote: 'Give a valid plan.',
+      mainTutorial: 'f_tut',
+    });
+    expect(asked).toEqual([{ notebookId: NB, fileId: 'f_tut', blockId: 'b_t1' }]);
+    expect(focusCalls(fx).at(-1)).toEqual({ threadId: out.threadId, block: 'FOCUS on f_tut at b_t1' });
+    // A block of the notes, with the swap on: no focus.
+    await table.call('notes:blockAction', { fileId: NB, docId: 'doc_deck', blockId: 'b_2', kind: 'explain', quote: 'x', mainTutorial: 'f_tut' });
+    expect(focusCalls(fx).at(-1)).toMatchObject({ block: null });
+    // A line of this sheet while another tutorial is in front: no focus either.
+    await table.call('notes:blockAction', { fileId: NB, docId: 'doc_tut', docKey: TUT_KEY, blockId: 'b_t1', kind: 'example', quote: 'x', mainTutorial: 'f_other' });
+    expect(focusCalls(fx).at(-1)).toMatchObject({ block: null });
+    expect(asked).toHaveLength(1);
+  });
+
+  it('gives Ask… on a line of that sheet, and later messages in its thread, the line’s block', async () => {
+    const { fx, asked } = withTutorial();
+    const table = wire(fx);
+    const { threadId } = await table.call<{ threadId: string }>('chat:openSpan', {
+      fileId: NB,
+      docKey: TUT_KEY,
+      blockId: 'b_t1',
+      quote: 'Give a valid plan.',
+      question: 'What counts as valid?',
+      mainTutorial: 'f_tut',
+    });
+    await table.call('chat:send', { fileId: NB, threadId, text: 'and the table?', mainTutorial: 'f_tut' });
+    expect(asked).toEqual([
+      { notebookId: NB, fileId: 'f_tut', blockId: 'b_t1' },
+      { notebookId: NB, fileId: 'f_tut', blockId: 'b_t1' },
+    ]);
+    expect(focusCalls(fx).every((c) => (c as { threadId: string }).threadId === threadId)).toBe(true);
+  });
+
+  it('costs the focus, never the turn, when it cannot be built', async () => {
+    const { fx } = withTutorial();
+    (fx.host as { tutorialFocus?: DocHost['tutorialFocus'] }).tutorialFocus = () => {
+      throw new Error('no such sheet');
+    };
+    await wire(fx).call('chat:send', { fileId: NB, text: 'hello', mainTutorial: 'f_tut' });
+    expect(focusCalls(fx)).toEqual([{ threadId: 'doc', block: null }]);
+    expect(fx.actor.last('sendMessage')!.args[0]).toBe('hello');
+  });
+});

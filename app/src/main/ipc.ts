@@ -90,6 +90,7 @@ import { importLegacyNotebooks } from './notebooks/legacy.js';
 // Tutorials (`docs/research/tutorials.md`, 2026-10-03): roles, the sheet's doc, checks and help.
 import { registerTutorialIpc, tutorialDepsFor } from './tutorial/ipc.js';
 import { replyInPart, tutorialPartStates } from './tutorial/reply.js';
+import { tutorialFocusText } from './tutorial/focus.js';
 import { onRoleChanged as tutorialRoleChanged } from './tutorial/ingest.js';
 import type { TutorialDeps } from './tutorial/context.js';
 import { ensureManagedVault, isManagedVault } from './vault/managed.js';
@@ -1113,6 +1114,7 @@ export class AppService {
       },
       actorFor: (roomId) => this.#requireActor(roomId),
       tutorialReply: (input, actor) => replyInPart(this.#tutorial(), input, actor),
+      tutorialFocus: (input) => tutorialFocusText(this.#tutorial(), input),
       currentActor: () => this.#actor,
       fileForRoom: (roomId) => this.#fileIdForRoom(roomId),
       persistFlow: () => this.#persistFlow(),

@@ -35,7 +35,7 @@ export interface TutorialPartState {
 }
 
 /** Each `tut_part` at the top of a sheet: its id, label, and the block ids inside it. */
-function partsOf(doc: Node): { partId: string; label: string; blockIds: string[] }[] {
+export function partsOf(doc: Node): { partId: string; label: string; blockIds: string[] }[] {
   const out: { partId: string; label: string; blockIds: string[] }[] = [];
   doc.forEach((node) => {
     if (node.type.name !== 'tut_part') return;

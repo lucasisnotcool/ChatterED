@@ -52,6 +52,9 @@ export class FakeActor {
   noteSpanThread: DocActorMethods['noteSpanThread'] = (...args) => {
     this.#record('noteSpanThread', args);
   };
+  noteTutorialFocus: DocActorMethods['noteTutorialFocus'] = (...args) => {
+    this.#record('noteTutorialFocus', args);
+  };
   pass: DocActorMethods['pass'] = async (...args) => {
     this.#record('pass', args);
     return { released: true, refused: null };

@@ -879,6 +879,13 @@ export class RoomActor {
    * thread goes through `#portFor`. In memory only: main passes the key again on each action.
    */
   #threadDocKey = new Map<string, string>();
+  /**
+   * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2): anchorId → the focus block
+   * (`prompts.tutor.tutorialFocusBlock`) main built for that thread, read by every turn in it that
+   * is not a tutor turn. Main sets it before each learner action and clears it (null) when the
+   * mode is off, so it is in memory only.
+   */
+  #tutorialFocus = new Map<string, string>();
   /** One port per tutorial content key, so its parsed document is cached across turns. */
   #tutorialPorts = new Map<string, DocPort>();
   /** The slide text main resolved for a block action's thread, for its doc line (§4.2). */
@@ -2284,6 +2291,19 @@ export class RoomActor {
     // Ask… on a tutorial sheet's line: the thread's doc line goes into the sheet (`#portFor`).
     if (input.contentKey) this.#threadDocKey.set(input.threadId, input.contentKey);
     this.#registerThread(input.threadId, 'span', { blockId: input.blockId, quote: input.quote });
+  }
+
+  /**
+   * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2). Main calls this before a
+   * learner action in a thread (the notebook chat, or a line of the sheet): `block` is what the
+   * turns in that thread read about the sheet, its parts and the lecture notes and pages they draw
+   * on (`tutorialFocusBlock`); null takes it away, as when the learner switches back to the notes.
+   */
+  noteTutorialFocus(input: { threadId: string; block: string | null }): void {
+    if (!input.threadId) return;
+    const block = input.block?.trim() ?? '';
+    if (block.length > 0) this.#tutorialFocus.set(input.threadId, block);
+    else this.#tutorialFocus.delete(input.threadId);
   }
 
   /**
@@ -4156,7 +4176,7 @@ export class RoomActor {
         move: decision.moveType,
         probeType: decision.probeType ?? undefined,
         targetElementId: decision.targetElementId ?? undefined,
-        note: this.#withSheetGuard(decision, this.#turnNote(decision)),
+        note: this.#withSheetGuard(decision, this.#withTutorialFocus(decision, this.#turnNote(decision))),
         // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
         // clause, and the rule name is what tells them apart.
         byRule: decision.decidedBy,
@@ -5367,6 +5387,20 @@ export class RoomActor {
       .map((p) => p.label);
     if (unsolved.length === 0) return note;
     return [note, sheetGuardBlock(unsolved)].filter((b): b is string => typeof b === 'string' && b.length > 0).join('\n\n');
+  }
+
+  /**
+   * **The tutorial as the main view** (2026-10-04): the focus block main set on this turn's thread
+   * goes first, before the turn's own note, so the turn reads what the learner is working on before
+   * what it is asked to do. A tutor turn has its part's own block and is left as it was; the sheet's
+   * guard is still appended after both (`#withSheetGuard`).
+   */
+  #withTutorialFocus(decision: TurnDecision, note: string | undefined): string | undefined {
+    if (isTutorRule(decision.decidedBy)) return note;
+    const anchor = this.#turnAnchorId;
+    const focus = anchor === null ? undefined : this.#tutorialFocus.get(anchor);
+    if (!focus) return note;
+    return [focus, note].filter((b): b is string => typeof b === 'string' && b.length > 0).join('\n\n');
   }
 
   /** Whether a thread is on a line inside a tutorial part the learner has not solved yet. */

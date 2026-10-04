@@ -178,6 +178,9 @@ export const FALLBACK_GREETING =
 /** The composer's placeholder on the doc chat while no question is open (§6). */
 export const NOTEBOOK_ASK_PLACEHOLDER = 'Ask about this notebook, or @Ellie / @Max…';
 
+/** The same, while the tutorial is the main view (2026-10-04, `tutorials.md` §2): the sheet is what is asked about. */
+export const TUTORIAL_ASK_PLACEHOLDER = 'Ask about this tutorial, or @Ellie / @Max…';
+
 /**
  * The greeting and the starter questions the empty doc chat draws. Read **defensively**: the
  * overview may be absent, or a hand-edited row may carry the wrong shapes, and the chat must

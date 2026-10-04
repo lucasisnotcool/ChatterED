@@ -62,6 +62,12 @@ export interface DraftSpan {
 export class ChatStore {
   fileId: string | null = $state(null);
   roomId: string | null = $state(null);
+  /**
+   * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2): the tutorial the learner has
+   * in the middle column, set by the shell; null with the notes there. Sent with every message and
+   * Ask…, so main tells the turn about the sheet and the lecture notes behind it.
+   */
+  mainTutorial: string | null = $state(null);
 
   /** The doc chat and its span threads. Private threads are not in here; they are addressed by agent. */
   threads: ThreadView[] = $state([]);
@@ -239,12 +245,17 @@ export class ChatStore {
     this.lastSendAnchor = threadId;
     this.pending = [...this.pending, { id, anchorId: threadId, body, state: 'pending', at: Date.now(), error: null }];
     void bridge()
-      .chatSend({ fileId, threadId, text: body })
+      .chatSend({ fileId, threadId, text: body, ...this.#main() })
       .then((result) => {
         this.roomId = result.roomId;
       })
       .catch((err: unknown) => this.failSend(id, message(err)));
     return id;
+  }
+
+  /** `{ mainTutorial }` while the tutorial is the main view, else nothing (the call is as it was). */
+  #main(): { mainTutorial?: string } {
+    return this.mainTutorial ? { mainTutorial: this.mainTutorial } : {};
   }
 
   failSend(id: string, reason: string): void {
@@ -294,6 +305,7 @@ export class ChatStore {
         quote: draft.quote,
         question: body,
         ...(draft.docKey ? { docKey: draft.docKey } : {}),
+        ...this.#main(),
       })
       .catch(() => null);
     this.draftBusy = false;
