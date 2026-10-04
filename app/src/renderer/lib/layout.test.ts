@@ -394,3 +394,61 @@ describe('the tutorial’s Split ratio', () => {
     expect(readSplitRatio('5')).toBe(TUTORIAL_SPLIT.max);
   });
 });
+
+describe('the tutorial as the main view (4 Oct 2026): per notebook, remembered, off by default', () => {
+  it('is off for a notebook that never turned it on, and needs a tutorial to be on', async () => {
+    const { mainTutorialFor } = await import('./layout.js');
+    expect(mainTutorialFor({}, 'nb_1', [{ fileId: 'f_t1' }])).toBeNull();
+    expect(mainTutorialFor({ nb_1: 'f_t1' }, 'nb_1', [])).toBeNull();
+    expect(mainTutorialFor({ nb_1: 'f_t1' }, null, [{ fileId: 'f_t1' }])).toBeNull();
+    // Another notebook's choice is not this one's.
+    expect(mainTutorialFor({ nb_2: 'f_t1' }, 'nb_1', [{ fileId: 'f_t1' }])).toBeNull();
+  });
+
+  it('shows the remembered tutorial, or the first when that one is gone', async () => {
+    const { mainTutorialFor } = await import('./layout.js');
+    const tutorials = [{ fileId: 'f_t1' }, { fileId: 'f_t2' }];
+    expect(mainTutorialFor({ nb_1: 'f_t2' }, 'nb_1', tutorials)).toBe('f_t2');
+    expect(mainTutorialFor({ nb_1: 'f_gone' }, 'nb_1', tutorials)).toBe('f_t1');
+  });
+
+  it('turns on and off per notebook, leaving the others alone', async () => {
+    const { withTutorialMain } = await import('./layout.js');
+    const on = withTutorialMain({ nb_2: 'f_x' }, 'nb_1', 'f_t1');
+    expect(on).toEqual({ nb_2: 'f_x', nb_1: 'f_t1' });
+    expect(withTutorialMain(on, 'nb_1', 'f_t2')).toEqual({ nb_2: 'f_x', nb_1: 'f_t2' });
+    expect(withTutorialMain(on, 'nb_1', null)).toEqual({ nb_2: 'f_x' });
+    expect(withTutorialMain({}, 'nb_1', null)).toEqual({});
+  });
+
+  it('keeps the newest notebooks when there are too many to remember', async () => {
+    const { withTutorialMain, TUTORIAL_MAIN_KEEP } = await import('./layout.js');
+    let map: Readonly<Record<string, string>> = {};
+    for (let i = 0; i < TUTORIAL_MAIN_KEEP + 5; i++) map = withTutorialMain(map, `nb_${i}`, 'f');
+    expect(Object.keys(map)).toHaveLength(TUTORIAL_MAIN_KEEP);
+    expect(map).not.toHaveProperty('nb_0');
+    expect(map).toHaveProperty(`nb_${TUTORIAL_MAIN_KEEP + 4}`, 'f');
+  });
+
+  it('opens the notes’ window below the doc header, and where it was left after that', async () => {
+    const { notesFloatFrame, NOTES_WINDOW_BELOW } = await import('./layout.js');
+    const view = { width: 1500, height: 950, top: 38 };
+    const fresh = notesFloatFrame(null, view);
+    expect(fresh.top).toBe(38 + NOTES_WINDOW_BELOW);
+    expect(fresh.left + fresh.width).toBeLessThanOrEqual(1500);
+    expect(fresh.top + fresh.height).toBeLessThanOrEqual(950);
+    const moved = { left: 300, top: 200, width: 600, height: 500 };
+    expect(notesFloatFrame(moved, view)).toEqual(moved);
+  });
+
+  it('round-trips through storage, and reads anything else as nothing remembered', async () => {
+    const { readTutorialMain, withTutorialMain } = await import('./layout.js');
+    const map = withTutorialMain({}, 'nb_1', 'f_t1');
+    expect(readTutorialMain(JSON.stringify(map))).toEqual({ nb_1: 'f_t1' });
+    expect(readTutorialMain(null)).toEqual({});
+    expect(readTutorialMain('not json')).toEqual({});
+    expect(readTutorialMain('[1,2]')).toEqual({});
+    expect(readTutorialMain('"nb_1"')).toEqual({});
+    expect(readTutorialMain(JSON.stringify({ nb_1: 'f_t1', nb_2: 3, nb_3: '' }))).toEqual({ nb_1: 'f_t1' });
+  });
+});

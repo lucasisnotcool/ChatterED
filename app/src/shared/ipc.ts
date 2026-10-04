@@ -582,7 +582,17 @@ export interface ChatterEdApi {
   /** Every thread on the file's room: the doc chat, span threads, and the two private threads. */
   chatThreads(input: { fileId: string }): Promise<ChatView>;
   /** Creates the room on the first message. `threadId` defaults to the doc chat. */
-  chatSend(input: { fileId: string; threadId?: string; text: string }): Promise<{ roomId: string; threadId: string }>;
+  chatSend(input: {
+    fileId: string;
+    threadId?: string;
+    text: string;
+    /**
+     * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2): the tutorial source's file id
+     * when the learner has it as the main view; omitted otherwise. Main then tells the turn about
+     * the sheet and the lecture notes behind it (`main/tutorial/focus.ts`).
+     */
+    mainTutorial?: string;
+  }): Promise<{ roomId: string; threadId: string }>;
   /** Highlight + Ctrl+E: a question anchored to a span. */
   chatOpenSpan(input: {
     fileId: string;
@@ -591,6 +601,8 @@ export interface ChatterEdApi {
     question: string;
     /** The tutorial's content key when the block is a sheet's line (`NotesBlockActionInput.docKey`). */
     docKey?: string;
+    /** The tutorial the learner has as the main view (`chatSend`'s). */
+    mainTutorial?: string;
   }): Promise<{ roomId: string; threadId: string }>;
   chatPrivateOpen(input: {
     fileId: string;
@@ -749,6 +761,8 @@ export interface NotesBlockActionInput {
    * `tutorialContentKey(notebookId, fileId)`. Omitted for the notes.
    */
   docKey?: string;
+  /** The tutorial the learner has as the main view (`chatSend`'s), when it does. */
+  mainTutorial?: string;
 }
 
 export interface NotesBlockActionResult {

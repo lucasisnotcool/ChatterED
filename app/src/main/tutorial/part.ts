@@ -123,7 +123,7 @@ export function threadObjective(part: PartRecord): string | null {
 export function partMaterial(
   deps: TutorialDeps,
   notebookId: string,
-  part: PartRecord,
+  part: Pick<PartRecord, 'links'>,
 ): Pick<TutorialTurnInput, 'notes' | 'slides'> {
   const notes: TutorialTurnInput['notes'] = [];
   const doc = notebookDoc(deps, notebookId);

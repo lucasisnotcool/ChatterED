@@ -320,6 +320,12 @@ export class DocStore {
   askAboutSpan: ((input: { blockId: string; quote: string; docKey?: string }) => void) | null = null;
   focusThread: ((threadId: string) => void) | null = null;
   spanThreads: (() => readonly SpanThreadView[]) | null = null;
+  /**
+   * **The tutorial as the main view** (2026-10-04): the tutorial the middle column shows, or null.
+   * Set by the shell; sent with a block action on a sheet's line, so main tells the turn about the
+   * sheet and the lecture behind it.
+   */
+  mainTutorial: (() => string | null) | null = null;
   /** `store.progress.view` (N5's): the objectives list's fills (contract C5). */
   progressView: (() => ProgressView | null) | null = null;
 
@@ -1754,7 +1760,16 @@ export class DocStore {
     this.#setBlockLine(blockId, { kind, author, state: 'running', line: kind === 'quiz' ? 'Max is asking…' : 'Ellie is writing…' }, BLOCK_ACTION_MS);
     try {
       await this.#flushSave();
-      const result = await bridge().notesBlockAction({ fileId, docId, blockId, kind, quote, ...this.#docKey() });
+      const main = this.#tutorial ? (this.mainTutorial?.() ?? null) : null;
+      const result = await bridge().notesBlockAction({
+        fileId,
+        docId,
+        blockId,
+        kind,
+        quote,
+        ...this.#docKey(),
+        ...(main ? { mainTutorial: main } : {}),
+      });
       if (fileId !== this.fileId) return;
       if (!result.accepted) {
         this.#refuseBlock(blockId, kind, blockActionRefusal(result.reason));

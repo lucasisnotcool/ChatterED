@@ -47,6 +47,13 @@ export interface DocHost {
     input: { roomId: string; threadId: string; docId: string | null; blockId: string | null; text: string },
     actor: unknown,
   ): Promise<boolean>;
+  /**
+   * **The tutorial as the main view** (2026-10-04, `tutorial/focus.ts`): the block the turns in a
+   * thread read about the sheet the learner has as the main view, its parts and the lecture notes
+   * and pages behind them; null when `fileId` is not a tutorial of the notebook. Optional for test
+   * hosts.
+   */
+  tutorialFocus?(input: { notebookId: string; fileId: string; blockId?: string | null }): string | null;
 
   backend(): ResolvedBackend;
   /** The counted, logged client. Pass the material so the scripted backend picks the right script. */

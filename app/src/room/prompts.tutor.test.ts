@@ -7,9 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { FIXTURE_KEYS } from '../shared/doc/tutorial.fixture.test-support.js';
 import type { PartKey } from '../shared/tutorial.js';
 import {
+  TUTORIAL_FOCUS_HEADER,
   TUTOR_ANSWER_HEADER,
   TUTOR_KEY_GUARD_HEADER,
   hintRung,
+  tutorialFocusBlock,
   tutorBlock,
   tutorMaxWordCeiling,
   tutorWordCeiling,
@@ -178,5 +180,60 @@ describe('tutorBlock: refresher and feedback', () => {
     expect(judged).toContain('the official solution may differ');
     const ran = flat(tutorBlock(input({ kind: 'feedback', key: low, verdict: { verdict: 'partial', checkedBy: 'simulation', detail: 'x.' } })));
     expect(ran).not.toContain('the official solution may differ');
+  });
+});
+
+describe('the tutorial as the main view: what every turn reads about the sheet (2026-10-04)', () => {
+  const parts = [
+    { label: 'Problem 1 a.', prompt: 'Write the domain.', solved: true, notesHeadings: ['PDDL'], pages: [5, 3, 5] },
+    { label: 'Problem 1 b.', prompt: 'Give a valid plan.', solved: false, notesHeadings: [], pages: [] },
+  ];
+  const notes = [{ blockId: 'b_n1', heading: 'STRIPS actions', text: 'An action has a precondition and an effect.' }];
+
+  it('names the sheet, lists its parts with what is done and where their lecture is, and the notes behind it', () => {
+    const block = flat(tutorialFocusBlock({ title: 'Tutorial 1', parts, current: null, notes }));
+    expect(block).toContain(`${TUTORIAL_FOCUS_HEADER}: Tutorial 1`);
+    expect(block).toContain('- Problem 1 a. (done): "Write the domain." · notes: “PDDL” · lecture p. 3, p. 5');
+    expect(block).toContain('- Problem 1 b. (still theirs to solve): "Give a valid plan."');
+    expect(block).toContain('THE LECTURE NOTES THE SHEET DRAWS ON');
+    expect(block).toContain('under “STRIPS actions”: An action has a precondition and an effect.');
+    // Help on a part stays Max's: the turn sends them to the part's own buttons.
+    expect(block).toContain('**Check** or **Help** on that part');
+  });
+
+  it('puts the part a line is in first, with its problem, its notes and its lecture pages quoted', () => {
+    const block = flat(
+      tutorialFocusBlock({
+        title: 'Tutorial 1',
+        parts,
+        current: {
+          label: 'Problem 1 b.',
+          prompt: 'THE PROBLEM: blocks on a table.\n\nTHIS PART: Give a valid plan.',
+          notes,
+          slides: [{ page: 5, label: 'Lecture 4 p. 5', text: 'Action(Move(b, x, y))' }],
+        },
+        notes: [],
+      }),
+    );
+    expect(block).toContain('THE LINE THEY ASKED ABOUT IS IN Problem 1 b.');
+    expect(block).toContain('THIS PART: Give a valid plan.');
+    expect(block).toContain('Lecture p. 5 (Lecture 4 p. 5) reads: """ Action(Move(b, x, y)) """');
+    expect(block).toContain('under “STRIPS actions”');
+    expect(block).not.toContain('THE LECTURE NOTES THE SHEET DRAWS ON');
+  });
+
+  it('never carries a key: it has no field for one, and says nothing of an answer', () => {
+    const block = tutorialFocusBlock({ title: '', parts, current: null, notes: [] });
+    expect(block).toContain(`${TUTORIAL_FOCUS_HEADER}: Tutorial`);
+    expect(block).not.toContain(TUTOR_KEY_GUARD_HEADER);
+    expect(block).not.toContain(TUTOR_ANSWER_HEADER);
+    expect(block).not.toContain(KEY.answer);
+  });
+
+  it('caps a long sheet', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ label: `P${i}`, prompt: 'x'.repeat(500), solved: false, notesHeadings: [], pages: [] }));
+    const block = tutorialFocusBlock({ title: 'T', parts: many, current: null, notes: [] });
+    expect(block).toContain('…and 6 more parts.');
+    expect(block).not.toContain('x'.repeat(300));
   });
 });

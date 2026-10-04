@@ -145,6 +145,40 @@ function tutorialKeyOf(host: DocHost, docId: string | null | undefined): string 
   return sha !== null && parseTutorialContentKey(sha) !== null ? sha : null;
 }
 
+/**
+ * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2; `tutorial/focus.ts`): the block
+ * a thread's turns read about the sheet, or null.
+ *
+ * `mainTutorial` is the tutorial the renderer has as the main view (absent with the mode off). The
+ * notebook chat always gets it; a thread on a line gets it only when the line is on that same sheet
+ * (`sheetKey`, the line's doc's content key), with the line's block so the part it is in comes
+ * first. A thread on the notes, or on another sheet, gets nothing. A focus that cannot be built
+ * costs the focus, never the turn.
+ */
+export function focusFor(
+  host: Pick<DocHost, 'tutorialFocus'>,
+  input: { fileId: string; mainTutorial?: string | null; docChat: boolean; sheetKey?: string | null; blockId?: string | null },
+): string | null {
+  const main = input.mainTutorial?.trim();
+  if (!main || !host.tutorialFocus || !isNotebookId(input.fileId)) return null;
+  let blockId: string | null = null;
+  if (!input.docChat) {
+    const sheet = input.sheetKey ? parseTutorialContentKey(input.sheetKey) : null;
+    if (!sheet || sheet.notebookId !== input.fileId || sheet.fileId !== main) return null;
+    blockId = input.blockId ?? null;
+  }
+  try {
+    return host.tutorialFocus({ notebookId: input.fileId, fileId: main, blockId });
+  } catch {
+    return null;
+  }
+}
+
+/** Set (or, with null, clear) a thread's focus on the actor, before its turn. */
+function noteFocus(target: DocActor, threadId: string, block: string | null): void {
+  if (actorHas(target, 'noteTutorialFocus')) target.noteTutorialFocus({ threadId, block });
+}
+
 /** The material a room was opened on: where the deck's outline and its file id are kept. */
 function materialFor(host: DocHost, roomId: string): { fileId: string | null; outline: string } {
   const room = host.store.rooms.get(roomId);
@@ -290,7 +324,7 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
    * A learner turn. **This creates the room on the first message**, as `flowAskHere` always has:
    * there is no setup screen, and the document is the thing the conversation is about.
    */
-  handle<{ fileId: string; threadId?: string; text: string }>('chat:send', async (input) => {
+  handle<{ fileId: string; threadId?: string; text: string; mainTutorial?: string }>('chat:send', async (input) => {
     const threadId = input.threadId?.trim() || DOC_ANCHOR_ID;
     const { roomId, actor } = await host.openFlowRoom(input.fileId);
     const repo = threads();
@@ -317,6 +351,18 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
       const contentKey = tutorialKeyOf(host, thread.docId);
       target.noteSpanThread({ threadId, blockId: thread.blockId, quote: thread.quote ?? null, ...(contentKey ? { contentKey } : {}) });
     }
+    // The tutorial as the main view: the notebook chat, or a line of that sheet, is about the sheet.
+    noteFocus(
+      target,
+      threadId,
+      focusFor(host, {
+        fileId: input.fileId,
+        mainTutorial: input.mainTutorial,
+        docChat: threadId === DOC_ANCHOR_ID,
+        sheetKey: thread?.kind === 'span' ? tutorialKeyOf(host, thread.docId) : null,
+        blockId: thread?.blockId ?? null,
+      }),
+    );
     try {
       await target.sendMessage(input.text, threadId, context ?? undefined);
     } finally {
@@ -336,7 +382,7 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
    * to be about an objective is how a question the learner asked can end up filling the bar. When
    * the pages are taught by two objectives, or by none, it stays null rather than being guessed.
    */
-  handle<{ fileId: string; blockId: string; quote: string; question: string; docKey?: string }>(
+  handle<{ fileId: string; blockId: string; quote: string; question: string; docKey?: string; mainTutorial?: string }>(
     'chat:openSpan',
     async (input) => {
       // `blockId: ''` is T2's "not minted yet", not a name. A thread anchored to it would match
@@ -378,6 +424,17 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
           ...(input.docKey && docKey ? { contentKey: docKey } : {}),
         });
       }
+      noteFocus(
+        target,
+        threadId,
+        focusFor(host, {
+          fileId: input.fileId,
+          mainTutorial: input.mainTutorial,
+          docChat: false,
+          sheetKey: input.docKey ? docKey : null,
+          blockId: input.blockId,
+        }),
+      );
       try {
         await target.sendMessage(input.question, threadId, context ?? undefined);
       } finally {
@@ -704,6 +761,19 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
     const discard = (): void => {
       if (!existing) repo.remove(roomId, threadId);
     };
+    // The tutorial as the main view: Explain or Example on a line of that sheet reads the sheet's part
+    // and the lecture behind it (`focusFor`); any other block clears what a past action left.
+    noteFocus(
+      target,
+      threadId,
+      focusFor(host, {
+        fileId: input.fileId,
+        mainTutorial: input.mainTutorial,
+        docChat: false,
+        sheetKey: input.docKey ? docKey : null,
+        blockId: input.blockId,
+      }),
+    );
     let started: Awaited<ReturnType<DocActor['blockAction']>>;
     try {
       started = await requireActorMethod(target, 'blockAction').call(target, {

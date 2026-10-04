@@ -411,3 +411,62 @@ describe('a typed reply in a part’s thread, and the sheet’s guard (2026-10-0
   });
 });
 
+describe('the tutorial as the main view: the focus a thread’s turns read (2026-10-04)', () => {
+  const FOCUS = [
+    'THE LEARNER IS WORKING ON A TUTORIAL SHEET: Tutorial 1',
+    'ITS PARTS',
+    '- Problem 1 b. (still theirs to solve): "Give a valid plan."',
+    'THE LECTURE NOTES THE SHEET DRAWS ON',
+    '- under “STRIPS actions”: An action has a precondition and an effect.',
+  ].join('\n');
+  const unsolved = () => [{ contentKey: CONTENT_KEY, label: 'Problem 1 b.', solved: false, blockIds: [P1B, P1B_SLOT] }];
+  const lastGroup = (h: ReturnType<typeof build>) =>
+    h.llm.requests.filter((r) => r.meta.scope === 'group').at(-1)!.messages.at(-1)!.content;
+
+  it('goes in front of the notebook chat’s turn, with the lecture notes, and the sheet’s guard still after it', async () => {
+    const h = build({ tutorialParts: unsolved });
+    h.actor.noteTutorialFocus({ threadId: 'doc', block: FOCUS });
+    await settle(h.clock, h.actor.sendMessage('what does this sheet want from me?', 'doc'));
+    const prompt = lastGroup(h);
+    expect(prompt).toContain('THE LEARNER IS WORKING ON A TUTORIAL SHEET: Tutorial 1');
+    expect(prompt).toContain('under “STRIPS actions”');
+    expect(prompt).toContain('TUTORIAL PARTS THE LEARNER HAS NOT SOLVED YET');
+    expect(prompt.indexOf('THE LEARNER IS WORKING ON')).toBeLessThan(prompt.indexOf('TUTORIAL PARTS THE LEARNER HAS NOT SOLVED YET'));
+    expect(prompt).not.toContain(KEY.answer);
+  });
+
+  it('is read only in its own thread, and is gone once main clears it (the swap turned off)', async () => {
+    const h = build();
+    h.actor.noteTutorialFocus({ threadId: 'doc', block: FOCUS });
+    await settle(h.clock, h.actor.sendMessage('a question elsewhere', 'span_other'));
+    expect(lastGroup(h)).not.toContain('THE LEARNER IS WORKING ON A TUTORIAL SHEET');
+    h.actor.noteTutorialFocus({ threadId: 'doc', block: null });
+    await settle(h.clock, h.actor.sendMessage('and in the notebook chat?', 'doc'));
+    expect(lastGroup(h)).not.toContain('THE LEARNER IS WORKING ON A TUTORIAL SHEET');
+  });
+
+  it('reaches Explain on a line of the sheet too', async () => {
+    const P1B_PROMPT = TUT_OUTLINE[TUT_OUTLINE.findIndex((e) => e.blockId === P1B) + 1]!;
+    const h = build();
+    h.actor.noteTutorialFocus({ threadId: 'span_e0000000009', block: FOCUS });
+    const started = await h.actor.blockAction({
+      kind: 'explain',
+      blockId: P1B_PROMPT.blockId,
+      anchorId: 'span_e0000000009',
+      quote: P1B_PROMPT.text,
+      objectiveId: null,
+      contentKey: CONTENT_KEY,
+    });
+    await settle(h.clock, started.turn);
+    expect(lastGroup(h)).toContain('THE LEARNER IS WORKING ON A TUTORIAL SHEET: Tutorial 1');
+  });
+
+  it('leaves a tutor turn as it was: Max’s help on a part reads the part’s own block', async () => {
+    const h = build();
+    h.actor.noteTutorialFocus({ threadId: SPAN, block: FOCUS });
+    await run(h);
+    expect(groupPrompt(h)).not.toContain('THE LEARNER IS WORKING ON A TUTORIAL SHEET');
+    expect(groupPrompt(h)).toContain(TUTOR_KEY_GUARD_HEADER);
+  });
+});
+

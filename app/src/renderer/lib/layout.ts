@@ -386,6 +386,21 @@ export function floatFrame(saved: FloatFrame | null, view: FloatView): FloatFram
   return clampFrame(base, area, { min: TUTORIAL_WINDOW_MIN, keep: FLOAT_KEEP, bar: FLOAT_BAR, margin: FLOAT_MARGIN });
 }
 
+/** How far below the app's title bar the notes' window first opens: the doc header, the sheet's header, a gap. */
+export const NOTES_WINDOW_BELOW = 92;
+
+/**
+ * **Where the notes' window goes** while the tutorial is the main view (2026-10-04): as the
+ * tutorial window, but with nothing remembered it starts below the doc header and the sheet's
+ * header, so the *Main view* switch and the sheet's **Notes** button stay in sight above it.
+ */
+export function notesFloatFrame(saved: FloatFrame | null, view: FloatView): FloatFrame {
+  if (saved) return floatFrame(saved, view);
+  const top = (view.top ?? 0) + NOTES_WINDOW_BELOW;
+  const width = Math.min(560, view.width * 0.42);
+  return floatFrame({ width, height: Math.min(720, view.height - top - 24), left: view.width - width - 24, top }, view);
+}
+
 /** A stored frame read defensively: anything but four finite numbers is nothing remembered. */
 export function readFloatFrame(raw: string | null): FloatFrame | null {
   if (!raw) return null;
@@ -397,6 +412,59 @@ export function readFloatFrame(raw: string | null): FloatFrame | null {
   } catch {
     return null;
   }
+}
+
+// ── The tutorial as the main view (4 Oct 2026, Lucas: the swap) ──────────────────────────
+
+/**
+ * **Which notebooks have the tutorial as the main view, and which tutorial** (`tutorials.md` §2,
+ * 2026-10-04): notebook id → the tutorial source's file id. Kept per install with the other panel
+ * state; a notebook not in it has the notes as the main view, as every notebook did before.
+ */
+export type TutorialMainMap = Readonly<Record<string, string>>;
+
+/** At most this many notebooks are remembered; the oldest entries go first. */
+export const TUTORIAL_MAIN_KEEP = 200;
+
+/** A stored map read defensively: anything but string → non-empty string pairs is dropped. */
+export function readTutorialMain(raw: string | null): TutorialMainMap {
+  if (!raw) return {};
+  try {
+    const o = JSON.parse(raw) as unknown;
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+      if (k && typeof v === 'string' && v.length > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** The swap turned on (a tutorial's file id) or off (null) for one notebook. */
+export function withTutorialMain(map: TutorialMainMap, notebookId: string, fileId: string | null): TutorialMainMap {
+  const { [notebookId]: _was, ...rest } = map;
+  if (fileId === null) return rest;
+  // Re-inserted last, so the newest choice is the last kept when the map is trimmed.
+  const entries = [...Object.entries(rest), [notebookId, fileId] as const];
+  return Object.fromEntries(entries.slice(-TUTORIAL_MAIN_KEEP));
+}
+
+/**
+ * **The tutorial the middle column shows, or null for the notes.** On only when the notebook has
+ * the swap on *and* has a tutorial: the one remembered, or, if that one is gone (its role changed,
+ * its source removed), the notebook's first. A notebook with no tutorial left shows its notes.
+ */
+export function mainTutorialFor(
+  map: TutorialMainMap,
+  notebookId: string | null,
+  tutorials: readonly { fileId: string }[],
+): string | null {
+  if (!notebookId) return null;
+  const want = map[notebookId];
+  if (!want || tutorials.length === 0) return null;
+  return tutorials.some((t) => t.fileId === want) ? want : tutorials[0]!.fileId;
 }
 
 // ── The tutorial's Split: two views of the sheet, one above the other (4 Oct 2026) ─────────

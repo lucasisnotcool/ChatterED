@@ -29,6 +29,7 @@ import { checkPart, judgeChoice } from './check.js';
 import { listViews, tutorialRecord, type TutorialDeps, type TutorialTurnInput, type TutorialTurnStart } from './context.js';
 import { helpPart } from './help.js';
 import { replyInPart, tutorialPartStates } from './reply.js';
+import { tutorialFocus, tutorialFocusText } from './focus.js';
 import { ingestTutorial, rewriteKeys, tutorialInFlight } from './ingest.js';
 import { tutorialRepo } from './repo.js';
 import { tutorialGaps } from './view.js';
@@ -461,6 +462,69 @@ describe('a typed reply in a part’s thread, and the parts’ states (2026-10-0
     expect(before.find((p) => p.partId === 'P1b')!.blockIds).toContain(partBlocks('P1b').inner);
     await helpPart(deps, { notebookId, fileId: tutorialId, partId: 'P2', kind: 'reveal' });
     expect(tutorialPartStates(deps, notebookId).find((p) => p.partId === 'P2')!.solved).toBe(true);
+  });
+});
+
+describe('the tutorial as the main view: what the agents are told (2026-10-04)', () => {
+  function innerBlock(partId: string): string {
+    const { doc } = savedDoc();
+    let found = '';
+    doc.forEach((n) => {
+      if (n.type.name === 'tut_part' && n.attrs.partId === partId) found = n.firstChild!.attrs.blockId as string;
+    });
+    return found;
+  }
+
+  it('is nothing for a source that is not a tutorial of this notebook', async () => {
+    await ingested();
+    const lecture = service.get(notebookId)!.sources[0]!.fileId;
+    expect(tutorialFocus(deps, { notebookId, fileId: lecture })).toBeNull();
+    expect(tutorialFocus(deps, { notebookId, fileId: 'f_nowhere' })).toBeNull();
+    expect(tutorialFocus(deps, { notebookId: 'nb_other', fileId: tutorialId })).toBeNull();
+  });
+
+  it('says which sheet it is before the sheet has been read', () => {
+    expect(tutorialFocus(deps, { notebookId, fileId: tutorialId })).toEqual({
+      title: 'Tutorial 9',
+      parts: [],
+      current: null,
+      notes: [],
+    });
+  });
+
+  it('gives the notebook chat the sheet’s parts, their links, and the lecture notes they draw on', async () => {
+    await ingested();
+    const focus = tutorialFocus(deps, { notebookId, fileId: tutorialId })!;
+    expect(focus.title).toBe('Tutorial 9: Planning practice');
+    expect(focus.parts.map((p) => p.solved)).toEqual(focus.parts.map(() => false));
+    expect(focus.parts).toHaveLength(5);
+    expect(focus.parts[0]!.pages).toEqual([1]);
+    expect(focus.current).toBeNull();
+    // The notes block the parts link to, as the learner's notes have it.
+    expect(focus.notes).toEqual([expect.objectContaining({ blockId: notesBlockId, text: 'Relaxation drops delete lists.' })]);
+    // Never a key.
+    const text = tutorialFocusText(deps, { notebookId, fileId: tutorialId })!;
+    const keys = tutorialRepo(db).parts(tutorialRecord(deps, notebookId, tutorialId)!.id);
+    for (const k of keys) if (k.key.answer.length > 12) expect(text).not.toContain(k.key.answer);
+    expect(text).toContain('Relaxation drops delete lists.');
+  });
+
+  it('puts the part a line is in first, with its problem, its notes and its lecture page’s text', async () => {
+    await ingested();
+    const focus = tutorialFocus(deps, { notebookId, fileId: tutorialId, blockId: innerBlock('P1b') })!;
+    expect(focus.current).not.toBeNull();
+    expect(focus.current!.notes.map((n) => n.blockId)).toEqual([notesBlockId]);
+    expect(focus.current!.slides.map((s) => s.page)).toEqual([1]);
+    expect(focus.current!.slides[0]!.text).toContain('Planning with STRIPS');
+    expect(focus.notes).toEqual([]);
+  });
+
+  it('marks a part done once it is shown', async () => {
+    await ingested();
+    await helpPart(deps, { notebookId, fileId: tutorialId, partId: 'P2', kind: 'reveal' });
+    const focus = tutorialFocus(deps, { notebookId, fileId: tutorialId })!;
+    const p2 = partAnswers(savedDoc().doc).findIndex((a) => a.partId === 'P2');
+    expect(focus.parts[p2]!.solved).toBe(true);
   });
 });
 

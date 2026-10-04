@@ -34,6 +34,11 @@ export interface DocActorMethods {
    * block-less and filed Ellie's doc edit wherever the planner guessed.
    */
   noteSpanThread(input: { threadId: string; blockId: string; quote: string | null; contentKey?: string | null }): void;
+  /**
+   * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2): what the turns in a thread
+   * read about the sheet and the lecture behind it, or null when the mode is off.
+   */
+  noteTutorialFocus(input: { threadId: string; block: string | null }): void;
   /** A lesson card's Start: Ellie announces the objective and prompts for a question (§6). */
   startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void>;
   /**

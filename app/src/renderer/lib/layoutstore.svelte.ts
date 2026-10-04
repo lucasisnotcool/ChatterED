@@ -17,11 +17,16 @@ import {
   clamp,
   clampSplit,
   filesChosen,
+  readFloatFrame,
   readSplitRatio,
+  readTutorialMain,
   readZoom,
   roomForTutorial,
+  withTutorialMain,
   type FilesRoom,
+  type FloatFrame,
   type PanelBounds,
+  type TutorialMainMap,
 } from './layout.js';
 
 const KEYS = {
@@ -34,6 +39,8 @@ const KEYS = {
   mapOpen: 'chattered.notesmap.open',
   tutorialWidth: 'chattered.tutorial.width',
   tutorialSplit: 'chattered.tutorial.split',
+  tutorialMain: 'chattered.tutorial.main',
+  notesFrame: 'chattered.notes.frame',
 } as const;
 
 function read(key: string): string | null {
@@ -78,6 +85,18 @@ export class LayoutStore {
    * choice, so a restart with no tutorial open finds the panel where they left it.
    */
   filesMadeRoom = $state(false);
+  /**
+   * **The tutorial as the main view** (2026-10-04, `tutorials.md` §2): per notebook, the tutorial
+   * the middle column shows instead of the notes. Off (absent) by default; kept per install.
+   */
+  tutorialMain = $state<TutorialMainMap>(readTutorialMain(read(KEYS.tutorialMain)));
+  /**
+   * With the tutorial as the main view, the notes float in a window over the app when the learner
+   * opens them (the **Notes** control, a part's *From the notes*, the map, a lesson's Start). Open
+   * or not is this sitting's; the window's place and size are kept, as the tutorial window's are.
+   */
+  notesWindowOpen = $state(false);
+  notesFrame = $state<FloatFrame | null>(readFloatFrame(read(KEYS.notesFrame)));
   #docked = false;
   #learnerChose = false;
 
@@ -126,6 +145,25 @@ export class LayoutStore {
   setTutorialSplit(ratio: number, height = 0): void {
     this.tutorialSplit = clampSplit(ratio, height);
     write(KEYS.tutorialSplit, String(this.tutorialSplit));
+  }
+
+  /** The swap, for one notebook: a tutorial's file id makes it the main view; null puts the notes back. */
+  setTutorialMain(notebookId: string, fileId: string | null): void {
+    if ((this.tutorialMain[notebookId] ?? null) === fileId) return;
+    const next = withTutorialMain(this.tutorialMain, notebookId, fileId);
+    this.tutorialMain = next;
+    // Back to the notes: their window has nothing left to float over.
+    if (fileId === null) this.notesWindowOpen = false;
+    write(KEYS.tutorialMain, JSON.stringify(next));
+  }
+
+  setNotesWindowOpen(open: boolean): void {
+    this.notesWindowOpen = open;
+  }
+
+  setNotesFrame(frame: FloatFrame): void {
+    this.notesFrame = { ...frame };
+    write(KEYS.notesFrame, JSON.stringify(frame));
   }
 
   setMapOpen(open: boolean): void {

@@ -34,17 +34,38 @@
    *    the tutorial floats over the app (`TutorialWindow`). A span thread on a tutorial's block
    *    jumps to it there rather than in the notes.
    *
+   *  - **the swap** (2026-10-04, Lucas; `tutorials.md` §2): in a notebook with a tutorial, *Main
+   *    view: Lecture notes · Tutorial* in the doc header makes the tutorial the middle column. The
+   *    notes are then hidden, still mounted (so their slides, headings and citations keep working
+   *    for the sheet), and open as a window over the app from the sheet's **Notes** button, a
+   *    part's *From the notes*, the map or a lesson's Start; Escape or × closes it. The swap is per
+   *    notebook and remembered (`layout.tutorialMain`), off by default; while it is on, the chat and
+   *    the sheet's line actions tell main which sheet is in front (`chat.mainTutorial`).
+   *
    * The doc header keeps the progress bar and the lesson path. The page viewer, Reveal in Finder
    * and Close went with the vault: a source is a copy in app storage (§1, answer C), its slides
    * are the citations' previews, and the breadcrumb in the title bar is the way home.
    */
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { bridge } from '../../lib/bridge.js';
   import { createFileDrop, filesToPaths, noPathNotice } from '../../lib/dropguard.js';
+  import { attachEdgeHandles, floatArea, resizeFrame } from '../../lib/floatframe.js';
   import { runViewerCommand } from '../../lib/viewer.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
-  import { CHAT, NOTES_SPLIT_MIN, TUTORIAL, filesCrowdTutorial } from '../../lib/layout.js';
+  import {
+    CHAT,
+    NOTES_SPLIT_MIN,
+    TUTORIAL,
+    TUTORIAL_WINDOW_MIN,
+    filesCrowdTutorial,
+    floatFrame,
+    mainTutorialFor,
+    notesFloatFrame,
+    type FloatFrame,
+    type FloatView,
+  } from '../../lib/layout.js';
+  import '../notes/floatframe.css';
   import type { NotebookView } from '../../../shared/notebook.js';
   import { layout } from '../../lib/layoutstore.svelte.js';
   import ChatColumn from './ChatColumn.svelte';
@@ -97,7 +118,64 @@
   $effect(() => () => untrack(() => tutorial.setNotebook(null)));
 
   const tutorialOpen = $derived(tutorial.openFileId !== null);
-  const docked = $derived(tutorialOpen && !tutorial.floating);
+
+  /**
+   * **The swap** (2026-10-04): the tutorial the middle column shows instead of the notes, or null.
+   * On only in a notebook that has a tutorial and has the swap on (`mainTutorialFor`).
+   */
+  const mainFileId = $derived(mainTutorialFor(layout.tutorialMain, notebookId, tutorial.views));
+  const tutorialMain = $derived(mainFileId !== null);
+  const hasTutorials = $derived(tutorial.views.length > 0);
+  /** With the swap on, the notes are a window over the app while open, and hidden while not. */
+  const notesFloating = $derived(tutorialMain && layout.notesWindowOpen);
+  const notesHidden = $derived(tutorialMain && !layout.notesWindowOpen);
+
+  /**
+   * The main tutorial is the one the pane shows: opened when the swap goes on (or the notebook
+   * opens with it on), and a tab picked in the pane becomes the remembered one. Closing it from
+   * its source row (*Close*) is going back to the notes: the middle column is never empty.
+   */
+  let lastOpen: string | null = null;
+  $effect(() => {
+    const want = mainFileId;
+    const open = tutorial.openFileId;
+    untrack(() => {
+      const closed = open === null && lastOpen !== null && lastOpen === want;
+      lastOpen = open;
+      if (!want) return;
+      if (closed) layout.setTutorialMain(notebookId, null);
+      else if (open === null) void tutorial.open(want);
+      else if (open !== want) layout.setTutorialMain(notebookId, open);
+    });
+  });
+
+  /** The chat and the sheet's line actions say which sheet is in front (`main/tutorial/focus.ts`). */
+  $effect(() => {
+    const main = mainFileId;
+    untrack(() => {
+      store.chat.mainTutorial = main;
+      tutorial.doc.mainTutorial = () => main;
+    });
+  });
+  $effect(() => () =>
+    untrack(() => {
+      store.chat.mainTutorial = null;
+      tutorial.doc.mainTutorial = null;
+      layout.setNotesWindowOpen(false);
+    }),
+  );
+
+  /** *Main view*: the tutorial on screen (or the first), or back to the notes. */
+  function setMain(on: boolean): void {
+    if (!on) {
+      layout.setTutorialMain(notebookId, null);
+      return;
+    }
+    const fileId = tutorial.openFileId ?? tutorial.views[0]?.fileId ?? null;
+    if (fileId) layout.setTutorialMain(notebookId, fileId);
+  }
+
+  const docked = $derived(tutorialOpen && !tutorial.floating && !tutorialMain);
 
   /**
    * **Room for the docked tutorial.** Notes and tutorial side by side want two readable sheets;
@@ -129,9 +207,108 @@
       void tutorial.focusBlock(blockId);
       return;
     }
+    // The swap is on and the notes are hidden: their window opens first, then the block is found.
+    if (notesHidden) {
+      openNotes(blockId);
+      return;
+    }
+    revealNotesBlock(blockId);
+  }
+
+  function revealNotesBlock(blockId: string): void {
     store.doc.scrollToBlock(blockId);
-    const el = document.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
+    const el = docbody?.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  /**
+   * **The notes, one click away** while the tutorial is the main view: their window opens, and
+   * with a block (a part's *From the notes*, the map, a lesson's Start) it scrolls there once the
+   * notes are laid out again.
+   */
+  function openNotes(blockId: string | null = null): void {
+    if (!layout.notesWindowOpen) notesFrame = notesFloatFrame(layout.notesFrame, viewport());
+    layout.setNotesWindowOpen(true);
+    void tick().then(() => {
+      // The window takes the focus, so Escape closes it; a block is found once it is laid out.
+      if (docbody && !docbody.contains(document.activeElement)) docbody.focus({ preventScroll: true });
+      if (blockId) requestAnimationFrame(() => revealNotesBlock(blockId));
+    });
+  }
+  tutorial.openNotes = (blockId) => openNotes(blockId);
+  $effect(() => () => untrack(() => (tutorial.openNotes = null)));
+
+  // ── the notes' window (the swap on) ────────────────────────────────────────────────────────
+  /** The app's size, and the title bar's bottom, which the window never goes above (`floatArea`). */
+  const viewport = (): FloatView => {
+    const area = floatArea();
+    return { width: area.right, height: area.bottom, top: area.top };
+  };
+  let notesFrame = $state<FloatFrame | null>(null);
+  let notesMoving = $state(false);
+  /** Each opening places the window where it was left, kept inside the app as it is now. */
+  $effect(() => {
+    if (!notesFloating) return;
+    untrack(() => (notesFrame = notesFloatFrame(layout.notesFrame, viewport())));
+  });
+
+  function onresize(): void {
+    if (notesFloating && notesFrame) notesFrame = floatFrame(notesFrame, viewport());
+  }
+
+  /** Move by the window's bar, as the tutorial window moves (`TutorialWindow`). */
+  function notesBarDown(event: PointerEvent): void {
+    if (event.button !== 0 || !notesFrame || (event.target as Element).closest('button')) return;
+    event.preventDefault();
+    const el = event.currentTarget as HTMLElement;
+    el.setPointerCapture(event.pointerId);
+    const start = { ...notesFrame };
+    const x0 = event.clientX;
+    const y0 = event.clientY;
+    notesMoving = true;
+    document.documentElement.classList.add('ff-resizing');
+    document.documentElement.style.setProperty('--ff-cursor', 'grabbing');
+    const move = (e: PointerEvent): void => {
+      notesFrame = floatFrame({ ...start, left: start.left + e.clientX - x0, top: start.top + e.clientY - y0 }, viewport());
+    };
+    const up = (): void => {
+      notesMoving = false;
+      document.documentElement.classList.remove('ff-resizing');
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      if (notesFrame) layout.setNotesFrame(notesFrame);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  }
+
+  // Resize from any edge or corner while floating (`attachEdgeHandles`, the slide windows' too).
+  $effect(() => {
+    const root = docbody;
+    if (!root || !notesFloating) return;
+    let start: FloatFrame | null = null;
+    return attachEdgeHandles(root, {
+      start: () => {
+        start = notesFrame ? { ...notesFrame } : null;
+        notesMoving = true;
+      },
+      move: (edge, dx, dy) => {
+        if (start) notesFrame = resizeFrame(start, edge, dx, dy, floatArea(), TUTORIAL_WINDOW_MIN);
+      },
+      end: () => {
+        notesMoving = false;
+        if (notesFrame) layout.setNotesFrame(notesFrame);
+      },
+    });
+  });
+
+  /** Escape outside the text closes the notes' window, as it docks the tutorial's. */
+  function notesKey(e: KeyboardEvent): void {
+    if (!notesFloating || e.key !== 'Escape' || (e.target as Element).closest('.ProseMirror')) return;
+    e.preventDefault();
+    layout.setNotesWindowOpen(false);
   }
 
   /** A `p. N` in a turn. The document is what the learner is reading, so it lands there. */
@@ -181,7 +358,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onwindowkey} />
+<svelte:window onkeydown={onwindowkey} {onresize} />
 
 <div class="shell" bind:clientWidth={shellWidth} role="region" aria-label="Notebook">
   {#if filesOpen}
@@ -231,10 +408,59 @@
            on this file — so the header's own rule holds: nothing here may push the buttons over
            the chat column's tabs at 1100px. -->
       <CostCounter />
+
+      <!-- The swap (2026-10-04): only in a notebook with a tutorial. -->
+      {#if hasTutorials}
+        <div class="mainview" role="group" aria-label="Main view">
+          <button
+            type="button"
+            class="mv-opt"
+            class:on={!tutorialMain}
+            aria-pressed={!tutorialMain}
+            title="The lecture notes in the middle, the tutorial beside them"
+            onclick={() => setMain(false)}
+          >Lecture notes</button>
+          <button
+            type="button"
+            class="mv-opt"
+            class:on={tutorialMain}
+            aria-pressed={tutorialMain}
+            title="The tutorial sheet in the middle; the notes open in a window when you need them"
+            onclick={() => setMain(true)}
+          >Tutorial</button>
+        </div>
+      {/if}
     </header>
 
     <div class="docrow">
-    <div class="docbody" bind:this={docbody} style:min-width={docked ? `${NOTES_SPLIT_MIN}px` : null}>
+    <!-- Floating, it is a dialog (focusable, so Escape reaches it); docked, a plain column. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
+    <div
+      class="docbody"
+      class:notes-hidden={notesHidden}
+      class:notes-window={notesFloating}
+      class:ff-window={notesFloating}
+      class:moving={notesMoving}
+      bind:this={docbody}
+      role={notesFloating ? 'dialog' : null}
+      aria-label={notesFloating ? 'Lecture notes' : null}
+      aria-hidden={notesHidden ? 'true' : null}
+      tabindex={notesFloating ? -1 : null}
+      onkeydown={notesKey}
+      style:min-width={docked ? `${NOTES_SPLIT_MIN}px` : null}
+      style:left={notesFloating && notesFrame ? `${notesFrame.left}px` : null}
+      style:top={notesFloating && notesFrame ? `${notesFrame.top}px` : null}
+      style:width={notesFloating && notesFrame ? `${notesFrame.width}px` : null}
+      style:height={notesFloating && notesFrame ? `${notesFrame.height}px` : null}
+    >
+      {#if notesFloating}
+        <!-- The window's title bar: drag to move; the × (or Escape) puts the notes away again. -->
+        <div class="nw-bar" onpointerdown={notesBarDown}>
+          <span class="nw-kicker">Lecture notes</span>
+          <span class="nw-hint">behind the tutorial</span>
+          <button type="button" class="nw-close" aria-label="Close the notes" title="Close the notes (Esc)" onclick={() => layout.setNotesWindowOpen(false)}>×</button>
+        </div>
+      {/if}
       <!--
         **The pacing disclosure, once per install, above the document.**
 
@@ -245,11 +471,20 @@
         "show the pacing note again" button that puts it back. It decides for itself whether to
         render; this column only gives it somewhere to be.
       -->
-      <PacingStrip />
+      <!-- With the swap on, the disclosure goes above the sheet: the notes may never be opened. -->
+      {#if !tutorialMain}
+        <PacingStrip />
+      {/if}
       <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
       <NotesPane fileId={notebookId} />
     </div>
-    {#if docked}
+    {#if tutorialMain}
+      <!-- The swap: the sheet is the middle column, the whole of it. -->
+      <section class="tutmain" id="tutorial-column" aria-label="Tutorial">
+        <div class="tutmain-pacing"><PacingStrip /></div>
+        <TutorialPane main />
+      </section>
+    {:else if docked}
       <PaneSplitter
         size={layout.tutorialWidth}
         bounds={TUTORIAL}
@@ -279,7 +514,7 @@
     <ChatColumn {pages} onjump={jump} onpage={goToPage} />
   </div>
 
-  {#if tutorialOpen && tutorial.floating}
+  {#if tutorialOpen && tutorial.floating && !tutorialMain}
     <TutorialWindow />
   {/if}
 </div>
@@ -329,6 +564,66 @@
   /* The tutorial yields before the notes do: its width is the learner's, with a floor. */
   .tutcol { flex: 0 1 auto; min-width: 360px; min-height: 0; display: flex; flex-direction: column; }
   .tutcol > :global(.tp-nd) { flex: 1 1 auto; }
+
+  /* ── The swap (2026-10-04): the sheet in the middle, the notes hidden or in a window ── */
+  .tutmain { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .tutmain > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
+  /* The disclosure, once per install, above the sheet; it scrolls rather than crowd it out. */
+  .tutmain-pacing { flex: 0 1 auto; max-height: 50%; overflow-y: auto; }
+  .tutmain-pacing:empty { display: none; }
+  /* Hidden, not unmounted: the notes' editor still answers the sheet's headings, citations and
+     slide windows, and comes back exactly where it was. */
+  .docbody.notes-hidden { display: none; }
+  .docbody.notes-window {
+    position: fixed;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: var(--pane);
+    box-shadow: 0 18px 48px rgb(20 20 40 / 20%), 0 2px 8px rgb(20 20 40 / 8%);
+    outline: none;
+  }
+  .docbody.notes-window:focus-within { box-shadow: 0 20px 52px rgb(20 20 40 / 24%), 0 0 0 3px var(--indigo-tint); }
+  .docbody.notes-window.moving { box-shadow: 0 24px 60px rgb(20 20 40 / 28%); }
+  .docbody.notes-window > :global(.nd) { flex: 1 1 auto; min-height: 0; }
+  .nw-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 4px 6px 4px 14px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--ground);
+    cursor: grab;
+    user-select: none;
+  }
+  .nw-kicker { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--indigo); }
+  .nw-hint { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nw-close { flex: none; font-size: 16px; line-height: 1; padding: 2px 7px; border-radius: 6px; color: var(--text-2); cursor: pointer; }
+  .nw-close:hover { background: var(--pane); color: var(--text); }
+
+  .mainview {
+    flex: none;
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--pane);
+  }
+  .mv-opt {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+  .mv-opt:hover { color: var(--indigo); }
+  .mv-opt.on { background: var(--indigo-tint); color: var(--indigo); font-weight: 600; }
 
   /* Its width is the learner's, but it yields before the document does: `flex-shrink: 1` with a
      floor, so a narrow window takes it back to 300 px instead of squeezing the doc to nothing. */

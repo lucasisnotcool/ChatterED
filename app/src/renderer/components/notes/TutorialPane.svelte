@@ -63,9 +63,16 @@
 
   let {
     floating = false,
+    main = false,
     onbardown,
   }: {
     floating?: boolean;
+    /**
+     * **The swap** (2026-10-04, `tutorials.md` §2): the sheet is the middle column and the notes are
+     * hidden. The header's Pop out / Dock and × give way to **Notes**, which opens the notes in a
+     * window; *From the notes* opens them there too. The doc header's *Main view* switches back.
+     */
+    main?: boolean;
     /** The floating window's: a press on the header (not on a control) starts a move. */
     onbardown?: (event: PointerEvent) => void;
   } = $props();
@@ -134,6 +141,11 @@
   // ── D2's part chrome, wired to the store, the notes and the slides ─────────────────────────
   /** *From the notes:* — the notes scroll to the block and flash it, as a lesson's Start does. */
   function openNotesBlock(blockId: string): void {
+    // The swap on: the notes are hidden behind the sheet, so their window opens on the block.
+    if (main && tut.openNotes) {
+      tut.openNotes(blockId);
+      return;
+    }
     store.doc.scrollToBlock(blockId);
   }
 
@@ -345,7 +357,7 @@
   }
 </script>
 
-<div class="nd tp-nd" class:floating class:nd-compact={fit.compact} aria-label="Tutorial" bind:this={root}>
+<div class="nd tp-nd" class:floating class:main class:nd-compact={fit.compact} aria-label="Tutorial" bind:this={root}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="tp-head" class:grab={Boolean(onbardown)} class:narrow={narrowHead} onpointerdown={headdown}>
     {#if views.length > 1}
@@ -435,7 +447,18 @@
         </svg>
       </button>
     {/if}
-    {#if floating}
+    {#if main}
+      <!-- The swap: the notes are one click away, in a window over the app. -->
+      <button
+        type="button"
+        class="tp-btn tp-notes-btn"
+        class:on={layout.notesWindowOpen}
+        aria-pressed={layout.notesWindowOpen}
+        aria-label={layout.notesWindowOpen ? 'Close the lecture notes' : 'Open the lecture notes'}
+        title={layout.notesWindowOpen ? 'Close the lecture notes window (Esc)' : 'Open the lecture notes in a window over the sheet'}
+        onclick={() => (layout.notesWindowOpen ? layout.setNotesWindowOpen(false) : tut.openNotes?.(null))}
+      >Notes</button>
+    {:else if floating}
       <button
         type="button"
         class="tp-btn"
@@ -470,7 +493,9 @@
         {:else}Pop out{/if}
       </button>
     {/if}
-    <button type="button" class="tp-btn tp-close" aria-label="Close the tutorial" title="Close the tutorial" onclick={() => tut.close()}>×</button>
+    {#if !main}
+      <button type="button" class="tp-btn tp-close" aria-label="Close the tutorial" title="Close the tutorial" onclick={() => tut.close()}>×</button>
+    {/if}
   </header>
 
   <div
@@ -616,7 +641,9 @@
 
 <style>
   .tp-nd { position: relative; height: 100%; border-left: 1px solid var(--hairline); }
-  .tp-nd.floating { border-left: 0; }
+  .tp-nd.floating,
+  .tp-nd.main { border-left: 0; }
+  .tp-notes-btn.on { border-color: var(--indigo); background: var(--indigo-tint); color: var(--indigo); }
 
   .tp-head {
     flex: none;
