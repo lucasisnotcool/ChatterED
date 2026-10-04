@@ -15,8 +15,10 @@
  *    default and harmless.
  *
  *  - **Files dropped on a drop zone** (`docs/research/notebooks.md` §1, 2026-10-01): the
- *    Notebooks home and the open notebook's window, which turn a drop into a new notebook or new
- *    sources. A zone is any element marked `data-dropzone` (and everything inside it); the guard
+ *    Notebooks home, which turns a drop into a new notebook, and the open notebook's sources
+ *    column, which turns it into new sources. Since 2026-10-04 the notes and the tutorial sheet
+ *    are zones too, for **images only** (`createImageDrop`): the image goes into the sheet where
+ *    it was dropped. A zone is any element marked `data-dropzone` (and everything inside it); the guard
  *    stands aside there entirely, and the zone's own `dragover`/`drop` handlers take the event,
  *    `preventDefault` it and read the paths with `filesToPaths`. Standing aside rather than
  *    half-handling is deliberate: the guard runs after the zone (bubble phase, on the window), and
@@ -124,7 +126,13 @@ export function installDropGuard(target: Pick<Window, 'addEventListener'>): void
 
 /** The part of a `DragEvent` a drop zone reads. */
 export interface ZoneDragEvent {
-  dataTransfer: { types: Iterable<string>; dropEffect?: string; files?: Iterable<{ name: string }> | null } | null;
+  dataTransfer: {
+    types: Iterable<string>;
+    dropEffect?: string;
+    files?: Iterable<{ name: string }> | null;
+    /** While the drag is in the air the files cannot be read, but each item's MIME type can. */
+    items?: Iterable<{ kind: string; type: string }> | null;
+  } | null;
   preventDefault(): void;
   stopPropagation?(): void;
 }
@@ -177,4 +185,135 @@ export function createFileDrop<F extends { name: string }>(options: {
       options.ondrop([...((e.dataTransfer?.files ?? []) as Iterable<F>)]);
     },
   };
+}
+
+// ── images into a sheet (2026-10-04) ────────────────────────────────────────────────────────────
+
+/** The image types a notebook takes as a source (`SOURCE_EXTENSIONS`: png, jpg, gif, webp). */
+const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+/**
+ * Does a drag still in the air carry at least one image? Read from `items`, whose MIME types are
+ * known before the drop. `null` when the drag cannot say (no `items`): the drop decides then.
+ */
+export function carriesImage(items: Iterable<{ kind: string; type: string }> | null | undefined): boolean | null {
+  if (!items) return null;
+  for (const item of items) if (item.kind === 'file' && IMAGE_TYPES.has(item.type.toLowerCase())) return true;
+  return false;
+}
+
+/** The dropped files that are images a notebook takes, by type or, failing that, by extension. */
+export function imageFiles<F extends { name: string; type?: string }>(files: Iterable<F> | null | undefined): F[] {
+  const out: F[] = [];
+  for (const file of files ?? []) {
+    const type = (file.type ?? '').toLowerCase();
+    const ext = (file.name.split('.').pop() ?? '').toLowerCase();
+    if (IMAGE_TYPES.has(type) || (type === '' && IMAGE_EXTENSIONS.has(ext))) out.push(file);
+  }
+  return out;
+}
+
+/** What a sheet says when files that are not images are dropped on it. */
+export const NOT_AN_IMAGE_NOTICE = 'Only images can be dropped into the notes. To add a file as a source, drop it on Sources.';
+
+/**
+ * **A sheet's drop handlers** (the notes, the tutorial): an image dropped on it is put into it, at
+ * the place it was dropped; anything else is refused there, with a "not allowed" cursor while it
+ * is dragged and a line saying where files go. A sheet is a drop zone (`data-dropzone`), so the
+ * guard stands aside and these must `preventDefault` every files drag themselves, or Chromium
+ * would open the file in place of the app.
+ *
+ * `onover` says what is over the sheet: `'image'` (outline it), `'refused'` (other files: say where
+ * they go, because with a "not allowed" cursor Chromium never fires the drop, so a line on drop
+ * would never show) or null. `accept` is false while the sheet cannot take an image (no document
+ * on screen yet).
+ */
+export function createImageDrop<F extends { name: string; type?: string }>(options: {
+  accept: () => boolean;
+  onover: (over: 'image' | 'refused' | null) => void;
+  ondrop: (images: F[], at: { x: number; y: number; target: EventTarget | null }) => void;
+  onrefuse: (notice: string) => void;
+}): {
+  dragenter: (e: ZoneDragEvent) => void;
+  dragover: (e: ZoneDragEvent) => void;
+  dragleave: (e: ZoneDragEvent) => void;
+  drop: (e: ZoneDragEvent & { clientX: number; clientY: number; target: EventTarget | null }) => void;
+} {
+  let depth = 0;
+  let current: 'image' | 'refused' | null = null;
+  const set = (state: 'image' | 'refused' | null): void => {
+    if (state === current) return;
+    current = state;
+    options.onover(state);
+  };
+  /**
+   * `dragover` repeats every few dozen ms while a drag is over the zone. A drag cancelled with
+   * Esc, or one that leaves the window fast, may send no `dragleave`, so a pause in them clears
+   * the outline and the hint rather than leaving them up.
+   */
+  let idle: ReturnType<typeof setTimeout> | null = null;
+  const stillOver = (): void => {
+    if (idle) clearTimeout(idle);
+    idle = setTimeout(() => {
+      depth = 0;
+      set(null);
+    }, 400);
+  };
+  const gone = (): void => {
+    if (idle) clearTimeout(idle);
+    idle = null;
+    depth = 0;
+    set(null);
+  };
+  const files = (e: ZoneDragEvent) => carriesFiles(e.dataTransfer?.types);
+  const wanted = (e: ZoneDragEvent) => options.accept() && carriesImage(e.dataTransfer?.items) !== false;
+  return {
+    dragenter(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      depth += 1;
+      if (depth === 1) set(wanted(e) ? 'image' : options.accept() ? 'refused' : null);
+      stillOver();
+    },
+    dragover(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = wanted(e) ? 'copy' : 'none';
+      stillOver();
+    },
+    dragleave(e) {
+      if (!files(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) gone();
+    },
+    drop(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      e.stopPropagation?.();
+      gone();
+      if (!options.accept()) return;
+      const images = imageFiles([...((e.dataTransfer?.files ?? []) as Iterable<F>)]);
+      if (images.length === 0) {
+        options.onrefuse(NOT_AN_IMAGE_NOTICE);
+        return;
+      }
+      options.ondrop(images, { x: e.clientX, y: e.clientY, target: e.target });
+    },
+  };
+}
+
+/**
+ * **Where a dropped image goes**: after the top-level block whose top is the last one above the
+ * drop point, so a drop on a paragraph lands under it and a drop in the margin beside the last
+ * line lands at the end. Null above the first block (the caller's fallback decides). `blocks` are
+ * the sheet's top-level blocks in order, with their block ids and their tops on screen.
+ */
+export function dropAnchor(blocks: readonly { id: string | null; top: number }[], y: number): string | null {
+  let anchor: string | null = null;
+  for (const block of blocks) {
+    if (block.top > y) break;
+    if (block.id) anchor = block.id;
+  }
+  return anchor;
 }

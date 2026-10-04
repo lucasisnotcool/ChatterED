@@ -19,9 +19,20 @@
    *  - **the column sizes**, which are `layoutstore.svelte.ts`'s: both edges drag (the sources
    *    panel's is in `SourcesPanel`), and the panel closes from its edge, its toggle, or View ▸
    *    Show/Hide Files (⌃⌘S);
-   *  - **the drop zone** (`notebooks.md` §1): files dropped anywhere on the notebook window are
-   *    added to it, with an overlay that names the notebook while the drag is over it. The window
-   *    is marked `data-dropzone`, so the app-wide drop guard stands aside here and nowhere else.
+   *  - **the drop zone** (`notebooks.md` §1): files dropped on the **sources column** are added
+   *    to the notebook, and its drop box lights up while they are over it. Since 2026-10-04 that
+   *    column is the only place a file becomes a source: an image dropped on the notes or the
+   *    tutorial goes into that sheet where it was dropped (`lib/sheetdrop.ts`), and any other file
+   *    dropped there or on the chat is refused. Each zone is marked `data-dropzone`, so the
+   *    app-wide drop guard stands aside there and nowhere else;
+   *  - **Ctrl with + − 0** (2026-10-04): the View menu's zoom keys are ⌘ on a Mac, and Ctrl is
+   *    routed the same way here, to the notes or the tutorial, whichever the learner is in
+   *    (`lib/viewer.ts`).
+   *
+   *  - **the tutorial column** (`docs/research/tutorials.md` §2): with a tutorial open and docked,
+   *    the doc column splits *notes | splitter | tutorial*, its width the learner's; popped out,
+   *    the tutorial floats over the app (`TutorialWindow`). A span thread on a tutorial's block
+   *    jumps to it there rather than in the notes.
    *
    * The doc header keeps the progress bar and the lesson path. The page viewer, Reveal in Finder
    * and Close went with the vault: a source is a copy in app storage (§1, answer C), its slides
@@ -30,9 +41,11 @@
   import { untrack } from 'svelte';
   import { bridge } from '../../lib/bridge.js';
   import { createFileDrop, filesToPaths, noPathNotice } from '../../lib/dropguard.js';
+  import { runViewerCommand } from '../../lib/viewer.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
-  import { CHAT } from '../../lib/layout.js';
+  import { CHAT, NOTES_SPLIT_MIN, TUTORIAL, filesCrowdTutorial } from '../../lib/layout.js';
+  import type { NotebookView } from '../../../shared/notebook.js';
   import { layout } from '../../lib/layoutstore.svelte.js';
   import ChatColumn from './ChatColumn.svelte';
   import CostCounter from '../cost/CostCounter.svelte';
@@ -43,6 +56,8 @@
   import PaneSplitter from '../PaneSplitter.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import SourcesPanel from '../SourcesPanel.svelte';
+  import TutorialPane from '../notes/TutorialPane.svelte';
+  import TutorialWindow from '../notes/TutorialWindow.svelte';
 
   let { notebookId }: { notebookId: string } = $props();
 
@@ -68,6 +83,36 @@
       });
   });
 
+  /**
+   * The notebook's tutorials follow the open notebook (a deep snapshot: a source's role or status
+   * is a field inside the view). Help and Check bring their thread up in the chat.
+   */
+  const tutorial = store.tutorial;
+  tutorial.focusThread = (threadId) => store.chat.focusThread(threadId);
+  $effect(() => {
+    const view = store.notebook.view;
+    const snapshot = view && view.id === notebookId ? ($state.snapshot(view) as NotebookView) : null;
+    untrack(() => tutorial.setNotebook(snapshot));
+  });
+  $effect(() => () => untrack(() => tutorial.setNotebook(null)));
+
+  const tutorialOpen = $derived(tutorial.openFileId !== null);
+  const docked = $derived(tutorialOpen && !tutorial.floating);
+
+  /**
+   * **Room for the docked tutorial.** Notes and tutorial side by side want two readable sheets;
+   * when the sources panel and the chat leave the doc column less than that
+   * (`filesCrowdTutorial`), the sources fold away while the tutorial is docked, and come back
+   * when it closes, pops out or the window grows — unless the learner reopened or closed them in
+   * the meantime (`LayoutStore.roomForTutorial`).
+   */
+  let shellWidth = $state(0);
+  $effect(() => {
+    const crowded = docked ? filesCrowdTutorial(shellWidth, layout.filesWidth, layout.chatWidth) : null;
+    untrack(() => layout.roomForTutorial(crowded));
+  });
+  $effect(() => () => untrack(() => layout.roomForTutorial(null)));
+
   /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
   const pages = $derived(
     [...new Set(taughtObjectives(store.progress.view).flatMap((o) => o.pages))].sort((a, b) => a - b),
@@ -79,6 +124,11 @@
    * scrolls nowhere is the one thing it must not be.
    */
   function jump(blockId: string): void {
+    // A thread on a tutorial's block: the part is in the tutorial column, not the notes.
+    if (!store.doc.hasBlock(blockId) && tutorial.tutorialOfBlock(blockId)) {
+      void tutorial.focusBlock(blockId);
+      return;
+    }
     store.doc.scrollToBlock(blockId);
     const el = document.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`);
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -105,12 +155,11 @@
   /** The document column, which the map of the notes reads the headings from. */
   let docbody = $state<HTMLElement | null>(null);
 
-  /** Files are being dragged over the window: the overlay and the sources panel's box say so. */
+  /** Files are being dragged over the sources column: its drop box says so. */
   let over = $state(false);
-  const name = $derived(store.notebook.view?.name ?? 'this notebook');
 
   /**
-   * A drop anywhere on the notebook adds the files to it (§1). Paths come from the preload
+   * A drop on the sources column adds the files to the notebook (§1). Paths come from the preload
    * (`pathForFile`); a file with none (dragged out of another app's memory) is named in a notice
    * rather than lost, and the rest of the drop still goes in.
    */
@@ -122,20 +171,30 @@
       if (paths.length > 0) void store.notebook.addSources(paths);
     },
   });
+
+  /** Ctrl+= / Ctrl+− / Ctrl+0 as the menu's ⌘ ones. */
+  function onwindowkey(e: KeyboardEvent): void {
+    if (e.defaultPrevented || !e.ctrlKey || e.metaKey || e.altKey) return;
+    const command = e.key === '=' || e.key === '+' ? 'zoom.in' : e.key === '-' ? 'zoom.out' : e.key === '0' ? 'zoom.reset' : null;
+    if (!command) return;
+    if (runViewerCommand(command)) e.preventDefault();
+  }
 </script>
 
-<div
-  class="shell"
-  data-dropzone
-  role="region"
-  aria-label="Notebook"
-  ondragenter={drop.dragenter}
-  ondragover={drop.dragover}
-  ondragleave={drop.dragleave}
-  ondrop={drop.drop}
->
+<svelte:window onkeydown={onwindowkey} />
+
+<div class="shell" bind:clientWidth={shellWidth} role="region" aria-label="Notebook">
   {#if filesOpen}
-    <div class="files">
+    <div
+      class="files"
+      data-dropzone
+      role="region"
+      aria-label="Sources: drop files here to add them"
+      ondragenter={drop.dragenter}
+      ondragover={drop.dragover}
+      ondragleave={drop.dragleave}
+      ondrop={drop.drop}
+    >
       <SourcesPanel {over} oncollapse={() => layout.setFilesOpen(false)}>
         {#snippet below()}
           <!-- The overview's outline, with each section's fill (§7). Its clicks are the same
@@ -146,7 +205,9 @@
     </div>
   {/if}
 
-  <main class="doc">
+  <!-- Docked, the doc column holds two floors (the notes' and the tutorial's): the chat gives way
+       first, as it does to the notes alone. -->
+  <main class="doc" style:min-width={docked ? `${NOTES_SPLIT_MIN + TUTORIAL.min}px` : null}>
     <header class="dochead">
       <button
         type="button"
@@ -172,7 +233,8 @@
       <CostCounter />
     </header>
 
-    <div class="docbody" bind:this={docbody}>
+    <div class="docrow">
+    <div class="docbody" bind:this={docbody} style:min-width={docked ? `${NOTES_SPLIT_MIN}px` : null}>
       <!--
         **The pacing disclosure, once per install, above the document.**
 
@@ -186,6 +248,21 @@
       <PacingStrip />
       <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
       <NotesPane fileId={notebookId} />
+    </div>
+    {#if docked}
+      <PaneSplitter
+        size={layout.tutorialWidth}
+        bounds={TUTORIAL}
+        sign={-1}
+        label="Resize the tutorial"
+        controls="tutorial-column"
+        onsize={(width) => layout.setTutorialWidth(width)}
+        oncollapse={() => tutorial.close()}
+      />
+      <section class="tutcol" id="tutorial-column" aria-label="Tutorial" style:width={`${layout.tutorialWidth}px`}>
+        <TutorialPane />
+      </section>
+    {/if}
     </div>
   </main>
 
@@ -202,28 +279,13 @@
     <ChatColumn {pages} onjump={jump} onpage={goToPage} />
   </div>
 
-  {#if over}
-    <!-- Pointer-transparent, so the drag keeps landing on the zone underneath it. -->
-    <div class="overlay" aria-hidden="true">Drop to add to “{name}”</div>
+  {#if tutorialOpen && tutorial.floating}
+    <TutorialWindow />
   {/if}
 </div>
 
 <style>
   .shell { position: relative; flex: 1; display: flex; min-width: 0; min-height: 0; }
-
-  .overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 30;
-    display: grid;
-    place-items: center;
-    background: color-mix(in srgb, var(--indigo-tint) 88%, transparent);
-    border: 2px dashed var(--indigo);
-    color: var(--indigo);
-    font-size: 15px;
-    font-weight: 600;
-    pointer-events: none;
-  }
 
   .files { flex: none; display: flex; min-height: 0; }
 
@@ -262,7 +324,11 @@
   .mini { font-size: 11px; color: var(--text-2); flex: none; white-space: nowrap; }
   .mini:hover { color: var(--indigo); }
 
-  .docbody { flex: 1; overflow-y: auto; min-height: 0; }
+  .docrow { flex: 1; display: flex; min-height: 0; min-width: 0; }
+  .docbody { flex: 1 1 0; overflow-y: auto; min-height: 0; min-width: 0; }
+  /* The tutorial yields before the notes do: its width is the learner's, with a floor. */
+  .tutcol { flex: 0 1 auto; min-width: 360px; min-height: 0; display: flex; flex-direction: column; }
+  .tutcol > :global(.tp-nd) { flex: 1 1 auto; }
 
   /* Its width is the learner's, but it yields before the document does: `flex-shrink: 1` with a
      floor, so a narrow window takes it back to 300 px instead of squeezing the doc to nothing. */

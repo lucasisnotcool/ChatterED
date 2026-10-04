@@ -92,6 +92,65 @@
 }
 .nd-toggle[aria-pressed='true'] .nd-toggle-dot { background: #4257c8; }
 
+/* A narrow pane (`layout.ts` `NOTES_HEAD_COMPACT_BELOW`): one row, the title ellipsised, and the
+   zoom, Add a question and Freeze behind `⋯` (NotesPane.svelte). It wrapped onto three rows. */
+.nd-head-compact {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 12px 8px 18px;
+  position: relative;
+}
+.nd-head-compact .nd-title { flex: 1 1 auto; min-width: 3em; }
+.nd-head-compact .nd-head-spacer { display: none; }
+.nd-head-compact > * { flex-shrink: 0; }
+.nd-head-compact > .nd-title { flex-shrink: 1; }
+
+.nd-more { position: relative; display: inline-flex; flex: none; }
+.nd-more-btn { padding: 2px 10px 5px; font-size: 14px; line-height: 1; }
+.nd-more-btn[aria-expanded='true'] { border-color: #c7c7e8; color: var(--indigo); }
+.nd-more-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--pane);
+  box-shadow: 0 8px 24px rgb(20 20 40 / 12%);
+  outline: none;
+}
+.nd-more-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px 6px 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--hairline);
+}
+.nd-more-label { font-size: 12px; color: var(--text-2); }
+.nd-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+.nd-more-item:hover:not(:disabled),
+.nd-more-item:focus-visible { background: var(--ground); outline: none; }
+.nd-more-item:disabled { opacity: 0.5; cursor: default; }
+.nd-more-item .nd-toggle-dot.on { background: #4257c8; }
+
 /* − 100 % + : the notes' zoom, which ⌘+ / ⌘− / ⌘0 and a pinch also drive (NotesPane.svelte). */
 .nd-zoom {
   display: inline-flex;
@@ -119,6 +178,28 @@
 
 /* ── the scrolling document ─────────────────────────────────────────────── */
 
+/* An image is being dragged over the sheet (2026-10-04): it goes in where it is dropped. */
+.nd-dropping {
+  box-shadow: inset 0 0 0 2px var(--indigo);
+  background: color-mix(in srgb, var(--indigo-tint) 35%, transparent);
+}
+.nd-drop-hint {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: calc(100% - 32px);
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--pane);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgb(20 20 40 / 18%);
+}
+
 .nd-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -130,6 +211,12 @@
   max-width: calc(var(--nd-column) + var(--nd-gutter) * 2);
   margin: 0 auto;
   padding: 36px var(--nd-gutter) 96px;
+  /* The backstop for a sideways scrollbar under the whole document (the docked tutorial, 3 Oct
+     2026): nothing in a sheet is meant to reach past its own padding box, the gutters included,
+     so whatever still does (an agent's name flag at the end of a line, a formula's preview) is
+     cut at the pane's edge rather than making every line scroll sideways. `clip`, not `hidden`:
+     no scroll container, so `position: sticky` and the vertical overflow are untouched. */
+  overflow-x: clip;
 }
 
 .nd-frozen-note {
@@ -151,6 +238,8 @@
   max-width: var(--nd-column);
   margin: 0 auto;
   outline: none;
+  /* A word longer than the column (a file name, an identifier) breaks rather than overflows. */
+  overflow-wrap: break-word;
   color: var(--text);
   font-size: 15px;
   line-height: 1.68;
@@ -744,7 +833,8 @@
 }
 .nd-strip-toggle:hover { background: #eef0f5; color: var(--text); }
 .nd-strip-caret { color: var(--muted); font-size: 9px; width: 9px; }
-.nd-strip-name { font-weight: 600; }
+.nd-strip-toggle { max-width: 100%; text-align: left; }
+.nd-strip-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .nd-strip-pages { color: var(--muted); }
 .nd-strip-thumbs {
   display: grid;
@@ -1499,3 +1589,221 @@
 .nd-chip-part { display: inline-flex; align-items: baseline; gap: 0.3em; max-width: 100%; min-width: 0; }
 .nd-chip-src { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nd-chip-where { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ══ THE COMPACT SHEET (`layout.ts` `sheetFit`, 2026-10-03) ═══════════════════════════════════
+   A pane under 600 of the sheet's units (the notes beside a docked tutorial, the tutorial
+   itself, the notes zoomed in a narrow window) has gutters of 20 px on the left and 32 on the
+   right, not 104–132, and what lived in them moves. Every rule here is under `.nd-compact`, which
+   the panes set from `sheetFit` / `tutorialSheetFit`; a wide sheet is exactly what the rules
+   above draw.
+
+   - **The toolbar** folds behind a `⋯` handle in the right gutter, at the block's top, on hover
+     (and on the caret's block): nothing it shows covers a word. The four actions open from it as
+     a small menu over the block's right side, on hover (after a short intent), focus or a click.
+   - **The provenance chip** of a block with a toolbar shows beside the handle while the handle
+     or its menu is in use, the menu's header, so it is one hover away and never over the words at
+     rest. A block without a toolbar (a tutorial sheet, a figure, a table) shows its chip over its
+     top-right corner on hover, in the space between blocks.
+   - **Remove · Keep** is a one-line bar above the block's words, in the flow, so it never covers
+     the line before; a block that cannot hold a bar in its flow (a table's rows, a diagram's
+     grid) floats it over its top-left corner instead.
+   - The diagram and block toolbars wrap inside the column instead of running into a gutter. */
+
+.nd-compact .nd-sheet { padding-left: 20px; padding-right: 32px; }
+
+/* The handle exists in every sheet and is drawn only in a compact one; in a wide one the list is
+   not a box at all, so the four buttons are the toolbar's own items, exactly as before. */
+.nd-tools-more { display: none; }
+.nd-tools-list { display: contents; }
+
+.nd-compact .nd-tools-holder { top: 0.2em; }
+.nd-compact .nd-tools {
+  flex-direction: row;
+  margin-left: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.nd-compact .nd-tools::before { display: none; }
+.nd-compact .nd-tools-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  padding: 0 0 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1;
+}
+.nd-compact .nd-tools-more:hover,
+.nd-compact .nd-tools-open .nd-tools-more,
+.nd-compact .nd-tools:focus-within .nd-tools-more { color: var(--indigo); border-color: #c7c7e8; }
+.nd-compact .nd-tools-more:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+/* A block whose chip says it has no source: the handle carries the warning's colour. */
+.nd-compact .nd-editor .ProseMirror > *:has(.nd-chip-bad) .nd-tools-more { color: var(--challenger); border-color: #e8d4b4; }
+/* The menu: the wide toolbar's own card, hung from the handle over the block's right side. */
+.nd-compact .nd-tools-list {
+  position: absolute;
+  top: calc(100% + 3px);
+  right: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--pane);
+  box-shadow: 0 6px 20px rgb(20 20 40 / 12%);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+/* A short hover intent, so a pointer crossing the gutter does not drop a menu over the words. */
+.nd-compact .nd-tools:hover .nd-tools-list {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 0.12s ease 0.15s, visibility 0s linear 0.15s;
+}
+.nd-compact .nd-tools.nd-tools-open .nd-tools-list,
+.nd-compact .nd-tools:focus-within .nd-tools-list {
+  visibility: visible;
+  opacity: 1;
+  transition: none;
+}
+
+/* The chip, on a block without a toolbar: over its top-right corner, between the blocks. */
+.nd-compact .nd-chip-holder {
+  left: auto;
+  right: 0;
+  top: auto;
+  bottom: calc(100% + 1px);
+  width: auto;
+  max-width: 100%;
+  z-index: 3;
+  line-height: 1;
+}
+.nd-compact .nd-chip,
+.nd-compact .nd-chip:has(.nd-chip-part) {
+  display: inline-flex;
+  max-width: min(200px, 100%);
+  margin-left: 0;
+}
+.nd-compact .nd-chip:not(:has(.nd-chip-part)) { display: inline-block; }
+/* …and on a block with one: on the handle's row, left of it, while the handle is in use. It
+   stays a moment after the pointer leaves the handle, long enough to be reached and hovered. */
+.nd-compact .nd-editor .ProseMirror > *:has(.nd-tools-holder) .nd-chip-holder { top: 0.2em; bottom: auto; }
+.nd-compact .nd-editor .ProseMirror > *:has(.nd-tools-holder) .nd-chip {
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: 0 2px 8px rgb(20 20 40 / 8%);
+  transition: opacity 0.12s ease, visibility 0s linear 0.3s, color 0.12s ease, border-color 0.12s ease;
+}
+.nd-compact .nd-editor .ProseMirror > *:has(.nd-tools:hover, .nd-tools:focus-within, .nd-tools-open) .nd-chip,
+.nd-compact .nd-editor .ProseMirror .nd-chip:hover,
+.nd-compact .nd-editor .ProseMirror .nd-chip:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+/* Remove · Keep: a bar above the block. Floating by default (any block)… */
+.nd-compact .nd-editctl {
+  position: absolute;
+  left: 0;
+  right: auto;
+  top: auto;
+  bottom: calc(100% + 2px);
+  z-index: 3;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 8px 2px 0;
+  border-radius: 0 6px 6px 0;
+  background: var(--pane);
+  box-shadow: 0 1px 6px rgb(20 20 40 / 8%);
+  text-align: left;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+/* …and in the flow, above the words, on the blocks that can hold it there. */
+.nd-compact .nd-editor .ProseMirror > :is(p, h1, h2, h3, h4, ul, ol, blockquote) > .nd-editctl {
+  position: static;
+  margin: 0 0 4px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.nd-compact .nd-editctl-one,
+.nd-compact .nd-editctl-one.nd-ellie,
+.nd-compact .nd-editctl-one.nd-max {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1px 8px;
+  padding: 0 0 0 8px;
+  border-right: 0;
+  border-left: 2px solid var(--nd-ellie);
+}
+.nd-compact .nd-editctl-one.nd-max { border-left: 2px dashed var(--nd-max); }
+.nd-compact .nd-editctl-who { display: inline; }
+.nd-compact .nd-editctl-why { flex: 1 1 8em; min-width: 0; margin-top: 0; -webkit-line-clamp: 1; }
+.nd-compact .nd-editctl-row { margin: 0 0 0 auto; justify-content: flex-start; }
+
+.nd-compact .nd-dg-tools,
+.nd-compact .nd-blk-tools {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+/* The objectives' fill bars: shorter, so a narrow column keeps its words. */
+.nd-compact .nd-objectives > li { padding-right: 74px; }
+.nd-compact .nd-objectives > li.nd-objitem::before { right: 40px; width: 28px; }
+
+/* ── getting out of a component (2026-10-04, pm/structure.ts) ─────────────── */
+
+/* The gap cursor: the caret between two components, or before/after one at the sheet's edge. Its
+   own stylesheet draws a 20 px black line; here it is the column's width, in the app's ink. */
+.nd .ProseMirror-gapcursor:after {
+  width: min(100%, 240px);
+  border-top: 2px solid var(--indigo);
+}
+
+/* ＋ line in the gap beside a component: on the boundary line at the right, clear of the "Max wrote
+   this" labels on the left and of the part's own buttons below the border; shown while either
+   neighbour is hovered. Zero height, so the sheet's layout is exactly what it was without it. */
+.nd-edge { position: relative; height: 0; user-select: none; }
+.nd-edge-btn {
+  position: absolute;
+  right: 6px;
+  top: -10px;
+  z-index: 3;
+  padding: 1px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font: 11px/1.4 var(--font-ui, system-ui);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.nd-edge-btn:hover { color: var(--indigo); border-color: var(--indigo); }
+.ProseMirror > :hover + .nd-edge .nd-edge-btn,
+.ProseMirror > .nd-edge:has(+ :hover) .nd-edge-btn,
+.ProseMirror > .nd-edge:has(+ .ProseMirror-widget + :hover) .nd-edge-btn,
+.nd-edge:hover .nd-edge-btn {
+  opacity: 1;
+  pointer-events: auto;
+}

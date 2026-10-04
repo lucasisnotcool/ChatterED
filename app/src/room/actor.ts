@@ -183,6 +183,18 @@ import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
 import { SilenceTimer, lessonReadingMs, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
 import { ledgerView, messageView, timerView, whisperTurnView } from './views.js';
+import type { HintLevel, PartKey } from '../shared/tutorial.js';
+import { sheetGuardBlock, tutorBlock, tutorMaxWordCeiling, type TutorKind } from './prompts.tutor.js';
+import {
+  TUTORIAL_REQUEST,
+  isTutorRule,
+  partLastChild,
+  tutorDecision,
+  tutorDocLine,
+  tutorKindOfMove,
+  tutorLineBatch,
+  tutorialRequestLine,
+} from './tutor.js';
 
 /** No agent indicator at all for the first 8 s after a learner message (product-design.md §C3). */
 export const FLOOR_YIELD_MS = 8_000;
@@ -309,6 +321,20 @@ export interface RoomActorDeps {
    * downstream needs a null check.
    */
   docPort?: DocPort;
+  /**
+   * **A tutorial's document, by its content key** (`TUTORIAL-CONTRACT.md` S5). A notebook's room
+   * has one notes doc (`docPort`), but each of its tutorials is a document of its own, and a
+   * tutorial turn writes its one line there. Optional: without it a tutorial turn still answers
+   * in the chat and writes nothing.
+   */
+  docPortFor?: (contentKey: string) => DocPort;
+  /**
+   * **The notebook's tutorial parts** (2026-10-04, main's `tutorial/reply.ts`): each part's label,
+   * whether it is still the learner's to solve, and the blocks inside it. Read per turn: every
+   * turn that is not a tutor turn carries a guard naming the unsolved parts (`sheetGuardBlock`),
+   * and an answer about a line inside one writes nothing into the sheet. Absent with no tutorial.
+   */
+  tutorialParts?: () => readonly { contentKey: string; label: string; solved: boolean; blockIds: readonly string[] }[];
   /**
    * **The file's progress and the rows it is drawn from** (brief §4.8, 2026-10-01), for the
    * recap Ellie posts when a sitting goes idle. A callback for the reason `learnerObjectives` is
@@ -456,6 +482,17 @@ export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>)
       return 50;
     case 'mention_reply':
       return 120;
+    // The tutorial turns (S5): each kind's ceiling, a hint at its largest rung's.
+    case 'tutor_hint':
+      return tutorMaxWordCeiling('hint');
+    case 'tutor_refresher':
+      return tutorMaxWordCeiling('refresher');
+    case 'tutor_feedback':
+      return tutorMaxWordCeiling('feedback');
+    case 'tutor_reveal':
+      return tutorMaxWordCeiling('reveal');
+    case 'tutor_reply':
+      return tutorMaxWordCeiling('reply');
     default:
       return null;
   }
@@ -510,6 +547,46 @@ export interface BlockActionStart {
  * a request and its answer. The quote is the block's own text, capped: it is the learner's
  * selection in all but name, and a whole paragraph in a chat bubble is not a question.
  */
+/** `RoomActor.tutorialTurn`'s input (`TUTORIAL-CONTRACT.md` S5), built by main's `tutorial:help` / `tutorial:check`. */
+export interface TutorialTurnInput {
+  kind: TutorKind;
+  /** The rung for `hint`; the part's current rung otherwise. */
+  level: HintLevel;
+  /** The tutorial doc. */
+  docId: string;
+  contentKey: string;
+  partId: string;
+  partBlockId: string;
+  label: string;
+  /** The part's span thread (main finds or creates it, with `docId` = the tutorial doc). */
+  anchorId: string;
+  /** `PartAnswer.prompt`. */
+  prompt: string;
+  /** The learner's answer as text ('' if empty). */
+  answer: string;
+  /** Hidden: never quoted before `reveal`. */
+  key: PartKey;
+  /** `reply` only: the learner's own words, which are the row this turn answers. */
+  learnerText?: string;
+  /** The part was released, so a `reply` may discuss its answer. */
+  revealed?: boolean;
+  verdict?: { verdict: QuizVerdict3; checkedBy: 'simulation' | 'model'; detail: string };
+  /** The linked notes blocks. */
+  notes: { blockId: string; heading: string | null; text: string }[];
+  /** The linked lecture pages. */
+  slides: { page: number; label: string; text: string }[];
+  objectiveId: string | null;
+}
+
+/** What `tutorialTurn` hands back as soon as it is accepted or refused. */
+export interface TutorialTurnStart {
+  accepted: boolean;
+  reason: 'busy' | 'no_doc' | null;
+  threadId: string;
+  /** Settles when the turn and its doc line have (at once on a refusal). Never rejects for a failed turn. */
+  turn: Promise<void>;
+}
+
 export function blockActionLine(kind: 'explain' | 'example', quote: string): string {
   const body = quote.trim().replace(/\s+/g, ' ');
   const capped = body.length <= 160 ? body : `${body.slice(0, 159).trimEnd()}\u2026`;
@@ -788,6 +865,22 @@ export class RoomActor {
   #generating = false;
   /** Block actions answered so far, for their script cues (`block_explain:N`). */
   #blockActions = 0;
+  /** Tutorial turns answered so far, for their script cues (`tutor_hint:N`). */
+  #tutorTurns = 0;
+  /**
+   * **The tutorial turn in flight** (S5): what its prompt block is built from. Read only by a turn
+   * whose decision is a `rule:tutor_*` one, and only one can run at a time (`#generating`).
+   */
+  #tutor: TutorialTurnInput | null = null;
+  /**
+   * **Threads on a tutorial sheet's line** (2026-10-03): anchorId → the tutorial's content key.
+   * Explain, Example and Ask… work on any line of the sheet (`tutorials.md` §4), and the doc line
+   * that follows belongs in the sheet, not in the notes, so every doc read and write for such a
+   * thread goes through `#portFor`. In memory only: main passes the key again on each action.
+   */
+  #threadDocKey = new Map<string, string>();
+  /** One port per tutorial content key, so its parsed document is cached across turns. */
+  #tutorialPorts = new Map<string, DocPort>();
   /** The slide text main resolved for a block action's thread, for its doc line (§4.2). */
   #actionPassage = new Map<string, string>();
   /** True for the length of a Quiz me turn, so the question is pitched (§4.5) like a follow-up was. */
@@ -2186,8 +2279,10 @@ export class RoomActor {
    * research paper it was filed under the title summary instead of the line asked about. Main
    * calls this before the turn; a block action registers its own block and does not need it.
    */
-  noteSpanThread(input: { threadId: string; blockId: string; quote: string | null }): void {
+  noteSpanThread(input: { threadId: string; blockId: string; quote: string | null; contentKey?: string | null }): void {
     if (!input.threadId || !input.blockId) return;
+    // Ask… on a tutorial sheet's line: the thread's doc line goes into the sheet (`#portFor`).
+    if (input.contentKey) this.#threadDocKey.set(input.threadId, input.contentKey);
     this.#registerThread(input.threadId, 'span', { blockId: input.blockId, quote: input.quote });
   }
 
@@ -2224,6 +2319,12 @@ export class RoomActor {
     objectiveId: string | null;
     /** The slide text of the block's pages, for the doc line. */
     passage?: string | null;
+    /**
+     * **The block is a tutorial sheet's line** (2026-10-03): the tutorial's content key. Its doc
+     * line goes into that document through `docPortFor`. Quiz me is refused there: Max's
+     * questions on the sheet are its own buttons (`tutorialTurn`).
+     */
+    contentKey?: string | null;
   }): Promise<BlockActionStart> {
     const refuse = (reason: BlockActionRefusal, threadId: string | null = null): BlockActionStart => ({
       accepted: false,
@@ -2231,7 +2332,10 @@ export class RoomActor {
       reason,
       turn: Promise.resolve(),
     });
-    if (this.#retired || this.#docPort.docId() === null || !input.blockId || !input.anchorId) return refuse('no_doc');
+    const sheet = typeof input.contentKey === 'string' && input.contentKey.length > 0 ? input.contentKey : null;
+    if (sheet !== null && input.kind === 'quiz') return refuse('no_doc');
+    const port = sheet === null ? this.#docPort : this.#tutorialPort(sheet);
+    if (this.#retired || port.docId() === null || !input.blockId || !input.anchorId) return refuse('no_doc');
     if (input.kind === 'quiz' && quizOpen(this.#pendingQuiz)) {
       // The open question's thread, so the chat can bring *it* into view instead.
       return refuse('question_open', this.#anchorOfQuiz(this.#pendingQuiz!) ?? this.#pendingQuiz!.anchorId ?? null);
@@ -2239,6 +2343,7 @@ export class RoomActor {
     if (this.#generating || this.#pending !== null) return refuse('busy');
     this.#generating = true;
     const quote = input.quote.trim().replace(/\s+/g, ' ');
+    if (sheet !== null) this.#threadDocKey.set(input.anchorId, sheet);
     this.#registerThread(input.anchorId, 'span', { blockId: input.blockId, quote: quote.length > 0 ? quote : null });
     if (input.context) this.#askContext.set(input.anchorId, input.context);
     if (input.passage && input.passage.trim().length > 0) this.#actionPassage.set(input.anchorId, input.passage);
@@ -2305,6 +2410,146 @@ export class RoomActor {
       release();
       this.#blockQuiz = false;
       throw err;
+    }
+  }
+
+  /**
+   * **Hint, Refresher, Check or Show answer on a tutorial part** (`tutorials.md` §4,
+   * `TUTORIAL-CONTRACT.md` S5). Modelled on `blockAction`'s Explain:
+   *
+   * - The part's span thread is registered with the part's block and its label, and a learner row
+   *   saying what was asked goes in first (`tutorialRequestLine`, `TUTORIAL_REQUEST`). It is a
+   *   button, not their words: never classified as an attempt, never judged by the ledger.
+   * - One agent turn, decided in code (`tutor.tutorDecision`, `rule:tutor_*`): Max for a hint, a
+   *   check and a release unless `TUTOR_HELPER` is `ellie`; Ellie for a refresher. Its prompt is
+   *   `prompts.tutor.tutorBlock`: the part, their answer, the key behind its guard (the answer
+   *   itself only on `reveal`), and the linked notes and lecture pages to ground it in.
+   * - Then **one line** (≤ 25 words, derived in code) into the tutorial doc after the part's last
+   *   child, through `docPortFor(contentKey)`, as an agent insert with `reason: 'tutor_hint'` and
+   *   the usual pending Remove · Keep.
+   *
+   * It records no outcome (main does). Resolves once accepted; `turn` settles after the line.
+   */
+  async tutorialTurn(input: TutorialTurnInput): Promise<TutorialTurnStart> {
+    const refuse = (reason: 'busy' | 'no_doc'): TutorialTurnStart => ({
+      accepted: false,
+      reason,
+      threadId: input.anchorId,
+      turn: Promise.resolve(),
+    });
+    if (this.#retired || !input.partBlockId || !input.anchorId) return refuse('no_doc');
+    const replyText = input.kind === 'reply' ? (input.learnerText ?? '').trim() : '';
+    if (input.kind === 'reply' && replyText.length === 0) return refuse('no_doc');
+    // Without `docPortFor` the turn still answers in the chat and writes no line.
+    const port: DocPort | null = this.#d.docPortFor ? this.#tutorialPort(input.contentKey) : null;
+    if (port !== null && port.docId() === null) return refuse('no_doc');
+    if (this.#generating || this.#pending !== null) return refuse('busy');
+    this.#generating = true;
+    this.#registerThread(input.anchorId, 'span', { blockId: input.partBlockId, quote: input.label.trim() || null });
+    this.#event('student', 'flow.tutorial_help', {
+      kind: input.kind,
+      level: input.level,
+      anchor_id: input.anchorId,
+      part_id: input.partId,
+      block_id: input.partBlockId,
+      objective_id: input.objectiveId,
+      answer_chars: input.answer.length,
+      checked_by: input.verdict?.checkedBy ?? null,
+    });
+
+    const release = (): void => {
+      this.#generating = false;
+      this.#tutor = null;
+    };
+    try {
+      // A reply is the learner's own words; every other kind is a button, written as a request.
+      const body = input.kind === 'reply' ? replyText : tutorialRequestLine(input.kind, input.label, input.level);
+      let messageId: string | null = null;
+      await this.#mailbox.enqueue(() => {
+        this.#timer.cancel();
+        this.#typingUntil = 0;
+        this.#noteLearnerActivity('ask', input.anchorId);
+        const row = this.#insertMessage({
+          participantId: this.#studentParticipant().id,
+          body,
+          anchorId: input.anchorId,
+          decidedBy: input.kind === 'reply' ? null : TUTORIAL_REQUEST,
+        });
+        messageId = row.id;
+        // A button, as a block action is: nothing to classify, nobody named, and not an answer to
+        // any open question of Max's, which stays exactly where it was.
+        this.#lastLearnerTurn = null;
+        this.#lastMention = null;
+        this.#mentionRest = null;
+        this.#noteReply(row.id, false);
+        this.#event('student', 'message.send', { seq: row.seq, chars: body.length, anchor_id: input.anchorId, tutorial: input.kind });
+        this.#d.store.rooms.update(this.#d.roomId, { consecutive_agent_turns: 0, expects_reply: 1 });
+      });
+      this.#tutorTurns += 1;
+      this.#tutor = input;
+      const turn = this.#runAgentTurn('promote', {
+        anchorId: input.anchorId,
+        studentBody: body,
+        studentMessageId: messageId,
+        tutor: { input, port },
+      }).finally(release);
+      return { accepted: true, reason: null, threadId: input.anchorId, turn };
+    } catch (err) {
+      release();
+      throw err;
+    }
+  }
+
+  /**
+   * **The line under the part** (S5): derived in code from the turn (`tutor.tutorDocLine`), placed
+   * after the part's last child (`tutor.partLastChild`), and emitted through `#emitDocEdit` on the
+   * tutorial's own port. Nothing in here may throw: the chat reply has already landed.
+   */
+  async #tutorDocLine(
+    tutor: { input: TutorialTurnInput; port: DocPort | null },
+    decision: TurnDecision,
+    text: string,
+    messageId: string | null,
+    turnId: string,
+  ): Promise<void> {
+    const { input, port } = tutor;
+    // A reply is conversation about the part: it writes nothing into the sheet.
+    if (port === null || this.#retired || input.kind === 'reply') return;
+    try {
+      if (port.docId() === null || port.frozen()) return;
+      const outline = port.outlineNear({ blockId: input.partBlockId }, 40);
+      const anchor = partLastChild(outline, input.partBlockId) ?? input.partBlockId;
+      const kind = tutorKindOfMove(decision.moveType) ?? input.kind;
+      const pages = kind === 'feedback' || kind === 'reveal' ? [] : input.slides.map((s) => s.page).slice(0, 3);
+      const line = tutorDocLine({
+        kind,
+        level: input.level,
+        reply: text,
+        notesHeading: input.notes.find((n) => (n.heading ?? '').trim().length > 0)?.heading ?? null,
+        pages: input.slides.map((s) => s.page),
+        prerequisite: input.key.prerequisites[0] ?? null,
+        verdict: input.verdict,
+      });
+      const batch = tutorLineBatch({
+        editId: this.#d.newId('edit'),
+        author: decision.role === 'challenger' ? 'max' : 'ellie',
+        anchorBlockId: anchor,
+        partBlockId: input.partBlockId,
+        line,
+        pages,
+        label: input.label,
+        kind,
+      });
+      const emitted = await this.#emitDocEdit(batch, { objectiveId: input.objectiveId, messageId, turnId }, port);
+      this.#turnLog.event('info', 'doc.tutor_line', {
+        kind,
+        level: input.level,
+        emitted,
+        under_part: anchor !== input.partBlockId,
+        words: wordCount(line),
+      });
+    } catch (err) {
+      this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
     }
   }
 
@@ -2794,6 +3039,8 @@ export class RoomActor {
       ownQuestion?: boolean;
       /** **`rule:block_action`** (`notebooks.md` §4): Explain or Example pressed on a block. */
       blockAction?: 'explain' | 'example';
+      /** **`rule:tutor_*`** (`TUTORIAL-CONTRACT.md` S5): a tutorial part's Hint, Refresher, Check or Show answer. */
+      tutor?: { input: TutorialTurnInput; port: DocPort | null };
       /**
        * **A floor this turn may not be released before** (§6, 2026-10-01: the learner reads
        * Ellie's lesson intro while Max is typing). Not scaled by Reply speed: it is reading time,
@@ -2989,6 +3236,8 @@ export class RoomActor {
        * the deck as the learner's evidence.
        */
       opts.blockAction === undefined &&
+      // Nor on a tutorial button: its row is a request, and main records the part's outcome.
+      opts.tutor === undefined &&
       !answersCloze &&
       this.#lastLearnerTurn !== 'give_up';
     if (ledgerRuns) {
@@ -3038,7 +3287,9 @@ export class RoomActor {
          * there is nothing left for a model to decide and a call here would buy 20 s of Sonnet to
          * be told what the button already said.
          */
-        opts.ownQuestion
+        opts.tutor
+        ? tutorDecision(opts.tutor.input.kind)
+        : opts.ownQuestion
         ? ownQuestionDecision()
         : opts.blockAction
         ? blockActionDecision(opts.blockAction)
@@ -3133,7 +3384,14 @@ export class RoomActor {
        * neither of these is that.
        */
       decision.moveType === 'peer_guess' ||
-      decision.moveType === 'max_prompt'
+      decision.moveType === 'max_prompt' ||
+      /**
+       * **A tutorial button asks for help, not for a verdict** (S5): a hint or a release the
+       * learner pressed for arrives at the Teacher's band, as a "+ Try this" question does. A
+       * check keeps the Tester's band: it is feedback on an answer, which is what the band is for.
+       */
+      decision.decidedBy === 'rule:tutor_hint' ||
+      decision.decidedBy === 'rule:tutor_reveal'
         ? agentByRole(this.#d.roster, 'peer').latency
         : agent.latency;
     const target = Math.max(
@@ -3447,7 +3705,12 @@ export class RoomActor {
      * next turn wait would be the artefact charging the conversation for its own ambitions. Every
      * failure inside is swallowed and logged there.
      */
-    void this.#maybeDocEdit(decision, text, dispatchedMessageId ?? '', pending.id, anchorId);
+    /**
+     * **A tutorial turn writes its one line into the tutorial, not the notes** (S5), and the turn
+     * settles after it: the line is derived in code, so there is no model call to wait on.
+     */
+    if (opts.tutor) await this.#tutorDocLine(opts.tutor, decision, text, dispatchedMessageId, pending.id);
+    else void this.#maybeDocEdit(decision, text, dispatchedMessageId ?? '', pending.id, anchorId);
     this.#lastAgentTurn = classifyAgentTurn(decision, this.#lastAgentTurn);
     /**
      * **How long the next silence has to be** (#47 §5): the reading time of what was just said,
@@ -3893,7 +4156,7 @@ export class RoomActor {
         move: decision.moveType,
         probeType: decision.probeType ?? undefined,
         targetElementId: decision.targetElementId ?? undefined,
-        note: this.#turnNote(decision),
+        note: this.#withSheetGuard(decision, this.#turnNote(decision)),
         // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
         // clause, and the rule name is what tells them apart.
         byRule: decision.decidedBy,
@@ -3960,7 +4223,7 @@ export class RoomActor {
        * are the slide's, and a Quiz me or a closure after it, which runs the ledger with no new
        * message, would otherwise judge the deck as the learner's latest evidence.
        */
-      .filter((m) => m.decided_by !== BLOCK_ACTION_REQUEST)
+      .filter((m) => m.decided_by !== BLOCK_ACTION_REQUEST && m.decided_by !== TUTORIAL_REQUEST)
       .map((m) => ({ id: m.id, seq: m.seq, body: m.body }));
     const trigger = studentMessages.at(-1);
     if (!trigger) return;
@@ -4657,6 +4920,12 @@ export class RoomActor {
         return `lesson:${n + 1}`;
       case 'rule:block_action':
         return `${decision.moveType}:${this.#blockActions}`;
+      case 'rule:tutor_hint':
+      case 'rule:tutor_refresher':
+      case 'rule:tutor_feedback':
+      case 'rule:tutor_reveal':
+      case 'rule:tutor_reply':
+        return `${decision.moveType}:${this.#tutorTurns}`;
       default:
         break;
     }
@@ -4674,11 +4943,35 @@ export class RoomActor {
     }
   }
 
+  /**
+   * **The document a thread's doc reads and writes go to**: the tutorial sheet's, when the thread
+   * is on one of its lines (`#threadDocKey`), else the room's notes. A sheet thread in a host with
+   * no `docPortFor` gets `NO_DOC`, so nothing meant for the sheet can land in the notes.
+   */
+  #portFor(anchorId: string | null): DocPort {
+    const key = anchorId === null ? undefined : this.#threadDocKey.get(anchorId);
+    return key === undefined ? this.#docPort : this.#tutorialPort(key);
+  }
+
+  #tutorialPort(contentKey: string): DocPort {
+    const known = this.#tutorialPorts.get(contentKey);
+    if (known) return known;
+    let port: DocPort = NO_DOC;
+    try {
+      port = this.#d.docPortFor?.(contentKey) ?? NO_DOC;
+    } catch (err) {
+      this.#turnLog.event('error', 'tutorial.docport.error', { cause: failureReason(err) });
+      return NO_DOC;
+    }
+    this.#tutorialPorts.set(contentKey, port);
+    return port;
+  }
+
   /** Everything `docedit.ts` needs to bill and address a call. */
-  #docEditDeps(anchorId: string | null, turnId: string | null): DocEditDeps {
+  #docEditDeps(anchorId: string | null, turnId: string | null, port: DocPort = this.#portFor(anchorId)): DocEditDeps {
     return {
       llm: this.#d.llm,
-      docPort: this.#docPort,
+      docPort: port,
       // `models.orchestrator`, as every schema-bound call in this app does: `fast` deliberately
       // resolves to the same model, because Haiku emits 2–4× the output tokens on a schema and is
       // *slower* for it (`llm/models.ts`'s measured table).
@@ -4706,14 +4999,16 @@ export class RoomActor {
   async #emitDocEdit(
     batch: AgentDocOpBatch | null,
     meta: { objectiveId: string | null; messageId: string | null; turnId: string | null },
+    /** The document it goes into: the room's notes, or a tutorial's (S5). */
+    port: DocPort = this.#docPort,
   ): Promise<boolean> {
     if (batch === null) return false;
-    const docId = this.#docPort.docId();
+    const docId = port.docId();
     // §3's Freeze: *"Edits that would have happened are dropped, not queued."* Checked here as
     // well as in the renderer (architect §D4) — in both, because a queue in main is the easy
     // mistake and it makes Freeze a delay rather than a refusal. A retired room's planner call
     // can still come back after the reset; it is dropped the same way.
-    if (this.#retired || docId === null || this.#docPort.frozen()) return false;
+    if (this.#retired || docId === null || port.frozen()) return false;
     try {
       this.#d.transport.emit({
         type: 'doc.cursor',
@@ -4723,7 +5018,7 @@ export class RoomActor {
         blockId: batch.focusBlockId,
         state: 'thinking',
       });
-      this.#docPort.recordEdit({
+      port.recordEdit({
         batch,
         roomId: this.#d.roomId,
         turnId: meta.turnId,
@@ -4761,10 +5056,10 @@ export class RoomActor {
    * The reply has already been released when this runs, so the row is updated in place and the
    * view re-emitted under the same id (the same path a regenerated summary card takes).
    */
-  async #noteEditInChat(messageId: string, batch: AgentDocOpBatch, note: NoteKind = 'point'): Promise<void> {
+  async #noteEditInChat(messageId: string, batch: AgentDocOpBatch, note: NoteKind = 'point', port: DocPort = this.#docPort): Promise<void> {
     const op = batch.ops[0];
     if (!messageId || op === undefined || op.op !== 'insert_after') return;
-    const entry = this.#docPort.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
+    const entry = port.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
     const line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null), note);
     await this.#mailbox.enqueue(() => {
       if (this.#retired) return;
@@ -4791,7 +5086,12 @@ export class RoomActor {
    * that must not become durable notes. And **every private turn**, which is §4.1's whole boundary.
    */
   async #maybeDocEdit(decision: TurnDecision, text: string, messageId: string, turnId: string, anchorId: string | null): Promise<void> {
-    if (this.#retired || this.#docPort.docId() === null || this.#docPort.frozen()) return;
+    /** The notes, or the tutorial sheet when the thread is on one of its lines (`#portFor`). */
+    const port = this.#portFor(anchorId);
+    if (this.#retired || port.docId() === null || port.frozen()) return;
+    // 2026-10-04: nothing is written into a part the learner is still solving; the tutor's own
+    // lines (Hint, Check) are the only agent text that goes there.
+    if (this.#inUnsolvedPart(anchorId)) return;
     if (decision.moveType === 'peer_guess' || decision.moveType === 'max_prompt') return;
     /**
      * **§5.6 — the learner's own question.** Their answer is already in the Q block, so a *Well
@@ -4800,16 +5100,17 @@ export class RoomActor {
      */
     if (decision.moveType === 'own_question_feedback') {
       const own = this.#ownQuestion;
-      if (own === null || feedbackVerdict3(text) !== 'complete' || !this.#docPort.hasQuestion(own.questionId)) return;
+      if (own === null || feedbackVerdict3(text) !== 'complete' || !port.hasQuestion(own.questionId)) return;
       try {
         await this.#emitDocEdit(
-          buildResolveEdit(this.#docEditDeps(anchorId, turnId), {
+          buildResolveEdit(this.#docEditDeps(anchorId, turnId, port), {
             questionId: own.questionId,
             resolution: 'you_got_this',
             text: '',
             learnerAnswer: null,
           }),
           { objectiveId: null, messageId, turnId },
+          port,
         );
       } catch (err) {
         this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
@@ -4818,7 +5119,7 @@ export class RoomActor {
     }
     // #49: a `Not marked.` turn marked nothing — no suggestion on the learner's text, no resolution.
     if (decision.moveType === 'quiz_feedback' && feedbackUnmarked(text)) return;
-    const deps = this.#docEditDeps(anchorId, turnId);
+    const deps = this.#docEditDeps(anchorId, turnId, port);
     // Read before the first await below: a lesson's question sets it for its own turn only.
     const blockId =
       (decision.moveType === 'quiz' ? this.#questionBlockAt : null) ??
@@ -4857,6 +5158,7 @@ export class RoomActor {
                 : undefined,
           }),
           { objectiveId: quiz.objectiveId ?? null, messageId, turnId },
+          port,
         );
         return;
       }
@@ -4888,7 +5190,7 @@ export class RoomActor {
           quote_chars: plan.quoteChars,
           text_chars: docText.text.length,
         });
-        await this.#emitDocEdit(plan.batch, { objectiveId: quiz?.objectiveId ?? null, messageId, turnId });
+        await this.#emitDocEdit(plan.batch, { objectiveId: quiz?.objectiveId ?? null, messageId, turnId }, port);
         // …and the Q block still resolves below, because the answer was still an answer.
       }
       // 5.3 — a Max question closed: its answer goes under the Q block, as notes, tagged.
@@ -4924,7 +5226,7 @@ export class RoomActor {
         this.#lastAnswerPages = pagesCited(text);
         const context = this.#askContext.get(anchorId ?? '');
         const pages = context?.page;
-        const outline = this.#docPort.outlineNear({
+        const outline = port.outlineNear({
           blockId,
           pages: typeof pages === 'number' ? [pages] : undefined,
         });
@@ -4948,8 +5250,8 @@ export class RoomActor {
           anchored: blockId !== null,
         });
         if (plan.batch === null) return;
-        const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId });
-        if (emitted) await this.#noteEditInChat(messageId, plan.batch, plan.noteKind);
+        const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId }, port);
+        if (emitted) await this.#noteEditInChat(messageId, plan.batch, plan.noteKind, port);
       }
     } catch (err) {
       this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
@@ -4993,7 +5295,7 @@ export class RoomActor {
     },
   ): Promise<void> {
     // No model call for an edit that would be dropped (§3's Freeze); `#emitDocEdit` checks again.
-    if (this.#retired || this.#docPort.docId() === null || this.#docPort.frozen()) return;
+    if (this.#retired || deps.docPort.docId() === null || deps.docPort.frozen()) return;
     const question = quiz.questionText ?? '';
     const context = this.#askContext.get(quiz.anchorId ?? '');
     const page = typeof context?.page === 'number' ? context.page : null;
@@ -5010,7 +5312,7 @@ export class RoomActor {
     });
     // How the notes text was had, never the text itself.
     this.#turnLog.event('info', 'doc.resolve', { resolution, via, quoted: input.learnerAnswer !== null });
-    await this.#emitDocEdit(batch, { objectiveId: quiz.objectiveId ?? null, messageId: input.messageId, turnId: input.turnId });
+    await this.#emitDocEdit(batch, { objectiveId: quiz.objectiveId ?? null, messageId: input.messageId, turnId: input.turnId }, deps.docPort);
   }
 
   /** Which door a release came through, for the event log and for `markAnswerShown`. */
@@ -5045,7 +5347,44 @@ export class RoomActor {
    *  - the **Tester**: the objective's own `quizSeeds`, and on the feedback turn what a correct
    *    demonstration contains (#38 §4).
    */
+  /** The notebook's tutorial parts now, or none; a host that throws costs the guard, not the turn. */
+  #tutorialParts(): readonly { contentKey: string; label: string; solved: boolean; blockIds: readonly string[] }[] {
+    try {
+      return this.#d.tutorialParts?.() ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * **The sheet's guard on every turn that is not a tutor turn** (2026-10-04, Lucas: "explain,
+   * never solve"). A tutor turn has the key's own guard, which now covers the sheet's other parts.
+   */
+  #withSheetGuard(decision: TurnDecision, note: string | undefined): string | undefined {
+    if (isTutorRule(decision.decidedBy)) return note;
+    const unsolved = this.#tutorialParts()
+      .filter((p) => !p.solved)
+      .map((p) => p.label);
+    if (unsolved.length === 0) return note;
+    return [note, sheetGuardBlock(unsolved)].filter((b): b is string => typeof b === 'string' && b.length > 0).join('\n\n');
+  }
+
+  /** Whether a thread is on a line inside a tutorial part the learner has not solved yet. */
+  #inUnsolvedPart(anchorId: string | null): boolean {
+    if (anchorId === null) return false;
+    const key = this.#threadDocKey.get(anchorId);
+    const blockId = this.#threads.get(anchorId)?.blockId ?? null;
+    if (key === undefined || blockId === null) return false;
+    return this.#tutorialParts().some((p) => p.contentKey === key && !p.solved && p.blockIds.includes(blockId));
+  }
+
   #turnNote(decision: TurnDecision): string | undefined {
+    /**
+     * **A tutorial turn reads one block and nothing else** (S5). The part, the learner's answer,
+     * the key behind its guard and the linked notes and pages are all in it; the room's notes doc,
+     * its *where* block and the learner's notes near a block are about the overview, not the sheet.
+     */
+    if (isTutorRule(decision.decidedBy) && this.#tutor !== null) return tutorBlock(this.#tutor);
     /**
      * **The collab doc's own turns** (#48), checked first because each of them is a whole turn
      * rather than a variation on the Tester's or the Teacher's. Their blocks are in
@@ -5272,11 +5611,12 @@ export class RoomActor {
    * nowhere for the learner to write that the agents could see at all.
    */
   #learnerNotesNote(): string | undefined {
-    if (this.#docPort.docId() === null) return undefined;
     const anchorId = this.#turnAnchorId;
+    const port = this.#portFor(anchorId);
+    if (port.docId() === null) return undefined;
     const blockId = anchorId === null ? null : (this.#threads.get(anchorId)?.blockId ?? null);
     const page = anchorId === null ? undefined : this.#askContext.get(anchorId)?.page;
-    const outline = this.#docPort.outlineNear({
+    const outline = port.outlineNear({
       blockId,
       pages: typeof page === 'number' ? [page] : undefined,
     });

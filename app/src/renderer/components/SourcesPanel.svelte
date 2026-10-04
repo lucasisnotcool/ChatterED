@@ -5,11 +5,15 @@
    * It replaces the vault sidebar. Top to bottom, as the approved mockup has it:
    *
    *  - **Add sources**, the native picker into this notebook;
-   *  - **the drop box**, which lights up while files are dragged anywhere over the notebook (the
-   *    whole window is the drop zone, `ThreeColumn`; this box is where the learner is told so);
+   *  - **the drop box**, which lights up while files are dragged over this column, the one place a
+   *    dropped file becomes a source (`ThreeColumn`, 2026-10-04; an image dropped on a sheet goes
+   *    into that sheet instead);
    *  - **Use in this notebook · All**, and one row per source: a type badge, the name, a line
    *    under it (*59 pages · ready*, *Reading…*, the error sentence when it failed), the checkbox
    *    that puts it in or out of context, and a hover × to remove it (main asks first);
+   *  - **a role** on each row (`docs/research/tutorials.md` §1): *Lecture*, *Tutorial* or
+   *    *Solutions*, changed from the badge's "Use as…" menu. A tutorial row opens its sheet beside
+   *    the notes (**Open**) and says how far it has got; a solutions row says it is hidden;
    *  - the sentence that says what the checkboxes mean, once;
    *  - then whatever the shell hands down: the overview's outline with its fills (`NotesMap`).
    *
@@ -22,7 +26,18 @@
   import type { NotebookSourceView } from '../../shared/notebook.js';
   import { FILES } from '../lib/layout.js';
   import { layout } from '../lib/layoutstore.svelte.js';
-  import { allState, badgeTone, inUseLine, sourceMeta, typeBadge } from '../lib/notebookview.js';
+  import { SOURCE_ROLES, type SourceRole } from '../../shared/tutorial.js';
+  import {
+    allState,
+    badgeTone,
+    inUseLine,
+    roleHint,
+    roleLabel,
+    roleOf,
+    sourceMeta,
+    tutorialLine,
+    typeBadge,
+  } from '../lib/notebookview.js';
   import { store } from '../lib/store.svelte.js';
   import PaneSplitter from './PaneSplitter.svelte';
 
@@ -31,7 +46,7 @@
     oncollapse,
     below,
   }: {
-    /** Files are being dragged over the notebook window: the drop box says where they go. */
+    /** Files are being dragged over this column: the drop box says they go in here. */
     over?: boolean;
     /** Dragging the edge all the way in (or Enter on it) closes the panel. */
     oncollapse?: () => void;
@@ -57,6 +72,64 @@
     box.checked = source.enabled;
     void nb.setEnabled([source.fileId], wanted);
   }
+
+  // ── roles (`tutorials.md` §1) ──────────────────────────────────────────────────────────────
+  const tut = store.tutorial;
+
+  /** The row whose "Use as…" menu is open, and where: fixed, so the panel's scroll never clips it. */
+  let menuFor = $state<string | null>(null);
+  let menuAt = $state<{ left: number; top: number }>({ left: 0, top: 0 });
+  const MENU = { width: 236, height: 196 };
+
+  function openMenu(fileId: string, e: MouseEvent): void {
+    e.stopPropagation();
+    if (menuFor === fileId) {
+      menuFor = null;
+      return;
+    }
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const below = box.bottom + 4 + MENU.height <= window.innerHeight - 8;
+    menuAt = {
+      left: Math.max(8, Math.min(box.left, window.innerWidth - MENU.width - 8)),
+      top: below ? box.bottom + 4 : Math.max(8, box.top - 4 - MENU.height),
+    };
+    menuFor = fileId;
+  }
+
+  async function setRole(source: NotebookSourceView, role: SourceRole): Promise<void> {
+    menuFor = null;
+    if (roleOf(source) === role) return;
+    const result = await tut.setRole(source.fileId, role);
+    if (result.error) nb.say(result.error);
+    if (result.view && nb.view?.id === result.view.id) nb.view = result.view;
+    // A sheet just marked as a tutorial opens beside the notes: that is where it is answered.
+    if (role === 'tutorial' && result.view) void tut.open(source.fileId);
+  }
+
+  /** What a row says under its name, by role. */
+  function metaOf(source: NotebookSourceView): string {
+    if (source.status !== 'ready') return sourceMeta(source);
+    const role = roleOf(source);
+    if (role === 'solutions') return 'Hidden: only used to check your answers';
+    if (role === 'tutorial') return tutorialLine(tut.viewOf(source.fileId), tut.reading[source.fileId] ?? null);
+    return sourceMeta(source);
+  }
+
+  $effect(() => {
+    if (!menuFor) return;
+    const close = (): void => {
+      menuFor = null;
+    };
+    const onkey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', onkey);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onkey);
+    };
+  });
 
   function toggleAll(e: Event): void {
     const box = e.currentTarget as HTMLInputElement;
@@ -94,11 +167,70 @@
 
     <ul class="list">
       {#each sources as source (source.fileId)}
-        <li class="src" class:off={!source.enabled} class:failed={source.status === 'failed'}>
+        {@const role = roleOf(source)}
+        <li
+          class="src"
+          class:off={!source.enabled && role !== 'solutions'}
+          class:failed={source.status === 'failed'}
+          class:hidden-role={role === 'solutions'}
+          class:open={tut.openFileId === source.fileId}
+        >
           <span class="badge {badgeTone(source.name)}" aria-hidden="true">{typeBadge(source.name)}</span>
           <div class="body">
             <div class="name" title={source.name}>{source.name}</div>
-            <div class="meta">{sourceMeta(source)}</div>
+            <div class="meta">
+              <button
+                type="button"
+                class="role {role}"
+                aria-haspopup="menu"
+                aria-expanded={menuFor === source.fileId}
+                title="What this source is in the notebook. Click to change it."
+                onpointerdown={(e) => e.stopPropagation()}
+                onclick={(e) => openMenu(source.fileId, e)}
+              >{roleLabel(role)}<span class="caret" aria-hidden="true">▾</span></button>
+              <span class="metatext" title={metaOf(source)}>{metaOf(source)}</span>
+            </div>
+            {#if role === 'tutorial' && source.status === 'ready'}
+              <div class="tutrow">
+                <button
+                  type="button"
+                  class="opentut"
+                  aria-pressed={tut.openFileId === source.fileId}
+                  onclick={() => (tut.openFileId === source.fileId ? tut.close() : void tut.open(source.fileId))}
+                >{tut.openFileId === source.fileId ? 'Close' : 'Open'}</button>
+                {#if tut.localError[source.fileId] || tut.viewOf(source.fileId)?.status === 'failed'}
+                  <button type="button" class="retry" onclick={() => void tut.retry(source.fileId)}>Retry</button>
+                {/if}
+              </div>
+            {/if}
+            {#if menuFor === source.fileId}
+              <div
+                class="rolemenu"
+                role="menu"
+                aria-label={`Use ${source.name} as`}
+                tabindex="-1"
+                style:left={`${menuAt.left}px`}
+                style:top={`${menuAt.top}px`}
+                onpointerdown={(e) => e.stopPropagation()}
+              >
+                <div class="rolemenu-head">Use as…</div>
+                {#each SOURCE_ROLES as option (option)}
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={role === option}
+                    class="rolemenu-item"
+                    onclick={() => void setRole(source, option)}
+                  >
+                    <span class="tick" aria-hidden="true">{role === option ? '✓' : ''}</span>
+                    <span class="rolemenu-text">
+                      <span class="rolemenu-name">{roleLabel(option)}</span>
+                      <span class="rolemenu-hint">{roleHint(option)}</span>
+                    </span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
             {#if source.status === 'reading'}
               <div class="bar" role="progressbar" aria-label={`Reading ${source.name}`}><i></i></div>
             {:else if source.status === 'failed' && source.error}
@@ -112,6 +244,9 @@
             aria-label={`Remove ${source.name}`}
             onclick={() => void nb.remove(source.fileId)}
           >×</button>
+          {#if role === 'solutions'}
+            <span aria-hidden="true"></span>
+          {:else}
           <input
             type="checkbox"
             checked={source.enabled}
@@ -119,6 +254,7 @@
             aria-label={`Use ${source.name}`}
             onchange={(e) => toggle(source, e)}
           />
+          {/if}
         </li>
       {/each}
     </ul>
@@ -237,6 +373,75 @@
   .name { font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { font-size: 10.5px; color: var(--text-2); }
   .error { margin-top: 2px; font-size: 10.5px; line-height: 1.4; color: #8a2708; }
+
+  /* The role: a quiet pill for a lecture, the learner's colour for a tutorial, struck grey for
+     solutions. Its click opens "Use as…". */
+  .meta { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .metatext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .role {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 5px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 15px;
+    color: var(--text-2);
+    background: var(--pane);
+  }
+  .role:hover,
+  .role[aria-expanded='true'] { border-color: var(--indigo); color: var(--indigo); }
+  .role.tutorial { border-color: #c9c5f3; background: var(--indigo-tint); color: var(--indigo); }
+  .role.solutions { border-style: dashed; color: var(--text-2); }
+  .caret { margin-left: 2px; font-size: 8px; opacity: 0.75; }
+  .src.hidden-role .name { color: var(--text-2); }
+  .src.open { background: var(--indigo-tint); }
+
+  .tutrow { display: flex; gap: 6px; margin-top: 4px; }
+  .opentut,
+  .retry {
+    border: 1px solid var(--hairline);
+    background: var(--pane);
+    border-radius: 999px;
+    padding: 1px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--indigo);
+  }
+  .opentut:hover,
+  .retry:hover { border-color: var(--indigo); }
+  .opentut[aria-pressed='true'] { color: var(--text-2); font-weight: 500; }
+
+  .rolemenu {
+    position: fixed;
+    z-index: 40;
+    width: 236px;
+    padding: 4px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--pane);
+    box-shadow: 0 10px 28px rgb(20 20 40 / 16%);
+  }
+  .rolemenu-head { padding: 4px 8px 2px; font-size: 10.5px; color: var(--muted); font-weight: 600; }
+  .rolemenu-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 6px;
+    text-align: left;
+  }
+  .rolemenu-item:hover,
+  .rolemenu-item:focus-visible { background: var(--ground); outline: none; }
+  .tick { width: 12px; flex: none; color: var(--indigo); font-size: 11px; line-height: 1.5; }
+  .rolemenu-text { display: grid; gap: 1px; }
+  .rolemenu-name { font-size: 12px; color: var(--text); font-weight: 600; }
+  .rolemenu-hint { font-size: 10.5px; line-height: 1.35; color: var(--text-2); }
   .src.off .name,
   .src.off .badge { opacity: 0.5; }
   .src input { width: 14px; height: 14px; accent-color: var(--indigo); margin: 0; }

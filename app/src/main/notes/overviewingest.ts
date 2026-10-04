@@ -146,10 +146,17 @@ export function overviewIsCurrent(record: NotesDocRecord | null): boolean {
   );
 }
 
-/** The ticked sources whose text is in: the overview's context. */
+/**
+ * The ticked **lecture** sources whose text is in: the overview's context. A tutorial sheet is
+ * not summarised into the overview and its solutions are never read (`tutorials.md` §1); a source
+ * from before migration 028 has no role and is a lecture.
+ */
 export function readySources(subject: NotebookSubject): NotebookSourceView[] {
-  return subject.sources.filter((s) => s.enabled && s.status === 'ready');
+  return subject.sources.filter((s) => s.enabled && s.status === 'ready' && (s.role ?? 'lecture') === 'lecture');
 }
+
+/** What `deckText` is asked for by the overview: lecture sources only. */
+const OVERVIEW_DECK = { roles: ['lecture'] as const };
 
 /** Which scripted fixture this notebook is, judged by its first ready source. */
 function fixtureFor(deps: Pick<OverviewDeps, 'notebooks'>, subject: NotebookSubject): 'critique1' | null {
@@ -383,7 +390,7 @@ async function runOverview(
     const sources = readySources(subject);
     if (sources.length === 0) throw new Error('no ticked source is ready to read');
 
-    const deck = deps.notebooks.deckText(input.notebookId);
+    const deck = deps.notebooks.deckText(input.notebookId, OVERVIEW_DECK);
     // §3.2, amended 2026-10-02: slides or prose, read off the text, and the budget from the body.
     const policy = overviewPolicy(deck.text);
     const sourceWords = policy.bodyWords;
@@ -742,7 +749,7 @@ async function landFixture(
   const startedAt = Date.now();
   try {
     const { raw, fixture } = fixtureRaw(deps, subject);
-    const deck = deps.notebooks.deckText(input.notebookId);
+    const deck = deps.notebooks.deckText(input.notebookId, OVERVIEW_DECK);
     const policy = overviewPolicy(deck.text);
     land(deps, input, subject, docId, mode, {
       raw,

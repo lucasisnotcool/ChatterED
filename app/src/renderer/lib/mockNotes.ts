@@ -77,6 +77,8 @@ export function mockSources(): NotebookSourceView[] {
       status: 'ready',
       error: null,
       addedAt: added,
+      role: 'lecture',
+      keyFor: null,
     },
     {
       fileId: 'f_mock_notes',
@@ -88,6 +90,8 @@ export function mockSources(): NotebookSourceView[] {
       status: 'ready',
       error: null,
       addedAt: added,
+      role: 'lecture',
+      keyFor: null,
     },
     {
       fileId: 'f_mock_tutorial',
@@ -99,6 +103,8 @@ export function mockSources(): NotebookSourceView[] {
       status: 'ready',
       error: null,
       addedAt: added,
+      role: 'tutorial',
+      keyFor: null,
     },
   ];
 }

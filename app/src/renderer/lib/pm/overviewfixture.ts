@@ -94,7 +94,7 @@ export function fixtureOverviewDoc(): Json {
 }
 
 function source(partial: Partial<NotebookSourceView> & Pick<NotebookSourceView, 'fileId' | 'name' | 'kind' | 'pageBase' | 'pageCount'>): NotebookSourceView {
-  return { enabled: true, status: 'ready', error: null, addedAt: '2026-10-01T09:00:00.000Z', ...partial };
+  return { enabled: true, status: 'ready', error: null, addedAt: '2026-10-01T09:00:00.000Z', role: 'lecture', keyFor: null, ...partial };
 }
 
 /** The notebook: a lecture PDF and a Markdown file, both ticked. */

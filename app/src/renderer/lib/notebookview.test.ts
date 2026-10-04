@@ -27,6 +27,8 @@ function source(over: Partial<NotebookSourceView> = {}): NotebookSourceView {
     status: 'ready',
     error: null,
     addedAt: '2026-10-01T00:00:00.000Z',
+    role: 'lecture',
+    keyFor: null,
     ...over,
   };
 }
@@ -210,5 +212,47 @@ describe('folders on the home', () => {
   it('never offers a folder itself or anything inside it', () => {
     const targets = moveTargets(folders, { folderId: 'fd_cs', currentParent: null }).map((t) => t.folderId);
     expect(targets).toEqual(['fd_other']);
+  });
+});
+
+describe('tutorials in the sources panel and the tutorial column', () => {
+  const part = (status: string) => ({ status }) as unknown as import('../../shared/tutorial.js').TutorialPartView;
+
+  it('reads a role defensively: no role is a lecture', async () => {
+    const { roleOf, keyForOf } = await import('./notebookview.js');
+    expect(roleOf({})).toBe('lecture');
+    expect(roleOf({ role: 'tutorial' })).toBe('tutorial');
+    expect(roleOf({ role: 'bogus' })).toBe('lecture');
+    expect(keyForOf({ keyFor: 'f1' })).toBe('f1');
+    expect(keyForOf({ keyFor: '' })).toBeNull();
+  });
+
+  it('says what a tutorial is doing', async () => {
+    const { tutorialLine, partsLabel } = await import('./notebookview.js');
+    expect(tutorialLine(null)).toBe('Not read yet');
+    expect(tutorialLine({ status: 'pending', parts: [], docId: null })).toBe('Reading the sheet…');
+    expect(tutorialLine({ status: 'ready', parts: [], docId: 'd' }, { done: 1, total: 4 })).toBe('Reading the sheet…');
+    expect(tutorialLine({ status: 'failed', parts: [], docId: null })).toBe('Couldn’t read the sheet');
+    const parts = [part('correct'), part('partial'), part('untried')];
+    expect(tutorialLine({ status: 'ready', parts, docId: 'd' })).toBe('3 parts · 1 done');
+    expect(partsLabel({ parts, docId: 'd' })).toBe('Parts 1 / 3');
+    expect(partsLabel({ parts, docId: null })).toBe('');
+  });
+
+  it('names a tab by the sheet, or its file until read', async () => {
+    const { tutorialTabLabel } = await import('./notebookview.js');
+    expect(tutorialTabLabel({ title: 'Tutorial 9' }, 'x.pdf')).toBe('Tutorial 9');
+    expect(tutorialTabLabel({ title: '' }, 'Week3_Tutorial1.pdf')).toBe('Week3 Tutorial1');
+    expect(tutorialTabLabel({ title: 'A very long tutorial title that goes on and on' }, null, 12)).toBe('A very long…');
+  });
+
+  it('says why a check or a hint did not run', async () => {
+    const { checkRefusal, helpRefusal } = await import('./notebookview.js');
+    expect(checkRefusal(null)).toBeNull();
+    expect(checkRefusal('empty')).toMatch(/Write an answer/);
+    expect(checkRefusal('busy')).toBe('Max is still answering. Try again when he has finished.');
+    expect(helpRefusal('top', 'hint')).toMatch(/last hint/);
+    expect(helpRefusal('busy', 'refresher')).toBe('Ellie is still answering. Try again when she has finished.');
+    expect(helpRefusal(null, 'reveal')).toBeNull();
   });
 });

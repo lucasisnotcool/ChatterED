@@ -9,6 +9,11 @@
    *
    * **Jump to span** is the other direction of the same link: T4 draws the highlight and clicking
    * it focuses this card; clicking here scrolls the document back to the line.
+   *
+   * **Reply here** (2026-10-04) points the chat's one composer at this thread, so an answer to a
+   * question Max asked here (a tutorial hint that ends in one, say) stays with the line it is
+   * about. While it is the composer's thread the card says so; the learner's words, while they
+   * are still sending, are drawn at its foot (`tail`).
    */
   import type { MessageView, ThinkingView } from '../../../shared/types.js';
   import type { ThreadView } from '../../../shared/doc/types.js';
@@ -24,6 +29,9 @@
     thinking = null,
     onjump,
     onpage,
+    replying = false,
+    onreply,
+    tail,
     children,
   }: {
     thread: ThreadView;
@@ -33,6 +41,11 @@
     thinking?: ThinkingView | null;
     onjump?: (blockId: string) => void;
     onpage?: (page: number) => void;
+    /** The composer is replying in this thread. */
+    replying?: boolean;
+    onreply?: () => void;
+    /** The learner's own turns still sending into this thread. */
+    tail?: import('svelte').Snippet;
     children?: import('svelte').Snippet;
   } = $props();
 
@@ -40,7 +53,7 @@
   const quiz = $derived(thread.quiz);
 </script>
 
-<section class="span" class:focused data-thread={thread.threadId} aria-label="About a line in the document">
+<section class="span" class:focused class:replying data-thread={thread.threadId} aria-label="About a line in the document">
   <header class="head">
     <button
       type="button"
@@ -66,8 +79,18 @@
       {#each messages as message (message.id)}
         <ChatMessage {message} {pages} {onpage} />
       {/each}
+      {@render tail?.()}
       {#if thinking}
         {@render children?.()}
+      {/if}
+      {#if onreply}
+        <div class="replyrow">
+          {#if replying}
+            <span class="replying-note">Replying here ↓</span>
+          {:else}
+            <button type="button" class="reply" onclick={onreply}>Reply here</button>
+          {/if}
+        </div>
       {/if}
       <!-- What this aside has cost (#42 item C). Inside the fold: a collapsed thread is a thread
            the learner has put away, and a number is not a reason to reopen it. -->
@@ -93,6 +116,9 @@
     box-shadow: 0 0 0 3px var(--indigo-tint);
     transition: box-shadow 600ms ease-out, border-color 600ms ease-out;
   }
+
+  /* The composer's thread: a steady edge, not the focus flash. */
+  .span.replying { border-color: color-mix(in srgb, var(--indigo) 55%, var(--hairline)); }
 
   .head { display: flex; align-items: flex-start; gap: 7px; }
   .fold {
@@ -135,5 +161,16 @@
   }
 
   .turns { margin-left: 17px; }
+  .replyrow { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
+  .reply {
+    font-size: 11px;
+    color: var(--indigo);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 2px 8px;
+    background: var(--pane);
+  }
+  .reply:hover { border-color: var(--indigo); }
+  .replying-note { font-size: 10.5px; color: var(--indigo); }
   .folded { margin: 4px 0 6px 17px; font-size: 11px; color: var(--muted); }
 </style>

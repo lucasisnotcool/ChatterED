@@ -33,7 +33,7 @@ export interface DocActorMethods {
    * 2026-10-02). Main creates highlight and Ask… threads; without this the actor saw them as
    * block-less and filed Ellie's doc edit wherever the planner guessed.
    */
-  noteSpanThread(input: { threadId: string; blockId: string; quote: string | null }): void;
+  noteSpanThread(input: { threadId: string; blockId: string; quote: string | null; contentKey?: string | null }): void;
   /** A lesson card's Start: Ellie announces the objective and prompts for a question (§6). */
   startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void>;
   /**
@@ -81,6 +81,8 @@ export interface DocActorMethods {
     context?: ReferenceContext | null;
     objectiveId: string | null;
     passage?: string | null;
+    /** A tutorial sheet's line: its content key (the doc line goes there; Quiz me is refused). */
+    contentKey?: string | null;
   }): Promise<BlockActionStart>;
   openPrivate(agent: AgentAuthor): { threadId: string; turns: PrivateTurnView[] };
   sendPrivate(threadId: string, text: string): Promise<void>;

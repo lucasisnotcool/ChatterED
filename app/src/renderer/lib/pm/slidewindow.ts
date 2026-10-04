@@ -13,8 +13,9 @@
  *  - **One window per click.** A second reference opens a second window, cascaded down and right
  *    so it does not hide the first. Clicking a reference whose slide is already open brings that
  *    window to the front rather than opening it twice.
- *  - **Moved by its title bar, resized from its corner.** It may go anywhere, as long as enough of
- *    its title bar stays in the app to drag it back (`clampWindow`). The last size the learner
+ *  - **Moved by its title bar, resized from any edge or corner** (`lib/floatframe.ts`). It may go
+ *    anywhere, as long as enough of its title bar stays in the app to drag it back and its top
+ *    stays below the app's title bar, the OS drag region (`clampFrame`). The last size the learner
  *    chose is what the next window opens at, and is kept across launches; positions are not, as a
  *    window belongs beside the line that opened it.
  *  - **Keys, while it has focus** (it takes focus when it opens, and on any press in it): ← → step
@@ -41,9 +42,12 @@
  */
 import { bestRegion } from '../../../shared/doc/cite.js';
 import type { Rect } from '../../../shared/doc/types.js';
+import { attachEdgeHandles, clampFrame, floatArea, resizeFrame, type ClampOptions } from '../floatframe.js';
 import type { SlideSource } from '../rasterise.js';
 import {
+  BAR_HEIGHT,
   HANDLES,
+  KEEP_VISIBLE,
   MARGIN,
   NUDGE,
   WHOLE_SLIDE,
@@ -51,8 +55,6 @@ import {
   WINDOW_SIZE,
   cascade,
   citedStep,
-  clampSize,
-  clampWindow,
   dragRect,
   fitSlide,
   handleAt,
@@ -70,6 +72,7 @@ import {
   type Point,
 } from './slidegeom.js';
 import type { SlideReader } from './sourcepop.js';
+import '../../components/notes/floatframe.css';
 import '../../components/notes/slidewindow.css';
 
 export interface SlideWindowOptions {
@@ -120,9 +123,17 @@ const open = new Set<Live>();
 /** Over the app's own panes and floating cards (≤ 40); each window pressed comes to the front. */
 let zTop = 60;
 
+/**
+ * The area a window lives in: the app below its title bar (`floatArea`). Never under the bar: it
+ * is the OS drag region, which wins over any DOM laid on it, so a window's header there could
+ * neither be dragged nor have its × clicked (Lucas, 2026-10-04).
+ */
 function viewportBox(): Box {
-  return { left: 0, top: 0, right: globalThis.innerWidth, bottom: globalThis.innerHeight };
+  return floatArea();
 }
+
+/** How a window is kept in the app (`clampFrame`): its header grabbable, never under the title bar. */
+const CLAMP: ClampOptions = { min: WINDOW_MIN, keep: KEEP_VISIBLE, bar: BAR_HEIGHT, margin: MARGIN };
 
 /** The size the learner last left a window at. Best effort: storage may be refused. */
 function savedSize(): { width: number; height: number } {
@@ -202,7 +213,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   const rectPage = options.rectPage ?? page;
 
   // ── the frame ──
-  const node = el('div', 'nd-sw');
+  const node = el('div', 'nd-sw ff-window');
   node.setAttribute('role', 'dialog');
   node.tabIndex = -1;
   const bar = el('div', 'nd-sw-bar');
@@ -249,9 +260,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   const cancelCrop = button('', 'Cancel', 'Back to the slide (Esc)', () => stopCrop());
   cropBar.append(el('span', 'nd-sp-hint', 'Drag across the part to insert'), el('span', 'nd-sp-spacer'), cancelCrop, insertWhole, insertSel);
 
-  const grip = el('span', 'nd-sw-grip');
-  grip.title = 'Drag to resize';
-  node.append(bar, body, foot, cropBar, grip);
+  node.append(bar, body, foot, cropBar);
 
   // ── the slide ──
   /** Bumped per page shown and per render, so a late canvas never lands on the wrong page. */
@@ -598,7 +607,8 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   });
 
   // ── the frame on screen: place, move, resize ──
-  let frame = { left: 0, top: 0, ...clampSize(savedSize(), viewportBox()) };
+  const area0 = viewportBox();
+  let frame = clampFrame({ left: area0.left, top: area0.top, ...savedSize() }, area0, CLAMP);
 
   const apply = (): void => {
     node.style.left = `${String(frame.left)}px`;
@@ -618,7 +628,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
       [...open].map((live) => ({ left: live.node.offsetLeft, top: live.node.offsetTop })),
       view,
     );
-    frame = { ...frame, width, ...clampWindow({ ...frame, width, ...spot }, view) };
+    frame = clampFrame({ ...frame, width, ...spot }, view, CLAMP);
     apply();
   };
 
@@ -630,7 +640,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
     const start = { x: event.clientX, y: event.clientY, left: frame.left, top: frame.top };
     node.classList.add('nd-sw-moving');
     const move = (e: PointerEvent): void => {
-      frame = { ...frame, ...clampWindow({ ...frame, left: start.left + e.clientX - start.x, top: start.top + e.clientY - start.y }, viewportBox()) };
+      frame = clampFrame({ ...frame, left: start.left + e.clientX - start.x, top: start.top + e.clientY - start.y }, viewportBox(), CLAMP);
       apply();
     };
     const up = (): void => {
@@ -644,34 +654,25 @@ export function openSlideWindow(options: SlideWindowOptions): void {
     bar.addEventListener('pointercancel', up);
   });
 
-  // Resize from the corner. The size is remembered for the next window.
-  grip.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    grip.setPointerCapture(event.pointerId);
-    const start = { x: event.clientX, y: event.clientY, width: frame.width, height: frame.height };
-    node.classList.add('nd-sw-resizing');
-    const move = (e: PointerEvent): void => {
-      const view = viewportBox();
-      const size = clampSize({ width: start.width + e.clientX - start.x, height: start.height + e.clientY - start.y }, view);
-      // Never past the app's right or bottom edge while resizing.
-      size.width = Math.min(size.width, Math.max(WINDOW_MIN.width, view.right - MARGIN - frame.left));
-      size.height = Math.min(size.height, Math.max(WINDOW_MIN.height, view.bottom - MARGIN - frame.top));
-      frame = { ...frame, ...size };
+  // Resize from any edge or corner (`attachEdgeHandles`, shared with the tutorial window). The
+  // slide refits to the stage in its own shape as it goes (`fit`, via the stage's ResizeObserver
+  // and `scheduleRerender`). The size is remembered for the next window.
+  let resizeStart = frame;
+  attachEdgeHandles(node, {
+    start: () => {
+      resizeStart = { ...frame };
+      node.classList.add('nd-sw-resizing');
+      front();
+    },
+    move: (edge, dx, dy) => {
+      frame = resizeFrame(resizeStart, edge, dx, dy, viewportBox(), WINDOW_MIN, MARGIN);
       apply();
       scheduleRerender();
-    };
-    const up = (): void => {
+    },
+    end: () => {
       node.classList.remove('nd-sw-resizing');
       saveSize({ width: frame.width, height: frame.height });
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', up);
-      grip.removeEventListener('pointercancel', up);
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
+    },
   });
 
   // ── focus and keys ──
@@ -715,9 +716,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
 
   const resizeObserver = new ResizeObserver(() => scheduleRerender());
   const onWindowResize = (): void => {
-    const view = viewportBox();
-    frame = { ...frame, ...clampSize(frame, view) };
-    frame = { ...frame, ...clampWindow(frame, view) };
+    frame = clampFrame(frame, viewportBox(), CLAMP);
     apply();
   };
 

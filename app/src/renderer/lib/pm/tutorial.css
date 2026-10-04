@@ -1,0 +1,467 @@
+/**
+ * A tutorial sheet in the editor, and its parts under the notes (`pm/tutorial.ts`, 2026-10-03).
+ *
+ * Global and `nd-`-prefixed, as `notes.css` is, because everything styled here is DOM that
+ * ProseMirror made (decorations, node views). Colours are the app's tokens (`styles/app.css`) and
+ * the notes' agent hues (`--nd-ellie`, `--nd-max`, with fallbacks so the sheet still reads in a
+ * host outside `.nd`). The learner's colour is `--indigo`; the sheet's own words wear "sheet ink":
+ * a printed face in a quiet blue-black, so what the sheet asks and what the learner wrote never
+ * look alike. **Colour is never the only signal:** every status says its word, every agent dot
+ * has its shape (Ellie solid, Max dashed).
+ */
+
+.nd-editor {
+  --nd-sheet-ink: #2b344d;
+  --nd-sheet-face: 'Iowan Old Style', 'Charter', 'Palatino', Georgia, serif;
+  --nd-learner-wash: rgb(79 70 229 / 4.5%);
+  --nd-good: #14714f;
+  --nd-good-edge: #a7d7c5;
+  --nd-half: #8a5a11;
+  --nd-half-edge: #e2c391;
+  --nd-bad: #b91c1c;
+  --nd-bad-edge: #eeb0ac;
+}
+
+/* ── the sheet's own words ─────────────────────────────────────────────── */
+
+.nd-editor .ProseMirror .nd-tut-sheet {
+  color: var(--nd-sheet-ink);
+  font-family: var(--nd-sheet-face);
+  font-size: 1.04em;
+}
+.nd-editor .ProseMirror .nd-tut-sheet code,
+.nd-editor .ProseMirror pre.nd-tut-sheet { font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+.nd-editor .ProseMirror h2.nd-tut-sheet,
+.nd-editor .ProseMirror h3.nd-tut-sheet { letter-spacing: 0; }
+
+/* ── housekeeping, folded ──────────────────────────────────────────────── */
+
+.nd-tut-admin-bar { margin: 0 0 10px; user-select: none; }
+.nd-tut-admin-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px 3px 4px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.nd-tut-admin-toggle:hover { background: var(--ground); color: var(--text); }
+.nd-tut-admin-name { font-weight: 600; }
+.nd-tut-admin-act { color: var(--muted); }
+.nd-editor .ProseMirror .nd-tut-admin { opacity: 0.62; font-size: 13px; }
+.nd-editor .ProseMirror h2.nd-tut-admin,
+.nd-editor .ProseMirror h3.nd-tut-admin { margin-top: 12px; border-top: 0; padding-top: 0; font-size: 13px; }
+.nd-editor .ProseMirror .nd-tut-folded { display: none; }
+
+/* ── a part: a card ────────────────────────────────────────────────────── */
+
+.nd-editor .ProseMirror section.nd-tut-part {
+  margin: 16px 0 24px;
+  padding: 10px 18px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--pane);
+  box-shadow: 0 1px 2px rgb(20 20 40 / 4%);
+  transition: border-color 0.2s ease;
+  /* The header adapts to the card's width, not the window's (`@container tutpart` below). */
+  container: tutpart / inline-size;
+}
+.nd-editor .ProseMirror section.nd-tut-part:focus-within { border-color: #c7c7e8; }
+/* A compact sheet (`notes.css` `.nd-compact`): the card's own margins give way to the words. */
+.nd-compact .nd-editor .ProseMirror section.nd-tut-part { padding: 8px 12px 4px; }
+.nd-compact .nd-tut-head-row { gap: 4px 8px; }
+.nd-editor .ProseMirror section.nd-tut-part[data-status='correct'] { border-color: var(--nd-good-edge); }
+.nd-editor .ProseMirror section.nd-tut-part[data-status='partial'] { border-color: var(--nd-half-edge); }
+.nd-editor .ProseMirror section.nd-tut-part > p:last-child,
+.nd-editor .ProseMirror section.nd-tut-part > .nd-tut-slot:last-child { margin-bottom: 10px; }
+
+.nd-tut-head {
+  margin: 0 0 8px;
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+}
+.nd-tut-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 26px;
+}
+.nd-tut-head-left { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.nd-tut-label {
+  font-weight: 650;
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* The status: a word, quiet while untried; its colour as well once judged. */
+.nd-tut-status {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+  cursor: default;
+}
+.nd-tut-status[data-status='untried'] { color: var(--muted); }
+.nd-tut-status[data-status='working'] { color: var(--indigo); }
+.nd-tut-status[data-status='correct'],
+.nd-tut-status[data-status='partial'],
+.nd-tut-status[data-status='incorrect'] {
+  padding: 0 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-weight: 550;
+}
+.nd-tut-status[data-status='correct'] { border-color: var(--nd-good-edge); color: var(--nd-good); }
+.nd-tut-status[data-status='partial'] { border-color: var(--nd-half-edge); color: var(--nd-half); }
+.nd-tut-status[data-status='incorrect'] { border-color: var(--nd-bad-edge); color: var(--nd-bad); }
+.nd-tut-status[data-status='revealed'] { color: var(--text-2); font-style: italic; }
+
+/* The hint rungs taken: three dots, filled in Max's colour, dashed when not. */
+.nd-tut-dots { display: inline-flex; gap: 3px; cursor: default; }
+.nd-tut-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px dashed var(--muted);
+  box-sizing: border-box;
+}
+.nd-tut-dot.nd-on { border: 0; background: var(--nd-max, #b91c1c); }
+
+.nd-tut-actions { display: inline-flex; align-items: center; flex: none; max-width: 100%; margin-left: auto; }
+.nd-tut-controls { display: inline-flex; align-items: center; gap: 4px; }
+.nd-tut-controls[hidden] { display: none; }
+.nd-tut-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.nd-tut-btn:hover:not(:disabled) { border-color: #c7c7e8; color: var(--text); }
+.nd-tut-btn:disabled { cursor: default; }
+.nd-tut-btn:disabled:not(.nd-tut-check) { opacity: 0.45; }
+.nd-tut-btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.nd-tut-btn[hidden] { display: none; }
+.nd-tut-rung { color: var(--nd-max, #b91c1c); font-weight: 550; }
+.nd-tut-rung::before { content: '·'; margin: 0 5px; color: var(--muted); font-weight: 400; }
+.nd-tut-busy { animation: nd-shimmer 1.4s ease-in-out infinite; }
+
+/* Check: the one primary action, quiet until there is something to check. */
+.nd-tut-check { border-color: var(--indigo); background: var(--indigo); color: #fff; font-weight: 550; }
+.nd-tut-check:hover:not(:disabled) { background: #443cd0; border-color: #443cd0; color: #fff; }
+.nd-tut-check:disabled { border-color: var(--hairline); background: transparent; color: var(--muted); font-weight: 400; }
+
+/* Help ▾: a quiet text button, given its outline when the part is hovered or being worked in. */
+.nd-tut-help-wrap { position: relative; display: inline-flex; }
+.nd-tut-help { border-color: transparent; background: transparent; color: var(--glyph, var(--text-2)); gap: 4px; padding: 2px 7px; }
+.nd-tut-help-icon { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.nd-tut-caret { font-size: 10px; line-height: 1; color: var(--muted); transform: translateY(-0.5px); }
+.nd-tut-help-more { display: none; }
+.nd-editor .ProseMirror section.nd-tut-part:hover .nd-tut-help,
+.nd-editor .ProseMirror section.nd-tut-part:focus-within .nd-tut-help,
+.nd-tut-help[aria-expanded='true'] { border-color: var(--hairline); background: var(--pane); color: var(--text-2); }
+.nd-tut-help[aria-expanded='true'] { border-color: #c7c7e8; color: var(--indigo); }
+
+/* The menu: drawn in the card, under the button (above it near the pane's bottom). */
+.nd-tut-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: max-content;
+  min-width: 232px;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--pane);
+  box-shadow: 0 8px 24px rgb(20 20 40 / 12%);
+}
+.nd-tut-menu[hidden] { display: none; }
+.nd-tut-menu.nd-up { top: auto; bottom: calc(100% + 4px); }
+.nd-tut-menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.nd-tut-menu-item:hover:not(:disabled),
+.nd-tut-menu-item:focus-visible,
+.nd-tut-menu-item:focus { background: var(--ground); outline: none; }
+.nd-tut-menu-item:disabled { opacity: 0.5; cursor: default; }
+.nd-tut-menu-item > .nd-tool-dot,
+.nd-tut-menu-mark { flex: none; margin-top: 5px; }
+.nd-tut-menu-mark { width: 8px; height: 8px; }
+.nd-tut-menu-words { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.nd-tut-menu-label { font-size: 12.5px; color: var(--text); white-space: nowrap; }
+.nd-tut-menu-detail { font-size: 11px; color: var(--text-2); opacity: 0.85; }
+.nd-tut-menu-dots { flex: none; margin-top: 5px; }
+.nd-tut-menu-reveal .nd-tut-menu-label { color: var(--text-2); }
+.nd-tut-menu-sep { height: 1px; margin: 3px 6px; background: var(--hairline); }
+
+/* Show the answer? It won't count. — in the controls' place. */
+.nd-tut-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 1px 2px 1px 8px;
+  border: 1px dashed var(--hairline);
+  border-radius: 7px;
+}
+.nd-tut-confirm[hidden] { display: none; }
+.nd-tut-confirm-q { color: var(--text-2); font-size: 11.5px; margin-right: 2px; }
+.nd-tut-reveal-yes { color: var(--nd-bad); border-color: var(--nd-bad-edge); }
+.nd-tut-reveal-yes:hover:not(:disabled) { border-color: var(--nd-bad); color: var(--nd-bad); }
+
+/* Hint and Refresher inline: only on a wide card (below). */
+.nd-tut-wide { display: none; }
+
+/* From the notes: one muted line of links, cut with an ellipsis; the full list is its tooltip. */
+.nd-tut-from {
+  margin-top: 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--muted);
+}
+.nd-tut-from-name { color: var(--muted); }
+.nd-tut-sep { color: var(--muted); }
+.nd-tut-link {
+  color: var(--text-2);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  border-radius: 3px;
+}
+.nd-tut-link:hover { color: var(--indigo); text-decoration: underline; text-underline-offset: 2px; }
+.nd-tut-link:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; color: var(--indigo); }
+
+/* A wide card (about 640 px or more: the popped-out window made wide, a wide column): Hint and Refresher come back inline, and
+   the menu keeps only the give-up, behind a quieter "More". */
+@container tutpart (min-width: 600px) {
+  .nd-tut-wide { display: inline-flex; }
+  .nd-tut-menu-hint,
+  .nd-tut-menu-refresher,
+  .nd-tut-menu-sep { display: none; }
+  .nd-tut-help-word,
+  .nd-tut-help-icon { display: none; }
+  .nd-tut-help-more { display: inline; }
+}
+
+/* ── the learner's answer slot ─────────────────────────────────────────── */
+
+.nd-editor .ProseMirror .nd-tut-slot {
+  margin: 4px 0 12px;
+  padding: 6px 12px 4px;
+  border-left: 3px solid var(--indigo);
+  border-radius: 0 6px 6px 0;
+  background: var(--nd-learner-wash);
+  font-family: var(--font);
+  color: var(--text);
+}
+.nd-editor .ProseMirror .nd-tut-slot::before {
+  content: 'Your answer';
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--indigo);
+  user-select: none;
+  pointer-events: none;
+}
+.nd-editor .ProseMirror .nd-tut-slot > p { margin: 0 0 6px; }
+.nd-editor .ProseMirror .nd-tut-slot > ul,
+.nd-editor .ProseMirror .nd-tut-slot > ol { margin: 0 0 6px; }
+.nd-editor .ProseMirror .nd-tut-slot > pre { margin: 2px 0 8px; background: var(--pane); }
+
+/* The slot's placeholder: a decoration's attribute, drawn where the caret goes, never typed over. */
+.nd-editor .ProseMirror .nd-tut-ph::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--font);
+}
+.nd-editor .ProseMirror pre.nd-tut-ph::before { font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+
+/* ── a blank in the sheet's line: an underlined field that grows with its answer ── */
+
+.nd-tut-field {
+  /* The input and a hidden copy of its value share one grid cell, so the field is as wide as
+     what is typed in it, never narrower than six characters. */
+  display: inline-grid;
+  vertical-align: baseline;
+  min-width: 6ch;
+  max-width: 100%;
+  margin: 0 2px;
+  font-family: var(--font);
+  font-size: 0.95em;
+}
+.nd-tut-field::after {
+  content: attr(data-value) ' ';
+  grid-area: 1 / 1;
+  visibility: hidden;
+  white-space: pre;
+  padding: 0 5px;
+  font: inherit;
+  overflow: hidden;
+}
+.nd-tut-field-input {
+  grid-area: 1 / 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0 5px;
+  border: 0;
+  border-bottom: 1.5px solid #b9b9cf;
+  border-radius: 3px 3px 0 0;
+  background: var(--nd-learner-wash);
+  color: var(--text);
+  font: inherit;
+  line-height: inherit;
+  outline: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.nd-tut-field-input::placeholder { color: var(--muted); letter-spacing: 0.04em; }
+.nd-tut-field-input:hover { border-bottom-color: #9a9ac0; }
+.nd-tut-field-input:focus {
+  border-bottom-color: var(--indigo);
+  background: var(--indigo-tint);
+}
+.nd-tut-field-filled .nd-tut-field-input { border-bottom-color: var(--indigo); }
+.nd-tut-field-input:read-only { cursor: default; }
+
+/* ── choose all that apply ─────────────────────────────────────────────── */
+
+.nd-tut-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 4px 0 12px;
+  padding: 4px 6px;
+  border-left: 3px solid var(--indigo);
+  border-radius: 0 6px 6px 0;
+  background: var(--nd-learner-wash);
+  user-select: none;
+}
+.nd-tut-choices-selected { box-shadow: 0 0 0 2px var(--indigo-tint); }
+.nd-tut-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.nd-tut-choice:hover { background: rgb(79 70 229 / 7%); }
+.nd-tut-choice.nd-on { background: var(--indigo-tint); }
+.nd-tut-choice input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--indigo);
+  transform: translateY(1px);
+  cursor: pointer;
+}
+.nd-tut-choice input:disabled { cursor: default; }
+.nd-tut-choice-id {
+  flex: none;
+  min-width: 2.4em;
+  color: var(--text-2);
+  font-family: var(--nd-sheet-face);
+  font-variant-numeric: tabular-nums;
+}
+.nd-tut-choice-text { color: var(--nd-sheet-ink); font-family: var(--nd-sheet-face); }
+.nd-tut-choice-text code {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+  background: #f1f1f6;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* ── Max's (or Ellie's) one line under a part ──────────────────────────── */
+/* An agent's note, as the notes draw one: the agent's name in words, its rail's shape, its hue. */
+
+.nd-editor .ProseMirror .nd-tut-hint {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px dashed var(--nd-max, #b91c1c);
+  font-family: var(--font);
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+.nd-editor .ProseMirror .nd-tut-hint.nd-ellie { border-left: 2px solid var(--nd-ellie, #0f7b6c); }
+.nd-editor .ProseMirror .nd-tut-hint::before {
+  content: attr(data-who);
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--nd-max, #b91c1c);
+  user-select: none;
+  pointer-events: none;
+}
+.nd-editor .ProseMirror .nd-tut-hint.nd-ellie::before { color: var(--nd-ellie, #0f7b6c); }
+
+/* ── the main notes: each section's practice row (`practiceChipsPlugin`) ── */
+
+.nd-practice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 2px 0 6px;
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+  user-select: none;
+}
+.nd-practice-name { font-weight: 600; }
+.nd-practice-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; }
+.nd-practice-tut { color: var(--muted); margin-right: 2px; }
+.nd-practice-sep { color: var(--muted); }
+.nd-practice-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.nd-practice-part:hover { border-color: #c7c7e8; color: var(--indigo); }
+.nd-practice-glyph { font-size: 10.5px; }
+.nd-practice-part[data-status='correct'] { border-color: var(--nd-good-edge); color: var(--nd-good); }
+.nd-practice-part[data-status='partial'] { border-color: var(--nd-half-edge); color: var(--nd-half); }
+.nd-practice-part[data-status='incorrect'] { border-color: var(--nd-bad-edge); color: var(--nd-bad); }
+.nd-practice-part[data-status='revealed'] { border-style: dashed; }

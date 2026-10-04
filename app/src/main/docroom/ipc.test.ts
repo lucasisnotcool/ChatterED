@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { docOf, para } from '../../shared/doc/fixture.test-support.js';
 import type { ChatView } from '../../shared/doc/types.js';
+import type { DocHost } from '../dochost.js';
 import { fakeHost, handlerTable, objective, type FakeHost } from './fakehost.test-support.js';
 import { resetDocCache } from './doc.js';
 import { closeFileQuestions, registerDocRoomIpc, resetDocTextState } from './ipc.js';
@@ -150,6 +151,34 @@ describe('chat:send', () => {
     expect(anchorId).toBe(threadId);
     expect(context).toMatchObject({ scope: 'segment', page: 2, label: 'the Hessian test decides it' });
     expect(context.passageText).toBe('p.2: the Hessian test.');
+  });
+
+  it('hands a span thread to the tutorial’s tutor first, and sends nothing itself when it takes it (2026-10-04)', async () => {
+    const fx = fakeHost({ doc: deck() });
+    const seen: { threadId: string; blockId: string | null; text: string }[] = [];
+    let take = true;
+    (fx.host as { tutorialReply?: DocHost['tutorialReply'] }).tutorialReply = async (input: Parameters<NonNullable<DocHost['tutorialReply']>>[0]) => {
+      seen.push({ threadId: input.threadId, blockId: input.blockId, text: input.text });
+      return take;
+    };
+    const table = wire(fx);
+    const { threadId } = await table.call<{ threadId: string }>('chat:openSpan', {
+      fileId: 'f_deck',
+      blockId: 'b_2',
+      quote: 'the Hessian test decides it',
+      question: 'What does that mean?',
+    });
+    const sentBefore = fx.actor.calls.filter((c) => c.method === 'sendMessage').length;
+    await table.call('chat:send', { fileId: 'f_deck', threadId, text: 'my answer' });
+    expect(seen).toEqual([{ threadId, blockId: 'b_2', text: 'my answer' }]);
+    expect(fx.actor.calls.filter((c) => c.method === 'sendMessage').length).toBe(sentBefore);
+    // Not a part's thread: the tutor declines and the message goes to the room as before.
+    take = false;
+    await table.call('chat:send', { fileId: 'f_deck', threadId, text: 'and again' });
+    expect(fx.actor.last('sendMessage')!.args[0]).toBe('and again');
+    // The doc chat is never offered to it.
+    await table.call('chat:send', { fileId: 'f_deck', text: 'Summarise.' });
+    expect(seen).toHaveLength(2);
   });
 
   it('falls back to the deck for a block the ingest wrote with no slide behind it', async () => {
@@ -743,5 +772,72 @@ describe('notebook-aware page text (C2)', () => {
     await table.call('notes:blockAction', { fileId: NB, docId: 'doc_deck', blockId: 'b_2', kind: 'example', quote: 'x' });
     expect(fx.actor.last('blockAction')!.args[0]).toMatchObject({ passage: 'NOTEBOOK SECTION' });
     expect(fx.vaultReads).toEqual([]);
+  });
+});
+
+// ── tutorials (`tutorials.md` §4: Explain and Ask work on any line of the sheet) ─────────────
+
+describe('a block action on a tutorial sheet’s line', () => {
+  const TUT_KEY = `nb:${NB}:tut:f_tut`;
+  const withTutorial = () => {
+    const fx = fakeHost({ doc: deck(), fileId: NB, contentSha: `nb:${NB}` });
+    fx.db
+      .prepare(
+        `INSERT INTO notes_docs (id, content_sha, file_id, title, page_count, version, doc_json, ingest_status, ingest_version, created_at, updated_at)
+         VALUES ('doc_tut', @sha, 'f_tut', 'Tutorial 1', 12, 1, @json, 'ready', 1, @now, @now)`,
+      )
+      .run({
+        sha: TUT_KEY,
+        json: JSON.stringify(docOf(para('b_t1', 'Give a valid plan.', 'ingest', null, [9])).toJSON()),
+        now: '2026-10-03T10:00:00.000Z',
+      });
+    return fx;
+  };
+
+  it('opens its thread on the tutorial’s doc and reads the sheet’s page, with docKey', async () => {
+    const fx = withTutorial();
+    fx.notebookPageText = 'SHEET PAGE 9';
+    const out = await wire(fx).call<{ accepted: boolean; threadId: string }>('notes:blockAction', {
+      fileId: NB,
+      docId: 'doc_tut',
+      docKey: TUT_KEY,
+      blockId: 'b_t1',
+      kind: 'explain',
+      quote: 'Give a valid plan.',
+    });
+    expect(out.accepted).toBe(true);
+    const row = fx.db.prepare('SELECT doc_id, block_id FROM notes_threads WHERE thread_id = @t').get<{ doc_id: string; block_id: string }>({
+      t: out.threadId,
+    })!;
+    expect(row).toEqual({ doc_id: 'doc_tut', block_id: 'b_t1' });
+    expect(fx.notebookReads).toEqual([{ notebookId: NB, pageFrom: 9, pageTo: 9 }]);
+    expect(fx.actor.last('blockAction')!.args[0]).toMatchObject({ passage: 'SHEET PAGE 9' });
+  });
+
+  it('refuses another notebook’s tutorial key', async () => {
+    const fx = withTutorial();
+    const out = await wire(fx).call<{ reason: string | null }>('notes:blockAction', {
+      fileId: NB,
+      docId: 'doc_tut',
+      docKey: 'nb:nb_other:tut:f_tut',
+      blockId: 'b_t1',
+      kind: 'explain',
+      quote: 'x',
+    });
+    expect(out.reason).toBe('no_doc');
+  });
+
+  it('opens Ask… on a sheet line in the tutorial’s doc too', async () => {
+    const fx = withTutorial();
+    const out = await wire(fx).call<{ threadId: string }>('chat:openSpan', {
+      fileId: NB,
+      docKey: TUT_KEY,
+      blockId: 'b_t1',
+      quote: 'Give a valid plan.',
+      question: 'What counts as valid?',
+    });
+    const row = fx.db.prepare('SELECT doc_id FROM notes_threads WHERE thread_id = @t').get<{ doc_id: string }>({ t: out.threadId })!;
+    expect(row.doc_id).toBe('doc_tut');
+    expect(fx.notebookReads).toEqual([{ notebookId: NB, pageFrom: 9, pageTo: 9 }]);
   });
 });

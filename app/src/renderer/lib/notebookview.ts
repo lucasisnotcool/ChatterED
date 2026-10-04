@@ -16,6 +16,15 @@ import {
 } from '../../shared/notebook.js';
 import { childFolders, subtreeFolderIds, type FolderView } from '../../shared/folders.js';
 import type { OverviewMeta } from '../../shared/doc/types.js';
+import {
+  TUTOR_HELPER,
+  isSourceRole,
+  partsDone,
+  type SourceRole,
+  type TutorialCheckResult,
+  type TutorialHelpResult,
+  type TutorialView,
+} from '../../shared/tutorial.js';
 
 type ContextSource = Pick<NotebookSourceView, 'enabled' | 'status'>;
 
@@ -239,4 +248,123 @@ export function folderTree(folders: readonly FolderView[]): MoveTarget[] {
   };
   walk(null, 0);
   return out;
+}
+
+// ── Tutorials (`docs/research/tutorials.md` §1, §2; `TUTORIAL-CONTRACT.md` S1, S7) ─────────
+
+/**
+ * A source's role, read defensively: a main process from before tutorials sends no `role`, and
+ * every such source is a lecture (`SourceRole`'s own rule for what existed before 2026-10-03).
+ */
+export function roleOf(source: object): SourceRole {
+  const role = (source as { role?: unknown }).role;
+  return isSourceRole(role) ? role : 'lecture';
+}
+
+/** The tutorial a `solutions` source answers, read defensively the same way. */
+export function keyForOf(source: object): string | null {
+  const keyFor = (source as { keyFor?: unknown }).keyFor;
+  return typeof keyFor === 'string' && keyFor.length > 0 ? keyFor : null;
+}
+
+/** The role's word on a source row's badge and in its "Use as…" menu. */
+export function roleLabel(role: SourceRole): string {
+  return role === 'tutorial' ? 'Tutorial' : role === 'solutions' ? 'Solutions' : 'Lecture';
+}
+
+/** What each role does, for the "Use as…" menu's second line. */
+export function roleHint(role: SourceRole): string {
+  switch (role) {
+    case 'tutorial':
+      return 'Opens beside the notes, to answer part by part';
+    case 'solutions':
+      return 'Hidden. Only used to check your answers';
+    default:
+      return 'The overview and the notes are written from it';
+  }
+}
+
+/** A tutorial's status as the renderer sees it: main's view, or a read this renderer is starting. */
+export interface TutorialReading {
+  /** Page images being made and sent, before `tutorial:ingest` (null total: not counted yet). */
+  done: number;
+  total: number | null;
+}
+
+/**
+ * **The line under a tutorial's row** in the sources panel and the reading state's caption:
+ * *Reading the sheet…*, *9 parts · 4 done*, *Couldn't read the sheet*. `reading` is the renderer's
+ * own first step (the page images), which main's view does not know about.
+ */
+export function tutorialLine(
+  view: Pick<TutorialView, 'status' | 'parts' | 'docId'> | null,
+  reading: TutorialReading | null = null,
+): string {
+  if (reading) return 'Reading the sheet…';
+  if (!view) return 'Not read yet';
+  if (view.status === 'failed') return 'Couldn’t read the sheet';
+  if (view.status === 'pending' || !view.docId) return 'Reading the sheet…';
+  const { done, total } = partsDone(view);
+  if (total === 0) return 'No parts found';
+  return `${total} ${total === 1 ? 'part' : 'parts'} · ${done} done`;
+}
+
+/** The header's *Parts 4 / 9*. Empty before there is a document to count. */
+export function partsLabel(view: Pick<TutorialView, 'parts' | 'docId'> | null): string {
+  if (!view || !view.docId || view.parts.length === 0) return '';
+  const { done, total } = partsDone(view);
+  return `Parts ${done} / ${total}`;
+}
+
+/** A tab's words: the sheet's title, or its file name until it has been read. Short. */
+export function tutorialTabLabel(view: Pick<TutorialView, 'title'>, sourceName: string | null, max = 28): string {
+  const raw = view.title.trim() || (sourceName ?? 'Tutorial').replace(/\.[a-z0-9]+$/i, '').replace(/[_+]+/g, ' ');
+  return raw.length > max ? `${raw.slice(0, max - 1).trimEnd()}…` : raw;
+}
+
+/** Who answers which kind of help (`TUTOR_HELPER`, §4): the name a refusal names. */
+export function helperName(kind: 'hint' | 'refresher' | 'reveal' | 'check'): string {
+  if (kind === 'refresher') return 'Ellie';
+  return TUTOR_HELPER === 'ellie' ? 'Ellie' : 'Max';
+}
+
+/** Why a check was not run, in a line for the small toast under the part. Null when it ran. */
+export function checkRefusal(reason: TutorialCheckResult['reason'] | 'failed'): string | null {
+  switch (reason) {
+    case null:
+      return null;
+    case 'empty':
+      return 'Write an answer in this part first.';
+    case 'busy': {
+      const who = helperName('check');
+      return `${who} is still answering. Try again when ${who === 'Ellie' ? 'she has' : 'he has'} finished.`;
+    }
+    case 'no_doc':
+      return 'The sheet is not saved yet. Try again in a moment.';
+    default:
+      return 'That did not work. Try again.';
+  }
+}
+
+/** Why help was not given, in a line for the toast. Null when it was. */
+export function helpRefusal(
+  reason: TutorialHelpResult['reason'] | 'failed',
+  kind: 'hint' | 'refresher' | 'reveal',
+): string | null {
+  const who = helperName(kind);
+  const pronoun = who === 'Ellie' ? 'she has' : 'he has';
+  switch (reason) {
+    case null:
+      return null;
+    case 'top':
+      return 'That was the last hint. Try the part again, or use Show answer.';
+    case 'busy':
+      return `${who} is still answering. Try again when ${pronoun} finished.`;
+    case 'question_open':
+      return "Max's question is still open in the chat. Answer it or pass first.";
+    case 'no_doc':
+      return 'The sheet is not saved yet. Try again in a moment.';
+    default:
+      return 'That did not work. Try again.';
+  }
 }

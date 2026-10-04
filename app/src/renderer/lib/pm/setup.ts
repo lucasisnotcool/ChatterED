@@ -18,6 +18,7 @@ import { gapCursor } from 'prosemirror-gapcursor';
 import { history, redo, undo } from 'prosemirror-history';
 import { inputRules, textblockTypeInputRule, undoInputRule, wrappingInputRule } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
+import { structurePlugin } from './structure.js';
 import { liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-list';
 import type { Command, Plugin } from 'prosemirror-state';
 import { notesSchema } from '../../../shared/doc/schema.js';
@@ -29,6 +30,13 @@ import { searchHitPlugin } from './searchhit.js';
 import { readAloudPlugin } from './readaloud.js';
 import { tableGuard, tableKeymap } from './table.js';
 import { tableChrome } from './tableview.js';
+import {
+  practiceChipsPlugin,
+  tutorialNodeViewsPlugin,
+  tutorialPlugins,
+  type PracticeChipsContext,
+  type TutorialChromeContext,
+} from './tutorial.js';
 
 /** `# ` … `### ` at the start of a block. */
 function headingRule() {
@@ -68,6 +76,14 @@ export interface EditorKeys {
    * the key then falls through to the base keymap's `exitCode`.
    */
   submitAnswer: Command;
+  /**
+   * A **tutorial document** (`tutorial.ts`, 2026-10-03): its part chrome (status, Hint · Refresher
+   * · Check · Show answer, *From the notes:*), the folded course admin, and the keys that reach its
+   * blanks. Without it a tutorial document's blanks and tick boxes are still drawn as controls.
+   */
+  tutorial?: () => TutorialChromeContext;
+  /** The **main notes**: each section's "Practise · Tutorial 1: P1a ✓ · P1b" row (`tutorial.ts`). */
+  practice?: () => PracticeChipsContext;
 }
 
 export function editorPlugins(keys: EditorKeys): Plugin[] {
@@ -84,6 +100,12 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
   return [
     inputRules({ rules: [headingRule(), bulletRule(), orderedRule(), codeRule(), ...mathInputRules()] }),
     history(),
+    // A tutorial's blanks and tick boxes, and with a context its part chrome; ahead of the maths
+    // and the keymaps, so → ← and Tab beside a blank reach the blank first (`tutorial.ts`).
+    ...(keys.tutorial ? tutorialPlugins(keys.tutorial) : [tutorialNodeViewsPlugin()]),
+    ...(keys.practice ? [practiceChipsPlugin(keys.practice)] : []),
+    // ⌥↩ / ⇧⌥↩ and the ＋ line edges: out of a component; a pasted part as a reference (`structure.ts`).
+    structurePlugin(),
     // Formulas typeset at rest, stepped over as one unit, edited in a popover (`math.ts`). Ahead of
     // every keymap, so its arrow and delete keys at a formula's edge are seen first.
     mathPlugin(),

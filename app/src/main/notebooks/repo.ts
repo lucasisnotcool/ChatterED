@@ -26,6 +26,7 @@ import type { SqlDatabase } from '../db/driver.js';
 import { insert, plain, plainAll } from '../db/sql.js';
 import type { FileKind } from '../vault/kinds.js';
 import type { FolderView } from '../../shared/folders.js';
+import { isSourceRole, type SourceRole } from '../../shared/tutorial.js';
 import {
   contextFingerprint,
   virtualPageCount,
@@ -77,6 +78,9 @@ export interface SourceRow {
   status: SourceStatus;
   error: string | null;
   added_at: string;
+  /** Migration 028. Optional on an insert: the column defaults to `lecture`. */
+  role?: SourceRole;
+  key_for?: string | null;
 }
 
 /** A source with what its `files` row says about it. `file_*` are null if that row is gone. */
@@ -108,6 +112,8 @@ export function sourceView(row: SourceRecord): NotebookSourceView {
     status: row.status,
     error: row.error,
     addedAt: row.added_at,
+    role: isSourceRole(row.role) ? row.role : 'lecture',
+    keyFor: row.role === 'solutions' ? (row.key_for ?? null) : null,
   };
 }
 

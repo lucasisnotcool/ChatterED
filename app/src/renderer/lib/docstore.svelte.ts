@@ -22,7 +22,7 @@
  * of the same rule, for the race.
  */
 
-import { EditorState, NodeSelection, TextSelection } from 'prosemirror-state';
+import { EditorState, NodeSelection, TextSelection, type Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { RoomEvent } from '../../shared/types.js';
 import type {
@@ -85,6 +85,7 @@ import type { SlideReader } from './pm/sourcepop.js';
 import { pageLinesFor } from './pagelines.js';
 import { slideGroups, type SlideGroup, type SlideOverride } from '../../shared/doc/slidegroups.js';
 import { learnerTextByBlock } from './pm/doctext.js';
+import { tutorialContentKey } from '../../shared/tutorial.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
 const SAVE_DEBOUNCE_MS = 800;
@@ -128,6 +129,18 @@ interface SlideGroupsApi {
 
 function slideApi(): SlideGroupsApi {
   return bridge() as unknown as SlideGroupsApi;
+}
+
+/**
+ * `tutorial:doc` (`TUTORIAL-CONTRACT.md` S2), read off the bridge defensively for the same reason:
+ * a preload from before tutorials has no such call, and the tutorial column then says so.
+ */
+interface TutorialDocApi {
+  tutorialDoc?: (input: { notebookId: string; fileId: string }) => Promise<NotesDocView | null>;
+}
+
+function tutorialDocApi(): TutorialDocApi {
+  return bridge() as unknown as TutorialDocApi;
 }
 
 /**
@@ -287,6 +300,14 @@ export class DocStore {
   #notebook: NotebookView | null = null;
   /** A first ingest is being started for a notebook that just got a ready source. */
   #ingestStarting = false;
+  /**
+   * **A tutorial's document, not the notebook's notes** (`docs/research/tutorials.md`, S7). The
+   * second `DocStore` the tutorial column hosts: `fileId` is still the notebook (so a block action,
+   * the page lines and the citations go through the notebook, as on the notes), the document is
+   * the tutorial's own `notes_docs` row, loaded with `tutorial:doc` and saved with `notes:save` by
+   * its `docId`. The overview's machinery (first ingest, Update, the banner) never runs on it.
+   */
+  #tutorial: { notebookId: string; fileId: string } | null = null;
   /** Update overview was accepted: the next `ready` replaces the doc with main's (`#settleAfterIngest`). */
   #awaitingRewrite = false;
   // Plain on purpose: what was dismissed per notebook for this session, and timer handles.
@@ -296,7 +317,7 @@ export class DocStore {
   #lineTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // ── wiring set by `NotesPane` from `store.chat` (T5), so neither store imports the other ──
-  askAboutSpan: ((input: { blockId: string; quote: string }) => void) | null = null;
+  askAboutSpan: ((input: { blockId: string; quote: string; docKey?: string }) => void) | null = null;
   focusThread: ((threadId: string) => void) | null = null;
   spanThreads: (() => readonly SpanThreadView[]) | null = null;
   /** `store.progress.view` (N5's): the objectives list's fills (contract C5). */
@@ -316,8 +337,9 @@ export class DocStore {
    * when there is nothing. Retry is the learner's explicit `force`.
    */
   async open(fileId: string): Promise<void> {
-    if (this.fileId === fileId && this.docId) return;
+    if (this.fileId === fileId && this.docId && !this.#tutorial) return;
     const token = ++this.#openToken;
+    this.#tutorial = null;
     this.#reset();
     this.fileId = fileId;
     this.loading = true;
@@ -404,6 +426,86 @@ export class DocStore {
     await this.#maybeStartIngest();
   }
 
+  /**
+   * **Open a tutorial's document** (`tutorials.md` §2, S2). The slides are the notebook's, as on
+   * the notes, so a figure cropped from the sheet and a chip citing a lecture page both render.
+   * Nothing is ingested from here: with no document yet the tutorial column shows the reading
+   * state and `TutorialStore` sends the page images and starts the read.
+   */
+  async openTutorial(notebookId: string, fileId: string): Promise<void> {
+    const same = this.#tutorial?.notebookId === notebookId && this.#tutorial.fileId === fileId;
+    if (same && this.docId) return;
+    // The document on screen is written before it is let go: a tab switch must never lose a word.
+    if (this.#view || this.#saveTimer || this.#savePending) await this.#flushSave();
+    // Let the old view go without a snapshot: its teardown must not write it over the next one.
+    this.#view = null;
+    const token = ++this.#openToken;
+    this.#tutorial = { notebookId, fileId };
+    this.#reset();
+    this.fileId = notebookId;
+    this.loading = true;
+    this.#slides = new SlideSource(this.#notebookParts(notebookId), { open: openSource, paginate: paginateText });
+    this.slidesReady = true;
+    if (this.#notebook?.id === notebookId) this.pageCount = this.#notebook.pageCount;
+    await this.#loadTutorial(token);
+  }
+
+  /**
+   * **The tutorial's document was (re)written by main** (a first read finished, or Read again):
+   * take main's copy over whatever is on screen. Read again took the editor down first
+   * (`holdForReread`), so nothing of the old document is saved over the new one.
+   */
+  async reloadTutorial(): Promise<void> {
+    if (!this.#tutorial) return;
+    await this.#loadTutorial(this.#openToken);
+  }
+
+  async #loadTutorial(token: number): Promise<void> {
+    const which = this.#tutorial;
+    const api = tutorialDocApi();
+    if (!which) return;
+    try {
+      if (!api.tutorialDoc) {
+        this.error = 'Tutorials are not available in this build yet.';
+        return;
+      }
+      const view = await api.tutorialDoc({ notebookId: which.notebookId, fileId: which.fileId });
+      if (token !== this.#openToken) return;
+      this.error = null;
+      if (view) this.#adopt(view);
+    } catch (err) {
+      if (token === this.#openToken) this.error = message(err);
+    } finally {
+      if (token === this.#openToken) this.loading = false;
+    }
+  }
+
+  /**
+   * **Read again** is about to replace this document: save what is on screen (main carries the
+   * learner's answers over by part id from the *stored* document), then take the editor down
+   * without another save, as Regenerate does for the notes.
+   */
+  async holdForReread(): Promise<void> {
+    await this.#flushSave();
+    if (this.#saveTimer) clearTimeout(this.#saveTimer);
+    this.#saveTimer = null;
+    this.#savePending = false;
+    this.#cancelAnimations();
+    this.#view = null;
+    this.learnerTouched = false;
+  }
+
+  /** `{ docKey }` for a call about a line of a tutorial sheet (S7), else nothing. */
+  #docKey(): { docKey?: string } {
+    const t = this.#tutorial;
+    return t ? { docKey: tutorialContentKey(t.notebookId, t.fileId) } : {};
+  }
+
+  /** The tutorial this store holds, or null when it holds the notebook's notes. */
+  tutorialOf(): { notebookId: string; fileId: string } | null {
+    return this.#tutorial ? { ...this.#tutorial } : null;
+  }
+
   #notebookParts(fileId: string | null): SlidePart[] {
     const nb = this.#notebook;
     return nb && nb.id === fileId ? nb.sources : [];
@@ -428,7 +530,7 @@ export class DocStore {
   async #maybeStartIngest(): Promise<void> {
     const fileId = this.fileId;
     const nb = this.#notebook;
-    if (!fileId || !isNotebookId(fileId) || this.loading || this.docId || this.#ingestStarting) return;
+    if (this.#tutorial || !fileId || !isNotebookId(fileId) || this.loading || this.docId || this.#ingestStarting) return;
     if (this.ingest.status !== 'none' || !nb || nb.id !== fileId || notebookEmpty(nb) !== null) return;
     if (!has('notesIngest')) return;
     this.#ingestStarting = true;
@@ -457,7 +559,7 @@ export class DocStore {
   /** The Retry on a failed ingest (§ ingest states). */
   async retryIngest(): Promise<void> {
     const fileId = this.fileId;
-    if (!fileId || !has('notesIngest')) return;
+    if (this.#tutorial || !fileId || !has('notesIngest')) return;
     this.error = null;
     this.ingest = { ...this.ingest, status: 'pending', error: null };
     const token = this.#openToken;
@@ -484,7 +586,7 @@ export class DocStore {
    */
   async regenerate(): Promise<string | null> {
     const fileId = this.fileId;
-    if (!fileId || !has('notesRegenerate') || !has('notesIngest')) return null;
+    if (this.#tutorial || !fileId || !has('notesRegenerate') || !has('notesIngest')) return null;
     if (this.ingest.status === 'pending' || this.ingest.status === 'streaming') {
       return 'Ellie is still writing these notes. Regenerate them once she has finished.';
     }
@@ -578,8 +680,9 @@ export class DocStore {
     this.#slideInputs++;
     this.#groupsMemo = null;
     this.#openStrips.clear();
-    // The windows read this deck's pages: a different notebook takes them with it.
-    closeAllSlideWindows();
+    // The windows read this deck's pages: a different notebook takes them with it. A tutorial
+    // switching tabs is the same notebook, and the windows the notes opened stay.
+    if (!this.#tutorial) closeAllSlideWindows();
     this.ingest = { ...EMPTY_INGEST };
   }
 
@@ -655,7 +758,7 @@ export class DocStore {
     // A notebook's slides exist from the start (they open lazily); a lone PDF's arrive later.
     const source = this.#slides ?? (isNotebookId(fileId) ? null : await this.#waitForSlides(token));
     if (!source || token !== this.#openToken) return;
-    // Notebook pages (C1): every page of the ticked PDF and image sources, or those `only` keeps.
+    // Notebook pages (C1): every page of the ticked, lecture PDF and image sources, or those `only` keeps.
     const raster = source.ingestRaster(only);
     if (raster.pages.length === 0) return;
     this.rasterising = { done: 0, total: raster.pages.length };
@@ -825,6 +928,8 @@ export class DocStore {
   apply(e: RoomEvent): void {
     switch (e.type) {
       case 'notes.status': {
+        // A tutorial's read is reported on `tutorial:changed`, never here (`TutorialStore`).
+        if (this.#tutorial) return;
         const mine = this.docId ? e.docId === this.docId : this.fileId === e.fileId;
         // During an Update the doc may come back under a new id: the notebook is what matters then.
         if (!mine && !(this.#awaitingRewrite && e.fileId === this.fileId)) return;
@@ -1142,6 +1247,55 @@ export class DocStore {
     setTimeout(() => element.classList.remove('nd-flash'), 1_400);
   }
 
+  /** Is this block in the document on screen? (The chat asks, to route a thread's jump.) */
+  hasBlock(blockId: string): boolean {
+    const view = this.#view;
+    return view ? blockPos(view.state.doc, blockId) !== null : false;
+  }
+
+  /**
+   * The heading of the section a block is in: its own text when it is a heading, else the last
+   * heading above it. A tutorial part's *From the notes:* chip names the notes' section this way.
+   */
+  headingFor(blockId: string): string | null {
+    const view = this.#view;
+    if (!view) return null;
+    let last: string | null = null;
+    let found: string | null | undefined;
+    view.state.doc.forEach((node) => {
+      if (found !== undefined) return;
+      const isHeading = node.type.name === 'heading';
+      if (isHeading) last = node.textContent.trim() || last;
+      if (blockAttrs(node).blockId === blockId) {
+        found = last;
+        return;
+      }
+      let inside = false;
+      node.descendants((child) => {
+        if (inside) return false;
+        if (blockAttrs(child).blockId === blockId) inside = true;
+        return !inside;
+      });
+      if (inside) found = last;
+    });
+    return found ?? null;
+  }
+
+  /**
+   * Redraw a plugin's decorations without touching the document: `mark` sets that plugin's meta
+   * (the tutorial chrome's `bumpTutorialChrome`, the practice chips'). Not undoable, not saved.
+   */
+  redraw(mark: (tr: Transaction) => Transaction): void {
+    const view = this.#view;
+    if (!view) return;
+    view.dispatch(mark(view.state.tr).setMeta('addToHistory', false));
+  }
+
+  /** Is an editor on screen for this store? */
+  mounted(): boolean {
+    return this.#view !== null;
+  }
+
   /** Everything on screen written to main, waiting for it (the search page, before it switches notebooks). */
   async flush(): Promise<void> {
     await this.#flushSave();
@@ -1218,7 +1372,7 @@ export class DocStore {
     if (!blockId) return false;
     const quote = view.state.doc.textBetween(from, to, ' ', ' ').trim();
     if (!quote) return false;
-    this.askAboutSpan?.({ blockId, quote });
+    this.askAboutSpan?.({ blockId, quote, ...this.#docKey() });
     return true;
   }
 
@@ -1413,8 +1567,21 @@ export class DocStore {
    * undoable and saved like typing; the figure's page counts towards the section it lands in.
    */
   insertSlide(page: number, rect: Rect | null, afterBlockId: string | null = null): boolean {
+    return this.#insertImage(page, rect, afterBlockId) !== null;
+  }
+
+  /**
+   * **An image dropped on the sheet** (2026-10-04): the whole page of the image source it became,
+   * after the block it was dropped on (`dropguard.ts` `dropAnchor`). Returns the new block's id,
+   * so the next of several dropped together goes after it and they keep the order they came in.
+   */
+  insertDroppedImage(page: number, afterBlockId: string | null): string | null {
+    return this.#insertImage(page, null, afterBlockId);
+  }
+
+  #insertImage(page: number, rect: Rect | null, afterBlockId: string | null): string | null {
     const view = this.#view;
-    if (!view) return false;
+    if (!view) return null;
     const state = view.state;
     let pos: number | null = null;
     if (afterBlockId) {
@@ -1431,12 +1598,13 @@ export class DocStore {
     if (pos === null) pos = state.doc.content.size;
     // A paragraph holding the image, in line with text (2026-10-03), with its id now, not at the
     // authorship stamp's leisure: the strips and the chips key on it.
-    const tr = state.tr.insert(pos, imageParagraph(page, rect, newBlockId()));
+    const blockId = newBlockId();
+    const tr = state.tr.insert(pos, imageParagraph(page, rect, blockId));
     // The image selected, its corner handles showing: the next thing a learner does is size it.
     tr.setSelection(NodeSelection.create(tr.doc, pos + 1)).scrollIntoView();
     view.dispatch(tr);
     view.focus();
-    return true;
+    return blockId;
   }
 
   // ── §6: the learner's own doc text ────────────────────────────────────────────────────────
@@ -1572,7 +1740,7 @@ export class DocStore {
     if (!found) return;
     const quote = blockQuote(found.node);
     if (kind === 'ask') {
-      this.askAboutSpan?.({ blockId, quote });
+      this.askAboutSpan?.({ blockId, quote, ...this.#docKey() });
       return;
     }
     const fileId = this.fileId;
@@ -1586,7 +1754,7 @@ export class DocStore {
     this.#setBlockLine(blockId, { kind, author, state: 'running', line: kind === 'quiz' ? 'Max is asking…' : 'Ellie is writing…' }, BLOCK_ACTION_MS);
     try {
       await this.#flushSave();
-      const result = await bridge().notesBlockAction({ fileId, docId, blockId, kind, quote });
+      const result = await bridge().notesBlockAction({ fileId, docId, blockId, kind, quote, ...this.#docKey() });
       if (fileId !== this.fileId) return;
       if (!result.accepted) {
         this.#refuseBlock(blockId, kind, blockActionRefusal(result.reason));
@@ -1722,7 +1890,7 @@ export class DocStore {
    */
   async updateOverview(): Promise<string | null> {
     const fileId = this.fileId;
-    if (!fileId || !this.docId || !has('notesUpdateOverview') || this.updatingOverview) return null;
+    if (this.#tutorial || !fileId || !this.docId || !has('notesUpdateOverview') || this.updatingOverview) return null;
     const token = this.#openToken;
     this.updatingOverview = true;
     const before = { ...this.ingest };

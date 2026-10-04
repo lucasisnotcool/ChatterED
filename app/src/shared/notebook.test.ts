@@ -24,6 +24,8 @@ function source(over: Partial<NotebookSourceView>): NotebookSourceView {
     status: 'ready',
     error: null,
     addedAt: '2026-10-01T00:00:00Z',
+    role: 'lecture',
+    keyFor: null,
     ...over,
   };
 }

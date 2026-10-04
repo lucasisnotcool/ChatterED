@@ -227,6 +227,12 @@ describe('ingestPages: what the ingest is shown as images', () => {
   it('can be limited to the sources an Update has not seen', () => {
     expect(ingestPages(PARTS, (p) => p.fileId === 'photo')).toEqual([10]);
   });
+
+  it('shows the overview lecture sources only: never a tutorial or its solutions', () => {
+    const parts = [PARTS[0]!, PARTS[1]!, { ...PARTS[2]!, role: 'tutorial' as const }];
+    expect(ingestPages(parts)).toEqual([1, 2, 3, 4, 5]);
+    expect(ingestPages([{ ...PARTS[0]!, role: 'solutions' as const }])).toEqual([]);
+  });
 });
 
 describe('wrapWords: a text page as a card', () => {

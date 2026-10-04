@@ -1,0 +1,37 @@
+/* ══ FLOATING WINDOWS' FRAME (lib/floatframe.ts) ═══════════════════════════════════════════
+   4 Oct 2026. Shared by the slide windows (`.nd-sw`) and the popped-out tutorial (`.tw`): eight
+   invisible handles on the border, each with its cursor, and no part of a floating window ever
+   in the app's drag region. Global, because the handles are made in code. */
+
+/* Electron subtracts no-drag boxes from the title bar's drag region. The windows are also kept
+   below the bar (`floatArea`), so this only matters mid-transition; it costs nothing. */
+.ff-window,
+.ff-window .ff-h {
+  -webkit-app-region: no-drag;
+}
+
+.ff-h {
+  position: absolute;
+  z-index: 20;
+  touch-action: none;
+  background: transparent;
+}
+/* Edges: 6 px, inside the border (the windows clip their overflow). Corners: 12 px squares. */
+.ff-h-n, .ff-h-s { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.ff-h-e, .ff-h-w { top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; }
+.ff-h-n { top: 0; }
+.ff-h-s { bottom: 0; }
+.ff-h-e { right: 0; }
+.ff-h-w { left: 0; }
+.ff-h-nw, .ff-h-ne, .ff-h-sw, .ff-h-se { width: 12px; height: 12px; }
+.ff-h-nw { top: 0; left: 0; cursor: nwse-resize; }
+.ff-h-se { bottom: 0; right: 0; cursor: nwse-resize; }
+.ff-h-ne { top: 0; right: 0; cursor: nesw-resize; }
+.ff-h-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+
+/* Mid-gesture the cursor holds everywhere, however fast the pointer leaves the handle. */
+html.ff-resizing,
+html.ff-resizing * {
+  cursor: var(--ff-cursor, default) !important;
+  user-select: none !important;
+}

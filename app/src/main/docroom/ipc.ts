@@ -33,6 +33,9 @@ import type {
   NotesGenerateBlockResult,
 } from '../../shared/ipc.js';
 import { isNotebookId } from '../../shared/notebook.js';
+import { parseTutorialContentKey } from '../../shared/tutorial.js';
+import { docFromJson } from '../../shared/doc/schema.js';
+import { notesRepo } from '../db/repos/notes.js';
 import { scopeShownFor } from '../../shared/scope.js';
 import { referenceContext, saveFlowState } from '../flowroom.js';
 import type { ReferenceContext } from '../../room/reference.js';
@@ -110,6 +113,38 @@ async function pageText(host: DocHost, fileId: string, pageFrom: number, pageTo:
   return host.vault.textFor({ fileId, pageFrom, pageTo });
 }
 
+/** A doc by its id (a tutorial's, which `fileBytesKey` does not name), parsed. */
+function notesDocById(host: DocHost, docId: string): { doc: ReturnType<typeof docFromJson> | null } | null {
+  const record = notesRepo(host.db).byId(docId);
+  if (!record) return null;
+  try {
+    return { doc: record.doc ? docFromJson(record.doc) : null };
+  } catch {
+    return { doc: null };
+  }
+}
+
+/**
+ * The content key a block action's block is in: the notes', or — with `docKey` — this notebook's
+ * tutorial's. Any other key is refused rather than trusted: the renderer names a doc of the
+ * notebook it is on, never another's.
+ */
+function blockDocKey(fileId: string, docKey: string | undefined, notesKey: string | null): string | null {
+  if (!docKey) return notesKey;
+  const parsed = parseTutorialContentKey(docKey);
+  return parsed && parsed.notebookId === fileId ? docKey : null;
+}
+
+/**
+ * The tutorial content key of a span thread's doc, when the thread is on a tutorial sheet's line,
+ * else null. Passed to the actor with the thread so its doc line goes into the sheet, not the notes.
+ */
+function tutorialKeyOf(host: DocHost, docId: string | null | undefined): string | null {
+  if (!docId) return null;
+  const sha = notesRepo(host.db).byId(docId)?.contentSha ?? null;
+  return sha !== null && parseTutorialContentKey(sha) !== null ? sha : null;
+}
+
 /** The material a room was opened on: where the deck's outline and its file id are kept. */
 function materialFor(host: DocHost, roomId: string): { fileId: string | null; outline: string } {
   const room = host.store.rooms.get(roomId);
@@ -141,7 +176,10 @@ async function contextFor(
         (k) => k.contentSha,
         () => null,
       );
-      const opened = openNotesDoc(host.db, { contentSha, fileId: input.fileId });
+      // A span thread on a tutorial sheet's line lives in the tutorial's doc (`tutorials.md` §4),
+      // not the notes: its block's pages are read from there.
+      const own = thread.docId ? notesDocById(host, thread.docId) : null;
+      const opened = own ?? openNotesDoc(host.db, { contentSha, fileId: input.fileId });
       const pages = pagesForBlock(opened?.doc ?? null, thread.blockId);
       if (pages.length > 0) {
         const from = Math.min(...pages);
@@ -265,10 +303,19 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         ? repo.ensureDocThread({ roomId, docId, threadId, now: now() })
         : repo.get(roomId, threadId);
 
+    // A thread on a tutorial part is the part's tutor's to answer (`tutorial/reply.ts`).
+    if (thread?.kind === 'span' && host.tutorialReply) {
+      const routed = await host
+        .tutorialReply({ roomId, threadId, docId: thread.docId ?? null, blockId: thread.blockId ?? null, text: input.text }, actor)
+        .catch(() => false);
+      if (routed) return { roomId, threadId };
+    }
+
     const context = await contextFor(host, { roomId, fileId: input.fileId, thread, question: input.text });
     const target = docActor(actor);
     if (thread?.kind === 'span' && thread.blockId && actorHas(target, 'noteSpanThread')) {
-      target.noteSpanThread({ threadId, blockId: thread.blockId, quote: thread.quote ?? null });
+      const contentKey = tutorialKeyOf(host, thread.docId);
+      target.noteSpanThread({ threadId, blockId: thread.blockId, quote: thread.quote ?? null, ...(contentKey ? { contentKey } : {}) });
     }
     try {
       await target.sendMessage(input.text, threadId, context ?? undefined);
@@ -289,7 +336,7 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
    * to be about an objective is how a question the learner asked can end up filling the bar. When
    * the pages are taught by two objectives, or by none, it stays null rather than being guessed.
    */
-  handle<{ fileId: string; blockId: string; quote: string; question: string }>(
+  handle<{ fileId: string; blockId: string; quote: string; question: string; docKey?: string }>(
     'chat:openSpan',
     async (input) => {
       // `blockId: ''` is T2's "not minted yet", not a name. A thread anchored to it would match
@@ -300,7 +347,9 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         (k) => k.contentSha,
         () => null,
       );
-      const opened = openNotesDoc(host.db, { contentSha, fileId: input.fileId });
+      // Ask… on a tutorial sheet's line (`tutorials.md` §4): the thread is on the tutorial's doc.
+      const docKey = blockDocKey(input.fileId, input.docKey, contentSha);
+      const opened = openNotesDoc(host.db, { contentSha: docKey, fileId: input.docKey ? null : input.fileId });
       const objectiveId = objectiveForBlock(host.objectivesTree(input.fileId), opened?.doc ?? null, input.blockId);
 
       const threadId = newId(SPAN_THREAD_PREFIX.replace(/_$/, ''));
@@ -322,7 +371,12 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
       });
       const target = docActor(actor);
       if (actorHas(target, 'noteSpanThread')) {
-        target.noteSpanThread({ threadId, blockId: input.blockId, quote: cap(input.quote, QUOTE_CAP) });
+        target.noteSpanThread({
+          threadId,
+          blockId: input.blockId,
+          quote: cap(input.quote, QUOTE_CAP),
+          ...(input.docKey && docKey ? { contentKey: docKey } : {}),
+        });
       }
       try {
         await target.sendMessage(input.question, threadId, context ?? undefined);
@@ -621,7 +675,9 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
     ): NotesBlockActionResult => ({ accepted: false, roomId, threadId, reason });
     if (!input.blockId) return refuse('no_doc');
     const key = await host.fileBytesKey(input.fileId).catch(() => null);
-    const opened = openNotesDoc(host.db, { contentSha: key?.contentSha ?? null, fileId: input.fileId });
+    const docKey = blockDocKey(input.fileId, input.docKey, key?.contentSha ?? null);
+    if (!docKey) return refuse('no_doc');
+    const opened = openNotesDoc(host.db, { contentSha: docKey, fileId: input.docKey ? null : input.fileId });
     if (!opened?.doc) return refuse('no_doc');
 
     const { roomId, actor } = await host.openFlowRoom(input.fileId);
@@ -658,6 +714,8 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
         context,
         objectiveId,
         passage: context?.scope === 'segment' ? context.passageText : null,
+        // A tutorial sheet's line: the doc line goes into the sheet, and Quiz me is refused there.
+        contentKey: input.docKey ? docKey : null,
       });
     } catch (err) {
       discard();

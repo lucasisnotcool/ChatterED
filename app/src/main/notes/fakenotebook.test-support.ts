@@ -18,6 +18,7 @@ import {
   type NotebookSourceView,
   type SourceKind,
 } from '../../shared/notebook.js';
+import type { SourceRole } from '../../shared/tutorial.js';
 
 export interface FakeSource {
   fileId: string;
@@ -30,6 +31,9 @@ export interface FakeSource {
   status?: NotebookSourceView['status'];
   /** Null for a source not read yet. Defaults to `sha-<fileId>`. */
   contentSha?: string | null;
+  /** Migration 028: `lecture` by default. */
+  role?: SourceRole;
+  keyFor?: string | null;
 }
 
 export interface FakeNotebook {
@@ -61,6 +65,8 @@ export function fakeNotebook(id: string, sources: FakeSource[], name = 'Planning
       status: s.status ?? 'ready',
       error: null,
       addedAt: '2026-10-01T09:00:00.000Z',
+      role: s.role ?? 'lecture',
+      keyFor: s.keyFor ?? null,
     }));
 
   const subjectOf = (): NotebookSubject => {
@@ -77,21 +83,25 @@ export function fakeNotebook(id: string, sources: FakeSource[], name = 'Planning
 
   state.host = {
     subject: (notebookId) => (notebookId === id ? subjectOf() : null),
-    deckText: (notebookId) => {
+    deckText: (notebookId, opts) => {
       if (notebookId !== id) return { text: '', truncated: false };
+      const roles = opts?.roles ?? ['lecture', 'tutorial'];
       const parts: string[] = [];
       for (const s of state.sources) {
         if ((s.enabled ?? true) === false || (s.status ?? 'ready') !== 'ready') continue;
+        const role = s.role ?? 'lecture';
+        if (role === 'solutions' || !roles.includes(role)) continue;
         parts.push(`=== SOURCE: ${s.name} ===`);
         s.pages.forEach((text, i) => parts.push(`[p. ${s.pageBase + i + 1}]`, text));
       }
       return { text: parts.join('\n'), truncated: state.truncated };
     },
-    textFor: ({ notebookId, pageFrom, pageTo }) => {
+    textFor: ({ notebookId, pageFrom, pageTo, includeSolutions }) => {
       if (notebookId !== id) return '';
       const out: string[] = [];
       for (let p = pageFrom; p <= pageTo; p += 1) {
         const hit = locatePage(state.sources.map((s) => ({ ...s, pageCount: s.pages.length })), p);
+        if (hit && hit.source.role === 'solutions' && includeSolutions !== true) continue;
         if (hit) out.push(hit.source.pages[hit.localPage - 1] ?? '');
       }
       return out.join('\n');

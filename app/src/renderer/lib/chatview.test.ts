@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  composeTarget,
   AGENT_HUE,
   agentOf,
   chatComposer,
@@ -230,5 +231,30 @@ describe('tabs', () => {
     expect(out[0]!.unread).toBe(2);
     expect(out[1]!.unread).toBe(0);
     expect(out[2]!.unread).toBe(3);
+  });
+});
+
+describe('composeTarget: where the composer sends (2026-10-04)', () => {
+  const base = { replyTo: null, spanThreadIds: ['span:a', 'span:b'], openQuizThreadId: null, docThreadId: 'doc' };
+
+  it('sends to the notebook chat when nothing is chosen or open', () => {
+    expect(composeTarget(base)).toEqual({ threadId: 'doc', replying: false, answering: false });
+  });
+
+  it("answers Max's open question when no thread is chosen", () => {
+    expect(composeTarget({ ...base, openQuizThreadId: 'span:b' })).toEqual({ threadId: 'span:b', replying: false, answering: true });
+  });
+
+  it('replies in the chosen thread, a tutorial hint that ends in a question included', () => {
+    expect(composeTarget({ ...base, replyTo: 'span:a' })).toEqual({ threadId: 'span:a', replying: true, answering: false });
+  });
+
+  it('is answering only when the chosen thread is the one with the open question', () => {
+    expect(composeTarget({ ...base, replyTo: 'span:a', openQuizThreadId: 'span:b' }).answering).toBe(false);
+    expect(composeTarget({ ...base, replyTo: 'span:b', openQuizThreadId: 'span:b' }).answering).toBe(true);
+  });
+
+  it('falls back when the chosen thread is gone (a chat reset)', () => {
+    expect(composeTarget({ ...base, replyTo: 'span:gone' })).toEqual({ threadId: 'doc', replying: false, answering: false });
   });
 });

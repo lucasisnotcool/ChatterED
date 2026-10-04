@@ -574,7 +574,10 @@ export class PdfSlides {
 export type SlidePart = Pick<
   NotebookSourceView,
   'fileId' | 'name' | 'kind' | 'pageBase' | 'pageCount' | 'enabled' | 'status'
->;
+> & {
+  /** Absent on a source from before tutorials (and the one-PDF path): a lecture. */
+  role?: NotebookSourceView['role'];
+};
 
 /** A source's bytes as `openDocument({ fileId })` hands them over: a PDF's or image's, or text. */
 export interface SourceContent {
@@ -648,10 +651,14 @@ export function pageTitle(parts: readonly SlidePart[], page: number): string {
   return part.kind === 'text' ? `${name} §${String(localPage)}` : `${name} p. ${String(localPage)}`;
 }
 
-/** The pages the ingest is shown as images: ticked, ready PDF and image sources (text it reads). */
+/**
+ * The pages the ingest is shown as images: ticked, ready PDF and image sources (text it reads),
+ * and **lecture** ones only (tutorials S1): a tutorial's pages are sent when the sheet is read,
+ * and a solutions source's never.
+ */
 export function ingestPages(parts: readonly SlidePart[], only?: (part: SlidePart) => boolean): number[] {
   return parts
-    .filter((p) => p.enabled && p.status === 'ready' && p.kind !== 'text' && (!only || only(p)))
+    .filter((p) => p.enabled && p.status === 'ready' && p.kind !== 'text' && (p.role ?? 'lecture') === 'lecture' && (!only || only(p)))
     .flatMap((part) => pagesOfSource(part))
     .sort((a, b) => a - b);
 }

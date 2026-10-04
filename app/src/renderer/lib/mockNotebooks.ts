@@ -31,6 +31,7 @@ import {
   type NotebookView,
   type SourceRefusal,
 } from '../../shared/notebook.js';
+import type { SourceRole } from '../../shared/tutorial.js';
 import {
   childFolders,
   freshFolderName,
@@ -323,6 +324,8 @@ export class MockNotebooks {
         status: 'reading',
         error: null,
         addedAt: this.#now(),
+        role: 'lecture',
+        keyFor: null,
       };
       added.push(source);
     }
@@ -356,6 +359,18 @@ export class MockNotebooks {
     for (const s of n.sources) {
       // A source that failed to read cannot be in context: there is nothing to read.
       if (input.fileIds.includes(s.fileId) && s.status !== 'failed') s.enabled = input.enabled;
+    }
+    return this.#changed(n);
+  }
+
+  /** `notebook:setRole` (tutorials, S1): `keyFor` defaults to the only tutorial, as main's does. */
+  setRole(input: { notebookId: string; fileId: string; role: SourceRole; keyFor?: string | null }): NotebookView {
+    const n = this.#get(input.notebookId);
+    const source = n.sources.find((s) => s.fileId === input.fileId);
+    if (source) {
+      source.role = input.role;
+      const tutorials = n.sources.filter((s) => s.role === 'tutorial' && s.fileId !== input.fileId);
+      source.keyFor = input.role === 'solutions' ? (input.keyFor ?? (tutorials.length === 1 ? tutorials[0]!.fileId : null)) : null;
     }
     return this.#changed(n);
   }

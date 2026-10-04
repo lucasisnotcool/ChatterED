@@ -70,6 +70,7 @@ import { SegmentService, type SplitInput } from './vault/segments.js';
 import type { ConfirmRequest, DocHost } from './dochost.js';
 import { registerNotesIpc } from './notes/ipc.js';
 import { createDocPort } from './notes/docport.js';
+import { parseTutorialContentKey } from '../shared/tutorial.js';
 import { sourceProfile } from './notes/overview.js';
 import { registerDocRoomIpc } from './docroom/ipc.js';
 import { buildProgress, registerProgressIpc } from './docroom/progress.js';
@@ -86,6 +87,11 @@ import { SearchIndex } from './search/index.js';
 import { registerSearchIpc } from './search/ipc.js';
 import { resolveModelDir } from './search/modelpath.js';
 import { importLegacyNotebooks } from './notebooks/legacy.js';
+// Tutorials (`docs/research/tutorials.md`, 2026-10-03): roles, the sheet's doc, checks and help.
+import { registerTutorialIpc, tutorialDepsFor } from './tutorial/ipc.js';
+import { replyInPart, tutorialPartStates } from './tutorial/reply.js';
+import { onRoleChanged as tutorialRoleChanged } from './tutorial/ingest.js';
+import type { TutorialDeps } from './tutorial/context.js';
 import { ensureManagedVault, isManagedVault } from './vault/managed.js';
 import { isNotebookId, notebookContentKey } from '../shared/notebook.js';
 import type { MaterialRow } from '../room/records.js';
@@ -144,6 +150,7 @@ export class AppService {
   readonly #embedder: Embedder;
   readonly #search: SearchIndex;
   readonly #notebookHost: NotebookHostImpl;
+  #tutorialDeps: TutorialDeps | null = null;
   readonly #cost: CostLedger;
   /** Running app-level totals since launch, so `cost.updated` needs no second query per call. */
   #sessionTokens: CostTokens = emptyTokens();
@@ -183,6 +190,8 @@ export class AppService {
       },
       confirm: (input) => this.#confirm(input),
       onDeleted: (notebookId) => this.#retireNotebookRoom(notebookId),
+      // Solutions for a tutorial rewrite its hidden key (`tutorials.md` §5), in the background.
+      onRoleChanged: (change) => tutorialRoleChanged(this.#tutorial(), change),
     });
     /**
      * **Search.** The model ships in the app (Resources/models, or app/models in dev), so search
@@ -597,6 +606,13 @@ export class AppService {
         contentSha: material.file_sha256,
         roomId,
       }),
+      // TUTORIAL-CONTRACT S5: a tutorial turn writes its one line into the tutorial's own doc.
+      docPortFor: (contentKey) =>
+        createDocPort(this.docHost(), { fileId: parseTutorialContentKey(contentKey)?.fileId ?? null, contentSha: contentKey, roomId }),
+      // 2026-10-04: the notebook's tutorial parts, for the guard on every turn (`tutorial/reply.ts`).
+      ...(material.file_id && isNotebookId(material.file_id)
+        ? { tutorialParts: () => tutorialPartStates(this.#tutorial(), material.file_id!) }
+        : {}),
       // collab-doc §4.8: what Ellie's idle recap is read from. The same view the bar draws and
       // the same rows it is drawn from, so the message and the bar cannot disagree.
       fileProgress: async () => {
@@ -1038,6 +1054,14 @@ export class AppService {
    * so the notes ingest, the chats and the progress bar are three modules beside this file and
    * not three more sections of it.
    */
+  /** What the tutorial module is given (`main/tutorial/context.ts`), made once. */
+  #tutorial(): TutorialDeps {
+    this.#tutorialDeps ??= tutorialDepsFor(this.docHost(), (change) =>
+      this.#d.getWindow()?.webContents.send(IPC.tutorialChanged, change),
+    );
+    return this.#tutorialDeps;
+  }
+
   docHost(): DocHost {
     const roomFor = async (fileId: string, create: boolean) => {
       if (create) {
@@ -1088,6 +1112,7 @@ export class AppService {
         return found ? { roomId: found.roomId, actor: found.actor } : null;
       },
       actorFor: (roomId) => this.#requireActor(roomId),
+      tutorialReply: (input, actor) => replyInPart(this.#tutorial(), input, actor),
       currentActor: () => this.#actor,
       fileForRoom: (roomId) => this.#fileIdForRoom(roomId),
       persistFlow: () => this.#persistFlow(),
@@ -1202,6 +1227,7 @@ export class AppService {
     registerNotesIpc(docHost, handle);
     registerDocRoomIpc(docHost, handle);
     registerProgressIpc(docHost, handle);
+    registerTutorialIpc(this.#tutorial(), handle);
     registerSearchIpc({ index: this.#search, handle });
     // Notebooks (`docs/research/notebooks.md`): the home, the sources panel and the drop path.
     registerNotebookIpc({

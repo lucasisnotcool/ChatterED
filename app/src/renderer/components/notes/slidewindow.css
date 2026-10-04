@@ -1,7 +1,8 @@
 /* ══ SLIDE WINDOWS (lib/pm/slidewindow.ts) ═════════════════════════════════════════════════
    3 Oct 2026, second cut: the popover beside a chip became a window that floats over the app,
-   moved by its title bar and resized from its corner, open until it is closed. Self-contained:
-   it does not lean on notes.css, because the windows live on <body>, outside the notes pane.
+   moved by its title bar and resized from any edge or corner (`floatframe.css`), open until it
+   is closed. Self-contained: it does not lean on notes.css, because the windows live on <body>,
+   outside the notes pane.
    Place and size are set in code (`slidegeom.ts`). */
 
 .nd-sw {
@@ -50,16 +51,6 @@
 }
 .nd-sw > .nd-sp-foot { padding: 8px 10px 10px; }
 .nd-sw-close { font-size: 14px; line-height: 1.2; }
-.nd-sw-grip {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 50%, #c9c9d8 50%, #c9c9d8 58%, transparent 58%, transparent 70%, #c9c9d8 70%, #c9c9d8 78%, transparent 78%);
-  touch-action: none;
-}
 
 .nd-sw-bar,
 .nd-sp-foot {

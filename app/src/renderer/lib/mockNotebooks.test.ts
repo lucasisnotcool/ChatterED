@@ -76,6 +76,7 @@ describe('MockNotebooks', () => {
     const { model, pushed } = setup();
     const source: NotebookSourceView = {
       fileId: 'f1', name: 'x.pdf', kind: 'pdf', pageBase: 0, pageCount: 3, enabled: true, status: 'ready', error: null, addedAt: '2026-09-01T00:00:00.000Z',
+      role: 'lecture', keyFor: null,
     };
     model.seed({ id: 'nb_old000000000', name: 'Old', sources: [source], subtitle: null, fill: null, updatedAt: '2026-09-01T00:00:00.000Z' });
     model.seed({ id: 'nb_new000000000', name: 'New', sources: [], subtitle: null, fill: 0.5, updatedAt: '2026-09-20T00:00:00.000Z' });

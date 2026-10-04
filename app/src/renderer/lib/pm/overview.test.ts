@@ -98,6 +98,12 @@ describe('the note slot', () => {
     expect(showsChip(block('b_s1_i1'))).toBe(true);
     expect(showsChip(block('b_s1'))).toBe(true);
   });
+
+  it('is not drawn on a tutorial sheet\'s own words, but is on a hint line that cites the lecture', () => {
+    const para = (reason: string) => notesSchema.nodes.paragraph!.create({ blockId: 'b_x', pages: [60], reason, objectiveIds: [] }, notesSchema.text('x'));
+    for (const reason of ['sheet', 'sheet_admin', 'sheet_part', 'answer_slot']) expect(showsChip(para(reason))).toBe(false);
+    expect(showsChip(para('tutor_hint'))).toBe(true);
+  });
 });
 
 describe('chipLabel: citations through the notebook (C1)', () => {

@@ -287,6 +287,49 @@ export function scriptedBlockReply(request: LlmRequest, cue: string): string {
       'What the example shows: the line is a rule you can apply, not only a definition.',
     ].join('\n\n');
   }
+  if (cue.startsWith('tutor_')) return scriptedTutorReply(request, cue);
+  return '';
+}
+
+/**
+ * **A tutorial turn in a scripted room** (`TUTORIAL-CONTRACT.md` S5). No script was written for
+ * a problem sheet, so each kind gets a generic reply in its shape, with the pages the prompt
+ * linked: plausible for the dev mock, plainly not a model, and never the answer before a release.
+ */
+export function scriptedTutorReply(request: LlmRequest, cue: string): string {
+  const all = [...request.system.map((b) => b.text), ...request.messages.map((m) => m.content)].join('\n');
+  const pages = [...new Set([...all.matchAll(/Lecture p\. (\d+)/g)].map((m) => Number(m[1])))];
+  const where = pages.length > 0 ? pages.map((p) => `p. ${p}`).join(' and ') : 'the lecture';
+  if (cue.startsWith('tutor_hint')) {
+    if (all.includes('THIS IS HINT 2 OF 3')) {
+      return [
+        'Break it into steps:',
+        `1. What has to be true before the first action can run? (${where})`,
+        '2. What does each action change?',
+        '3. Which order gets you from the start to the goal?',
+      ].join('\n');
+    }
+    if (all.includes('THIS IS HINT 3 OF 3')) {
+      return `On the lecture's example (${where}), the first step is to list what each action needs and what it changes, then pick the one whose needs already hold. Now do that same step on the part.`;
+    }
+    return `Look at ${where}: the definition there is what this part turns on. Which of its conditions does your answer have to satisfy?`;
+  }
+  if (cue.startsWith('tutor_refresher')) {
+    return `The idea this part rests on is on ${where}: an action has preconditions that must hold before it runs and effects that hold after. Want to go back to the part with that in mind?`;
+  }
+  if (cue.startsWith('tutor_feedback')) {
+    const opener = /Your first line is exactly \*\*([^*]+)\*\*/.exec(all)?.[1] ?? 'Partly there.';
+    return opener === 'Well done.'
+      ? `${opener}\n\nThat holds, and it matches ${where}. Why does it work?`
+      : `${opener}\n\nThe start of it is right. What does ${where} say has to hold before the next step?`;
+  }
+  if (cue.startsWith('tutor_reply')) {
+    return `Part of that holds. Look again at ${where}: which condition does your answer still have to meet?`;
+  }
+  if (cue.startsWith('tutor_reveal')) {
+    const answer = quoted(request, 'THE ANSWER, WHICH YOU NOW GIVE') || 'the model answer';
+    return `Here is the answer: ${answer}\n\nIt follows from ${where}. In one line, in your own words: why does it work?`;
+  }
   return '';
 }
 

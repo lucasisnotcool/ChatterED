@@ -18,7 +18,13 @@
  * the chat and progress stores with the notebook id is therefore `store.openNotebook`'s job.
  */
 
-import type { AddSourcesResult, NotebookSummary, NotebookView } from '../../shared/notebook.js';
+import {
+  toNotebookPage,
+  type AddSourcesResult,
+  type NotebookSourceView,
+  type NotebookSummary,
+  type NotebookView,
+} from '../../shared/notebook.js';
 import type { FolderView } from '../../shared/folders.js';
 import { bridge } from './bridge.js';
 import { patchList, refusalNotice } from './notebookview.js';
@@ -247,6 +253,77 @@ export class NotebookStore {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * **An image dropped into the notes or a tutorial sheet** (2026-10-04). It becomes a source, as
+   * it would dropped on Sources, because an image in a sheet is a page of the notebook: a
+   * `slide_image` cites a notebook page, so the picture keeps its provenance and opens in a slide
+   * window like any other. Resolves to that page once main has read the source and fixed its
+   * base (`service.ts`: a base is set at `ready`, not at add), or null when it did not go in,
+   * which is said in a line. An image that is already a source goes in again from its page
+   * rather than being refused as a duplicate.
+   */
+  async addImage(path: string, name: string): Promise<number | null> {
+    const notebookId = this.id;
+    if (!notebookId) return null;
+    let result: AddSourcesResult;
+    try {
+      result = await bridge().notebookAddSources({ notebookId, paths: [path] });
+    } catch (err) {
+      this.say(message(err));
+      return null;
+    }
+    if (this.id !== notebookId) return null;
+    this.view = result.notebook;
+    const added = result.added[0];
+    if (!added) {
+      if (result.refused[0]?.reason === 'duplicate') {
+        const same = result.notebook.sources.find((s) => s.kind === 'image' && s.name === name && s.status === 'ready');
+        if (same) return toNotebookPage(same, 1);
+      }
+      this.say(refusalNotice(result.refused));
+      return null;
+    }
+    const read = await this.#whenRead(notebookId, added.fileId);
+    return read ? toNotebookPage(read, 1) : null;
+  }
+
+  /**
+   * A source just added, once it is `ready` (its pushes land in `view`), or null if it failed,
+   * went, or the notebook closed. An image reads in well under a second; the minute is a ceiling
+   * for a queue that is still busy with a long PDF dropped just before it.
+   */
+  #whenRead(notebookId: string, fileId: string, timeoutMs = 60_000): Promise<NotebookSourceView | null> {
+    const started = Date.now();
+    return new Promise((resolve) => {
+      const check = (): boolean => {
+        const source = this.view?.id === notebookId ? this.view.sources.find((s) => s.fileId === fileId) : undefined;
+        if (!source) {
+          resolve(null);
+          return true;
+        }
+        if (source.status === 'ready') {
+          resolve($state.snapshot(source) as NotebookSourceView);
+          return true;
+        }
+        if (source.status === 'failed') {
+          this.say(source.error ?? `“${source.name}” could not be read.`);
+          resolve(null);
+          return true;
+        }
+        if (Date.now() - started > timeoutMs) {
+          this.say(`“${source.name}” is taking a while to read. It is in Sources already; drop it here again once it is ready.`);
+          resolve(null);
+          return true;
+        }
+        return false;
+      };
+      if (check()) return;
+      const timer = setInterval(() => {
+        if (check()) clearInterval(timer);
+      }, 150);
+    });
   }
 
   /** **Add sources**: the picker, into the open notebook. */

@@ -69,6 +69,7 @@ import {
   moveFolderRefusal,
   type FolderView,
 } from '../../shared/folders.js';
+import { guessSourceRole, isSourceRole, type SetSourceRoleInput, type SourceRole } from '../../shared/tutorial.js';
 import { folderView, notebooksRepo, sourceView, type NotebooksRepo, type SourceRecord } from './repo.js';
 
 /** Converted to text on import with macOS `textutil` (`SOURCE_EXTENSIONS` in shared/notebook.ts). */
@@ -110,7 +111,29 @@ export interface NotebookServiceDeps {
   onDeleted?: (notebookId: string) => void;
   /** `textutil -convert txt`. Injectable so the tests run off macOS. */
   convertToText?: (input: string, output: string) => Promise<void>;
+  /**
+   * **A source's role changed** (`tutorials.md` §1): guessed when it was read, or set from its
+   * row. Main's tutorial module listens, to rewrite a tutorial's key when its solutions arrive.
+   * Nothing is ingested for a new tutorial here: the renderer sends its page images first, then
+   * asks (`tutorial:ingest`).
+   */
+  onRoleChanged?: (change: RoleChange) => void;
 }
+
+export interface RoleChange {
+  notebookId: string;
+  fileId: string;
+  role: SourceRole;
+  /** For `solutions`: the tutorial they answer, if any. */
+  keyFor: string | null;
+  /** What it was before. */
+  previous: SourceRole;
+  /** `guess` when the read set it, `learner` when the sources panel did. */
+  by: 'guess' | 'learner';
+}
+
+/** How many of a new source's first pages the role guess reads. */
+export const ROLE_GUESS_PAGES = 3;
 
 /** macOS `textutil`, via execFile: no shell, so no file name is ever interpreted. */
 export function textutilConvert(input: string, output: string): Promise<void> {
@@ -213,6 +236,7 @@ export class NotebookService {
   readonly #confirm: ((input: ConfirmRequest) => Promise<boolean>) | null;
   readonly #onDeleted: (notebookId: string) => void;
   readonly #convert: (input: string, output: string) => Promise<void>;
+  readonly #onRoleChanged: (change: RoleChange) => void;
 
   readonly #queue: string[] = [];
   #draining: Promise<void> | null = null;
@@ -228,6 +252,7 @@ export class NotebookService {
     this.#confirm = deps.confirm ?? null;
     this.#onDeleted = deps.onDeleted ?? (() => undefined);
     this.#convert = deps.convertToText ?? textutilConvert;
+    this.#onRoleChanged = deps.onRoleChanged ?? (() => undefined);
   }
 
   get repo(): NotebooksRepo {
@@ -639,6 +664,88 @@ export class NotebookService {
   }
 
   /**
+   * **What a source is in this notebook** (`tutorials.md` §1; `notebook:setRole`). `solutions`
+   * name the tutorial they answer: the one given, which must be a tutorial of this notebook, or,
+   * when none is given, the notebook's only tutorial (null when there is not exactly one). A
+   * tutorial retyped as something else leaves the solutions that pointed at it answering nothing.
+   * Never rewrites the overview: a role change only moves a source in or out of what it covers,
+   * and the banner says so.
+   */
+  setRole(input: SetSourceRoleInput): NotebookView {
+    const view = this.#require(input.notebookId);
+    const source = view.sources.find((s) => s.fileId === input.fileId);
+    if (!source) throw new Error('That source is not in this notebook.');
+    if (!isSourceRole(input.role)) throw new Error(`Unknown source role: ${String(input.role)}`);
+    let keyFor: string | null = null;
+    if (input.role === 'solutions') {
+      const tutorials = view.sources.filter((s) => s.role === 'tutorial' && s.fileId !== input.fileId);
+      if (typeof input.keyFor === 'string' && input.keyFor.length > 0) {
+        if (!tutorials.some((t) => t.fileId === input.keyFor)) throw new Error('Those solutions must answer a tutorial in this notebook.');
+        keyFor = input.keyFor;
+      } else {
+        keyFor = tutorials.length === 1 ? tutorials[0]!.fileId : null;
+      }
+    }
+    if (source.role === input.role && source.keyFor === keyFor) return view;
+    inSavepoint(this.#db, () => {
+      this.#repo.updateSource(input.fileId, { role: input.role, key_for: keyFor });
+      if (source.role === 'tutorial' && input.role !== 'tutorial') {
+        for (const s of view.sources) {
+          if (s.role === 'solutions' && s.keyFor === input.fileId) this.#repo.updateSource(s.fileId, { key_for: null });
+        }
+      }
+      this.#repo.touch(input.notebookId, this.#now());
+    });
+    log().info('notebook.source_role', {
+      notebook_id: input.notebookId,
+      file_id: input.fileId,
+      role: input.role,
+      previous: source.role,
+      key_for: keyFor,
+    });
+    const next = this.#emit(input.notebookId)!;
+    this.#onRoleChanged({
+      notebookId: input.notebookId,
+      fileId: input.fileId,
+      role: input.role,
+      keyFor,
+      previous: source.role,
+      by: 'learner',
+    });
+    return next;
+  }
+
+  /**
+   * The role a source just read most likely has (`guessSourceRole`, which errs to `lecture`),
+   * written in the transaction that makes it ready. A tutorial guessed here also picks up
+   * solutions already in the notebook that answer nothing yet, when it is the only tutorial;
+   * solutions guessed here answer the only tutorial, when there is one.
+   */
+  #guessRole(source: SourceRecord, chunks: readonly { page: number; body: string }[]): RoleChange | null {
+    const current = isSourceRole(source.role) ? source.role : 'lecture';
+    if (current !== 'lecture') return null;
+    const text = chunks
+      .filter((c) => c.page <= ROLE_GUESS_PAGES)
+      .map((c) => c.body)
+      .join('\n\n');
+    const role = guessSourceRole(source.display_name, text);
+    if (role === 'lecture') return null;
+    const others = this.#repo.sources(source.notebook_id).filter((s) => s.file_id !== source.file_id).map(sourceView);
+    let keyFor: string | null = null;
+    if (role === 'solutions') {
+      const tutorials = others.filter((s) => s.role === 'tutorial');
+      keyFor = tutorials.length === 1 ? tutorials[0]!.fileId : null;
+    }
+    this.#repo.updateSource(source.file_id, { role, key_for: keyFor });
+    if (role === 'tutorial' && !others.some((s) => s.role === 'tutorial')) {
+      for (const s of others) {
+        if (s.role === 'solutions' && s.keyFor === null) this.#repo.updateSource(s.fileId, { key_for: source.file_id });
+      }
+    }
+    return { notebookId: source.notebook_id, fileId: source.file_id, role, keyFor, previous: current, by: 'guess' };
+  }
+
+  /**
    * Remove one source, after the native confirm: its copy (and a Word file's converted text), its
    * `files` row and its FTS rows. Its pages become a gap; nothing else is renumbered.
    */
@@ -766,6 +873,7 @@ export class NotebookService {
 
     const { pageCount, chunks } = outcome;
     let base = 0;
+    let guessed: RoleChange | null = null;
     try {
       const abs = this.absPath(source.rel_path);
       const st = await stat(abs);
@@ -785,6 +893,7 @@ export class NotebookService {
           sha256: source.sha256,
         });
         this.#repo.setHighWater(source.notebook_id, base + pageCount, this.#now());
+        guessed = this.#guessRole(source, chunks);
       });
     } catch (err) {
       this.#repo.updateSource(fileId, { status: 'failed', error: MESSAGES.copyMissing, page_count: 0 });
@@ -798,9 +907,11 @@ export class NotebookService {
       kind: source.file_kind,
       pages: pageCount,
       page_base: base,
+      role: (guessed as RoleChange | null)?.role ?? 'lecture',
       ms: Date.now() - started,
     });
     this.#emit(source.notebook_id);
+    if (guessed) this.#onRoleChanged(guessed);
   }
 
   /** The slow half: convert, open, count, cut into pages. Never writes the database. */

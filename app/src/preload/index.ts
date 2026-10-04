@@ -7,6 +7,7 @@ import { IPC, type ChatterEdApi } from '../shared/ipc.js';
 import type { AppCommand, RoomEvent, WindowState } from '../shared/types.js';
 import type { CostUpdate } from '../shared/cost.js';
 import type { NotebookChange } from '../shared/notebook.js';
+import type { TutorialChange } from '../shared/tutorial.js';
 import { trialApi } from './trial.js';
 
 const api: ChatterEdApi = {
@@ -140,6 +141,20 @@ const api: ChatterEdApi = {
   notesUpdateOverview: (input) => ipcRenderer.invoke(IPC.notesUpdateOverview, input),
   notesSetRecommendation: (input) => ipcRenderer.invoke(IPC.notesSetRecommendation, input),
   notesBlockAction: (input) => ipcRenderer.invoke(IPC.notesBlockAction, input),
+  // Tutorials (`docs/research/tutorials.md`, 2026-10-03).
+  notebookSetRole: (input) => ipcRenderer.invoke(IPC.notebookSetRole, input),
+  tutorialList: (input) => ipcRenderer.invoke(IPC.tutorialList, input),
+  tutorialDoc: (input) => ipcRenderer.invoke(IPC.tutorialDoc, input),
+  tutorialIngest: (input) => ipcRenderer.invoke(IPC.tutorialIngest, input),
+  tutorialCheck: (input) => ipcRenderer.invoke(IPC.tutorialCheck, input),
+  tutorialHelp: (input) => ipcRenderer.invoke(IPC.tutorialHelp, input),
+  onTutorialChanged: (listener) => {
+    const handler = (_event: unknown, payload: TutorialChange) => listener(payload);
+    ipcRenderer.on(IPC.tutorialChanged, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC.tutorialChanged, handler);
+    };
+  },
   onAppCommand: (listener) => {
     const handler = (_event: unknown, payload: AppCommand) => listener(payload);
     ipcRenderer.on(IPC.appCommand, handler);

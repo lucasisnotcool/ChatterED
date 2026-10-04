@@ -12,6 +12,7 @@ import { isAbsolute } from 'node:path';
 import { IPC } from '../../shared/ipc.js';
 import { SOURCE_EXTENSIONS } from '../../shared/notebook.js';
 import { isFolderId } from '../../shared/folders.js';
+import type { SetSourceRoleInput } from '../../shared/tutorial.js';
 import type { IpcHandle } from '../dochost.js';
 import type { NotebookService } from './service.js';
 
@@ -80,6 +81,16 @@ export function registerNotebookIpc({ service, handle, pickFiles }: NotebookIpcD
       Array.isArray(input?.fileIds) ? input.fileIds.filter((f): f is string => typeof f === 'string') : [],
       input?.enabled === true,
     ),
+  );
+  // Tutorials (`docs/research/tutorials.md` §1): what a source is. The service validates the role
+  // and the tutorial a set of solutions answers.
+  handle<SetSourceRoleInput>(IPC.notebookSetRole, (input) =>
+    service.setRole({
+      notebookId: requireId(input?.notebookId),
+      fileId: typeof input?.fileId === 'string' ? input.fileId : '',
+      role: input?.role,
+      keyFor: typeof input?.keyFor === 'string' ? input.keyFor : null,
+    }),
   );
   handle<{ notebookId: string; folderId: string | null }>(IPC.notebookMove, (input) =>
     service.moveNotebook(requireId(input?.notebookId), folderOrTop(input?.folderId)),

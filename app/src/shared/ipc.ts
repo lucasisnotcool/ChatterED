@@ -23,6 +23,17 @@ import type {
 import type { SegmentDocumentView } from './segment/types.js';
 import type { AddSourcesResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
 import type { FolderView } from './folders.js';
+import type {
+  SetSourceRoleInput,
+  TutorialChange,
+  TutorialCheckInput,
+  TutorialCheckResult,
+  TutorialHelpInput,
+  TutorialHelpResult,
+  TutorialIngestInput,
+  TutorialListInput,
+  TutorialView,
+} from './tutorial.js';
 import type { SearchResult, SearchStatus } from './search/types.js';
 import type { PageLinesView } from './doc/cite.js';
 import type { SlideOverride } from './doc/slidegroups.js';
@@ -196,6 +207,18 @@ export const IPC = {
   notesSetRecommendation: 'notes:setRecommendation',
   // Block actions. Body in `src/main/docroom/ipc.ts`.
   notesBlockAction: 'notes:blockAction',
+
+  // ── tutorials (`docs/research/tutorials.md`, 2026-10-03) ─────────────────────────────────
+  // Bodies in `src/main/tutorial/ipc.ts` (`notebook:setRole` in `src/main/notebooks/ipc.ts`).
+  // See `app/docs/TUTORIAL-CONTRACT.md` S1, S2, S4, S6.
+  notebookSetRole: 'notebook:setRole',
+  tutorialList: 'tutorial:list',
+  tutorialDoc: 'tutorial:doc',
+  tutorialIngest: 'tutorial:ingest',
+  tutorialCheck: 'tutorial:check',
+  tutorialHelp: 'tutorial:help',
+  /** main → renderer: a tutorial's document or one of its parts' records changed. */
+  tutorialChanged: 'tutorial:changed',
 } as const;
 
 export interface ChatterEdApi {
@@ -566,6 +589,8 @@ export interface ChatterEdApi {
     blockId: string;
     quote: string;
     question: string;
+    /** The tutorial's content key when the block is a sheet's line (`NotesBlockActionInput.docKey`). */
+    docKey?: string;
   }): Promise<{ roomId: string; threadId: string }>;
   chatPrivateOpen(input: {
     fileId: string;
@@ -681,6 +706,28 @@ export interface ChatterEdApi {
    * Ask… never comes here: the renderer opens the composer with the block quoted.
    */
   notesBlockAction(input: NotesBlockActionInput): Promise<NotesBlockActionResult>;
+
+  // ── tutorials (`docs/research/tutorials.md`, 2026-10-03; `TUTORIAL-CONTRACT.md`) ────────────
+  /** What a source is: `lecture`, `tutorial`, or the `solutions` to one tutorial (S1). */
+  notebookSetRole(input: SetSourceRoleInput): Promise<NotebookView>;
+  /** Every tutorial of a notebook, ingested or not (`docId: null` until it is). */
+  tutorialList(input: TutorialListInput): Promise<TutorialView[]>;
+  /**
+   * A tutorial's document, as `notesGet` returns the notes' (S2). Saved through `notesSave` by
+   * its `docId`. Null before it has been ingested.
+   */
+  tutorialDoc(input: { notebookId: string; fileId: string }): Promise<NotesDocView | null>;
+  /**
+   * Read the sheet into its document (S3). Send the tutorial's page images first, through
+   * `notesPageImages` with the notebook id and notebook pages, as the overview does. Returns at
+   * once with `status: 'pending'`; `tutorial:changed` says when it is `ready` or `failed`.
+   */
+  tutorialIngest(input: TutorialIngestInput): Promise<TutorialView>;
+  /** Judge a part's saved answer (S4); Max voices the verdict in the part's span thread. */
+  tutorialCheck(input: TutorialCheckInput): Promise<TutorialCheckResult>;
+  /** A hint (the next rung), a refresher, or the answer revealed (S6). */
+  tutorialHelp(input: TutorialHelpInput): Promise<TutorialHelpResult>;
+  onTutorialChanged(listener: (change: TutorialChange) => void): () => void;
 }
 
 export interface NotesUpdateOverviewResult {
@@ -696,6 +743,12 @@ export interface NotesBlockActionInput {
   kind: Exclude<BlockActionKind, 'ask'>;
   /** The block's text as the doc shows it: the span thread's quote. */
   quote: string;
+  /**
+   * **The document the block is in, when it is not the notebook's notes** (`tutorials.md` §4:
+   * Explain and Ask work on any line of a tutorial sheet): the tutorial's content key,
+   * `tutorialContentKey(notebookId, fileId)`. Omitted for the notes.
+   */
+  docKey?: string;
 }
 
 export interface NotesBlockActionResult {

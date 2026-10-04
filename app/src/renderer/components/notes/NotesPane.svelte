@@ -29,19 +29,30 @@
    * out-of-date banner over the doc (§2: never rewritten silently). The header is lighter for an
    * overview: Regenerate is only for a file outside a notebook, because Update overview replaces it.
    */
-  import { flushSync, untrack } from 'svelte';
+  import { flushSync, tick, untrack } from 'svelte';
   import { isNotebookId, type NotebookView } from '../../../shared/notebook.js';
   import { notebookEmpty, overviewBanner, overviewMeta } from '../../lib/pm/overview.js';
-  import { NOTES_ZOOM, blockAnchorDelta, percent, sheetGutter, zoomIn, zoomOut } from '../../lib/layout.js';
+  import {
+    NOTES_HEAD_COMPACT_BELOW,
+    NOTES_ZOOM,
+    blockAnchorDelta,
+    headCompact,
+    percent,
+    sheetFit,
+    zoomIn,
+    zoomOut,
+  } from '../../lib/layout.js';
   import { layout } from '../../lib/layoutstore.svelte.js';
   import { pinchScale } from '../../lib/pdfview.js';
   import { store } from '../../lib/store.svelte.js';
   import { registerViewer, type ViewerCommand } from '../../lib/viewer.js';
+  import { sheetImageDrop } from '../../lib/sheetdrop.js';
   import InsertControl from './InsertControl.svelte';
   import ListenControl from './ListenControl.svelte';
   import NotesEditor from './NotesEditor.svelte';
   import SlideRegroup from './SlideRegroup.svelte';
   import type { SpanThreadView } from '../../lib/pm/chrome.js';
+  import { bumpTutorialChrome, type PracticeChipsContext } from '../../lib/pm/tutorial.js';
   import './notes.css';
   import './table.css';
 
@@ -97,6 +108,20 @@
   $effect(() => {
     const id = fileId;
     if (id) void doc.open(id);
+  });
+
+  /**
+   * **Practise** under each section (`tutorials.md` §7): the tutorial parts linked to it, from the
+   * tutorial store. A plain snapshot, read by the plugin on every rebuild; a part's record moving
+   * (a Check) changes nothing in the notes, so the store's revision redraws them.
+   */
+  const practice = (): PracticeChipsContext => ({
+    tutorials: () => store.tutorial.snapshot(),
+    onOpenPart: (tutorialFileId, partId) => void store.tutorial.openPart(tutorialFileId, partId),
+  });
+  $effect(() => {
+    void store.tutorial.revision;
+    untrack(() => doc.redraw(bumpTutorialChrome));
   });
 
   /**
@@ -156,8 +181,62 @@
   // ── Zoom ────────────────────────────────────────────────────────────────
   let scroller = $state<HTMLElement | null>(null);
   let paneWidth = $state(0);
-  /** The gutters give way to the text when zoomed in a narrow pane (`sheetGutter`). */
-  const gutter = $derived(sheetGutter(paneWidth, layout.notesZoom));
+  /**
+   * The gutters give way to the text when zoomed in a narrow pane (`sheetGutter`), and below
+   * `COMPACT_BELOW` units the sheet goes compact: the gutters' chrome moves into the column
+   * (`sheetFit`, notes.css `.nd-compact`). The header folds on its own, narrower rule.
+   */
+  const fit = $derived(sheetFit(paneWidth, layout.notesZoom));
+  const narrowHead = $derived(headCompact(paneWidth, NOTES_HEAD_COMPACT_BELOW));
+  const title = $derived(doc.title || notebook?.name || 'Lecture notes');
+
+  // ── the narrow header's ⋯ menu ──────────────────────────────────────────
+  let moreOpen = $state(false);
+  let moreRoot = $state<HTMLElement | null>(null);
+  let moreButton = $state<HTMLButtonElement | null>(null);
+  let morePop = $state<HTMLElement | null>(null);
+
+  function closeMore(focusButton = false): void {
+    moreOpen = false;
+    if (focusButton) moreButton?.focus();
+  }
+
+  /** From the keyboard (`detail` 0), the first item takes the focus, as a menu's should. */
+  function toggleMore(fromKeyboard: boolean): void {
+    moreOpen = !moreOpen;
+    if (moreOpen && fromKeyboard) void tick().then(() => menuItems()[0]?.focus());
+  }
+
+  function menuItems(): HTMLButtonElement[] {
+    return [...(morePop?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
+  }
+
+  function moreKey(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeMore(true);
+      return;
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const items = menuItems();
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === 'ArrowDown' ? (at + 1) % items.length : (at - 1 + items.length) % items.length;
+    items[next]?.focus();
+  }
+
+  /** A press anywhere else closes it; so does the header widening past the fold. */
+  $effect(() => {
+    if (!moreOpen) return;
+    const away = (e: PointerEvent): void => {
+      if (moreRoot && !moreRoot.contains(e.target as Node)) moreOpen = false;
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  });
+  $effect(() => {
+    if (!narrowHead) untrack(() => (moreOpen = false));
+  });
 
   /** The block under a viewport point, or the first block below it (a gap between two). */
   function blockAt(x: number, y: number): HTMLElement | null {
@@ -218,6 +297,13 @@
     });
   }
 
+  /**
+   * **An image dropped on the notes** (2026-10-04) goes into them where it was dropped, as a page
+   * of the notebook (`lib/sheetdrop.ts`). Other files go in only on the sources column.
+   */
+  let imageOver = $state<'image' | 'refused' | null>(null);
+  const imageDrop = sheetImageDrop({ doc, notebook: store.notebook, accept: () => ready, onover: (o) => (imageOver = o) });
+
   const savedLabel = $derived.by(() => {
     if (doc.saving) return 'Saving…';
     if (doc.savedAt > 0) return 'Saved';
@@ -225,41 +311,51 @@
   });
 </script>
 
-<div class="nd">
-  <header class="nd-head">
-    <span class="nd-title">{doc.title || notebook?.name || 'Lecture notes'}</span>
+{#snippet zoomGroup()}
+  <span class="nd-zoom" role="group" aria-label="Zoom the notes">
+    <button
+      type="button"
+      class="nd-zoom-step"
+      aria-label="Zoom out"
+      title="Zoom out (⌘−, or pinch)"
+      disabled={layout.notesZoom <= NOTES_ZOOM.min}
+      onclick={() => command('zoom.out')}
+    >−</button>
+    <button
+      type="button"
+      class="nd-zoom-level"
+      aria-label={`Zoom ${percent(layout.notesZoom)}. Reset to 100%`}
+      title="Actual size (⌘0)"
+      onclick={() => command('zoom.reset')}
+    >{percent(layout.notesZoom)}</button>
+    <button
+      type="button"
+      class="nd-zoom-step"
+      aria-label="Zoom in"
+      title="Zoom in (⌘+, or pinch)"
+      disabled={layout.notesZoom >= NOTES_ZOOM.max}
+      onclick={() => command('zoom.in')}
+    >+</button>
+  </span>
+{/snippet}
+
+<div class="nd" class:nd-compact={fit.compact}>
+  <header class="nd-head" class:nd-head-compact={narrowHead}>
+    <span class="nd-title" title={narrowHead ? title : null}>{title}</span>
     {#if !isNotebook && doc.pageCount > 0}
       <span class="nd-head-meta">{doc.pageCount} slides</span>
     {/if}
     <span class="nd-head-spacer"></span>
     {#if savedLabel}<span class="nd-head-meta">{savedLabel}</span>{/if}
+    <!-- Listen and Insert stay on the row at any width: each owns a state that must stay in
+         sight while it runs (the reading's Pause · Stop, the half-minute Insert), and they are
+         never unmounted, so neither is cut off by the header folding. -->
     <ListenControl {doc} {scroller} />
-    <span class="nd-zoom" role="group" aria-label="Zoom the notes">
-      <button
-        type="button"
-        class="nd-zoom-step"
-        aria-label="Zoom out"
-        title="Zoom out (⌘−, or pinch)"
-        disabled={layout.notesZoom <= NOTES_ZOOM.min}
-        onclick={() => command('zoom.out')}
-      >−</button>
-      <button
-        type="button"
-        class="nd-zoom-level"
-        aria-label={`Zoom ${percent(layout.notesZoom)}. Reset to 100%`}
-        title="Actual size (⌘0)"
-        onclick={() => command('zoom.reset')}
-      >{percent(layout.notesZoom)}</button>
-      <button
-        type="button"
-        class="nd-zoom-step"
-        aria-label="Zoom in"
-        title="Zoom in (⌘+, or pinch)"
-        disabled={layout.notesZoom >= NOTES_ZOOM.max}
-        onclick={() => command('zoom.in')}
-      >+</button>
-    </span>
+    {#if !narrowHead}
+      {@render zoomGroup()}
+    {/if}
     <InsertControl {doc} />
+    {#if !narrowHead}
     <button
       class="nd-toggle"
       type="button"
@@ -297,9 +393,101 @@
       <span class="nd-toggle-dot"></span>
       {doc.frozen ? 'Frozen' : 'Freeze'}
     </button>
+    {:else}
+      <!-- A narrow pane: the state that matters stays in sight (Frozen), the rest is one menu. -->
+      {#if doc.frozen}
+        <button
+          class="nd-toggle"
+          type="button"
+          aria-pressed="true"
+          title="Ellie and Max are not editing. Unfreeze to let them back in."
+          onclick={() => void doc.setFrozen(false)}
+        >
+          <span class="nd-toggle-dot"></span>
+          Frozen
+        </button>
+      {/if}
+      <span class="nd-more" bind:this={moreRoot}>
+        <button
+          bind:this={moreButton}
+          class="nd-toggle nd-more-btn"
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+          aria-label="More: zoom, Add a question, Freeze"
+          title="Zoom, Add a question, Freeze"
+          onmousedown={(e) => e.preventDefault()}
+          onclick={(e) => toggleMore(e.detail === 0)}
+        >⋯</button>
+        {#if moreOpen}
+          <div class="nd-more-pop" role="menu" aria-label="More" tabindex="-1" bind:this={morePop} onkeydown={moreKey}>
+            <div class="nd-more-row" role="group" aria-label="Zoom">
+              <span class="nd-more-label">Zoom</span>
+              {@render zoomGroup()}
+            </div>
+            <button
+              type="button"
+              role="menuitem"
+              class="nd-more-item"
+              disabled={!canAsk}
+              title={canAsk
+                ? 'Write a question of your own into the notes, answer it there, and Max marks it.'
+                : 'The notes are not open yet.'}
+              onmousedown={(e) => e.preventDefault()}
+              onclick={() => {
+                closeMore();
+                doc.addOwnQuestion();
+              }}
+            >Add a question</button>
+            {#if !isNotebook}
+              <button
+                type="button"
+                role="menuitem"
+                class="nd-more-item"
+                disabled={!canRegenerate}
+                onclick={() => {
+                  closeMore();
+                  void regenerate();
+                }}
+              >Regenerate…</button>
+            {/if}
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={doc.frozen}
+              class="nd-more-item"
+              title={doc.frozen
+                ? 'Ellie and Max are not editing. Unfreeze to let them back in.'
+                : 'Stop Ellie and Max editing. They still talk.'}
+              onmousedown={(e) => e.preventDefault()}
+              onclick={() => {
+                closeMore();
+                void doc.setFrozen(!doc.frozen);
+              }}
+            >
+              <span class="nd-toggle-dot" class:on={doc.frozen}></span>
+              {doc.frozen ? 'Unfreeze Ellie and Max' : 'Freeze Ellie and Max'}
+            </button>
+          </div>
+        {/if}
+      </span>
+    {/if}
   </header>
 
-  <div class="nd-scroll" bind:this={scroller} bind:clientWidth={paneWidth} {onwheel}>
+  <div
+    class="nd-scroll"
+    class:nd-dropping={imageOver === 'image'}
+    bind:this={scroller}
+    bind:clientWidth={paneWidth}
+    {onwheel}
+    data-dropzone
+    role="region"
+    aria-label="Lecture notes"
+    ondragenter={imageDrop.dragenter}
+    ondragover={imageDrop.dragover}
+    ondragleave={imageDrop.dragleave}
+    ondrop={imageDrop.drop}
+  >
     <div
       class="nd-sheet"
       role="presentation"
@@ -308,7 +496,7 @@
         if (e.target === e.currentTarget && e.button === 0 && doc.placeCaretBeside(e.clientX, e.clientY)) e.preventDefault();
       }}
       style:zoom={layout.notesZoom === 1 ? null : String(layout.notesZoom)}
-      style:--nd-gutter={`${gutter}px`}
+      style:--nd-gutter={`${fit.gutter}px`}
     >
       {#if empty}
         <div class="nd-state nd-empty">
@@ -404,7 +592,7 @@
           </p>
         {/if}
 
-        <NotesEditor {doc} onAskAboutFigure={askAboutFigure} />
+        <NotesEditor {doc} onAskAboutFigure={askAboutFigure} {practice} />
 
         {#if status === 'streaming'}
           <p class="nd-writing">
@@ -426,5 +614,9 @@
       ondrop={(key, title) => void doc.moveSlide(doc.slideDrag?.page ?? 0, key, title)}
       oncancel={() => (doc.slideDrag = null)}
     />
+  {/if}
+  {#if imageOver === 'refused'}
+    <!-- A file that is not an image, over the sheet: the cursor says no, and this says where. -->
+    <div class="nd-drop-hint" role="status">Only images can be dropped here. Drop other files on Sources.</div>
   {/if}
 </div>

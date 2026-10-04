@@ -71,9 +71,17 @@ export function hasToolbar(node: Node): boolean {
   return node.textContent.trim().length > 0;
 }
 
-/** Does this block get a provenance chip? Every block with an id, except the overview's scaffolding. */
+/**
+ * A tutorial sheet's own blocks cite the sheet they are in: the page is where the learner already
+ * is, and a chip naming the file on every part card was noise sitting on the card's edge (Lucas,
+ * 4 Oct 2026). A hint line keeps its chip: it cites the lecture.
+ */
+const SHEET_REASONS = new Set(['sheet', 'sheet_admin', 'sheet_part', 'answer_slot']);
+
+/** Does this block get a provenance chip? Every block with an id, except the overview's scaffolding and a sheet's own words. */
 export function showsChip(node: Node): boolean {
-  return Boolean(blockAttrs(node).blockId) && !isScaffold(node);
+  const { blockId, reason } = blockAttrs(node);
+  return Boolean(blockId) && !isScaffold(node) && !(reason !== null && SHEET_REASONS.has(reason));
 }
 
 /** The block's text as the doc shows it: the quote a block action or Ask… carries. */

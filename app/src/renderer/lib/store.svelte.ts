@@ -40,6 +40,7 @@ import { DocStore } from './docstore.svelte.js';
 import { ChatStore } from './chatstore.svelte.js';
 import { ProgressStore } from './progressstore.svelte.js';
 import { NotebookStore } from './notebookstore.svelte.js';
+import { TutorialStore } from './tutorialstore.svelte.js';
 import { SearchStore } from './searchstore.svelte.js';
 import type { NotebookView } from '../../shared/notebook.js';
 import { regenerateCommand } from './pm/overview.js';
@@ -161,6 +162,11 @@ class Store {
   readonly progress = new ProgressStore();
   /** The open notebook (`notebooks.md`, 2026-10-01). Owned by track N5. */
   readonly notebook = new NotebookStore();
+  /**
+   * The open notebook's tutorials (`docs/research/tutorials.md`): the split column, its own
+   * `DocStore` on the open tutorial's document, and the sources panel's roles.
+   */
+  readonly tutorial = new TutorialStore();
   /** The search page (`docs/research/search.md` §5): kept across visits. */
   readonly search = new SearchStore();
   /** Bumped to ask the search page to put the cursor in its box (⇧⌘F, the rail). */
@@ -328,6 +334,7 @@ class Store {
     this.unsubscribe = bridge().onEvent((e) => this.apply(e));
     // A source finishing its read, a checkbox, a rename: main pushes; the renderer never polls.
     if (has('onNotebookChanged')) this.notebook.subscribe();
+    this.tutorial.subscribe();
     this.unsubscribeCommands?.();
     this.unsubscribeCommands = bridge().onAppCommand((command) => this.runCommand(command));
     try {
@@ -345,7 +352,11 @@ class Store {
     // collab-doc (#48): every event goes to the three sibling stores first. They take what is
     // theirs (`notes.*`, `doc.*`, `chat.*`, `progress.*`, and the message/turn events the chats
     // draw from) and ignore the rest; nothing below depends on what they did with it.
-    this.doc.apply(e);
+    // A tutorial's document has its own `docId`: its events go to the tutorial's `DocStore`, and
+    // never to the notes' (whose `notes.status` matches on the notebook id while it has no doc).
+    const docId = (e as { docId?: unknown }).docId;
+    if (typeof docId === 'string' && this.tutorial.docIds().includes(docId)) this.tutorial.doc.apply(e);
+    else this.doc.apply(e);
     this.chat.apply(e);
     this.progress.apply(e);
     const room = this.room;

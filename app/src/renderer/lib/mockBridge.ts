@@ -17,6 +17,17 @@ import {
   type NotebookSummary,
 } from '../../shared/notebook.js';
 import { MockNotebooks } from './mockNotebooks.js';
+import type {
+  TutorialChange,
+  TutorialPartStatus,
+  TutorialPartView,
+  TutorialView,
+  HintLevel,
+} from '../../shared/tutorial.js';
+import { tutorialContentKey } from '../../shared/tutorial.js';
+import { FIXTURE_SHEET } from '../../shared/doc/tutorial.fixture.test-support.js';
+import { carryAnswers, partAnswers, tutorialDocJson } from '../../shared/doc/tutorialdoc.js';
+import { docFromJson } from '../../shared/doc/schema.js';
 /**
  * **The real classifier, imported and not copied** (issue #47, `attempt-first.md` §2.2).
  *
@@ -1363,7 +1374,7 @@ export function createMockBridge(): ChatterEdApi {
       id: 'nb_cs3249lect4',
       name: 'CS3249 · Lecture 4',
       sources: [
-        { fileId: 'f_mock_cs3249', name: 'CS3249+Lecture+4.pdf', kind: 'pdf', pageBase: 0, pageCount: 66, enabled: true, status: 'ready', error: null, addedAt: iso(-3 * 864e5) },
+        { fileId: 'f_mock_cs3249', name: 'CS3249+Lecture+4.pdf', kind: 'pdf', pageBase: 0, pageCount: 66, enabled: true, status: 'ready', error: null, addedAt: iso(-3 * 864e5), role: 'lecture', keyFor: null },
       ],
       subtitle: 'Prototyping Conversational User Interfaces',
       fill: 0.4,
@@ -1373,8 +1384,8 @@ export function createMockBridge(): ChatterEdApi {
       id: 'nb_cs4246week1',
       name: 'CS4246 · Week 1',
       sources: [
-        { fileId: 'f_mock_wk1_slides', name: 'Week 1 slides.pdf', kind: 'pdf', pageBase: 0, pageCount: 48, enabled: true, status: 'ready', error: null, addedAt: iso(-9 * 864e5) },
-        { fileId: 'f_mock_wk1_notes', name: 'Week 1 notes.md', kind: 'text', pageBase: 48, pageCount: 2, enabled: true, status: 'ready', error: null, addedAt: iso(-9 * 864e5) },
+        { fileId: 'f_mock_wk1_slides', name: 'Week 1 slides.pdf', kind: 'pdf', pageBase: 0, pageCount: 48, enabled: true, status: 'ready', error: null, addedAt: iso(-9 * 864e5), role: 'lecture', keyFor: null },
+        { fileId: 'f_mock_wk1_notes', name: 'Week 1 notes.md', kind: 'text', pageBase: 48, pageCount: 2, enabled: true, status: 'ready', error: null, addedAt: iso(-9 * 864e5), role: 'lecture', keyFor: null },
       ],
       subtitle: 'Classical planning, PDDL',
       fill: 0.75,
@@ -1393,6 +1404,155 @@ export function createMockBridge(): ChatterEdApi {
 
   const OTHER_NOTEBOOK_LINE =
     'The dev mock has a written overview and a conversation for “CS4246 · Week 2 Planning” only.';
+
+  // ── tutorials (`docs/research/tutorials.md`; `TUTORIAL-CONTRACT.md` S2) ────────────────────
+  //
+  // Every tutorial source, in any notebook, reads as the test fixture's sheet (`FIXTURE_SHEET`),
+  // built into a document by the same `tutorialDocJson` main uses. A check says *correct* for
+  // anything written (there is no key in the mock); help posts the learner's line and a canned
+  // reply in the part's span thread, and a hint writes Max's one line into the sheet.
+
+  interface MockTutorial {
+    notebookId: string;
+    fileId: string;
+    docId: string | null;
+    status: TutorialView['status'];
+    version: number;
+    doc: unknown;
+    records: Map<string, { status: TutorialPartStatus; hintLevel: HintLevel; attempts: number; checkedBy: 'simulation' | 'model' | null }>;
+    edits: DocEditRecord[];
+  }
+  const tutorialMap = new Map<string, MockTutorial>();
+  const tutorialListeners = new Set<(change: TutorialChange) => void>();
+
+  const tutorialSources = (notebookId: string) =>
+    (notebooks.model.view(notebookId)?.sources ?? []).filter((src) => src.role === 'tutorial');
+
+  function tutorialOf(notebookId: string, fileId: string): MockTutorial {
+    const key = `${notebookId}:${fileId}`;
+    let t = tutorialMap.get(key);
+    if (!t) {
+      t = { notebookId, fileId, docId: null, status: 'pending', version: 0, doc: null, records: new Map(), edits: [] };
+      tutorialMap.set(key, t);
+    }
+    return t;
+  }
+
+  /** Which notes blocks and lecture pages each part draws on: the fixture notes' first sections. */
+  function mockLinks(index: number): { notesBlockIds: string[]; pages: number[] } {
+    const headings: string[] = [];
+    const json = notes.doc as { content?: { type: string; attrs?: { blockId?: string; level?: number } }[] } | null;
+    for (const node of json?.content ?? []) {
+      if (node.type === 'heading' && node.attrs?.level === 2 && node.attrs.blockId) headings.push(node.attrs.blockId);
+    }
+    const at = headings.length === 0 ? [] : [headings[index % headings.length]!];
+    return { notesBlockIds: at, pages: [3 + index * 4, 4 + index * 4] };
+  }
+
+  function tutorialViewOf(t: MockTutorial): TutorialView {
+    const source = notebooks.model.view(t.notebookId)?.sources.find((src) => src.fileId === t.fileId);
+    const parts: TutorialPartView[] = [];
+    if (t.doc) {
+      partAnswers(docFromJson(t.doc)).forEach((answer, i) => {
+        const record = t.records.get(answer.partId) ?? { status: answer.empty ? 'untried' : 'working', hintLevel: 0 as HintLevel, attempts: 0, checkedBy: null };
+        // Every taught objective but the last: the last is the sheet's one gap.
+        const taught = objectives.filter((o) => !o.assumedByDeck).slice(0, -1);
+        parts.push({
+          partId: answer.partId,
+          origin: 'sheet',
+          blockId: answer.blockId,
+          label: answer.label,
+          answerKind: answer.kind,
+          status: record.status === 'untried' && !answer.empty ? 'working' : record.status,
+          hintLevel: record.hintLevel,
+          attempts: record.attempts,
+          checkedBy: record.checkedBy,
+          links: mockLinks(i),
+          objectiveIds: taught.length > 0 ? [taught[i % taught.length]!.objectiveId] : [],
+        });
+      });
+    }
+    const covered = new Set(parts.flatMap((p) => p.objectiveIds));
+    const gap = objectives.filter((o) => !o.assumedByDeck && !covered.has(o.objectiveId)).at(-1);
+    return {
+      notebookId: t.notebookId,
+      fileId: t.fileId,
+      docId: t.docId,
+      contentKey: tutorialContentKey(t.notebookId, t.fileId),
+      title: t.doc ? FIXTURE_SHEET.title : (source?.name ?? 'Tutorial'),
+      status: t.status,
+      error: null,
+      parts,
+      hasSolutions: false,
+      gaps: t.doc && gap ? [{ objectiveId: gap.objectiveId, title: gap.title, pages: gap.pages.slice(0, 3) }] : [],
+    };
+  }
+
+  function pushTutorial(t: MockTutorial): void {
+    const change: TutorialChange = { notebookId: t.notebookId, fileId: t.fileId, view: tutorialViewOf(t) };
+    tutorialListeners.forEach((l) => l(structuredClone(change)));
+  }
+
+  function tutorialDocView(t: MockTutorial): NotesDocView | null {
+    if (!t.docId || !t.doc) return null;
+    return {
+      docId: t.docId,
+      fileId: t.notebookId,
+      contentSha: tutorialContentKey(t.notebookId, t.fileId),
+      title: FIXTURE_SHEET.title,
+      pageCount: notebooks.model.view(t.notebookId)?.pageCount ?? 0,
+      version: t.version,
+      doc: t.doc,
+      ingest: { status: 'ready', windowsDone: 1, windowsTotal: 1, withImages: true, error: null },
+      frozen: false,
+      edits: t.edits.filter((e) => e.status === 'applied'),
+      suggestions: [],
+      overview: null,
+    };
+  }
+
+  const tutorialByDoc = (docId: string): MockTutorial | null => [...tutorialMap.values()].find((t) => t.docId === docId) ?? null;
+
+  /** The part's span thread, made on first use, as main's `tutorial:help` finds or creates it. */
+  function partThread(t: MockTutorial, partId: string): { threadId: string; blockId: string; label: string; lastChild: string | null } | null {
+    if (!t.doc) return null;
+    const answer = partAnswers(docFromJson(t.doc)).find((a) => a.partId === partId);
+    if (!answer) return null;
+    const existing = [...chatThreadMap.values()].find((x) => x.kind === 'span' && x.blockId === answer.blockId);
+    const threadId = existing?.threadId ?? `${SPAN_THREAD_PREFIX}${hex12()}`;
+    if (!existing) pushThread(thread(threadId, { kind: 'span', blockId: answer.blockId, quote: answer.label }));
+    let lastChild: string | null = null;
+    docFromJson(t.doc).descendants((node) => {
+      if (node.type.name !== 'tut_part' || node.attrs.partId !== partId) return true;
+      node.forEach((child) => {
+        const id = (child.attrs as { blockId?: string }).blockId;
+        if (id) lastChild = id;
+      });
+      return false;
+    });
+    return { threadId, blockId: answer.blockId, label: answer.label, lastChild };
+  }
+
+  /** Max's one line under the part (S5), on the ordinary doc-edit path, with the tutorial's doc id. */
+  function tutorialLine(t: MockTutorial, anchorBlockId: string | null, text: string): void {
+    if (!t.docId || !anchorBlockId) return;
+    editSeq += 1;
+    const batch: AgentDocOpBatch = {
+      editId: `edit_mock_tut_${editSeq}`,
+      author: 'max',
+      cause: 'block_action',
+      focusBlockId: anchorBlockId,
+      why: 'One line under the part, so the sheet records the help you used. The full hint is in the chat.',
+      ops: [{ op: 'insert_after', anchorBlockId, blocks: [{ kind: 'paragraph', text, prov: { pages: [], reason: 'tutor_hint' } }] }],
+    };
+    emit({ type: 'doc.edit', roomId: ROOM, docId: t.docId, batch });
+  }
+
+  const HINT_LINES = [
+    'Look at the PDDL section of the notes, and the slide with the action schema.',
+    'Break it into: the objects, the predicates, then one action with its precondition and effect.',
+    'Worked on the lecture example: Move(A, B, Table) needs On(A, B) and Clear(A).',
+  ];
 
   /** Any notebook but the fixture: a doc that failed to write, with the reason in a sentence. */
   function otherNotebookView(fileId: string): NotesDocView {
@@ -1699,7 +1859,14 @@ export function createMockBridge(): ChatterEdApi {
      * doc comes back — because a renderer that has never met a conflict has never been tested
      * against the one thing that will happen the first time a window lands mid-keystroke (D5).
      */
-    async notesSave({ baseVersion, doc }) {
+    async notesSave({ docId, baseVersion, doc }) {
+      const tut = tutorialByDoc(docId);
+      if (tut) {
+        if (baseVersion !== tut.version) return { ok: false as const, conflict: true as const, version: tut.version, doc: tut.doc };
+        tut.doc = doc;
+        tut.version += 1;
+        return { ok: true as const, version: tut.version };
+      }
       if (baseVersion !== notes.version) {
         return { ok: false as const, conflict: true as const, version: notes.version, doc: notes.doc };
       }
@@ -2261,6 +2428,81 @@ export function createMockBridge(): ChatterEdApi {
     },
     async notebookSetEnabled(input) {
       return notebooks.model.setEnabled(input);
+    },
+    async notebookSetRole(input) {
+      const view = notebooks.model.setRole(input);
+      if (input.role === 'tutorial') {
+        const t = tutorialOf(input.notebookId, input.fileId);
+        pushTutorial(t);
+      } else {
+        const t = tutorialMap.get(`${input.notebookId}:${input.fileId}`);
+        if (t) tutorialListeners.forEach((l) => l({ notebookId: t.notebookId, fileId: t.fileId, view: null }));
+      }
+      return view;
+    },
+    async tutorialList({ notebookId }) {
+      return tutorialSources(notebookId).map((src) => tutorialViewOf(tutorialOf(notebookId, src.fileId)));
+    },
+    async tutorialDoc({ notebookId, fileId }) {
+      return tutorialDocView(tutorialOf(notebookId, fileId));
+    },
+    /** Answers at once with `pending`; the sheet is "read" a moment later and pushed. */
+    async tutorialIngest({ notebookId, fileId, force }) {
+      const t = tutorialOf(notebookId, fileId);
+      if (t.docId && t.status === 'ready' && force !== true) return tutorialViewOf(t);
+      t.status = 'pending';
+      later(2400, () => {
+        const source = notebooks.model.view(notebookId)?.sources.find((src) => src.fileId === fileId);
+        const fresh = tutorialDocJson(FIXTURE_SHEET, { pageBase: source?.pageBase ?? 0 });
+        t.doc = t.doc ? carryAnswers(docFromJson(t.doc), docFromJson(fresh)).doc.toJSON() : fresh;
+        t.docId = t.docId ?? `doc_mock_tut_${fileId}`;
+        t.version += 1;
+        t.status = 'ready';
+        pushTutorial(t);
+      });
+      return tutorialViewOf(t);
+    },
+    async tutorialCheck({ notebookId, fileId, partId }) {
+      const t = tutorialOf(notebookId, fileId);
+      if (!t.doc) return { accepted: false, reason: 'no_doc' as const, status: null, threadId: null };
+      const answer = partAnswers(docFromJson(t.doc)).find((a) => a.partId === partId);
+      if (!answer) return { accepted: false, reason: 'no_doc' as const, status: null, threadId: null };
+      if (answer.empty) return { accepted: false, reason: 'empty' as const, status: null, threadId: null };
+      const at = partThread(t, partId)!;
+      const record = t.records.get(partId) ?? { status: 'untried' as TutorialPartStatus, hintLevel: 0 as HintLevel, attempts: 0, checkedBy: null };
+      t.records.set(partId, { ...record, status: 'correct', attempts: record.attempts + 1, checkedBy: 'model' });
+      post(`Check ${at.label}`, null, { anchorId: at.threadId });
+      think(max, 2200, `That works. ${at.label} has what it needs: the reasoning follows from the lecture's definition, and nothing is missing.`, { anchorId: at.threadId });
+      const view = tutorialViewOf(t);
+      for (const id of view.parts.find((p) => p.partId === partId)?.objectiveIds ?? []) fillObjective(id, 1, answer.text || 'tutorial answer');
+      pushTutorial(t);
+      return { accepted: true, reason: null, status: 'correct' as const, threadId: at.threadId };
+    },
+    async tutorialHelp({ notebookId, fileId, partId, kind }) {
+      const t = tutorialOf(notebookId, fileId);
+      const at = partThread(t, partId);
+      if (!at) return { accepted: false, reason: 'no_doc' as const, level: null, threadId: null };
+      const record = t.records.get(partId) ?? { status: 'untried' as TutorialPartStatus, hintLevel: 0 as HintLevel, attempts: 0, checkedBy: null };
+      if (kind === 'hint' && record.hintLevel >= 3) return { accepted: false, reason: 'top' as const, level: null, threadId: at.threadId };
+      const level = (kind === 'hint' ? record.hintLevel + 1 : record.hintLevel) as HintLevel;
+      t.records.set(partId, { ...record, hintLevel: level, status: kind === 'reveal' ? 'revealed' : record.status });
+      const ask = kind === 'hint' ? `Hint on ${at.label}` : kind === 'refresher' ? `Refresher for ${at.label}` : `Show the answer to ${at.label}`;
+      post(ask, null, { anchorId: at.threadId });
+      if (kind === 'refresher') {
+        think(ellie, 2400, 'A quick refresher from the lecture: an action schema has a precondition (what must hold) and an effect (what changes). The notes section on PDDL has both written out (p. 7).', { anchorId: at.threadId });
+      } else if (kind === 'reveal') {
+        think(max, 2400, 'Here is one answer that works: the plan moves X to the Table, then Y onto X. In one line: why does Y have to wait until X is off it?', { anchorId: at.threadId });
+      } else {
+        const line = HINT_LINES[level - 1] ?? HINT_LINES[0]!;
+        think(max, 2400, `${line} Have a go before the next hint.`, { anchorId: at.threadId });
+        later(2800, () => tutorialLine(t, at.lastChild ?? at.blockId, line));
+      }
+      pushTutorial(t);
+      return { accepted: true, reason: null, level: kind === 'hint' ? level : null, threadId: at.threadId };
+    },
+    onTutorialChanged(listener) {
+      tutorialListeners.add(listener);
+      return () => tutorialListeners.delete(listener);
     },
     async notebookRemoveSource(input) {
       return notebooks.model.removeSource(input);

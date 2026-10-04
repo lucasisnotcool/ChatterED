@@ -17,6 +17,7 @@ import type { ResolvedBackend } from './llm/backend.js';
 import type { SegmentService } from './vault/segments.js';
 import type { VaultService } from './vault/service.js';
 import type { NotebookSourceView, SourceKind } from '../shared/notebook.js';
+import type { SourceRole } from '../shared/tutorial.js';
 
 /** The wrapper `register()` builds: logs `ipc.error` with the channel, then re-throws. */
 export type IpcHandle = <T>(channel: string, fn: (payload: T) => unknown) => void;
@@ -37,6 +38,15 @@ export interface DocHost {
 
   /** The one main→renderer stream. */
   emit(event: RoomEvent): void;
+  /**
+   * **A typed message into a thread on a tutorial part** (2026-10-04, `tutorial/reply.ts`): Max's
+   * reply turn, with the part and the learner's answer slot. Resolves false when the thread is not
+   * on a part, and `chat:send` sends the message as it always has. Optional for test hosts.
+   */
+  tutorialReply?(
+    input: { roomId: string; threadId: string; docId: string | null; blockId: string | null; text: string },
+    actor: unknown,
+  ): Promise<boolean>;
 
   backend(): ResolvedBackend;
   /** The counted, logged client. Pass the material so the scripted backend picks the right script. */
@@ -92,15 +102,28 @@ export interface NotebookHost {
    * and each page under a `[p. N]` line where N is the **notebook** page, so a model's citation is
    * already a notebook page. Capped at the vault's `DECK_TEXT_CAP`; `truncated` says it was.
    */
-  deckText(notebookId: string): { text: string; truncated: boolean };
-  /** The text of a run of notebook pages, from any source whether ticked or not. '' for a gap. */
-  textFor(input: { notebookId: string; pageFrom: number; pageTo: number }): string;
+  deckText(notebookId: string, opts?: SourceRoleFilter): { text: string; truncated: boolean };
+  /**
+   * The text of a run of notebook pages, from any source whether ticked or not. '' for a gap.
+   * **'' for the pages of a `solutions` source** (`tutorials.md` §1) unless `includeSolutions`,
+   * which only `main/tutorial/` passes, to rewrite a tutorial's hidden key from them.
+   */
+  textFor(input: { notebookId: string; pageFrom: number; pageTo: number; includeSolutions?: boolean }): string;
   /**
    * Where a notebook page lives: the source's file id (what `vault`, `segments` and the page
    * cache take), its own page number, the copy's absolute path, its kind, and its content sha
    * once read. Null for a gap or out of range.
    */
   locate(notebookId: string, page: number): LocatedPage | null;
+}
+
+/**
+ * **Which roles of source a read covers** (`tutorials.md` §1, migration 028). The default is the
+ * room's context, lecture and tutorial sources; the overview asks for `['lecture']`. `solutions`
+ * are never in a deck text, whatever is asked.
+ */
+export interface SourceRoleFilter {
+  roles?: readonly SourceRole[];
 }
 
 export interface NotebookSubject {
@@ -112,7 +135,7 @@ export interface NotebookSubject {
   readonly sources: readonly NotebookSourceView[];
   /** `virtualPageCount(sources)`. */
   readonly pageCount: number;
-  /** `contextFingerprint(sources)`. */
+  /** `contextFingerprint(sources)`: the ticked, ready **lecture** sources (the overview's). */
   readonly fingerprint: string;
 }
 

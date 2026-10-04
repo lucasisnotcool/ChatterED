@@ -335,14 +335,29 @@ function blockToolbars(doc: Node, ctx: ChromeContext): Decoration[] {
         const bar = el('span', 'nd-tools');
         bar.setAttribute('role', 'toolbar');
         bar.setAttribute('aria-label', 'Work on this line');
+        // A compact sheet (notes.css `.nd-compact`) has no gutter to stack the four in: they fold
+        // behind this handle on the block's corner, and open on hover, focus or a click. A wide
+        // sheet hides the handle, and the list lays out exactly as the toolbar always did.
+        const more = button('nd-tools-more', '⋯', 'Explain, Example, Quiz me, Ask…', () => {
+          more.setAttribute('aria-expanded', String(bar.classList.toggle('nd-tools-open')));
+        });
+        more.setAttribute('aria-label', 'Work on this line');
+        more.setAttribute('aria-haspopup', 'true');
+        more.setAttribute('aria-expanded', 'false');
+        bar.addEventListener('mouseleave', () => {
+          bar.classList.remove('nd-tools-open');
+          more.setAttribute('aria-expanded', 'false');
+        });
+        const list = el('span', 'nd-tools-list');
         for (const action of ACTIONS) {
           const control = button(`nd-tool nd-tool-${action.kind}`, '', action.title, () => act(blockId, action.kind));
           if (action.who) control.append(agentDot(action.who));
           control.append(document.createTextNode(action.label));
           control.setAttribute('aria-label', action.who ? `${action.label} (${AGENT_NAME[action.who]})` : action.label);
           if (busy && action.kind !== 'ask') control.disabled = true;
-          bar.append(control);
+          list.append(control);
         }
+        bar.append(more, list);
         holder.append(bar);
         return holder;
       }),
@@ -474,7 +489,11 @@ function recommendationCards(doc: Node, ctx: ChromeContext): Decoration[] {
 function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
   const byPos = new Map<number, DocEditRecord[]>();
   for (const edit of ctx.edits) {
-    const target = edit.blockIds.map((id) => blockPos(doc, id)).find((hit) => hit !== null);
+    // The edit's own block before the tutorial part it also names: a hint line Max writes into a
+    // part names the part too, and its Remove · Keep belongs beside the line, not on the
+    // part card's top edge (live run, 4 Oct 2026).
+    const hits = edit.blockIds.map((id) => blockPos(doc, id)).filter((hit) => hit !== null);
+    const target = hits.find((hit) => hit.node.type.name !== 'tut_part') ?? hits[0];
     if (!target) continue;
     const at = byPos.get(target.pos) ?? [];
     at.push(edit);

@@ -12,12 +12,17 @@
    * the neutral *the room has it* line for the floor-yield window, the named indicator, the
    * elapsed counter for Max only, **Stop** once the floor has passed, and the failure card with
    * its retry. A turn always ends in something the learner can see.
+   *
+   * **Replying in a span thread** (2026-10-04): the one composer sends where `composeTarget`
+   * says: the thread the learner chose (**Reply here** on its card, or the thread last brought
+   * into view, such as a tutorial part's after Help or Check), else Max's open question, else the
+   * notebook chat. A chip above the composer names the thread and clears it.
    */
   import { untrack } from 'svelte';
   import type { MessageView } from '../../../shared/types.js';
   import type { ThreadView } from '../../../shared/doc/types.js';
-  import { RECEIVED_LINE, pendingFor, receivedVisible, stopAllowed } from '../../lib/flowchat.js';
-  import { ASK_PLACEHOLDER, chatComposer, messagesOf } from '../../lib/chatview.js';
+  import { RECEIVED_LINE, pendingFor, receivedVisible, stopAllowed, type PendingSend } from '../../lib/flowchat.js';
+  import { ASK_PLACEHOLDER, REPLY_PLACEHOLDER, chatComposer, composeTarget, messagesOf } from '../../lib/chatview.js';
   import { NOTEBOOK_ASK_PLACEHOLDER, greetingOf } from '../../lib/notebookview.js';
   import { clock, store } from '../../lib/store.svelte.js';
   import ChatMessage from './ChatMessage.svelte';
@@ -67,9 +72,27 @@
   );
 
   const open = $derived(chat.openQuiz);
-  const composer = $derived(chatComposer(open?.quiz ?? null));
+  const target = $derived(
+    composeTarget({
+      replyTo: chat.replyTo,
+      spanThreadIds: spans.map((t) => t.threadId),
+      openQuizThreadId: open?.threadId ?? null,
+      docThreadId: docId,
+    }),
+  );
+  const replyThread = $derived(target.replying ? (spans.find((t) => t.threadId === target.threadId) ?? null) : null);
+  const composer = $derived(chatComposer(target.answering ? (open?.quiz ?? null) : null));
   /** §6: the notebook's own placeholder while nothing is open; the answering ones are unchanged. */
-  const placeholder = $derived(composer.placeholder === ASK_PLACEHOLDER ? NOTEBOOK_ASK_PLACEHOLDER : composer.placeholder);
+  const placeholder = $derived(
+    composer.placeholder !== ASK_PLACEHOLDER ? composer.placeholder : replyThread ? REPLY_PLACEHOLDER : NOTEBOOK_ASK_PLACEHOLDER,
+  );
+
+  let foot = $state<HTMLElement | null>(null);
+  /** A card's **Reply here**: the composer takes that thread, and the caret goes to it. */
+  function replyIn(threadId: string): void {
+    chat.replyIn(threadId);
+    queueMicrotask(() => foot?.querySelector<HTMLTextAreaElement>('textarea')?.focus());
+  }
 
   /**
    * **Ellie's greeting and the three starter questions** (§6, contract C10), from the overview's
@@ -174,13 +197,33 @@
       void chat.sendDraft(text);
       return;
     }
-    chat.send(open?.threadId ?? docId, text);
+    chat.send(target.threadId, text);
   }
 
   async function pass(): Promise<void> {
     refused = await chat.pass();
   }
 </script>
+
+{#snippet mine(sent: PendingSend)}
+  <article class="mine" class:sending={sent.state === 'pending'} class:failed={sent.state === 'failed'}>
+    <header>
+      <span class="label-caps">You</span>
+      <span class="gap"></span>
+      <span class="state" class:bad={sent.state === 'failed'}>
+        {sent.state === 'pending' ? 'Sending…' : "Didn't send"}
+      </span>
+    </header>
+    <p>{sent.body}</p>
+    {#if sent.state === 'failed'}
+      <div class="sendfoot">
+        <span class="why">{sent.error ?? 'The app could not reach the room.'}</span>
+        <button type="button" class="ctrl" onclick={() => chat.retrySend(sent.id)}>Retry</button>
+        <button type="button" class="ctrl ghost" onclick={() => chat.dropSend(sent.id)}>Discard</button>
+      </div>
+    {/if}
+  </article>
+{/snippet}
 
 <div class="chat">
   <div class="scroll" bind:this={scroller}>
@@ -218,7 +261,14 @@
           {pages}
           {onjump}
           {onpage}
+          replying={replyThread?.threadId === entry.thread.threadId}
+          onreply={() => replyIn(entry.thread!.threadId)}
         >
+          {#snippet tail()}
+            {#each pendingFor(chat.pending, entry.thread!.threadId) as sent (sent.id)}
+              {@render mine(sent)}
+            {/each}
+          {/snippet}
           {#if chat.thinking}<ThinkingIndicator thinking={chat.thinking} />{/if}
         </SpanThreadCard>
       {/if}
@@ -226,23 +276,7 @@
 
     <!-- The learner's words, on screen from the keystroke and greyed until the echo. -->
     {#each pendingHere as sent (sent.id)}
-      <article class="mine" class:sending={sent.state === 'pending'} class:failed={sent.state === 'failed'}>
-        <header>
-          <span class="label-caps">You</span>
-          <span class="gap"></span>
-          <span class="state" class:bad={sent.state === 'failed'}>
-            {sent.state === 'pending' ? 'Sending…' : "Didn't send"}
-          </span>
-        </header>
-        <p>{sent.body}</p>
-        {#if sent.state === 'failed'}
-          <div class="sendfoot">
-            <span class="why">{sent.error ?? 'The app could not reach the room.'}</span>
-            <button type="button" class="ctrl" onclick={() => chat.retrySend(sent.id)}>Retry</button>
-            <button type="button" class="ctrl ghost" onclick={() => chat.dropSend(sent.id)}>Discard</button>
-          </div>
-        {/if}
-      </article>
+      {@render mine(sent)}
     {/each}
 
     {#if received && (heldAnchor === docId || heldAnchor === null)}
@@ -270,7 +304,17 @@
     {/each}
   </div>
 
-  <div class="foot">
+  <div class="foot" bind:this={foot}>
+    {#if replyThread && !draft}
+      <!-- The thread the composer is replying in. ✕ (or Esc) goes back to the notebook chat. -->
+      <div class="draft replyto">
+        <blockquote title={replyThread.quote ?? ''}>
+          <span class="replyto-label">Replying in the thread about</span>
+          {replyThread.quote ?? 'a line in the document'}
+        </blockquote>
+        <button type="button" class="drop" title="Ask the notebook chat instead" onclick={() => chat.clearReply()}>✕</button>
+      </div>
+    {/if}
     {#if draft}
       <!-- The draft span thread: the quote is here, the thread is not created until this sends. -->
       <div class="draft">
@@ -286,7 +330,8 @@
     <!-- What this thread has cost (#42 item C). Above the composer rather than at the end of the
          scroller, so it is where the learner already is rather than somewhere they have to
          scroll to — and so it does not move every time a reply lands. -->
-    <CostFooter anchorId={docId} />
+    <!-- The thread the composer sends to, so "this thread" means the one being written in. -->
+    <CostFooter anchorId={target.threadId} />
 
     <MentionComposer
       placeholder={draft ? 'Ask about this line…' : placeholder}
@@ -295,10 +340,10 @@
       passing={chat.passing}
       busy={chat.draftBusy}
       autofocus={draft !== null}
-      cancelLabel={draft ? 'cancels' : null}
+      cancelLabel={draft ? 'cancels' : replyThread ? 'leaves the thread' : null}
       onsend={send}
       onpass={() => void pass()}
-      oncancel={draft ? () => chat.cancelDraft() : undefined}
+      oncancel={draft ? () => chat.cancelDraft() : replyThread ? () => chat.clearReply() : undefined}
     />
   </div>
 </div>
@@ -425,6 +470,7 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  .replyto-label { display: block; font-style: normal; font-size: 10px; color: var(--indigo); }
   .drop { flex: none; font-size: 11px; color: var(--muted); }
   .drop:hover { color: #8a2708; }
 

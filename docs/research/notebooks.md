@@ -31,9 +31,14 @@ first *short* pass, and the rest of the notes grow from what the learner chose t
 - **Sources are copied into app storage** (answer C), under the app's data directory, one folder
   per notebook. The original file can move or be deleted without breaking the notebook. Removing a
   source deletes the copy, never the original.
-- **Adding sources:** drag files anywhere onto the notebook window, onto the drop zone in the
-  sources panel, or press **Add sources** for a file picker. Each new source shows a reading bar,
-  then "ready" (text extracted and indexed).
+- **Adding sources:** drag files onto the sources column (its drop box lights up), or press
+  **Add sources** for a file picker. Each new source shows a reading bar, then "ready" (text
+  extracted and indexed). *Changed 2026-10-04 (Lucas):* this was "anywhere onto the notebook
+  window". Now only the sources column turns a drop into sources. An **image** dropped on the
+  notes or on a tutorial sheet goes into that sheet, in line, after the block it was dropped on.
+  It is still added as an image source, because an image in a sheet is a notebook page
+  (`slide_image` cites a page), which keeps its provenance and its slide window. Any other file
+  dropped on a sheet or on the chat is refused, with a line that says to drop it on Sources.
 - **The Notebooks home** is a grid of notebooks: title, source count, last edited, own-words fill.
   Dropping files on the home screen starts a new notebook named after the first file. A **New
   notebook** button opens the picker.
@@ -43,6 +48,10 @@ first *short* pass, and the rest of the notes grow from what the learner chose t
   vault folder itself is never modified.
 
 ## 2. Context is per notebook
+
+*Amended 2026-10-03:* sources now have a **role** (`tutorials.md` §1). A `lecture` source is
+everything this section says. A `tutorial` is a problem sheet that opens as its own document
+beside the notes and is never in the overview; a `solutions` source is never in anyone's context.
 
 - **Each source has a checkbox.** The ticked sources are the notebook's context: the overview is
   written from them, and Ellie and Max read them. An unticked source stays in the notebook and

@@ -211,6 +211,26 @@ export function chatComposer(quiz: DocQuizView | null | undefined, testerName = 
   };
 }
 
+/**
+ * **Where the composer sends** (2026-10-04). The span thread the learner is replying in, while it
+ * still exists; else Max's open question; else the notebook chat. `answering` is true only when
+ * the words go to the thread whose question is open, so the composer turns into *Your answer…*
+ * with **Pass** there and nowhere else.
+ */
+export function composeTarget(input: {
+  replyTo: string | null;
+  spanThreadIds: readonly string[];
+  openQuizThreadId: string | null;
+  docThreadId: string;
+}): { threadId: string; replying: boolean; answering: boolean } {
+  const replying = input.replyTo !== null && input.spanThreadIds.includes(input.replyTo);
+  const threadId = replying ? input.replyTo! : (input.openQuizThreadId ?? input.docThreadId);
+  return { threadId, replying, answering: input.openQuizThreadId !== null && threadId === input.openQuizThreadId };
+}
+
+/** The composer's placeholder while it replies in a span thread that has no question open. */
+export const REPLY_PLACEHOLDER = 'Reply in this thread…';
+
 // ── the tags on a turn (§4.2's rule column, §4.3's cue) ─────────────────────────────────────
 
 export interface ChatTag {

@@ -23,7 +23,7 @@
  */
 
 import type { Fragment, Mark, Node, Schema } from 'prosemirror-model';
-import { authorMark } from './schema.js';
+import { authorMark, blankText } from './schema.js';
 import { normaliseTexDelimiters } from './tex.js';
 import type { DocAuthor } from './types.js';
 
@@ -224,6 +224,11 @@ export function nodesToInline(fragment: Fragment): string {
       return;
     }
     lastMath = null;
+    if (node.type.name === 'tut_blank') {
+      // A tutorial blank reads as its answer in brackets, or `[____]` while it is empty.
+      tokens.push({ text: blankText(node.attrs.value as string), strong: false, em: false, code: false, tex: null });
+      return;
+    }
     if (node.type.name === 'math_block') {
       tokens.push({ text: '', strong: false, em: false, code: false, tex: node.attrs.tex as string });
       return;

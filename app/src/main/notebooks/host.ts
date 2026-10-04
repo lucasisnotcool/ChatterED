@@ -12,7 +12,8 @@
  * file or runs pdf.js.
  */
 import type { SqlDatabase } from '../db/driver.js';
-import type { LocatedPage, NotebookHost, NotebookSubject } from '../dochost.js';
+import type { LocatedPage, NotebookHost, NotebookSubject, SourceRoleFilter } from '../dochost.js';
+import type { SourceRole } from '../../shared/tutorial.js';
 import { capText } from '../vault/extract.js';
 import { DECK_TEXT_CAP } from '../vault/service.js';
 import { createVaultRepo } from '../vault/repo.js';
@@ -35,13 +36,23 @@ export function imagePageLine(name: string): string {
   return `(An image: ${name}. It has no text to read.)`;
 }
 
+/** The room's context (`refreezeNotebookMaterial`, the doc chat): lecture and tutorial sources. */
+export const ROOM_ROLES: readonly SourceRole[] = ['lecture', 'tutorial'];
+
+/** The overview's: lecture sources only. */
+export const OVERVIEW_ROLES: readonly SourceRole[] = ['lecture'];
+
+function roleOf(record: Pick<SourceRecord, 'role'>): SourceRole {
+  return record.role === 'tutorial' || record.role === 'solutions' ? record.role : 'lecture';
+}
+
 export interface NotebookHostImpl extends NotebookHost {
   /**
    * The room's outline for a notebook (C4): the first line of each page of the ticked, ready
    * sources, `p. N — head` with N the notebook page, under each source's name when there is more
    * than one. Never generated: what the sources say about themselves.
    */
-  outline(notebookId: string): string;
+  outline(notebookId: string, opts?: SourceRoleFilter): string;
   /**
    * What the scripted backend should recognise this notebook as: its first ticked, ready source
    * (name and the sha of its bytes), so a fixture deck added to a notebook still replays its
@@ -54,7 +65,14 @@ export function createNotebookHost(db: SqlDatabase, deps: { absPath(relPath: str
   const repo = notebooksRepo(db);
   const vault = createVaultRepo(db);
 
-  const inContext = (records: SourceRecord[]) => records.filter((r) => r.enabled === 1 && r.status === 'ready');
+  /**
+   * The ticked, ready sources of the roles asked for (`tutorials.md` §1): by default the room's
+   * context, lecture and tutorial. Solutions are never context, whatever is asked.
+   */
+  const inContext = (records: SourceRecord[], roles: readonly SourceRole[] = ROOM_ROLES) =>
+    records.filter(
+      (r) => r.enabled === 1 && r.status === 'ready' && roleOf(r) !== 'solutions' && roles.includes(roleOf(r)),
+    );
 
   /** One source's indexed pages as notebook pages, in order. */
   const pagesOf = (record: SourceRecord, from: number | null = null, to: number | null = null) =>
@@ -80,10 +98,10 @@ export function createNotebookHost(db: SqlDatabase, deps: { absPath(relPath: str
       };
     },
 
-    deckText(notebookId) {
+    deckText(notebookId, opts) {
       if (!isNotebookId(notebookId)) return { text: '', truncated: false };
       const parts: string[] = [];
-      for (const record of inContext(repo.sources(notebookId))) {
+      for (const record of inContext(repo.sources(notebookId), opts?.roles)) {
         parts.push(sourceHeader(record.display_name));
         if (record.file_kind === 'image') {
           parts.push(`[p. ${record.page_base + 1}]\n${imagePageLine(record.display_name)}`);
@@ -98,7 +116,7 @@ export function createNotebookHost(db: SqlDatabase, deps: { absPath(relPath: str
       return { text: capped, truncated: capped.length < text.length };
     },
 
-    textFor({ notebookId, pageFrom, pageTo }) {
+    textFor({ notebookId, pageFrom, pageTo, includeSolutions }) {
       if (!isNotebookId(notebookId)) return '';
       if (!Number.isFinite(pageFrom) || !Number.isFinite(pageTo)) return '';
       const lo = Math.max(1, Math.floor(Math.min(pageFrom, pageTo)));
@@ -106,6 +124,8 @@ export function createNotebookHost(db: SqlDatabase, deps: { absPath(relPath: str
       const bodies: string[] = [];
       for (const record of repo.sources(notebookId)) {
         if (record.page_count < 1) continue;
+        // Solutions are read only to rewrite a tutorial's key (`main/tutorial/`), never as context.
+        if (roleOf(record) === 'solutions' && includeSolutions !== true) continue;
         const first = Math.max(lo, record.page_base + 1);
         const last = Math.min(hi, record.page_base + record.page_count);
         if (first > last) continue;
@@ -145,9 +165,9 @@ export function createNotebookHost(db: SqlDatabase, deps: { absPath(relPath: str
       };
     },
 
-    outline(notebookId) {
+    outline(notebookId, opts) {
       if (!isNotebookId(notebookId)) return '';
-      const records = inContext(repo.sources(notebookId));
+      const records = inContext(repo.sources(notebookId), opts?.roles);
       const named = records.length > 1;
       const lines: string[] = [];
       for (const record of records) {
@@ -173,7 +193,7 @@ export function createNotebookHost(db: SqlDatabase, deps: { absPath(relPath: str
     },
 
     scriptMaterial(notebookId) {
-      const first = inContext(repo.sources(notebookId))[0];
+      const first = inContext(repo.sources(notebookId), ['lecture'])[0] ?? inContext(repo.sources(notebookId))[0];
       if (first && first.sha256) return { fileName: first.display_name, contentSha: first.sha256 };
       return { fileName: repo.get(notebookId)?.name ?? notebookId, contentSha: notebookContentKey(notebookId) };
     },

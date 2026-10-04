@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   CHAT,
   COLLAPSE_SLACK,
+  COMPACT_BELOW,
+  GUTTER_COMPACT,
+  NOTES_HEAD_COMPACT_BELOW,
+  TUTORIAL_HEAD_COMPACT_BELOW,
+  TWO_PANES_WANTED,
+  filesChosen,
+  filesCrowdTutorial,
+  roomForTutorial,
+  type FilesRoom,
+  headCompact,
+  sheetFit,
+  tutorialSheetFit,
   FILES,
   HOME_ZOOM,
   NOTES_ZOOM,
@@ -130,6 +142,108 @@ describe('the notes gutters', () => {
   });
 });
 
+describe('the compact sheet', () => {
+  it('leaves a wide pane exactly as the gutters had it', () => {
+    for (const [w, z] of [[1100, 1], [1000, 1.25], [600, 1], [1400, 2]] as const) {
+      expect(sheetFit(w, z)).toEqual({ compact: false, gutter: sheetGutter(w, z) });
+    }
+  });
+
+  it('drops the gutters below COMPACT_BELOW units, so a 340 px pane is not a 132 px column', () => {
+    expect(sheetFit(340, 1)).toEqual({ compact: true, gutter: GUTTER_COMPACT });
+    expect(sheetFit(COMPACT_BELOW - 1, 1).compact).toBe(true);
+    // Zoomed: 1000 px at 200 % is 500 units, a narrow sheet.
+    expect(sheetFit(1000, 2).compact).toBe(true);
+    // The compact column is always wider than the floor gutters' one at the same width.
+    for (let w = 300; w < COMPACT_BELOW; w += 20) {
+      expect(w - 2 * GUTTER_COMPACT).toBeGreaterThan(w - 2 * GUTTER_FLOOR);
+    }
+  });
+
+  it('is not compact before the pane has been measured', () => {
+    expect(sheetFit(0, 1).compact).toBe(false);
+    expect(tutorialSheetFit(0).compact).toBe(false);
+  });
+
+  it("keeps the tutorial's own wide gutters, and compacts at the same width", () => {
+    expect(tutorialSheetFit(1000)).toEqual({ compact: false, gutter: GUTTER_FULL });
+    expect(tutorialSheetFit(800)).toEqual({ compact: false, gutter: 88 });
+    expect(tutorialSheetFit(COMPACT_BELOW)).toEqual({ compact: false, gutter: 88 });
+    expect(tutorialSheetFit(360)).toEqual({ compact: true, gutter: GUTTER_COMPACT });
+  });
+
+  it('lays the zoomed tutorial out in its unzoomed width, as the notes are', () => {
+    expect(tutorialSheetFit(1000, 2)).toEqual({ compact: true, gutter: GUTTER_COMPACT });
+    expect(tutorialSheetFit(1000, 1)).toEqual(tutorialSheetFit(1000));
+    expect(tutorialSheetFit(500, 0.75).compact).toBe(false);
+  });
+});
+
+describe('the panes\' headers', () => {
+  it('fold below their widths, and never before they are measured', () => {
+    expect(headCompact(0, NOTES_HEAD_COMPACT_BELOW)).toBe(false);
+    expect(headCompact(340, NOTES_HEAD_COMPACT_BELOW)).toBe(true);
+    expect(headCompact(NOTES_HEAD_COMPACT_BELOW, NOTES_HEAD_COMPACT_BELOW)).toBe(false);
+    expect(headCompact(400, TUTORIAL_HEAD_COMPACT_BELOW)).toBe(true);
+    expect(headCompact(700, TUTORIAL_HEAD_COMPACT_BELOW)).toBe(false);
+  });
+});
+
+describe('room for a docked tutorial', () => {
+  it('folds the sources when the doc column would be under two readable panes', () => {
+    // 1440 px window, 48 px rail: 1392 - 280 - 380 leaves 732.
+    expect(filesCrowdTutorial(1392, 280, 380)).toBe(true);
+    // 1728 px: 1680 - 280 - 380 leaves 1020.
+    expect(filesCrowdTutorial(1680, 280, 380)).toBe(false);
+    expect(filesCrowdTutorial(280 + 380 + TWO_PANES_WANTED, 280, 380)).toBe(false);
+    expect(filesCrowdTutorial(280 + 380 + TWO_PANES_WANTED - 1, 280, 380)).toBe(true);
+  });
+
+  it('says nothing before the shell is measured', () => {
+    expect(filesCrowdTutorial(0, 280, 380)).toBe(false);
+  });
+});
+
+describe('folding the sources for a docked tutorial (roomForTutorial)', () => {
+  const opened: FilesRoom = { open: true, madeRoom: false, docked: false, chose: false };
+  const run = (s: FilesRoom, ...steps: (boolean | null | 'open' | 'close')[]): FilesRoom =>
+    steps.reduce<FilesRoom>(
+      (at, step) => (step === 'open' ? filesChosen(at, true) : step === 'close' ? filesChosen(at, false) : roomForTutorial(at, step)),
+      s,
+    );
+
+  it('folds the sources when crowded, and brings them back when the tutorial goes', () => {
+    const folded = run(opened, true);
+    expect(folded).toMatchObject({ open: false, madeRoom: true });
+    expect(run(folded, null)).toMatchObject({ open: true, madeRoom: false });
+  });
+
+  it('leaves them alone with room, and brings them back while docked when the window grows', () => {
+    expect(run(opened, false, null).open).toBe(true);
+    expect(run(opened, true, false)).toMatchObject({ open: true, madeRoom: false });
+  });
+
+  it('never opens a panel the learner had closed', () => {
+    expect(run({ ...opened, open: false }, true, false, null).open).toBe(false);
+  });
+
+  it('respects a learner who reopens the panel while docked, until the tutorial closes', () => {
+    const chose = run(opened, true, 'open', true);
+    expect(chose.open).toBe(true);
+    expect(run(chose, null).open).toBe(true);
+    // The next docking starts afresh.
+    expect(run(chose, null, true).open).toBe(false);
+  });
+
+  it('does not reopen a panel the learner closed after it was folded for them', () => {
+    expect(run(opened, true, 'open', 'close', null).open).toBe(false);
+  });
+
+  it('remembers no choice made while nothing is docked', () => {
+    expect(run(opened, 'open', true).open).toBe(false);
+  });
+});
+
 describe('keeping the paragraph under the pointer while the notes reflow', () => {
   it('scrolls by however far the same point of the block has moved', () => {
     // The pointer is a quarter of the way down a 100 px block at 200. At 150 % the block is
@@ -206,5 +320,77 @@ describe('dragging past the maximum', () => {
     expect(dragOvershoots(500, 0, 100 + 72, 1, b)).toBe(false);
     expect(dragOvershoots(500, 0, 100 + 73, 1, b)).toBe(true);
     expect(dragOvershoots(500, 0, -200, -1, b)).toBe(true);
+  });
+});
+
+describe('the tutorial window (floatFrame)', () => {
+  it('starts on the right with nothing remembered, inside the app', async () => {
+    const { floatFrame } = await import('./layout.js');
+    const f = floatFrame(null, { width: 1400, height: 900 });
+    expect(f.left + f.width).toBeLessThanOrEqual(1400);
+    expect(f.left).toBeGreaterThan(700);
+    expect(f.top).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps a remembered window grabbable and no bigger than the app', async () => {
+    const { floatFrame, TUTORIAL_WINDOW_MIN } = await import('./layout.js');
+    const f = floatFrame({ left: 3000, top: -50, width: 5000, height: 100 }, { width: 1200, height: 800 });
+    expect(f.width).toBeLessThanOrEqual(1200);
+    expect(f.height).toBe(TUTORIAL_WINDOW_MIN.height);
+    expect(f.left).toBeLessThan(1200);
+    expect(f.top).toBe(0);
+  });
+
+  it('never under the app title bar: a remembered frame there comes back below it', async () => {
+    const { floatFrame } = await import('./layout.js');
+    const f = floatFrame({ left: 400, top: 0, width: 500, height: 600 }, { width: 1400, height: 900, top: 38 });
+    expect(f).toEqual({ left: 400, top: 38, width: 500, height: 600 });
+    const fresh = floatFrame(null, { width: 1400, height: 900, top: 38 });
+    expect(fresh.top).toBeGreaterThanOrEqual(38);
+    expect(fresh.top + fresh.height).toBeLessThanOrEqual(900);
+  });
+
+  it('caps the height at the app below the title bar', async () => {
+    const { floatFrame } = await import('./layout.js');
+    const f = floatFrame({ left: 100, top: 100, width: 500, height: 5000 }, { width: 1200, height: 800, top: 38 });
+    expect(f.height).toBe(800 - 38 - 16);
+    expect(f.top).toBe(100);
+  });
+
+  it('reads a stored frame defensively', async () => {
+    const { readFloatFrame } = await import('./layout.js');
+    expect(readFloatFrame(null)).toBeNull();
+    expect(readFloatFrame('nope')).toBeNull();
+    expect(readFloatFrame('{"left":1,"top":2,"width":"3","height":4}')).toBeNull();
+    expect(readFloatFrame('{"left":1,"top":2,"width":3,"height":4}')).toEqual({ left: 1, top: 2, width: 3, height: 4 });
+  });
+});
+
+describe('the tutorial’s Split ratio', () => {
+  it('follows the divider, kept inside the bounds and leaving both views usable', async () => {
+    const { splitRatioAt, TUTORIAL_SPLIT, SPLIT_VIEW_MIN } = await import('./layout.js');
+    expect(splitRatioAt(300, 1000)).toBe(0.3);
+    expect(splitRatioAt(10, 1000)).toBe(TUTORIAL_SPLIT.min);
+    expect(splitRatioAt(990, 1000)).toBe(TUTORIAL_SPLIT.max);
+    // A short window: the 72 px floor is stricter than 15 %.
+    expect(splitRatioAt(0, 300) * 300).toBeCloseTo(SPLIT_VIEW_MIN, 0);
+    expect(splitRatioAt(0, 0)).toBe(TUTORIAL_SPLIT.initial);
+  });
+
+  it('moves by key, and ignores keys that are not its own', async () => {
+    const { splitKeyRatio, TUTORIAL_SPLIT } = await import('./layout.js');
+    expect(splitKeyRatio(0.4, 'ArrowUp', false)).toBe(0.35);
+    expect(splitKeyRatio(0.4, 'ArrowDown', true)).toBe(0.55);
+    expect(splitKeyRatio(0.4, 'Home', false)).toBe(TUTORIAL_SPLIT.min);
+    expect(splitKeyRatio(0.4, 'End', false)).toBe(TUTORIAL_SPLIT.max);
+    expect(splitKeyRatio(0.4, 'a', false)).toBeNull();
+  });
+
+  it('reads a stored ratio defensively', async () => {
+    const { readSplitRatio, TUTORIAL_SPLIT } = await import('./layout.js');
+    expect(readSplitRatio(null)).toBe(TUTORIAL_SPLIT.initial);
+    expect(readSplitRatio('nope')).toBe(TUTORIAL_SPLIT.initial);
+    expect(readSplitRatio('0.62')).toBe(0.62);
+    expect(readSplitRatio('5')).toBe(TUTORIAL_SPLIT.max);
   });
 });

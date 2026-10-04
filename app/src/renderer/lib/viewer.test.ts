@@ -63,4 +63,27 @@ describe('the viewer command registry', () => {
     offTop();
     expect(runViewerCommand('zoom.out')).toBe(false);
   });
+
+  it('lets the tutorial take ⌘+ only while it is the pane in focus, and gives it back to the notes', () => {
+    const notes: string[] = [];
+    const tutorial: string[] = [];
+    let tutorialFocused = false;
+    const offNotes = registerViewer((c) => notes.push(c));
+    const offTutorial = registerViewer((c) => tutorial.push(c), () => tutorialFocused);
+    runViewerCommand('zoom.in');
+    tutorialFocused = true;
+    runViewerCommand('zoom.out');
+    tutorialFocused = false;
+    runViewerCommand('zoom.reset');
+    expect(notes).toEqual(['zoom.in', 'zoom.reset']);
+    expect(tutorial).toEqual(['zoom.out']);
+    offTutorial();
+    offNotes();
+  });
+
+  it('reports nothing done when every registration declines', () => {
+    const off = registerViewer(() => undefined, () => false);
+    expect(runViewerCommand('zoom.in')).toBe(false);
+    off();
+  });
 });

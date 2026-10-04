@@ -19,6 +19,10 @@
  * Pure: imported by main and by the renderer.
  */
 
+import type { SourceRole } from './tutorial.js';
+
+export type { SourceRole } from './tutorial.js';
+
 /** `nb_<12 hex>`. The id the doc, the room, the tree and the outcomes are keyed on. */
 export const NOTEBOOK_ID_PREFIX = 'nb_';
 
@@ -65,6 +69,14 @@ export interface NotebookSourceView {
   /** Why a source failed, in a sentence the learner can act on. */
   error: string | null;
   addedAt: string;
+  /**
+   * **What the source is in this notebook** (`docs/research/tutorials.md` §1, migration 028): a
+   * `lecture` (the default, and every source added before 2026-10-03), a `tutorial` sheet shown
+   * beside the notes, or the `solutions` to one tutorial, hidden from every context.
+   */
+  role: SourceRole;
+  /** For `solutions`: the `fileId` of the tutorial they answer, or null when none is chosen. */
+  keyFor: string | null;
 }
 
 export interface NotebookView {
@@ -204,12 +216,18 @@ export function pagesOfSource(source: Pick<NotebookSourceView, 'pageBase' | 'pag
  * A fingerprint of what is in context: the ticked, ready sources and their bases. Two calls on
  * the same set give the same string in any order. Stored on the overview as what it was written
  * from (`OverviewMeta.fingerprint`), and compared to tell the learner it is out of date.
+ *
+ * **Lecture sources only, by default** (`tutorials.md` §1): a tutorial or its solutions are not
+ * the overview's to cover, so adding or retyping one must not raise the "not covered" banner. A
+ * source with no `role` (a view from before migration 028) counts as a lecture. `roles` widens it
+ * for a caller that fingerprints another context (the room's is lecture and tutorial).
  */
 export function contextFingerprint(
-  sources: readonly Pick<NotebookSourceView, 'fileId' | 'pageBase' | 'enabled' | 'status'>[],
+  sources: readonly (Pick<NotebookSourceView, 'fileId' | 'pageBase' | 'enabled' | 'status'> & { role?: SourceRole })[],
+  roles: readonly SourceRole[] = ['lecture'],
 ): string {
   return sources
-    .filter((s) => s.enabled && s.status === 'ready')
+    .filter((s) => s.enabled && s.status === 'ready' && roles.includes(s.role ?? 'lecture'))
     .map((s) => `${s.fileId}@${s.pageBase}`)
     .sort()
     .join(',');

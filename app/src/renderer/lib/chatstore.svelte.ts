@@ -55,6 +55,8 @@ function emptyChannel(): PrivateChannel {
 export interface DraftSpan {
   blockId: string;
   quote: string;
+  /** A tutorial's content key, when the line is on a tutorial sheet (`tutorialContentKey`). */
+  docKey?: string;
 }
 
 export class ChatStore {
@@ -80,6 +82,17 @@ export class ChatStore {
   /** The thread to bring into view; cleared by the component once it has scrolled. */
   focusRequest: { threadId: string; token: number } | null = $state(null);
   draft: DraftSpan | null = $state(null);
+  /**
+   * **The span thread the composer replies in** (2026-10-04), or null for the notebook chat.
+   *
+   * A span thread had no way to be answered: the one composer sent to the doc chat unless a quiz
+   * was open, so when Max ended a tutorial hint with a question ("which actions have their
+   * preconditions met?"), the learner's answer went to the notebook chat, away from the part it
+   * was about. It is set by a card's **Reply here** and whenever a thread is brought into view
+   * (`focusThread`: a tutorial Help or Check landing, a Ctrl+E thread just created, a highlight
+   * clicked), and the composer says so with a chip that clears it.
+   */
+  replyTo: string | null = $state(null);
   draftBusy = $state(false);
   passing = $state(false);
   /** The private turn whose **Insert into the document** is in flight. */
@@ -199,6 +212,7 @@ export class ChatStore {
     this.lastSendAnchor = null;
     this.tab = 'doc';
     this.draft = null;
+    this.replyTo = null;
     this.focusRequest = null;
     this.seen = {};
     // Closing the document ends both private threads. They are not restored on reopen, and the
@@ -255,9 +269,11 @@ export class ChatStore {
    * chip, focused, with the composer under it. No thread is created until the learner sends —
    * `chat:openSpan` takes the question, so there is no such thing as an empty span thread.
    */
-  openSpanThread(input: { blockId: string; quote: string }): void {
+  openSpanThread(input: { blockId: string; quote: string; docKey?: string }): void {
     this.tab = 'doc';
-    this.draft = { blockId: input.blockId, quote: input.quote.trim() };
+    this.replyTo = null;
+    // `docKey`: a line of a tutorial sheet, whose thread is on the tutorial's document (S7).
+    this.draft = { blockId: input.blockId, quote: input.quote.trim(), ...(input.docKey ? { docKey: input.docKey } : {}) };
   }
 
   cancelDraft(): void {
@@ -272,7 +288,13 @@ export class ChatStore {
     if (!fileId || !draft || body.length === 0) return null;
     this.draftBusy = true;
     const result = await bridge()
-      .chatOpenSpan({ fileId, blockId: draft.blockId, quote: draft.quote, question: body })
+      .chatOpenSpan({
+        fileId,
+        blockId: draft.blockId,
+        quote: draft.quote,
+        question: body,
+        ...(draft.docKey ? { docKey: draft.docKey } : {}),
+      })
       .catch(() => null);
     this.draftBusy = false;
     if (!result) return null;
@@ -316,11 +338,25 @@ export class ChatStore {
   /** Bring a thread into view — a highlight click in the document, or a card's own header. */
   focusThread(threadId: string): void {
     this.tab = 'doc';
+    // The thread just brought into view is the conversation now: the next words go to it.
+    this.replyTo = threadId === this.docThreadId ? null : threadId;
     this.focusRequest = { threadId, token: (this.focusRequest?.token ?? 0) + 1 };
+  }
+
+  /** A card's **Reply here**: the composer answers in that thread (and a half-asked draft goes). */
+  replyIn(threadId: string): void {
+    this.draft = null;
+    this.focusThread(threadId);
+  }
+
+  /** The chip's ✕, or Esc: back to the notebook chat. */
+  clearReply(): void {
+    this.replyTo = null;
   }
 
   focusDocChat(): void {
     this.tab = 'doc';
+    this.replyTo = null;
     this.focusRequest = { threadId: this.docThreadId, token: (this.focusRequest?.token ?? 0) + 1 };
   }
 

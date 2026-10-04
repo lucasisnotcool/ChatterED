@@ -6,6 +6,7 @@
  * components. What lives here is only what has a right answer: which size a key press lands on,
  * when a drag has gone far enough to mean "close this panel", which step ⌘+ goes to next.
  */
+import { FLOAT_MARGIN, clampFrame } from './floatframe.js';
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -27,6 +28,16 @@ export const FILES: PanelBounds = { min: 180, max: 440, initial: 244 };
  * longer lines to fit, and the document keeps its own 380 px floor whatever this says.
  */
 export const CHAT: PanelBounds = { min: 340, max: 760, initial: 396 };
+
+/**
+ * The tutorial sheet beside the notes (`docs/research/tutorials.md` §2): a split column inside the
+ * doc column. Its floor is the narrowest a part's chrome (label, status, the four buttons) fits
+ * on one line; the notes keep their own floor (`NOTES_SPLIT_MIN`) beside it.
+ */
+export const TUTORIAL: PanelBounds = { min: 360, max: 980, initial: 480 };
+
+/** The notes' own floor while a tutorial is docked beside them. */
+export const NOTES_SPLIT_MIN = 340;
 
 /**
  * How far past its minimum a panel is dragged before the drag means "close it". Far enough that
@@ -186,6 +197,106 @@ export function sheetGutter(paneWidth: number, zoom: number): number {
   return Math.round(clamp((inner - TEXT_WANTED) / 2, GUTTER_FLOOR, GUTTER_FULL));
 }
 
+/**
+ * **The compact sheet** (2026-10-03, the tutorial docked beside the notes). Below
+ * `COMPACT_BELOW` of the sheet's own units the floor gutters cost more than they hold: at a
+ * 340 px pane two 104 px gutters left the notes a 132 px column, a heading wrapped a word to a
+ * line, and a sheet is not readable like that. Below it the gutters drop to 20 px on the left
+ * and 32 on the right (notes.css `.nd-compact`; `GUTTER_COMPACT` is the `--nd-gutter` the sheet's
+ * own sums see), and what lived in them moves: the toolbar folds behind a `⋯` handle in the
+ * narrow right gutter, the chip shows beside that handle (or over the block's corner, on a block
+ * without one), and Remove · Keep becomes a bar above the block. 600 is where the floor gutters
+ * leave a ~390 px column; the compact sheet gives the same pane ~550. Wide panes are exactly as
+ * they were (`sheetGutter`).
+ */
+export const COMPACT_BELOW = 600;
+export const GUTTER_COMPACT = 24;
+
+export interface SheetFit {
+  compact: boolean;
+  /** `--nd-gutter`, in the sheet's own units. */
+  gutter: number;
+}
+
+/** The notes' sheet: compact below `COMPACT_BELOW` units, `sheetGutter`'s gutters above it. */
+export function sheetFit(paneWidth: number, zoom: number): SheetFit {
+  if (paneWidth > 0 && zoom > 0 && paneWidth / zoom < COMPACT_BELOW) return { compact: true, gutter: GUTTER_COMPACT };
+  return { compact: false, gutter: sheetGutter(paneWidth, zoom) };
+}
+
+/**
+ * The tutorial's sheet. Its wide gutters give way earlier than the notes' do: a part's chrome is
+ * inside its card, and what the margin still holds (a citation chip, "Max wrote this · Remove ·
+ * Keep") needs about 88 px at 10.5 px. Zoomed (2026-10-04), the sheet is laid out in the pane's
+ * width in CSS px at 100 %, as the notes' is (`sheetFit`).
+ */
+export function tutorialSheetFit(paneWidth: number, zoom = 1): SheetFit {
+  const width = zoom > 0 ? paneWidth / zoom : paneWidth;
+  if (width > 0 && width < COMPACT_BELOW) return { compact: true, gutter: GUTTER_COMPACT };
+  return { compact: false, gutter: Math.round(clamp((width - 640) / 2, 88, GUTTER_FULL)) };
+}
+
+/**
+ * The panes' headers fold before their sheets do. The notes' header holds the title, Listen,
+ * − 100 % +, Insert, Add a question and Freeze: about 640 px on one line, and below that it
+ * wrapped onto three rows. Narrower, zoom, Add a question and Freeze go behind a `⋯` menu.
+ * The tutorial's holds a label, its title, *Parts n / m* with a bar, Read again, Pop out and
+ * ×; below 520 the bar goes and Pop out / Dock are icons, so the title keeps its room.
+ */
+export const NOTES_HEAD_COMPACT_BELOW = 640;
+export const TUTORIAL_HEAD_COMPACT_BELOW = 520;
+
+/** True when a pane `width` px wide (0: not measured yet) should draw its compact header. */
+export function headCompact(width: number, below: number): boolean {
+  return width > 0 && width < below;
+}
+
+/**
+ * **Room for a docked tutorial.** Two readable sheets side by side want about 800 px between
+ * them (two compact sheets of ~350 px text each). When the shell, less the sources panel and the
+ * chat at the widths the learner gave them, leaves the doc column less than that, the sources
+ * panel folds away while the tutorial is docked (`LayoutStore.roomForTutorial`). Measured
+ * against the panels' set widths, never their drawn ones, so folding it cannot flip the answer.
+ */
+export const TWO_PANES_WANTED = 800;
+
+export function filesCrowdTutorial(shellWidth: number, filesWidth: number, chatWidth: number): boolean {
+  if (shellWidth <= 0) return false;
+  return shellWidth - filesWidth - chatWidth < TWO_PANES_WANTED;
+}
+
+/** The sources panel's state, as far as a docked tutorial is concerned (`LayoutStore`). */
+export interface FilesRoom {
+  open: boolean;
+  /** Folded by the app to make room for a docked tutorial, not by the learner. */
+  madeRoom: boolean;
+  docked: boolean;
+  /** The learner opened or closed the panel while this tutorial was docked. */
+  chose: boolean;
+}
+
+/** The learner opened or closed the panel (the toggle, its edge, View ▸ Show/Hide Files). */
+export function filesChosen(s: FilesRoom, open: boolean): FilesRoom {
+  return { open, madeRoom: false, docked: s.docked, chose: s.docked };
+}
+
+/**
+ * `crowded` while a tutorial is docked, `null` when none is. Docked and crowded, an open panel
+ * folds; docked with room again (the window grew, the chat narrowed), or no longer docked, a
+ * panel this folded comes back. A learner who opens or closes the panel while the tutorial is
+ * docked has decided, and is left alone until it closes.
+ */
+export function roomForTutorial(s: FilesRoom, crowded: boolean | null): FilesRoom {
+  if (crowded === null) {
+    return { open: s.madeRoom ? true : s.open, madeRoom: false, docked: false, chose: false };
+  }
+  const next = { ...s, docked: true };
+  if (s.chose) return next;
+  if (crowded && s.open) return { ...next, open: false, madeRoom: true };
+  if (!crowded && s.madeRoom) return { ...next, open: true, madeRoom: false };
+  return next;
+}
+
 // ── Swipes ────────────────────────────────────────────────────────────────
 
 /**
@@ -226,4 +337,106 @@ export function stepTab<T>(tabs: readonly T[], current: T, by: number): T {
   const at = tabs.indexOf(current);
   if (at < 0) return current;
   return tabs[clamp(at + by, 0, tabs.length - 1)]!;
+}
+
+// ── The tutorial's floating window (`tutorials.md` §2: Pop out) ───────────────────────────
+
+/** The smallest the tutorial window may be resized to: a part's chrome on one line, a few lines of it. */
+export const TUTORIAL_WINDOW_MIN = { width: 380, height: 300 } as const;
+
+/** A window's place and size in viewport px (the slide windows' `Frame`, `pm/slidegeom.ts`). */
+export interface FloatFrame {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** How much of the window's title bar must stay inside the app to drag it back by. */
+const FLOAT_KEEP = 80;
+const FLOAT_BAR = 40;
+
+/**
+ * The app's size, and where the area a floating window may use starts: `top` is the bottom of the
+ * app's title bar (`floatArea`, `lib/floatframe.ts`), which no floating window may go under —
+ * it is the OS drag region, and a window there could neither be dragged nor clicked. 0 when absent.
+ */
+export interface FloatView {
+  width: number;
+  height: number;
+  top?: number;
+}
+
+/**
+ * **Where the tutorial window goes**, from what was remembered (or nothing) and the app's size
+ * now: the size between the minimum and the area below the title bar less a margin, the place
+ * anywhere as long as its title bar can still be grabbed and its top is below the app's title bar
+ * (`clampFrame`). A frame remembered under the title bar (before 2026-10-04) comes back below it.
+ * With nothing remembered: the right half of the app, below the title bar, where it covers the
+ * chat rather than the notes it is about.
+ */
+export function floatFrame(saved: FloatFrame | null, view: FloatView): FloatFrame {
+  const area = { left: 0, top: view.top ?? 0, right: view.width, bottom: view.height };
+  const base = saved ?? {
+    width: Math.min(560, view.width * 0.42),
+    height: Math.min(720, view.height - 120),
+    left: view.width - Math.min(560, view.width * 0.42) - 24,
+    top: Math.max(64, area.top + 16),
+  };
+  return clampFrame(base, area, { min: TUTORIAL_WINDOW_MIN, keep: FLOAT_KEEP, bar: FLOAT_BAR, margin: FLOAT_MARGIN });
+}
+
+/** A stored frame read defensively: anything but four finite numbers is nothing remembered. */
+export function readFloatFrame(raw: string | null): FloatFrame | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw) as Partial<Record<keyof FloatFrame, unknown>>;
+    const nums = [o.left, o.top, o.width, o.height];
+    if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+    return { left: o.left as number, top: o.top as number, width: o.width as number, height: o.height as number };
+  } catch {
+    return null;
+  }
+}
+
+// ── The tutorial's Split: two views of the sheet, one above the other (4 Oct 2026) ─────────
+
+/** The top view's share of the pane's body: never less than a figure's worth, never all of it. */
+export const TUTORIAL_SPLIT = { min: 0.15, max: 0.85, initial: 0.4 } as const;
+
+/** Neither view is ever squeezed below this, whatever the ratio says (a short floating window). */
+export const SPLIT_VIEW_MIN = 72;
+
+/** A ratio kept inside the bounds, and inside what leaves both views `SPLIT_VIEW_MIN` px tall. */
+export function clampSplit(ratio: number, height = 0): number {
+  let min: number = TUTORIAL_SPLIT.min;
+  let max: number = TUTORIAL_SPLIT.max;
+  if (height > SPLIT_VIEW_MIN * 2) {
+    min = Math.max(min, SPLIT_VIEW_MIN / height);
+    max = Math.min(max, 1 - SPLIT_VIEW_MIN / height);
+  }
+  if (!Number.isFinite(ratio)) return TUTORIAL_SPLIT.initial;
+  return Math.round(clamp(ratio, min, max) * 1000) / 1000;
+}
+
+/** The top view's share for a divider dragged to `y` px below the top of a body `height` px tall. */
+export function splitRatioAt(y: number, height: number): number {
+  if (!(height > 0)) return TUTORIAL_SPLIT.initial;
+  return clampSplit(y / height, height);
+}
+
+/** ↑/↓ move the divider by 5 % (Shift: 15 %), Home/End to the ends; anything else is not ours. */
+export function splitKeyRatio(ratio: number, key: string, shift: boolean, height = 0): number | null {
+  const step = shift ? 0.15 : 0.05;
+  if (key === 'ArrowUp') return clampSplit(ratio - step, height);
+  if (key === 'ArrowDown') return clampSplit(ratio + step, height);
+  if (key === 'Home') return clampSplit(0, height);
+  if (key === 'End') return clampSplit(1, height);
+  return null;
+}
+
+/** A stored ratio read defensively: anything but a number in bounds is the initial one. */
+export function readSplitRatio(raw: string | null): number {
+  const value = raw === null || raw === '' ? Number.NaN : Number(raw);
+  return Number.isFinite(value) ? clampSplit(value) : TUTORIAL_SPLIT.initial;
 }

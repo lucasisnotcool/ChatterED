@@ -51,6 +51,7 @@ import type {
   TableGrid,
 } from './types.js';
 import { OBJECTIVES_REASON } from './types.js';
+import type { TutorialAnswerKind, TutorialOption, TutorialPartOrigin } from '../tutorial.js';
 
 /**
  * What a `parseDOM` handler below actually touches: one method.
@@ -394,6 +395,173 @@ const slide_image: NodeSpec = {
     return ['span', attrs];
   },
 };
+
+// ── a tutorial sheet's parts (2026-10-03, docs/research/tutorials.md) ───────────────────────────
+
+/** JSON in a `data-*` attribute, read back leniently: a pasted fragment with a bad one keeps its text. */
+function readJsonAttr<T>(dom: AttrSource, name: string, fallback: T): T {
+  const raw = dom.getAttribute(name);
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * **One part of a tutorial sheet** (`tutorials.md` §3): the sheet's words for one sub-question
+ * ("Problem 3 A) i."), then the learner's slot for the answer. A container, as a `q_block` is: the
+ * prompt's paragraphs and the slot are blocks in their own right, so a hint line Max writes lands
+ * under the slot by block id and the learner-text guard sees the slot as the learner's.
+ *
+ * `partId` is the sheet's own address for the part (`P3A.i`), stable across a re-read; `label` is
+ * how the chips and the chat name it. The hidden key and the attempt record live in main
+ * (`tutorial_parts`), never here: everything in a document reaches the renderer and the clipboard.
+ */
+const tut_part: NodeSpec = {
+  content: 'block+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: {
+    partId: { default: '' },
+    label: { default: '' },
+    answerKind: { default: 'text' as TutorialAnswerKind },
+    /** `sheet` for the tutorial's own questions; `generated` is reserved for practice the app adds. */
+    origin: { default: 'sheet' as TutorialPartOrigin },
+    ...BLOCK_ATTRS,
+  },
+  parseDOM: [
+    {
+      tag: 'section[data-tut-part]',
+      getAttrs: (dom: AttrSource) => ({
+        ...readBlockAttrs(dom),
+        partId: dom.getAttribute('data-tut-part') ?? '',
+        label: dom.getAttribute('data-label') ?? '',
+        answerKind: dom.getAttribute('data-answer-kind') ?? 'text',
+        origin: dom.getAttribute('data-origin') ?? 'sheet',
+      }),
+    },
+  ],
+  toDOM: (node) => [
+    'section',
+    {
+      ...blockDataAttrs(node),
+      'data-tut-part': node.attrs.partId as string,
+      'data-label': node.attrs.label as string,
+      'data-answer-kind': node.attrs.answerKind as string,
+      'data-origin': node.attrs.origin as string,
+    },
+    0,
+  ],
+};
+
+/**
+ * **The learner's answer to a part**, typed, pasted, listed: a PDDL domain in a code block, a
+ * search tree as a nested list, a plan as a numbered one, or an explanation in paragraphs. One
+ * block, as a list is one block, so a learner sentence in it protects all of it from an agent.
+ */
+const tut_answer: NodeSpec = {
+  content: 'block+',
+  group: 'block',
+  defining: true,
+  isolating: true,
+  attrs: {
+    answerKind: { default: 'text' as TutorialAnswerKind },
+    ...BLOCK_ATTRS,
+  },
+  parseDOM: [
+    {
+      tag: 'div[data-tut-answer]',
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), answerKind: dom.getAttribute('data-tut-answer') || 'text' }),
+    },
+  ],
+  toDOM: (node) => ['div', { ...blockDataAttrs(node), 'data-tut-answer': node.attrs.answerKind as string }, 0],
+};
+
+/**
+ * **A blank in the sheet's own words**: `Effect: ____` becomes a field the learner types into, in
+ * the line where the sheet put it. An inline atom whose `value` is the answer, so the sheet's
+ * words around it cannot be typed into by accident and the blank is never split by a keystroke.
+ */
+const tut_blank: NodeSpec = {
+  inline: true,
+  group: 'inline',
+  atom: true,
+  selectable: false,
+  attrs: {
+    blankId: { default: '' },
+    value: { default: '' },
+  },
+  leafText: (node) => blankText(node.attrs.value as string),
+  parseDOM: [
+    {
+      tag: 'span[data-tut-blank]',
+      getAttrs: (dom: AttrSource) => ({
+        blankId: dom.getAttribute('data-tut-blank') ?? '',
+        value: dom.getAttribute('data-value') ?? '',
+      }),
+    },
+  ],
+  toDOM: (node) => [
+    'span',
+    { class: 'nd-tut-blank', 'data-tut-blank': node.attrs.blankId as string, 'data-value': node.attrs.value as string },
+    blankText(node.attrs.value as string),
+  ],
+};
+
+/** A blank as text: its answer in brackets, or a rule the width of a short answer. */
+export function blankText(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? `[${trimmed}]` : '[____]';
+}
+
+/**
+ * **"Choose all that apply"**: the sheet's options, each with a tick box. An atom, because the
+ * options are the sheet's words and the ticks are the learner's answer; `picked` is the option ids
+ * ticked, in the order the sheet lists them.
+ */
+const tut_choices: NodeSpec = {
+  group: 'block',
+  atom: true,
+  selectable: true,
+  attrs: {
+    multi: { default: true },
+    options: { default: [] as TutorialOption[] },
+    picked: { default: [] as string[] },
+    ...BLOCK_ATTRS,
+  },
+  parseDOM: [
+    {
+      tag: 'div[data-tut-choices]',
+      getAttrs: (dom: AttrSource) => ({
+        ...readBlockAttrs(dom),
+        multi: dom.getAttribute('data-multi') !== 'false',
+        options: readJsonAttr<TutorialOption[]>(dom, 'data-options', []),
+        picked: readJsonAttr<string[]>(dom, 'data-picked', []),
+      }),
+    },
+  ],
+  toDOM: (node) => [
+    'div',
+    {
+      ...blockDataAttrs(node),
+      'data-tut-choices': '',
+      'data-multi': String(node.attrs.multi as boolean),
+      'data-options': JSON.stringify(node.attrs.options),
+      'data-picked': JSON.stringify(node.attrs.picked),
+    },
+    choicesText(node),
+  ],
+};
+
+/** The options on lines, ticked ones marked: what the outline, a prompt and the clipboard read. */
+export function choicesText(node: Node): string {
+  const options = (node.attrs.options as TutorialOption[] | null) ?? [];
+  const picked = new Set((node.attrs.picked as string[] | null) ?? []);
+  return options.map((o) => `${picked.has(o.id) ? '[x]' : '[ ]'} ${o.id}. ${o.text}`).join('\n');
+}
 
 /**
  * **A comparison table** (2026-10-01): Ellie fills one on request, and the learner edits it.
@@ -884,6 +1052,10 @@ export const notesSchema = new Schema({
     q_block,
     slide_figure,
     slide_image,
+    tut_part,
+    tut_answer,
+    tut_blank,
+    tut_choices,
     table,
     table_row,
     table_cell,
@@ -925,7 +1097,7 @@ export const notesSchema = new Schema({
  * separate blocks, because an agent op that landed on a bullet's paragraph would be an op that
  * bypassed the list. A `table` and a `diagram` are one block each for the same reason.
  */
-const CONTAINERS = new Set(['q_block']);
+const CONTAINERS = new Set(['q_block', 'tut_part']);
 
 /**
  * The blocks that are one addressable unit with structure inside: a `table` and a `diagram`. They
@@ -1060,8 +1232,8 @@ export function blockPages(node: Node): number[] {
 }
 
 /**
- * True for a block whose *text* belongs to its children rather than to it — today, only the
- * `q_block`. Anything that scans the document span by span has to skip these, or every run
+ * True for a block whose *text* belongs to its children rather than to it: a `q_block`, and a
+ * tutorial's `tut_part`. Anything that scans the document span by span has to skip these, or every run
  * inside a Q block would be reported twice: once for the child that holds it and once for the
  * container that contains the child.
  */
@@ -1204,6 +1376,7 @@ function outlineText(node: Node): string {
     return truncateWords(caption || `slide p. ${String(node.attrs.page as number)}`);
   }
   if (node.type.name === 'math_block') return truncateWords(node.attrs.tex as string);
+  if (node.type.name === 'tut_choices') return truncateWords(choicesText(node), LEARNER_OUTLINE_WORDS);
   const limit = hasLearnerText(node) ? LEARNER_OUTLINE_WORDS : OUTLINE_WORDS;
   if (node.type.name === 'table') return truncateWords(tableText(node), limit);
   if (node.type.name === 'diagram') return truncateWords(diagramText(node), limit);
