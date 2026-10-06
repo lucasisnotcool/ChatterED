@@ -7,7 +7,14 @@
  * behaviour this rule has to recognise.
  */
 import { describe, expect, it } from 'vitest';
-import { ANSWER_REQUEST_PHRASES, GIVE_UP_PHRASES, classifyLearnerTurn, quizCue } from './attempt.js';
+import {
+  ANSWER_REQUEST_PHRASES,
+  GIVE_UP_PHRASES,
+  classifyLearnerTurn,
+  isAnswerDemand,
+  isComplaintQuestion,
+  quizCue,
+} from './attempt.js';
 
 describe('classifyLearnerTurn', () => {
   it('reads R6’s own asks as a give-up', () => {
@@ -235,6 +242,87 @@ describe('classifyLearnerTurn', () => {
       expect(GIVE_UP_PHRASES, p.phrase).toContain(p);
     }
     expect(GIVE_UP_PHRASES.some((p) => p.phrase === 'idk' && p.match === 'whole')).toBe(true);
+  });
+});
+
+/**
+ * **Item 16 (6 Oct afternoon, `notebooks.md` §11.10).** The two MDP sessions on build 413, quoted.
+ * Both ended in anger: *"show me"* (#64) drew a clarification and *"fuck just give answer"* (#66)
+ * was marked *Partly there* as an attempt.
+ */
+describe('demands and complaints', () => {
+  it('releases on the real turns: a bare "show me" and "fuck just give answer"', () => {
+    expect(classifyLearnerTurn('show me')).toBe('give_up');
+    expect(classifyLearnerTurn('fuck just give answer')).toBe('give_up');
+    expect(classifyLearnerTurn('GIVE UP')).toBe('give_up');
+    expect(classifyLearnerTurn('fuck i give up')).toBe('give_up');
+  });
+
+  it('reads the decision’s phrasings in any case, with or without swearing', () => {
+    for (const line of [
+      'Show me',
+      'SHOW ME!',
+      'show me.',
+      'give answer',
+      'just give answer',
+      'just give me answer',
+      'just give me the answer',
+      'Just give the answer',
+      'answer pls',
+      'ANSWER PLEASE',
+      'just tell me',
+      'JUST TELL ME',
+      'fucking tell me',
+      'omg just show me the answer already',
+      'pls just give me the answer, I tried',
+      'ffs show answer',
+      'tell me the answer man',
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('give_up');
+      expect(isAnswerDemand(line), line).toBe(true);
+    }
+  });
+
+  it('keeps asking to be shown something other than the answer a request for background', () => {
+    expect(classifyLearnerTurn('show me an example')).toBe('question');
+    expect(classifyLearnerTurn('can you show me how CNF clauses are written?')).toBe('question');
+    expect(isAnswerDemand('show me an example')).toBe(false);
+  });
+
+  it('never reads an answer that mentions "the answer" as a demand', () => {
+    expect(classifyLearnerTurn('I think the answer is that the sum must be 1 because it is a distribution')).toBe('attempt');
+    expect(isAnswerDemand('my answer: give the answer as a distribution over next states')).toBe(false);
+  });
+
+  it('reads "huh what do you want" as a clarification, never an attempt (#58)', () => {
+    expect(classifyLearnerTurn('huh what do you want')).toBe('question');
+    expect(isComplaintQuestion('huh what do you want')).toBe(true);
+    expect(classifyLearnerTurn('so what on earth were you trying to tell me??')).toBe('question');
+    expect(classifyLearnerTurn('didnt i answer this?')).toBe('question');
+    expect(classifyLearnerTurn('what are you asking for')).toBe('question');
+  });
+
+  it('keeps a complaint that carries an answer an attempt (#60)', () => {
+    const turn =
+      'didnt i answer this? one is optimal and the other is based on fixed policy. optimal means max of ' +
+      "actions' expected utility, fixed policy means whatever policy but may be non optimal";
+    expect(classifyLearnerTurn(turn)).toBe('attempt');
+    expect(isComplaintQuestion(turn)).toBe(false);
+  });
+
+  it('marks nothing on a turn that is only a swear word or a groan', () => {
+    for (const line of ['fuck', 'ugh', 'wtf', 'omg!!']) expect(classifyLearnerTurn(line), line).toBe('other');
+  });
+
+  it('leaves the real answers of the two sessions attempts', () => {
+    for (const line of [
+      'computed expected utility will be lower than actual, so it pushes the agent away from that choice',
+      '$T(s,a,\\cdot)$ must be 1, for a given state and action, to be a valid model',
+      'Upi(s) uses pi(s) or the otpimal action, in place of action.',
+      'argmax of utility of all possible actions from s',
+    ]) {
+      expect(classifyLearnerTurn(line), line).toBe('attempt');
+    }
   });
 });
 

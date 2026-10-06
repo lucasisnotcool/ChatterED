@@ -354,6 +354,111 @@ export function isHintRequest(body: string): boolean {
   return matchesAny(body, HINT_REQUEST_PHRASES);
 }
 
+// ── Demands and complaints (6 Oct afternoon, item 16; notebooks.md §11.10) ──────────────────
+
+/**
+ * **Words a demand carries that say nothing about what is demanded**: swearing, fillers and
+ * politeness. Stripped before a turn is read as a demand, so *"fuck just give answer"*, *"answer
+ * pls"* and *"JUST TELL ME"* are read as *"give answer"*, *"answer"* and *"tell me"*.
+ *
+ * The 6 Oct sessions on the MDP deck: *"show me"* (the button's own label, #64) was read as a
+ * request for background, because `TELL_ME`'s *show me* ran before the give-up list, and Max
+ * clarified instead of releasing; *"fuck just give answer"* (#66) matched nothing, so it was marked
+ * as an attempt, *Partly there*, and ended in *"GIVE UP"* a turn later. Both learners were angry.
+ */
+const DEMAND_NOISE =
+  /\b(?:fuck(?:ing|in|ed)?|fk|fking|fkin|frick(?:ing)?|freaking|wtf|ffs|omg|omfg|damn|dammit|shit|bloody|ugh+|argh+|bro|bruh|dude|man|mate|lol|lmao|pls|plz|please|just|now|already|then|ok|okay|so|oh|cmon|come on|seriously|god|jeez|geez|lah|leh|sia|hey|max|ellie)\b/g;
+
+/** The words left once the noise is out: lower case, no punctuation, single spaces. */
+function demandCore(body: string): string {
+  return bareWords(body).replace(DEMAND_NOISE, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * **A demand for the answer, as a whole turn once the noise is out.** The Show me button's own
+ * label is here: a learner who types it means what the button means.
+ */
+const DEMANDS = new Set([
+  'answer',
+  'the answer',
+  'answer it',
+  'give answer',
+  'give the answer',
+  'give me answer',
+  'give me the answer',
+  'give it',
+  'give me it',
+  'show me',
+  'show me it',
+  'show it',
+  'show answer',
+  'show the answer',
+  'show me answer',
+  'show me the answer',
+  'tell me',
+  'tell me it',
+  'tell me answer',
+  'tell me the answer',
+  'you tell me',
+  'reveal',
+  'reveal it',
+  'reveal answer',
+  'reveal the answer',
+  'solution',
+  'the solution',
+  'show solution',
+  'show me the solution',
+  'give me the solution',
+  'give up',
+  'i give up',
+  'i quit',
+  'skip',
+  'skip it',
+  'next',
+  'whats the answer',
+  'what is the answer',
+]);
+
+/** *"give me the answer, I've tried"*: asking to be given, shown or told the answer, anywhere. */
+const DEMAND_IN_TURN = /\b(?:give|show|tell|send)(?: me| us)?(?: the| your| ur| an| a)? (?:answer|solution|model answer)\b/;
+
+/**
+ * **A demand for the answer** (item 16): a typed *Show me*. Checked before the request for
+ * background, because *"show me"* alone is the button's label, not a request to be shown an
+ * example; *"show me an example"* and *"can you show me how CNF works"* are not demands and are
+ * still background. A turn that also carries a candidate answer is an attempt, not a demand.
+ */
+export function isAnswerDemand(body: string): boolean {
+  const normalised = normalise(body);
+  if (normalised.length === 0 || contentWords(normalised).length > SHORT_TURN_WORDS) return false;
+  if (CANDIDATE.test(normalised)) return false;
+  const core = demandCore(normalised);
+  if (DEMANDS.has(core)) return true;
+  return DEMAND_IN_TURN.test(core);
+}
+
+/**
+ * **A complaint that asks what Max wants** (item 16): *"huh what do you want"* (#58), *"so what on
+ * earth were you trying to tell me??"* (#47), *"didnt i answer this?"* on its own. Not an answer to
+ * mark: Max says plainly what is still needed (`rule:quiz_clarify`), and it is not a try. Whole
+ * turns only: *"didnt i answer this? one is optimal and the other…"* (#60) carries an answer and is
+ * an attempt.
+ */
+const COMPLAINT_ASKS =
+  /^(?:(?:huh|eh|what|wait|um+|hmm+)\s)*(?:huh|eh|what|what do you (?:want|mean|need|expect)(?: from me| me to (?:say|write|do|answer))?|what (?:do|did) you want me to (?:say|write|do|answer)|what are you (?:asking|asking for|looking for|after|getting at|trying to (?:say|tell me|get at))|what (?:on earth |the hell )?(?:are|were) you trying to (?:say|tell me|get at|ask)|what on earth|what is the question|whats the question|i dont (?:get|understand)(?: it| this| the question| what you want)?|didnt i (?:already )?answer (?:this|that|it)|i (?:already )?answered (?:this|that|it)(?: already)?|i did answer (?:this|that|it))$/;
+
+/** Nothing but swearing or a groan: *"fuck"*, *"ugh"*, *"wtf"*. Not an attempt, not a demand. */
+function onlyNoise(body: string): boolean {
+  return bareWords(body).length > 0 && demandCore(body).length === 0;
+}
+
+/** True for a complaint that is a question about what Max wants. Exported for its tests. */
+export function isComplaintQuestion(body: string): boolean {
+  const normalised = normalise(body);
+  if (normalised.length === 0 || contentWords(normalised).length > 14) return false;
+  return COMPLAINT_ASKS.test(demandCore(normalised));
+}
+
 /** Apostrophes are dropped too (`bareWords`), so "what's the answer" and "whats the answer" are one phrase. */
 export function isAnswerRequest(body: string): boolean {
   return matchesAny(body, ANSWER_REQUEST_PHRASES);
@@ -387,6 +492,15 @@ export function classifyLearnerTurn(body: string): LearnerTurnKind {
   if (trimmed.length === 0) return 'other';
   // Ledger rule 4's own predicate. "ok" is not an attempt, and it is the reply R6 actually gave.
   if (isAgreementPhrase(trimmed)) return 'other';
+  /**
+   * Item 16 (6 Oct afternoon): a typed demand for the answer releases it, and it is checked before
+   * the background rule, whose *show me* / *tell me* would otherwise read *"show me"* (the button's
+   * own label) as a request for an example. A complaint is never an attempt: one that asks what
+   * Max wants is a clarification, and one that is only a groan or a swear word is nothing to mark.
+   */
+  if (isAnswerDemand(trimmed)) return 'give_up';
+  if (isComplaintQuestion(trimmed)) return 'question';
+  if (onlyNoise(trimmed)) return 'other';
   // #49: asking to be told something is not an answer to mark, however many sentences it takes.
   if (isBackgroundRequest(trimmed)) return 'question';
   // §4.4, and it is checked **before** the hint list: a turn that reads both ways ("I don't know,
