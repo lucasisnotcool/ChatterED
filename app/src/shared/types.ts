@@ -684,6 +684,12 @@ export interface FlowQuizView {
   verdict?: 'complete' | 'partial' | null;
   /** True once `flow:showAnswer` (or an answer request after one attempt) has been honoured. */
   answerShown: boolean;
+  /**
+   * **Max has offered Show me** (2026-10-06, D3; `core/pitch.followUpPlan`): after the second
+   * answer that was not *Well done*, or after a guess, his feedback asks nothing smaller and the
+   * composer's Pass becomes **Show me**. Absent from a main built before this.
+   */
+  showMe?: boolean;
 }
 
 /**

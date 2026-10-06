@@ -888,6 +888,17 @@ export interface PendingQuiz {
    */
   followUpBlank?: boolean;
   /**
+   * **Max has offered Show me on it** (2026-10-06, D3, `core/pitch.followUpPlan`): after the second
+   * answer that was not *Well done*, or after a guess, his feedback ends on the offer instead of a
+   * smaller question. It stays offered until the question closes.
+   */
+  showMeOffered?: boolean;
+  /**
+   * **The answer last marked was to a blank** (2026-10-06, D4). Read by `qResolutionOf`: a
+   * question closed by a correct blank is *revisit*, not *you got this*.
+   */
+  lastMarkedBlank?: boolean;
+  /**
    * **Ellie's guess has been corrected** (§4.7). The correction is asked of the first feedback turn
    * after her cue, which may not be the turn that resolves the question; this stops every later
    * feedback turn correcting it again (six times in the 3 Oct run).
@@ -1029,6 +1040,8 @@ export function openQuiz(
     resolvedInDoc: false,
     followUpBlank: false,
     cueCorrected: false,
+    showMeOffered: false,
+    lastMarkedBlank: false,
   };
 }
 
@@ -1078,10 +1091,12 @@ export function markFeedbackGiven(
   /** #48: the three-valued verdict, for the outcome row and the progress fill. */
   verdict3: QuizVerdict3 | null = null,
   /**
-   * 2026-10-03: `followUpBlank`, the turn ended on a blank it was asked for; `cueCorrected`, the
-   * turn was asked to correct Ellie's guess. A *Well done* opens no follow-up, blank or not.
+   * 2026-10-03: `followUpBlank`, the turn ended on a blank it was asked for (no turn is asked for
+   * one since 2026-10-06; kept so a restored question still reads); `cueCorrected`, the turn was
+   * asked to correct Ellie's guess. 2026-10-06: `showMe`, the turn was planned to offer Show me. A
+   * *Well done* opens no follow-up and offers nothing.
    */
-  extra: { followUpBlank?: boolean; cueCorrected?: boolean } = {},
+  extra: { followUpBlank?: boolean; cueCorrected?: boolean; showMe?: boolean } = {},
 ): PendingQuiz {
   return {
     ...quiz,
@@ -1091,6 +1106,8 @@ export function markFeedbackGiven(
     hadPartial: quiz.hadPartial === true || verdict3 === 'partial',
     followUpBlank: verdict !== 'complete' && extra.followUpBlank === true,
     cueCorrected: quiz.cueCorrected === true || extra.cueCorrected === true,
+    showMeOffered: verdict !== 'complete' && (quiz.showMeOffered === true || extra.showMe === true),
+    lastMarkedBlank: answersBlank(quiz),
   };
 }
 
@@ -1161,7 +1178,14 @@ export function cueMistakeToCorrect(quiz: PendingQuiz | null): string | null {
  */
 export function qResolutionOf(quiz: PendingQuiz | null): QResolution | null {
   if (!quiz) return null;
-  if (verdict3Of(quiz) === 'complete' && quiz.feedbackGiven) return 'you_got_this';
+  /**
+   * 2026-10-06 (D4, `collab-doc.md` §5.3 amended): a correct **blank** closes the question as
+   * *revisit*. One recalled term is not an answer the learner earned, and in the 10-05 run the
+   * wrong term was stored under *you got this*.
+   */
+  if (verdict3Of(quiz) === 'complete' && quiz.feedbackGiven) {
+    return quiz.form === 'cloze' || quiz.lastMarkedBlank === true ? 'revisit' : 'you_got_this';
+  }
   if (quiz.releasedBy === 'give_up' || quiz.releasedBy === 'pass' || quiz.releasedBy === 'closure') {
     return quiz.hadPartial === true || verdict3Of(quiz) === 'partial' ? 'partly_yours' : 'released';
   }

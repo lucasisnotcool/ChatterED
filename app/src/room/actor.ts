@@ -30,6 +30,7 @@ import {
 } from '../shared/doc/types.js';
 import { parseMention } from '../shared/doc/mention.js';
 import { ownWordsOf } from '../core/ownwords.js';
+import { dropQuestionTail, questionText, settleVerdict, type TurnVerdict } from '../core/quizturn.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import {
   buildQuestionEdit,
@@ -38,7 +39,6 @@ import {
   planBlockNote,
   type NoteKind,
   buildResolveEdit,
-  planResolveEdit,
   planSuggestionEdit,
   type DocEditDeps,
 } from './docedit.js';
@@ -184,7 +184,7 @@ import { ledgerSystemBlock } from './prompts.ledger.js';
 import { limitsLine } from './prompts.whisper.js';
 import { SCRIPT_WHISPERS } from './llm/script.psd-hessian.js';
 import { roundCardFor } from './roundcard.js';
-import { SilenceTimer, lessonReadingMs, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
+import { SilenceTimer, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
 import { ledgerView, messageView, timerView, whisperTurnView } from './views.js';
 import type { HintLevel, PartKey } from '../shared/tutorial.js';
 import { sheetGuardBlock, tutorBlock, tutorMaxWordCeiling, type TutorKind } from './prompts.tutor.js';
@@ -849,7 +849,14 @@ export class RoomActor {
   /** Her cue's text, so Max's prompt can answer *it* rather than the question (§4.3 step 2). */
   #cueText: string | null = null;
   /** The objective a `lesson_start` turn is about, for the length of that turn (§6). */
-  #lessonTarget: { title: string; statement: string; criteria: string[]; pages: number[]; maxAsksNext: boolean } | null = null;
+  #lessonTarget: {
+    title: string;
+    statement: string;
+    criteria: string[];
+    pages: number[];
+    section: string | null;
+    maxQuestionOpen: boolean;
+  } | null = null;
   /** The learner's own doc text being assessed, for the length of that turn (§6). */
   #docTextTarget: { blockId: string; text: string; anchorId: string } | null = null;
   /** Questions asked, so a `questionId` is minted once and shared by the Q block and the outcomes. */
@@ -904,6 +911,11 @@ export class RoomActor {
   #tutorialPorts = new Map<string, DocPort>();
   /** The slide text main resolved for a block action's thread, for its doc line (§4.2). */
   #actionPassage = new Map<string, string>();
+  /**
+   * The objective and block of the Explain/Example now running in a thread (2026-10-06, D2), so the
+   * press is filed against it once Ellie's answer lands (`#noteTurnForFlow`).
+   */
+  #actionObjective = new Map<string, { objectiveId: string; blockId: string }>();
   /** True for the length of a Quiz me turn, so the question is pitched (§4.5) like a follow-up was. */
   #blockQuiz = false;
   /**
@@ -1566,9 +1578,9 @@ export class RoomActor {
    * unmounts the renderer and may dispose the actor before a 9–12 s Tester turn could land.
    *
    * So a close that cannot get an answer quickly does not wait for one. The question is still
-   * resolved — in the doc, as *released*, from the objective's own criteria — because a Q block
-   * left open forever is the debt §4.7 exists to pay. Silence would be the one outcome the brief
-   * rules out.
+   * closed, because a question left open forever is the debt §4.7 exists to pay. Since 2026-10-06
+   * (D4) neither path writes an answer into the doc: the release is the chat's, and the Q block
+   * folds into a chip that says *revisit*.
    */
   async closeOpenQuestion(reason: 'closure' = 'closure'): Promise<void> {
     const quiz = this.#pendingQuiz;
@@ -1596,40 +1608,26 @@ export class RoomActor {
   }
 
   /**
-   * The fallback half of §4.7: no model answer could be had in time, so the Q block is resolved
-   * with an answer written from the objective's own criteria — which is what the ingest already
-   * wrote as *what a correct demonstration contains*. It is a worse answer than Max's and it is
-   * infinitely better than an open question the learner never gets back to.
+   * The fallback half of §4.7: no model answer could be had in time, so the question is closed
+   * without one: an outcome row, and the Q block folded into a *revisit* chip. (The name is from
+   * when the fallback wrote an answer from the objective's criteria; since 2026-10-06 the doc gets
+   * no answer on a closure at all.)
    */
   #resolveFromCriteria(quiz: PendingQuiz): void {
     if (!quizOpen(quiz)) return;
     this.#pendingQuiz = markAnswerShown(quiz, 'closure');
     this.#recordOutcome({ kind: 'released', verdict: null, releasedBy: 'closure', messageId: null, source: 'chat' });
-    const element = this.#d.pack.elements.find((e) => e.id === quiz.elementId);
     /**
-     * *"What a correct demonstration contains"*, which the objective ingest writes as
-     * `demonstration` — and, for a pack that has none (a fixture, or `draftConcept`), the ledger's
-     * own level-3 and level-4 descriptions of the same claim. Both are the objective's criteria in
-     * the sense §4.7 means; taking the second is the difference between a thin answer and none.
-     */
-    const criteria = (
-      (element?.demonstration ?? []).length > 0
-        ? element!.demonstration!
-        : [element?.criteria['3'], element?.criteria['4']].filter((c): c is string => typeof c === 'string')
-    ).filter((c) => c.trim().length > 0);
-    /**
-     * **The criteria are what the answer is written from, not the answer** (#49). They are
-     * phrased as a rubric — *"Lists all four steps in order"* — and the live run of 22 Sep put one
-     * under a question as if it were Max's answer. When even the notes call cannot be had, the
-     * question still closes, tag only, rather than saying *open* about a question the app closed.
+     * **Nothing is written into the doc on an idle closure** (2026-10-06, D4; `collab-doc.md` §4.7,
+     * amended 2026-10-06). The question still closes, so the rail card folds into a chip that says
+     * *revisit*; until then a 30–100-word answer was written from the objective's criteria under a
+     * question the learner may have walked away from.
      */
     const closed = this.#pendingQuiz;
     if (closed === null || closed.resolvedInDoc === true) return;
     this.#claimResolution(closed);
     void this.#resolveInDoc(this.#docEditDeps(quiz.anchorId ?? null, null), closed, qResolutionOf(closed) ?? 'released', {
-      turn: null,
       learnerAnswer: null,
-      criteria,
       messageId: null,
       turnId: null,
     }).catch((err: unknown) => this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: 'closure' }));
@@ -1658,6 +1656,7 @@ export class RoomActor {
         feedbackGiven: quiz.feedbackGiven === true,
         answerShown: quiz.answerShown === true,
         verdict: verdictOf(quiz),
+        showMe: quiz.showMeOffered === true && quizOpen(quiz),
       },
     };
   }
@@ -2417,6 +2416,13 @@ export class RoomActor {
         return { accepted: true, threadId: input.anchorId, reason: null, turn };
       }
 
+      // D2 (2026-10-06): the press is recorded against the line's objective when Ellie's answer
+      // lands. Notes only: a tutorial sheet's line is not a section of the notes.
+      if (sheet === null && input.objectiveId !== null) {
+        this.#actionObjective.set(input.anchorId, { objectiveId: input.objectiveId, blockId: input.blockId });
+      } else {
+        this.#actionObjective.delete(input.anchorId);
+      }
       const body = blockActionLine(input.kind, quote);
       let messageId: string | null = null;
       await this.#mailbox.enqueue(() => {
@@ -2650,41 +2656,49 @@ export class RoomActor {
   // ── the lesson card, and the learner's own doc text (#48 §6) ─────────────
 
   /**
-   * **Start**, on a lesson card (brief §6, revised 2026-10-01). Two turns, one press:
+   * **Start**, on a lesson card (brief §6, revised 2026-10-06, D2): **one** turn. Ellie walks the
+   * learner through the section (`lessonStartBlock`, given the section's text when main has it),
+   * and nobody asks.
    *
-   * 1. **Ellie** says what this lesson is about and why it matters, in two or three sentences.
-   *    She teaches nothing and asks nothing (`lessonStartBlock`).
-   * 2. **Max** asks the first question on the objective, the way Quiz me does (`rule:try_here`,
-   *    pitched, its Q block under the objective's first block). He is shown typing from the moment
-   *    Ellie's intro lands, and his question is held until the learner has had time to read it
-   *    (`lessonReadingMs`), so the two do not arrive on top of each other.
-   *
-   * Until 1 Oct, Start ended on Ellie inviting the learner to ask, on the argument that every
-   * studied session opened by the learner asking (R1, R3, R4). Lucas changed it on 1 Oct so that a
-   * lesson opens on Max's first question, which is how its objective is cleared. When Max already
-   * has a question open (one at a time, §5.2), only Ellie's turn runs.
+   * From 1 Oct to 6 Oct Start was two turns: Ellie's two-sentence introduction, then Max's first
+   * question on the objective, held only for the time it took to read her. In the 10-03 to 10-05
+   * runs every one of the 30 quizzes came that way, within 15 s, Quiz me was pressed 0 times, and
+   * three Starts re-asked an objective 34–48 s after its answer had been released. Max now asks
+   * only when the learner presses Quiz me, or the "Ready to check this?" offer that code shows once
+   * the learner has worked on the section (`core/readiness`, `notebooks.md` §5.2 amended
+   * 2026-10-06). An open question of Max's is pointed back to, as before.
    */
-  async startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void> {
+  async startLesson(input: {
+    objectiveId: string;
+    anchorId: string;
+    blockId: string | null;
+    /** The section of the notes the lesson is, as text (main reads it off the stored doc). */
+    section?: string | null;
+    /** The slide pages the objective is cited to. */
+    pages?: readonly number[];
+  }): Promise<void> {
     this.#objectiveByAnchor.set(input.anchorId, input.objectiveId);
     this.#registerThread(input.anchorId, this.#threadKindOf(input.anchorId), { blockId: input.blockId });
     this.#noteLearnerActivity('ask', input.anchorId);
     const element = this.#d.pack.elements.find((e) => e.id === input.objectiveId);
+    const maxQuestionOpen = quizOpen(this.#pendingQuiz);
     this.#lessonTarget = {
       title: element?.learner_label || element?.label || input.objectiveId,
       // The element's own label is the statement of what it is; `demonstration` is what a correct
       // answer contains, which is exactly §6's "what it asks of you".
       statement: element?.label ?? '',
       criteria: [...(element?.demonstration ?? [])],
-      pages: [],
-      maxAsksNext: !quizOpen(this.#pendingQuiz),
+      pages: [...(input.pages ?? [])],
+      section: input.section?.trim() ? input.section.trim() : null,
+      maxQuestionOpen,
     };
-    const maxQuestionOpen = !this.#lessonTarget.maxAsksNext;
     this.#event('student', 'flow.lesson_start', {
       objective_id: input.objectiveId,
       anchor_id: input.anchorId,
-      max_asks: !maxQuestionOpen,
+      // Always false since 2026-10-06: Start teaches and asks nothing.
+      max_asks: false,
+      walkthrough: this.#lessonTarget.section !== null,
     });
-    const before = Math.max(0, ...this.#d.store.messages.forRoom(this.#d.roomId).map((m) => m.seq));
     try {
       await this.#runAgentTurn('promote', {
         anchorId: input.anchorId,
@@ -2692,35 +2706,6 @@ export class RoomActor {
       });
     } finally {
       this.#lessonTarget = null;
-    }
-    if (maxQuestionOpen || this.#retired) return;
-
-    // Ellie's intro, if it landed. A failed turn has its own card, and Max does not talk over it.
-    const peer = agentByRole(this.#d.roster, 'peer');
-    const intro = this.#d.store.messages
-      .forRoom(this.#d.roomId)
-      .filter((m) => m.seq > before && m.anchor_id === input.anchorId)
-      .find((m) => this.#d.store.participants.get(m.participant_id)?.agent_key === peer.key);
-    if (!intro) return;
-
-    this.#event('student', 'flow.try', {
-      anchor_id: input.anchorId,
-      objective_id: input.objectiveId,
-      door: 'lesson_start',
-      question_number: this.#testerQuestions + 1,
-    });
-    this.#blockQuiz = true;
-    this.#questionBlockAt = input.blockId;
-    try {
-      await this.#runAgentTurn('promote', {
-        anchorId: input.anchorId,
-        tryHere: { objectiveId: input.objectiveId },
-        minFloorMs: lessonReadingMs(intro.body),
-        thinkingVerb: 'typing',
-      });
-    } finally {
-      this.#blockQuiz = false;
-      this.#questionBlockAt = null;
     }
   }
 
@@ -3625,6 +3610,7 @@ export class RoomActor {
       usage = result.usage as unknown as Record<string, number>;
     }
     this.#trace(pending.id, { generationMs, model, backend, usage });
+    text = this.#settleTurnText(decision, text, opts.tutor?.input ?? null);
 
     await floor;
     if (pending.cancelled) {
@@ -3749,6 +3735,8 @@ export class RoomActor {
     /**
      * **A tutorial turn writes its one line into the tutorial, not the notes** (S5), and the turn
      * settles after it: the line is derived in code, so there is no model call to wait on.
+     * (2026-10-06: D4 keeps such breadcrumbs out of the notes; whether the sheet keeps them is a
+     * joint call with Valerie, `notebooks.md` §11.9, so the sheet's rule stands.)
      */
     if (opts.tutor) await this.#tutorDocLine(opts.tutor, decision, text, dispatchedMessageId, pending.id);
     else void this.#maybeDocEdit(decision, text, dispatchedMessageId ?? '', pending.id, anchorId);
@@ -4205,7 +4193,7 @@ export class RoomActor {
           // clause, and the rule name is what tells them apart.
           byRule: decision.decidedBy,
           cloze: this.#clozeTurn(decision),
-          followUpBlank: this.#followUpBlankTurn(decision),
+          showMe: this.#showMeTurn(decision),
           sourceGenre: this.#d.sourceGenre,
         },
       });
@@ -4269,11 +4257,12 @@ export class RoomActor {
   }
 
   /**
-   * **A turn asked to carry a fill-in-the-blank** (2026-10-06 decision, D3): the feedback that ends
-   * a run on a blank (`#followUpBlankTurn`), or a pitched question that is one (`#clozeTurn`).
+   * **A turn asked to carry a fill-in-the-blank** (2026-10-06 decision, D3): a pitched question that
+   * is one (`#clozeTurn`), which is Quiz me's question after a release. A run of *Partly there* no
+   * longer ends on a blank (it offers Show me, `#showMeTurn`), so no feedback turn is one.
    */
   #blankTurn(decision: TurnDecision): boolean {
-    return this.#followUpBlankTurn(decision) || (this.#pitchedQuestion(decision) && this.#clozeTurn(decision));
+    return this.#pitchedQuestion(decision) && this.#clozeTurn(decision);
   }
 
   /**
@@ -4666,6 +4655,30 @@ export class RoomActor {
    */
   #noteTurnForFlow(decision: TurnDecision, messageId: string, text = ''): void {
     const now = this.#d.clock.now();
+    /**
+     * **Explain and Example are recorded against the line's objective** (2026-10-06, D2;
+     * `notebooks.md` §5.2 amended). They fill nothing (§4.3, unchanged); they are what
+     * `core/readiness` reads, with the renderer's own measures, to offer "Ready to check this?".
+     * Until now the objective was passed in with the press and only logged.
+     */
+    if (decision.moveType === 'block_explain' || decision.moveType === 'block_example') {
+      const filed = this.#turnAnchorId === null ? undefined : this.#actionObjective.get(this.#turnAnchorId);
+      if (filed !== undefined) {
+        this.#actionObjective.delete(this.#turnAnchorId!);
+        try {
+          this.#docPort.recordActivity?.({
+            roomId: this.#d.roomId,
+            objectiveId: filed.objectiveId,
+            kind: decision.moveType === 'block_explain' ? 'explain' : 'example',
+            blockId: filed.blockId,
+          });
+        } catch (err) {
+          // A press that cannot be filed costs an offer, never the answer that already landed.
+          this.#turnLog.event('warn', 'activity.record_failed', { cause: failureReason(err) });
+        }
+        this.#event('peer', 'flow.block_action_filed', { objective_id: filed.objectiveId, move: decision.moveType });
+      }
+    }
     if (decision.role === 'peer' && decision.targetElementId) {
       this.#taught.push({
         elementId: decision.targetElementId,
@@ -4743,14 +4756,15 @@ export class RoomActor {
       const answered = this.#pendingQuiz.answerMessageId;
       this.#beforeAttempt = null;
       /**
-       * Read before the mark lands (2026-10-03): whether the answer just marked was to a blank,
-       * whether this turn was asked to end on one, and whether it was asked to correct Ellie.
+       * Read before the mark lands (2026-10-03): whether the answer just marked was to a blank, and
+       * whether it was asked to correct Ellie. 2026-10-06 (D3): whether it was planned to offer
+       * Show me. No turn is asked to end on a blank any more, so none is recorded as one.
        */
       const markedBlank = answersBlank(this.#pendingQuiz);
-      const askedBlank = markedBlank || this.#followUpBlankTurn(decision);
+      const showMe = this.#showMeTurn(decision);
       const cueCorrected = cueMistakeToCorrect(this.#pendingQuiz) !== null;
       this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text), feedbackVerdict3(text), {
-        followUpBlank: askedBlank && hasBlank(text),
+        showMe,
         cueCorrected,
       });
       /**
@@ -4935,6 +4949,7 @@ export class RoomActor {
       feedbackGiven: quiz.feedbackGiven === true,
       answerShown: quiz.answerShown === true,
       verdict: verdictOf(quiz),
+      showMe: quiz.showMeOffered === true && quizOpen(quiz),
       questionId: quiz.questionId ?? quiz.quizMessageId,
       objectiveId: quiz.objectiveId ?? null,
       cueGiven: cueGiven(quiz),
@@ -5203,6 +5218,50 @@ export class RoomActor {
   }
 
   /**
+   * **The words agree with the record** (2026-10-06, D3; `core/quizturn.ts`; `collab-doc.md` §4.2,
+   * amended 2026-10-06). Run on the finished text, before it is stored, so the message, the outcome
+   * row and the progress bar read one verdict, and a closing turn asks nothing.
+   *
+   *  - **One verdict per message, and it is the one logged.** A marking turn's verdict is read off
+   *    its first line (`flow.feedbackVerdict3`); a turn that states two is settled to the more
+   *    cautious, and one that states none says the *Partly there* code would log for it. A tutorial
+   *    check already holds its verdict in code, and that one wins over the words.
+   *  - **No question tail** after *Well done* or a released answer (`quiz_answer`): the next
+   *    question is the learner's to ask for. Not on a tutorial sheet's turns, whose "one why"
+   *    after a check or a Show answer stands until the joint call `notebooks.md` §11.9 leaves open.
+   *
+   * The model's words are corrected rather than regenerated: what changes is the verdict line and a
+   * trailing question, which code can do exactly, and a second call would hold the turn for both.
+   * The streamed preview may have shown the uncorrected words for a moment; the stored message is
+   * what the thread keeps.
+   */
+  #settleTurnText(decision: TurnDecision, text: string, tutor: TutorialTurnInput | null): string {
+    const move = decision.moveType;
+    let out = text;
+    let verdict: TurnVerdict | null = null;
+    let change: 'none' | 'added' | 'corrected' = 'none';
+    // `Not marked.` is the one non-verdict exit (#49); it marks nothing, so there is nothing to settle.
+    if ((move === 'quiz_feedback' && !feedbackUnmarked(text)) || move === 'own_question_feedback') {
+      ({ text: out, verdict, change } = settleVerdict(text));
+    } else if (move === 'tutor_feedback' && tutor?.verdict) {
+      ({ text: out, verdict, change } = settleVerdict(text, tutor.verdict.verdict));
+    }
+    const closing = tutor === null && (verdict === 'complete' || move === 'quiz_answer');
+    const before = out;
+    if (closing) out = dropQuestionTail(out);
+    if (change !== 'none' || out !== before) {
+      // What was done, never the words.
+      this.#event('challenger', 'quiz.text_settled', {
+        move,
+        verdict,
+        verdict_change: change,
+        tail_dropped: out !== before,
+      });
+    }
+    return out;
+  }
+
+  /**
    * **The edit that goes with a turn** (brief §5.1–5.3), run **beside** the turn and never inside
    * it: the reply has already been released by the time this starts, and nothing here can delay,
    * fail or cancel it.
@@ -5273,7 +5332,8 @@ export class RoomActor {
           buildQuestionEdit(deps, {
             questionId: quiz.questionId ?? quiz.quizMessageId,
             objectiveId: quiz.objectiveId ?? null,
-            text,
+            // 2026-10-06 (D4): the question, not the chat turn around it (`core/quizturn`).
+            text: questionText(text),
             blockId,
             fallbackPages: this.#lastAnswerPages,
             exchangePages:
@@ -5322,7 +5382,6 @@ export class RoomActor {
       // 5.3 — a Max question closed: its answer goes under the Q block, as notes, tagged.
       if (resolves && quiz !== null && resolution !== null) {
         await this.#resolveInDoc(deps, quiz, resolution, {
-          turn: text,
           // A doc-text answer is already in the notes, in the learner's own block.
           learnerAnswer: docText === null ? (quiz.answerText ?? null) : null,
           messageId,
@@ -5406,40 +5465,32 @@ export class RoomActor {
   }
 
   /**
-   * **§5.3's edit, written as notes** (#49). The question, the page it was about and whatever
-   * closed it go to `planResolveEdit`; what comes back is the answer in the notes' voice, or — on
-   * *you got this* — the learner's own answer, filed as theirs, with at most one line of Max's.
+   * **§5.3's edit: the question folds into a self-check chip** (2026-10-06, D4; `collab-doc.md`
+   * §5.3, amended 2026-10-06). No model call and no Max text: on *you got this* the learner's own
+   * answer goes in, filed as theirs, when it came from the chat (an answer written in place is
+   * already there); on anything else (a release, a closure, a blank) nothing is written, and the
+   * chip says *revisit*. The released answer is the chat's alone.
+   *
+   * It replaced a 30–100-word answer written under the question by `planResolveEdit`: Max wrote
+   * 1,406 of one doc's 4,572 words that way, much of it answers the learner had not earned.
    */
   async #resolveInDoc(
     deps: DocEditDeps,
     quiz: PendingQuiz,
     resolution: QResolution,
-    input: {
-      turn: string | null;
-      learnerAnswer: string | null;
-      criteria?: readonly string[];
-      messageId: string | null;
-      turnId: string | null;
-    },
+    input: { learnerAnswer: string | null; messageId: string | null; turnId: string | null },
   ): Promise<void> {
-    // No model call for an edit that would be dropped (§3's Freeze); `#emitDocEdit` checks again.
     if (this.#retired || deps.docPort.docId() === null || deps.docPort.frozen()) return;
-    const question = quiz.questionText ?? '';
-    const context = this.#askContext.get(quiz.anchorId ?? '');
-    const page = typeof context?.page === 'number' ? context.page : null;
-    const { batch, via } = await planResolveEdit(deps, {
+    const earned = resolution === 'you_got_this';
+    const learnerAnswer = earned ? input.learnerAnswer : null;
+    const batch = buildResolveEdit(deps, {
       questionId: quiz.questionId ?? quiz.quizMessageId,
       resolution,
-      question,
-      turn: input.turn,
-      learnerAnswer: input.learnerAnswer,
-      criteria: input.criteria,
-      passage: context?.scope === 'segment' ? context.passageText : null,
-      page,
-      pages: page !== null ? [page] : pagesCited(question),
+      text: '',
+      learnerAnswer,
     });
-    // How the notes text was had, never the text itself.
-    this.#turnLog.event('info', 'doc.resolve', { resolution, via, quoted: input.learnerAnswer !== null });
+    // How it closed, never the text.
+    this.#turnLog.event('info', 'doc.resolve', { resolution, quoted: learnerAnswer !== null });
     await this.#emitDocEdit(batch, { objectiveId: quiz.objectiveId ?? null, messageId: input.messageId, turnId: input.turnId }, deps.docPort);
   }
 
@@ -5707,14 +5758,14 @@ export class RoomActor {
       if (answersBlank(quiz)) {
         blocks.push(clozeFeedbackBlock({ followUp: quiz?.form !== 'cloze' }));
       } else if (quiz !== null) {
-        // 2026-10-03: from the second try the answers are marked together; past two open follow-ups,
-        // or after a guess, the follow-up is a blank.
+        // 2026-10-03: from the second try the answers are marked together. 2026-10-06 (D3): from the
+        // second try, or after a guess, the turn offers Show me instead of a smaller question.
         const plan = followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText });
         const note = followUpBlock({
           attempts: attemptsOf(quiz),
           together: plan.together,
           guess: plan.guess,
-          blank: plan.form === 'cloze' && !this.#blankWithdrawn,
+          showMe: plan.next === 'show_me',
         });
         if (note) blocks.push(note);
       }
@@ -5814,15 +5865,15 @@ export class RoomActor {
   }
 
   /**
-   * **Does this feedback turn end, if it ends on a follow-up, on a blank?** (2026-10-03,
-   * `core/pitch.followUpPlan`.) Only on an open question whose open follow-ups are used up, or
-   * whose answer was a guess; a blank already being marked has its own way on.
+   * **Does this feedback turn, unless it is *Well done*, offer Show me rather than ask?**
+   * (2026-10-06, D3, `core/pitch.followUpPlan`; `collab-doc.md` §4.2 amended 2026-10-06, which
+   * replaced the 2026-10-03 blank.) From the second try at an open question, or after a guess. A
+   * blank already being marked has its own way on.
    */
-  #followUpBlankTurn(decision: TurnDecision): boolean {
+  #showMeTurn(decision: TurnDecision): boolean {
     const quiz = this.#pendingQuiz;
     if (decision.moveType !== 'quiz_feedback' || quiz === null || answersBlank(quiz)) return false;
-    if (this.#blankWithdrawn) return false;
-    return followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText }).form === 'cloze';
+    return followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText }).next === 'show_me';
   }
 
   /**

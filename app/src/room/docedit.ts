@@ -6,8 +6,8 @@
  * | # | Trigger | Edit |
  * |---|---|---|
  * | 5.1 | The learner asked in the doc chat, or pressed **Explain** / **Example** on a block (`notebooks.md` §4.2, which replaces §5.1's 40–150 words) | **one note** of at most `CARD_ADDITION_MAX_WORDS` words (a paragraph, a list, a formula or a table): **into the card's depth** when the block is in a concept card, else under the block, with provenance (`planBlockNote`; §11.2, amended 2026-10-06) |
- * | 5.2 | Max asks a question the doc **does not already answer** | the question goes in as a **Q block** at the segment it is about |
- * | 5.3 | A Max question is **closed** — the learner's *Well done*, or a release | the answer goes in under the Q block, **once**, tagged with how it closed: on *you got this* the learner's own answer (theirs, verbatim) and at most one line of Max's; otherwise the correct answer, written as notes |
+ * | 5.2 | Max asks a question the doc **does not already answer** | the question alone (`core/quizturn.questionText`, 2026-10-06) goes in as a **Q block** at the segment it is about (after the card when it is in one); the renderer shows it in a side rail while it is open |
+ * | 5.3 | A Max question is **closed** — the learner's *Well done*, a release, a closure | the Q block folds into a **self-check chip**, **once**: on *you got this* the learner's own answer (theirs, verbatim) and nothing of Max's; otherwise nothing at all, and the chip says *revisit* (2026-10-06, D4) |
  *
  * Four properties this module is responsible for keeping true.
  *
@@ -15,12 +15,13 @@
  *    has landed, and a failure anywhere in here is swallowed. A doc edit that could fail a turn
  *    would make the document's ambitions the conversation's problem, which is exactly the trade
  *    `progress-tracking.md` §4.6 already refused for the ledger.
- * 2. **5.1 and 5.3 cost a model call (5.1 one more when its line runs over); 5.2 does not.** 5.2 is built in code: the anchor comes from
- *    the exchange's pages or the thread's block, and the question is the turn Max wrote. 5.3 used
- *    to be built in code too — Max's resolving turn, verbatim — and that is how the notes filled
- *    up with verdicts, second-person marking and follow-up questions (#49). The chat is about the
- *    learner; the notes are about the material. Rewriting one into the other is a model's job,
- *    and it happens once per question.
+ * 2. **5.1 costs a model call (one more when its line runs over); 5.2 and 5.3 do not.** 5.2 is
+ *    built in code: the anchor comes from the exchange's pages or the thread's block, and the
+ *    question is the turn Max wrote, less its preamble. 5.3 was Max's resolving turn verbatim
+ *    until #49, then a 30–100-word answer from a model call (`planResolveEdit`), and since
+ *    2026-10-06 (D4, `collab-doc.md` §5.3 amended) it writes no Max words at all: Max wrote 1,406
+ *    of one doc's 4,572 words that way, much of it answers the learner had not earned. The chat is
+ *    about the learner; the notes are about the material, and the learner's earned answer.
  * 3. **The model is shown the outline and nothing else.** `docPort.outlineNear` is the whole view
  *    (brief §8: *"a structured model call given the doc outline near the anchor"*), and the reply
  *    is a `DocBlockDraft[]` the shared validator checks — never ProseMirror JSON, never an offset.
@@ -827,10 +828,10 @@ function questionProvenance(deps: DocEditDeps, text: string, blockId: string | n
 // ── 5.3: the closed question, with its answer under it ──────────────────────
 
 /**
- * **The resolution, as a batch.** `blocks` is what goes under the question in Max's colour;
- * `learnerAnswer` is the learner's own answer on *you got this*, which `ops.ts` writes in their
- * author mark (`types.ts`, the `resolve_q` op). Either may be empty: a question whose answer
- * could not be had is still closed, and says so in its tag rather than by staying open forever.
+ * **The resolution, as a batch.** `learnerAnswer` is the learner's own answer on *you got this*,
+ * which `ops.ts` writes in their author mark (`types.ts`, the `resolve_q` op). `text` and `math`
+ * are what would go under the question in Max's colour; since 2026-10-06 (D4) the actor passes
+ * neither, and a question closes into its chip with the learner's answer or with nothing.
  */
 export function buildResolveEdit(
   deps: DocEditDeps,
@@ -864,112 +865,14 @@ export function buildResolveEdit(
     focusBlockId: null,
     why:
       input.resolution === 'you_got_this'
-        ? 'You answered this one; your answer is under the question.'
-        : input.resolution === 'partly_yours'
-          ? 'Part of this was yours; the full answer is under the question.'
-          : 'The answer was released, so it is written under the question.',
+        ? 'You answered this one; your answer is kept with the question.'
+        : 'This one is marked to revisit; the answer is in the chat.',
   };
 }
 
 /**
- * The structured reply. Two fields and no drafts: the provenance is the question's and the turn's
- * citations, set in code, so the model is not asked to invent any.
- */
-export const RESOLVE_NOTES_SCHEMA: Record<string, unknown> = {
-  $schema: 'http://json-schema.org/draft-07/schema#',
-  type: 'object',
-  required: ['text'],
-  additionalProperties: false,
-  properties: {
-    text: {
-      type: ['string', 'null'],
-      description:
-        'What goes under the question in the notes, in the notes’ own voice. Null when nothing should be added.',
-    },
-    math: {
-      type: ['string', 'null'],
-      description: 'One display formula in TeX, when the answer needs one. Null otherwise.',
-    },
-  },
-};
-
-export interface ResolveNotesInput {
-  resolution: QResolution;
-  question: string;
-  /** Max's resolving turn in the chat, when there was one. Substance to take, not a voice to copy. */
-  turn: string | null;
-  /** On *you got this*: the learner's answer, which the notes will show verbatim above this. */
-  learnerAnswer: string | null;
-  /** What a correct demonstration contains — the objective's criteria, for the closure fallback. */
-  criteria?: readonly string[];
-  passage?: string | null;
-  page?: number | null;
-}
-
-export function resolveNotesPrompt(input: ResolveNotesInput): string {
-  const lines = [
-    'A question was asked about the learner’s lecture notes, and it is now closed. You are writing',
-    'what goes under it in the notes. You answer with the JSON object alone — no prose, no fence.',
-    '',
-    'THE QUESTION',
-    '"""',
-    input.question.trim(),
-    '"""',
-  ];
-  if (input.passage && input.passage.trim().length > 0) {
-    const where = typeof input.page === 'number' ? ` (p. ${input.page})` : '';
-    lines.push('', `THE SLIDE${where}`, '"""', input.passage.trim().slice(0, ANSWER_EDIT_PASSAGE_CHARS), '"""');
-  }
-  if (input.turn && input.turn.trim().length > 0) {
-    lines.push(
-      '',
-      'WHAT THE TESTER SAID IN THE CHAT WHEN IT CLOSED',
-      '(it talks to the learner and marks them; take the substance, never the voice)',
-      '"""',
-      input.turn.trim(),
-      '"""',
-    );
-  }
-  const criteria = (input.criteria ?? []).filter((c) => c.trim().length > 0);
-  if (criteria.length > 0) {
-    lines.push('', 'A CORRECT ANSWER CONTAINS', ...criteria.map((c) => `- ${c}`));
-  }
-  if (input.resolution === 'you_got_this' && input.learnerAnswer) {
-    lines.push(
-      '',
-      'THE LEARNER ANSWERED IT CORRECTLY, AND THEIR ANSWER GOES IN THE NOTES VERBATIM, AS THEIRS:',
-      '"""',
-      input.learnerAnswer.trim(),
-      '"""',
-      '',
-      '**Their answer is the entry.** Add at most **one sentence** under it, and only if the answer',
-      'leaves out or misstates something the correct answer needs — the missing condition, the',
-      'term the slide uses. If it is complete as it stands, answer `{"text":null}`. Never restate',
-      'what they wrote, never praise it, never say what they did.',
-    );
-  } else {
-    lines.push(
-      '',
-      '**Write the correct answer to the question**, complete, **30–100 words**: one short',
-      'paragraph, and a formula in `math` if the answer needs one.',
-    );
-  }
-  lines.push(
-    '',
-    'This is the notes, not the chat. So:',
-    '- No verdict ("Well done", "Partly there", "Not yet"), and no marking of anyone.',
-    '- No second person, and no mention of the learner, an attempt, the tester or Ellie.',
-    '- No question, anywhere.',
-    '- No page citations in the text; the notes carry provenance separately.',
-    '- Inline `$...$` only for a single symbol; anything larger goes in `math`.',
-    '- Open with the answer itself, not a stock opener.',
-  );
-  return lines.join('\n');
-}
-
-/**
- * **The fallback, when the call cannot be had.** Code, and conservative on purpose: it keeps
- * only the sentences of Max's turn that could stand in notes — no verdict opener, nothing in the
+ * **The sentences of a turn that could stand in notes.** Code, and conservative on purpose: it keeps
+ * only the sentences of an agent's turn that could stand in notes — no verdict opener, nothing in the
  * second person, no question, nothing about Ellie — and gives up (empty) when too little is left
  * to be an answer. Worse than the call; better than the turn verbatim, which is what #49 was.
  */
@@ -998,59 +901,6 @@ export function notesFromTurn(turn: string | null, names: readonly string[] = ['
     .filter((sentence) => !/\b(reasonable|missing|not quite|close but|correctly|well done|partly there|not yet|not marked)\b/i.test(sentence));
   const out = kept.join(' ').trim();
   return out.split(/\s+/).filter((w) => w.length > 0).length >= 8 ? out : '';
-}
-
-/**
- * **5.3.** One call per question, when it closes: the learner's *Well done*, or a release.
- *
- * Never throws for a bad reply: a reply that cannot be read falls back to `notesFromTurn`, and a
- * question that has neither still resolves — tag only — because the alternative is a Q block that
- * says *open* forever about a question the app has closed.
- */
-export async function planResolveEdit(
-  deps: DocEditDeps,
-  input: ResolveNotesInput & {
-    questionId: string;
-    /** The Q block's pages: provenance when the answer cites none. */
-    pages?: readonly number[];
-    pageCount?: number;
-  },
-): Promise<{ batch: AgentDocOpBatch; via: 'model' | 'fallback' | 'none' }> {
-  const quoted = input.resolution === 'you_got_this' ? input.learnerAnswer : null;
-  let text: string | null = null;
-  let math: string | null = null;
-  let answered = false;
-  try {
-    const result = await deps.llm.complete({
-      model: deps.model,
-      max_tokens: 900,
-      system: [{ type: 'text', text: resolveNotesPrompt(input) }],
-      messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
-      jsonSchema: RESOLVE_NOTES_SCHEMA,
-      meta: docEditMeta(deps),
-    });
-    const parsed = JSON.parse(extractJson(result.text)) as Record<string, unknown>;
-    if ('text' in parsed) {
-      answered = true;
-      text = typeof parsed.text === 'string' && parsed.text.trim().length > 0 ? parsed.text.trim() : null;
-      math = typeof parsed.math === 'string' && parsed.math.trim().length > 0 ? parsed.math.trim() : null;
-    }
-  } catch {
-    // The fallback below; the caller logs which path it took.
-  }
-  // On *you got this* the learner's answer is the entry, so a failed call loses nothing but the
-  // optional completion line — Max's praise is not a fallback for it.
-  const fallback = !answered && quoted === null ? notesFromTurn(input.turn) : '';
-  const batch = buildResolveEdit(deps, {
-    questionId: input.questionId,
-    resolution: input.resolution,
-    text: text ?? fallback,
-    math,
-    learnerAnswer: quoted,
-    pages: input.pages,
-    pageCount: input.pageCount,
-  });
-  return { batch, via: answered ? 'model' : fallback.length > 0 ? 'fallback' : 'none' };
 }
 
 // ── §6: a correction to the learner's own doc text, as a suggestion ────────

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { docOf, heading, para } from '../../shared/doc/fixture.test-support.js';
 import type { QuizOutcome } from '../../shared/doc/types.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
+import { activityRepo } from '../db/repos/activity.js';
 import { fakeHost, handlerTable, objective, type FakeHost } from './fakehost.test-support.js';
 import { resetDocCache } from './doc.js';
 import { buildProgress, registerProgressIpc } from './progress.js';
@@ -92,6 +93,26 @@ describe('buildProgress', () => {
     expect(view.objectives.map((o) => o.fill)).toEqual([1, 0.5, 0]);
     expect(view).toMatchObject({ status: 'ready', completed: 1, total: 3 });
     expect(view.fraction).toBeCloseTo(0.5);
+  });
+
+  /** 2026-10-06 (D2): Explain/Example since the objective's last question closed, for readiness. */
+  it('carries each objective’s Explain and Example presses since its last question closed', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o1', { refs: [{ page: 1 }], order: 1 }), objective('o2', { refs: [{ page: 2 }], order: 2 })]);
+    const presses = activityRepo(fx.db);
+    const press = (id: string, objectiveId: string, kind: 'explain' | 'example', createdAt: string) =>
+      presses.insert({ id, contentSha: 'sha-deck', roomId: 'room_test', objectiveId, kind, blockId: null, createdAt });
+    press('a1', 'o1', 'explain', '2026-09-19T09:00:00.000Z');
+    press('a2', 'o1', 'example', '2026-09-19T11:00:00.000Z');
+    press('a3', 'o2', 'explain', '2026-09-19T11:00:00.000Z');
+    // o1's question closed at T0 (10:00): only the press after it counts.
+    record(fx, outcome({ id: 'qo_1', objectiveId: 'o1', kind: 'released', verdict: null, releasedBy: 'give_up' }));
+
+    const view = await buildProgress(fx.host, 'f_deck');
+    expect(view.objectives.map((o) => o.activity)).toEqual([
+      { explains: 0, examples: 1, since: T0 },
+      { explains: 1, examples: 0, since: null },
+    ]);
   });
 
   it('fills nothing for a released answer, whichever way it was released', async () => {
@@ -218,10 +239,13 @@ describe('progress:get / progress:start', () => {
 
     expect(out).toEqual({ roomId: fx.roomId, threadId: 'doc', blockId: 'b_2' });
     expect(fx.opened).toEqual(['f_deck']);
+    // 2026-10-06 (D2): Ellie walks the learner through the section, so she is given it and its pages.
     expect(fx.actor.last('startLesson')?.args[0]).toEqual({
       objectiveId: 'o2',
       anchorId: 'doc',
       blockId: 'b_2',
+      section: 'The Hessian test decides it on the interior.\nAnd the second-order condition follows.',
+      pages: [2],
     });
     const threads = fx.db
       .prepare('SELECT thread_id, kind FROM notes_threads WHERE room_id = @r')

@@ -306,6 +306,26 @@ describe('blockAction: Explain and Example', () => {
     expect(rows(h).some((m) => m.body.includes('Added one line'))).toBe(false);
   });
 
+  /** 2026-10-06 (D2): the press is filed against the line's objective once Ellie's answer lands. */
+  it('records Explain and Example against the line’s objective, and nothing when it has none', async () => {
+    const pressed: { objectiveId: string; kind: string; blockId: string | null; roomId: string }[] = [];
+    const port = docPort({ recordActivity: (a) => pressed.push(a) });
+    const h = build({ docPort: port.port });
+    const explain = await h.actor.blockAction({ kind: 'explain', blockId: 'b_idea', anchorId: SPAN, quote: BULLET_TEXT, objectiveId: ELEMENT });
+    await settle(h.clock, explain.turn);
+    const example = await h.actor.blockAction({ kind: 'example', blockId: 'b_idea', anchorId: SPAN, quote: BULLET_TEXT, objectiveId: ELEMENT });
+    await settle(h.clock, example.turn);
+    const unmapped = await h.actor.blockAction({ kind: 'explain', blockId: 'b_bare', anchorId: 'span_b0000000002', quote: 'x', objectiveId: null });
+    await settle(h.clock, unmapped.turn);
+    expect(pressed.map((p) => [p.objectiveId, p.kind, p.blockId])).toEqual([
+      [ELEMENT, 'explain', 'b_idea'],
+      [ELEMENT, 'example', 'b_idea'],
+    ]);
+    expect(pressed.every((p) => p.roomId === h.roomId)).toBe(true);
+    // Actions still fill nothing (§4.3).
+    expect(port.outcomes).toEqual([]);
+  });
+
   it('refuses a second action while one is being answered, and takes the next once it is done', async () => {
     const h = build();
     const first = await h.actor.blockAction({ kind: 'explain', blockId: 'b_idea', anchorId: SPAN, quote: BULLET_TEXT, objectiveId: null });

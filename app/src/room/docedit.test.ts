@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planBlockNote, planResolveEdit, planSuggestionEdit, provenanceFor, resolveNotesPrompt, trimToWords, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planBlockNote, planSuggestionEdit, provenanceFor, trimToWords, type DocEditDeps } from './docedit.js';
 import { generateBlockPrompt, planGeneratedBlock } from './generate.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
@@ -558,69 +558,6 @@ describe('notesFromTurn — the fallback when the notes call cannot be had', () 
 
   it('keeps nothing that talks about Ellie', () => {
     expect(notesFromTurn('Ellie said the cost moves to the sender, which is wrong on p. 3.')).toBe('');
-  });
-});
-
-describe('planResolveEdit (§5.3, #49)', () => {
-  const base = {
-    questionId: 'q_9',
-    question: 'Why does admissibility matter for A*?',
-    turn: '**Not yet.** You said it makes A* faster. It is what guarantees the path A* returns is optimal. Why would a faster search not be enough?',
-    learnerAnswer: null,
-    pages: [4],
-  };
-
-  it('writes the model’s notes text, never the turn', async () => {
-    const d = deps({}, { text: 'An admissible heuristic guarantees that the first goal A* expands is on an optimal path.', math: null });
-    const { batch, via } = await planResolveEdit(d, { ...base, resolution: 'released' });
-    expect(via).toBe('model');
-    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
-    expect(op.blocks).toHaveLength(1);
-    expect(JSON.stringify(op.blocks)).not.toMatch(/Not yet|You said|\?/);
-    expect(op.blocks[0]).toMatchObject({ prov: { pages: [4] } });
-    expect(d.requests[0]!.meta).toMatchObject({ scope: 'docedit', costScope: 'docedit' });
-  });
-
-  it('files the learner’s answer as theirs on *you got this*, with Max’s line only if he has one', async () => {
-    const d = deps({}, { text: null });
-    const { batch } = await planResolveEdit(d, {
-      ...base,
-      resolution: 'you_got_this',
-      learnerAnswer: 'it never overestimates so the first goal A* pops is optimal',
-    });
-    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
-    expect(op.learnerAnswer).toBe('it never overestimates so the first goal A* pops is optimal');
-    expect(op.blocks).toEqual([]);
-    const prompt = (d.requests[0]!.system as { text: string }[])[0]!.text;
-    expect(prompt).toContain('Their answer is the entry');
-  });
-
-  it('falls back to the cleaned turn when the reply cannot be read', async () => {
-    const d = deps({}, {});
-    const { batch, via } = await planResolveEdit(d, { ...base, resolution: 'released' });
-    expect(via).toBe('fallback');
-    const op = batch.ops[0] as Extract<(typeof batch.ops)[number], { op: 'resolve_q' }>;
-    expect(JSON.stringify(op.blocks)).toContain('guarantees the path A* returns is optimal');
-    expect(JSON.stringify(op.blocks)).not.toMatch(/Not yet|You said/);
-  });
-
-  it('does not put Max’s praise in place of a failed completion line', async () => {
-    const { batch, via } = await planResolveEdit(deps({}, {}), {
-      ...base,
-      resolution: 'you_got_this',
-      turn: '**Well done.** That is exactly the property the slide names on p. 4, and the reason A* can stop at the first goal.',
-      learnerAnswer: 'it never overestimates',
-    });
-    expect(via).toBe('none');
-    expect((batch.ops[0] as { blocks: unknown[] }).blocks).toEqual([]);
-  });
-
-  it('tells the model the notes are not the chat', () => {
-    const prompt = resolveNotesPrompt({ ...base, resolution: 'released' });
-    expect(prompt).toMatch(/No verdict/);
-    expect(prompt).toMatch(/No second person/);
-    expect(prompt).toMatch(/No question/);
-    expect(prompt).toContain(base.question);
   });
 });
 

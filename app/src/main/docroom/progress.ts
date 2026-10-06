@@ -20,9 +20,10 @@ import type { LearningObjective } from '../../shared/objectives.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
 import { notesRepo } from '../db/repos/notes.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
+import { activityRepo, activitySince } from '../db/repos/activity.js';
 import { threadsRepo } from '../db/repos/threads.js';
 import { docActor, requireActorMethod } from './actorport.js';
-import { blockIdsForObjective, lessonBlocks, notesDocRow, openNotesDoc, pagesOfObjective } from './doc.js';
+import { blockIdsForObjective, lessonBlocks, lessonSectionText, notesDocRow, openNotesDoc, pagesOfObjective } from './doc.js';
 
 /** The outcome that earned an objective its fill: the best verdict, and the earliest of those. */
 function bestOutcome(outcomes: readonly QuizOutcome[]): QuizOutcome | null {
@@ -97,6 +98,9 @@ export async function buildProgress(host: DocHost, fileId: string): Promise<Prog
     else byObjective.set(outcome.objectiveId, [outcome]);
   }
 
+  // D2 (2026-10-06): Explain/Example per objective, for the renderer's readiness offer.
+  const presses = contentSha ? activityRepo(host.db).forContent(contentSha) : [];
+
   const states = new Map(host.objectivesStates(fileId).map((s) => [s.objectiveId, s]));
   const objectives: LearningObjective[] = tree ? [...tree.objectives].sort((a, b) => a.order - b.order) : [];
 
@@ -119,6 +123,10 @@ export async function buildProgress(host: DocHost, fileId: string): Promise<Prog
       // agent's summary of them (`progress-tracking.md` §4.4 R1).
       evidence: best?.messageId ? (host.store.messages.get(best.messageId)?.body ?? null) : null,
       lastMovedAt: best?.createdAt ?? state?.lastMovedAt ?? null,
+      activity: activitySince(
+        presses.filter((p) => p.objectiveId === objective.id),
+        mine,
+      ),
     };
   });
 
@@ -180,8 +188,27 @@ export function subscribeOutcomes(host: DocHost): void {
   })();
 }
 
+/**
+ * An Explain or Example press moves the readiness half of the view (D2, 2026-10-06), so the bar's
+ * view is pushed again when one is stored, by the same route as an outcome.
+ */
+function subscribePresses(host: DocHost): void {
+  void (async () => {
+    try {
+      const port = await import('../notes/docport.js');
+      port.subscribeActivity(({ roomId }) => {
+        const fileId = host.fileForRoom(roomId);
+        if (fileId) void emitProgress(host, fileId);
+      });
+    } catch {
+      // The view can still be pulled.
+    }
+  })();
+}
+
 export function registerProgressIpc(host: DocHost, handle: IpcHandle): void {
   subscribeOutcomes(host);
+  subscribePresses(host);
 
   handle<{ fileId: string }>('progress:get', async (input) => buildProgress(host, input.fileId));
 
@@ -208,7 +235,8 @@ export function registerProgressIpc(host: DocHost, handle: IpcHandle): void {
     );
     const docRow = notesDocRow(host.db, { contentSha, fileId: input.fileId });
     const doc = docRow ? openNotesDoc(host.db, { contentSha: docRow.contentSha })?.doc ?? null : null;
-    const { scrollTo: blockId, anchor } = lessonBlocks(doc, blockIdsForObjective(host.db, doc, docRow?.docId ?? null, objective));
+    const lessonIds = blockIdsForObjective(host.db, doc, docRow?.docId ?? null, objective);
+    const { scrollTo: blockId, anchor } = lessonBlocks(doc, lessonIds);
 
     threadsRepo(host.db).ensureDocThread({
       roomId,
@@ -223,6 +251,9 @@ export function registerProgressIpc(host: DocHost, handle: IpcHandle): void {
         objectiveId: objective.id,
         anchorId: DOC_ANCHOR_ID,
         blockId: anchor,
+        // D2 (2026-10-06): Ellie walks the learner through the section, so she is given it.
+        section: lessonSectionText(doc, lessonIds),
+        pages: pagesOfObjective(objective),
       });
     } finally {
       host.persistFlow();

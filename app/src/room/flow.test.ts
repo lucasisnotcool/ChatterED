@@ -747,6 +747,29 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     expect(qResolutionOf(markAnswerShown(thenWrong, 'closure'))).toBe('partly_yours');
   });
 
+  /** 2026-10-06 (D4): one recalled term is not an earned answer, so its chip says revisit. */
+  it('resolves a question closed by a correct blank as revisit, never you got this', () => {
+    const cloze = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1', form: 'cloze' }, t0), 'm_10', { attempt: true });
+    expect(qResolutionOf(markFeedbackGiven(cloze, 'complete', 'complete'))).toBe('revisit');
+
+    // A blank follow-up restored from before 2026-10-06 closes the same way.
+    const open = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+    const blankOwed = { ...markFeedbackGiven(open, 'partial', 'partial'), followUpBlank: true };
+    const filled = markFeedbackGiven(answerQuiz(blankOwed, 'm_11', { attempt: true }), 'complete', 'complete');
+    expect(qResolutionOf(filled)).toBe('revisit');
+  });
+
+  /** 2026-10-06 (D3): Show me, once offered, stays offered until the question closes. */
+  it('keeps Show me offered once it has been, and drops it on a Well done', () => {
+    const asked = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+    const offered = markFeedbackGiven(asked, 'partial', 'partial', { showMe: true });
+    expect(offered.showMeOffered).toBe(true);
+    const again = markFeedbackGiven(answerQuiz(offered, 'm_11', { attempt: true }), 'partial', 'not_yet');
+    expect(again.showMeOffered).toBe(true);
+    const done = markFeedbackGiven(answerQuiz(offered, 'm_12', { attempt: true }), 'complete', 'complete', { showMe: true });
+    expect(done.showMeOffered).toBe(false);
+  });
+
   it('an unanswered quiz expires at session close rather than becoming a debt', () => {
     // §12 q. 6: a quiz that greets you next session is a debt, and design-brief.md §E argues
     // against debts.

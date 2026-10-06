@@ -28,7 +28,6 @@ import { NOTES_SCRIPT } from './llm/script.notes.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
 import { API_PLAN } from './llm/models.js';
 import { DEMO, FLOW, openSession, type TaughtItem } from './flow.js';
-import { LESSON_READ_FLOOR_MS, lessonReadingMs } from './timer.js';
 
 const DOC = 'doc';
 const SPAN = 'span_0123456789ab';
@@ -614,12 +613,10 @@ describe('releasing and closing a question', () => {
     expect(resolves).toHaveLength(1);
     // Released after a Partly there: part of it was theirs (brief §5.3).
     expect(resolves[0]!.batch.ops[0]).toMatchObject({ op: 'resolve_q', resolution: 'partly_yours', learnerAnswer: null });
-    const written = JSON.stringify(resolves[0]!.batch.ops);
-    expect(written).not.toMatch(/Partly there|Not yet|Well done/);
-    expect(written).not.toMatch(/\byou(r)?\b/i);
-    expect(written).not.toContain('?');
-    expect(written).not.toContain('Fair enough');
-    expect(written).toContain('privacy of having');
+    // 2026-10-06 (D4): a released answer is the chat's alone. The notes get no Max words, and no
+    // model call writes them: the Q block only folds into a chip that says revisit.
+    expect(resolves[0]!.batch.ops[0]).toMatchObject({ blocks: [] });
+    expect(h.llm.requests.some((r) => r.system.some((b) => b.text.includes('it is now closed')))).toBe(false);
 
     // A further turn on the closed question resolves nothing again.
     await settle(h.clock, h.actor.closeOpenQuestion('closure'));
@@ -1111,42 +1108,39 @@ describe('startLesson', () => {
   const maxAsks: Reply = (r) =>
     r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger') && r.meta.scriptCue?.startsWith('try') ? LESSON_Q : null;
 
-  it('has Ellie say what the lesson is, asking nothing, and then Max ask the first question (§6, 2026-10-01)', async () => {
+  /**
+   * 2026-10-06 (D2, `collab-doc.md` §6 amended): Start is Ellie's walk-through and nothing else.
+   * From 1 Oct it was her two-sentence intro and then Max's question within seconds; in the 10-03
+   * to 10-05 runs every quiz came that way and Quiz me was never pressed.
+   */
+  it('has Ellie walk the learner through the section, and Max ask nothing', async () => {
     const h = build({}, null, maxAsks);
-    await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_bbb' }));
+    await settle(
+      h.clock,
+      h.actor.startLesson({
+        objectiveId: ELEMENT,
+        anchorId: DOC,
+        blockId: 'b_bbb',
+        section: 'Side channels\nA side channel keeps the main thread clean.',
+        pages: [4, 5],
+      }),
+    );
 
-    expect(rules(h)).toEqual(['rule:lesson_start', 'rule:try_here']);
+    expect(rules(h)).toEqual(['rule:lesson_start']);
     const messages = h.store.messages.forRoom(h.roomId);
-    expect(messages).toHaveLength(2);
-    expect(messages[1]!.body).toBe(LESSON_Q);
-    expect(messages.every((m) => m.anchor_id === DOC)).toBe(true);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.anchor_id).toBe(DOC);
+    expect(h.actor.pendingQuizView()).toBeNull();
+    expect(h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'insert_q')).toBeUndefined();
 
     const ellie = flat(prompts(h)[0]!);
     expect(ellie).toContain('THE LEARNER PRESSED START ON A LESSON');
-    expect(ellie).toContain('Do not teach it yet');
-    expect(ellie).toContain('ask the learner nothing');
-    expect(ellie).toContain('Max asks them the first question on this right after you');
-    // Max's question is pitched as Quiz me's is.
-    expect(prompts(h)[1]).toContain('HOW HARD THIS QUESTION SHOULD BE');
-
-    // His question is the open one, on the lesson's objective, and its Q block sits under the
-    // objective's first block rather than wherever the question's citations would put it.
-    const open = h.actor.pendingQuizView()!.quiz;
-    expect(open.attempts).toBe(0);
-    const insert = h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'insert_q');
-    expect(insert).toMatchObject({ anchorBlockId: 'b_bbb', objectiveId: ELEMENT });
-  });
-
-  it('shows Max typing, and holds his question for one read of Ellie\'s intro', async () => {
-    const h = build({ replySpeed: 'off' }, null, maxAsks);
-    await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_bbb' }));
-
-    const [intro, question] = h.store.messages.forRoom(h.roomId);
-    // Reply speed *off* removes every manufactured floor, and not this one: it is reading time.
-    expect(question!.latency_target_ms).toBe(lessonReadingMs(intro!.body));
-    expect(question!.latency_target_ms).toBeGreaterThanOrEqual(LESSON_READ_FLOOR_MS);
-    const thinking = h.events.filter((e) => e.type === 'agent.thinking').map((e) => (e as { thinking: { agentKey: string; verb: string } }).thinking);
-    expect(thinking.some((t) => t.agentKey.startsWith('challenger') && t.verb === 'typing')).toBe(true);
+    expect(ellie).toContain('Walk them through it');
+    expect(ellie).toContain('A side channel keeps the main thread clean.');
+    expect(ellie).toContain('pp. 4, 5');
+    expect(ellie).toContain('Ask the learner nothing');
+    expect(ellie).not.toContain('Do not teach it yet');
+    expect(ellie).not.toContain('Max asks');
   });
 
   it('runs only Ellie\'s turn when Max already has a question open, and she points back to it', async () => {
@@ -1403,76 +1397,103 @@ describe('the fill-in-the-blank after a release', () => {
 // ── 2026-10-03: two open follow-ups, then a blank; a guess gets a blank ────────────────────
 
 describe('the follow-up after Partly there', () => {
-  const BLANK = 'Partly there. You have who pays it. Fill in the blank: the side channel is private from the rest of the ____.';
   const marking = (request: LlmRequest) =>
     request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK');
   const reply: Reply = (request) => {
     if (!marking(request)) return null;
     const prompt = request.messages.at(-1)!.content;
-    if (prompt.includes('YOUR LAST FOLLOW-UP WAS A FILL-IN-THE-BLANK')) return 'Well done. "Private from the rest of the group." p. 3.';
-    if (prompt.includes('one fill-in-the-blank')) return BLANK;
+    if (prompt.includes('**ask nothing**')) return 'Partly there. You have who can read it; the rest is on p. 3. Press Show me, or try once more.';
     return 'Partly there. You have part of it, p. 3. Who else can read it?';
   };
   const ANSWERS = [
     'the side channel is a private thread with one agent',
     'the agent can read it but nobody else in the room',
-    'it stays out of the main chat for everyone',
   ];
 
-  async function threeTries() {
-    const h = build({}, null, reply);
-    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
-    for (const answer of ANSWERS) await settle(h.clock, h.actor.sendMessage(answer, DOC));
-    return h;
-  }
-
-  it('asks the first two follow-ups open, and marks the second try with the first', async () => {
+  it('asks one open follow-up, and marks the second try with the first', async () => {
     const h = build({}, null, reply);
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
     await settle(h.clock, h.actor.sendMessage(ANSWERS[0]!, DOC));
     expect(prompts(h).at(-1)).not.toContain('THIS IS THEIR TRY');
     expect(flat(prompts(h).at(-1)!)).toContain('your last sentence is one follow-up question on the gap');
+    expect(h.actor.pendingQuizView()!.quiz.showMe).toBe(false);
 
     await settle(h.clock, h.actor.sendMessage(ANSWERS[1]!, DOC));
     const second = flat(prompts(h).at(-1)!);
     expect(second).toContain('THIS IS THEIR TRY 2');
     expect(second).toContain('taken together');
-    expect(second).not.toContain('one fill-in-the-blank');
   });
 
-  it('makes the third follow-up a blank, and marks the blank as one', async () => {
-    const h = await threeTries();
-    const third = flat(prompts(h).at(-1)!);
-    expect(third).toContain('They have had 2 open follow-ups on it already');
-    expect(third).toContain('do not ask another open question');
-    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(true);
+  /**
+   * 2026-10-06 (D3, `collab-doc.md` §4.2 amended): after the second answer that is not Well done,
+   * Max asks nothing smaller, never a blank, and offers Show me. It reverses 2026-10-03's blank.
+   */
+  it('offers Show me after the second partial, with no blank, and Show me releases it as revisit', async () => {
+    const h = build({}, null, reply);
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    for (const answer of ANSWERS) await settle(h.clock, h.actor.sendMessage(answer, DOC));
+    const second = flat(prompts(h).at(-1)!);
+    expect(second).toContain('**ask nothing**');
+    expect(second).toContain('Show me');
+    expect(second).not.toContain('Fill in the blank');
+    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(false);
+    expect(h.actor.pendingQuizView()!.quiz.showMe).toBe(true);
+    expect(h.actor.docThreads().find((t) => t.quiz)!.quiz!.showMe).toBe(true);
 
-    const ledgerCalls = () => h.llm.requests.filter((r) => r.meta.scope === 'ledger').length;
-    const before = ledgerCalls();
-    await settle(h.clock, h.actor.sendMessage('group', DOC));
-    expect(prompts(h).at(-1)).toContain('YOUR LAST FOLLOW-UP WAS A FILL-IN-THE-BLANK');
-    expect(ledgerCalls()).toBe(before);
-
-    // Three Partly theres on the learner's own words, then the term: it fills what the words earned.
-    const verdicts = h.doc.outcomes.filter((o) => o.kind === 'verdict');
-    expect(verdicts.map((o) => [o.verdict, o.form])).toEqual([
-      ['partial', 'open'],
-      ['partial', 'open'],
-      ['partial', 'open'],
-      ['complete', 'cloze'],
-    ]);
-    expect(progressFill(verdicts.map((o) => ({ ...o, id: 'x', contentSha: 's', createdAt: 't' })))).toBe(0.5);
-    expect(h.actor.docThreads().find((t) => t.quiz)?.quiz?.resolution).toBe('you_got_this');
+    const released = await settle(h.clock, h.actor.pass(DOC));
+    expect(released).toEqual({ released: true, refused: null });
+    const resolve = h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'resolve_q');
+    expect(resolve).toMatchObject({ resolution: 'partly_yours', blocks: [], learnerAnswer: null });
+    expect(h.actor.pendingQuizView()!.quiz).toMatchObject({ answerShown: true, showMe: false });
   });
 
-  it('answers a guess with a blank, on the first try', async () => {
+  it('answers a guess with the offer of Show me, on the first try', async () => {
     const h = build({}, null, reply);
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
     await settle(h.clock, h.actor.sendMessage(':action ?', DOC));
     const prompt = flat(prompts(h).at(-1)!);
     expect(prompt).toContain('they are guessing at what you want');
-    expect(prompt).toContain('one fill-in-the-blank');
+    expect(prompt).toContain('**ask nothing**');
     expect(prompt).not.toContain('taken together');
+  });
+});
+
+// ── 2026-10-06 (D3): the words agree with the record ─────────────────────────────────────
+
+describe('one verdict per message, and it is the logged one', () => {
+  const marking = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK');
+
+  /** The 2026-10-05 turn: Well done first, then the page read again, then Not yet. */
+  it('stores the cautious verdict of two, and logs that one', async () => {
+    const h = build({}, null, (r) =>
+      marking(r)
+        ? '**Well done.** p. 3: "private from the rest". Wait, the page puts it the other way round. **Not yet.**'
+        : null,
+    );
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('the side channel is public to the whole group', DOC));
+    const feedback = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(feedback.body.startsWith('**Not yet.** p. 3:')).toBe(true);
+    expect(feedback.body).not.toMatch(/well done/i);
+    expect(h.doc.outcomes.filter((o) => o.kind === 'verdict').map((o) => o.verdict)).toEqual(['not_yet']);
+    expect(h.actor.pendingQuizView()!.quiz.answerShown).toBe(false);
+  });
+
+  it('drops the "Why…?" tail after a Well done, and the answer earned is the learner’s alone', async () => {
+    const h = build({}, null, (r) =>
+      marking(r) ? 'Well done. It is private from the rest of the group, p. 3. Why does that keep the main thread clean?' : null,
+    );
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('a private thread, out of everyone else’s view', DOC));
+    const feedback = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(feedback.body).toBe('Well done. It is private from the rest of the group, p. 3.');
+    const resolve = h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'resolve_q');
+    expect(resolve).toMatchObject({
+      resolution: 'you_got_this',
+      blocks: [],
+      learnerAnswer: 'a private thread, out of everyone else’s view',
+    });
   });
 });
 
@@ -1765,73 +1786,82 @@ describe('generateBlock', () => {
 
 // ── 2026-10-06 decision (D3): a blank that gives its answer away is not sent ─────────────────
 
+/**
+ * W1's check (2026-10-06, D3; `core/pitch.blankGiveaway`), on the one blank left: the easier
+ * question Quiz me asks after a release (§4.5). A run of *Partly there* no longer ends on a blank
+ * (it offers Show me), so the check is exercised here rather than on a follow-up.
+ */
 describe('the blank that gives its answer away', () => {
   const GIVEN_AWAY =
-    'Partly there. p. 3: "The side channel is private from the rest of the group." ' +
+    'p. 3: "The side channel is private from the rest of the group." ' +
     'Fill in the blank: p. 3: "The side channel is private from the rest of the ____."';
-  const CLEAN = 'Partly there. You have who pays it. Fill in the blank: the side channel is private from the rest of the ____.';
-  const OPEN = 'Partly there. You have who pays it. Who is kept out of it, besides the one agent?';
-  const marking = (request: LlmRequest) =>
-    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK');
-  const ANSWERS = [
-    'the side channel is a private thread with one agent',
-    'the agent can read it but nobody else in the room',
-    'it stays out of the main chat for everyone',
-  ];
+  const CLEAN = 'Fill in the blank: the side channel is private from the rest of the ____.';
+  const OPEN = 'Who is kept out of the side channel, besides the one agent?';
+  const asking = (request: LlmRequest) =>
+    request.meta.scope === 'group' &&
+    (request.meta.agentKey ?? '').startsWith('challenger') &&
+    !request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK') &&
+    /fill-in-the-blank/i.test(request.messages.at(-1)!.content);
 
-  /** Max's third feedback ends on a blank; `second` is what he writes when told it gave it away. */
+  /** Max's question after the release is a blank; `second` is what he writes when told it gave it away. */
   function reply(second: string): Reply {
     return (request) => {
-      if (!marking(request)) return null;
+      if (!asking(request)) return null;
       const prompt = request.messages.at(-1)!.content;
       if (prompt.includes('NO FILL-IN-THE-BLANK THIS TIME')) return OPEN;
       if (prompt.includes('YOUR LAST DRAFT GAVE THE BLANK AWAY')) return second;
-      if (prompt.includes('one fill-in-the-blank')) return GIVEN_AWAY;
-      return 'Partly there. You have part of it, p. 3. Who else can read it?';
+      return GIVEN_AWAY;
     };
   }
 
-  async function threeTries(second: string) {
+  async function afterRelease(second: string) {
     const h = build({}, null, reply(second));
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
-    for (const answer of ANSWERS) await settle(h.clock, h.actor.sendMessage(answer, DOC));
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    await settle(h.clock, h.actor.sendMessage('and who can read it?', DOC));
     return h;
   }
 
-  const markingPrompts = (h: ReturnType<typeof build>) => h.llm.requests.filter(marking).map((r) => r.messages.at(-1)!.content);
+  const askingPrompts = (h: ReturnType<typeof build>) => h.llm.requests.filter(asking).map((r) => r.messages.at(-1)!.content);
 
-  it('tells the live follow-up prompts that the answer must not be readable off the question', async () => {
-    const h = await threeTries(CLEAN);
-    const [first, second, third] = markingPrompts(h).map(flat);
-    expect(first).toContain('must not be readable off the question');
-    expect(second).toContain('must not be readable off the question');
-    expect(third).toContain('must not be readable off the screen');
-  });
-
-  it('writes the turn again once, saying what to leave out, and sends the second draft', async () => {
-    const h = await threeTries(CLEAN);
-    const drafts = markingPrompts(h);
-    expect(drafts).toHaveLength(4);
+  it('writes the question again once, saying what to leave out, and sends the second draft', async () => {
+    const h = await afterRelease(CLEAN);
+    const drafts = askingPrompts(h);
+    expect(drafts).toHaveLength(2);
     const again = flat(drafts.at(-1)!);
     expect(again).toContain('YOUR LAST DRAFT GAVE THE BLANK AWAY');
-    expect(again).toContain('The side channel is private from the rest of the group.');
     expect(again).toContain('do not use "group"');
     expect(bodies(h)).toContain(CLEAN);
     expect(bodies(h)).not.toContain(GIVEN_AWAY);
-    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(true);
+    expect(h.actor.flowSnapshot().pendingQuiz?.form).toBe('cloze');
   });
 
   it('drops the blank for an open question when the second draft gives it away too', async () => {
-    const h = await threeTries(GIVEN_AWAY);
-    const drafts = markingPrompts(h);
-    expect(drafts).toHaveLength(5);
-    const last = flat(drafts.at(-1)!);
-    expect(last).toContain('NO FILL-IN-THE-BLANK THIS TIME');
-    expect(last).not.toContain('one fill-in-the-blank');
-    expect(last).toContain('your last sentence is one follow-up question on the gap');
+    const h = await afterRelease(GIVEN_AWAY);
+    const drafts = askingPrompts(h);
+    expect(drafts).toHaveLength(3);
+    expect(flat(drafts.at(-1)!)).toContain('NO FILL-IN-THE-BLANK THIS TIME');
     expect(bodies(h)).toContain(OPEN);
     expect(bodies(h)).not.toContain(GIVEN_AWAY);
-    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(false);
+    expect(h.actor.flowSnapshot().pendingQuiz?.form).not.toBe('cloze');
+  });
+
+  /** 2026-10-06 (D4): a question closed by a correct blank is revisit, never you got this. */
+  it('closes a question answered by a correct blank as revisit', async () => {
+    const h = build({}, null, (r) => {
+      if (asking(r)) return CLEAN;
+      if (r.meta.scope === 'group' && r.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK')) {
+        return 'Well done. "Private from the rest of the group." p. 3.';
+      }
+      return null;
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('I give up', DOC));
+    await settle(h.clock, h.actor.sendMessage('and who can read it?', DOC));
+    expect(h.actor.flowSnapshot().pendingQuiz?.form).toBe('cloze');
+    await settle(h.clock, h.actor.sendMessage('group', DOC));
+    const resolves = h.doc.edits.flatMap((e) => e.batch.ops).filter((op) => op.op === 'resolve_q');
+    expect(resolves.at(-1)).toMatchObject({ resolution: 'revisit', blocks: [], learnerAnswer: null });
   });
 });
 

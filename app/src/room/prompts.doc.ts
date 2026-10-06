@@ -22,8 +22,8 @@
 import type { AgentProfile } from '../shared/types.js';
 import { teacherName, testerName } from './agents.js';
 import { VERDICT_OPENERS } from './flow.js';
-import { BLANK_NOT_ON_SCREEN, NO_REMARKS, NOT_READABLE_OFF } from './prompts.js';
-import { OPEN_FOLLOW_UPS } from '../core/pitch.js';
+import { NO_REMARKS, NOT_READABLE_OFF } from './prompts.js';
+import { PARTIALS_BEFORE_SHOW_ME } from '../core/pitch.js';
 
 // ── §4.2 row 1, first turn: Ellie answers ──────────────────────────────────
 
@@ -461,21 +461,25 @@ export function cueCorrectionLines(claim: string, ellieName: string): string[] {
 // ── §6: the lesson card's Start ────────────────────────────────────────────
 
 /**
- * **Start**, on a lesson card (§6, revised 2026-10-01): Ellie's half. She says what the lesson is
- * and why it matters, and stops; Max asks the first question on the objective after her
- * (`RoomActor.startLesson`).
+ * **Start**, on a lesson card (§6, revised 2026-10-01 and again 2026-10-06, D2): Ellie walks the
+ * learner through the section, and nobody asks.
  *
- * It still teaches nothing, so the learner meets the question before the explanation. It no longer
- * invites the learner to ask: that was the first design (R1, R3, R4 all opened by asking), and
- * Lucas replaced it on 1 Oct with a question from Max, which is how a lesson's objective is cleared.
+ * From 1 Oct a lesson opened on Max's first question, asked within seconds of Ellie's two-sentence
+ * introduction. In the 10-03 to 10-05 runs all 30 quizzes came that way, the learner never pressed
+ * Quiz me, and the cold openers were the unready ones. So Start now teaches: Ellie takes the learner
+ * through what the notes say on it, in order, from the notes and the slides, and asks nothing.
+ * The check is offered later, by code, when the learner has worked on the section
+ * (`core/readiness`), and the learner presses it.
  */
 export function lessonStartBlock(input: {
   title: string;
   statement: string;
   criteria: readonly string[];
   pages: readonly number[];
-  /** Max asks the first question straight after (§6, 2026-10-01); false when one is already open. */
-  maxAsksNext?: boolean;
+  /** The section of the notes this lesson is, as text, for her to walk through. */
+  section?: string | null;
+  /** Max already has a question open (one at a time, §5.2): she points back to it at the end. */
+  maxQuestionOpen?: boolean;
 }): string {
   const lines = [
     'THE LEARNER PRESSED START ON A LESSON',
@@ -487,21 +491,21 @@ export function lessonStartBlock(input: {
     lines.push('By the end they should be able to:', ...criteria.map((c) => `- ${c}`));
   }
   if (input.pages.length > 0) {
-    lines.push(`The notes for it are on ${input.pages.length === 1 ? 'p.' : 'pp.'} ${input.pages.join(', ')}.`);
+    lines.push(`The slides for it are ${input.pages.length === 1 ? 'p.' : 'pp.'} ${input.pages.join(', ')}.`);
   }
-  /**
-   * **Ellie introduces; Max opens** (§6, revised 2026-10-01). She used to end by inviting the
-   * learner to ask. Now Max asks the first question on the objective right after her, so her turn
-   * says what the lesson is and stops: a question from her would be a second one on top of his.
-   */
+  const section = input.section?.trim() ?? '';
+  if (section.length > 0) {
+    lines.push('THE NOTES FOR IT, AS THE LEARNER SEES THEM', '"""', section.slice(0, 4_000), '"""');
+  }
   lines.push(
     '',
-    'Say in two or three sentences what we will be learning here and why it is worth understanding —',
-    'no more. **Do not teach it yet**, and **ask the learner nothing**: no question, no "any',
-    'questions?", no invitation to ask.',
-    input.maxAsksNext === false
+    '**Walk them through it**: what each idea in these notes says, in order, in plain words, with the',
+    'slide’s own example where it has one and its page as p. N. About 150 words, 220 at most. Do not',
+    'add what the notes and slides do not cover. **Ask the learner nothing**: no question, no "any',
+    'questions?", and do not say that a question or a check is coming.',
+    input.maxQuestionOpen === true
       ? 'Max already has a question open for them; end by pointing them back to it in a few words.'
-      : 'Max asks them the first question on this right after you, so end on what they are about to be asked to show, not on a question.',
+      : 'End by saying they can press Explain or Example on any line they want more on.',
   );
   return lines.join('\n');
 }
@@ -555,18 +559,19 @@ export function clozeFeedbackBlock(input: { followUp?: boolean } = {}): string {
 }
 
 /**
- * **The second try onwards, and the blank that ends the run** (live run, 2026-10-03;
- * `core/pitch.followUpPlan`).
+ * **The second try onwards, and the offer of Show me** (live run, 2026-10-03; amended 2026-10-06,
+ * D3; `core/pitch.followUpPlan`).
  *
- * One question on the p. 4 `Fly` action was marked *Partly there* six times. Each answer was
- * marked alone against the whole question, so an answer to one follow-up could never be complete;
- * each follow-up asked for something narrower, ending on which line declares the parameters; and
- * `:action ?`, a guess at what Max wanted, got another open question. So from the second try the
- * answers are marked together, and past two open follow-ups, or after a guess, the follow-up is
- * one blank. Nothing when neither applies: the first try's feedback is the ordinary one.
+ * One question on the p. 4 `Fly` action was marked *Partly there* six times: each answer marked
+ * alone against the whole question, each follow-up narrower. So from the second try the answers
+ * are marked together. The 2026-10-03 fix then ended a run on a fill-in-the-blank, and in the runs
+ * that followed every such blank was scored complete, 6 of 8 with the term on screen and one on
+ * the wrong word. Since 2026-10-06 (`collab-doc.md` §4.2, §4.5 amended) the second try, or a
+ * guess, gets no smaller question: Max says what landed and offers **Show me**. Nothing when
+ * neither applies: the first try's feedback is the ordinary one.
  */
-export function followUpBlock(input: { attempts: number; together: boolean; guess: boolean; blank: boolean }): string | undefined {
-  if (!input.together && !input.blank) return undefined;
+export function followUpBlock(input: { attempts: number; together: boolean; guess: boolean; showMe: boolean }): string | undefined {
+  if (!input.together && !input.showMe) return undefined;
   const lines = [`THIS IS THEIR TRY ${input.attempts} AT THIS QUESTION`];
   if (input.together) {
     lines.push(
@@ -579,16 +584,16 @@ export function followUpBlock(input: { attempts: number; together: boolean; gues
   if (input.guess) {
     lines.push(
       'Their answer is a few words ending in a question mark: they are guessing at what you want, not',
-      'answering it. Another open question asks them to guess again.',
+      'answering it. Another question asks them to guess again.',
     );
   }
-  if (input.blank) {
+  if (input.showMe) {
     lines.push(
-      `${input.guess ? 'So unless' : `They have had ${OPEN_FOLLOW_UPS} open follow-ups on it already. Unless`} it is Well done,`,
-      'your follow-up is **one fill-in-the-blank**, not another open question: "Fill in the blank:" and',
-      'one sentence from the page about the one thing still missing, with its key term replaced by',
-      '____. One blank, nothing after the sentence, and do not give the term or a hint at it.',
-      BLANK_NOT_ON_SCREEN,
+      `${input.guess ? 'So unless' : `They have had ${PARTIALS_BEFORE_SHOW_ME - 1} follow-up on it already. Unless`} it is Well done,`,
+      '**ask nothing**: no follow-up, no smaller question and no fill-in-the-blank. Say what their',
+      'answers have so far, name the part still missing without stating or quoting it, and end on one',
+      'sentence offering to show them the answer (the **Show me** button) or to try once more in',
+      'their own words.',
     );
   } else {
     // 2026-10-06 (D3): an open follow-up from the second try on carries the same rule.

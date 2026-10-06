@@ -13,7 +13,7 @@
  * `src/main/notes/docport.ts`; T3 calls it.
  */
 
-import type { AgentDocOpBatch, OutlineEntry, QuizOutcome } from '../shared/doc/types.js';
+import type { AgentDocOpBatch, ObjectiveActivity, OutlineEntry, QuizOutcome } from '../shared/doc/types.js';
 
 export interface DocPort {
   /** The doc for this room's file, or null when it has not been ingested (then nothing is edited). */
@@ -42,6 +42,11 @@ export interface DocPort {
   }): void;
   /** One row per verdict or release. The progress bar is a pure function of these. */
   recordOutcome(outcome: Omit<QuizOutcome, 'id' | 'contentSha' | 'createdAt'>): void;
+  /**
+   * One Explain or Example press, against the objective of its line (2026-10-06, D2; migration 030).
+   * Optional, so a port written before it (a tutorial sheet's, a test's) need not record one.
+   */
+  recordActivity?(activity: Omit<ObjectiveActivity, 'id' | 'contentSha' | 'createdAt'>): void;
 }
 
 /** A room with no notes doc: every read is empty and every write is dropped. */

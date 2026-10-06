@@ -340,9 +340,11 @@ Never ask two questions at once. (The one time the answer is yours to give is be
 
 When the learner has answered, your next turn is **feedback on what they actually said**. Its first
 line is exactly one verdict on the answer to the question you asked — ${VERDICT_OPENERS.join(' / ')}
-— and then what landed, what was missing, and the correction, with grounds. Unless the verdict is
-Well done, it ends on one follow-up question on the gap, and asks nothing else; after Well done it
-asks nothing. The verdict marks the answer, not the person. Feedback after an answer is required,
+— and then what landed and what was wrong, with grounds. **What is missing you name, never state
+or quote**: the part of the question it belongs to and the page that settles it; the full answer
+waits until the question closes. Unless the verdict is Well done, it ends on one follow-up question
+on the gap (or, when you are told to, on the offer to show the answer), and asks nothing else;
+after Well done it asks nothing, not even why. The verdict marks the answer, not the person. Feedback after an answer is required,
 not optional.
 
 SHOW YOUR GROUNDS, ALWAYS.
@@ -501,8 +503,9 @@ export function learnerBlock(input: {
  * is one the learner can check, which is the whole of Lee & See's trust calibration here.
  */
 const GROUNDS = [
-  'For each point you make \u2014 what landed, what was missing, the correction \u2014 say where the deck',
-  'settles it, as p. N: \u201c\u2026\u201d quoting the page\u2019s own words verbatim. If the deck does not settle a',
+  'For each point you make \u2014 what landed, what was wrong, the correction \u2014 say where the deck',
+  'settles it, as p. N: \u201c\u2026\u201d quoting the page\u2019s own words verbatim. For a part that is still',
+  'missing while the question is open, give only the page, never its words: quoting it gives it away. If the deck does not settle a',
   'point, say so in that clause (\u201cthe deck doesn\u2019t settle this; in general\u2026\u201d) rather than stating it as',
   'if it did. Never call an answer wrong on a rule you cannot ground, and if the learner disputes a',
   'verdict, that is not a mark against them.',
@@ -602,11 +605,19 @@ export function quizBlock(input: {
       `Your first line is exactly one of these three verdicts and nothing else: **${done}** \u2014 the`,
       `answer to the question is complete and correct; **${partly}** \u2014 right in part, or right but`,
       `incomplete; **${notYet}** \u2014 wrong, or not an answer to the question.`,
-      'Then say what the learner\u2019s answer had, what was missing or wrong, and the correction.',
+      'Then say what the learner\u2019s answer had, and correct anything it got wrong.',
+      /**
+       * 2026-10-06 (D3, `collab-doc.md` §4.2 amended): the feedback after a partial no longer
+       * quotes the missing part. Max quoted it and then asked for it; 31 of 47 follow-ups in the
+       * 10-03 to 10-05 runs gave their answer away, in the question or the message before it.
+       */
+      '**Do not state or quote what is missing.** Name the part of the question it belongs to and the',
+      'page that settles it, and leave the rest for them: the full answer comes when the question',
+      'closes (their own Well done, or Show me).',
       `Unless the verdict is ${done.replace(/\.$/, '')}, **end on one follow-up question** that asks for the missing or`,
       'wrong part only \u2014 in their own words, or applied to the case \u2014 so that they can try again; no',
-      `other question anywhere in the turn. After ${done} ask nothing: the next question is theirs to`,
-      'ask for. Under 100 words.',
+      `other question anywhere in the turn. After ${done} ask nothing, not even why: the next question`,
+      'is theirs to ask for. Under 100 words.',
       /**
        * **The one non-verdict exit** (#49 fallback, `collab-doc.md` §4.2, 2026-09-25). The code
        * that decides a turn is an attempt is a heuristic, and the 2026-09-23 run's request for the
@@ -832,10 +843,11 @@ export interface TurnDirective {
    */
   cloze?: boolean;
   /**
-   * **This feedback turn's follow-up, if it owes one, is a blank** (2026-10-03,
-   * `core/pitch.followUpPlan`): the third try at an open question, or a guess.
+   * **This feedback turn, unless it is *Well done*, offers Show me and asks nothing** (2026-10-06,
+   * D3, `core/pitch.followUpPlan`; it replaced the 2026-10-03 blank that ended a run): the second
+   * try at an open question, or a guess.
    */
-  followUpBlank?: boolean;
+  showMe?: boolean;
   /**
    * **The source is a paper or a reading, not slides** (`notebooks.md` §3.2, amended 2026-10-02).
    * The role blocks say "slide" throughout; on the first paper Ellie wrote "the slide doesn't
@@ -967,9 +979,10 @@ export function turnDirective(d: TurnDirective): string {
   }
   /** §6's Start button, and §4.2 row 3's `@Max`. The notes carry the objective and the limits. */
   if (d.move === 'lesson_start') {
+    // 2026-10-06 (D2, `collab-doc.md` §6 amended): Ellie walks them through it; nobody asks yet.
     bits.push(
-      'Say what this lesson is about in two or three sentences. Do not teach it yet, and ask them',
-      'nothing: Max asks the first question.',
+      'Walk them through this part of the notes, in order, in about 150 words. Ask them nothing, and',
+      'do not say that a question is coming.',
     );
   }
   if (d.move === 'mention_reply') {
@@ -1005,12 +1018,13 @@ export function turnDirective(d: TurnDirective): string {
       `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
       'the question you asked, not the whole objective: nothing it did not ask for is missing, and a',
       'complete answer to it is Well done.',
-      ...(d.followUpBlank === true
+      // 2026-10-06 (D3): what is missing is named, never stated or quoted, until the question closes.
+      'Do not state or quote what is missing: name the part of the question it belongs to and the page',
+      'that settles it. After Well done ask nothing at all, not even why.',
+      ...(d.showMe === true
         ? [
-            'Unless it is Well done, do not ask another open question: your last sentence is one',
-            'fill-in-the-blank, "Fill in the blank:" and then one sentence from the page with the key term',
-            'of what is still missing replaced by ____. One blank, nothing after it, and do not give the term.',
-            BLANK_NOT_ON_SCREEN,
+            'Unless it is Well done, ask **no** question and no fill-in-the-blank: end on one sentence',
+            'offering to show them the answer (they press **Show me**), or to try once more in their own words.',
           ]
         : [
             'Unless it is Well done, your last sentence is one follow-up question on the gap, and there is',

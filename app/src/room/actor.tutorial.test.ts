@@ -262,6 +262,28 @@ describe('tutorialTurn: refresher, check and reveal', () => {
     expect(op.blocks[0]!.text).toBe('Checked (run by the app): not yet. Step 1 fails: Y is not clear.');
   });
 
+  /** 2026-10-06 (D3): the check's verdict is code's, so a reply that says another is corrected to it. */
+  it('settles a check reply that states another verdict to the one code holds', async () => {
+    const base = client();
+    const llm: LLMClient = {
+      kind: 'scripted',
+      async complete(request, onDelta, signal) {
+        if (request.meta.scope !== 'group') return base.complete(request, onDelta, signal);
+        const text = 'Well done. The plan reaches the goal.';
+        onDelta?.(text);
+        return { text, model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
+      },
+    };
+    const h = build({ llm });
+    await run(h, {
+      kind: 'feedback',
+      answer: 'Move(Y, Table, X)',
+      verdict: { verdict: 'not_yet', checkedBy: 'simulation', detail: 'Step 1 fails: Y is not clear.' },
+    });
+    const reply = rows(h).find((m) => m.decided_by === 'rule:tutor_feedback')!;
+    expect(reply.body).toBe('**Not yet.** The plan reaches the goal.');
+  });
+
   it('a reveal gives the key’s answer and asks for one line on why; the line says only that it was shown', async () => {
     const h = build();
     await run(h, { kind: 'reveal' });

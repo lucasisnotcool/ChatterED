@@ -279,8 +279,14 @@ export interface OutlineEntry {
 
 // ── agent edits ─────────────────────────────────────────────────────────────────────────────
 
-/** How a Max question ended (brief §5.3). Shown as the tag on the resolved Q block. */
-export type QResolution = 'you_got_this' | 'partly_yours' | 'released';
+/**
+ * How a Max question ended (brief §5.3). Shown on the resolved question's self-check chip.
+ *
+ * `revisit` (2026-10-06, D4): closed by a correct fill-in-the-blank. One recalled term is not an
+ * answer the learner earned, so the chip says *revisit*, never *you got this*; the same chip label
+ * goes on `partly_yours` and `released` (`collab-doc.md` §5.3, amended 2026-10-06).
+ */
+export type QResolution = 'you_got_this' | 'partly_yours' | 'released' | 'revisit';
 
 /**
  * **Agents address blocks, never offsets.** There is no position anywhere in this union, by
@@ -598,6 +604,32 @@ export interface ProgressObjectiveView {
   /** The learner's own sentence that earned the fill, verbatim, when there is one. */
   evidence: string | null;
   lastMovedAt: string | null;
+  /**
+   * **What the learner asked for on it since its last question closed** (2026-10-06, D2): Explain
+   * and Example presses on its lines, from `objective_activity` (migration 030), which outlives a
+   * room, so New Conversation keeps it. `since` is when that last question closed (its newest
+   * outcome row), or null when none has. Half of `core/readiness`'s input; the renderer measures
+   * the rest. Absent from a main built before this.
+   */
+  activity?: ObjectiveActivityView;
+}
+
+/** One objective's Explain and Example count since its last question closed (D2). */
+export interface ObjectiveActivityView {
+  explains: number;
+  examples: number;
+  since: string | null;
+}
+
+/** One Explain or Example press, filed against the objective of the line it was on (D2). */
+export interface ObjectiveActivity {
+  id: string;
+  contentSha: string;
+  roomId: string;
+  objectiveId: string;
+  kind: 'explain' | 'example';
+  blockId: string | null;
+  createdAt: string;
 }
 
 export interface ProgressView {

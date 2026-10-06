@@ -293,3 +293,45 @@ export function lessonBlocks(doc: Node | null, blockIds: readonly string[]): { s
   });
   return { scrollTo: heading, anchor: under ?? heading };
 }
+
+/** How much of a section Ellie is shown to walk through on a lesson's Start. */
+export const LESSON_SECTION_CHARS = 4_000;
+
+/**
+ * **The section a lesson is, as text** (2026-10-06, D2; `collab-doc.md` §6 amended): what Ellie
+ * walks the learner through on Start. The objective's first section heading, then every top-level
+ * block under it up to the next heading of the same or a higher level; without a heading, the
+ * objective's own blocks. Questions are left out: an earlier question is not the section's text.
+ */
+export function lessonSectionText(doc: Node | null, blockIds: readonly string[]): string {
+  if (doc === null || blockIds.length === 0) return '';
+  const heading = blockIds.find((id) => blockPos(doc, id)?.node.type.name === 'heading') ?? null;
+  const parts: string[] = [];
+  if (heading === null) {
+    for (const id of blockIds) {
+      const node = blockPos(doc, id)?.node;
+      if (node && node.type.name !== 'q_block') parts.push(node.textContent.trim());
+    }
+  } else {
+    let level: number | null = null;
+    let done = false;
+    doc.forEach((node) => {
+      if (done) return;
+      const { blockId } = blockAttrs(node);
+      if (level === null) {
+        if (blockId === heading) {
+          level = (node.attrs.level as number) ?? 2;
+          parts.push(node.textContent.trim());
+        }
+        return;
+      }
+      if (node.type.name === 'heading' && ((node.attrs.level as number) ?? 2) <= level) {
+        done = true;
+        return;
+      }
+      if (node.type.name === 'q_block') return;
+      parts.push(node.textContent.trim());
+    });
+  }
+  return parts.filter((p) => p.length > 0).join('\n').slice(0, LESSON_SECTION_CHARS);
+}

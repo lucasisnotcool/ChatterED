@@ -5,6 +5,7 @@ import { fakeHost, objective } from './fakehost.test-support.js';
 import {
   blockIdsForObjective,
   lessonBlocks,
+  lessonSectionText,
   objectiveForBlock,
   openNotesDoc,
   pagesForBlock,
@@ -252,5 +253,31 @@ describe('lessonBlocks', () => {
 describe('pagesOfObjective', () => {
   it('deduplicates and sorts the refs’ pages', () => {
     expect(pagesOfObjective(objective('o', { refs: [{ page: 4 }, { page: 2 }, { page: 4 }] }))).toEqual([2, 4]);
+  });
+});
+
+describe('lessonSectionText (D2, 2026-10-06)', () => {
+  it('is the heading and the blocks under it, up to the next heading, without questions', () => {
+    const doc = docOf(
+      heading('h_a', 2, 'Classical planning in PDDL', [2]),
+      para('b_take', 'A domain plus a problem is searched for a plan.', 'ingest', null, [2]),
+      notesSchema.nodes.q_block!.create({ blockId: 'q_old', questionId: 'q1', askedBy: 'max', status: 'open' }, [
+        para('q_old_p', 'An earlier question?', 'max'),
+      ]),
+      heading('h_a2', 3, 'Air cargo', [2]),
+      para('b_idea', 'Air cargo split into domain and problem.', 'ingest', null, [2]),
+      heading('h_b', 2, 'Search', [4]),
+      para('b_next', 'Not this section.', 'ingest', null, [4]),
+    );
+    expect(lessonSectionText(doc, ['h_a', 'b_take'])).toBe(
+      'Classical planning in PDDL\nA domain plus a problem is searched for a plan.\nAir cargo\nAir cargo split into domain and problem.',
+    );
+  });
+
+  it('falls back to the objective’s own blocks when it has no heading', () => {
+    expect(lessonSectionText(deck(), ['b_1', 'b_2'])).toBe(
+      'Convexity is about the shape of the set.\nThe Hessian test decides it on the interior.',
+    );
+    expect(lessonSectionText(null, ['b_1'])).toBe('');
   });
 });

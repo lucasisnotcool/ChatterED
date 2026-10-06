@@ -39,8 +39,14 @@ export interface DocActorMethods {
    * read about the sheet and the lecture behind it, or null when the mode is off.
    */
   noteTutorialFocus(input: { threadId: string; block: string | null }): void;
-  /** A lesson card's Start: Ellie announces the objective and prompts for a question (§6). */
-  startLesson(input: { objectiveId: string; anchorId: string; blockId: string | null }): Promise<void>;
+  /** A lesson card's Start: Ellie walks the learner through the section, and nobody asks (§6, amended 2026-10-06). */
+  startLesson(input: {
+    objectiveId: string;
+    anchorId: string;
+    blockId: string | null;
+    section?: string | null;
+    pages?: readonly number[];
+  }): Promise<void>;
   /**
    * The learner's own doc text, as an attempt. T3 inserts the synthetic `doc_text` learner
    * message inside the mailbox — see the note in `ipc.ts` on why main does not insert it.

@@ -28,6 +28,7 @@ import { blocksForPages, docFromJson, docOutline, docOutlineNear, eachBlock } fr
 import type { DocHost } from '../dochost.js';
 import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/notes.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
+import { activityRepo } from '../db/repos/activity.js';
 import { log } from '../log.js';
 
 /**
@@ -66,6 +67,30 @@ function announceOutcome(outcome: QuizOutcome): void {
   }
 }
 
+/**
+ * **The activity seam** (2026-10-06, D2): an Explain or Example press moves what the progress view
+ * reports for readiness, so its subscribers are told as an outcome's are.
+ */
+const activitySubscribers = new Set<(press: { roomId: string }) => void>();
+
+/** Subscribe to every Explain/Example press as it is stored. Returns the unsubscribe. */
+export function subscribeActivity(fn: (press: { roomId: string }) => void): () => void {
+  activitySubscribers.add(fn);
+  return () => {
+    activitySubscribers.delete(fn);
+  };
+}
+
+function announceActivity(press: { roomId: string }): void {
+  for (const fn of activitySubscribers) {
+    try {
+      fn(press);
+    } catch (err) {
+      log().warn('notes.activity.subscriber_failed', { cause: err instanceof Error ? err.message : String(err) });
+    }
+  }
+}
+
 /** `e_<12 hex>` / `qo_<12 hex>` — the id shapes the rest of the app uses. */
 function mintId(prefix: string): string {
   let out = '';
@@ -88,6 +113,7 @@ export function createDocPort(host: DocHost, file: DocPortFile): DocPort {
   if (!file.contentSha) return NO_DOC;
   const repo: NotesRepo = notesRepo(host.db);
   const outcomes = outcomesRepo(host.db);
+  const activity = activityRepo(host.db);
   const contentSha = file.contentSha;
 
   /** The parsed document, and the version it was parsed from. */
@@ -192,6 +218,12 @@ export function createDocPort(host: DocHost, file: DocPortFile): DocPort {
       // The progress bar is a pure function of these rows, and recomputing it is T6's. This
       // port's job ends at "the row exists, and whoever cares has been told".
       announceOutcome(stored);
+    },
+
+    recordActivity(press) {
+      activity.insert({ ...press, id: mintId('oa'), contentSha, createdAt: new Date().toISOString() });
+      // The same seam as an outcome: the progress view carries the count (D2), so it is pushed again.
+      announceActivity({ roomId: press.roomId });
     },
   };
 }
