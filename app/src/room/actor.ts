@@ -44,6 +44,7 @@ import {
 import { planGeneratedBlock, type GeneratedBlockKind } from './generate.js';
 import {
   ELLIE_CUE_SCHEMA,
+  blankGivenAwayBlock,
   blockActionBlock,
   cueCorrectionLines,
   clozeFeedbackBlock,
@@ -161,6 +162,7 @@ import {
 } from './prompts.js';
 import {
   DEFAULT_PITCH,
+  blankGiveaway,
   followUpPlan,
   hasBlank,
   notePitch,
@@ -907,6 +909,13 @@ export class RoomActor {
    * against. Capped, because the point is a list he can read, not a transcript.
    */
   #questionsAsked: string[] = [];
+
+  /**
+   * **The blank is withdrawn for this generation** (2026-10-06 decision, D3). Set only while the
+   * third draft of a blank turn is generated, after two drafts gave the blank's answer away
+   * (`#completeBlankTurn`): every prompt that would ask for a blank asks for an open question.
+   */
+  #blankWithdrawn = false;
 
   #log: TurnLog;
   /** The current turn's logger, so helpers off the main path (`#failTurn`) share its id. */
@@ -4166,26 +4175,32 @@ export class RoomActor {
       onDelta?.(line);
       return { text: line, model: 'pool:content_free', usage: {}, ttftMs: 0, backend: undefined };
     }
-    const request = buildGroupContext(this.#d.groupStore, {
-      roomId: this.#d.roomId,
-      speaker: agent,
-      roster: this.#d.roster,
-      pack: this.#d.pack,
-      directive: {
-        agentRole: agent.role,
-        move: decision.moveType,
-        probeType: decision.probeType ?? undefined,
-        targetElementId: decision.targetElementId ?? undefined,
-        note: this.#withSheetGuard(decision, this.#withTutorialFocus(decision, this.#turnNote(decision))),
-        // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
-        // clause, and the rule name is what tells them apart.
-        byRule: decision.decidedBy,
-        cloze: this.#clozeTurn(decision),
-        followUpBlank: this.#followUpBlankTurn(decision),
-        sourceGenre: this.#d.sourceGenre,
-      },
-    });
-    request.meta.scriptCue = cue;
+    // A closure, so a blank turn that gave its answer away can be asked for again (`#completeBlankTurn`).
+    const build = (extra?: string): LlmRequest => {
+      const note = this.#withSheetGuard(decision, this.#withTutorialFocus(decision, this.#turnNote(decision)));
+      const built = buildGroupContext(this.#d.groupStore, {
+        roomId: this.#d.roomId,
+        speaker: agent,
+        roster: this.#d.roster,
+        pack: this.#d.pack,
+        directive: {
+          agentRole: agent.role,
+          move: decision.moveType,
+          probeType: decision.probeType ?? undefined,
+          targetElementId: decision.targetElementId ?? undefined,
+          note: extra === undefined ? note : [note, extra].filter((b) => typeof b === 'string' && b.length > 0).join('\n\n'),
+          // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
+          // clause, and the rule name is what tells them apart.
+          byRule: decision.decidedBy,
+          cloze: this.#clozeTurn(decision),
+          followUpBlank: this.#followUpBlankTurn(decision),
+          sourceGenre: this.#d.sourceGenre,
+        },
+      });
+      built.meta.scriptCue = cue;
+      return built;
+    };
+    const request = build();
     /**
      * **What the prefix carried, per call** (issue #35 item 4). The reply's prompt is the frozen
      * room prefix, which since the whole-deck fix holds the entire document rather than the
@@ -4229,7 +4244,79 @@ export class RoomActor {
       onDelta?.(cue.text);
       return { ...result, text: cue.text };
     }
+    if (this.#blankTurn(decision)) {
+      const again = (extra: string): LlmRequest => {
+        const next = build(extra);
+        next.meta.turnId = request.meta.turnId;
+        next.meta.anchorId = request.meta.anchorId;
+        return next;
+      };
+      return this.#completeBlankTurn(request, again, onDelta, signal);
+    }
     return this.#d.llm.complete(request, onDelta, signal);
+  }
+
+  /**
+   * **A turn asked to carry a fill-in-the-blank** (2026-10-06 decision, D3): the feedback that ends
+   * a run on a blank (`#followUpBlankTurn`), or a pitched question that is one (`#clozeTurn`).
+   */
+  #blankTurn(decision: TurnDecision): boolean {
+    return this.#followUpBlankTurn(decision) || (this.#pitchedQuestion(decision) && this.#clozeTurn(decision));
+  }
+
+  /**
+   * **A blank that gives its answer away is not sent** (2026-10-06 decision, the `notebooks.md` /
+   * `collab-doc.md` amendment, D3; `core/pitch.blankGiveaway`).
+   *
+   * The live MDP run: *"p. 44: "Fewer iterations, but each iteration is more computationally
+   * intensive." … Fill in the blank: p. 44: "Simpler update, but ____ iterations needed."*, and the
+   * learner wrote "fewer", read off the sentence above it. The model proposes, code decides: the
+   * draft is held back (not streamed, so nothing reaches the screen before the check), checked
+   * against itself, the message before it and the deck, and on a hit written again once with what
+   * to leave out. If that one gives it away too, the blank is withdrawn and the third draft ends on
+   * an open question; it goes out as written, because a third check would have nothing left to ask
+   * for. The turn then streams as one delta, as Ellie's cue does.
+   */
+  async #completeBlankTurn(
+    first: LlmRequest,
+    again: (extra: string) => LlmRequest,
+    onDelta: ((text: string) => void) | undefined,
+    signal: AbortSignal | undefined,
+  ): ReturnType<LLMClient['complete']> {
+    const earlier = this.#messageBefore();
+    const pageText = this.#d.store.materials.get(this.#room().material_id)?.extracted_text ?? null;
+    const check = (text: string) => blankGiveaway({ turn: text, earlier: earlier === null ? [] : [earlier], pageText });
+
+    let result = await this.#d.llm.complete(first, undefined, signal);
+    const hit = check(result.text);
+    if (hit !== null) {
+      this.#turnLog.event('warn', 'blank.given_away', { draft: 1, kind: hit.kind, where: hit.where });
+      result = await this.#d.llm.complete(again(blankGivenAwayBlock({ ...hit, open: false })), undefined, signal);
+      const second = check(result.text);
+      if (second !== null) {
+        this.#turnLog.event('warn', 'blank.given_away', { draft: 2, kind: second.kind, where: second.where });
+        this.#blankWithdrawn = true;
+        try {
+          result = await this.#d.llm.complete(again(blankGivenAwayBlock({ ...second, open: true })), undefined, signal);
+        } finally {
+          this.#blankWithdrawn = false;
+        }
+        this.#turnLog.event('info', 'blank.withdrawn', { has_blank: hasBlank(result.text) });
+      }
+    }
+    onDelta?.(result.text);
+    return result;
+  }
+
+  /** The last agent message in this turn's thread: what is on screen just above the turn. */
+  #messageBefore(): string | null {
+    const anchorId = this.#turnAnchorId;
+    const student = this.#studentParticipant().id;
+    const rows = this.#d.store.messages
+      .forRoom(this.#d.roomId)
+      .filter((m) => m.participant_id !== student && (m.anchor_id ?? null) === anchorId)
+      .sort((a, b) => b.seq - a.seq);
+    return rows[0]?.body ?? null;
   }
 
   async #updateLedger(cue: string, turnStart: number, fallbackCue?: string): Promise<void> {
@@ -5602,7 +5689,12 @@ export class RoomActor {
         // 2026-10-03: from the second try the answers are marked together; past two open follow-ups,
         // or after a guess, the follow-up is a blank.
         const plan = followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText });
-        const note = followUpBlock({ attempts: attemptsOf(quiz), together: plan.together, guess: plan.guess, blank: plan.form === 'cloze' });
+        const note = followUpBlock({
+          attempts: attemptsOf(quiz),
+          together: plan.together,
+          guess: plan.guess,
+          blank: plan.form === 'cloze' && !this.#blankWithdrawn,
+        });
         if (note) blocks.push(note);
       }
       /**
@@ -5708,6 +5800,7 @@ export class RoomActor {
   #followUpBlankTurn(decision: TurnDecision): boolean {
     const quiz = this.#pendingQuiz;
     if (decision.moveType !== 'quiz_feedback' || quiz === null || answersBlank(quiz)) return false;
+    if (this.#blankWithdrawn) return false;
     return followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText }).form === 'cloze';
   }
 
@@ -5738,7 +5831,9 @@ export class RoomActor {
      * was pitched as though it were a second.
      */
     const onObjective = objectiveId === null ? [] : this.#outcomes.filter((o) => o.objectiveId === objectiveId);
-    return pitchInputs({ objectiveId, outcomes, fill: progressFill(onObjective) });
+    const inputs = pitchInputs({ objectiveId, outcomes, fill: progressFill(onObjective) });
+    // 2026-10-06 (D3): the blank was given away twice, so this draft is an open question at the same level.
+    return this.#blankWithdrawn && inputs.form === 'cloze' ? { ...inputs, pitch: 'level', form: 'open' } : inputs;
   }
 
   /**

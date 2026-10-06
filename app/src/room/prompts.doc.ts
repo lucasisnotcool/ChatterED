@@ -22,7 +22,7 @@
 import type { AgentProfile } from '../shared/types.js';
 import { teacherName, testerName } from './agents.js';
 import { VERDICT_OPENERS } from './flow.js';
-import { NO_REMARKS } from './prompts.js';
+import { BLANK_NOT_ON_SCREEN, NO_REMARKS, NOT_READABLE_OFF } from './prompts.js';
 import { OPEN_FOLLOW_UPS } from '../core/pitch.js';
 
 // ── §4.2 row 1, first turn: Ellie answers ──────────────────────────────────
@@ -252,6 +252,44 @@ export function maxFollowupBlock(input: {
     'no yes/no, no "is it X or Y?" where one of them is obviously wrong. If reading your question',
     'aloud would tell them the answer, ask a different one.',
   );
+  return lines.join('\n');
+}
+
+/**
+ * **The blank gave its answer away; write the turn again** (2026-10-06 decision, the
+ * `notebooks.md` / `collab-doc.md` amendment, D3). `core/pitch.blankGiveaway` found the blank's
+ * term readable off the screen, so the turn is generated once more with what to leave out. If the
+ * second draft gives it away too, the third is asked for with `open: true`: no blank at all, one
+ * open question instead, because a blank on that point keeps being one the learner can read back.
+ */
+export function blankGivenAwayBlock(input: {
+  kind: 'sentence' | 'term' | 'mirror';
+  term: string | null;
+  quoted: string;
+  open: boolean;
+}): string {
+  const term = input.term?.trim() ? `"${input.term.trim()}"` : null;
+  const why =
+    input.kind === 'mirror'
+      ? `The sentence "${input.quoted}" is on screen and mirrors the one you blanked${term ? `, filling its gap with ${term}` : ''}.`
+      : input.kind === 'term'
+        ? `The blanked term${term ? ` ${term}` : ''} is already on screen, in "${input.quoted}".`
+        : `The sentence you blanked is already on screen whole, in "${input.quoted}", so the blank is filled by reading it back.`;
+  const lines = [
+    input.open ? 'NO FILL-IN-THE-BLANK THIS TIME' : 'YOUR LAST DRAFT GAVE THE BLANK AWAY',
+    why,
+    `Write the turn again. Do not quote that sentence${term ? `, and do not use ${term}` : ''} anywhere in it.`,
+  ];
+  if (input.open) {
+    lines.push(
+      'A blank on this point keeps giving its answer away, so do not write one: no "Fill in the blank",',
+      'no ____. End instead on one short open question about the part that is still missing, for them to',
+      'answer in their own words.',
+      NOT_READABLE_OFF,
+    );
+  } else {
+    lines.push('Blank a sentence that is not on screen, or a different term, so the learner has to recall it.');
+  }
   return lines.join('\n');
 }
 
@@ -550,7 +588,11 @@ export function followUpBlock(input: { attempts: number; together: boolean; gues
       'your follow-up is **one fill-in-the-blank**, not another open question: "Fill in the blank:" and',
       'one sentence from the page about the one thing still missing, with its key term replaced by',
       '____. One blank, nothing after the sentence, and do not give the term or a hint at it.',
+      BLANK_NOT_ON_SCREEN,
     );
+  } else {
+    // 2026-10-06 (D3): an open follow-up from the second try on carries the same rule.
+    lines.push(NOT_READABLE_OFF);
   }
   return lines.join('\n');
 }

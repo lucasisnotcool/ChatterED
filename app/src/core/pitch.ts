@@ -181,6 +181,243 @@ export function hasBlank(text: string): boolean {
   return BLANK.test(text);
 }
 
+// ── The blank that gives its answer away (2026-10-06 decision, D3) ──────────────────────────
+
+/**
+ * **A fill-in-the-blank whose answer is already on screen** (2026-10-06 decision, the
+ * `notebooks.md` / `collab-doc.md` amendment, D3). A blank is a sentence from the page with one
+ * term taken out (§4.5), and Max is also asked to ground every correction by quoting the page, so
+ * the two meet: in the live runs of 2026-10-03 to 10-05, 6 of the 8 blanks that ended a run had
+ * their answer quoted whole in the same message or the one before. The learner reads it back, and
+ * the blank is marked *Well done*.
+ *
+ * Three ways it is given away, checked in this order:
+ *
+ * - `sentence`: the blank's sentence, unblanked, is elsewhere on screen, so the term can be read
+ *   off it (`p. 43: "Final utilities solve the Bellman equations…" Fill in the blank: p. 43:
+ *   "Final utilities solve the ____ equations…"`).
+ * - `term`: the term itself, recovered from the page, is elsewhere on screen.
+ * - `mirror`: an on-screen sentence shares the word beside the blank and fills the slot with
+ *   another word (`"Fewer iterations, but each iteration is more computationally intensive." …
+ *   Fill in the blank: "Simpler update, but ____ iterations needed."`). The learner wrote "fewer",
+ *   the wrong word, read off the other row of the slide's table.
+ *
+ * "On screen" is the rest of the turn (any sentence without a blank in it) and the messages the
+ * caller passes as `earlier`, the message just before. Words are compared case-folded, under
+ * Unicode compatibility folding (so the deck's 𝑃 is P), with a plural `s` folded away. A word
+ * list of function words is never a term and never a neighbour, so "the" beside a blank says
+ * nothing. A false hit costs one regeneration, which is why the mirror check is allowed to be loose.
+ */
+export type BlankGiveawayKind = 'sentence' | 'term' | 'mirror';
+
+export interface BlankGiveaway {
+  kind: BlankGiveawayKind;
+  /** The words a learner could read off the screen: the blank's own term, or the mirror's word. */
+  term: string | null;
+  /** The on-screen sentence that gives it away, as written there. */
+  quoted: string;
+  /** In the turn itself, or in one of the `earlier` messages. */
+  where: 'turn' | 'earlier';
+}
+
+export interface BlankGiveawayInput {
+  /** The whole turn that carries the blank. */
+  turn: string;
+  /** What is on screen just before it: the message before this one. */
+  earlier?: readonly string[];
+  /** The text of the page (or the deck) the sentence is from, to recover the blanked term. */
+  pageText?: string | null;
+}
+
+/** Words that are never a term, never a neighbour worth aligning on, and never a mirror's word. */
+const FUNCTION_WORDS = new Set(
+  (
+    'a an the of to in on at by for from with into onto as and or but nor if then so than that this these those ' +
+    'it its is are was were be been being has have had do does did not no yes can could may might must shall should ' +
+    'will would there here which who whom whose what when where why how each every any all some one ' +
+    'p pp page slide e g i ie eg s t'
+  ).split(' '),
+);
+
+const SEGMENT_BREAK = /["“”«»…\n]+|(?<=[.!?])\s+/u;
+const FILL_IN = /^.*fill[\s-]+in[\s-]+the[\s-]+blanks?\s*:?/isu;
+
+interface Words {
+  raw: string[];
+  stem: string[];
+}
+
+function fold(word: string): string {
+  if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`;
+  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
+  return word;
+}
+
+function wordsOf(text: string): Words {
+  const raw = text
+    .normalize('NFKC')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 0);
+  return { raw, stem: raw.map(fold) };
+}
+
+/** The same list folded, so a folded word (`this` is `thi`) is still recognised. */
+const FUNCTION_STEMS = new Set([...FUNCTION_WORDS].map(fold));
+
+function isFunctionWord(word: string): boolean {
+  return FUNCTION_WORDS.has(word) || FUNCTION_STEMS.has(word);
+}
+
+function segmentsOf(text: string): string[] {
+  return text
+    .split(SEGMENT_BREAK)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function same(a: readonly string[], from: number, b: readonly string[]): boolean {
+  if (from < 0 || from + b.length > a.length) return false;
+  for (let i = 0; i < b.length; i += 1) if (a[from + i] !== b[i]) return false;
+  return true;
+}
+
+/** The words either side of the blank, in the blank's own segment. */
+interface Slot {
+  left: Words;
+  right: Words;
+  sentence: string;
+}
+
+function slotOf(text: string): Slot | null {
+  const segment = segmentsOf(text).find((s) => hasBlank(s));
+  if (segment === undefined) return null;
+  const match = /_{3,}/.exec(segment)!;
+  const before = segment.slice(0, match.index).replace(FILL_IN, '');
+  const after = segment.slice(match.index + match[0].length);
+  // A second blank in the same sentence is not one this check can read; its side stops there.
+  const left = wordsOf(before.split(/_{3,}/).at(-1) ?? '');
+  const right = wordsOf(after.split(/_{3,}/)[0] ?? '');
+  const sentence = `${before}${CLOZE_BLANK}${after.split(/_{3,}/)[0]!}`.trim();
+  return { left, right, sentence };
+}
+
+/**
+ * Every way `words` fills the slot between the last `a` words of `left` and the first `b` of
+ * `right`, as raw words. With no right side the fill is one word; with no left side, one word.
+ */
+function fills(slot: Slot, words: Words, a: number, b: number, maxTerm = 4): string[][] {
+  const left = slot.left.stem.slice(slot.left.stem.length - a);
+  const right = slot.right.stem.slice(0, b);
+  const found: string[][] = [];
+  if (a === 0 && b === 0) return found;
+  for (let start = 0; start < words.stem.length; start += 1) {
+    if (a > 0 && !same(words.stem, start, left)) continue;
+    const t = start + a;
+    if (b === 0) {
+      if (t < words.raw.length) found.push(words.raw.slice(t, t + 1));
+      continue;
+    }
+    if (a === 0) {
+      // Right side only: the word before it fills the slot.
+      if (same(words.stem, t, right) && t > 0) found.push(words.raw.slice(t - 1, t));
+      continue;
+    }
+    for (let len = 1; len <= maxTerm; len += 1) {
+      if (same(words.stem, t + len, right)) {
+        found.push(words.raw.slice(t, t + len));
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * **The sentence with the blank in it**, without a leading "Fill in the blank:", or `null` when
+ * the text has no blank. The blank is written as `CLOZE_BLANK` whatever length Max typed.
+ */
+export function blankSentence(text: string): string | null {
+  return slotOf(text)?.sentence ?? null;
+}
+
+/**
+ * **The blanked term, recovered from the page.** The words either side of the blank are found in
+ * `pageText` (four a side, then two) and what sits between them is the term, up to four words.
+ * `null` when the sentence is not on the page in those words, or the page fills it two ways.
+ */
+export function blankTerm(sentenceOrTurn: string, pageText: string | null | undefined): string | null {
+  const slot = slotOf(sentenceOrTurn);
+  if (slot === null || !pageText) return null;
+  const page = wordsOf(pageText);
+  for (const size of [4, 2]) {
+    const a = Math.min(slot.left.stem.length, size);
+    const b = Math.min(slot.right.stem.length, size);
+    if (a + b < 2) continue;
+    const terms = new Set(fills(slot, page, a, b).map((w) => w.join(' ')));
+    if (terms.size === 1) return [...terms][0]!;
+    if (terms.size > 1) return null;
+  }
+  return null;
+}
+
+/**
+ * **Does this turn's blank give its answer away?** `null` when it does not, or when the turn has
+ * no blank. See `BlankGiveaway` for the three ways and what counts as on screen.
+ */
+export function blankGiveaway(input: BlankGiveawayInput): BlankGiveaway | null {
+  const slot = slotOf(input.turn);
+  if (slot === null) return null;
+  const onScreen: { text: string; words: Words; where: 'turn' | 'earlier' }[] = [];
+  const add = (text: string, where: 'turn' | 'earlier'): void => {
+    for (const s of segmentsOf(text)) if (!hasBlank(s)) onScreen.push({ text: s, words: wordsOf(s), where });
+  };
+  add(input.turn, 'turn');
+  for (const e of input.earlier ?? []) add(e, 'earlier');
+  if (onScreen.length === 0) return null;
+
+  // The sentence, unblanked: enough of it either side that it is the same sentence.
+  const a = Math.min(slot.left.stem.length, 4);
+  const b = Math.min(slot.right.stem.length, 4);
+  const context = [...slot.left.stem.slice(slot.left.stem.length - a), ...slot.right.stem.slice(0, b)];
+  if (a + b >= Math.min(3, slot.left.stem.length + slot.right.stem.length) && context.some((w) => !isFunctionWord(w))) {
+    for (const s of onScreen) {
+      const filled = fills(slot, s.words, a, b).find((w) => w.some((x) => !isFunctionWord(x)));
+      if (filled) return { kind: 'sentence', term: filled.join(' '), quoted: s.text, where: s.where };
+    }
+  }
+
+  // The term itself, when the page says what it is.
+  const term = blankTerm(slot.sentence, input.pageText);
+  const termWords = term === null ? null : wordsOf(term);
+  if (termWords !== null && termWords.raw.some((w) => !isFunctionWord(w) && w.length > 2)) {
+    for (const s of onScreen) {
+      for (let i = 0; i < s.words.stem.length; i += 1) {
+        if (same(s.words.stem, i, termWords.stem)) return { kind: 'term', term, quoted: s.text, where: s.where };
+      }
+    }
+  }
+
+  // The mirror: a sentence that shares the blank's neighbour and fills the slot with its own word.
+  const inBlank = new Set([...slot.left.stem, ...slot.right.stem]);
+  const rightWord = slot.right.stem[0];
+  const leftWord = slot.left.stem.at(-1);
+  const candidate = (w: string | undefined): w is string =>
+    w !== undefined && !isFunctionWord(w) && !inBlank.has(fold(w)) && /\p{L}/u.test(w);
+  for (const s of onScreen) {
+    for (let k = 0; k < s.words.stem.length; k += 1) {
+      const word = s.words.stem[k];
+      if (rightWord !== undefined && !isFunctionWord(rightWord) && word === rightWord && candidate(s.words.raw[k - 1])) {
+        return { kind: 'mirror', term: s.words.raw[k - 1]!, quoted: s.text, where: s.where };
+      }
+      if (leftWord !== undefined && !isFunctionWord(leftWord) && word === leftWord && candidate(s.words.raw[k + 1])) {
+        return { kind: 'mirror', term: s.words.raw[k + 1]!, quoted: s.text, where: s.where };
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * The form of the question that was actually asked. The pitch asks for a cloze; whether Max wrote
  * one is read off his words, because a question with no blank in it is an open question whatever

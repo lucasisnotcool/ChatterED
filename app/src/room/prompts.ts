@@ -519,6 +519,26 @@ export const NO_REMARKS =
   'Do not comment on how the learner went about it \u2014 not whether their question was reasonable, ' +
   'not what they should have asked, not what kind of message it was. Talk about the material.';
 
+/**
+ * **The answer must not be readable off the question** (2026-10-06 decision, the `notebooks.md` /
+ * `collab-doc.md` amendment, D3). The rule lived only in `maxFollowupBlock`'s open branch
+ * (`prompts.doc.ts`), which runs for the retired `rule:max_followup`, so the live follow-up and
+ * blank prompts never carried it: 31 of 47 recent follow-ups gave their own answer away.
+ */
+export const NOT_READABLE_OFF =
+  '**The answer must not be readable off the question.** No question that contains its own answer, ' +
+  'no yes/no, and no "is it X or Y?" where one of them is obviously wrong.';
+
+/**
+ * **Nor off the screen, for a blank** (same decision). Max quoted the sentence whole, or its other
+ * row in the slide's table, and then blanked it; `core/pitch.blankGiveaway` checks for it in code,
+ * and this is the instruction that makes the check rarely fire.
+ */
+export const BLANK_NOT_ON_SCREEN =
+  'The term must not be readable off the screen: do not blank a sentence quoted anywhere else in this ' +
+  'message or the one before it, do not use the term anywhere else in the message, and do not quote ' +
+  'a sentence that mirrors the blank one (the other row of a table, its contrasting half).';
+
 /** Which turn of the attempt loop this is (§2.3). `question` is the default. */
 export type QuizTurn = 'question' | 'feedback' | 'answer' | 'clarify' | 'hint_withheld';
 
@@ -910,6 +930,7 @@ export function turnDirective(d: TurnDirective): string {
     bits.push(
       'Ask **one** fill-in-the-blank: "Fill in the blank:" and then one sentence from the page with one',
       'key term replaced by ____. One blank, nothing after the sentence, and do not give the term or a hint at it.',
+      BLANK_NOT_ON_SCREEN,
     );
   }
   /** §4.2 row 1, second turn: one Socratic follow-up, pitched by `pitchBlock` in the note. */
@@ -989,8 +1010,13 @@ export function turnDirective(d: TurnDirective): string {
             'Unless it is Well done, do not ask another open question: your last sentence is one',
             'fill-in-the-blank, "Fill in the blank:" and then one sentence from the page with the key term',
             'of what is still missing replaced by ____. One blank, nothing after it, and do not give the term.',
+            BLANK_NOT_ON_SCREEN,
           ]
-        : ['Unless it is Well done, your last sentence is one follow-up question on the gap, and there is', 'no other question in the turn.']),
+        : [
+            'Unless it is Well done, your last sentence is one follow-up question on the gap, and there is',
+            'no other question in the turn.',
+            NOT_READABLE_OFF,
+          ]),
       `Only if the message asks for background and tries no answer at all: first line **${UNMARKED_OPENER}**,`,
       'then that background in at most 80 words, with a toy example that is not your question\u2019s case',
       'and without answering it, then the same question again \u2014 and no verdict.',

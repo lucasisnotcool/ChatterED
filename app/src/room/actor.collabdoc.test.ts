@@ -1762,3 +1762,75 @@ describe('generateBlock', () => {
   });
 });
 
+// ── 2026-10-06 decision (D3): a blank that gives its answer away is not sent ─────────────────
+
+describe('the blank that gives its answer away', () => {
+  const GIVEN_AWAY =
+    'Partly there. p. 3: "The side channel is private from the rest of the group." ' +
+    'Fill in the blank: p. 3: "The side channel is private from the rest of the ____."';
+  const CLEAN = 'Partly there. You have who pays it. Fill in the blank: the side channel is private from the rest of the ____.';
+  const OPEN = 'Partly there. You have who pays it. Who is kept out of it, besides the one agent?';
+  const marking = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK');
+  const ANSWERS = [
+    'the side channel is a private thread with one agent',
+    'the agent can read it but nobody else in the room',
+    'it stays out of the main chat for everyone',
+  ];
+
+  /** Max's third feedback ends on a blank; `second` is what he writes when told it gave it away. */
+  function reply(second: string): Reply {
+    return (request) => {
+      if (!marking(request)) return null;
+      const prompt = request.messages.at(-1)!.content;
+      if (prompt.includes('NO FILL-IN-THE-BLANK THIS TIME')) return OPEN;
+      if (prompt.includes('YOUR LAST DRAFT GAVE THE BLANK AWAY')) return second;
+      if (prompt.includes('one fill-in-the-blank')) return GIVEN_AWAY;
+      return 'Partly there. You have part of it, p. 3. Who else can read it?';
+    };
+  }
+
+  async function threeTries(second: string) {
+    const h = build({}, null, reply(second));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    for (const answer of ANSWERS) await settle(h.clock, h.actor.sendMessage(answer, DOC));
+    return h;
+  }
+
+  const markingPrompts = (h: ReturnType<typeof build>) => h.llm.requests.filter(marking).map((r) => r.messages.at(-1)!.content);
+
+  it('tells the live follow-up prompts that the answer must not be readable off the question', async () => {
+    const h = await threeTries(CLEAN);
+    const [first, second, third] = markingPrompts(h).map(flat);
+    expect(first).toContain('must not be readable off the question');
+    expect(second).toContain('must not be readable off the question');
+    expect(third).toContain('must not be readable off the screen');
+  });
+
+  it('writes the turn again once, saying what to leave out, and sends the second draft', async () => {
+    const h = await threeTries(CLEAN);
+    const drafts = markingPrompts(h);
+    expect(drafts).toHaveLength(4);
+    const again = flat(drafts.at(-1)!);
+    expect(again).toContain('YOUR LAST DRAFT GAVE THE BLANK AWAY');
+    expect(again).toContain('The side channel is private from the rest of the group.');
+    expect(again).toContain('do not use "group"');
+    expect(bodies(h)).toContain(CLEAN);
+    expect(bodies(h)).not.toContain(GIVEN_AWAY);
+    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(true);
+  });
+
+  it('drops the blank for an open question when the second draft gives it away too', async () => {
+    const h = await threeTries(GIVEN_AWAY);
+    const drafts = markingPrompts(h);
+    expect(drafts).toHaveLength(5);
+    const last = flat(drafts.at(-1)!);
+    expect(last).toContain('NO FILL-IN-THE-BLANK THIS TIME');
+    expect(last).not.toContain('one fill-in-the-blank');
+    expect(last).toContain('your last sentence is one follow-up question on the gap');
+    expect(bodies(h)).toContain(OPEN);
+    expect(bodies(h)).not.toContain(GIVEN_AWAY);
+    expect(h.actor.flowSnapshot().pendingQuiz?.followUpBlank).toBe(false);
+  });
+});
+
