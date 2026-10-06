@@ -201,6 +201,8 @@ export interface ExportSummary {
   objectiveStates: number;
   usageRows: number;
   events: number;
+  /** Notebooks left out by "Exclude from research data" (migration 032), their own or a folder's. */
+  excludedNotebooks: number;
   databaseBytes: number;
   logBytes: number;
   logFiles: number;

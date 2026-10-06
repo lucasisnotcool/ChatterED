@@ -25,6 +25,7 @@ import {
   sourceKindFor,
   virtualPageCount,
   type AddSourcesResult,
+  type DuplicateResult,
   type NotebookChange,
   type NotebookSourceView,
   type NotebookSummary,
@@ -52,6 +53,7 @@ interface Held {
   updatedAt: string;
   openedAt: string | null;
   folderId?: string | null;
+  researchExclude?: boolean;
 }
 
 export interface MockNotebookDeps {
@@ -171,6 +173,7 @@ export class MockNotebooks {
         updatedAt: n.updatedAt,
         openedAt: n.openedAt,
         folderId: n.folderId ?? null,
+        researchExclude: n.researchExclude ?? false,
       }));
   }
 
@@ -199,6 +202,7 @@ export class MockNotebooks {
       ord: siblings.length === 0 ? 0 : Math.max(...siblings.map((x) => x.ord)) + 1,
       createdAt: at,
       updatedAt: at,
+      researchExclude: false,
     };
     this.#folders.set(id, folder);
     return { ...folder };
@@ -217,6 +221,71 @@ export class MockNotebooks {
     if (refusal) throw new Error(refusal);
     f.parentId = parentId;
     return { ...f };
+  }
+
+  // ── Exclude from research data and Duplicate: the mock keeps the flags and copies the cards ──
+
+  setNotebookResearchExclude(notebookId: string, exclude: boolean): NotebookView {
+    const n = this.#held.get(notebookId);
+    if (!n) throw new Error('That notebook no longer exists.');
+    n.researchExclude = exclude;
+    return this.view(notebookId)!;
+  }
+
+  setFolderResearchExclude(folderId: string, exclude: boolean): FolderView {
+    const f = this.#folder(folderId);
+    f.researchExclude = exclude;
+    return { ...f };
+  }
+
+  #copyNotebook(n: Held, name: string, folderId: string | null, researchExclude: boolean): string {
+    const id = `nb_${globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const at = this.#now();
+    this.#held.set(id, {
+      ...n,
+      id,
+      name,
+      sources: n.sources.map((s) => ({ ...s, fileId: `f_${globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)}` })),
+      createdAt: at,
+      updatedAt: at,
+      openedAt: null,
+      fill: null,
+      folderId,
+      researchExclude,
+    });
+    return id;
+  }
+
+  duplicateNotebook(input: { notebookId: string; name?: string | null; researchExclude?: boolean }): DuplicateResult {
+    const n = this.#held.get(input.notebookId);
+    if (!n) throw new Error('That notebook no longer exists.');
+    const name = input.name?.trim() || `${n.name} (copy)`;
+    const researchExclude = input.researchExclude !== false;
+    const id = this.#copyNotebook(n, name, n.folderId ?? null, researchExclude);
+    return { kind: 'notebook', id, name, notebooks: 1, missingSources: 0, researchExclude };
+  }
+
+  duplicateFolder(input: { folderId: string; name?: string | null; researchExclude?: boolean }): DuplicateResult {
+    const root = this.#folder(input.folderId);
+    const name = input.name?.trim() || `${root.name} (copy)`;
+    const researchExclude = input.researchExclude !== false;
+    const map = new Map<string, string>();
+    let notebooks = 0;
+    const walk = (f: FolderView, parentId: string | null, isRoot: boolean) => {
+      const copy = this.createFolder({ name: isRoot ? name : f.name, parentId });
+      const held = this.#folders.get(copy.id)!;
+      held.researchExclude = isRoot ? researchExclude : f.researchExclude;
+      map.set(f.id, copy.id);
+      for (const n of [...this.#held.values()].filter((x) => x.folderId === f.id)) {
+        this.#copyNotebook(n, n.name, copy.id, n.researchExclude ?? false);
+        notebooks += 1;
+      }
+      for (const c of [...this.#folders.values()].filter((x) => x.parentId === f.id && !map.has(x.id) && ![...map.values()].includes(x.id))) {
+        walk(c, copy.id, false);
+      }
+    };
+    walk(root, root.parentId, true);
+    return { kind: 'folder', id: map.get(root.id)!, name, notebooks, missingSources: 0, researchExclude };
   }
 
   deleteFolder(folderId: string): { deleted: boolean; movedNotebooks: number; movedFolders: number } {

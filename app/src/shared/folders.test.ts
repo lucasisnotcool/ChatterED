@@ -8,6 +8,7 @@ const f = (id: string, parentId: string | null, name = id, ord = 0): FolderView 
   ord,
   createdAt: '2026-10-03T00:00:00.000Z',
   updatedAt: '2026-10-03T00:00:00.000Z',
+  researchExclude: false,
 });
 
 // CS4246 ─┬─ Planning ── Week 3

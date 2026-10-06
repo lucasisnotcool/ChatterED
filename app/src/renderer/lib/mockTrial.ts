@@ -45,6 +45,7 @@ export function createMockTrial(): TrialApi {
         objectiveStates: 9,
         usageRows: 57,
         events: 120,
+        excludedNotebooks: 1,
         databaseBytes: 2_400_000,
         logBytes: 180_000,
         logFiles: 1,

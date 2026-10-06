@@ -106,6 +106,24 @@ export interface NotebookSummary {
   openedAt: string | null;
   /** The folder it sits in (`shared/folders.ts`), or null at the top level. */
   folderId: string | null;
+  /**
+   * Its own "Exclude from research data" mark (migration 032). A folder's mark covers it too;
+   * `researchExclusionOf` in `shared/folders.ts` reads both.
+   */
+  researchExclude: boolean;
+}
+
+/** What `notebook:duplicate` and `folder:duplicate` return to the renderer. */
+export interface DuplicateResult {
+  kind: 'notebook' | 'folder';
+  /** The copy's id: `nb_…` or `fd_…`. */
+  id: string;
+  name: string;
+  /** Notebooks copied (1 for a notebook). */
+  notebooks: number;
+  /** Sources whose file was not on disk: their rows are copied, their bytes could not be. */
+  missingSources: number;
+  researchExclude: boolean;
 }
 
 /** Pushed on `notebook:changed` whenever a notebook or one of its sources changed. */

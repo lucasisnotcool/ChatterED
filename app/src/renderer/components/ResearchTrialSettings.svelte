@@ -42,6 +42,10 @@
       {plural(s.objectiveStates, 'objective record')}, {plural(s.usageRows, 'AI call')} and
       {plural(s.events, 'logged event')} — a {size(s.databaseBytes)} database — plus
       {plural(s.logFiles, 'log file')} ({size(s.logBytes)}).
+      {#if s.excludedNotebooks > 0}
+        {plural(s.excludedNotebooks, 'notebook')} marked “Exclude from research data” (or in a folder marked so)
+        {s.excludedNotebooks === 1 ? 'is' : 'are'} left out, with everything tied to {s.excludedNotebooks === 1 ? 'it' : 'them'}.
+      {/if}
     </p>
   {/if}
   <div class="acts">

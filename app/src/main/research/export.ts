@@ -13,6 +13,11 @@
  *     logs/main*.log             the app's diagnostic logs, anonymised
  *     settings/ui-text-scale.json
  *
+ * **Excluded notebooks and folders** (migration 032, `exclude.ts`): everything tied to a notebook
+ * the learner marked "Exclude from research data", or that sits in a folder so marked, is deleted
+ * from the snapshot before anything else reads it — its docs, its room and chat, its progress, its
+ * search rows, its usage rows. The manifest counts what was left out; it never names it.
+ *
  * What is **not** in it, by construction rather than by filtering: the export copies the database
  * and an allowlist of small files, so the PDFs (which never leave the learner's own folder), the
  * rendered slide images under `userData/notes-pages/`, the API key files, and Chromium's caches
@@ -40,6 +45,7 @@ import {
   type AnonymiseReport,
 } from './anonymise.js';
 import { writeReadable, type ReadableReport } from './readable.js';
+import { applyResearchExclusion, excludedCounts, exclusionScope, type ExclusionReport } from './exclude.js';
 
 export const EXPORT_FORMAT = 'chattered-research-export';
 export const EXPORT_FORMAT_VERSION = 1;
@@ -77,6 +83,8 @@ export interface ResearchManifest {
     valuesScrubbed: number;
   };
   contents: ReadableReport & { logFiles: number };
+  /** Migration 032: how many notebooks and folders were left out, and how many rows went with them. */
+  researchExclusion: { notebooks: number; folders: number; rowsRemoved: number };
   contact: string;
   files: ManifestFile[];
 }
@@ -150,8 +158,11 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
   let report: AnonymiseReport;
   let readable: ReadableReport;
   let schema: number;
+  let excluded: ExclusionReport;
   try {
     copy.exec('PRAGMA journal_mode = DELETE');
+    // First, so nothing below reads, scrubs or counts a row the learner kept out of the trial.
+    excluded = applyResearchExclusion(copy);
     report = anonymiseDatabase(copy, scrub);
     const leaks = findLeaks(copy, scrub);
     if (leaks.length > 0) throw new Error(`Anonymising left identifying text in ${leaks.join(', ')}`);
@@ -215,6 +226,11 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
       valuesScrubbed: report.valuesScrubbed,
     },
     contents: { ...readable, logFiles },
+    researchExclusion: {
+      notebooks: excluded.notebooks,
+      folders: excluded.folders,
+      rowsRemoved: Object.values(excluded.rows).reduce((a, b) => a + b, 0),
+    },
     contact: TRIAL_CONTACT_EMAIL,
     files,
   };
@@ -247,6 +263,10 @@ function count(db: SqlDatabase, table: string, tables: Set<string>): number {
 
 export function exportSummary(db: SqlDatabase, logDir: string): ExportSummary {
   const tables = new Set(listTables(db));
+  // What the export would leave out (migration 032), counted read-only on the live database.
+  const scope = exclusionScope(db);
+  const left = excludedCounts(db, scope);
+  const kept = (table: string) => Math.max(0, count(db, table, tables) - (left[table] ?? 0));
   const page = db.prepare('PRAGMA page_size').get<{ page_size: number }>()?.page_size ?? 0;
   const pages = db.prepare('PRAGMA page_count').get<{ page_count: number }>()?.page_count ?? 0;
   let logBytes = 0;
@@ -262,13 +282,14 @@ export function exportSummary(db: SqlDatabase, logDir: string): ExportSummary {
     /* No log directory yet. */
   }
   return {
-    rooms: count(db, 'rooms', tables),
-    messages: count(db, 'messages', tables),
-    privateTurns: count(db, 'whispers', tables),
-    notesDocs: count(db, 'notes_docs', tables),
-    objectiveStates: count(db, 'learning_objective_states', tables),
-    usageRows: count(db, 'llm_usage', tables),
-    events: count(db, 'events', tables),
+    rooms: kept('rooms'),
+    messages: kept('messages'),
+    privateTurns: kept('whispers'),
+    notesDocs: kept('notes_docs'),
+    objectiveStates: kept('learning_objective_states'),
+    usageRows: kept('llm_usage'),
+    events: kept('events'),
+    excludedNotebooks: scope.notebooks.length,
     databaseBytes: page * pages,
     logBytes,
     logFiles,
@@ -319,6 +340,9 @@ How it was anonymised
   - Settings whose name marks them as secret are removed.
   - The text of your lecture documents is removed (${excluded}), as is the
     search index of your sources. File and notebook names are kept.
+  - Notebooks you marked "Exclude from research data", and every notebook in a folder you
+    marked so, are left out entirely: their notes, chats, progress, search index and AI-call
+    rows. The manifest says how many; it does not name them.
   - You are identified only by the random participant ID above.
   - What you typed is included exactly as you typed it.
 

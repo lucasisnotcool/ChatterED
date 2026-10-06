@@ -87,6 +87,14 @@ export function openTestDatabase(filename = ':memory:'): SqlDatabase {
   return wrap(load('better-sqlite3-node'), filename, filename !== ':memory:');
 }
 
+/**
+ * The Node-ABI build on a real file, WAL like the app's: for the headless tools under
+ * `scripts/` (`duplicate-folder.mjs`), which run with the app quit, under plain Node.
+ */
+export function openNodeDatabase(filename: string): SqlDatabase {
+  return wrap(load('better-sqlite3-node'), filename, true);
+}
+
 /** True when this SQLite was compiled with FTS5. Both of ours are; the vault index needs it. */
 export function hasFts5(db: SqlDatabase): boolean {
   const row = db.prepare(`SELECT sqlite_compileoption_used('ENABLE_FTS5') AS used`).get<{ used: number }>();

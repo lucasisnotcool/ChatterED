@@ -17,6 +17,7 @@ import { createStore } from './db/store.js';
 import { AppService } from './ipc.js';
 import { installMenuFor } from './menu.js';
 import { IPC } from '../shared/ipc.js';
+import { ensureResearchExcludeColumns } from './research/exclude.js';
 import { defaultLogDir, errorClass, fileSink, initLogger, log, type LogLevel } from './log.js';
 import { appEntryUrl, guardWindow, installAppGuards, isTrustedSender } from './security.js';
 import { CrashBudget, isCrash } from './crash.js';
@@ -307,6 +308,10 @@ function boot(): void {
       log().info('db.backup', { from, to, file: basename(file) });
     },
   });
+  // Migration 032's columns, if a build with a later migration but not 032 reached this database
+  // first (the runner would then skip 032 for good). A no-op everywhere else.
+  const added = ensureResearchExcludeColumns(db);
+  if (added.length > 0) log().warn('db.research_exclude_columns_added', { tables: added });
   const store = createStore(db);
 
   // Before any window exists, so its webContents is covered from the first event.

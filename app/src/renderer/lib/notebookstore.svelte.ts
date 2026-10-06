@@ -125,6 +125,47 @@ export class NotebookStore {
     }
   }
 
+  // ── Exclude from research data (migration 032) and Duplicate ──
+
+  async setNotebookResearchExclude(notebookId: string, exclude: boolean): Promise<void> {
+    this.list = this.list.map((n) => (n.id === notebookId ? { ...n, researchExclude: exclude } : n));
+    try {
+      await bridge().notebookSetResearchExclude({ notebookId, exclude });
+    } catch (err) {
+      this.say(message(err));
+    }
+    await this.loadList();
+  }
+
+  async setFolderResearchExclude(folderId: string, exclude: boolean): Promise<void> {
+    this.folders = this.folders.map((f) => (f.id === folderId ? { ...f, researchExclude: exclude } : f));
+    try {
+      await bridge().folderSetResearchExclude({ folderId, exclude });
+    } catch (err) {
+      this.say(message(err));
+    }
+    await this.loadFolders();
+  }
+
+  /** A deep copy beside it, excluded from research data. The toast names the copy. */
+  async duplicate(kind: 'notebook' | 'folder', id: string): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      const out =
+        kind === 'notebook'
+          ? await bridge().notebookDuplicate({ notebookId: id, researchExclude: true })
+          : await bridge().folderDuplicate({ folderId: id, researchExclude: true });
+      await this.loadList();
+      const missing = out.missingSources > 0 ? ` ${out.missingSources} source file(s) were missing and could not be copied.` : '';
+      this.say(`Made “${out.name}”, excluded from research data.${missing}`);
+    } catch (err) {
+      this.say(message(err));
+    } finally {
+      this.busy = false;
+    }
+  }
+
   async moveNotebook(notebookId: string, folderId: string | null): Promise<void> {
     const before = this.list.find((n) => n.id === notebookId);
     if (!before || before.folderId === folderId) return;

@@ -71,6 +71,7 @@ import {
 } from '../../shared/folders.js';
 import { guessSourceRole, isSourceRole, type SetSourceRoleInput, type SourceRole } from '../../shared/tutorial.js';
 import { folderView, notebooksRepo, sourceView, type NotebooksRepo, type SourceRecord } from './repo.js';
+import { duplicateFolder, duplicateNotebook, type DuplicatedFolder, type DuplicatedNotebook } from './duplicate.js';
 
 /** Converted to text on import with macOS `textutil` (`SOURCE_EXTENSIONS` in shared/notebook.ts). */
 export const CONVERT_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'docx', 'rtf']);
@@ -307,6 +308,7 @@ export class NotebookService {
         updatedAt: doc && doc.updated_at > row.updated_at ? doc.updated_at : row.updated_at,
         openedAt: row.opened_at,
         folderId: row.folder_id ?? null,
+        researchExclude: row.research_exclude === 1,
       };
     });
   }
@@ -497,6 +499,59 @@ export class NotebookService {
     this.#repo.setNotebookFolder(notebookId, this.#parentOrTop(folderId));
     log().info('notebook.moved', { notebook_id: notebookId });
     return this.#emit(notebookId)!;
+  }
+
+  // ── Exclude from research data (migration 032) and Duplicate ──────────────────────────────
+
+  /** A notebook's own mark. A folder's mark covers it as well (`research/exclude.ts`). */
+  setNotebookResearchExclude(notebookId: string, exclude: boolean): NotebookView {
+    this.#require(notebookId);
+    this.#repo.setNotebookResearchExclude(notebookId, exclude);
+    log().info('notebook.research_exclude', { notebook_id: notebookId, exclude });
+    return this.#emit(notebookId)!;
+  }
+
+  /** A folder's mark: it covers every folder and notebook under it. */
+  setFolderResearchExclude(folderId: string, exclude: boolean): FolderView {
+    this.#requireFolder(folderId);
+    this.#repo.setFolderResearchExclude(folderId, exclude);
+    log().info('folder.research_exclude', { folder_id: folderId, exclude });
+    return this.#requireFolder(folderId);
+  }
+
+  /**
+   * A deep copy of a notebook (`duplicate.ts`): "<name> (copy)" beside it, excluded from research
+   * data unless asked otherwise. Sources still being read are read again in the copy.
+   */
+  duplicateNotebook(input: { notebookId: string; name?: string | null; researchExclude?: boolean }): DuplicatedNotebook {
+    this.#require(input.notebookId);
+    const out = duplicateNotebook({ db: this.#db, root: this.#root, now: this.#now }, input);
+    log().info('notebook.duplicated', {
+      notebook_id: input.notebookId,
+      copy_id: out.to,
+      sources: Object.keys(out.files).length,
+      missing: out.missing.length,
+      research_exclude: out.researchExclude,
+    });
+    this.#emit(out.to);
+    this.resumeReading();
+    return out;
+  }
+
+  /** A deep copy of a folder and its subtree into a new sibling (`duplicate.ts`). */
+  duplicateFolder(input: { folderId: string; name?: string | null; researchExclude?: boolean }): DuplicatedFolder {
+    this.#requireFolder(input.folderId);
+    const out = duplicateFolder({ db: this.#db, root: this.#root, now: this.#now }, input);
+    log().info('folder.duplicated', {
+      folder_id: input.folderId,
+      copy_id: out.to,
+      folders: Object.keys(out.folders).length,
+      notebooks: out.notebooks.length,
+      research_exclude: out.researchExclude,
+    });
+    for (const n of out.notebooks) this.#emit(n.to);
+    this.resumeReading();
+    return out;
   }
 
   /** The notebooks search covers from `folderId`: it and every folder under it (null: all). */

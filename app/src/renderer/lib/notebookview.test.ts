@@ -119,6 +119,7 @@ describe('patchList', () => {
     updatedAt: '2026-09-01T00:00:00.000Z',
     openedAt: null,
     folderId: null,
+    researchExclude: false,
   });
   const view = (id: string): NotebookView => ({
     id,
@@ -178,6 +179,7 @@ describe('folders on the home', () => {
     ord: 0,
     createdAt: '2026-10-03T00:00:00.000Z',
     updatedAt: '2026-10-03T00:00:00.000Z',
+    researchExclude: false,
   });
   const folders = [fv('fd_cs', null, 'CS4246'), fv('fd_plan', 'fd_cs', 'Planning'), fv('fd_dec', 'fd_cs', 'Decision making'), fv('fd_other', null, 'CS3249')];
   const nb = (id: string, folderId: string | null): NotebookSummary => ({
@@ -190,6 +192,7 @@ describe('folders on the home', () => {
     updatedAt: '2026-10-03T00:00:00.000Z',
     openedAt: null,
     folderId,
+    researchExclude: false,
   });
   const list = [nb('nb_a', null), nb('nb_b', 'fd_cs'), nb('nb_c', 'fd_plan'), nb('nb_d', 'fd_plan')];
 

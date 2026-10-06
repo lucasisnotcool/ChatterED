@@ -26,6 +26,7 @@ import {
 } from './anonymise.js';
 import { exportSummary, stageResearchExport, zipDirectory, type ResearchManifest } from './export.js';
 import { docPlainText } from './readable.js';
+import { seedFolder, seedManagedVault, seedNotebook } from '../../test-support/notebookseed.js';
 
 const HOME = '/Users/jdoe';
 const USER = 'jdoe';
@@ -412,5 +413,143 @@ describe('exportSummary and docPlainText', () => {
 
   it('marks excluded source text with its length', () => {
     expect(sourceTextMarker(12)).toBe('[excluded from the research export: 12 characters of source-document text]');
+  });
+});
+
+// ── Exclude from research data (migration 032) ──────────────────────────────────────────────
+
+describe('exclude from research data', () => {
+  /** Three notebooks with every row family: one in, one in a marked folder's subfolder, one marked itself. */
+  function seedThree(): SqlDatabase {
+    const { db } = openTestDb();
+    seedManagedVault(db, `${HOME}/Library/Application Support/ChatterED/notebooks`);
+    seedFolder(db, 'fd_term', 'Exam term', null, true);
+    seedFolder(db, 'fd_termweek', 'Week 9', 'fd_term');
+    seedFolder(db, 'fd_kept', 'Kept');
+    seedNotebook(db, 'in', { folderId: 'fd_kept' });
+    seedNotebook(db, 'out', { folderId: 'fd_termweek' });
+    seedNotebook(db, 'own', { researchExclude: true });
+    return db;
+  }
+
+  /** Rows of `table` with `needle` in any column. */
+  function mentioning(db: SqlDatabase, table: string, needle: string): number {
+    const cols = db
+      .prepare(`PRAGMA table_info("${table}")`)
+      .all<{ name: string }>()
+      .map((c) => `COALESCE(CAST("${c.name}" AS TEXT), '')`);
+    if (cols.length === 0) return 0;
+    return db
+      .prepare(`SELECT COUNT(*) AS n FROM "${table}" WHERE instr(${cols.join(" || ' ' || ")}, @x) > 0`)
+      .get<{ n: number }>({ x: needle })!.n;
+  }
+
+  // Every table the seed writes a row to, for each notebook.
+  const TABLES = [
+    'notebooks', 'notebook_sources', 'files', 'settings', 'notes_docs', 'notes_doc_edits', 'notes_suggestions', 'notes_threads',
+    'notes_slide_groups', 'notes_objective_blocks', 'tutorial_parts', 'learning_trees', 'learning_objective_states', 'search_chunks',
+    'search_state', 'materials', 'rooms', 'participants', 'sessions', 'messages', 'message_revisions', 'whispers', 'turn_decisions',
+    'events', 'ledger', 'ledger_history', 'rubric_scores', 'message_refs', 'outbox', 'quiz_outcomes', 'objective_activity', 'llm_usage',
+  ];
+  /** A value in each table that names the notebook `tag`: its id, an id derived from it, or its marker. */
+  const needle = (table: string, tag: string): string =>
+    ({
+      ledger: `l_${tag}`,
+      ledger_history: `msg_${tag}1`,
+      rubric_scores: `MARK_${tag}`,
+      events: `MARK_${tag}`,
+      turn_decisions: `MARK_${tag}`,
+      message_revisions: `room_${tag}`,
+      participants: `room_${tag}`,
+      sessions: `room_${tag}`,
+      outbox: `room_${tag}`,
+      llm_usage: `MARK_${tag}`,
+      learning_objective_states: `nb_${tag}`,
+      files: `f_${tag}`,
+      notebook_sources: `f_${tag}`,
+    })[table] ?? `_${tag}`;
+
+  it('leaves out every row tied to an excluded notebook, and keeps every row of an included one', async () => {
+    const db = seedThree();
+    // The fixture really has each family, for each notebook, before the export.
+    for (const table of TABLES) {
+      for (const tag of ['in', 'out', 'own']) expect(mentioning(db, table, needle(table, tag)), `${table} ${tag}`).toBeGreaterThan(0);
+    }
+    const { staged } = await stage(db);
+    const copy = openTestDatabase(join(staged.dir, 'database', 'chattered.db'));
+    try {
+      for (const table of TABLES) {
+        expect(mentioning(copy, table, needle(table, 'in')), `${table} keeps the included notebook`).toBeGreaterThan(0);
+        expect(mentioning(copy, table, needle(table, 'out')), `${table} drops the folder-excluded notebook`).toBe(0);
+        expect(mentioning(copy, table, needle(table, 'own')), `${table} drops the self-excluded notebook`).toBe(0);
+      }
+      // Exactly the included notebook's rows, family by family.
+      const n = (sql: string) => copy.prepare(sql).get<{ n: number }>()!.n;
+      expect(n(`SELECT COUNT(*) AS n FROM notebooks`)).toBe(1);
+      expect(n(`SELECT COUNT(*) AS n FROM notes_docs`)).toBe(2);
+      expect(n(`SELECT COUNT(*) AS n FROM rooms`)).toBe(1);
+      expect(n(`SELECT COUNT(*) AS n FROM messages`)).toBe(2);
+      expect(n(`SELECT COUNT(*) AS n FROM llm_usage`)).toBe(3);
+      // The excluded folders go too; the included one stays.
+      expect(copy.prepare(`SELECT id FROM folders ORDER BY id`).all()).toEqual([{ id: 'fd_kept' }]);
+    } finally {
+      copy.close();
+    }
+
+    // No byte of any exported file, the database included, carries an excluded notebook's trace.
+    for (const file of walk(staged.dir)) {
+      const text = readFileSync(file).toString('latin1');
+      for (const trace of ['MARK_out', 'MARK_own', 'nb_out', 'nb_own', 'room_out', 'room_own', 'doc_out', 'doc_own', 'Exam term', 'Week 9']) {
+        expect(text.includes(trace), `${relative(staged.dir, file)} contains ${trace}`).toBe(false);
+      }
+    }
+    expect(readFileSync(join(staged.dir, 'database', 'chattered.db')).toString('latin1')).toContain('MARK_in');
+    expect(existsSync(join(staged.dir, 'readable', 'transcripts', 'room_in.json'))).toBe(true);
+    expect(existsSync(join(staged.dir, 'readable', 'notes', 'doc_in.json'))).toBe(true);
+    expect(existsSync(join(staged.dir, 'readable', 'transcripts', 'room_out.json'))).toBe(false);
+
+    const manifest = JSON.parse(readFileSync(join(staged.dir, 'manifest.json'), 'utf8')) as ResearchManifest;
+    expect(manifest.researchExclusion.notebooks).toBe(2);
+    expect(manifest.researchExclusion.folders).toBe(2);
+    expect(manifest.researchExclusion.rowsRemoved).toBeGreaterThan(60);
+    expect(readFileSync(join(staged.dir, 'README.txt'), 'utf8')).toContain('Exclude from research data');
+  });
+
+  it('never touches the live database: the rows go from the snapshot only', async () => {
+    const db = seedThree();
+    const before = TABLES.map((t) => [t, mentioning(db, t, needle(t, 'out'))]);
+    await stage(db);
+    expect(TABLES.map((t) => [t, mentioning(db, t, needle(t, 'out'))])).toEqual(before);
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger'`).get<{ n: number }>()!.n).toBeGreaterThan(0);
+  });
+
+  it('counts what an export would contain without the excluded notebooks', () => {
+    const db = seedThree();
+    const { logDir } = fixtureDirs();
+    expect(exportSummary(db, logDir)).toMatchObject({
+      rooms: 1,
+      messages: 2,
+      privateTurns: 1,
+      notesDocs: 2,
+      objectiveStates: 1,
+      usageRows: 3,
+      events: 1,
+      excludedNotebooks: 2,
+    });
+  });
+
+  it('exports everything when nothing is excluded', async () => {
+    const { db } = openTestDb();
+    seedManagedVault(db, '/x');
+    seedNotebook(db, 'a');
+    seedNotebook(db, 'b');
+    const { staged } = await stage(db);
+    expect(staged.manifest.researchExclusion).toEqual({ notebooks: 0, folders: 0, rowsRemoved: 0 });
+    const copy = openTestDatabase(join(staged.dir, 'database', 'chattered.db'));
+    try {
+      expect(copy.prepare(`SELECT COUNT(*) AS n FROM notebooks`).get<{ n: number }>()!.n).toBe(2);
+    } finally {
+      copy.close();
+    }
   });
 });

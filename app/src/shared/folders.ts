@@ -27,6 +27,11 @@ export interface FolderView {
   ord: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * **Exclude from research data** (migration 032): the folder's own mark. It covers every folder
+   * and notebook under it; `researchExcludedFolderIds` gives the effective set.
+   */
+  researchExclude: boolean;
 }
 
 type Tree = readonly Pick<FolderView, 'id' | 'parentId'>[];
@@ -84,4 +89,31 @@ export function freshFolderName(siblings: readonly Pick<FolderView, 'name'>[], b
   const taken = new Set(siblings.map((s) => s.name.toLowerCase()));
   if (!taken.has(base.toLowerCase())) return base;
   for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
+}
+
+/**
+ * **Exclude from research data**, effective (migration 032): every folder marked, and every folder
+ * under one. The same reading as main's `research/exclude.ts`, for the home's markers.
+ */
+export function researchExcludedFolderIds(folders: readonly Pick<FolderView, 'id' | 'parentId' | 'researchExclude'>[]): Set<string> {
+  const out = new Set<string>();
+  for (const f of folders) if (f.researchExclude) for (const id of subtreeFolderIds(folders, f.id)) out.add(id);
+  return out;
+}
+
+/**
+ * Why an item is left out of the research data: its own mark (`'own'`), the nearest marked folder
+ * above it, or null when it is in. For a folder, pass its parent as `folderId`.
+ */
+export function researchExclusionOf(
+  folders: readonly Pick<FolderView, 'id' | 'parentId' | 'researchExclude' | 'name'>[],
+  item: { researchExclude: boolean; folderId: string | null },
+): { by: 'own' } | { by: 'folder'; folderId: string; name: string } | null {
+  if (item.researchExclude) return { by: 'own' };
+  const path = folderPath(folders, item.folderId);
+  for (let i = path.length - 1; i >= 0; i--) {
+    const f = path[i]!;
+    if (f.researchExclude) return { by: 'folder', folderId: f.id, name: f.name };
+  }
+  return null;
 }

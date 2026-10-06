@@ -13,6 +13,11 @@
    * Rename and Delete live on a card's context menu (right-click, or the ⋯ that appears on hover
    * and on focus, so neither is mouse-only). Delete is main's to confirm, with a native sheet.
    *
+   * **Exclude from research data** (migration 032) is a tick on the same menu, for a notebook and
+   * for a folder (a folder's covers everything under it), and an excluded card or folder carries a
+   * small "Not in research" marker. **Duplicate** makes a deep copy beside it, excluded from
+   * research data; its chats and progress are not copied (`main/notebooks/duplicate.ts`).
+   *
    * **Zoom and centring.** On a large display the grid sat as a small block in the top-left
    * corner. The column is centred, and ⌘+ / ⌘− / ⌘0 (View ▸ Zoom, routed through
    * `lib/viewer.ts`) and a trackpad pinch scale it, cards and text together, as CSS `zoom` on the
@@ -30,7 +35,7 @@
   import { registerViewer, type ViewerCommand } from '../lib/viewer.js';
   import { clock, store } from '../lib/store.svelte.js';
   import type { NotebookSummary } from '../../shared/notebook.js';
-  import { childFolders, folderPath, type FolderView } from '../../shared/folders.js';
+  import { childFolders, folderPath, researchExclusionOf, type FolderView } from '../../shared/folders.js';
   import { folderNotebookCount, moveTargets, notebooksIn, type MoveTarget } from '../lib/notebookview.js';
 
   const nb = store.notebook;
@@ -104,6 +109,15 @@
     menu = null;
     if (m.kind === 'notebook') await nb.moveNotebook(m.id, folderId);
     else await nb.moveFolder(m.id, folderId);
+  }
+
+  /** Why an item is out of the research data, as the marker's tooltip; null when it is in. */
+  function exclusionTitle(item: { researchExclude: boolean; folderId: string | null }): string | null {
+    const why = researchExclusionOf(nb.folders, item);
+    if (!why) return null;
+    return why.by === 'own'
+      ? 'Excluded from research data: nothing in it is in a research export.'
+      : `Excluded from research data with the folder “${why.name}”.`;
   }
 
   function countLabel(folderId: string): string {
@@ -311,6 +325,9 @@
                 <span class="fname">
                   <span class="t">{f.name}</span>
                   <span class="s">{countLabel(f.id)}</span>
+                  {#if exclusionTitle({ researchExclude: f.researchExclude, folderId: f.parentId })}
+                    <span class="rx" title={exclusionTitle({ researchExclude: f.researchExclude, folderId: f.parentId })}>Not in research</span>
+                  {/if}
                 </span>
               </button>
               <button
@@ -356,6 +373,7 @@
               <span class="t">{n.name}</span>
               <span class="s">{cardLine(n, clock.ms)}</span>
               {#if n.subtitle}<span class="s sub">{n.subtitle}</span>{/if}
+              {#if exclusionTitle(n)}<span class="rx" title={exclusionTitle(n)}>Not in research</span>{/if}
               <span class="fill" title={n.fill === null ? 'No objectives yet' : `${fillWidth(n.fill)} in your own words`}>
                 <i style:width={fillWidth(n.fill)}></i>
               </span>
@@ -417,11 +435,43 @@
         {@const target = menuNotebook}
         <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); startRename(target); }}>Rename…</button>
         <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); if (menu) menu = { ...menu, moving: true }; }}>Move to…</button>
+        <button
+          type="button"
+          role="menuitem"
+          title="A copy beside it: sources, notes, tutorials and objectives, without the chats or progress. Excluded from research data."
+          disabled={nb.busy}
+          onclick={(e) => { e.stopPropagation(); menu = null; void nb.duplicate('notebook', target.id); }}
+        >Duplicate</button>
+        {@const inherited = researchExclusionOf(nb.folders, { researchExclude: false, folderId: target.folderId })}
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={target.researchExclude || inherited !== null}
+          disabled={inherited !== null}
+          title={inherited && inherited.by === 'folder' ? `Excluded with the folder “${inherited.name}”.` : 'Leave this notebook, its notes, chats and progress out of research exports.'}
+          onclick={(e) => { e.stopPropagation(); menu = null; void nb.setNotebookResearchExclude(target.id, !target.researchExclude); }}
+        ><span class="tick" aria-hidden="true">{target.researchExclude || inherited ? '✓' : ''}</span>Exclude from research data</button>
         <button type="button" role="menuitem" class="danger" onclick={(e) => { e.stopPropagation(); void remove(target.id); }}>Delete…</button>
       {:else if menuFolder}
         {@const folder = menuFolder}
         <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); startFolderRename(folder); }}>Rename…</button>
         <button type="button" role="menuitem" onclick={(e) => { e.stopPropagation(); if (menu) menu = { ...menu, moving: true }; }}>Move to…</button>
+        <button
+          type="button"
+          role="menuitem"
+          title="A copy beside it with everything inside, without the chats or progress. Excluded from research data."
+          disabled={nb.busy}
+          onclick={(e) => { e.stopPropagation(); menu = null; void nb.duplicate('folder', folder.id); }}
+        >Duplicate folder</button>
+        {@const above = researchExclusionOf(nb.folders, { researchExclude: false, folderId: folder.parentId })}
+        <button
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={folder.researchExclude || above !== null}
+          disabled={above !== null}
+          title={above && above.by === 'folder' ? `Excluded with the folder “${above.name}”.` : 'Leave every notebook in this folder, and in folders inside it, out of research exports.'}
+          onclick={(e) => { e.stopPropagation(); menu = null; void nb.setFolderResearchExclude(folder.id, !folder.researchExclude); }}
+        ><span class="tick" aria-hidden="true">{folder.researchExclude || above ? '✓' : ''}</span>Exclude from research data</button>
         <button
           type="button"
           role="menuitem"
@@ -583,6 +633,20 @@
   .menu .mhead { padding: 4px 10px 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
   .menu .mnone { padding: 6px 10px; font-size: 12.5px; color: var(--text-2); }
   .menu .danger { color: #8a2708; }
+  .menu button:disabled { color: var(--text-2); cursor: default; }
+  .menu button:disabled:hover { background: none; }
+  .menu .tick { display: inline-block; width: 14px; }
+  /* Excluded from research data: a quiet marker, not a warning. */
+  .rx {
+    justify-self: start;
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    color: var(--text-2);
+    border: 1px dashed var(--hairline);
+    border-radius: 999px;
+    padding: 0 7px;
+    line-height: 16px;
+  }
 
   .overlay {
     position: absolute;

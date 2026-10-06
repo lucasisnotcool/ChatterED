@@ -2486,6 +2486,18 @@ export function createMockBridge(): ChatterEdApi {
     async folderDelete({ folderId }) {
       return notebooks.model.deleteFolder(folderId);
     },
+    async notebookSetResearchExclude({ notebookId, exclude }) {
+      return notebooks.model.setNotebookResearchExclude(notebookId, exclude);
+    },
+    async folderSetResearchExclude({ folderId, exclude }) {
+      return notebooks.model.setFolderResearchExclude(folderId, exclude);
+    },
+    async notebookDuplicate(input) {
+      return notebooks.model.duplicateNotebook(input);
+    },
+    async folderDuplicate(input) {
+      return notebooks.model.duplicateFolder(input);
+    },
     // Search has no model or index in the dev mock: it says so rather than inventing hits.
     async searchQuery({ query }) {
       return { query: query.trim(), hits: [], mode: 'keyword' as const, pending: 0, ms: 0 };

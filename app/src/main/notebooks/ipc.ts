@@ -10,7 +10,7 @@
  */
 import { isAbsolute } from 'node:path';
 import { IPC } from '../../shared/ipc.js';
-import { SOURCE_EXTENSIONS } from '../../shared/notebook.js';
+import { SOURCE_EXTENSIONS, type DuplicateResult } from '../../shared/notebook.js';
 import { isFolderId } from '../../shared/folders.js';
 import type { SetSourceRoleInput } from '../../shared/tutorial.js';
 import type { IpcHandle } from '../dochost.js';
@@ -109,6 +109,36 @@ export function registerNotebookIpc({ service, handle, pickFiles }: NotebookIpcD
     service.moveFolder(requireFolderId(input?.folderId), folderOrTop(input?.parentId)),
   );
   handle<{ folderId: string }>(IPC.folderDelete, (input) => service.deleteFolder(requireFolderId(input?.folderId)));
+  handle<{ notebookId: string; exclude: boolean }>(IPC.notebookSetResearchExclude, (input) =>
+    service.setNotebookResearchExclude(requireId(input?.notebookId), input?.exclude === true),
+  );
+  handle<{ folderId: string; exclude: boolean }>(IPC.folderSetResearchExclude, (input) =>
+    service.setFolderResearchExclude(requireFolderId(input?.folderId), input?.exclude === true),
+  );
+  // A copy is excluded from research data unless the renderer says `researchExclude: false`.
+  handle<{ notebookId: string; name?: string | null; researchExclude?: boolean }>(IPC.notebookDuplicate, (input): DuplicateResult => {
+    const out = service.duplicateNotebook({
+      notebookId: requireId(input?.notebookId),
+      name: typeof input?.name === 'string' ? input.name : null,
+      researchExclude: input?.researchExclude !== false,
+    });
+    return { kind: 'notebook', id: out.to, name: out.name, notebooks: 1, missingSources: out.missing.length, researchExclude: out.researchExclude };
+  });
+  handle<{ folderId: string; name?: string | null; researchExclude?: boolean }>(IPC.folderDuplicate, (input): DuplicateResult => {
+    const out = service.duplicateFolder({
+      folderId: requireFolderId(input?.folderId),
+      name: typeof input?.name === 'string' ? input.name : null,
+      researchExclude: input?.researchExclude !== false,
+    });
+    return {
+      kind: 'folder',
+      id: out.to,
+      name: out.name,
+      notebooks: out.notebooks.length,
+      missingSources: out.notebooks.reduce((n, nb) => n + nb.missing.length, 0),
+      researchExclude: out.researchExclude,
+    };
+  });
   handle<{ notebookId: string; fileId: string }>(IPC.notebookRemoveSource, (input) =>
     service.removeSource(requireId(input?.notebookId), typeof input?.fileId === 'string' ? input.fileId : ''),
   );

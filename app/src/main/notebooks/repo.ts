@@ -45,6 +45,8 @@ export interface NotebookRow {
   legacy_file_id: string | null;
   /** Migration 026: the folder it sits in, or null at the top level. */
   folder_id?: string | null;
+  /** Migration 032: 1 when the learner marked it "Exclude from research data". */
+  research_exclude?: number;
 }
 
 export interface FolderRow {
@@ -54,6 +56,8 @@ export interface FolderRow {
   ord: number;
   created_at: string;
   updated_at: string;
+  /** Migration 032: 1 when marked "Exclude from research data"; covers the whole subtree. */
+  research_exclude?: number;
 }
 
 export function folderView(row: FolderRow): FolderView {
@@ -64,6 +68,7 @@ export function folderView(row: FolderRow): FolderView {
     ord: row.ord,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    researchExclude: row.research_exclude === 1,
   };
 }
 
@@ -161,6 +166,10 @@ export interface NotebooksRepo {
   /** Notebooks in `folderId` or any folder under it; every notebook for null. */
   subtreeNotebookIds(folderId: string | null): string[];
   nextFolderOrd(parentId: string | null): number;
+
+  // ── Exclude from research data (migration 032) ──
+  setNotebookResearchExclude(notebookId: string, exclude: boolean): void;
+  setFolderResearchExclude(folderId: string, exclude: boolean): void;
 }
 
 const SOURCE_SELECT = `SELECT s.*, f.kind AS file_kind, f.sha256 AS sha256, f.rel_path AS rel_path
@@ -263,6 +272,12 @@ export function notebooksRepo(db: SqlDatabase): NotebooksRepo {
       (db
         .prepare('SELECT COALESCE(MAX(ord), -1) AS m FROM folders WHERE parent_id IS @p')
         .get<{ m: number }>({ p: parentId })?.m ?? -1) + 1,
+
+    // Not an edit either: neither `updated_at` moves.
+    setNotebookResearchExclude: (notebookId, exclude) =>
+      void db.prepare('UPDATE notebooks SET research_exclude = @e WHERE id = @id').run({ id: notebookId, e: exclude ? 1 : 0 }),
+    setFolderResearchExclude: (folderId, exclude) =>
+      void db.prepare('UPDATE folders SET research_exclude = @e WHERE id = @id').run({ id: folderId, e: exclude ? 1 : 0 }),
 
     view(id) {
       const row = repo.get(id);

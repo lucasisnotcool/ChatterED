@@ -21,7 +21,7 @@ import type {
   WindowState,
 } from './types.js';
 import type { SegmentDocumentView } from './segment/types.js';
-import type { AddSourcesResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
+import type { AddSourcesResult, DuplicateResult, NotebookChange, NotebookSummary, NotebookView } from './notebook.js';
 import type { FolderView } from './folders.js';
 import type {
   SetSourceRoleInput,
@@ -198,6 +198,11 @@ export const IPC = {
   folderRename: 'folder:rename',
   folderMove: 'folder:move',
   folderDelete: 'folder:delete',
+  // Exclude from research data (migration 032) and Duplicate, 2026-10-07.
+  notebookSetResearchExclude: 'notebook:setResearchExclude',
+  folderSetResearchExclude: 'folder:setResearchExclude',
+  notebookDuplicate: 'notebook:duplicate',
+  folderDuplicate: 'folder:duplicate',
   // Search (`docs/research/search.md` §4-§5). Bodies in `src/main/search/ipc.ts`.
   searchQuery: 'search:query',
   searchStatus: 'search:status',
@@ -690,6 +695,20 @@ export interface ChatterEdApi {
   folderMove(input: { folderId: string; parentId: string | null }): Promise<FolderView>;
   /** Its notebooks and subfolders move up one level first; no notebook is ever deleted by this. */
   folderDelete(input: { folderId: string }): Promise<{ deleted: boolean; movedNotebooks: number; movedFolders: number }>;
+
+  // ── exclude from research data (migration 032) and duplicate, 2026-10-07 ───────────────────
+  /** A notebook's own "Exclude from research data" mark. Not an edit: nothing else moves. */
+  notebookSetResearchExclude(input: { notebookId: string; exclude: boolean }): Promise<NotebookView>;
+  /** A folder's mark, which covers every folder and notebook under it. */
+  folderSetResearchExclude(input: { folderId: string; exclude: boolean }): Promise<FolderView>;
+  /**
+   * A deep copy beside it: sources (copied on disk), notes, tutorials, slide groups, objectives,
+   * search index; never its chats or progress. "<name> (copy)" and excluded from research data
+   * unless `name` / `researchExclude` say otherwise.
+   */
+  notebookDuplicate(input: { notebookId: string; name?: string | null; researchExclude?: boolean }): Promise<DuplicateResult>;
+  /** The same, for a folder and everything under it, into a new sibling folder. */
+  folderDuplicate(input: { folderId: string; name?: string | null; researchExclude?: boolean }): Promise<DuplicateResult>;
 
   // ── search (`docs/research/search.md` §4-§5, 2026-10-03) ───────────────────────────────────
   /** Slides and notes of the notebooks in `folderId` and below (null: all), best match first. */
