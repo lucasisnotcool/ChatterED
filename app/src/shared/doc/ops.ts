@@ -622,8 +622,9 @@ export function applyBatch(
       }
 
       case 'insert_q': {
-        // Never inside a card's frame (`placementTarget`): a Q block on a core line goes under the card.
-        const target = placementTarget(tr.doc, op.anchorBlockId);
+        // Never inside a card (§11.2, §11.5): a Q block anchored anywhere in a card goes under the
+        // card, where the renderer's own "Add a question" puts the learner's too.
+        const target = topLevelTarget(tr.doc, op.anchorBlockId);
         if (!target) return;
         if (op.text.trim().length === 0) return;
         const blockId = newBlockId();

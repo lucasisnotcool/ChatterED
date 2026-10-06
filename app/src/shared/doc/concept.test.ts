@@ -255,11 +255,13 @@ describe('the other ops keep a card a card', () => {
     expect(blockPos(inside, 'b_eq')!.node.child(1).textContent).toBe('Under the formula.');
   });
 
-  it('a Q block anchored on the core line goes under the card', () => {
-    const result = run({ op: 'insert_q', anchorBlockId: 'b_core', questionId: 'q1', objectiveId: null, text: 'Why?', prov: { pages: [39], reason: null } });
-    const doc = result.tr!.doc;
-    expect(() => doc.check()).not.toThrow();
-    expect(doc.child(3).type.name).toBe('q_block');
+  it('a Q block anchored anywhere in a card goes under the card', () => {
+    for (const anchor of ['b_core', 'b_eq_m']) {
+      const result = run({ op: 'insert_q', anchorBlockId: anchor, questionId: 'q1', objectiveId: null, text: 'Why?', prov: { pages: [39], reason: null } });
+      const doc = result.tr!.doc;
+      expect(() => doc.check()).not.toThrow();
+      expect(doc.child(3).type.name).toBe('q_block');
+    }
   });
 
   it('replace_block on the core line takes one paragraph, and refuses anything else', () => {
