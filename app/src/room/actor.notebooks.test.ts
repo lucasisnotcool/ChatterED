@@ -612,3 +612,27 @@ describe('Ellie and Max’s open question', () => {
     expect(reply.body).not.toContain('kept out of the shared context');
   });
 });
+
+// ── Decision 15 (6 Oct afternoon): Start again picks up where the learner left off ────────────
+
+describe('Start again', () => {
+  const lessonPrompts = (h: ReturnType<typeof build>) =>
+    h.llm.requests.filter((r) => r.meta.scope === 'group' && r.meta.scriptCue?.startsWith('lesson')).map((r) => r.messages.at(-1)!.content);
+
+  it('walks through on the first Start, and on the second gives a recap and only what is left', async () => {
+    const h = build({}, (r) => (r.meta.scope === 'group' && r.meta.scriptCue?.startsWith('lesson') ? 'A walkthrough of the side channel, p. 3.' : null));
+    await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_idea' }));
+    await act(h, { kind: 'quiz' });
+    await settle(h.clock, h.actor.pass(SPAN));
+    await settle(h.clock, h.actor.startLesson({ objectiveId: ELEMENT, anchorId: DOC, blockId: 'b_idea' }));
+
+    const [first, second] = lessonPrompts(h);
+    expect(first).not.toContain('THEY HAVE PRESSED START ON THIS BEFORE');
+    expect(first).toContain('Walk them through this part of the notes');
+    expect(second).toContain('THEY HAVE PRESSED START ON THIS BEFORE');
+    expect(second).toContain('A walkthrough of the side channel');
+    expect(second).toContain('they gave up and were shown the answer');
+    expect(second).toContain('They have started this before.');
+    expect(second).not.toContain('Walk them through this part of the notes');
+  });
+});

@@ -221,6 +221,7 @@ import {
   type TutorKind,
 } from './prompts.tutor.js';
 import { answerLeaks, withoutLeaks } from '../core/answerguard.js';
+import { lessonAgain, lessonAgainBlock, type LessonAgain } from './lessonagain.js';
 import {
   TUTORIAL_REQUEST,
   isTutorRule,
@@ -908,6 +909,8 @@ export class RoomActor {
     pages: number[];
     section: string | null;
     maxQuestionOpen: boolean;
+    /** Decision 15: what a second Start picks up from, or null on the first. */
+    again: LessonAgain | null;
   } | null = null;
   /** The learner's own doc text being assessed, for the length of that turn (§6). */
   #docTextTarget: { blockId: string; text: string; anchorId: string } | null = null;
@@ -2778,6 +2781,7 @@ export class RoomActor {
     this.#noteLearnerActivity('ask', input.anchorId);
     const element = this.#d.pack.elements.find((e) => e.id === input.objectiveId);
     const maxQuestionOpen = quizOpen(this.#pendingQuiz);
+    const again = await this.#lessonAgainFor(input.objectiveId);
     this.#lessonTarget = {
       title: element?.learner_label || element?.label || input.objectiveId,
       // The element's own label is the statement of what it is; `demonstration` is what a correct
@@ -2787,6 +2791,7 @@ export class RoomActor {
       pages: [...(input.pages ?? [])],
       section: input.section?.trim() ? input.section.trim() : null,
       maxQuestionOpen,
+      again,
     };
     this.#event('student', 'flow.lesson_start', {
       objective_id: input.objectiveId,
@@ -2794,6 +2799,8 @@ export class RoomActor {
       // Always false since 2026-10-06: Start teaches and asks nothing.
       max_asks: false,
       walkthrough: this.#lessonTarget.section !== null,
+      // Decision 15: a second Start picks up where they left off.
+      again: again !== null,
     });
     try {
       await this.#runAgentTurn('promote', {
@@ -2803,6 +2810,37 @@ export class RoomActor {
     } finally {
       this.#lessonTarget = null;
     }
+  }
+
+  /**
+   * **What a second Start picks up from** (2026-10-06 afternoon, decision 15; `lessonagain.ts`):
+   * the room's earlier walkthrough and questions on the objective, and the durable outcome rows and
+   * Explain/Example count. Null on a first Start. A host that cannot say costs the recap, never
+   * the turn.
+   */
+  async #lessonAgainFor(objectiveId: string): Promise<LessonAgain | null> {
+    let progress: Awaited<ReturnType<NonNullable<RoomActorDeps['fileProgress']>>> = null;
+    try {
+      progress = (await this.#d.fileProgress?.()) ?? null;
+    } catch (err) {
+      this.#turnLog.event('warn', 'lesson.again_progress_failed', { cause: failureReason(err) });
+    }
+    const outcomes = [...(progress?.outcomes ?? []), ...this.#outcomes];
+    const seen = new Set<string>();
+    const unique = outcomes.filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)));
+    const activity = progress?.view.objectives.find((o) => o.objectiveId === objectiveId)?.activity;
+    return lessonAgain({
+      objectiveId,
+      messages: this.#d.store.messages.forRoom(this.#d.roomId).map((m) => ({
+        seq: m.seq,
+        anchorId: m.anchor_id ?? null,
+        objectiveId: m.objective_id ?? null,
+        decidedBy: m.decided_by ?? null,
+        body: m.body,
+      })),
+      outcomes: unique,
+      activity: activity ? { explains: activity.explains, examples: activity.examples } : null,
+    });
   }
 
   /**
@@ -4312,6 +4350,7 @@ export class RoomActor {
           cloze: this.#clozeTurn(decision),
           showMe: this.#showMeTurn(decision),
           close: this.#closeTurn(decision),
+          lessonAgain: decision.moveType === 'lesson_start' && this.#lessonTarget?.again != null,
           sourceGenre: this.#d.sourceGenre,
         },
       });
@@ -6110,6 +6149,8 @@ export class RoomActor {
       case 'lesson_start':
         if (this.#lessonTarget === null) return undefined;
         blocks.push(lessonStartBlock(this.#lessonTarget));
+        // Decision 15: a second Start is told what was covered and what was got wrong.
+        if (this.#lessonTarget.again !== null) blocks.push(lessonAgainBlock(this.#lessonTarget.again));
         break;
       case 'block_explain':
       case 'block_example': {

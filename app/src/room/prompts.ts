@@ -918,6 +918,11 @@ export interface TurnDirective {
    * explain it". Said here, nearest the generation, rather than rewriting every block.
    */
   sourceGenre?: 'slides' | 'prose';
+  /**
+   * **A second Start on the same objective** (2026-10-06 afternoon, decision 15): one line of
+   * recap, then only what is not yet covered or was got wrong, not the walkthrough again.
+   */
+  lessonAgain?: boolean;
 }
 
 /**
@@ -1055,7 +1060,13 @@ export function turnDirective(d: TurnDirective): string {
     );
   }
   /** §6's Start button, and §4.2 row 3's `@Max`. The notes carry the objective and the limits. */
-  if (d.move === 'lesson_start') {
+  if (d.move === 'lesson_start' && d.lessonAgain === true) {
+    // Decision 15 (6 Oct afternoon): the lesson's note says what was covered and got wrong.
+    bits.push(
+      'They have started this before. One line of recap of where they stand, then only what is not yet',
+      'covered or was got wrong, in about 100 words. Do not walk them through it again. Ask them nothing.',
+    );
+  } else if (d.move === 'lesson_start') {
     // 2026-10-06 (D2, `collab-doc.md` §6 amended): Ellie walks them through it; nobody asks yet.
     bits.push(
       'Walk them through this part of the notes, in order, in about 150 words. Ask them nothing, and',
