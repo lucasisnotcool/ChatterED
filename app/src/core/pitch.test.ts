@@ -18,7 +18,7 @@ import {
   followUpPlan,
   hasBlank,
   isGuess,
-  OPEN_FOLLOW_UPS,
+  PARTIALS_BEFORE_SHOW_ME,
   notePitch,
   pitchBlock,
   pitchInputs,
@@ -350,15 +350,22 @@ describe('isGuess', () => {
 });
 
 describe('followUpPlan', () => {
-  it('asks open follow-ups for the first two tries, then a blank', () => {
-    expect(OPEN_FOLLOW_UPS).toBe(2);
-    expect(followUpPlan({ attempts: 1, answer: 'preconditions are At, Plane and Airport' }).form).toBe('open');
-    expect(followUpPlan({ attempts: 2, answer: 'false: At(P1 SFO), true: At(P1 SIN)' }).form).toBe('open');
-    expect(followUpPlan({ attempts: 3, answer: 'It comes from p.5 under init' }).form).toBe('cloze');
+  /** 2026-10-06 (D3): after two answers that are not Well done, Show me — never a blank. */
+  it('asks one open follow-up, then offers Show me from the second try', () => {
+    expect(PARTIALS_BEFORE_SHOW_ME).toBe(2);
+    expect(followUpPlan({ attempts: 1, answer: 'preconditions are At, Plane and Airport' }).next).toBe('open');
+    expect(followUpPlan({ attempts: 2, answer: 'false: At(P1 SFO), true: At(P1 SIN)' }).next).toBe('show_me');
+    expect(followUpPlan({ attempts: 3, answer: 'It comes from p.5 under init' }).next).toBe('show_me');
   });
 
-  it('answers a guess with a blank, on any try', () => {
-    expect(followUpPlan({ attempts: 1, answer: ':action ?' })).toEqual({ form: 'cloze', together: false, guess: true });
+  it('answers a guess with the offer of Show me, on any try', () => {
+    expect(followUpPlan({ attempts: 1, answer: ':action ?' })).toEqual({ next: 'show_me', together: false, guess: true });
+  });
+
+  it('never plans a blank', () => {
+    for (let attempts = 1; attempts <= 6; attempts += 1) {
+      expect(Object.keys(followUpPlan({ attempts, answer: 'x' }))).not.toContain('form');
+    }
   });
 
   it('marks the answers together from the second try', () => {

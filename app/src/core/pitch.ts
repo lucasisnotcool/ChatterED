@@ -428,14 +428,19 @@ export function questionForm(asked: QuestionForm, text: string): QuestionForm {
 }
 
 /**
- * **Open follow-ups Max may ask on one question before the next is a blank** (live run,
- * 2026-10-03). Every *Partly there* ends on a follow-up, and nothing ended the run of them: one
- * question on the p. 4 `Fly` action was marked six times, each follow-up narrower than the last,
- * until it asked which line of the action declares its parameters, a word the objective never
- * needed. Two open follow-ups are the learner's two chances to say it in their own words; past
- * that, what is still missing is asked as one term.
+ * **Marked answers on one question before Max offers *Show me*** (Lucas's decision of 2026-10-06,
+ * D3; `collab-doc.md` §4.2 and §4.5, amended 2026-10-06, which reverses the 2026-10-03 "two open
+ * follow-ups, then a blank").
+ *
+ * The 2026-10-03 rule ended a run of *Partly there* on a fill-in-the-blank. In the runs that
+ * followed, every chain that reached a third partial verdict ended on one, 8 of 8; in 6 of them
+ * the blanked term was on screen, quoted by Max in that message or the one before, and all 8 were
+ * scored complete, one of them on the wrong word. A blank shrinks the question until a guess
+ * passes. So after the second answer that is not *Well done*, Max asks nothing smaller: he says
+ * what landed and offers **Show me** (the release, `collab-doc.md` §4.4), and the learner may
+ * still write another attempt in their own words instead.
  */
-export const OPEN_FOLLOW_UPS = 2;
+export const PARTIALS_BEFORE_SHOW_ME = 2;
 
 /** Up to this many words, ending in a question mark, is a guess rather than an answer. */
 const GUESS_MAX_WORDS = 4;
@@ -454,8 +459,11 @@ export function isGuess(answer: string | null | undefined): boolean {
 }
 
 export interface FollowUpPlan {
-  /** The form of the follow-up the feedback ends on, if it is not *Well done*. */
-  form: QuestionForm;
+  /**
+   * How a feedback turn that is not *Well done* ends: `open`, one follow-up question on the gap in
+   * the learner's own words; `show_me`, no question at all, and the offer of **Show me**.
+   */
+  next: 'open' | 'show_me';
   /**
    * True from the second try on: the answers are marked **together** against the question Max
    * first asked. Marked one at a time, each answer covers only the part its follow-up asked for,
@@ -468,12 +476,14 @@ export interface FollowUpPlan {
 
 /**
  * The feedback turn's plan. `attempts` counts the try being marked, so it is 1 on the first
- * answer. The follow-up is a blank past `OPEN_FOLLOW_UPS` tries, or after a guess.
+ * answer. *Show me* is offered from the `PARTIALS_BEFORE_SHOW_ME`th try, or after a guess: a
+ * guess says the learner cannot tell what the question is after, and another question in reply
+ * asks them to guess again. Never a blank (2026-10-06).
  */
 export function followUpPlan(input: { attempts: number; answer: string | null | undefined }): FollowUpPlan {
   const guess = isGuess(input.answer);
   return {
-    form: input.attempts > OPEN_FOLLOW_UPS || guess ? 'cloze' : 'open',
+    next: input.attempts >= PARTIALS_BEFORE_SHOW_ME || guess ? 'show_me' : 'open',
     together: input.attempts >= 2,
     guess,
   };
