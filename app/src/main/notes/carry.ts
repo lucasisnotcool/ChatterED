@@ -26,8 +26,17 @@
  * a final H2 *Earlier notes*.
  */
 import type { Node } from 'prosemirror-model';
-import { NOTE_SLOT_REASON } from '../../shared/doc/types.js';
-import { blockAttrs, hasLearnerText, newBlockId, notesSchema } from '../../shared/doc/schema.js';
+import { CONCEPT_ROLES, NOTE_SLOT_REASON } from '../../shared/doc/types.js';
+import {
+  blockAttrs,
+  conceptCore,
+  conceptItems,
+  conceptLine,
+  hasLearnerText,
+  isConcept,
+  newBlockId,
+  notesSchema,
+} from '../../shared/doc/schema.js';
 import { inlineToNodes } from '../../shared/doc/inline.js';
 import { EARLIER_NOTES_HEADING, EARLIER_NOTES_REASON } from './overview.js';
 
@@ -50,6 +59,8 @@ export interface CarryStats {
   learnerBlocks: number;
   /** Of those, how many were carried because of a kept agent edit (and hold no learner text). */
   keptBlocks: number;
+  /** Of those, how many were concept cards merged into the new card of the same term (`mergeCard`). */
+  mergedCards: number;
 }
 
 /** True when the node or anything inside it has one of these block ids. */
@@ -113,7 +124,7 @@ export function carryOver(
   fresh: readonly Node[],
   keptBlockIds: ReadonlySet<string>,
 ): { nodes: Node[]; stats: CarryStats } {
-  const stats: CarryStats = { carried: 0, earlier: 0, learnerBlocks: 0, keptBlocks: 0 };
+  const stats: CarryStats = { carried: 0, earlier: 0, learnerBlocks: 0, keptBlocks: 0, mergedCards: 0 };
   if (!old) return { nodes: [...fresh], stats };
   const carried = carriedBlocks(old, keptBlockIds);
   if (carried.length === 0) return { nodes: [...fresh], stats };
@@ -145,11 +156,29 @@ export function carryOver(
   const byKey = new Map<string, Section>();
   for (const section of sections) if (section.key && !byKey.has(section.key)) byKey.set(section.key, section);
 
+  // ── concept cards (2026-10-06): a carried card merges into the new card of the same term ──
+  const freshCards = new Map<string, number>();
+  fresh.forEach((node, i) => {
+    if (!isConcept(node)) return;
+    const key = normaliseHeading((node.attrs.term as string) || conceptLine(node));
+    if (key && !freshCards.has(key)) freshCards.set(key, i);
+  });
+  const merged = new Map<number, Node>();
+
   const earlier: Node[] = [];
   for (const item of carried) {
     stats.carried += 1;
     if (item.learner) stats.learnerBlocks += 1;
     else stats.keptBlocks += 1;
+    if (isConcept(item.node)) {
+      const key = normaliseHeading((item.node.attrs.term as string) || conceptLine(item.node));
+      const at = freshCards.get(key);
+      if (at !== undefined) {
+        merged.set(at, mergeCard(merged.get(at) ?? fresh[at]!, item.node, keptBlockIds));
+        stats.mergedCards += 1;
+        continue;
+      }
+    }
     const home = item.under.map((key) => byKey.get(key)).find((s): s is Section => s !== undefined);
     if (!home) {
       earlier.push(item.node);
@@ -174,7 +203,8 @@ export function carryOver(
   const nodes: Node[] = [];
   const sectionAt = new Map(sections.map((s) => [s.start, s]));
   let current: Section | null = null;
-  fresh.forEach((node, i) => {
+  fresh.forEach((original, i) => {
+    const node = merged.get(i) ?? original;
     const starts = sectionAt.get(i);
     if (starts) {
       if (current && current.slot === -1) nodes.push(...current.before);
@@ -199,4 +229,42 @@ export function carryOver(
     );
   }
   return { nodes, stats };
+}
+
+/**
+ * **The learner's part of an old card, put into the new card of the same term** (`notebooks.md`
+ * §2, and §11.2, amended 2026-10-06). Carrying the old card whole beside the new one would show the
+ * same idea twice, once with the learner's words and once without; dropping it would lose them.
+ *
+ *  - The old **core line** replaces the new one when the learner wrote in it: it is their line now.
+ *  - Each old **depth item** the learner wrote in, or that holds a kept edit or one of Ellie's
+ *    notes, is carried whole into the new card, after the new card's own item of the same role
+ *    (or at that role's place in the reading order). Byte-identical, marks and ids and all.
+ *  - The old card's other items were the ingest's own, and the new card has its own of those.
+ */
+export function mergeCard(fresh: Node, old: Node, keptBlockIds: ReadonlySet<string>): Node {
+  const oldCore = conceptCore(old);
+  const children: Node[] = [];
+  fresh.forEach((child) => children.push(child));
+  if (oldCore && hasLearnerText(oldCore) && children.length > 0) children[0] = oldCore;
+
+  const rank = (role: unknown): number => {
+    const i = (CONCEPT_ROLES as readonly unknown[]).indexOf(role);
+    return i < 0 ? CONCEPT_ROLES.length : i;
+  };
+  for (const { node, role } of conceptItems(old)) {
+    if (!hasLearnerText(node) && !touchesAny(node, keptBlockIds)) continue;
+    // After the last item whose role comes no later than this one's, so a carried example sits
+    // after the new example and before the new pitfall.
+    let at = children.length;
+    for (let i = children.length - 1; i >= 1; i -= 1) {
+      if (rank(children[i]!.attrs.role) <= rank(role)) {
+        at = i + 1;
+        break;
+      }
+      at = i;
+    }
+    children.splice(at, 0, node);
+  }
+  return fresh.type.create(fresh.attrs, children, fresh.marks);
 }

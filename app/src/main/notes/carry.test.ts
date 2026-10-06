@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Node } from 'prosemirror-model';
 import { NOTE_SLOT_REASON, type DocAuthor } from '../../shared/doc/types.js';
 import { authorMark, blockAttrs, notesSchema } from '../../shared/doc/schema.js';
-import { carryOver, carriedBlocks, normaliseHeading } from './carry.js';
+import { carryOver, carriedBlocks, mergeCard, normaliseHeading } from './carry.js';
 import { EARLIER_NOTES_HEADING, mintOverview, validateOverview } from './overview.js';
 
 const AT = 1_759_000_000_000;
@@ -132,7 +132,7 @@ describe('carryOver', () => {
     expect(earlierAt).toBeGreaterThan(0);
     expect(blockAttrs(nodes[earlierAt]!).reason).toBeTruthy();
     expect(ids(nodes.slice(earlierAt + 1))).toEqual(['mine', 'typed-in', 'ellie-kept', 'slot1', 'mine2', 'kept-list']);
-    expect(stats).toEqual({ carried: 6, earlier: 6, learnerBlocks: 4, keptBlocks: 2 });
+    expect(stats).toEqual({ carried: 6, earlier: 6, learnerBlocks: 4, keptBlocks: 2, mergedCards: 0 });
   });
 
   it('drops every ingest block and every edit the learner did not keep', () => {
@@ -147,5 +147,51 @@ describe('carryOver', () => {
     const next = fresh();
     expect(ids(carryOver(null, next, new Set()).nodes)).toEqual(ids(next));
     expect(ids(carryOver(doc(heading('t', 1, 'x', 'title'), para('p', [])), next, new Set()).nodes)).toEqual(ids(next));
+  });
+});
+
+// ── concept cards (2026-10-06, notebooks.md §11.2) ───────────────────────────────────────────
+
+describe('carryOver: concept cards', () => {
+  const item = (blockId: string, role: string, children: Node[]): Node =>
+    notesSchema.nodes.concept_item!.create({ blockId, role, pages: [3], reason: null, objectiveIds: [] }, children);
+  const card = (blockId: string, term: string, core: Node, items: Node[]): Node =>
+    notesSchema.nodes.concept!.create({ blockId, term, pages: [3], reason: null, objectiveIds: [] }, [core, ...items]);
+
+  const newCard = (): Node =>
+    card('new-card', 'Value iteration', para('new-core', [{ text: 'Value iteration: repeat the Bellman update.', by: 'ingest' }], [3]), [
+      item('new-eq', 'equation', [para('new-eq-p', [{ text: 'The update.', by: 'ingest' }], [3])]),
+      item('new-pit', 'pitfall', [para('new-pit-p', [{ text: 'A pitfall.', by: 'ingest' }], [3])]),
+    ]);
+
+  it('puts the learner’s items and kept edits of an old card into the new card of the same term, and nothing else of it', () => {
+    const oldDoc = doc(
+      heading('t', 1, 'Planning', 'title'),
+      heading('h1', 2, 'Heuristics'),
+      card('old-card', 'Value Iteration!', para('old-core', [{ text: 'Value iteration: old line.', by: 'ingest' }], [3]), [
+        item('old-eq', 'equation', [para('old-eq-p', [{ text: 'Old update.', by: 'ingest' }], [3])]),
+        item('old-ex', 'example', [para('old-ex-p', [{ text: 'My worked case.', by: 'user' }], [3])]),
+        item('old-ellie', 'intuition', [para('old-ellie-p', [{ text: 'Ellie’s picture.', by: 'ellie', editId: 'e1' }], [3])]),
+      ]),
+    );
+    const next = [heading('t2', 1, 'Planning', 'title'), heading('h1b', 2, 'Heuristics'), newCard()];
+    const { nodes, stats } = carryOver(oldDoc, next, new Set(['old-ellie-p']));
+    expect(stats.mergedCards).toBe(1);
+    const merged = nodes.find((n) => n.type.name === 'concept')!;
+    const childIds: string[] = [];
+    merged.forEach((c) => childIds.push(blockAttrs(c).blockId));
+    expect(childIds).toEqual(['new-core', 'old-ellie', 'new-eq', 'old-ex', 'new-pit']);
+    expect(nodes.filter((n) => n.type.name === 'concept')).toHaveLength(1);
+    expect(() => doc(...nodes).check()).not.toThrow();
+  });
+
+  it('keeps the learner’s core line over the new one, and carries a card with no new match whole', () => {
+    const mineCore = para('old-core', [{ text: 'Value iteration: ', by: 'ingest' }, { text: 'in my words.', by: 'user' }], [3]);
+    const merged = mergeCard(newCard(), card('old', 'Value iteration', mineCore, []), new Set());
+    expect(merged.firstChild!.textContent).toBe('Value iteration: in my words.');
+
+    const lonely = doc(heading('t', 1, 'P', 'title'), card('lonely', 'Not in the new notes', mineCore, []));
+    const { nodes } = carryOver(lonely, [heading('t2', 1, 'P', 'title'), heading('h', 2, 'Heuristics'), newCard()], new Set());
+    expect(ids(nodes)).toContain('lonely');
   });
 });
