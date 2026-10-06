@@ -458,12 +458,22 @@ export function isGuess(answer: string | null | undefined): boolean {
   return words.length > 0 && words.length <= GUESS_MAX_WORDS;
 }
 
+/**
+ * **Three tries, then the answer** (6 Oct afternoon, item 2; `notebooks.md` §11.10). In the two MDP
+ * sessions of 6 Oct a question ran to five marked tries, each ending *"I can show you the answer
+ * with Show me, or you can try once more"*, and both ended in a sworn give-up. So the third answer
+ * that is not *Well done* closes the question: Max asks nothing more, shows the answer and credits
+ * what was right. There is no "try once more" after it.
+ */
+export const MAX_TRIES = 3;
+
 export interface FollowUpPlan {
   /**
    * How a feedback turn that is not *Well done* ends: `open`, one follow-up question on the gap in
-   * the learner's own words; `show_me`, no question at all, and the offer of **Show me**.
+   * the learner's own words; `show_me`, no question at all, and the offer of **Show me**; `close`,
+   * the answer itself, with credit for what was right, and the question closes (item 2).
    */
-  next: 'open' | 'show_me';
+  next: 'open' | 'show_me' | 'close';
   /**
    * True from the second try on: the answers are marked **together** against the question Max
    * first asked. Marked one at a time, each answer covers only the part its follow-up asked for,
@@ -478,12 +488,13 @@ export interface FollowUpPlan {
  * The feedback turn's plan. `attempts` counts the try being marked, so it is 1 on the first
  * answer. *Show me* is offered from the `PARTIALS_BEFORE_SHOW_ME`th try, or after a guess: a
  * guess says the learner cannot tell what the question is after, and another question in reply
- * asks them to guess again. Never a blank (2026-10-06).
+ * asks them to guess again. Never a blank (2026-10-06). From the `MAX_TRIES`th try the turn closes
+ * the question with the answer (6 Oct afternoon, item 2), a guess included.
  */
 export function followUpPlan(input: { attempts: number; answer: string | null | undefined }): FollowUpPlan {
   const guess = isGuess(input.answer);
   return {
-    next: input.attempts >= PARTIALS_BEFORE_SHOW_ME || guess ? 'show_me' : 'open',
+    next: input.attempts >= MAX_TRIES ? 'close' : input.attempts >= PARTIALS_BEFORE_SHOW_ME || guess ? 'show_me' : 'open',
     together: input.attempts >= 2,
     guess,
   };

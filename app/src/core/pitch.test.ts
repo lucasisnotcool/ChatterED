@@ -19,6 +19,7 @@ import {
   hasBlank,
   isGuess,
   PARTIALS_BEFORE_SHOW_ME,
+  MAX_TRIES,
   notePitch,
   pitchBlock,
   pitchInputs,
@@ -355,7 +356,17 @@ describe('followUpPlan', () => {
     expect(PARTIALS_BEFORE_SHOW_ME).toBe(2);
     expect(followUpPlan({ attempts: 1, answer: 'preconditions are At, Plane and Airport' }).next).toBe('open');
     expect(followUpPlan({ attempts: 2, answer: 'false: At(P1 SFO), true: At(P1 SIN)' }).next).toBe('show_me');
-    expect(followUpPlan({ attempts: 3, answer: 'It comes from p.5 under init' }).next).toBe('show_me');
+  });
+
+  /**
+   * 6 Oct afternoon, item 2: the MDP session's question ran to five tries (#36–#44), each ending
+   * "try once more". The third answer that is not Well done now closes it with the answer.
+   */
+  it('closes the question with the answer on the third try, a guess included', () => {
+    expect(MAX_TRIES).toBe(3);
+    expect(followUpPlan({ attempts: 3, answer: 'It comes from p.5 under init' }).next).toBe('close');
+    expect(followUpPlan({ attempts: 3, answer: ':action ?' }).next).toBe('close');
+    expect(followUpPlan({ attempts: 5, answer: 'x' }).next).toBe('close');
   });
 
   it('answers a guess with the offer of Show me, on any try', () => {
