@@ -363,6 +363,18 @@ it shows a hit block's explain and can match on it.
   correct when it is in the query's notebook and its pages meet `gold_pages`. Vectors are cached by
   text hash and seeded from the database's own index; on a copy of the 7 Oct database every
   `off`-mode row hash matched the app's index, so the eval chunks exactly as the app does. Which
-  mode ships should be decided on the real query set, not the five-query smoke test. On the 84-query
-  blind set, `append` scored best (S@1 .917, MRR .950), then `off` (S@1 .881), with `separate`
-  worst (S@1 .845), so the default is `append`; that preference is pending the final eval numbers.
+  mode ships should be decided on the real query set, not the five-query smoke test.
+- **Measured, 7 Oct 2026, and why the default is `append`.** 84 exam-style queries (12 per notebook:
+  method, definition, formula, compare, tutorial) were written blind from the slides, before any
+  explain existed, over the 7 CS4246 notebooks with 4,090 stored explains:
+
+  | Notes | S@1 | S@5 | MRR | N@1 | N@1, tutorial |
+  |---|---|---|---|---|---|
+  | the original notes (before the dense rewrite), `off` | .869 | .976 | .923 | .762 | .143 |
+  | dense concept-card notes, `off` | .881 | .988 | .930 | .881 | .714 |
+  | dense notes + explains, `append` | **.940** | .988 | **.964** | **.929** | **.857** |
+  | dense notes + explains, `separate` | .845 | .976 | .901 | .845 | .786 |
+
+  `separate` lets an explain outrank the notes block it explains, and explains of neighbouring
+  lines crowd each other; folding them into the block's own text (`append`) helps every query kind
+  and hurts none. 84 queries is a small set: `append` vs `off` is 5 queries at S@1.
