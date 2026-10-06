@@ -22,8 +22,10 @@
 import type { AgentProfile } from '../shared/types.js';
 import { teacherName, testerName } from './agents.js';
 import { VERDICT_OPENERS } from './flow.js';
-import { NO_REMARKS, NOT_READABLE_OFF } from './prompts.js';
-import { PARTIALS_BEFORE_SHOW_ME } from '../core/pitch.js';
+import { NO_REMARKS, NOT_READABLE_OFF, modelAnswerLines } from './prompts.js';
+import { MAX_TRIES, PARTIALS_BEFORE_SHOW_ME } from '../core/pitch.js';
+import { MAX_KEY_POINTS } from '../core/marking.js';
+import { FEEDBACK_MAX_WORDS, type FeedbackFault } from '../core/quizturn.js';
 
 // ── §4.2 row 1, first turn: Ellie answers ──────────────────────────────────
 
@@ -405,9 +407,14 @@ export function releaseBlock(input: {
   /** §4.7: the claim Ellie's cue got wrong, when it made one. */
   cueClaim: string | null;
   roster: readonly AgentProfile[];
+  /** 6 Oct afternoon (item 3): Max's hidden model answer, when the question has one. */
+  model?: { answer: string; points: readonly string[] } | null;
+  /** Item 17: the points the learner's answers stated, numbers from 1. */
+  covered?: readonly number[] | null;
 }): string {
   const ellie = teacherName(input.roster);
   const lines = ['GIVE THE ANSWER'];
+  const model = input.model && input.model.points.length > 0 ? input.model : null;
   if (input.releasedBy === 'closure') {
     lines.push(
       'This question has been sitting open and the session has gone quiet. No question you asked is',
@@ -422,10 +429,21 @@ export function releaseBlock(input: {
     'Give the answer to **the question you asked**, in full, under 150 words. No new question, and',
     'do not withhold any part of it.',
   );
-  if (input.attempts > 0) {
+  if (model !== null) {
+    lines.push(
+      'Give your model answer below, in full and in your own words, with its grounds.',
+      ...modelAnswerLines(model, input.attempts > 0 ? (input.covered ?? []) : [], 'answer'),
+    );
+  } else if (input.attempts > 0) {
     lines.push(
       'They did attempt it. One sentence on what their attempt already had of the answer — what they',
       'had, not what they missed. If nothing they wrote was an answer to it, leave that sentence out.',
+      /**
+       * 6 Oct afternoon (item 17): both releases that day said "your attempt already had the core
+       * idea" of answers marked Partly there four and five times. Code also strips such a sentence
+       * (`core/quizturn.dropCreditOverclaim`) unless every essential point was stated.
+       */
+      'Never say it had the core idea, the key idea or the whole idea: it was not marked Well done.',
     );
   }
   lines.push(NO_REMARKS);
@@ -570,8 +588,15 @@ export function clozeFeedbackBlock(input: { followUp?: boolean } = {}): string {
  * guess, gets no smaller question: Max says what landed and offers **Show me**. Nothing when
  * neither applies: the first try's feedback is the ordinary one.
  */
-export function followUpBlock(input: { attempts: number; together: boolean; guess: boolean; showMe: boolean }): string | undefined {
-  if (!input.together && !input.showMe) return undefined;
+export function followUpBlock(input: {
+  attempts: number;
+  together: boolean;
+  guess: boolean;
+  showMe: boolean;
+  /** 6 Oct afternoon (item 2): the third try. Unless it is Well done, the answer, and nothing asked. */
+  close?: boolean;
+}): string | undefined {
+  if (!input.together && !input.showMe && input.close !== true) return undefined;
   const lines = [`THIS IS THEIR TRY ${input.attempts} AT THIS QUESTION`];
   if (input.together) {
     lines.push(
@@ -587,17 +612,119 @@ export function followUpBlock(input: { attempts: number; together: boolean; gues
       'answering it. Another question asks them to guess again.',
     );
   }
-  if (input.showMe) {
+  if (input.close === true) {
+    /**
+     * 6 Oct afternoon (item 2, `notebooks.md` §11.10): three tries, then the answer. The first
+     * session's question ran to five, each ending "try once more", and ended "fuck i give up".
+     */
+    lines.push(
+      `This is their try ${MAX_TRIES}, the last. Unless it is Well done, **ask nothing** and offer nothing:`,
+      'after the verdict, give the answer to the question you asked, in full and under 150 words, and',
+      'credit in one sentence only what their answers actually stated. Never say they had the core',
+      'idea or the whole idea. No offer to try again; the question closes with this turn.',
+    );
+  } else if (input.showMe) {
     lines.push(
       `${input.guess ? 'So unless' : `They have had ${PARTIALS_BEFORE_SHOW_ME - 1} follow-up on it already. Unless`} it is Well done,`,
-      '**ask nothing**: no follow-up, no smaller question and no fill-in-the-blank. Say what their',
-      'answers have so far, name the part still missing without stating or quoting it, and end on one',
-      'sentence offering to show them the answer (the **Show me** button) or to try once more in',
-      'their own words.',
+      '**ask nothing**: no follow-up, no smaller question and no fill-in-the-blank. In two or three',
+      'sentences, say what is new in this answer and what is still missing: a missing word or fact',
+      'stated plainly, a missing step as one plain hint, never a page to look at. End on one sentence',
+      'offering to show them the answer (the **Show me** button) or to try once more in their own words.',
     );
   } else {
     // 2026-10-06 (D3): an open follow-up from the second try on carries the same rule.
     lines.push(NOT_READABLE_OFF);
+  }
+  return lines.join('\n');
+}
+
+// ── 6 Oct afternoon: how Max runs a question (`notebooks.md` §11.10) ─────────────────────────
+
+/**
+ * **A question turn's structured reply** (item 3): the question, and privately a short model answer
+ * with its one to three essential points, stored with the question like a tutorial part's hidden
+ * key (`core/marking.parseQuestionReply`). The learner sees `text` only.
+ */
+export const QUESTION_REPLY_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['text', 'model_answer', 'key_points'],
+  additionalProperties: false,
+  properties: {
+    text: { type: 'string', description: 'Your message to the learner: the question, asking one thing.' },
+    model_answer: {
+      type: 'string',
+      description: 'Private. A short model answer to the question, one to three sentences, in the deck’s terms.',
+    },
+    key_points: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: MAX_KEY_POINTS,
+      description: 'Private. The model answer’s essential points, one short clause each: what a correct answer must say.',
+    },
+  },
+};
+
+/** **A feedback turn's structured reply** (item 3): the message, and which points the answers state. */
+export const FEEDBACK_REPLY_SCHEMA: Record<string, unknown> = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  required: ['text', 'covered'],
+  additionalProperties: false,
+  properties: {
+    text: { type: 'string', description: 'Your message to the learner, starting with the verdict line.' },
+    covered: {
+      type: 'array',
+      items: { type: 'integer' },
+      description: 'The numbers (from 1) of the essential points the learner’s answers, taken together, state.',
+    },
+  },
+};
+
+/** What the question turn is told about the hidden half of its reply. */
+export function modelAnswerAskBlock(): string {
+  return [
+    'WRITE YOUR MODEL ANSWER TOO (PRIVATE)',
+    'Reply with a JSON object. "text" is the message the learner sees: the question, asking **one**',
+    'thing. "model_answer" is a short model answer to it, one to three sentences in the deck’s terms,',
+    `and "key_points" are its essential points, one to ${MAX_KEY_POINTS} short clauses: what a correct`,
+    'answer must say. The learner never sees these before the answer is released; you will mark',
+    'their answers by meaning against the points, so write ideas, not the slide’s exact words.',
+  ].join('\n');
+}
+
+/** Item 4: the draft asked two things. Written again once; then code keeps only the first ask. */
+export function twoAsksBlock(): string {
+  return [
+    'YOUR LAST DRAFT ASKED TWO THINGS',
+    'A question in two parts is marked part by part, and each part the answer leaves out becomes',
+    'another follow-up. Write it again asking **one** thing: one question mark, no second question',
+    'joined by "and". The other part can be a later question.',
+  ].join('\n');
+}
+
+/**
+ * Items 1, 4 and 13: the feedback draft sent the learner to a page, ran over the cap, or ended on
+ * two asks. Written again once; then code takes the pointer out, cuts to the cap and keeps one ask.
+ */
+export function feedbackRedoBlock(problems: readonly FeedbackFault[]): string {
+  const lines = ['YOUR LAST DRAFT NEEDS WRITING AGAIN'];
+  if (problems.includes('page_pointer')) {
+    lines.push(
+      'It sent them to a page to find what is missing ("p. N settles it"). That is a riddle. If the',
+      'missing part is a word or a fact, state it plainly and ask them to use it; if it is a step of',
+      'reasoning, give one plain hint: an analogy or the first step.',
+    );
+  }
+  if (problems.includes('too_long')) {
+    lines.push(
+      `It ran over ${FEEDBACK_MAX_WORDS} words. Say only what is new since their last try and what is still`,
+      'needed, in two or three sentences; do not restate what they already had.',
+    );
+  }
+  if (problems.includes('two_asks')) {
+    lines.push('Its question asked two things. Ask one.');
   }
   return lines.join('\n');
 }

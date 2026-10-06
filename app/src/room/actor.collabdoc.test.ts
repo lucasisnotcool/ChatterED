@@ -1908,8 +1908,11 @@ describe('the blank that gives its answer away', () => {
     expect(h.actor.flowSnapshot().pendingQuiz?.form).not.toBe('cloze');
   });
 
-  /** 2026-10-06 (D4): a question closed by a correct blank is revisit, never you got this. */
-  it('closes a question answered by a correct blank as revisit', async () => {
+  /**
+   * 2026-10-06 (D4): a question closed by a correct blank is never you got this. 6 Oct afternoon
+   * (item 14): it is recall, never revisit, and the chip shows the term the learner recalled.
+   */
+  it('closes a question answered by a correct blank as recall, with the learner’s term', async () => {
     const h = build({}, null, (r) => {
       if (asking(r)) return CLEAN;
       if (r.meta.scope === 'group' && r.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK')) {
@@ -1923,7 +1926,9 @@ describe('the blank that gives its answer away', () => {
     expect(h.actor.flowSnapshot().pendingQuiz?.form).toBe('cloze');
     await settle(h.clock, h.actor.sendMessage('group', DOC));
     const resolves = h.doc.edits.flatMap((e) => e.batch.ops).filter((op) => op.op === 'resolve_q');
-    expect(resolves.at(-1)).toMatchObject({ resolution: 'revisit', blocks: [], learnerAnswer: null });
+    expect(resolves.at(-1)).toMatchObject({ resolution: 'recall', blocks: [], learnerAnswer: 'group' });
+    // A blank still fills nothing (§4.5): its verdict row is filed as a cloze.
+    expect(h.doc.outcomes.at(-1)).toMatchObject({ kind: 'verdict', verdict: 'complete', form: 'cloze' });
   });
 });
 

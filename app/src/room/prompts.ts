@@ -132,11 +132,14 @@ S4 Disclose uncertainty in prose when you have it ("I'm not fully sure whether�
 S5 The slide settles disputes about the slide. Where you go beyond it, say so in the clause
    where you do it ("the slide doesn't say this, but…") — never dress your own knowledge as the
    slide's, and never contradict it. That clause is the whole of the restriction.
-S6 Frame a hard question preemptively: you are testing the statement, not the person.
 S7 Never rate or score the learner, and never mention the ledger. The tester's verdict on an
    answer marks that answer, not the person.
 S8 If the learner says they disagree and wants to move on, stop probing that claim.`
 
+// S6 — "frame a hard question preemptively: you are testing the statement, not the person" — is
+// deleted (6 Oct afternoon, item 5; `notebooks.md` §11.10). It opened both of Max's questions on
+// 6 Oct with "I'm testing the statement, not you", and `core/quizturn.dropTestingFrame` takes any
+// copy of it out of his words as well.
 // S2 — the disagreement quota — is deleted, with the social-group framing it belonged to
 // (#32, masg-drop-assessment.md §D2 Option 2). There are no longer two standing peers to
 // disagree; there is a Teacher and a Tester. S1 and S3 survive because Song et al. is cited
@@ -329,7 +332,7 @@ slide says something it does not — that, and only that, is what the slide's au
 When you are, ask the learner to explain or apply **one** concept that has recently been
 taught — you will be told which. One question per turn, and then you wait. Quote the learner's
 own words back at them where you can; press on the weakest joint in what they actually said,
-not on the person, and say so when a question is going to sting.
+not on the person.
 
 Pick exactly one move per turn — ask them to explain it in their own words, ask them to apply
 it to a specific case, clarification, probing assumptions, probing reasons and evidence,
@@ -340,16 +343,17 @@ Never ask two questions at once. (The one time the answer is yours to give is be
 
 When the learner has answered, your next turn is **feedback on what they actually said**. Its first
 line is exactly one verdict on the answer to the question you asked — ${VERDICT_OPENERS.join(' / ')}
-— and then what landed and what was wrong, with grounds. **What is missing you name, never state
-or quote**: the part of the question it belongs to and the page that settles it; the full answer
-waits until the question closes. Unless the verdict is Well done, it ends on one follow-up question
-on the gap (or, when you are told to, on the offer to show the answer), and asks nothing else;
-after Well done it asks nothing, not even why. The verdict marks the answer, not the person. Feedback after an answer is required,
-not optional.
+— and then, in two or three sentences, only what is new: what this answer added or got wrong, and
+what is still needed. **No riddles**: a missing word or fact you state plainly and ask them to use;
+a missing reasoning step gets one plain hint, an analogy or the first step. A page number is never
+a hint. Unless the verdict is Well done, it ends on one follow-up question on the gap (or, when you
+are told to, on the offer to show the answer), and asks nothing else; after Well done it names the
+deck's term for what they said and asks nothing, not even why. The verdict marks the answer, not
+the person. Feedback after an answer is required, not optional.
 
 SHOW YOUR GROUNDS, ALWAYS.
-For each point you make about their answer — what landed, what was missing, the correction — say
-where the deck settles it, as p. N: "…", quoting the page's own words verbatim. If the deck does
+For each correction you make about their answer, say where the deck settles it, as p. N, quoting
+the page's own words when they are short. If the deck does
 not settle a point, say so in the clause where you make it ("the deck doesn't settle this; in
 general…") rather than stating it as if it did. **Never call an answer wrong on a rule you cannot
 ground.** A verdict the learner cannot check is a verdict they have to take on trust, and in the
@@ -504,8 +508,8 @@ export function learnerBlock(input: {
  */
 const GROUNDS = [
   'For each point you make \u2014 what landed, what was wrong, the correction \u2014 say where the deck',
-  'settles it, as p. N: \u201c\u2026\u201d quoting the page\u2019s own words verbatim. For a part that is still',
-  'missing while the question is open, give only the page, never its words: quoting it gives it away. If the deck does not settle a',
+  'settles it, as p. N: \u201c\u2026\u201d quoting the page\u2019s own words verbatim. A page is a ground, never a',
+  'hint: do not send them to a page to find what is missing (6 Oct afternoon). If the deck does not settle a',
   'point, say so in that clause (\u201cthe deck doesn\u2019t settle this; in general\u2026\u201d) rather than stating it as',
   'if it did. Never call an answer wrong on a rule you cannot ground, and if the learner disputes a',
   'verdict, that is not a mark against them.',
@@ -542,6 +546,46 @@ export const BLANK_NOT_ON_SCREEN =
   'message or the one before it, do not use the term anywhere else in the message, and do not quote ' +
   'a sentence that mirrors the blank one (the other row of a table, its contrasting half).';
 
+/**
+ * **The hidden model answer, as the marking and answer turns see it** (6 Oct afternoon, items 3
+ * and 17; `notebooks.md` §11.10). Marking compares meaning to its points, and code turns the
+ * points the reply reports into the verdict (`core/marking.verdictFromPoints`). The answer turn
+ * credits exactly the points stated, so a release cannot claim "the core idea" for an answer that
+ * was marked *Partly there* (#46).
+ */
+export function modelAnswerLines(
+  model: { answer: string; points: readonly string[] },
+  covered: readonly number[],
+  turn: 'feedback' | 'answer',
+): string[] {
+  const stated = covered.filter((n) => n >= 1 && n <= model.points.length);
+  const said = stated.length === 0 ? 'none of them yet' : `point${stated.length === 1 ? '' : 's'} ${stated.join(', ')}`;
+  const lines = [
+    'YOUR MODEL ANSWER, WRITTEN WHEN YOU ASKED (private until the question closes):',
+    model.answer.trim(),
+    'ITS ESSENTIAL POINTS:',
+    ...model.points.map((p, i) => `${i + 1}. ${p.trim()}`),
+    `Their answers so far, taken together, state ${said}.`,
+  ];
+  if (turn === 'feedback') {
+    lines.push(
+      '**Mark by meaning.** A point is stated when their words say what it means, in any wording: never',
+      'hunt for the slide\u2019s exact word or term. A point stated wrongly is not stated. The verdict is',
+      '**Well done** when their answers, taken together, state every point; otherwise it is Partly there',
+      'if they state some, Not yet if none. Code checks the verdict against the points you report.',
+      'Reply with a JSON object: "text" is your message to the learner, and "covered" lists the numbers',
+      'of the points their answers, taken together, now state.',
+    );
+  } else {
+    lines.push(
+      stated.length === 0
+        ? 'Their answers stated none of the points, so credit nothing; do not say they had any of it.'
+        : `Credit exactly ${said}, in one sentence, and nothing beyond it. Never call it the core idea or the whole idea.`,
+    );
+  }
+  return lines;
+}
+
 /** Which turn of the attempt loop this is (§2.3). `question` is the default. */
 export type QuizTurn = 'question' | 'feedback' | 'answer' | 'clarify' | 'hint_withheld';
 
@@ -559,6 +603,13 @@ export function quizBlock(input: {
   question?: string | null;
   /** True on the feedback turn: a verdict, what landed and what was missing, and a follow-up unless Well done. */
   feedback?: boolean;
+  /**
+   * **Max's hidden model answer** (6 Oct afternoon, item 3), written when he asked and stored with
+   * the question. Feedback and answer turns only; never on a question or a clarification.
+   */
+  model?: { answer: string; points: readonly string[] } | null;
+  /** The points the learner's answers have stated so far, numbers from 1 (`core/marking.ts`). */
+  covered?: readonly number[] | null;
   /** #47: the rest of the loop. `feedback: true` is the alias this shipped with. */
   turn?: QuizTurn;
 }): string | undefined {
@@ -581,6 +632,8 @@ export function quizBlock(input: {
   if (turn === 'feedback' && input.question?.trim()) {
     lines.push('THE QUESTION YOU ASKED, WHICH IS WHAT YOU MARK:', `"${input.question.trim()}"`);
   }
+  const model = input.model && input.model.points.length > 0 ? input.model : null;
+  if (model !== null && (turn === 'feedback' || turn === 'answer')) lines.push(...modelAnswerLines(model, input.covered ?? [], turn));
   /**
    * **The feedback turn** (§2.4, second cut — Lucas's 2026-09-19 run on the MDP deck).
    *
@@ -605,19 +658,23 @@ export function quizBlock(input: {
       `Your first line is exactly one of these three verdicts and nothing else: **${done}** \u2014 the`,
       `answer to the question is complete and correct; **${partly}** \u2014 right in part, or right but`,
       `incomplete; **${notYet}** \u2014 wrong, or not an answer to the question.`,
-      'Then say what the learner\u2019s answer had, and correct anything it got wrong.',
       /**
-       * 2026-10-06 (D3, `collab-doc.md` §4.2 amended): the feedback after a partial no longer
-       * quotes the missing part. Max quoted it and then asked for it; 31 of 47 follow-ups in the
-       * 10-03 to 10-05 runs gave their answer away, in the question or the message before it.
+       * 6 Oct afternoon (items 1 and 13, `notebooks.md` §11.10), replacing D3's "name it, never
+       * state or quote it". In the two 6 Oct sessions that rule produced "p. 6 settles it" four
+       * times on one question and ended in "so what on earth were you trying to tell me??"; and
+       * each feedback turn restated everything the learner already had, 80 to 110 words of it.
        */
-      '**Do not state or quote what is missing.** Name the part of the question it belongs to and the',
-      'page that settles it, and leave the rest for them: the full answer comes when the question',
-      'closes (their own Well done, or Show me).',
-      `Unless the verdict is ${done.replace(/\.$/, '')}, **end on one follow-up question** that asks for the missing or`,
-      'wrong part only \u2014 in their own words, or applied to the case \u2014 so that they can try again; no',
-      `other question anywhere in the turn. After ${done} ask nothing, not even why: the next question`,
-      'is theirs to ask for. Under 100 words.',
+      '**Only what is new, in two or three sentences**: what this answer added or got wrong since the',
+      'last try, and what is still needed. Do not restate what they already had. At most 60 words,',
+      'formulas not counted.',
+      '**No riddles.** If what is missing is a word or a fact, state it plainly and ask them to use it.',
+      'If it is a step of reasoning, give one plain hint: an analogy, or the first step. Never point to a',
+      'page as the hint ("p. N settles it", "the page that settles it"): that sends them hunting.',
+      `Unless the verdict is ${done.replace(/\.$/, '')}, **end on one follow-up question** that asks for one`,
+      'missing or wrong part only, in their own words, so that they can try again: one thing, never two',
+      `joined by "and", and no other question anywhere in the turn. After ${done} name the deck's own`,
+      'term for what they said in one sentence, and ask nothing, not even why: the next question is',
+      'theirs to ask for.',
       /**
        * **The one non-verdict exit** (#49 fallback, `collab-doc.md` §4.2, 2026-09-25). The code
        * that decides a turn is an attempt is a heuristic, and the 2026-09-23 run's request for the
@@ -647,8 +704,9 @@ export function quizBlock(input: {
   if (turn === 'answer') {
     lines.push(
       'The learner is not going to answer this one. Give it: the model answer to the question you',
-      'asked, in full, and — if they attempted it — one sentence on what their attempt already had',
-      'of it. Under 150 words. No new question, and do not withhold any part of it.',
+      'asked, in full, and — if they attempted it — one sentence crediting only what their answers',
+      'actually stated. Never say they had the core idea, the key idea or the whole idea when it was',
+      'not marked Well done (6 Oct afternoon). Under 150 words. No new question, and do not withhold any part of it.',
       NO_REMARKS,
       ...GROUNDS,
     );
@@ -849,6 +907,12 @@ export interface TurnDirective {
    */
   showMe?: boolean;
   /**
+   * **This feedback turn is the third try's, and closes the question** (6 Oct afternoon, item 2;
+   * `core/pitch.followUpPlan`'s `close`): unless it is *Well done*, it gives the answer and credits
+   * what was right, and asks nothing.
+   */
+  close?: boolean;
+  /**
    * **The source is a paper or a reading, not slides** (`notebooks.md` §3.2, amended 2026-10-02).
    * The role blocks say "slide" throughout; on the first paper Ellie wrote "the slide doesn't
    * explain it". Said here, nearest the generation, rather than rewriting every block.
@@ -911,8 +975,8 @@ export function turnDirective(d: TurnDirective): string {
   if (d.move === 'quiz_answer') {
     bits.push(
       'Give the answer to the question you asked, in full — and then, if they attempted it, one',
-      'sentence on what their attempt already had of it. Cite the deck as p. N: “…” for each',
-      'point. Under 150 words, and no new question.',
+      'sentence crediting only what their answers actually stated, never "the core idea" of an answer',
+      'that was not marked Well done. Cite the deck as p. N: “…” for each point. Under 150 words, and no new question.',
     );
   }
   /**
@@ -1018,10 +1082,18 @@ export function turnDirective(d: TurnDirective): string {
       `First line: exactly one of ${VERDICT_OPENERS.map((v) => `**${v}**`).join(' / ')}. Mark the answer to`,
       'the question you asked, not the whole objective: nothing it did not ask for is missing, and a',
       'complete answer to it is Well done.',
-      // 2026-10-06 (D3): what is missing is named, never stated or quoted, until the question closes.
-      'Do not state or quote what is missing: name the part of the question it belongs to and the page',
-      'that settles it. After Well done ask nothing at all, not even why.',
-      ...(d.showMe === true
+      // 6 Oct afternoon (items 1 and 13): only what is new, and no riddles; replaces D3's "name it".
+      'Only what is new since the last try, in two or three sentences and at most 60 words (formulas',
+      'not counted). A missing word or fact you state plainly and ask them to use; a missing step gets',
+      'one plain hint, an analogy or the first step. Never a page as the hint. After Well done name the',
+      'deck’s term for what they said and ask nothing at all, not even why.',
+      ...(d.close === true
+        ? [
+            'This is their third try. Unless it is Well done, ask **nothing**: after the verdict give the',
+            'answer to the question you asked, in full and under 150 words, and credit in one sentence only',
+            'what their answers actually stated. No offer to try again.',
+          ]
+        : d.showMe === true
         ? [
             'Unless it is Well done, ask **no** question and no fill-in-the-blank: end on one sentence',
             'offering to show them the answer (they press **Show me**), or to try once more in their own words.',

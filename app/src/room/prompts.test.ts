@@ -429,8 +429,57 @@ describe('quizBlock', () => {
     for (const v of VERDICT_OPENERS) expect(block).toContain(`**${v}**`);
     expect(flat(block)).toContain('Your first line is exactly one of these three verdicts');
     expect(flat(block)).toContain('**end on one follow-up question**');
-    expect(flat(block)).toContain('After Well done. ask nothing');
+    // 6 Oct afternoon (item 3): after Well done Max names the deck's term, and asks nothing.
+    expect(flat(block)).toContain("After Well done. name the deck's own term for what they said in one sentence, and ask nothing");
     expect(block).not.toContain('No new question this turn.');
+  });
+
+  /**
+   * 6 Oct afternoon (items 1 and 13, `notebooks.md` §11.10), replacing D3's "name it, never state
+   * or quote it": no page as the hint, and only what is new, in two or three sentences.
+   */
+  it('asks the feedback turn for no riddles and only what is new', () => {
+    const block = flat(quizBlock({ label: 'x', seeds: [], demonstration: [], question: 'Why?', turn: 'feedback' })!);
+    expect(block).toContain('**No riddles.** If what is missing is a word or a fact, state it plainly and ask them to use it.');
+    expect(block).toContain('give one plain hint: an analogy, or the first step');
+    expect(block).toContain('Never point to a page as the hint');
+    expect(block).toContain('**Only what is new, in two or three sentences**');
+    expect(block).toContain('At most 60 words, formulas not counted.');
+    expect(block).not.toContain('Do not state or quote what is missing');
+    const directive = flat(turnDirective({ move: 'quiz_feedback', agentRole: 'challenger' } as never));
+    expect(directive).toContain('Never a page as the hint');
+    expect(directive).not.toContain('Do not state or quote what is missing');
+  });
+
+  /** Item 3: the model answer reaches the marking turn, with the points and how to report them. */
+  it('gives the marking turn the hidden model answer and asks which points are stated', () => {
+    const block = flat(
+      quizBlock({
+        label: 'x',
+        seeds: [],
+        question: 'Why must the sum be 1?',
+        turn: 'feedback',
+        model: { answer: 'It is a distribution over next states.', points: ['outcomes cover every case', 'so they total 1'] },
+        covered: [2],
+      })!,
+    );
+    expect(block).toContain('(private until the question closes): It is a distribution over next states.');
+    expect(block).toContain('1. outcomes cover every case 2. so they total 1');
+    expect(block).toContain('Their answers so far, taken together, state point 2.');
+    expect(block).toContain('**Mark by meaning.**');
+    expect(block).toContain('never hunt for the slide’s exact word');
+    expect(block).toContain('lists the numbers');
+    // Never on the question turn.
+    const asked = flat(quizBlock({ label: 'x', seeds: [], line: 'l', model: { answer: 'A', points: ['p'] } })!);
+    expect(asked).not.toContain('YOUR MODEL ANSWER');
+  });
+
+  /** Item 2: the third try's directive gives the answer and offers nothing. */
+  it('closes on the third try in the directive', () => {
+    const directive = flat(turnDirective({ move: 'quiz_feedback', agentRole: 'challenger', close: true } as never));
+    expect(directive).toContain('This is their third try. Unless it is Well done, ask **nothing**');
+    expect(directive).toContain('No offer to try again.');
+    expect(directive).not.toContain('Show me');
   });
 
   /**
@@ -490,7 +539,8 @@ describe('quizBlock', () => {
     expect(block).toContain('the deck doesn\u2019t settle this');
     expect(block).toContain('Never call an answer wrong on a rule you cannot ground');
     expect(block).toContain('not a mark against them');
-    expect(block).toContain('Under 100 words');
+    // 6 Oct afternoon (item 13): the cap is 60 words, formulas not counted, and code holds it too.
+    expect(block).toContain('At most 60 words');
   });
 
   it('gives the whole answer once, with its grounds, on the answer turn', () => {
@@ -502,7 +552,9 @@ describe('quizBlock', () => {
     })!;
     // #48 §4.4: released rather than unlocked, and given whether or not they attempted it.
     expect(block).toContain('is not going to answer this one');
-    expect(flat(block)).toContain('what their attempt already had of it');
+    // 6 Oct afternoon (item 17): credit only what was stated, never "the core idea".
+    expect(flat(block)).toContain('one sentence crediting only what their answers actually stated');
+    expect(flat(block)).toContain('Never say they had the core idea');
     expect(block).toContain('Under 150 words');
     expect(block).toContain('p. N');
     expect(block).not.toContain('A question nobody should ask now.');

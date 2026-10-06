@@ -30,6 +30,7 @@ import {
   cueMistakeToCorrect,
   markAnswerShown,
   markCueGiven,
+  pointsAllCovered,
   qResolutionOf,
   quizOpen,
   openQuiz,
@@ -747,16 +748,47 @@ describe('feedback after a quiz answer is a rule, not a prompt hint', () => {
     expect(qResolutionOf(markAnswerShown(thenWrong, 'closure'))).toBe('partly_yours');
   });
 
-  /** 2026-10-06 (D4): one recalled term is not an earned answer, so its chip says revisit. */
-  it('resolves a question closed by a correct blank as revisit, never you got this', () => {
+  /**
+   * 2026-10-06 (D4): one recalled term is not an earned answer, so its chip is never you got this.
+   * 6 Oct afternoon (item 14): it is recall, never revisit.
+   */
+  it('resolves a question closed by a correct blank as recall, never you got this or revisit', () => {
     const cloze = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1', form: 'cloze' }, t0), 'm_10', { attempt: true });
-    expect(qResolutionOf(markFeedbackGiven(cloze, 'complete', 'complete'))).toBe('revisit');
+    expect(qResolutionOf(markFeedbackGiven(cloze, 'complete', 'complete'))).toBe('recall');
 
     // A blank follow-up restored from before 2026-10-06 closes the same way.
     const open = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
     const blankOwed = { ...markFeedbackGiven(open, 'partial', 'partial'), followUpBlank: true };
     const filled = markFeedbackGiven(answerQuiz(blankOwed, 'm_11', { attempt: true }), 'complete', 'complete');
-    expect(qResolutionOf(filled)).toBe('revisit');
+    expect(qResolutionOf(filled)).toBe('recall');
+  });
+
+  /**
+   * 6 Oct afternoon (item 17): a release after answers that stated every essential point of Max's
+   * hidden model answer is the learner's, not *partly yours*. The points are stored with the
+   * question and carried, taken together, by `markFeedbackGiven`.
+   */
+  it('resolves a release as the learner’s when their answers stated every point', () => {
+    const asked = openQuiz({ quizMessageId: 'm_9', elementId: 'R1', modelAnswer: 'A.', keyPoints: ['one', 'two'] }, t0);
+    expect(asked.pointsCovered).toEqual([]);
+    const once = markFeedbackGiven(answerQuiz(asked, 'm_10', { attempt: true }), 'partial', 'partial', { pointsCovered: [2] });
+    expect(pointsAllCovered(once)).toBe(false);
+    expect(qResolutionOf(markAnswerShown(once, 'give_up'))).toBe('partly_yours');
+    const twice = markFeedbackGiven(answerQuiz(once, 'm_11', { attempt: true }), 'partial', 'partial', { pointsCovered: [1, 2] });
+    expect(pointsAllCovered(twice)).toBe(true);
+    expect(qResolutionOf(markAnswerShown(twice, 'give_up'))).toBe('you_got_this');
+    // A question with no points (asked before this build) is unchanged.
+    expect(pointsAllCovered(openQuiz({ quizMessageId: 'm_1', elementId: 'R1' }, t0))).toBe(false);
+  });
+
+  /** Item 2: the three-try close is a release at closure, marked as the cap's. */
+  it('marks a question closed by the three-try cap', () => {
+    const asked = answerQuiz(openQuiz({ quizMessageId: 'm_9', elementId: 'R1' }, t0), 'm_10', { attempt: true });
+    const closed = markAnswerShown(markFeedbackGiven(asked, 'partial', 'partial'), 'closure', { afterTries: true });
+    expect(closed.closedAfterTries).toBe(true);
+    expect(quizOpen(closed)).toBe(false);
+    expect(qResolutionOf(closed)).toBe('partly_yours');
+    expect(markAnswerShown(asked, 'give_up').closedAfterTries).toBe(false);
   });
 
   /** 2026-10-06 (D3): Show me, once offered, stays offered until the question closes. */

@@ -31,6 +31,7 @@ import type { AgentProfile } from '../shared/types.js';
  */
 import type { QResolution, QuizVerdict3 } from '../shared/doc/types.js';
 import type { QuestionForm } from '../core/pitch.js';
+import { allCovered } from '../core/marking.js';
 import { testerName } from './agents.js';
 
 /** The tunable set. One object so a demo profile is a substitution, not a scatter of flags. */
@@ -904,6 +905,29 @@ export interface PendingQuiz {
    * feedback turn correcting it again (six times in the 3 Oct run).
    */
   cueCorrected?: boolean;
+
+  // ── 6 Oct afternoon (items 2, 3 and 17; `notebooks.md` §11.10) ─────────────────────────
+
+  /**
+   * **Max's hidden model answer** (item 3), written privately when he asked, in the deck's terms.
+   * Stored with the question like a tutorial part's hidden key: it lives in main (the flow-state
+   * row) and is never put in a view, so it cannot reach the learner before a release. Absent on
+   * questions asked before this build, and when the reply did not carry one.
+   */
+  modelAnswer?: string | null;
+  /** Its one to three essential points (`core/marking.ts`). Marking compares meaning to these. */
+  keyPoints?: string[] | null;
+  /**
+   * **The points the learner's answers have stated so far**, numbers from 1, taken together across
+   * tries (`core/marking.coveredUnion`). All of them is *Well done*, decided in code.
+   */
+  pointsCovered?: number[] | null;
+  /**
+   * **Closed by the three-try cap** (item 2): the third answer that was not *Well done* got the
+   * answer in its feedback turn. Recorded as a release at `closure` (the app, not the learner,
+   * closed it; the outcome table admits no other value without a migration).
+   */
+  closedAfterTries?: boolean;
 }
 
 /** The answer now owed is to a blank: a cloze question, or a blank follow-up on an open one. */
@@ -1018,11 +1042,16 @@ export function openQuiz(
     questionText?: string | null;
     /** `cloze` for a fill-in-the-blank (§4.5). Left out for an open question. */
     form?: QuestionForm;
+    /** Item 3: Max's hidden model answer and its points, when his reply carried them. */
+    modelAnswer?: string | null;
+    keyPoints?: string[] | null;
   },
   now: number,
 ): PendingQuiz {
   return {
     ...input,
+    pointsCovered: [],
+    closedAfterTries: false,
     askedAt: now,
     answerMessageId: null,
     answerText: null,
@@ -1096,10 +1125,17 @@ export function markFeedbackGiven(
    * asked to correct Ellie's guess. 2026-10-06: `showMe`, the turn was planned to offer Show me. A
    * *Well done* opens no follow-up and offers nothing.
    */
-  extra: { followUpBlank?: boolean; cueCorrected?: boolean; showMe?: boolean } = {},
+  extra: {
+    followUpBlank?: boolean;
+    cueCorrected?: boolean;
+    showMe?: boolean;
+    /** Item 3: the points this turn found stated, already unioned with the earlier ones. */
+    pointsCovered?: number[] | null;
+  } = {},
 ): PendingQuiz {
   return {
     ...quiz,
+    ...(extra.pointsCovered ? { pointsCovered: extra.pointsCovered } : {}),
     feedbackGiven: true,
     verdict,
     verdict3,
@@ -1121,8 +1157,19 @@ export function markFeedbackGiven(
 export function markAnswerShown(
   quiz: PendingQuiz,
   releasedBy: 'give_up' | 'pass' | 'closure' | null = null,
+  /** Item 2: the answer came in the third try's feedback, not on a give-up. */
+  opts: { afterTries?: boolean } = {},
 ): PendingQuiz {
-  return { ...quiz, answerShown: true, releasedBy };
+  return { ...quiz, answerShown: true, releasedBy, ...(opts.afterTries === true ? { closedAfterTries: true } : {}) };
+}
+
+/**
+ * **Every essential point stated** (items 3 and 17): the learner's answers, taken together, said
+ * all of Max's hidden model answer. False on a question with no points (an older one).
+ */
+export function pointsAllCovered(quiz: PendingQuiz | null): boolean {
+  const points = quiz?.keyPoints ?? [];
+  return points.length > 0 && allCovered(points.length, quiz?.pointsCovered ?? []);
 }
 
 /**
@@ -1183,10 +1230,20 @@ export function qResolutionOf(quiz: PendingQuiz | null): QResolution | null {
    * *revisit*. One recalled term is not an answer the learner earned, and in the 10-05 run the
    * wrong term was stored under *you got this*.
    */
+  /**
+   * 6 Oct afternoon (item 14, `notebooks.md` §11.10): it is *recall*, not *revisit*. The chip shows
+   * the term the learner recalled, tagged *recall*; it still fills no progress.
+   */
   if (verdict3Of(quiz) === 'complete' && quiz.feedbackGiven) {
-    return quiz.form === 'cloze' || quiz.lastMarkedBlank === true ? 'revisit' : 'you_got_this';
+    return quiz.form === 'cloze' || quiz.lastMarkedBlank === true ? 'recall' : 'you_got_this';
   }
   if (quiz.releasedBy === 'give_up' || quiz.releasedBy === 'pass' || quiz.releasedBy === 'closure') {
+    /**
+     * Item 17: when the learner's answers stated every essential point, the outcome is theirs,
+     * whatever door the answer came through. The verdict is decided from the points too, so this
+     * is the backstop for a mark that was read off the words.
+     */
+    if (pointsAllCovered(quiz)) return 'you_got_this';
     return quiz.hadPartial === true || verdict3Of(quiz) === 'partial' ? 'partly_yours' : 'released';
   }
   return null;

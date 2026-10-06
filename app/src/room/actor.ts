@@ -30,7 +30,19 @@ import {
 } from '../shared/doc/types.js';
 import { parseMention } from '../shared/doc/mention.js';
 import { ownWordsOf } from '../core/ownwords.js';
-import { dropQuestionTail, questionText, settleVerdict, type TurnVerdict } from '../core/quizturn.js';
+import {
+  asksTwoThings,
+  dropCreditOverclaim,
+  dropQuestionTail,
+  dropTestingFrame,
+  feedbackFaults,
+  firstAsk,
+  fixFeedback,
+  questionText,
+  settleVerdict,
+  verdictsIn,
+  type TurnVerdict,
+} from '../core/quizturn.js';
 import { extractChipNote } from '../core/chipnote.js';
 import { chipNoteBlock } from './prompts.chip.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
@@ -64,6 +76,14 @@ import {
   mentionReplyBlock,
   releaseBlock,
 } from './prompts.doc.js';
+import {
+  FEEDBACK_REPLY_SCHEMA,
+  QUESTION_REPLY_SCHEMA,
+  feedbackRedoBlock,
+  modelAnswerAskBlock,
+  twoAsksBlock,
+} from './prompts.doc.js';
+import { coveredUnion, parseFeedbackReply, parseQuestionReply, verdictFromPoints, type ModelAnswer } from '../core/marking.js';
 import type {
   AgentProfile,
   AgentVerb,
@@ -114,6 +134,7 @@ import {
   markAnswerShown,
   markCueGiven,
   markFeedbackGiven,
+  pointsAllCovered,
   cueGiven,
   cueMistakeToCorrect,
   feedbackUnmarked,
@@ -849,6 +870,17 @@ export class RoomActor {
   #mentionRest: string | null = null;
   /** What Ellie's structured cue reported about itself, for the turn that records it (§4.7). */
   #pendingCue: { hasMistake: boolean; claim: string | null } | null = null;
+  /**
+   * **Max's hidden model answer, from the question turn that just ran** (6 Oct afternoon, item 3).
+   * Set in `#completeQuestionTurn`, read once by `#noteTurnForFlow` when the question opens, which
+   * stores it on `PendingQuiz`; the same hand-off `#pendingCue` uses.
+   */
+  #pendingKey: ModelAnswer | null = null;
+  /**
+   * **The points the feedback turn that just ran found stated** (item 3), or null when its reply
+   * carried none. Read by `#settleTurnText` for the verdict and by `#noteTurnForFlow` to store.
+   */
+  #pendingMark: { covered: number[] | null } | null = null;
   /** Her cue's text, so Max's prompt can answer *it* rather than the question (§4.3 step 2). */
   #cueText: string | null = null;
   /** The objective a `lesson_start` turn is about, for the length of that turn (§6). */
@@ -4184,7 +4216,17 @@ export class RoomActor {
       onDelta?.(line);
       return { text: line, model: 'pool:content_free', usage: {}, ttftMs: 0, backend: undefined };
     }
-    // A closure, so a blank turn that gave its answer away can be asked for again (`#completeBlankTurn`).
+    /**
+     * **Max's question and feedback turns are held and checked before they are sent** (6 Oct
+     * afternoon, items 1, 3, 4, 5 and 13; `notebooks.md` §11.10). A question also writes its hidden
+     * model answer, so it is told how (`modelAnswerAskBlock`).
+     */
+    const held = this.#heldMaxTurn(agent, decision);
+    const base = held === 'question' ? modelAnswerAskBlock() : undefined;
+    // What a held turn reports is about this turn only: nothing left by one that was cancelled.
+    this.#pendingKey = null;
+    this.#pendingMark = null;
+    // A closure, so a held turn that failed a check can be asked for again (`#completeQuestionTurn`).
     const build = (extra?: string): LlmRequest => {
       const note = this.#withSheetGuard(decision, this.#withTutorialFocus(decision, this.#turnNote(decision)));
       const built = buildGroupContext(this.#d.groupStore, {
@@ -4197,12 +4239,13 @@ export class RoomActor {
           move: decision.moveType,
           probeType: decision.probeType ?? undefined,
           targetElementId: decision.targetElementId ?? undefined,
-          note: extra === undefined ? note : [note, extra].filter((b) => typeof b === 'string' && b.length > 0).join('\n\n'),
+          note: [note, base, extra].filter((b) => typeof b === 'string' && b.length > 0).join('\n\n') || undefined,
           // One move, three causes (#47): only the withheld-answer hint owes the "one try unlocks it"
           // clause, and the rule name is what tells them apart.
           byRule: decision.decidedBy,
           cloze: this.#clozeTurn(decision),
           showMe: this.#showMeTurn(decision),
+          close: this.#closeTurn(decision),
           sourceGenre: this.#d.sourceGenre,
         },
       });
@@ -4253,16 +4296,123 @@ export class RoomActor {
       onDelta?.(cue.text);
       return { ...result, text: cue.text };
     }
-    if (this.#blankTurn(decision)) {
-      const again = (extra: string): LlmRequest => {
-        const next = build(extra);
-        next.meta.turnId = request.meta.turnId;
-        next.meta.anchorId = request.meta.anchorId;
-        return next;
-      };
-      return this.#completeBlankTurn(request, again, onDelta, signal);
-    }
+    const again = (extra: string): LlmRequest => {
+      const next = build(extra);
+      next.meta.turnId = request.meta.turnId;
+      next.meta.anchorId = request.meta.anchorId;
+      return next;
+    };
+    if (held === 'question') return this.#completeQuestionTurn(decision, request, again, onDelta, signal);
+    if (held === 'feedback') return this.#completeFeedbackTurn(decision, request, again, onDelta, signal);
     return this.#d.llm.complete(request, onDelta, signal);
+  }
+
+  /**
+   * **Which of Max's turns are held** (6 Oct afternoon): his question, and his feedback on an open
+   * question. Not a tutorial sheet's turns (`tutor_*`, its own rules), not a blank's feedback (its
+   * way on is the blank again), not the learner's own question.
+   */
+  #heldMaxTurn(agent: AgentProfile, decision: TurnDecision): 'question' | 'feedback' | null {
+    if (agent.role !== 'challenger' || isTutorRule(decision.decidedBy)) return null;
+    if (decision.moveType === 'quiz') return 'question';
+    if (decision.moveType === 'quiz_feedback' && this.#pendingQuiz !== null && !answersBlank(this.#pendingQuiz)) return 'feedback';
+    return null;
+  }
+
+  /**
+   * **Max's question, checked before it is sent** (6 Oct afternoon, items 3, 4 and 5).
+   *
+   *  - It is a structured call: the question, and privately a model answer with its one to three
+   *    essential points (`QUESTION_REPLY_SCHEMA`, `core/marking.parseQuestionReply`), stored with
+   *    the question by `#noteTurnForFlow`. A reply that is not the object is the question as plain
+   *    words with no model answer, and is marked as before.
+   *  - S6's "I'm testing the statement, not you" is taken out of every draft (item 5).
+   *  - A question that asks two things (`core/quizturn.asksTwoThings`: #34, #53) is written again
+   *    once; if it still does, only its first ask is kept, and its model answer is dropped because
+   *    its points were written for both halves (item 4).
+   *  - A blank is checked for giving itself away, as before (`#completeBlankTurn`).
+   *
+   * Held, not streamed, so nothing reaches the screen before the checks; it goes out as one delta.
+   */
+  async #completeQuestionTurn(
+    decision: TurnDecision,
+    first: LlmRequest,
+    again: (extra: string) => LlmRequest,
+    onDelta: ((text: string) => void) | undefined,
+    signal: AbortSignal | undefined,
+  ): ReturnType<LLMClient['complete']> {
+    const ask = async (request: LlmRequest): Promise<QuestionDraft> => {
+      request.jsonSchema = QUESTION_REPLY_SCHEMA;
+      const result = await this.#d.llm.complete(request, undefined, signal);
+      const parsed = parseQuestionReply(result.text);
+      return { result, text: dropTestingFrame(parsed.text), model: parsed.model };
+    };
+    let draft: QuestionDraft;
+    if (this.#blankTurn(decision)) {
+      draft = await this.#completeBlankTurn(first, again, ask);
+    } else {
+      draft = await ask(first);
+      if (asksTwoThings(draft.text)) {
+        this.#turnLog.event('warn', 'question.two_asks', { draft: 1 });
+        draft = await ask(again(twoAsksBlock()));
+        if (asksTwoThings(draft.text)) {
+          this.#turnLog.event('warn', 'question.two_asks', { draft: 2, cut: true });
+          draft = { ...draft, text: firstAsk(draft.text), model: null };
+        }
+      }
+    }
+    this.#pendingKey = draft.model;
+    this.#turnLog.event('info', 'question.model_answer', { points: draft.model?.points.length ?? 0 });
+    onDelta?.(draft.text);
+    return { ...draft.result, text: draft.text };
+  }
+
+  /**
+   * **Max's feedback, checked before it is sent** (6 Oct afternoon, items 1, 3, 4 and 13).
+   *
+   *  - On a question with a model answer it is a structured call that reports which essential
+   *    points the learner's answers state (`FEEDBACK_REPLY_SCHEMA`); `#settleTurnText` turns that
+   *    into the verdict (`core/marking.verdictFromPoints`).
+   *  - A turn that keeps the question open is checked for a page given as the hint, for its length
+   *    (`FEEDBACK_MAX_WORDS`, formulas not counted) and for a closing question that asks two
+   *    things (`core/quizturn.feedbackFaults`). On a fault it is written again once; what is still
+   *    wrong is then fixed in code (`fixFeedback`): the pointer out, one ask, cut to the cap.
+   *  - `Not marked.` and the third try's closing turn, which gives the answer, are not checked.
+   */
+  async #completeFeedbackTurn(
+    decision: TurnDecision,
+    first: LlmRequest,
+    again: (extra: string) => LlmRequest,
+    onDelta: ((text: string) => void) | undefined,
+    signal: AbortSignal | undefined,
+  ): ReturnType<LLMClient['complete']> {
+    const points = this.#pendingQuiz?.keyPoints?.length ?? 0;
+    const ask = async (request: LlmRequest): Promise<FeedbackDraft> => {
+      if (points > 0) request.jsonSchema = FEEDBACK_REPLY_SCHEMA;
+      const result = await this.#d.llm.complete(request, undefined, signal);
+      const parsed = points > 0 ? parseFeedbackReply(result.text, points) : { text: result.text.trim(), covered: null };
+      return { result, text: parsed.text, covered: parsed.covered };
+    };
+    let draft = await ask(first);
+    if (!feedbackUnmarked(draft.text) && !this.#closeTurn(decision)) {
+      // X3's `Chip:` line is the notes', not the chat's: it is neither counted nor cut, and
+      // `#settleTurnText` takes it out after this (`core/chipnote.ts`).
+      const faults = feedbackFaults(withoutChipLine(draft.text).body);
+      if (faults.length > 0) {
+        this.#turnLog.event('warn', 'feedback.redo', { draft: 1, faults });
+        const next = await ask(again(feedbackRedoBlock(faults)));
+        draft = { ...next, covered: next.covered ?? draft.covered };
+        const split = withoutChipLine(draft.text);
+        const left = feedbackFaults(split.body);
+        if (left.length > 0 && !feedbackUnmarked(draft.text)) {
+          this.#turnLog.event('warn', 'feedback.redo', { draft: 2, faults: left, fixed: true });
+          draft = { ...draft, text: [fixFeedback(split.body), ...split.chip].join('\n\n') };
+        }
+      }
+    }
+    this.#pendingMark = { covered: draft.covered };
+    onDelta?.(draft.text);
+    return { ...draft.result, text: draft.text };
   }
 
   /**
@@ -4290,32 +4440,30 @@ export class RoomActor {
   async #completeBlankTurn(
     first: LlmRequest,
     again: (extra: string) => LlmRequest,
-    onDelta: ((text: string) => void) | undefined,
-    signal: AbortSignal | undefined,
-  ): ReturnType<LLMClient['complete']> {
+    ask: (request: LlmRequest) => Promise<QuestionDraft>,
+  ): Promise<QuestionDraft> {
     const earlier = this.#messageBefore();
     const pageText = this.#d.store.materials.get(this.#room().material_id)?.extracted_text ?? null;
     const check = (text: string) => blankGiveaway({ turn: text, earlier: earlier === null ? [] : [earlier], pageText });
 
-    let result = await this.#d.llm.complete(first, undefined, signal);
-    const hit = check(result.text);
+    let draft = await ask(first);
+    const hit = check(draft.text);
     if (hit !== null) {
       this.#turnLog.event('warn', 'blank.given_away', { draft: 1, kind: hit.kind, where: hit.where });
-      result = await this.#d.llm.complete(again(blankGivenAwayBlock({ ...hit, open: false })), undefined, signal);
-      const second = check(result.text);
+      draft = await ask(again(blankGivenAwayBlock({ ...hit, open: false })));
+      const second = check(draft.text);
       if (second !== null) {
         this.#turnLog.event('warn', 'blank.given_away', { draft: 2, kind: second.kind, where: second.where });
         this.#blankWithdrawn = true;
         try {
-          result = await this.#d.llm.complete(again(blankGivenAwayBlock({ ...second, open: true })), undefined, signal);
+          draft = await ask(again(blankGivenAwayBlock({ ...second, open: true })));
         } finally {
           this.#blankWithdrawn = false;
         }
-        this.#turnLog.event('info', 'blank.withdrawn', { has_blank: hasBlank(result.text) });
+        this.#turnLog.event('info', 'blank.withdrawn', { has_blank: hasBlank(draft.text) });
       }
     }
-    onDelta?.(result.text);
-    return result;
+    return draft;
   }
 
   /** The last agent message in this turn's thread: what is on screen just above the turn. */
@@ -4737,9 +4885,15 @@ export class RoomActor {
           questionForm(this.#pitchInputs(decision.targetElementId).form, text) === 'cloze'
             ? { form: 'cloze' as const }
             : {}),
+          /**
+           * Item 3 (6 Oct afternoon): Max's hidden model answer and its points, stored with the
+           * question like a tutorial part's key. Main-only; `#docQuizView` never carries it.
+           */
+          ...(this.#pendingKey !== null ? { modelAnswer: this.#pendingKey.answer, keyPoints: [...this.#pendingKey.points] } : {}),
         },
         now,
       );
+      this.#pendingKey = null;
       if (this.#pendingQuiz.form === 'cloze') {
         this.#event('challenger', 'quiz.cloze_asked', {
           element_id: decision.targetElementId,
@@ -4782,10 +4936,16 @@ export class RoomActor {
        */
       const markedBlank = answersBlank(this.#pendingQuiz);
       const showMe = this.#showMeTurn(decision);
+      // 6 Oct afternoon (item 2): the third try's turn, which gave the answer unless Well done.
+      const closes = this.#closeTurn(decision);
       const cueCorrected = cueMistakeToCorrect(this.#pendingQuiz) !== null;
+      // Item 3: the points this turn found stated, taken together with the earlier tries.
+      const covered = this.#pendingMark?.covered ?? null;
+      this.#pendingMark = null;
       this.#pendingQuiz = markFeedbackGiven(this.#pendingQuiz, feedbackVerdict(text), feedbackVerdict3(text), {
         showMe,
         cueCorrected,
+        pointsCovered: covered === null ? null : coveredUnion(this.#pendingQuiz.pointsCovered, covered),
       });
       /**
        * **One outcome row per verdict** (#48, brief §6). The progress bar is a pure function of
@@ -4803,6 +4963,26 @@ export class RoomActor {
         // A blank follow-up's term fills nothing, as a cloze question's does (§4.5).
         ...(markedBlank ? { form: 'cloze' as const } : {}),
       });
+      /**
+       * **Three tries, then the answer** (6 Oct afternoon, item 2). The third answer that was not
+       * *Well done* got the answer in this very turn, so the question closes here, as a release:
+       * the verdict row above keeps what the answers earned, the release row fills nothing, and the
+       * next question on the objective is pitched lower, as after a give-up. Filed as `closure`
+       * (the app closed it, not the learner), with `cap` saying why.
+       */
+      if (closes && quizOpen(this.#pendingQuiz)) {
+        this.#pendingQuiz = markAnswerShown(this.#pendingQuiz, 'closure', { afterTries: true });
+        this.#event('challenger', 'quiz.answer_released', {
+          element_id: decision.targetElementId,
+          attempts: attemptsOf(this.#pendingQuiz),
+          released_by: 'closure',
+          cap: 'tries',
+          anchor_id: this.#anchorOfQuiz(this.#pendingQuiz) ?? null,
+          ledger_touched: false,
+          fills_progress: false,
+        });
+        this.#recordOutcome({ kind: 'released', verdict: null, releasedBy: 'closure', messageId: null, source: 'chat' });
+      }
       this.#emitThread(this.#anchorOfQuiz(this.#pendingQuiz));
     }
     /**
@@ -5262,7 +5442,8 @@ export class RoomActor {
     let change: 'none' | 'added' | 'corrected' = 'none';
     // `Not marked.` is the one non-verdict exit (#49); it marks nothing, so there is nothing to settle.
     if ((move === 'quiz_feedback' && !feedbackUnmarked(text)) || move === 'own_question_feedback') {
-      ({ text: out, verdict, change } = settleVerdict(text));
+      // Item 3 (6 Oct afternoon): on a question with a model answer, the points decide the verdict.
+      ({ text: out, verdict, change } = settleVerdict(text, move === 'quiz_feedback' ? this.#pointsVerdict(text) : null));
     } else if (move === 'tutor_feedback' && tutor?.verdict) {
       ({ text: out, verdict, change } = settleVerdict(text, tutor.verdict.verdict));
     }
@@ -5272,9 +5453,19 @@ export class RoomActor {
      * question, a sentence that passes is kept for the resolution to store on the Q block.
      */
     if (move === 'quiz_feedback' && tutor === null) out = this.#takeChipNote(out, verdict);
-    const closing = tutor === null && (verdict === 'complete' || move === 'quiz_answer');
+    // Item 2: the third try's feedback closes the question with the answer, so it asks nothing either.
+    const closesOnTries = tutor === null && move === 'quiz_feedback' && verdict !== null && this.#closeTurn(decision);
+    const closing = tutor === null && (verdict === 'complete' || move === 'quiz_answer' || closesOnTries);
     const before = out;
     if (closing) out = dropQuestionTail(out);
+    /**
+     * Item 17: a release, or the third try's closing turn, never tells the learner they had the
+     * core idea of an answer that was not marked *Well done*, unless every essential point of the
+     * model answer was in their answers.
+     */
+    if (tutor === null && (move === 'quiz_answer' || (closesOnTries && verdict !== 'complete')) && !pointsAllCovered(this.#pendingQuiz)) {
+      out = dropCreditOverclaim(out);
+    }
     if (change !== 'none' || out !== before) {
       // What was done, never the words.
       this.#event('challenger', 'quiz.text_settled', {
@@ -5681,6 +5872,9 @@ export class RoomActor {
             : null,
         // The quiz's own copy, else the message it was asked in (a quiz restored from an older sitting).
         question: turn === 'feedback' ? this.#pendingQuiz?.questionText?.trim() || this.#openQuestionText() || null : null,
+        // 6 Oct afternoon (item 3): the hidden model answer, to the marking and answer turns only.
+        model: turn === 'feedback' || turn === 'answer' ? this.#modelOf(this.#pendingQuiz) : null,
+        covered: this.#pendingQuiz?.pointsCovered ?? null,
       });
       /**
        * **The Tester gets the page too, since #47 §3.** He is asked to ground every point as
@@ -5790,6 +5984,9 @@ export class RoomActor {
             attempts: attemptsOf(quiz),
             cueClaim: cueMistakeToCorrect(quiz),
             roster: this.#d.roster,
+            // 6 Oct afternoon (items 3 and 17): the answer is the model answer, credit only the points stated.
+            model: this.#modelOf(quiz),
+            covered: quiz?.pointsCovered ?? null,
           }),
         );
         break;
@@ -5845,6 +6042,8 @@ export class RoomActor {
           together: plan.together,
           guess: plan.guess,
           showMe: plan.next === 'show_me',
+          // 6 Oct afternoon (item 2): the third try's turn gives the answer unless Well done.
+          close: plan.next === 'close',
         });
         if (note) blocks.push(note);
         // Decision 12 (6 Oct afternoon, #67): on a Well done, one sentence for the chip, marked as
@@ -5956,6 +6155,43 @@ export class RoomActor {
     const quiz = this.#pendingQuiz;
     if (decision.moveType !== 'quiz_feedback' || quiz === null || answersBlank(quiz)) return false;
     return followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText }).next === 'show_me';
+  }
+
+  /**
+   * **Is this feedback turn the third try's, which closes the question?** (6 Oct afternoon, item 2;
+   * `core/pitch.followUpPlan`'s `close`.) Unless it is *Well done*, it gives the answer, credits
+   * what was right and asks nothing; `#noteTurnForFlow` then closes the question as a release.
+   */
+  #closeTurn(decision: TurnDecision): boolean {
+    const quiz = this.#pendingQuiz;
+    if (decision.moveType !== 'quiz_feedback' || quiz === null || answersBlank(quiz) || !quizOpen(quiz)) return false;
+    return followUpPlan({ attempts: attemptsOf(quiz), answer: quiz.answerText }).next === 'close';
+  }
+
+  /** The hidden model answer stored with the open question, when it has one (item 3). */
+  #modelOf(quiz: PendingQuiz | null): ModelAnswer | null {
+    const points = quiz?.keyPoints ?? [];
+    const answer = quiz?.modelAnswer?.trim() ?? '';
+    return points.length > 0 && answer.length > 0 ? { answer, points } : null;
+  }
+
+  /**
+   * **The verdict the points earn** (item 3), or null when there are none to mark against. The
+   * feedback reply reported which points the answers state; taken together with the earlier tries
+   * (`coveredUnion`), code decides (`verdictFromPoints`): every point is *Well done* in any wording.
+   */
+  #pointsVerdict(text: string): TurnVerdict | null {
+    const quiz = this.#pendingQuiz;
+    const points = quiz?.keyPoints?.length ?? 0;
+    const covered = this.#pendingMark?.covered ?? null;
+    if (quiz === null || points === 0 || covered === null) return null;
+    const stated = verdictsIn(text).length > 0 ? settleVerdict(text).verdict : null;
+    const decided = verdictFromPoints({ pointCount: points, covered: coveredUnion(quiz.pointsCovered, covered), stated });
+    if (decided !== stated) {
+      // What changed, never the words.
+      this.#event('challenger', 'quiz.verdict_from_points', { stated, decided, points, covered: coveredUnion(quiz.pointsCovered, covered).length });
+    }
+    return decided;
   }
 
   /**
@@ -6634,6 +6870,31 @@ export function parseCue(raw: string): { text: string; hasMistake: boolean; clai
   } catch {
     return { text: raw.trim(), hasMistake: false, claim: null };
   }
+}
+
+/** The `Chip:` line `core/chipnote.ts` reads (decision 12), matched the same way. */
+const CHIP_LINE_START = /^[\s>*_]*chip[\s*_]*:/i;
+
+/** A feedback draft split into the chat's text and its `Chip:` lines, which the cap never touches. */
+function withoutChipLine(text: string): { body: string; chip: string[] } {
+  const lines = text.split('\n');
+  const chip = lines.filter((l) => CHIP_LINE_START.test(l)).map((l) => l.trim());
+  if (chip.length === 0) return { body: text, chip };
+  return { body: lines.filter((l) => !CHIP_LINE_START.test(l)).join('\n').trim(), chip };
+}
+
+/** One draft of Max's question: the call's result, the words to send, and the hidden model answer. */
+interface QuestionDraft {
+  result: Awaited<ReturnType<LLMClient['complete']>>;
+  text: string;
+  model: ModelAnswer | null;
+}
+
+/** One draft of Max's feedback: the words to send, and the points it found stated (null: none reported). */
+interface FeedbackDraft {
+  result: Awaited<ReturnType<LLMClient['complete']>>;
+  text: string;
+  covered: number[] | null;
 }
 
 function quizTurnFor(decision: TurnDecision): QuizTurn {

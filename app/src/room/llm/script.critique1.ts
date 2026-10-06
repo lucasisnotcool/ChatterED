@@ -321,9 +321,10 @@ export const CRITIQUE1_QUESTIONS: ScriptedBeat[] = [
     ),
     segment: 'p3.lower',
     text:
+      // 6 Oct afternoon (item 4): one ask. It asked who the whisper goes to as well until then.
       'You asked for it, so here it is — one question on the row you have just split out. In the bottom row of ' +
-      'page 3 the catch comes back through the side channel instead of interrupting the work: who is the whisper ' +
-      'going to there, and which of page 4’s three properties is doing the work in that example?',
+      'page 3 the catch comes back through the side channel instead of interrupting the work: which of page 4’s ' +
+      'three properties is doing the work in that example?',
   },
   {
     /**
@@ -343,8 +344,9 @@ export const CRITIQUE1_QUESTIONS: ScriptedBeat[] = [
     ),
     segment: 'p5',
     text:
+      // 6 Oct afternoon (item 4): one ask. It asked "and what makes it a bug" as well until then.
       'Page 5, then — and this one you have shown me nothing on yet. Three limit tests were run and one of them ' +
-      'came back wrong: which one is the bug, and what makes it a bug rather than a limit?',
+      'came back wrong: which one is a bug rather than a limit?',
   },
   {
     /**
@@ -423,12 +425,11 @@ export const CRITIQUE1_QUIZ_TURNS: ScriptedBeat[] = [
     cue: 'feedback:1',
     decision: tester('quiz_feedback', 'C2', 'Nominal: `rule:quiz_feedback` fired — feedback after an attempt is mandatory.'),
     text:
-      'Partly there. The partner is right: the whisper goes to the agent, and p. 3: "Oops, this will expose ' +
-      'data.." is the catch coming back through it, not through the main thread. The interruption cost is real ' +
-      'too — p. 3: "*Coding...*" runs straight through your question. What is missing is the property: politeness ' +
-      'is one of page 4’s *benefits*, not one of its three properties. The one your example needs is p. 4: ' +
-      '"Polychronic — hold conversation in parallel". Whether ephemerality is also at work, the deck does not ' +
-      'settle. So, in your own words: why polychronic rather than polite?',
+      // 6 Oct afternoon (items 1 and 13): only what is new, the missing property stated, under 60 words.
+      'Partly there. The whisper goes to the agent, and p. 3: "Oops, this will expose data.." comes back ' +
+      'through it. Politeness is one of page 4’s *benefits*, not its properties. The one your example needs ' +
+      'is p. 4: "Polychronic — hold conversation in parallel"; whether ephemerality is too, the deck does not ' +
+      'settle. In your words: why polychronic rather than polite?',
     ledger: {
       elements: [
         { id: 'C2', level: 2, confidence: 0.86, evidence: 'last_student', misconceptions_present: ['M2a'] },
