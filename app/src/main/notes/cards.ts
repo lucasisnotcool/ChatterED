@@ -168,10 +168,30 @@ export const CARDS_SYSTEM = [
   'define its idea. Never a page you were not shown.',
   '',
   'LENGTH. You are given the word budget for the whole notes and for the visible layer, and how',
-  'many cards to expect. They are measured in code; maths and figures do not count. Spend the',
-  'words where the slides do: an algorithm or a central equation gets a long card (up to 400',
-  'words), a term a short one (about 40). Be dense: no "it is important to note", no narrating the',
-  'deck ("this slide shows"), no exam framing, no padding, nothing said twice.',
+  'many cards to expect. They are measured in code; maths and figures do not count. The lower',
+  'bound matters as much as the upper one: notes under it are too thin to replace the slides, and',
+  'the student ends up asking what every line means. Spend the words where the slides do. A',
+  'central equation or an algorithm gets a long card (250 to 400 words: the intuition, the formula',
+  'and every symbol, the steps, the slide\'s worked example with its numbers, the pitfall); a main',
+  'concept 100 to 200; only a bare term about 40. Most cards carry an intuition, an example and a',
+  'pitfall as well as the slide\'s own content. Dense, not short: no "it is important to note", no',
+  'narrating the deck ("this slide shows"), no exam framing, no padding, nothing said twice.',
+  '',
+  'ONE CARD AT THE RIGHT DENSITY (a different lecture; the shape, not the content, is the point):',
+  '{"term": "Admissible heuristic", "core": "**Admissible heuristic**: an estimate $h(n)$ that never',
+  ' overestimates the true cost from $n$ to the nearest goal.", "pages": [21], "depth": [',
+  ' {"role": "intuition", "text": "An optimist: it may say the goal is closer than it is, never',
+  '  farther, so A* never gives up on a path that is actually best.", "pages": [21], "added": true},',
+  ' {"role": "equation", "tex": "0 \\\\le h(n) \\\\le h^*(n) \\\\quad \\\\text{for every node } n", "where": [',
+  '  "$h(n)$: the heuristic\'s estimate at node $n$", "$h^*(n)$: the true cheapest cost from $n$ to a goal"],',
+  '  "pages": [21], "added": false},',
+  ' {"role": "example", "text": "8-puzzle: Manhattan distance sums each tile\'s grid distance to its',
+  '  place. Each move shifts one tile by one square, so at least that many moves remain: for the',
+  '  slide\'s start state $h = 18$ while the optimal solution takes 26 moves.", "pages": [23], "added": false},',
+  ' {"role": "result", "text": "With an admissible $h$, A* tree search returns an optimal path.",',
+  '  "pages": [22], "added": false},',
+  ' {"role": "pitfall", "text": "Admissible is not consistent: graph search that discards repeated',
+  '  states needs consistency, $h(n) \\\\le c(n, a, n\') + h(n\')$, to stay optimal.", "pages": [24], "added": true}]}',
   '',
   'MARKUP: **bold**, *italic*, `code` and maths. Maths is typeset: inline $...$ TeX in any text,',
   '`tex` (no delimiters) for an equation item. Write formulas as TeX, never as h_FF-style text.',
@@ -180,9 +200,10 @@ export const CARDS_SYSTEM = [
   'sentences with `pages`), four to six `objectives` (`title` at most twelve words, a skill or a',
   'claim; a one-sentence `statement`; two to four checkable `criteria`; up to three `quizSeeds`,',
   'never yes/no, never containing their own answer; `pages`), `next` (optional, null otherwise:',
-  'what comes next, homework or readings, as `ideas` of one line each), `greeting` (one line in',
-  'Ellie\'s voice, a peer, plain, no exclamation marks, no "Welcome to") and exactly three',
-  '`starterQuestions` (each under fifteen words, plain text, no markup and no $tex$).',
+  'what comes next, homework or readings, as `ideas` of one line each), `greeting` (the one line',
+  'Ellie says TO the student when they open the notes: a peer who has read the same slides, plain,',
+  'no exclamation marks, no "Welcome to") and exactly three `starterQuestions` (questions the',
+  'student might ask first, each under fifteen words, plain text, no markup and no $tex$).',
   '',
   'Return the JSON object and nothing else.',
 ].join('\n');
@@ -235,7 +256,9 @@ export function cardsMessage(input: CardsPromptInput): string {
       ` **The whole notes are ${b.notes.min} to ${b.notes.max} words**, of which the visible layer` +
       ` (lede, objective titles, headings, takeaways and core lines) is ${b.core.min} to ${b.core.max}.` +
       ` Expect about ${b.cards.target} cards (${b.cards.min} to ${b.cards.max}, one per idea), each 40 to 400 words` +
-      ' by weight. Four to six objectives, sections in the deck\'s order, exactly three starter questions.',
+      ` by weight, about ${Math.round((b.notes.min + b.notes.max) / 2 / b.cards.target)} on average: below ${b.notes.min}` +
+      ' words in all the notes are too thin to replace the slides.' +
+      ' Four to six objectives, sections in the deck\'s order, exactly three starter questions.',
   );
   return parts.join('\n\n');
 }
