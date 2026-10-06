@@ -121,7 +121,9 @@ export function outlineText(outline: readonly OutlineEntry[]): string {
       const where = entry.pages.length > 0 ? ` [p. ${entry.pages.join(', ')}]` : '';
       const path = entry.path.length > 0 ? `${entry.path.join(' › ')} › ` : '';
       const learner = entry.learnerText ? ' (the learner wrote in this block)' : '';
-      return `- ${entry.blockId} — ${entry.kind}: ${path}${entry.text}${where}${learner}`;
+      // Decision 11 (6 Oct afternoon): Ellie sees which lines are her own earlier notes.
+      const ellie = entry.by === 'ellie' ? ' (Ellie’s note)' : '';
+      return `- ${entry.blockId} — ${entry.kind}: ${path}${entry.text}${where}${learner}${ellie}`;
     })
     .join('\n');
 }
@@ -267,6 +269,11 @@ export const BLOCK_NOTE_SCHEMA: Record<string, unknown> = {
       type: ['string', 'null'],
       description: 'Only when no block was given: the block id from the outline the note belongs under, or null.',
     },
+    update_note: {
+      type: ['string', 'null'],
+      description:
+        'Only outside a concept card: the first block id of one of your earlier notes under the block, to replace it with this note; null to add this note under them.',
+    },
     why: { type: 'string', description: 'One short sentence, for the log and the Remove · Keep tooltip.' },
   },
 };
@@ -356,6 +363,75 @@ function defaultRole(kind: BlockNoteKind, card: NoteCard): ConceptRole {
   return kind === 'example' ? 'example' : kind === 'explain' ? 'intuition' : 'note';
 }
 
+/**
+ * **Ellie's earlier notes on a block** (2026-10-06 afternoon, decision 11). On the Lecture-sdm run
+ * three answers in a row (#28, #30, #32) each added a paragraph under the same lines of
+ * "Reinforcement learning set-up", the second saying much of what the first had. Outside a card a
+ * note went in under the block every time; now Ellie is shown her notes already there and chooses
+ * to update one or add a new one, and this is what code accepts as "her earlier note on that
+ * block".
+ *
+ * The run of blocks straight after the anchor, at its heading path and outside any card, each
+ * wholly Ellie's (`OutlineEntry.by`), stopping at the first block that is not: a heading, the
+ * learner's, a question, Max's or the ingest's. Blocks of one edit are one note. A block with no
+ * authored text (a display formula) is passed over without ending the run, and is **never** part
+ * of a note: nothing marks who wrote a formula, so an update never replaces or removes one.
+ */
+export interface EarlierNote {
+  /** The note's first block: the id Ellie names to update it. */
+  id: string;
+  /** Its blocks with text, all hers: what an update replaces (the first) and removes (the rest). */
+  blockIds: string[];
+  text: string;
+}
+
+export function earlierNotes(outline: readonly OutlineEntry[], anchorBlockId: string | null): EarlierNote[] {
+  if (anchorBlockId === null) return [];
+  const at = outline.findIndex((e) => e.blockId === anchorBlockId);
+  if (at < 0 || outline[at]!.cardId) return [];
+  const path = outline[at]!.path.join('\u0000');
+  const notes: (EarlierNote & { editId: string | null })[] = [];
+  for (let i = at + 1; i < outline.length; i += 1) {
+    const e = outline[i]!;
+    if (e.cardId || e.kind === 'heading' || e.learnerText || e.questionId !== null || e.path.join('\u0000') !== path) break;
+    if (e.by === undefined && TEXTLESS_KINDS.has(e.kind)) continue;
+    if (e.by !== 'ellie') break;
+    const last = notes.at(-1);
+    if (last && last.editId !== null && last.editId === (e.editId ?? null)) {
+      last.blockIds.push(e.blockId);
+      last.text = `${last.text} ${e.text}`;
+      continue;
+    }
+    notes.push({ id: e.blockId, blockIds: [e.blockId], text: e.text, editId: e.editId ?? null });
+  }
+  return notes.map(({ id, blockIds, text }) => ({ id, blockIds, text }));
+}
+
+/** Blocks with no authored text (a display formula): passed over, never part of a note. */
+const TEXTLESS_KINDS = new Set(['math_block']);
+
+/**
+ * **Which note the model named, checked** (decision 11): the id must be the first block (or any
+ * block) of one of the earlier notes under the anchor. Anything else is not an update.
+ */
+export function noteToUpdate(notes: readonly EarlierNote[], named: unknown): EarlierNote | null {
+  if (typeof named !== 'string' || named.trim().length === 0) return null;
+  const id = named.trim();
+  return notes.find((n) => n.id === id || n.blockIds.includes(id)) ?? null;
+}
+
+/** The anchor a note in the outline sits under: the nearest block before it that is not one of Ellie's notes. */
+export function anchorOfNote(outline: readonly OutlineEntry[], blockId: string): string | null {
+  const at = outline.findIndex((e) => e.blockId === blockId);
+  if (at < 0 || outline[at]!.by !== 'ellie') return null;
+  for (let i = at - 1; i >= 0; i -= 1) {
+    const e = outline[i]!;
+    if (e.by === 'ellie' || TEXTLESS_KINDS.has(e.kind)) continue;
+    return e.blockId;
+  }
+  return null;
+}
+
 export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; words: number; max: number }): string {
   const block = input.blockId === null ? null : (input.outline.find((e) => e.blockId === input.blockId) ?? null);
   const card = noteCard(input.outline, input.blockId);
@@ -371,6 +447,20 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
       '"""',
       block?.text ?? '(not in the outline)',
       '"""',
+    );
+  }
+  const mine = card ? [] : earlierNotes(input.outline, input.blockId);
+  if (mine.length > 0) {
+    lines.push(
+      '',
+      'YOUR EARLIER NOTES UNDER THIS BLOCK (you wrote these, straight under it):',
+      ...mine.map((n) => `- ${n.id}: ${n.text}`),
+      '',
+      'Decide whether this note **updates** one of them or is **new**. If it corrects, sharpens or',
+      'extends one, set `update_note` to that note’s id and write the whole note as it should now',
+      'read, keeping what still holds of the old one: it replaces that note. If it is about something',
+      'none of them covers, set `update_note` to null and it is added under them. Either way, never',
+      'repeat what an earlier note already says.',
     );
   }
   if (card) {
@@ -448,6 +538,9 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
       '`{"blocks": [], "line": null, "anchor_block_id": null, "why": "…"}`: a note is optional here, and',
       'one filed under the wrong block is worse than none. A block marked "(the learner wrote in this',
       'block)" may be chosen; the note goes after it and never changes it.',
+      'Lines marked "(Ellie’s note)" are your own earlier notes. If this note updates one of them, put',
+      'that note’s first block id in `update_note` (and the block it sits under in `anchor_block_id`):',
+      'it replaces that note. Otherwise `update_note` is null.',
     );
   }
   if (retry) {
@@ -632,7 +725,18 @@ function noteText(blocks: readonly DocBlockDraft[]): string {
 export async function planBlockNote(
   deps: DocEditDeps,
   input: BlockNoteInput,
-): Promise<{ batch: AgentDocOpBatch | null; outcome: BlockNoteOutcome; words: number; retried: boolean; noteKind: NoteKind; card: boolean }> {
+): Promise<{
+  batch: AgentDocOpBatch | null;
+  outcome: BlockNoteOutcome;
+  words: number;
+  retried: boolean;
+  noteKind: NoteKind;
+  card: boolean;
+  /** Decision 11: into a card, added under the block, or replacing one of Ellie's earlier notes. */
+  placement?: 'card' | 'added' | 'updated';
+  /** Decision 11: the model named a note to update that is not one of hers under this block. */
+  updateRefused?: boolean;
+}> {
   const actionOnBlock = input.kind !== 'answer' && input.blockId !== null;
   const ask = async (retry?: { line: string; words: number; max: number }) => {
     const request: LlmRequest = {
@@ -680,8 +784,29 @@ export async function planBlockNote(
   // The anchor: the block that was named, or the planner's pick from the outline for a doc-chat
   // question that named none. A pick that is not in the outline is not trusted.
   const picked = typeof parsed?.anchor_block_id === 'string' ? parsed.anchor_block_id : null;
-  const anchorBlockId =
+  let anchorBlockId =
     input.blockId ?? underHeading(deps, picked !== null && input.outline.some((e) => e.blockId === picked) ? picked : null, input.outline);
+
+  /**
+   * **Update or add, Ellie's choice, checked** (decision 11). The note she names must be one of
+   * her own earlier notes straight under this block (`earlierNotes`); on a doc-chat question with
+   * no block, one of hers anywhere in the outline, and then the block it sits under is the
+   * anchor. Anything else is refused, and the note is added as before.
+   */
+  const named = typeof parsed?.update_note === 'string' ? parsed.update_note.trim() : '';
+  let update: EarlierNote | null = null;
+  if (named.length > 0) {
+    update = noteToUpdate(earlierNotes(input.outline, anchorBlockId), named);
+    if (update === null && input.blockId === null) {
+      const own = anchorOfNote(input.outline, named);
+      const found = own === null ? null : noteToUpdate(earlierNotes(input.outline, own), named);
+      if (found !== null) {
+        update = found;
+        anchorBlockId = own;
+      }
+    }
+  }
+  const updateRefused = named.length > 0 && update === null;
 
   if (blocks.length === 0) {
     if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried, noteKind, card: false };
@@ -732,13 +857,18 @@ export async function planBlockNote(
         blocks: drafts,
         prov,
       }
-    : { op: 'insert_after', anchorBlockId, blocks: drafts };
+    : update !== null
+      ? { op: 'replace_block', blockId: update.blockIds[0]!, blocks: drafts }
+      : { op: 'insert_after', anchorBlockId, blocks: drafts };
+  // An update replaces the note's first block and removes the rest of it; never a formula (see `earlierNotes`).
+  const rest: AgentDocOp[] =
+    card === null && update !== null ? update.blockIds.slice(1).map((blockId) => ({ op: 'remove_block', blockId })) : [];
   return {
     batch: {
       editId: deps.newId('edit'),
       author: 'ellie',
       cause: 'block_action',
-      ops: [op],
+      ops: [op, ...rest],
       focusBlockId: anchorBlockId,
       why,
     },
@@ -747,6 +877,8 @@ export async function planBlockNote(
     retried,
     noteKind,
     card: card !== null,
+    placement: card !== null ? 'card' : update !== null ? 'updated' : 'added',
+    updateRefused,
   };
 }
 

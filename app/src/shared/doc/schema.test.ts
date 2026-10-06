@@ -26,6 +26,7 @@ import {
   learnerSpans,
   newBlockId,
   notesSchema,
+  soleAgentAuthor,
   tableGrid,
   tableText,
 } from './schema.js';
@@ -226,6 +227,36 @@ describe('docOutline', () => {
     expect(outline).toHaveLength(1);
     expect(outline[0]!.kind).toBe('bullet_list');
     expect(outline[0]!.text).toBe('First. Second.');
+  });
+
+  /** Decision 11 (6 Oct afternoon): Ellie's planner sees her own earlier notes. */
+  it('marks a block that is wholly one agent’s, under one edit, and no other', () => {
+    const outline = docOutline(
+      docOf(
+        para('b_ingest', 'The slide says this.'),
+        para('b_ellie', 'Ellie’s note.', 'ellie', 'edit_1'),
+        mixed('b_both', [
+          { text: 'Ellie began, ', by: 'ellie' },
+          { text: 'and the learner went on.', by: 'user' },
+        ]),
+        para('b_max', 'Max wrote this.', 'max', 'edit_2'),
+      ),
+    );
+    const byId = new Map(outline.map((e) => [e.blockId, e]));
+    expect(byId.get('b_ellie')).toMatchObject({ by: 'ellie', editId: 'edit_1' });
+    expect(byId.get('b_max')).toMatchObject({ by: 'max', editId: 'edit_2' });
+    expect(byId.get('b_ingest')!.by).toBeUndefined();
+    expect(byId.get('b_both')!.by).toBeUndefined();
+    expect(soleAgentAuthor(para('b_x', 'One edit.', 'ellie', 'e_a'))).toEqual({ by: 'ellie', editId: 'e_a' });
+    expect(
+      soleAgentAuthor(
+        mixed('b_z', [
+          { text: 'One edit, ', by: 'ellie', editId: 'e_a' },
+          { text: 'then another.', by: 'ellie', editId: 'e_b' },
+        ]),
+      ),
+    ).toBeNull();
+    expect(soleAgentAuthor(para('b_y', ''))).toBeNull();
   });
 });
 

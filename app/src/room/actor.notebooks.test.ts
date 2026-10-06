@@ -258,6 +258,10 @@ describe('blockAction: Explain and Example', () => {
     // notebooks.md §4.2, amended 2026-10-02: the note is named for what it is.
     expect(editNoteLine('bullet_list', 'The side channel', 'background')).toBe('Added a background note under that bullet in “The side channel”.');
     expect(editNoteLine('paragraph', null, 'detail')).toBe('Added the details under that paragraph.');
+    // Decision 11 (6 Oct afternoon): an answer that revised her earlier note says so.
+    expect(editNoteLine('paragraph', 'Reinforcement learning set-up', 'point', true)).toBe(
+      'Updated my note under that paragraph in “Reinforcement learning set-up”.',
+    );
     // §11.2 (amended 2026-10-06): a note that went into a concept card names the card and the item.
     expect(cardNoteLine('Policy iteration', 'example', 'detail')).toBe('Added the details to the “Policy iteration” card, under Example.');
     expect(cardNoteLine(null, 'note')).toBe('Added a note to that card.');

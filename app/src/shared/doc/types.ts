@@ -275,6 +275,13 @@ export interface OutlineEntry {
   cardId?: string;
   /** On a card's depth item, and on the blocks inside one: which item it is. */
   role?: ConceptRole;
+  /**
+   * **Wholly one agent's** (2026-10-06 afternoon, decision 11): set when every text span in the
+   * block is that agent's, under one edit (`schema.soleAgentAuthor`). Absent otherwise.
+   */
+  by?: AgentAuthor;
+  /** The agent edit the block's text came from, with `by`. */
+  editId?: string;
 }
 
 // ── agent edits ─────────────────────────────────────────────────────────────────────────────

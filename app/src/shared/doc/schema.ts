@@ -1496,6 +1496,31 @@ function authorOf(marks: readonly Mark[]): { by: DocAuthor; editId: string | nul
   return null;
 }
 
+/**
+ * **Whose block this is, when it is wholly one agent's** (2026-10-06 afternoon, decision 11): every
+ * text span in it authored by the same agent, under one edit. Null when there is no text, any of it
+ * is the learner's or the ingest's, or two authors or two edits share it. It is how Ellie's planner
+ * sees her own earlier notes under a paragraph (`room/docedit.ts` `earlierNotes`).
+ */
+export function soleAgentAuthor(node: Node): { by: 'ellie' | 'max'; editId: string | null } | null {
+  let found: { by: DocAuthor; editId: string | null } | null = null;
+  let mixed = false;
+  node.descendants((child) => {
+    if (mixed) return false;
+    if (!child.isText) return true;
+    const author = authorOf(child.marks);
+    if (author === null || (found !== null && (author.by !== found.by || author.editId !== found.editId))) {
+      mixed = true;
+      return false;
+    }
+    found = author;
+    return true;
+  });
+  const sole = found as { by: DocAuthor; editId: string | null } | null;
+  if (mixed || sole === null || (sole.by !== 'ellie' && sole.by !== 'max')) return null;
+  return { by: sole.by, editId: sole.editId };
+}
+
 /** True when any text inside the node was typed by the learner. The guard's basic question. */
 export function hasLearnerText(node: Node): boolean {
   let learner = false;
@@ -1703,6 +1728,12 @@ function entryFor(node: Node, path: string[], card?: { cardId: string; role: Con
     learnerText: hasLearnerText(node),
     questionId: node.type.name === 'q_block' ? ((node.attrs.questionId as string) || null) : null,
   };
+  // Only on a block that is wholly one agent's, so every other outline is exactly what it was.
+  const agent = node.type.name === 'q_block' ? null : soleAgentAuthor(node);
+  if (agent) {
+    entry.by = agent.by;
+    if (agent.editId) entry.editId = agent.editId;
+  }
   // Only inside a card, so an outline of a document with no cards is exactly what it was.
   if (card && card.cardId) {
     entry.cardId = card.cardId;

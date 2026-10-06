@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AgentDocOpBatch, OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, noteAnchorOf, notesFromTurn, outlineText, pagesCited, planBlockNote, planSuggestionEdit, provenanceFor, trimToWords, type DocEditDeps } from './docedit.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, anchorOfNote, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, earlierNotes, noteAnchorOf, noteToUpdate, notesFromTurn, outlineText, pagesCited, planBlockNote, planSuggestionEdit, provenanceFor, trimToWords, type DocEditDeps } from './docedit.js';
 import { generateBlockPrompt, planGeneratedBlock } from './generate.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
@@ -398,6 +398,89 @@ describe('planBlockNote (notebooks §4.2)', () => {
     const outside = await planBlockNote(seq([{ line: 'A line.', why: 'x' }]), { kind: 'explain', answer: 'a', blockId: 'b_h', outline: CARD_OUTLINE });
     expect(outside).toMatchObject({ card: false });
     expect(outside.batch!.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_h' });
+  });
+});
+
+/**
+ * **Decision 11 (6 Oct afternoon): update or add, Ellie's choice, checked in code.** The outline is
+ * the Lecture-sdm run's "Reinforcement learning set-up" after #28 and #30: two notes of hers
+ * stacked under one paragraph, the second partly repeating the first.
+ */
+describe('Ellie’s earlier notes (decision 11)', () => {
+  const RL: OutlineEntry[] = [
+    { blockId: 'b_h', kind: 'heading', path: [], text: 'Reinforcement learning set-up', pages: [18], learnerText: false, questionId: null },
+    { blockId: 'b_e8', kind: 'paragraph', path: ['Reinforcement learning set-up'], text: 'The agent acts in an unknown MDP.', pages: [18], learnerText: false, questionId: null },
+    { blockId: 'b_n1', kind: 'paragraph', path: ['Reinforcement learning set-up'], text: 'RL does not drop full observability; what is unknown is the model.', pages: [18], learnerText: false, questionId: null, by: 'ellie', editId: 'edit_1' },
+    { blockId: 'b_n1m', kind: 'math_block', path: ['Reinforcement learning set-up'], text: "T(s,a,s') = P(s'|s,a)", pages: [18], learnerText: false, questionId: null },
+    { blockId: 'b_n1b', kind: 'paragraph', path: ['Reinforcement learning set-up'], text: 'A known MDP is solved offline.', pages: [18], learnerText: false, questionId: null, by: 'ellie', editId: 'edit_1' },
+    { blockId: 'b_n2', kind: 'paragraph', path: ['Reinforcement learning set-up'], text: 'RL applies when the agent does not know the model.', pages: [19], learnerText: false, questionId: null, by: 'ellie', editId: 'edit_2' },
+    { blockId: 'b_next', kind: 'paragraph', path: ['Reinforcement learning set-up'], text: 'Passive and active agents differ.', pages: [22], learnerText: false, questionId: null },
+  ];
+  function seq(reply: Record<string, unknown>) {
+    const d = deps();
+    d.llm = {
+      kind: 'scripted',
+      async complete(request) {
+        d.requests.push(request);
+        return { text: JSON.stringify(reply), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
+      },
+    };
+    return d;
+  }
+  const NOTE = 'RL is for an unknown model: both $P(s\'|s,a)$ and $R$ are learned from acting.';
+
+  it('finds her notes straight under the block, one per edit, never a formula and never past another block', () => {
+    expect(earlierNotes(RL, 'b_e8')).toEqual([
+      { id: 'b_n1', blockIds: ['b_n1', 'b_n1b'], text: 'RL does not drop full observability; what is unknown is the model. A known MDP is solved offline.' },
+      { id: 'b_n2', blockIds: ['b_n2'], text: 'RL applies when the agent does not know the model.' },
+    ]);
+    expect(earlierNotes(RL, 'b_next')).toEqual([]);
+    expect(earlierNotes(RL, null)).toEqual([]);
+    // A learner's line between ends the run: what is after it is not "under this block".
+    const mine = RL.map((e) => (e.blockId === 'b_n1' ? { ...e, by: undefined, learnerText: true } : e));
+    expect(earlierNotes(mine, 'b_e8')).toEqual([]);
+    expect(noteToUpdate(earlierNotes(RL, 'b_e8'), 'b_n1b')!.id).toBe('b_n1');
+    expect(noteToUpdate(earlierNotes(RL, 'b_e8'), 'b_next')).toBeNull();
+    expect(anchorOfNote(RL, 'b_n2')).toBe('b_e8');
+    expect(anchorOfNote(RL, 'b_next')).toBeNull();
+  });
+
+  it('shows her the notes and lets her update one: the first block is replaced, the rest removed, the formula kept', async () => {
+    const d = seq({ line: NOTE, update_note: 'b_n1', why: 'sharpens the first note' });
+    const out = await planBlockNote(d, { kind: 'answer', answer: 'a', blockId: 'b_e8', outline: RL });
+    const prompt = d.requests[0]!.system[0]!.text;
+    expect(prompt).toContain('YOUR EARLIER NOTES UNDER THIS BLOCK');
+    expect(prompt).toContain('- b_n1: RL does not drop full observability');
+    expect(prompt).toContain('(Ellie’s note)');
+    expect(out).toMatchObject({ placement: 'updated', updateRefused: false, outcome: 'written' });
+    expect(out.batch!.ops).toEqual([
+      { op: 'replace_block', blockId: 'b_n1', blocks: [{ kind: 'paragraph', text: NOTE, prov: { pages: [18], reason: null } }] },
+      { op: 'remove_block', blockId: 'b_n1b' },
+    ]);
+    expect(out.batch!.focusBlockId).toBe('b_e8');
+  });
+
+  it('adds a new note when she says so, and refuses an update of anything that is not hers under the block', async () => {
+    const added = await planBlockNote(seq({ line: NOTE, update_note: null, why: 'x' }), { kind: 'answer', answer: 'a', blockId: 'b_e8', outline: RL });
+    expect(added).toMatchObject({ placement: 'added', updateRefused: false });
+    expect(added.batch!.ops).toEqual([{ op: 'insert_after', anchorBlockId: 'b_e8', blocks: [expect.objectContaining({ text: NOTE })] }]);
+    for (const named of ['b_next', 'b_e8', 'b_n1m', 'b_nowhere']) {
+      const refused = await planBlockNote(seq({ line: NOTE, update_note: named, why: 'x' }), { kind: 'answer', answer: 'a', blockId: 'b_e8', outline: RL });
+      expect(refused).toMatchObject({ placement: 'added', updateRefused: true });
+      expect(refused.batch!.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_e8' });
+    }
+  });
+
+  it('on a doc-chat question with no block, finds the block the named note sits under', async () => {
+    const out = await planBlockNote(seq({ line: NOTE, update_note: 'b_n2', anchor_block_id: null, why: 'x' }), {
+      kind: 'answer',
+      answer: 'a',
+      blockId: null,
+      outline: RL,
+    });
+    expect(out).toMatchObject({ placement: 'updated' });
+    expect(out.batch!.ops[0]).toMatchObject({ op: 'replace_block', blockId: 'b_n2' });
+    expect(out.batch!.focusBlockId).toBe('b_e8');
   });
 });
 

@@ -546,7 +546,7 @@ const HELD_MIN_WORDS = 12;
  * names what happened and never more. Each overview key idea is its own one-item `bullet_list`
  * (contract C6), so a list reads as "that bullet".
  */
-export function editNoteLine(kind: string | null, section: string | null, note: NoteKind = 'point'): string {
+export function editNoteLine(kind: string | null, section: string | null, note: NoteKind = 'point', updated = false): string {
   const what =
     kind === 'bullet_list' || kind === 'list_item'
       ? 'that bullet'
@@ -559,6 +559,8 @@ export function editNoteLine(kind: string | null, section: string | null, note: 
             : 'that block';
   const where = section && section.trim().length > 0 ? ` in \u201c${section.trim()}\u201d` : '';
   // `notebooks.md` §4.2, amended 2026-10-02: the note is named for what it is.
+  // Decision 11 (6 Oct afternoon): an answer that revised her earlier note says so.
+  if (updated) return `Updated my note under ${what}${where}.`;
   const added = note === 'background' ? 'Added a background note' : note === 'detail' ? 'Added the details' : 'Added one line';
   return `${added} under ${what}${where}.`;
 }
@@ -5528,15 +5530,18 @@ export class RoomActor {
    */
   async #noteEditInChat(messageId: string, batch: AgentDocOpBatch, note: NoteKind = 'point', port: DocPort = this.#docPort): Promise<void> {
     const op = batch.ops[0];
-    if (!messageId || op === undefined || (op.op !== 'insert_after' && op.op !== 'card_attach')) return;
+    if (!messageId || op === undefined || (op.op !== 'insert_after' && op.op !== 'card_attach' && op.op !== 'replace_block')) return;
     let line: string;
     if (op.op === 'card_attach') {
       // §11.2 (amended 2026-10-06): the note went into a concept card; say which, and where in it.
       const card = port.outlineNear({ blockId: op.cardBlockId }, 0).find((e) => e.blockId === op.cardBlockId);
       line = cardNoteLine(card?.text.split(':')[0]?.trim() ?? null, op.role, note);
     } else {
-      const entry = port.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
-      line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null), note);
+      // Decision 11: an update names the block its note sits under, which is the batch's focus.
+      const anchor = op.op === 'insert_after' ? op.anchorBlockId : batch.focusBlockId;
+      if (anchor === null) return;
+      const entry = port.outlineNear({ blockId: anchor }, 0).find((e) => e.blockId === anchor);
+      line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null), note, op.op === 'replace_block');
     }
     await this.#mailbox.enqueue(() => {
       if (this.#retired) return;
@@ -5795,11 +5800,15 @@ export class RoomActor {
           anchored: blockId !== null,
           // §11.2 (amended 2026-10-06): into a concept card's depth, or under a block outside one.
           card: plan.card,
+          // Decision 11: added, or replacing one of her earlier notes; and a refused choice.
+          placement: plan.placement ?? null,
+          update_refused: plan.updateRefused === true,
         });
         // Decision 8: a question in the doc chat, which has no block, is filed under the block her
         // line went to. A span thread's was filed with its own block (`#noteTurnForFlow`).
         if (plan.batch !== null && blockId === null && this.#isQuestionToEllie(decision, anchorId)) {
-          const landed = noteAnchorOf(plan.batch);
+          // An update (decision 11) replaces one of her notes; the block it sits under is the focus.
+          const landed = plan.placement === 'updated' ? plan.batch.focusBlockId : noteAnchorOf(plan.batch);
           if (landed !== null) this.#fileQuestion(landed, 'doc_line');
         }
         if (plan.batch === null) return;
