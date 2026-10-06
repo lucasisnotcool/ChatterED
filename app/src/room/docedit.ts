@@ -825,6 +825,29 @@ function questionProvenance(deps: DocEditDeps, text: string, blockId: string | n
   return pages.length > 0 ? { pages: [...pages], reason: null } : own;
 }
 
+/**
+ * **The block a doc edit went to**: the card it was attached to, or the block it was placed by or
+ * changed. A question asked in the doc chat has no block of its own, so this is where it is filed
+ * for readiness (decision 8 of 6 Oct afternoon, #67). Null for a batch with no such op.
+ */
+export function noteAnchorOf(batch: AgentDocOpBatch): string | null {
+  for (const op of batch.ops) {
+    switch (op.op) {
+      case 'card_attach':
+        return op.cardBlockId;
+      case 'insert_after':
+      case 'insert_before':
+        return op.anchorBlockId;
+      case 'replace_block':
+      case 'append_to_block':
+        return op.blockId;
+      default:
+        break;
+    }
+  }
+  return null;
+}
+
 // ── 5.3: the closed question, with its answer under it ──────────────────────
 
 /**

@@ -270,6 +270,11 @@ const math_block: NodeSpec = {
  * into the prose around it, `block+` because the resolution (§5.3) is written *inside* it under
  * the question paragraph, and the block stays after it is resolved — the learner removes it if
  * they want to.
+ *
+ * `cardId` (6 Oct afternoon, #67, `notebooks.md` §11.10.4): the concept card the question is
+ * about, set when Max's question goes in under a card (`insert_q`). A topic is complete only when
+ * every card it covers has a *Well done* (decision 9), so a verdict has to know its card. Null
+ * outside a card and on older blocks.
  */
 const q_block: NodeSpec = {
   content: 'block+',
@@ -282,6 +287,7 @@ const q_block: NodeSpec = {
     status: { default: 'open' },
     resolution: { default: null as string | null },
     objectiveId: { default: null as string | null },
+    cardId: { default: null as string | null },
     ...BLOCK_ATTRS,
   },
   parseDOM: [
@@ -294,6 +300,7 @@ const q_block: NodeSpec = {
         status: dom.getAttribute('data-status') ?? 'open',
         resolution: dom.getAttribute('data-resolution'),
         objectiveId: dom.getAttribute('data-objective-id'),
+        cardId: dom.getAttribute('data-card-id'),
       }),
     },
   ],
@@ -308,6 +315,8 @@ const q_block: NodeSpec = {
     if (resolution) attrs['data-resolution'] = resolution;
     const objectiveId = node.attrs.objectiveId as string | null;
     if (objectiveId) attrs['data-objective-id'] = objectiveId;
+    const cardId = node.attrs.cardId as string | null;
+    if (cardId) attrs['data-card-id'] = cardId;
     return ['section', attrs, 0];
   },
 };
@@ -1418,6 +1427,36 @@ export function cardOf(doc: Node, blockId: string): CardRef | null {
 /** The `blockId` of the card a block belongs to, or null (`cardOf`). */
 export function cardIdOf(doc: Node, blockId: string): string | null {
   return cardOf(doc, blockId)?.cardId ?? null;
+}
+
+/**
+ * **The concept card a question is about** (6 Oct afternoon, decision 9 on #67): the Q block's own
+ * `cardId`, set when it went in under a card. A block written before that attribute existed stood
+ * straight after its card (`insert_q` puts it there, newest first), so it falls back to the card
+ * just above the run of Q blocks it stands in. Null for a question about no card, and for one
+ * whose Q block is gone.
+ */
+export function questionCardId(doc: Node, questionId: string): string | null {
+  if (!questionId) return null;
+  let found: string | null = null;
+  let previous: Node | null = null;
+  let viaPrevious: Node | null = null;
+  let done = false;
+  doc.forEach((node) => {
+    if (done) return;
+    if (node.type.name === 'q_block' && node.attrs.questionId === questionId) {
+      done = true;
+      const own = node.attrs.cardId as string | null;
+      if (own) found = own;
+      else viaPrevious = previous;
+      return;
+    }
+    // A run of Q blocks under a card keeps pointing at the card.
+    if (node.type.name !== 'q_block') previous = node;
+  });
+  if (found !== null) return found;
+  const card = viaPrevious as Node | null;
+  return card !== null && isConcept(card) ? blockAttrs(card).blockId || null : null;
 }
 
 /** Every card in the document, in order: its id, term and position. */

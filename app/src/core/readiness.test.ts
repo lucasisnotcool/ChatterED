@@ -43,6 +43,14 @@ describe('readiness', () => {
     expect(readiness({ ...cold, examples: 1, dwellMs: READY_DWELL_MS })).toEqual({ state: 'ready', because: ['help'] });
   });
 
+  // Decision 8 (6 Oct afternoon, #67): the Lecture-sdm session's five questions to Ellie about
+  // "RL set-up" counted nothing toward the offer.
+  it('counts a question to Ellie about the section as help, like Explain and Example', () => {
+    expect(readiness({ ...cold, questions: 1, dwellMs: READY_DWELL_MS })).toEqual({ state: 'ready', because: ['help'] });
+    expect(readiness({ ...cold, questions: 1 })).toEqual({ state: 'not_yet', needs: ['time'] });
+    expect(readiness({ ...cold, questions: -2, dwellMs: READY_DWELL_MS })).toEqual({ state: 'not_yet', needs: ['engagement'] });
+  });
+
   it('counts one sentence of the learner’s own words, not a heading', () => {
     expect(readiness({ ...cold, ownWords: READY_OWN_WORDS - 1, dwellMs: READY_DWELL_MS }).state).toBe('not_yet');
     expect(readiness({ ...cold, ownWords: READY_OWN_WORDS, dwellMs: READY_DWELL_MS })).toEqual({

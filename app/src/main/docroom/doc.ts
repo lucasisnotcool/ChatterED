@@ -15,7 +15,7 @@
  */
 
 import type { Node } from 'prosemirror-model';
-import { blockAttrs, blockPos, blocksForPages, docFromJson } from '../../shared/doc/schema.js';
+import { blockAttrs, blockPos, blocksForPages, conceptCards, conceptCore, docFromJson } from '../../shared/doc/schema.js';
 import type { LearningObjective, LearningTree } from '../../shared/objectives.js';
 import type { SqlDatabase } from '../db/driver.js';
 import { plain, plainAll } from '../db/sql.js';
@@ -255,6 +255,33 @@ export function blockIdsForObjective(
   if (!doc) return [];
   const pages = pagesOfObjective(objective);
   return pages.length === 0 ? [] : blocksForPages(doc, pages);
+}
+
+/**
+ * **The concept cards an objective covers** (6 Oct afternoon, decision 9 on #67), in document
+ * order: a card whose own block, or whose core line, is among the objective's blocks (the page
+ * intersection above, on the card's own pages), or whose ingest hint names the objective.
+ *
+ * Not through a depth item: Ellie's additions cite whatever pages her answer drew on (one cited
+ * pp. 6, 18 and 22), and counting a card under every objective one of its notes mentions would
+ * make a topic wait on cards that teach something else.
+ */
+export function cardsForObjective(
+  doc: Node | null,
+  blockIds: readonly string[],
+  objectiveId: string,
+): { cardId: string; term: string }[] {
+  if (!doc) return [];
+  const ids = new Set(blockIds);
+  const out: { cardId: string; term: string }[] = [];
+  for (const card of conceptCards(doc)) {
+    const core = conceptCore(card.node);
+    const hinted = blockAttrs(card.node).objectiveIds.includes(objectiveId);
+    if (ids.has(card.cardId) || (core !== null && ids.has(blockAttrs(core).blockId)) || hinted) {
+      out.push({ cardId: card.cardId, term: card.term });
+    }
+  }
+  return out;
 }
 
 /**

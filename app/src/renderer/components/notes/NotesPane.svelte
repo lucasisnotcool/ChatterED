@@ -93,12 +93,17 @@
 
   /**
    * The objectives' fills are the progress view's: a fill moving changes nothing in the doc. So
-   * is the readiness offer's half (D2): an Explain pressed, a question closing (`activity`), and a
-   * question opening in a thread, each of which can add or take away "Ready to check this?".
+   * is the readiness offer's half (D2): an Explain pressed or a question to Ellie answered, a
+   * question closing (`activity`), a card earning its *Well done* (`cards`, which moves the offer to
+   * the next card), and a question opening in a thread, each of which can add or take away "Ready
+   * to check this?".
    */
   $effect(() => {
     const signature = (store.progress.view?.objectives ?? [])
-      .map((o) => `${o.objectiveId}:${o.fill}:${o.activity?.explains ?? 0}:${o.activity?.examples ?? 0}:${o.activity?.since ?? ''}`)
+      .map(
+        (o) =>
+          `${o.objectiveId}:${o.fill}:${o.activity?.explains ?? 0}:${o.activity?.examples ?? 0}:${o.activity?.questions ?? 0}:${o.activity?.since ?? ''}:${(o.cards ?? []).map((c) => (c.done ? `${c.cardId}+` : c.cardId)).join(',')}`,
+      )
       .join('|');
     const asking = chat().openQuiz?.quiz.objectiveId ?? (chat().openQuiz ? 'open' : '');
     void signature;

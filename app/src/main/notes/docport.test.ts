@@ -15,6 +15,10 @@ import type { DocBlockDraft, QuizOutcome } from '../../shared/doc/types.js';
 import type { SqlDatabase } from '../db/driver.js';
 import type { DocHost } from '../dochost.js';
 import { createDocPort, subscribeOutcomes } from './docport.js';
+import { activityRepo } from '../db/repos/activity.js';
+import { card, docOf, heading, para } from '../../shared/doc/fixture.test-support.js';
+import { notesSchema } from '../../shared/doc/schema.js';
+import type { LearningObjective, LearningTree } from '../../shared/objectives.js';
 
 const T0 = '2026-09-20T10:00:00.000Z';
 const unsubscribes: (() => void)[] = [];
@@ -161,5 +165,67 @@ describe('recording', () => {
     ).not.toThrow();
     expect(outcomesRepo(db).forContent('sha-deck')).toHaveLength(1);
     expect(seen).toHaveLength(1);
+  });
+});
+
+// ── 6 Oct afternoon (#67): decisions 8 and 9 ─────────────────────────────────────────────────
+
+describe('a question to Ellie, and the card of a verdict', () => {
+  const objective = (id: string, page: number): LearningObjective => ({
+    id, fileId: 'f_deck', title: id, kind: 'objective', statement: '', criteria: [], quizSeeds: [],
+    refs: [{ page }], parentId: null, requires: [], assumedByDeck: false, order: page,
+  });
+  const tree: LearningTree = {
+    fileId: 'f_deck', contentSha: 'sha-deck', generatedAt: T0, model: 'sonnet', version: 1, status: 'ready',
+    objectives: [objective('o_iter', 12), objective('o_rl', 18)],
+  };
+
+  function withCards() {
+    const { db } = openTestDb();
+    const doc = docOf(
+      heading('b_h', 2, 'Value iteration', [12]),
+      card('b_card', 'Value iteration', para('b_core', '**Value iteration**: repeat Bellman updates.', 'ingest', null, [12]), [], [12]),
+      notesSchema.nodes.q_block!.create(
+        { blockId: 'b_q', questionId: 'q_vi', status: 'open', cardId: 'b_card', pages: [12] },
+        [para('b_q_p', 'What does one update compute?', 'max', null, [12])],
+      ),
+      para('b_rl', 'RL learns from experience.', 'ingest', null, [18]),
+      para('b_both', 'Both.', 'ingest', null, [12, 18]),
+    );
+    notesRepo(db).create(
+      {
+        id: newDocId(), contentSha: 'sha-deck', fileId: 'f_deck', title: 'Lecture', pageCount: 20,
+        doc: doc.toJSON() as never, ingestStatus: 'ready', ingestVersion: 1, windowsTotal: 1, withImages: false, model: 'sonnet',
+      },
+      T0,
+    );
+    const host = { db, objectivesTree: () => tree } as unknown as DocHost;
+    return { db, port: createDocPort(host, { fileId: 'f_deck', contentSha: 'sha-deck', roomId: 'room_1' }) };
+  }
+
+  it('files a question under its block’s objective, and nothing when the block has none or two', () => {
+    const { db, port } = withCards();
+    port.recordActivity!({ roomId: 'room_1', objectiveId: null, kind: 'question', blockId: 'b_rl' });
+    port.recordActivity!({ roomId: 'room_1', objectiveId: null, kind: 'question', blockId: 'b_both' });
+    port.recordActivity!({ roomId: 'room_1', objectiveId: null, kind: 'question', blockId: null });
+    const rows = activityRepo(db).forContent('sha-deck');
+    expect(rows.map((r) => [r.objectiveId, r.kind, r.blockId])).toEqual([['o_rl', 'question', 'b_rl']]);
+  });
+
+  it('copies the question’s card onto the outcome row, so removing the chip keeps the credit', () => {
+    const { db, port } = withCards();
+    port.recordOutcome({
+      roomId: 'room_1', objectiveId: 'o_iter', questionId: 'q_vi', kind: 'verdict', verdict: 'complete',
+      releasedBy: null, messageId: 'm_1', source: 'chat', attemptIndex: 1, ownWords: null,
+    });
+    port.recordOutcome({
+      roomId: 'room_1', objectiveId: 'o_iter', questionId: 'tut:f_deck:p1', kind: 'verdict', verdict: 'complete',
+      releasedBy: null, messageId: null, source: 'chat', attemptIndex: 1, ownWords: null,
+    });
+    const rows = outcomesRepo(db).forContent('sha-deck').sort((x, y) => x.questionId.localeCompare(y.questionId));
+    expect(rows.map((o) => [o.questionId, o.cardId])).toEqual([
+      ['q_vi', 'b_card'],
+      ['tut:f_deck:p1', null],
+    ]);
   });
 });

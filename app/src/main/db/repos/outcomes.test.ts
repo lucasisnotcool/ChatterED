@@ -20,6 +20,7 @@ function outcome(over: Partial<QuizOutcome> = {}): QuizOutcome {
     attemptIndex: 1,
     ownWords: null,
     form: 'open',
+    cardId: null,
     createdAt: T0,
     ...over,
   };
@@ -34,6 +35,13 @@ describe('outcomesRepo', () => {
     const r = repo();
     r.insert(outcome());
     expect(r.forContent('sha-a')).toEqual([outcome()]);
+  });
+
+  // Migration 031 (decision 9, 6 Oct afternoon): the card the question was about.
+  it('round-trips the card a verdict was about', () => {
+    const r = repo();
+    r.insert(outcome({ cardId: 'b_card' }));
+    expect(r.forContent('sha-a')[0]!.cardId).toBe('b_card');
   });
 
   it('round-trips a release, with its cause and no verdict', () => {

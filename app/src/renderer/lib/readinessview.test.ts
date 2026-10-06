@@ -115,6 +115,23 @@ describe('objectiveSections', () => {
     const doc = docOf(heading('h_a', 2, 'A'), card);
     expect(objectiveSections(doc, [objective('o_a', ['i1a'])])[0]).toMatchObject({ headingBlockId: 'h_a', target: 'c1p' });
   });
+
+  /**
+   * Decision 9 (6 Oct afternoon, #67): a partly done topic is offered again, and the check asks
+   * about the card still to do, not again about the one already earned.
+   */
+  it('presses Quiz me on the first card without a Well done', () => {
+    const conceptCard = (id: string, line: string) =>
+      notesSchema.node('concept', { blockId: id, term: id, pages: [3], reason: null, objectiveIds: [] }, [para(`${id}p`, line)]);
+    const doc = docOf(heading('h_a', 2, 'Iteration'), conceptCard('c_value', 'Value iteration: repeat.'), question('q1', { status: 'resolved' }), conceptCard('c_policy', 'Policy iteration: evaluate.'));
+    const cards = [
+      { cardId: 'c_value', term: 'Value iteration', done: true },
+      { cardId: 'c_policy', term: 'Policy iteration', done: false },
+    ];
+    expect(objectiveSections(doc, [objective('o_a', ['h_a'], { fill: 0.5, cards })])[0]?.target).toBe('c_policyp');
+    // With no card view (an older main), the first line, as before.
+    expect(objectiveSections(doc, [objective('o_a', ['h_a'])])[0]?.target).toBe('c_valuep');
+  });
 });
 
 describe('own words', () => {
@@ -191,6 +208,16 @@ describe('readyOffers', () => {
     expect(readyOffers({ doc, objectives, counters, threadQuizOpen: false })).toEqual([]);
     warm(counters, ['o_a']);
     expect(readyOffers({ doc, objectives, counters, threadQuizOpen: false })).toEqual([
+      { headingBlockId: 'h_a', target: 'p_a', objectiveIds: ['o_a'] },
+    ]);
+  });
+
+  // Decision 8 (6 Oct afternoon, #67): a question to Ellie on the section is the act.
+  it('offers after questions to Ellie on the section, as after an Explain', () => {
+    const counters = new ReadinessCounters();
+    warm(counters, ['o_a']);
+    const asked = [objective('o_a', ['h_a'], { activity: { explains: 0, examples: 0, questions: 2, since: null } })];
+    expect(readyOffers({ doc, objectives: asked, counters, threadQuizOpen: false })).toEqual([
       { headingBlockId: 'h_a', target: 'p_a', objectiveIds: ['o_a'] },
     ]);
   });

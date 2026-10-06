@@ -3,8 +3,9 @@
  * `collab-doc.md` §6 and `notebooks.md` §5.2, amended 2026-10-06). Pure and tested.
  *
  * `core/readiness.ts` decides; this file gathers what it decides from. Half of the signals are
- * main's (the objective's fill, and the Explain and Example presses on its lines since its last
- * question closed, `ProgressObjectiveView.activity`); the other half only the renderer can see:
+ * main's (the objective's fill, and the Explain and Example presses on its lines, and since 6 Oct
+ * afternoon the questions to Ellie about it, since its last question closed,
+ * `ProgressObjectiveView.activity`); the other half only the renderer can see:
  *
  *  - **own words**: what the learner wrote in the section themselves (author mark `user`),
  *    outside any question block;
@@ -41,8 +42,11 @@ export interface ObjectiveSection {
   from: number;
   to: number;
   /**
-   * The line Quiz me is pressed on: the section's first line with the action toolbar, else its
-   * first block that is neither a heading nor a question. Null when the section has none.
+   * The line Quiz me is pressed on: the core line of the section's first concept card that has no
+   * *Well done* yet (decision 9 of 6 Oct afternoon, #67: a partly done topic is checked on the
+   * card still to do, not again on the one already earned); else the section's first line with
+   * the action toolbar, else its first block that is neither a heading nor a question. Null when
+   * the section has none.
    */
   target: string | null;
 }
@@ -77,7 +81,7 @@ function topBlocks(doc: Node): { tops: Top[]; index: Map<string, number> } {
 /** The sections of the given objectives, in their order. Objectives with none are left out. */
 export function objectiveSections(
   doc: Node,
-  objectives: readonly Pick<ProgressObjectiveView, 'objectiveId' | 'blockIds'>[],
+  objectives: readonly (Pick<ProgressObjectiveView, 'objectiveId' | 'blockIds'> & Partial<Pick<ProgressObjectiveView, 'cards'>>)[],
 ): ObjectiveSection[] {
   const { tops, index } = topBlocks(doc);
   const out: ObjectiveSection[] = [];
@@ -116,7 +120,10 @@ export function objectiveSections(
       const core = conceptCore(t.node);
       return core && hasToolbar(core) ? blockAttrs(core).blockId || null : null;
     };
+    const todo = new Set((objective.cards ?? []).filter((c) => !c.done).map((c) => c.cardId));
+    const nextCard = body.find((t) => isConcept(t.node) && todo.has(t.blockId) && line(t) !== null);
     const target =
+      (nextCard ? line(nextCard) : null) ??
       body.map(line).find((id): id is string => id !== null) ??
       body.find((t) => t.blockId && t.level === null && t.node.type.name !== 'q_block')?.blockId ??
       null;
@@ -291,6 +298,7 @@ export function signalsFor(
     questionOpen,
     explains: objective.activity?.explains ?? 0,
     examples: objective.activity?.examples ?? 0,
+    questions: objective.activity?.questions ?? 0,
     ownWords: Math.max(0, ownWordsNow - counter.wordsBase),
     depthOpened: counter.depthOpened,
     dwellMs: counter.dwellMs,

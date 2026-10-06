@@ -43,6 +43,7 @@ import {
   conceptItems,
   eachBlock,
   hasLearnerText,
+  isConcept,
   isStructuredBlock,
   newBlockId,
   notesSchema,
@@ -628,6 +629,9 @@ export function applyBatch(
         if (!target) return;
         if (op.text.trim().length === 0) return;
         const blockId = newBlockId();
+        // The card it is about (decision 9, 6 Oct afternoon): a topic is complete only when every
+        // card it covers has a *Well done*, and a verdict finds its card through this.
+        const aboutCard = isConcept(target.node) ? blockAttrs(target.node).blockId || null : null;
         const question = notesSchema.nodes.paragraph!.create(
           {
             blockId: newBlockId(),
@@ -648,6 +652,7 @@ export function applyBatch(
             status: 'open',
             resolution: null,
             objectiveId: op.objectiveId,
+            cardId: aboutCard,
           },
           question,
         );

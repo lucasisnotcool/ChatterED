@@ -18,6 +18,7 @@
 import { judgeFormal } from '../../core/planning.js';
 import { statusAfterCheck } from '../../core/tutor.js';
 import type { QuizVerdict3 } from '../../shared/doc/types.js';
+import { TUTORIAL_QUESTION_PREFIX } from '../../shared/doc/progress.js';
 import { notebookContentKey } from '../../shared/notebook.js';
 import type { TutorialCheckInput, TutorialCheckResult } from '../../shared/tutorial.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
@@ -37,9 +38,12 @@ export interface Judgement {
   detail: string;
 }
 
-/** The `questionId` a tutorial part's outcome rows carry. */
+/**
+ * The `questionId` a tutorial part's outcome rows carry. Its prefix is how the progress bar knows a
+ * part's *Well done* still completes its objective whatever the notes' cards (decision 9).
+ */
 export function tutorialQuestionId(fileId: string, partId: string): string {
-  return `tut:${fileId}:${partId}`;
+  return `${TUTORIAL_QUESTION_PREFIX}${fileId}:${partId}`;
 }
 
 /** A choice part decided by its key's correct options: all of them and nothing else is complete. */

@@ -39,6 +39,7 @@ import {
   planBlockNote,
   type NoteKind,
   buildResolveEdit,
+  noteAnchorOf,
   planSuggestionEdit,
   type DocEditDeps,
 } from './docedit.js';
@@ -4679,6 +4680,17 @@ export class RoomActor {
         this.#event('peer', 'flow.block_action_filed', { objective_id: filed.objectiveId, move: decision.moveType });
       }
     }
+    /**
+     * **A question to Ellie about a section counts toward readiness** (decision 8 of 6 Oct
+     * afternoon, #67; `notebooks.md` §11.10.4), like Explain and Example. In a span thread its block
+     * is the thread's, and main finds the block's objective (`DocPort.recordActivity`). A question
+     * in the doc chat has no block yet: it is filed under the block her doc line went to, once
+     * that is known (`#maybeDocEdit`).
+     */
+    if (this.#isQuestionToEllie(decision, this.#turnAnchorId)) {
+      const blockId = this.#threads.get(this.#turnAnchorId!)?.blockId ?? null;
+      if (blockId !== null) this.#fileQuestion(blockId, 'thread');
+    }
     if (decision.role === 'peer' && decision.targetElementId) {
       this.#taught.push({
         elementId: decision.targetElementId,
@@ -5436,6 +5448,12 @@ export class RoomActor {
           // §11.2 (amended 2026-10-06): into a concept card's depth, or under a block outside one.
           card: plan.card,
         });
+        // Decision 8: a question in the doc chat, which has no block, is filed under the block her
+        // line went to. A span thread's was filed with its own block (`#noteTurnForFlow`).
+        if (plan.batch !== null && blockId === null && this.#isQuestionToEllie(decision, anchorId)) {
+          const landed = noteAnchorOf(plan.batch);
+          if (landed !== null) this.#fileQuestion(landed, 'doc_line');
+        }
         if (plan.batch === null) return;
         const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId }, port);
         if (emitted) await this.#noteEditInChat(messageId, plan.batch, plan.noteKind, port);
@@ -5443,6 +5461,29 @@ export class RoomActor {
     } catch (err) {
       this.#turnLog.event('error', 'doc.edit.error', { cause: failureReason(err), move: decision.moveType });
     }
+  }
+
+  /**
+   * A learner's question that Ellie answered on the notes (decision 8): her answer to something
+   * they asked (`rule:ellie_answers`) or addressed to her (`rule:mention`). Never on a tutorial
+   * sheet's line or while the sheet is the main view: a sheet's line is not a section of the notes,
+   * as for Explain and Example (`blockAction`).
+   */
+  #isQuestionToEllie(decision: TurnDecision, anchorId: string | null): boolean {
+    if (anchorId === null || decision.role !== 'peer' || decision.moveType !== 'answer_then_teach') return false;
+    if (decision.decidedBy !== 'rule:ellie_answers' && decision.decidedBy !== 'rule:mention') return false;
+    return !this.#threadDocKey.has(anchorId) && !this.#tutorialFocus.has(anchorId);
+  }
+
+  /** File one question to Ellie against its block's objective. Never fails the turn. */
+  #fileQuestion(blockId: string, via: 'thread' | 'doc_line'): void {
+    try {
+      this.#docPort.recordActivity?.({ roomId: this.#d.roomId, objectiveId: null, kind: 'question', blockId });
+    } catch (err) {
+      this.#turnLog.event('warn', 'activity.record_failed', { cause: failureReason(err) });
+      return;
+    }
+    this.#event('peer', 'flow.question_filed', { block_id: blockId, via });
   }
 
   /** Keep what a counted attempt is about to overwrite, for `Not marked.` to put back. */

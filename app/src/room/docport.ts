@@ -43,11 +43,20 @@ export interface DocPort {
   /** One row per verdict or release. The progress bar is a pure function of these. */
   recordOutcome(outcome: Omit<QuizOutcome, 'id' | 'contentSha' | 'createdAt'>): void;
   /**
-   * One Explain or Example press, against the objective of its line (2026-10-06, D2; migration 030).
-   * Optional, so a port written before it (a tutorial sheet's, a test's) need not record one.
+   * One Explain or Example press, against the objective of its line (2026-10-06, D2; migration 030),
+   * or one question to Ellie she answered on a section (decision 8 of 6 Oct afternoon, #67;
+   * migration 031). `objectiveId: null` asks the port to find the block's objective itself (the
+   * actor knows the block a question was about, not which objective the block is taught under);
+   * a block with none, or with two, is not filed. Optional, so a port written before it (a
+   * tutorial sheet's, a test's) need not record one.
    */
-  recordActivity?(activity: Omit<ObjectiveActivity, 'id' | 'contentSha' | 'createdAt'>): void;
+  recordActivity?(activity: ActivityInput): void;
 }
+
+/** What the actor files through `recordActivity`: the row less what the port mints. */
+export type ActivityInput = Omit<ObjectiveActivity, 'id' | 'contentSha' | 'createdAt' | 'objectiveId'> & {
+  objectiveId: string | null;
+};
 
 /** A room with no notes doc: every read is empty and every write is dropped. */
 export const NO_DOC: DocPort = {

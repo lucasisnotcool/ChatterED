@@ -308,7 +308,7 @@ describe('blockAction: Explain and Example', () => {
 
   /** 2026-10-06 (D2): the press is filed against the line's objective once Ellie's answer lands. */
   it('records Explain and Example against the line’s objective, and nothing when it has none', async () => {
-    const pressed: { objectiveId: string; kind: string; blockId: string | null; roomId: string }[] = [];
+    const pressed: { objectiveId: string | null; kind: string; blockId: string | null; roomId: string }[] = [];
     const port = docPort({ recordActivity: (a) => pressed.push(a) });
     const h = build({ docPort: port.port });
     const explain = await h.actor.blockAction({ kind: 'explain', blockId: 'b_idea', anchorId: SPAN, quote: BULLET_TEXT, objectiveId: ELEMENT });
@@ -324,6 +324,44 @@ describe('blockAction: Explain and Example', () => {
     expect(pressed.every((p) => p.roomId === h.roomId)).toBe(true);
     // Actions still fill nothing (§4.3).
     expect(port.outcomes).toEqual([]);
+  });
+
+  /**
+   * Decision 8 (6 Oct afternoon, #67): in the Lecture-sdm session five questions to Ellie about
+   * one section counted nothing toward "Ready to check this?". They are filed now, with their
+   * block, for main to find the block's objective.
+   */
+  it('files a question to Ellie in a span thread under the thread’s block', async () => {
+    const pressed: { objectiveId: string | null; kind: string; blockId: string | null }[] = [];
+    const port = docPort({ recordActivity: (a) => pressed.push(a) });
+    const h = build({ docPort: port.port });
+    h.actor.noteSpanThread({ threadId: 'span_c0000000001', blockId: 'b_idea', quote: BULLET_TEXT });
+    await settle(h.clock, h.actor.sendMessage('how does the side channel stay private?', 'span_c0000000001'));
+    expect(rules(h)).toEqual(['rule:ellie_answers']);
+    expect(pressed).toEqual([{ roomId: h.roomId, objectiveId: null, kind: 'question', blockId: 'b_idea' }]);
+    expect(port.outcomes).toEqual([]);
+  });
+
+  it('files a question in the doc chat under the block her line went to, and nothing when no line went in', async () => {
+    const pressed: { kind: string; blockId: string | null }[] = [];
+    const reply = (line: string | null) => (r: LlmRequest) =>
+      r.meta.scope === 'docedit' ? (line === null ? JSON.stringify({ line: '', anchor_block_id: null, why: 'nothing fits' }) : JSON.stringify({ line, anchor_block_id: 'b_idea', why: 'the point' })) : null;
+    const port = docPort({ recordActivity: (a) => pressed.push(a) });
+    const h = build({ docPort: port.port }, reply('A side channel never reaches the shared context.'));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(pressed.map((p) => [p.kind, p.blockId])).toEqual([['question', 'b_idea']]);
+
+    const quiet: { kind: string }[] = [];
+    const none = build({ docPort: docPort({ recordActivity: (a) => quiet.push(a) }).port }, reply(null));
+    await settle(none.clock, none.actor.sendMessage('what is the side channel?', DOC));
+    expect(quiet).toEqual([]);
+  });
+
+  it('files nothing for a question to Max', async () => {
+    const pressed: unknown[] = [];
+    const h = build({ docPort: docPort({ recordActivity: (a) => pressed.push(a) }).port });
+    await settle(h.clock, h.actor.sendMessage('@Max what is the side channel?', DOC));
+    expect(pressed).toEqual([]);
   });
 
   it('refuses a second action while one is being answered, and takes the next once it is done', async () => {

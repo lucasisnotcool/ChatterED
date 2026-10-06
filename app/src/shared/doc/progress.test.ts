@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { progressFill, revisionStats } from './progress.js';
+import { TUTORIAL_QUESTION_PREFIX, cardsEarned, isTutorialOutcome, progressFill, revisionStats, topicFill } from './progress.js';
 import type { QuizOutcome, QuizVerdict3 } from './types.js';
 
 let seq = 0;
@@ -91,6 +91,62 @@ describe('progressFill and the cloze form', () => {
 
   it('reads a row with no form, from before migration 023, as an open question', () => {
     expect(progressFill([{ ...verdict('complete'), form: null }])).toBe(1);
+  });
+});
+
+// ── decision 9 (6 Oct afternoon, #67): a topic is done only when every card it covers is ──────
+
+describe('topicFill', () => {
+  const on = (card: string | null, o: QuizOutcome): QuizOutcome => ({ ...o, cardId: card });
+
+  /**
+   * The Lecture-sdm evidence: one *Well done* on value iteration (#11) made "1 of 6" complete for
+   * a topic that also covers policy iteration, which ended in a give-up (#20).
+   */
+  it('is partly done after a Well done on one of its two cards, and a give-up on the other', () => {
+    const outcomes = [on('c_value', verdict('complete')), on('c_policy', verdict('not_yet')), on('c_policy', released('give_up'))];
+    expect(progressFill(outcomes)).toBe(1);
+    expect(topicFill(outcomes, ['c_value', 'c_policy'])).toBe(0.5);
+  });
+
+  it('is done once every card it covers has a Well done, in any order', () => {
+    const outcomes = [on('c_policy', verdict('partial')), on('c_value', verdict('complete')), on('c_policy', verdict('complete'))];
+    expect(topicFill(outcomes, ['c_value', 'c_policy'])).toBe(1);
+  });
+
+  it('does not count a blank, a release, or a Well done about no card or another card', () => {
+    const cloze = { ...on('c_policy', verdict('complete')), form: 'cloze' as const };
+    const outcomes = [on('c_value', verdict('complete')), cloze, on(null, verdict('complete')), on('c_other', verdict('complete'))];
+    expect(topicFill(outcomes, ['c_value', 'c_policy'])).toBe(0.5);
+    expect(topicFill([on('c_value', released('give_up'))], ['c_value'])).toBe(0);
+  });
+
+  it('fills as before for an objective that covers no card', () => {
+    expect(topicFill([verdict('complete')], [])).toBe(1);
+    expect(topicFill([verdict('partial')], [])).toBe(0.5);
+    expect(topicFill([released('pass')], [])).toBe(0);
+  });
+
+  it('keeps a tutorial part’s Well done completing the objective, as before', () => {
+    const part = { ...verdict('complete'), questionId: `${TUTORIAL_QUESTION_PREFIX}f_1:p_1` };
+    expect(isTutorialOutcome(part)).toBe(true);
+    expect(topicFill([part], ['c_value', 'c_policy'])).toBe(1);
+    const partial = { ...verdict('partial'), questionId: `${TUTORIAL_QUESTION_PREFIX}f_1:p_2` };
+    expect(topicFill([partial], ['c_value'])).toBe(0.5);
+  });
+
+  it('reads an older row’s card through the caller’s fallback', () => {
+    const old = verdict('complete');
+    expect(cardsEarned([old])).toEqual(new Set());
+    expect(cardsEarned([old], (o) => (o.questionId === old.questionId ? 'c_value' : null))).toEqual(new Set(['c_value']));
+    expect(topicFill([old], ['c_value'], cardsEarned([old], () => 'c_value'))).toBe(1);
+  });
+
+  it('counts a card earned under another objective, and is partly done on that alone', () => {
+    const elsewhere = new Set(['c_value']);
+    expect(topicFill([], ['c_value', 'c_policy'], elsewhere)).toBe(0.5);
+    expect(topicFill([], ['c_value'], elsewhere)).toBe(1);
+    expect(topicFill([], ['c_policy'], elsewhere)).toBe(0);
   });
 });
 

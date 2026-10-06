@@ -54,12 +54,18 @@ describe('activityRepo', () => {
     r.insert(press({ id: 'oa_2', roomId: 'room_b', createdAt: '2026-10-06T11:00:00.000Z' }));
     expect(r.forContent('sha-a').map((a) => a.roomId)).toEqual(['room_a', 'room_b']);
   });
+
+  it('stores a question to Ellie (migration 031 widens the kind)', () => {
+    const r = activityRepo(openTestDb().db);
+    r.insert(press({ kind: 'question' }));
+    expect(r.forContent('sha-a').map((a) => a.kind)).toEqual(['question']);
+  });
 });
 
 describe('activitySince', () => {
   it('counts everything when no question has closed', () => {
     const view = activitySince([press(), press({ id: 'oa_2', kind: 'example' })], []);
-    expect(view).toEqual({ explains: 1, examples: 1, since: null });
+    expect(view).toEqual({ explains: 1, examples: 1, questions: 0, since: null });
   });
 
   it('counts only presses after the newest outcome, so a release resets it', () => {
@@ -69,6 +75,21 @@ describe('activitySince', () => {
       press({ id: 'c', kind: 'example', createdAt: '2026-10-06T10:20:00.000Z' }),
     ];
     const view = activitySince(presses, [closed('2026-10-06T10:05:00.000Z'), closed('2026-10-06T10:15:00.000Z')]);
-    expect(view).toEqual({ explains: 0, examples: 1, since: '2026-10-06T10:15:00.000Z' });
+    expect(view).toEqual({ explains: 0, examples: 1, questions: 0, since: '2026-10-06T10:15:00.000Z' });
+  });
+
+  // Decision 8 (6 Oct afternoon, #67): five questions to Ellie on one section counted nothing.
+  it('counts questions to Ellie separately, reset by a closed question like the rest', () => {
+    const rows = [
+      press({ id: 'a', kind: 'question', createdAt: '2026-10-06T10:00:00.000Z' }),
+      press({ id: 'b', kind: 'question', createdAt: '2026-10-06T10:20:00.000Z' }),
+      press({ id: 'c', kind: 'question', createdAt: '2026-10-06T10:25:00.000Z' }),
+    ];
+    expect(activitySince(rows, [closed('2026-10-06T10:05:00.000Z')])).toEqual({
+      explains: 0,
+      examples: 0,
+      questions: 2,
+      since: '2026-10-06T10:05:00.000Z',
+    });
   });
 });

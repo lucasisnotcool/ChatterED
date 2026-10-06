@@ -33,6 +33,8 @@ interface OutcomeRow {
   own_words_cue: number | null;
   own_words_question: number | null;
   form: QuizOutcome['form'];
+  /** Migration 031: absent on a database read before it ran, NULL on rows written before it. */
+  card_id?: string | null;
   created_at: string;
 }
 
@@ -73,6 +75,7 @@ function toOutcome(row: OutcomeRow): QuizOutcome {
         : { block: row.own_words_block, cue: row.own_words_cue, question: row.own_words_question },
     // NULL is a row from before migration 023, and every question before it was an open one.
     form: row.form === 'cloze' ? 'cloze' : 'open',
+    cardId: row.card_id ?? null,
     createdAt: row.created_at,
   };
 }
@@ -87,9 +90,9 @@ export function outcomesRepo(db: SqlDatabase): OutcomesRepo {
         `INSERT INTO quiz_outcomes
            (id, content_sha, room_id, objective_id, question_id, kind, verdict, released_by,
             message_id, source, attempt_index, own_words_block, own_words_cue,
-            own_words_question, form, created_at)
+            own_words_question, form, card_id, created_at)
          VALUES (@id, @sha, @room, @objective, @question, @kind, @verdict, @released, @message,
-                 @source, @attempt, @owBlock, @owCue, @owQuestion, @form, @now)
+                 @source, @attempt, @owBlock, @owCue, @owQuestion, @form, @card, @now)
          ON CONFLICT (id) DO NOTHING`,
       ).run({
         id: outcome.id,
@@ -107,6 +110,7 @@ export function outcomesRepo(db: SqlDatabase): OutcomesRepo {
         owCue: outcome.ownWords?.cue ?? null,
         owQuestion: outcome.ownWords?.question ?? null,
         form: outcome.form ?? null,
+        card: outcome.cardId ?? null,
         now: outcome.createdAt,
       });
       return outcome;

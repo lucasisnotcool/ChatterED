@@ -612,22 +612,49 @@ export interface ProgressObjectiveView {
    * the rest. Absent from a main built before this.
    */
   activity?: ObjectiveActivityView;
+  /**
+   * **The concept cards the objective covers, and which have a *Well done*** (6 Oct afternoon,
+   * decision 9 on #67; `notebooks.md` §11.10.4). In document order. The objective is complete
+   * only when every one is done (`topicFill`); until then it is partly done. Empty for an
+   * objective whose blocks hold no card (a tutorial part's, a prose source's, an older doc's),
+   * which fills as before. The readiness offer asks about the first card not yet done. Absent
+   * from a main built before this.
+   */
+  cards?: ObjectiveCardView[];
 }
 
-/** One objective's Explain and Example count since its last question closed (D2). */
+/** One concept card an objective covers (decision 9). */
+export interface ObjectiveCardView {
+  cardId: string;
+  term: string;
+  /** An own-words *Well done* on a question about this card is on record. */
+  done: boolean;
+}
+
+/**
+ * One objective's Explain, Example and question count since its last question closed (D2;
+ * questions to Ellie since 6 Oct afternoon, decision 8 on #67). `questions` is absent from a main
+ * built before it.
+ */
 export interface ObjectiveActivityView {
   explains: number;
   examples: number;
+  questions?: number;
   since: string | null;
 }
 
-/** One Explain or Example press, filed against the objective of the line it was on (D2). */
+/**
+ * One Explain or Example press, or one question to Ellie answered on the section (decision 8),
+ * filed against the objective of the line it was on (D2).
+ */
+export type ObjectiveActivityKind = 'explain' | 'example' | 'question';
+
 export interface ObjectiveActivity {
   id: string;
   contentSha: string;
   roomId: string;
   objectiveId: string;
-  kind: 'explain' | 'example';
+  kind: ObjectiveActivityKind;
   blockId: string | null;
   createdAt: string;
 }
@@ -679,6 +706,13 @@ export interface QuizOutcome {
    * the objective. Absent or `null` on rows written before 023, which were all `open`.
    */
   form?: QuestionForm | null;
+  /**
+   * **The concept card the question was about** (migration 031; 6 Oct afternoon, decision 9 on
+   * #67): copied from its Q block (`q_block.cardId`) when the row is written, so removing the
+   * chip never takes the credit with it. Absent or `null` on older rows and on a question about
+   * no card; the progress view then reads the Q block, or counts the row toward no card.
+   */
+  cardId?: string | null;
   createdAt: string;
 }
 

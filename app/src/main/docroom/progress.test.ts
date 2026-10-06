@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { docOf, heading, para } from '../../shared/doc/fixture.test-support.js';
+import { card, docOf, heading, para } from '../../shared/doc/fixture.test-support.js';
+import { notesSchema } from '../../shared/doc/schema.js';
 import type { QuizOutcome } from '../../shared/doc/types.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
 import { activityRepo } from '../db/repos/activity.js';
@@ -110,9 +111,20 @@ describe('buildProgress', () => {
 
     const view = await buildProgress(fx.host, 'f_deck');
     expect(view.objectives.map((o) => o.activity)).toEqual([
-      { explains: 0, examples: 1, since: T0 },
-      { explains: 1, examples: 0, since: null },
+      { explains: 0, examples: 1, questions: 0, since: T0 },
+      { explains: 1, examples: 0, questions: 0, since: null },
     ]);
+  });
+
+  // Decision 8 (6 Oct afternoon, #67).
+  it('carries the questions to Ellie on an objective since its last question closed', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o1', { refs: [{ page: 1 }], order: 1 })]);
+    const presses = activityRepo(fx.db);
+    for (const id of ['q1', 'q2', 'q3'])
+      presses.insert({ id, contentSha: 'sha-deck', roomId: 'room_test', objectiveId: 'o1', kind: 'question', blockId: 'b_1', createdAt: `2026-09-19T11:0${id.slice(1)}:00.000Z` });
+    const view = await buildProgress(fx.host, 'f_deck');
+    expect(view.objectives[0]!.activity).toEqual({ explains: 0, examples: 0, questions: 3, since: null });
   });
 
   it('fills nothing for a released answer, whichever way it was released', async () => {
@@ -277,5 +289,95 @@ describe('progress:get / progress:start', () => {
     const table = handlerTable();
     registerProgressIpc(fx.host, table.handle);
     await expect(table.call('progress:start', { fileId: 'f_deck', objectiveId: 'o9' })).rejects.toThrow(/No objective/);
+  });
+});
+
+// ── decision 9 (6 Oct afternoon, #67): a topic is done only when every card it covers is ───────
+
+describe('buildProgress: concept cards', () => {
+  /**
+   * The Lecture-sdm shape: one topic (pp. 10–15) covers value iteration and policy iteration.
+   * Value iteration got a *Well done*; policy iteration's question ended in a give-up.
+   */
+  function iteration(opts: { qAttrs?: boolean } = {}) {
+    const q = (questionId: string, cardId: string) =>
+      notesSchema.nodes.q_block!.create(
+        { blockId: `b_${questionId}`, questionId, status: 'resolved', cardId: opts.qAttrs === false ? null : cardId, pages: [12] },
+        [para(`b_${questionId}_p`, 'Why?', 'max', null, [12])],
+      );
+    return docOf(
+      heading('b_h', 2, 'Value and policy iteration', [10]),
+      card('c_value', 'Value iteration', para('c_value_core', '**Value iteration**: repeat updates.', 'ingest', null, [12]), [], [12]),
+      q('q_value', 'c_value'),
+      card('c_policy', 'Policy iteration', para('c_policy_core', '**Policy iteration**: evaluate, improve.', 'ingest', null, [15]), [], [15]),
+      q('q_policy', 'c_policy'),
+      card('c_rl', 'RL set-up', para('c_rl_core', '**RL**: learn from experience.', 'ingest', null, [18]), [], [18]),
+    );
+  }
+
+  const tree = () => [
+    objective('o_iter', { refs: [{ page: 12 }, { page: 15 }], order: 1 }),
+    objective('o_rl', { refs: [{ page: 18 }], order: 2 }),
+  ];
+
+  it('leaves the topic partly done after a Well done on one of its two cards', async () => {
+    const fx = fakeHost({ doc: iteration() });
+    fx.setTree(tree());
+    record(
+      fx,
+      outcome({ id: 'qo_1', objectiveId: 'o_iter', questionId: 'q_value', cardId: 'c_value' }),
+      outcome({ id: 'qo_2', objectiveId: 'o_iter', questionId: 'q_policy', cardId: 'c_policy', verdict: 'not_yet', createdAt: '2026-09-19T10:05:00.000Z' }),
+      outcome({ id: 'qo_3', objectiveId: 'o_iter', questionId: 'q_policy', cardId: 'c_policy', kind: 'released', verdict: null, releasedBy: 'give_up', createdAt: '2026-09-19T10:06:00.000Z' }),
+    );
+    const view = await buildProgress(fx.host, 'f_deck');
+    const iter = view.objectives[0]!;
+    expect(iter.fill).toBe(0.5);
+    expect(iter.cards).toEqual([
+      { cardId: 'c_value', term: 'Value iteration', done: true },
+      { cardId: 'c_policy', term: 'Policy iteration', done: false },
+    ]);
+    expect(view.objectives[1]!.cards).toEqual([{ cardId: 'c_rl', term: 'RL set-up', done: false }]);
+    expect(view).toMatchObject({ completed: 0, total: 2 });
+  });
+
+  it('completes the topic once the other card has its Well done too', async () => {
+    const fx = fakeHost({ doc: iteration() });
+    fx.setTree(tree());
+    record(
+      fx,
+      outcome({ id: 'qo_1', objectiveId: 'o_iter', questionId: 'q_value', cardId: 'c_value' }),
+      outcome({ id: 'qo_2', objectiveId: 'o_iter', questionId: 'q_policy', cardId: 'c_policy', createdAt: '2026-09-19T10:05:00.000Z' }),
+    );
+    const view = await buildProgress(fx.host, 'f_deck');
+    expect(view.objectives[0]!.fill).toBe(1);
+    expect(view).toMatchObject({ completed: 1, total: 2 });
+  });
+
+  it('reads the card of a row written before migration 031 from its Q block', async () => {
+    const fx = fakeHost({ doc: iteration({ qAttrs: false }) });
+    fx.setTree(tree());
+    record(
+      fx,
+      outcome({ id: 'qo_1', objectiveId: 'o_iter', questionId: 'q_value' }),
+      outcome({ id: 'qo_2', objectiveId: 'o_iter', questionId: 'q_policy', createdAt: '2026-09-19T10:05:00.000Z' }),
+    );
+    const view = await buildProgress(fx.host, 'f_deck');
+    expect(view.objectives[0]!.fill).toBe(1);
+  });
+
+  it('keeps a tutorial part’s Well done filling the topic as before', async () => {
+    const fx = fakeHost({ doc: iteration() });
+    fx.setTree(tree());
+    record(fx, outcome({ id: 'qo_t', objectiveId: 'o_iter', questionId: 'tut:f_deck:p_1' }));
+    const view = await buildProgress(fx.host, 'f_deck');
+    expect(view.objectives[0]!.fill).toBe(1);
+  });
+
+  it('fills an objective with no cards exactly as before', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.setTree([objective('o1', { refs: [{ page: 1 }] })]);
+    record(fx, outcome());
+    const view = await buildProgress(fx.host, 'f_deck');
+    expect(view.objectives[0]).toMatchObject({ fill: 1, cards: [] });
   });
 });

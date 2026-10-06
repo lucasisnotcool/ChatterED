@@ -1,7 +1,9 @@
 /**
- * **Explain and Example, per objective** (migration 030; Lucas's decision of 2026-10-06, D2).
+ * **Explain, Example and questions to Ellie, per objective** (migration 030; Lucas's decision of
+ * 2026-10-06, D2; questions since migration 031, decision 8 of the afternoon on #67).
  *
- * One row per press Ellie answered, filed against the objective of the line it was on. It is half
+ * One row per press Ellie answered, or per question of the learner's she answered on a section,
+ * filed against the objective of the line it was on. It is half
  * of what `core/readiness` reads to decide whether to offer "Ready to check this?"; the renderer
  * measures the other half (time on the section, the learner's own words, folds opened).
  *
@@ -10,14 +12,14 @@
  */
 import type { SqlDatabase } from '../driver.js';
 import { plainAll } from '../sql.js';
-import type { ObjectiveActivity, ObjectiveActivityView, QuizOutcome } from '../../../shared/doc/types.js';
+import type { ObjectiveActivity, ObjectiveActivityKind, ObjectiveActivityView, QuizOutcome } from '../../../shared/doc/types.js';
 
 interface ActivityRow {
   id: string;
   content_sha: string;
   room_id: string;
   objective_id: string;
-  kind: 'explain' | 'example';
+  kind: ObjectiveActivityKind;
   block_id: string | null;
   created_at: string;
 }
@@ -84,10 +86,12 @@ export function activitySince(
   for (const o of outcomes) if (since === null || o.createdAt > since) since = o.createdAt;
   let explains = 0;
   let examples = 0;
+  let questions = 0;
   for (const a of activity) {
     if (since !== null && a.createdAt <= since) continue;
     if (a.kind === 'explain') explains += 1;
-    else examples += 1;
+    else if (a.kind === 'example') examples += 1;
+    else questions += 1;
   }
-  return { explains, examples, since };
+  return { explains, examples, questions, since };
 }

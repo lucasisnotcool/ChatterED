@@ -14,8 +14,10 @@
  * not leave the section "ready" for an immediate re-ask, which is how three lesson Starts re-fired
  * on one objective 34–48 s after a release):
  *
- *  - **help**: Explain or Example pressed on the section's lines, which is the learner asking to
- *    be taught;
+ *  - **help**: Explain or Example pressed on the section's lines, or a question to Ellie about
+ *    the section, which is the learner asking to be taught. Questions count since 6 Oct afternoon
+ *    (decision 8 on #67; `notebooks.md` §11.10.4): in the Lecture-sdm session five questions to
+ *    Ellie about one section counted nothing, while one Explain press would have;
  *  - **own words**: what the learner has written in the section themselves (author mark `user`),
  *    outside any question;
  *  - **depth opened**: a fold opened under a line (a concept card's depth, the section's slides);
@@ -41,6 +43,11 @@ export interface ReadinessSignals {
   explains: number;
   /** Example presses on the section's lines. */
   examples: number;
+  /**
+   * Questions the learner asked Ellie about the section and she answered (decision 8). Optional
+   * so a caller built before it reads as none.
+   */
+  questions?: number;
   /** Words the learner wrote in the section themselves, outside any question block. */
   ownWords: number;
   /** Folds opened under the section's lines: a card's depth, the section's slides. */
@@ -92,7 +99,7 @@ export function readiness(signals: ReadinessSignals): Readiness {
   if (signals.done) return { state: 'done' };
   if (signals.questionOpen) return { state: 'asking' };
   const because: ReadinessReason[] = [];
-  if (count(signals.explains) + count(signals.examples) >= 1) because.push('help');
+  if (count(signals.explains) + count(signals.examples) + count(signals.questions ?? 0) >= 1) because.push('help');
   if (count(signals.ownWords) >= READY_OWN_WORDS) because.push('own_words');
   if (count(signals.depthOpened) >= READY_DEPTH_OPENED) because.push('depth');
   const timeOk = count(signals.dwellMs) >= READY_DWELL_MS;

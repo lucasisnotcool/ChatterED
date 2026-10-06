@@ -1601,6 +1601,21 @@ describe('markOwnQuestion', () => {
     expect(h.doc.outcomes).toEqual([]);
   });
 
+  /**
+   * Decision 10 (6 Oct afternoon, #67; `notebooks.md` §11.10.4): a question the learner sets and
+   * answers counts toward nothing, neither the bar nor "Ready to check this?", whatever the verdict.
+   */
+  it('counts toward nothing: no outcome row and no readiness activity, even on a Well done', async () => {
+    const activity: unknown[] = [];
+    const h = own('Well done. p. 3: "A private turn with one agent."', {
+      hasQuestion: (id) => id === OWN.questionId,
+      recordActivity: (a) => activity.push(a),
+    });
+    await settle(h.clock, h.actor.markOwnQuestion(OWN));
+    expect(h.doc.outcomes).toEqual([]);
+    expect(activity).toEqual([]);
+  });
+
   it('leaves Max’s own open question open and unmarked', async () => {
     const h = own('Not yet. The deck says otherwise, p. 3: "A private turn with one agent."');
     await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));

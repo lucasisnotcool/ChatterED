@@ -15,7 +15,8 @@
 
 import { DOC_ANCHOR_ID } from '../../shared/doc/types.js';
 import type { ProgressObjectiveView, ProgressView, QuizOutcome } from '../../shared/doc/types.js';
-import { progressFill } from '../../shared/doc/progress.js';
+import { cardsEarned, topicFill } from '../../shared/doc/progress.js';
+import { questionCardId } from '../../shared/doc/schema.js';
 import type { LearningObjective } from '../../shared/objectives.js';
 import type { DocHost, IpcHandle } from '../dochost.js';
 import { notesRepo } from '../db/repos/notes.js';
@@ -23,7 +24,15 @@ import { outcomesRepo } from '../db/repos/outcomes.js';
 import { activityRepo, activitySince } from '../db/repos/activity.js';
 import { threadsRepo } from '../db/repos/threads.js';
 import { docActor, requireActorMethod } from './actorport.js';
-import { blockIdsForObjective, lessonBlocks, lessonSectionText, notesDocRow, openNotesDoc, pagesOfObjective } from './doc.js';
+import {
+  blockIdsForObjective,
+  cardsForObjective,
+  lessonBlocks,
+  lessonSectionText,
+  notesDocRow,
+  openNotesDoc,
+  pagesOfObjective,
+} from './doc.js';
 
 /** The outcome that earned an objective its fill: the best verdict, and the earliest of those. */
 function bestOutcome(outcomes: readonly QuizOutcome[]): QuizOutcome | null {
@@ -104,9 +113,26 @@ export async function buildProgress(host: DocHost, fileId: string): Promise<Prog
   const states = new Map(host.objectivesStates(fileId).map((s) => [s.objectiveId, s]));
   const objectives: LearningObjective[] = tree ? [...tree.objectives].sort((a, b) => a.order - b.order) : [];
 
+  /**
+   * Decision 9 (6 Oct afternoon, #67): an objective is complete only when every concept card it
+   * covers has a *Well done*. A row's card is the one written on it (migration 031), or, for a
+   * row from before, its Q block's in the notes now.
+   */
+  const cardOf = (outcome: QuizOutcome): string | null =>
+    outcome.cardId ?? (doc ? questionCardId(doc, outcome.questionId) : null);
+  // Any *Well done* on a card counts, whichever objective its question was filed under: the card
+  // is the same idea whoever asked about it.
+  const earnedCards = cardsEarned(outcomes, cardOf);
+
   const views: ProgressObjectiveView[] = objectives.map((objective) => {
     const mine = byObjective.get(objective.id) ?? [];
-    const fill = progressFill(mine);
+    const blockIds = blockIdsForObjective(host.db, doc, docRow?.docId ?? null, objective);
+    const covered = cardsForObjective(doc, blockIds, objective.id);
+    const fill = topicFill(
+      mine,
+      covered.map((c) => c.cardId),
+      earnedCards,
+    );
     const best = bestOutcome(mine);
     const state = states.get(objective.id);
     return {
@@ -115,7 +141,7 @@ export async function buildProgress(host: DocHost, fileId: string): Promise<Prog
       statement: objective.statement,
       criteria: objective.criteria,
       pages: pagesOfObjective(objective),
-      blockIds: blockIdsForObjective(host.db, doc, docRow?.docId ?? null, objective),
+      blockIds,
       fill,
       level: state?.level ?? 0,
       assumedByDeck: objective.assumedByDeck,
@@ -127,6 +153,7 @@ export async function buildProgress(host: DocHost, fileId: string): Promise<Prog
         presses.filter((p) => p.objectiveId === objective.id),
         mine,
       ),
+      cards: covered.map((c) => ({ cardId: c.cardId, term: c.term, done: earnedCards.has(c.cardId) })),
     };
   });
 

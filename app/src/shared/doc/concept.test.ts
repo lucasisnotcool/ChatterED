@@ -31,6 +31,7 @@ import {
   eachBlock,
   learnerSpans,
   notesSchema,
+  questionCardId,
 } from './schema.js';
 import type { AgentDocOp, AgentDocOpBatch, ConceptDraft, DocBlockDraft } from './types.js';
 import { conceptWords, validateConceptDraft } from './validate.js';
@@ -262,6 +263,35 @@ describe('the other ops keep a card a card', () => {
       expect(() => doc.check()).not.toThrow();
       expect(doc.child(3).type.name).toBe('q_block');
     }
+  });
+
+  // Decision 9 (6 Oct afternoon, #67): a verdict counts toward the card its question is about.
+  it('a Q block under a card knows its card, and one outside a card knows none', () => {
+    const inCard = run({ op: 'insert_q', anchorBlockId: 'b_eq_m', questionId: 'q1', objectiveId: null, text: 'Why?', prov: { pages: [39], reason: null } });
+    expect(inCard.tr!.doc.child(3).attrs.cardId).toBe('b_card');
+    expect(questionCardId(inCard.tr!.doc, 'q1')).toBe('b_card');
+    const outside = run({ op: 'insert_q', anchorBlockId: 'b_after', questionId: 'q2', objectiveId: null, text: 'Why?', prov: { pages: [40], reason: null } });
+    expect(outside.tr!.doc.child(4).attrs.cardId).toBeNull();
+    expect(questionCardId(outside.tr!.doc, 'q2')).toBeNull();
+    expect(questionCardId(outside.tr!.doc, 'q_missing')).toBeNull();
+    // It survives the round trip a saved doc makes.
+    expect(docFromJson(inCard.tr!.doc.toJSON()).child(3).attrs.cardId).toBe('b_card');
+  });
+
+  it('finds the card of an older Q block, written before it carried one, from where it stands', () => {
+    const q = (questionId: string) =>
+      notesSchema.nodes.q_block!.create({ blockId: `b_${questionId}`, questionId, status: 'resolved' }, [para(`b_${questionId}_p`, 'Why?')]);
+    const doc = docOf(
+      heading('b_h2', 2, 'Policy iteration', [39]),
+      card('b_card', 'Policy iteration', para('b_core', '**Policy iteration**: repeat.', 'ingest', null, [39])),
+      q('q_new'),
+      q('q_old'),
+      para('b_after', 'After the card.', 'ingest', null, [40]),
+      q('q_loose'),
+    );
+    expect(questionCardId(doc, 'q_new')).toBe('b_card');
+    expect(questionCardId(doc, 'q_old')).toBe('b_card');
+    expect(questionCardId(doc, 'q_loose')).toBeNull();
   });
 
   it('replace_block on the core line takes one paragraph, and refuses anything else', () => {

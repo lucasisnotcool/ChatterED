@@ -35,6 +35,72 @@ export function progressFill(outcomes: readonly QuizOutcome[]): ProgressFill {
 }
 
 /**
+ * **The `questionId` prefix of a tutorial part's outcome rows** (`main/tutorial/check.ts`,
+ * `tutorialQuestionId`). A part is checked against its own hidden key, not against a card of the
+ * notes, so its rows keep filling the bar exactly as before decision 9.
+ */
+export const TUTORIAL_QUESTION_PREFIX = 'tut:';
+
+export function isTutorialOutcome(outcome: Pick<QuizOutcome, 'questionId'>): boolean {
+  return outcome.questionId.startsWith(TUTORIAL_QUESTION_PREFIX);
+}
+
+/** An own-words *Well done*: a `complete` verdict on an open question (a blank's fills nothing). */
+function earnedVerdict(outcome: QuizOutcome): boolean {
+  return outcome.kind === 'verdict' && outcome.verdict === 'complete' && outcome.form !== 'cloze';
+}
+
+/**
+ * **The concept cards that have a *Well done*** (6 Oct afternoon, decision 9 on #67): the card of
+ * every own-words *Well done*. `cardOf` reads a row's card (`QuizOutcome.cardId`, or the caller's
+ * fallback for a row written before migration 031); a row about no card earns no card.
+ */
+export function cardsEarned(
+  outcomes: readonly QuizOutcome[],
+  cardOf: (outcome: QuizOutcome) => string | null = (o) => o.cardId ?? null,
+): Set<string> {
+  const done = new Set<string>();
+  for (const outcome of outcomes) {
+    if (!earnedVerdict(outcome)) continue;
+    const card = cardOf(outcome);
+    if (card) done.add(card);
+  }
+  return done;
+}
+
+/**
+ * **What a topic has earned, card by card** (6 Oct afternoon, decision 9 on #67;
+ * `notebooks.md` §11.10.4).
+ *
+ * > A topic is done only when every concept card it covers has a *Well done*. Until then it is
+ * > partly done.
+ *
+ * The Lecture-sdm evidence: one *Well done* on value iteration made a topic "1 of 6 complete"
+ * though the same topic covers policy iteration, whose question had ended in a give-up.
+ *
+ *  - **No cards** (a prose source, an older doc, an objective whose blocks hold none): exactly
+ *    `progressFill(outcomes)`, unchanged.
+ *  - **Cards**: complete (1) only when every covered card is in `earned`, the cards with an
+ *    own-words *Well done* (`cardsEarned`, by default over these outcomes; the caller may pass the
+ *    file's, since a card is the same idea whichever objective its question was filed under).
+ *    Otherwise partly done (0.5) when anything of the learner's is on record: a fill from these
+ *    outcomes, or one of the cards earned. A release and a blank still fill nothing.
+ *  - **A tutorial part's *Well done*** completes the objective as it always has (Lucas, 3 Oct:
+ *    full credit whatever help was used). Decision 9 leaves tutorial parts' behaviour unchanged.
+ */
+export function topicFill(
+  outcomes: readonly QuizOutcome[],
+  cards: readonly string[],
+  earned: ReadonlySet<string> = cardsEarned(outcomes),
+): ProgressFill {
+  const best = progressFill(outcomes);
+  if (cards.length === 0) return best;
+  if (outcomes.some((o) => isTutorialOutcome(o) && earnedVerdict(o))) return 1;
+  if (cards.every((card) => earned.has(card))) return 1;
+  return best > 0 || cards.some((card) => earned.has(card)) ? 0.5 : 0;
+}
+
+/**
  * **Revision: the second clause of the learning goal** (`docs/research/measurement.md` M2).
  *
  * The goal is *"answer a question about the lecture in their own words, **and revise that answer

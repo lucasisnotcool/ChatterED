@@ -24,7 +24,8 @@ import type { Node } from 'prosemirror-model';
 import type { DocPort } from '../../room/docport.js';
 import { NO_DOC } from '../../room/docport.js';
 import type { OutlineEntry, QuizOutcome } from '../../shared/doc/types.js';
-import { blocksForPages, docFromJson, docOutline, docOutlineNear, eachBlock } from '../../shared/doc/schema.js';
+import { blocksForPages, docFromJson, docOutline, docOutlineNear, eachBlock, questionCardId } from '../../shared/doc/schema.js';
+import { objectiveForBlock } from '../docroom/doc.js';
 import type { DocHost } from '../dochost.js';
 import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/notes.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
@@ -139,6 +140,11 @@ export function createDocPort(host: DocHost, file: DocPortFile): DocPort {
     }
   };
 
+  const questionCard = (questionId: string): string | null => {
+    const doc = parsed(record());
+    return doc ? questionCardId(doc, questionId) : null;
+  };
+
   return {
     docId() {
       return record()?.id ?? null;
@@ -208,6 +214,12 @@ export function createDocPort(host: DocHost, file: DocPortFile): DocPort {
     recordOutcome(outcome) {
       const stored: QuizOutcome = {
         ...outcome,
+        /**
+         * The card the question was about (decision 9, migration 031), copied from its Q block now,
+         * while the block is surely there: a learner who later removes the chip keeps the credit.
+         * A tutorial part's row has no Q block in these notes, and stays without one.
+         */
+        cardId: outcome.cardId ?? questionCard(outcome.questionId),
         // Said on every row from migration 023 on, so a reader never has to infer it (§4.5).
         form: outcome.form ?? 'open',
         id: mintId('qo'),
@@ -221,7 +233,15 @@ export function createDocPort(host: DocHost, file: DocPortFile): DocPort {
     },
 
     recordActivity(press) {
-      activity.insert({ ...press, id: mintId('oa'), contentSha, createdAt: new Date().toISOString() });
+      // A question to Ellie arrives with its block only (decision 8): the objective is the block's,
+      // by the same rule a span thread is tagged with (`objectiveForBlock`: exactly one, or none).
+      let objectiveId = press.objectiveId;
+      if (objectiveId === null) {
+        if (!press.blockId || !file.fileId) return;
+        objectiveId = objectiveForBlock(host.objectivesTree(file.fileId), parsed(record()), press.blockId);
+        if (objectiveId === null) return;
+      }
+      activity.insert({ ...press, objectiveId, id: mintId('oa'), contentSha, createdAt: new Date().toISOString() });
       // The same seam as an outcome: the progress view carries the count (D2), so it is pushed again.
       announceActivity({ roomId: press.roomId });
     },
