@@ -55,6 +55,25 @@ import { mapObjectiveBlocks, WINDOW_ERROR_RETRIES, WINDOW_PREEMPT_RETRIES, WINDO
 import { countPageImages, pageImageDir, pageImagesFor, type StoredPageImage } from './pageimages.js';
 import { NOTES_PROMPT_VERSION } from './prompts.js';
 import {
+  CARD_WORDS,
+  CARDS_JSON_SCHEMA,
+  CARDS_CONDENSE_MAX_TOKENS,
+  CARDS_MAX_TOKENS,
+  cardCondenseWords,
+  CARDS_SYSTEM,
+  cardBudget,
+  cardsMessage,
+  cardWords,
+  figureRect,
+  fitCards,
+  hasCards,
+  validateCards,
+  type CardBudget,
+  type CardRepairs,
+  type CardWords,
+} from './cards.js';
+import type { Rect } from '../../shared/doc/types.js';
+import {
   CONDENSE_SYSTEM,
   OVERVIEW_JSON_SCHEMA,
   OVERVIEW_MAX_OBJECTIVES,
@@ -73,6 +92,7 @@ import {
   validateOverview,
   type OverviewPolicy,
   type OverviewRepairs,
+  type ValidOverview,
 } from './overview.js';
 
 /** The ceiling on the overview's answer. The JSON and the pages are most of it. */
@@ -396,6 +416,7 @@ async function runOverview(
     const sourceWords = policy.bodyWords;
     const budget = policy.budget;
     const steps = deck.truncated ? sources.length + 1 : 1;
+    const asCards = policy.genre === 'slides';
     let done = 0;
     const progress = (): void => {
       const record = deps.repo.setIngest(docId, { status: 'pending', windowsDone: done, windowsTotal: steps }, now());
@@ -409,14 +430,15 @@ async function runOverview(
       const parts: string[] = [];
       for (const source of sources) {
         const own = sourceText(deps.notebooks, input.notebookId, source);
-        const words = condenseWords(sourceWordsOf(own));
+        // Cards keep the working (§11.2), so a condensed source keeps far more of it than a map needs.
+        const words = asCards ? cardCondenseWords(sourceWordsOf(own)) : condenseWords(sourceWordsOf(own));
         const outcome = await call(
           deps,
           {
             model: deps.models.orchestrator,
-            max_tokens: CONDENSE_MAX_TOKENS,
+            max_tokens: asCards ? CARDS_CONDENSE_MAX_TOKENS : CONDENSE_MAX_TOKENS,
             system: [{ type: 'text', text: CONDENSE_SYSTEM }],
-            messages: [{ role: 'user', content: condenseMessage({ sourceName: source.name, text: own, words }) }],
+            messages: [{ role: 'user', content: condenseMessage({ sourceName: source.name, text: own, words, keepWorking: asCards }) }],
             meta: { scope: 'notes', costScope: 'notes', fileId: input.notebookId },
           },
           `condense:${source.fileId}`,
@@ -433,29 +455,45 @@ async function runOverview(
 
     const images = await evidentiaryImages(deps, input.notebookId, sources);
     if (images.length > 0) deps.repo.setIngest(docId, { withImages: true }, now());
+    /**
+     * **Slides are written as concept cards** (`notebooks.md` §11.2, amended 2026-10-06); papers
+     * keep the prose overview. The cards' budget is a share of the slides' own words, and the
+     * figure regions of each page are what a `figure` item's crop is chosen from, in code.
+     */
+    const regions = asCards ? await figureRegions(deps, input.notebookId, sources) : new Map<number, FigureRegion[]>();
     const outcome = await call(
       deps,
       {
         // Sonnet, named as the orchestrator rather than the fast lane (see `ingest.ts`).
         model: deps.models.orchestrator,
-        max_tokens: OVERVIEW_MAX_TOKENS,
-        system: [{ type: 'text', text: OVERVIEW_SYSTEM }],
+        max_tokens: asCards ? CARDS_MAX_TOKENS : OVERVIEW_MAX_TOKENS,
+        system: [{ type: 'text', text: asCards ? CARDS_SYSTEM : OVERVIEW_SYSTEM }],
         messages: [
           {
             role: 'user',
-            content: overviewMessage({
-              notebookName: subject.name,
-              sourceNames: sources.map((s) => s.name),
-              deckText: text,
-              condensed: deck.truncated,
-              sourceWords,
-              budget,
-              genre: policy.genre,
-              imagePages: images.map((i) => i.page),
-            }),
+            content: asCards
+              ? cardsMessage({
+                  notebookName: subject.name,
+                  sourceNames: sources.map((s) => s.name),
+                  deckText: text,
+                  condensed: deck.truncated,
+                  budget: cardBudget(sourceWords),
+                  imagePages: images.map((i) => i.page),
+                  figurePages: [...regions].map(([page, boxes]) => ({ page, area: boxes[0]?.area ?? 0 })),
+                })
+              : overviewMessage({
+                  notebookName: subject.name,
+                  sourceNames: sources.map((s) => s.name),
+                  deckText: text,
+                  condensed: deck.truncated,
+                  sourceWords,
+                  budget,
+                  genre: policy.genre,
+                  imagePages: images.map((i) => i.page),
+                }),
           },
         ],
-        jsonSchema: OVERVIEW_JSON_SCHEMA,
+        jsonSchema: asCards ? CARDS_JSON_SCHEMA : OVERVIEW_JSON_SCHEMA,
         ...(images.length > 0 ? { images } : {}),
         meta: { scope: 'notes', costScope: 'notes', fileId: input.notebookId },
       },
@@ -479,6 +517,7 @@ async function runOverview(
       startedAt,
       outputTokens: outcome.outputTokens,
       condensed: deck.truncated,
+      regions,
     });
   } catch (err) {
     fail(deps, input, docId, mode, err, startedAt);
@@ -524,6 +563,8 @@ interface Landing {
   startedAt: number;
   outputTokens: number | null;
   condensed: boolean;
+  /** Each notebook page's figure regions, biggest first: where a card's figure is cropped from. */
+  regions?: ReadonlyMap<number, readonly FigureRegion[]>;
 }
 
 /**
@@ -540,18 +581,39 @@ function land(
 ): NotesDocRecord {
   const now = deps.now ?? (() => new Date().toISOString());
   const contentKey = notebookContentKey(input.notebookId);
-  const checked = validateOverview(landing.raw, {
+  const ctx = {
     pageCount: subject.pageCount,
-    pageExists: (page) => deps.notebooks.locate(input.notebookId, page) !== null,
+    pageExists: (page: number) => deps.notebooks.locate(input.notebookId, page) !== null,
     pageTexts: pageTextsOf(landing.deckText),
     fallbackTitle: subject.name,
     maxSections: landing.policy.maxSections,
     maxIdeas: landing.policy.maxIdeas,
-  });
-  const { repairs } = checked;
-  if (!checked.overview) throw new Error('the model returned no usable section');
-  // §3.2: the budget is a ceiling, so an overview well over it loses its third ideas.
-  const { overview, ideasCut } = fitOverview(checked.overview, landing.budget);
+  };
+  /**
+   * **Cards when the answer is cards** (§11.2): a slide deck's live call asks for them. An answer
+   * in the map's shape (the scripted fixtures, or a model that ignored the schema) lands as a map,
+   * through the gate it was written for, rather than as nothing.
+   */
+  const asCards = landing.policy.genre === 'slides' && hasCards(landing.raw);
+  let overview: ValidOverview;
+  let repairs: OverviewRepairs;
+  let ideasCut = 0;
+  let cards: CardLanding | null = null;
+  if (asCards) {
+    const checked = validateCards(landing.raw, { ...ctx, figureRect: (page) => figureRect(landing.regions?.get(page) ?? []) });
+    if (!checked.overview) throw new Error('the model returned no usable section');
+    const budget = cardBudget(landing.sourceWords);
+    const fit = fitCards(checked.overview, budget);
+    overview = fit.overview;
+    repairs = checked.repairs;
+    cards = { budget, itemsCut: fit.itemsCut, coresTrimmed: fit.coresTrimmed, repairs: checked.repairs, words: cardWords(overview) };
+  } else {
+    const checked = validateOverview(landing.raw, ctx);
+    if (!checked.overview) throw new Error('the model returned no usable section');
+    repairs = checked.repairs;
+    // §3.2: the budget is a ceiling, so an overview well over it loses its third ideas.
+    ({ overview, ideasCut } = fitOverview(checked.overview, landing.budget));
+  }
 
   // ── C5: the tree first, so the list is drawn from what is stored ──
   const { objectives, notes } = objectivesFromOverview({
@@ -594,8 +656,9 @@ function land(
     fingerprint: subject.fingerprint,
     writtenAt: now(),
     words: minted.words,
-    wordBudget: landing.budget,
+    wordBudget: cards ? cards.budget.notes.max : landing.budget,
     genre: landing.policy.genre,
+    ...(cards ? { cards: { coreWords: cards.words.core, coreBudget: cards.budget.core.max } } : {}),
   });
   const record = deps.repo.landOverview(
     {
@@ -648,8 +711,18 @@ function land(
     recommendations: meta.recommendations.length,
     ideasCut,
     statesCarried: carried.length,
+    cards,
   });
   return record;
+}
+
+/** What the card path adds to the landing's log line (§11.2: the ratio is a check that is logged). */
+interface CardLanding {
+  budget: CardBudget;
+  itemsCut: number;
+  coresTrimmed: number;
+  repairs: CardRepairs;
+  words: CardWords;
 }
 
 function logLanding(
@@ -669,8 +742,11 @@ function logLanding(
     recommendations: number;
     ideasCut: number;
     statesCarried: number;
+    cards: CardLanding | null;
   },
 ): void {
+  const c = extra.cards;
+  const share = (n: number): number => (landing.sourceWords > 0 ? Math.round((n / landing.sourceWords) * 1000) / 1000 : 0);
   log().info('notes.overview', {
     file_id: input.notebookId,
     doc_id: record.id,
@@ -715,6 +791,34 @@ function logLanding(
     suggestions_cleared: extra.suggestionsCleared,
     states_dropped: extra.statesDropped,
     states_carried: extra.statesCarried,
+    carried_cards_merged: extra.carried.mergedCards,
+    // §11.2: words written against the slides' words, the whole notes and the visible layer, each
+    // beside its 30–40% / 8–10% band. A check, logged; never a reason to refuse the notes.
+    form: c ? 'cards' : 'map',
+    ...(c
+      ? {
+          cards: {
+            count: c.words.perCard.length,
+            notes_words: c.words.notes,
+            notes_band: [c.budget.notes.min, c.budget.notes.max],
+            notes_share: share(c.words.notes),
+            core_words: c.words.core,
+            core_band: [c.budget.core.min, c.budget.core.max],
+            core_share: share(c.words.core),
+            thin_cards: c.words.perCard.filter((w) => w < CARD_WORDS.min).length,
+            heavy_cards: c.words.perCard.filter((w) => w > CARD_WORDS.max).length,
+            items_cut_over_budget: c.itemsCut,
+            cores_trimmed: c.coresTrimmed,
+            cards_dropped: c.repairs.cardsDropped,
+            items_dropped: c.repairs.itemsDropped,
+            items_marked_added: c.repairs.itemsAddedForced,
+            cores_cut: c.repairs.coresCut,
+            figures_dropped: c.repairs.figuresDropped,
+            tables_dropped: c.repairs.tablesDropped,
+            problems: c.repairs.problems,
+          },
+        }
+      : {}),
   });
 }
 
@@ -886,6 +990,41 @@ export async function evidentiaryImages(
   const step = figures.length / room;
   const spread = Array.from({ length: room }, (_, i) => figures[Math.floor(i * step)]!);
   return [...first, ...spread].sort((a, b) => a.page - b.page);
+}
+
+/** One figure region of a page (`extract.ts` `pageFigures`): its rect and the share of the slide it covers. */
+export interface FigureRegion {
+  rect: Rect;
+  area: number;
+}
+
+/**
+ * **The figure regions of every page of the ticked PDF sources**, by notebook page, biggest first,
+ * for the pages that have one (§11.2: a card's `figure` is a crop of its slide, chosen in code).
+ * One geometry pass per source, the same cached pass `evidentiaryImages` reads; a source whose
+ * geometry cannot be had contributes nothing, and the figure is then the whole slide.
+ */
+export async function figureRegions(
+  deps: Pick<OverviewDeps, 'notebooks' | 'geometry'>,
+  notebookId: string,
+  sources: readonly NotebookSourceView[],
+): Promise<Map<number, FigureRegion[]>> {
+  const out = new Map<number, FigureRegion[]>();
+  for (const source of sources) {
+    if (source.kind !== 'pdf') continue;
+    const located = deps.notebooks.locate(notebookId, source.pageBase + 1);
+    if (!located?.contentSha) continue;
+    try {
+      const geometry = await deps.geometry({ filePath: located.path, contentSha: located.contentSha });
+      for (const page of extractNotesPages(geometry)) {
+        if (page.figures.length === 0) continue;
+        out.set(source.pageBase + page.page, page.figures.map((f) => ({ rect: f.rect, area: f.area })));
+      }
+    } catch {
+      continue;
+    }
+  }
+  return out;
 }
 
 /** The same unwrapper the window ingest uses: prose around the object is a known shape. */

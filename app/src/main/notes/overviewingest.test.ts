@@ -32,6 +32,7 @@ import {
 import { NOTES_PROMPT_VERSION } from './prompts.js';
 import { fakeNotebook, slides, type FakeNotebook } from './fakenotebook.test-support.js';
 import { EARLIER_NOTES_HEADING } from './overview.js';
+import { CARDS_SYSTEM } from './cards.js';
 import { storeNotebookPageImages } from './ipc.js';
 import { notebookPageLines } from './pagelines.js';
 import { clearPageLinesCache } from './pagelines.js';
@@ -156,7 +157,9 @@ describe('the first overview', () => {
     expect(call.meta).toMatchObject({ scope: 'notes', costScope: 'notes', fileId: NB });
     expect(call.jsonSchema).toBeDefined();
     expect(call.messages[0]!.content).toContain('[p. 20]');
-    expect(call.messages[0]!.content).toMatch(/at most \d+ words/);
+    // A slide deck is asked for concept cards, with the 30–40% budget as numbers (§11.2).
+    expect(call.system?.[0]?.text).toBe(CARDS_SYSTEM);
+    expect(call.messages[0]!.content).toMatch(/The whole notes are \d+ to \d+ words/);
     // The status went pending → ready, one step.
     const statuses = h.events.filter((e) => e.type === 'notes.status').map((e) => (e as { ingest: { status: string } }).ingest.status);
     expect(statuses[0]).toBe('pending');
@@ -484,6 +487,129 @@ describe('recommendations (§5.3)', () => {
     expect(dismissed.recommendations.map((r) => r.status)).toEqual(['added', 'dismissed']);
     expect(h.repo.byId(done.id)!.overview!.recommendations.map((r) => r.status)).toEqual(['added', 'dismissed']);
     expect(setRecommendationStatus(h.deps, { docId: 'doc_nope', recommendationId: a!.id, status: 'added' })).toBeNull();
+  });
+});
+
+// ── concept cards (notebooks.md §11.2, amended 2026-10-06) ───────────────────────────────────
+
+/** A card answer over the same 20 slides: two sections, cards with depth. */
+function cardAnswer(over: { exampleText?: string } = {}): string {
+  const base = JSON.parse(answer()) as Record<string, unknown>;
+  return JSON.stringify({
+    ...base,
+    sections: [
+      {
+        heading: 'Heuristics',
+        pages: [3, 4],
+        takeaway: 'Heuristics estimate the cost to the goal.',
+        recommendation: { kind: 'table', title: 'x', description: 'A table the slide already has.' },
+        cards: [
+          {
+            term: 'h_max',
+            core: 'the cost of the most expensive goal fact, a lower bound on the true cost.',
+            pages: [3],
+            depth: [
+              { role: 'pitfall', text: 'Admissible does not mean accurate.', pages: [3], added: false },
+              { role: 'equation', tex: 'h_{\\max}(s) = \\max_{g \\in G} c(s, g)', where: ['$G$: the goal facts', '$c(s,g)$: cost to reach $g$'], pages: [3], added: false },
+              { role: 'example', text: over.exampleText ?? 'With goal facts costing 2 and 3, $h_{\\max} = 3$.', pages: [4], added: false },
+              { role: 'figure', page: 4, text: 'The relaxed planning graph.', pages: [4], added: false },
+            ],
+          },
+          { term: 'h_add', core: 'the sum of the goal facts’ costs: informative but not admissible.', pages: [5], depth: [] },
+        ],
+      },
+      {
+        heading: 'Abstraction',
+        pages: [8],
+        takeaway: 'Abstraction drops detail to plan faster.',
+        cards: [{ term: 'Abstraction', core: 'planning over a simplified model of the problem.', pages: [8], depth: [{ role: 'intuition', text: 'A map with only the highways.', pages: [8], added: false }] }],
+      },
+    ],
+  });
+}
+
+describe('notes as concept cards (§11.2)', () => {
+  it('lands a card answer as cards: sections, cards with folded depth in reading order, a slot per section', async () => {
+    const h = harness(() => cardAnswer());
+    const done = (await run(h))!;
+    const blocks = topLevel(done.doc);
+    expect(blocks.filter((b) => b.type === 'concept').map((b) => b.text.split(':')[0])).toEqual(['h_max', 'h_add', 'Abstraction']);
+    expect(blocks.filter((b) => b.reason === NOTE_SLOT_REASON)).toHaveLength(2);
+    const doc = docFromJson(done.doc);
+    const card = doc.child(blocks.findIndex((b) => b.type === 'concept'));
+    const roles: string[] = [];
+    card.forEach((child, _o, i) => {
+      if (i > 0) roles.push(child.attrs.role as string);
+    });
+    // Reading order, whatever order the model gave them in; the pitfall marked added in code.
+    expect(roles).toEqual(['equation', 'example', 'figure', 'pitfall']);
+    expect(card.lastChild!.attrs.reason).toBe('a common pitfall, added');
+    expect(card.child(1).child(0).type.name).toBe('math_block');
+    expect(card.child(1).child(1).type.name).toBe('bullet_list');
+    // The figure is the slide, in line, with its page as provenance.
+    expect(card.child(3).firstChild!.firstChild!.type.name).toBe('slide_image');
+    expect(card.child(3).attrs.pages).toEqual([4]);
+    const meta = done.overview!;
+    expect(meta.form).toBe('cards');
+    expect(meta.coreWords).toBeGreaterThan(0);
+    expect(meta.wordBudget).toBeGreaterThan(0);
+    // A table the slide has is written in, never recommended (§5.3 as amended).
+    expect(meta.recommendations.map((r) => r.kind)).not.toContain('table');
+  });
+
+  it('crops a figure from the page’s own figure region, chosen in code', async () => {
+    const h = harness(() => cardAnswer(), {
+      geometry: async () =>
+        [4].map((page) => ({
+          page,
+          width: 960,
+          height: 540,
+          textBoxes: [{ text: 'Relaxed planning graph', x0: 0.1, y0: 0.05, x1: 0.5, y1: 0.1, fontPt: 14, fontName: 'f' }],
+          inkBoxes: [{ kind: 'path' as const, x0: 0.1, y0: 0.2, x1: 0.9, y1: 0.8 }],
+          chrome: [false],
+          imageCount: 0,
+        })),
+    });
+    const done = (await run(h))!;
+    let rect: unknown = null;
+    docFromJson(done.doc).descendants((n) => {
+      if (n.type.name === 'slide_image') rect = n.attrs.rect;
+      return true;
+    });
+    expect(rect).toEqual({ x0: 0.08, y0: 0.18, x1: 0.92, y1: 0.82 });
+  });
+
+  it('Update overview puts the learner’s writing in a card into the new card of the same term', async () => {
+    const h = harness((_, n) => cardAnswer(n === 1 ? {} : { exampleText: 'A newer worked case.' }));
+    const first = (await run(h))!;
+    // The learner writes their own example item into the h_max card.
+    const record = h.repo.byId(first.id)!;
+    const doc = docFromJson(record.doc);
+    const nodes: ReturnType<typeof doc.child>[] = [];
+    doc.forEach((n) => nodes.push(n));
+    const at = nodes.findIndex((n) => n.type.name === 'concept');
+    const card = nodes[at]!;
+    const mine = notesSchema.nodes.concept_item!.create(
+      { blockId: 'b_my_item', role: 'note', pages: [3], reason: null, objectiveIds: [] },
+      notesSchema.nodes.paragraph!.create({ blockId: 'b_my_p', pages: [3], reason: null, objectiveIds: [] }, notesSchema.text('My way to remember it.', [authorMark('user', null, 1)])),
+    );
+    nodes[at] = card.copy(card.content.append(notesSchema.nodes.doc!.create(null, [mine]).content));
+    expect(h.repo.save({ docId: first.id, baseVersion: record.version, doc: notesSchema.nodes.doc!.create(null, nodes).toJSON(), learnerTouched: true }, T0).ok).toBe(true);
+
+    await updateOverview(h.deps, { notebookId: NB, roomId: null });
+    await overviewInFlight(KEY);
+    const updated = docFromJson(h.repo.byId(first.id)!.doc);
+    const cards: string[] = [];
+    let text = '';
+    updated.forEach((n) => {
+      if (n.type.name !== 'concept') return;
+      cards.push(n.attrs.term as string);
+      if (n.attrs.term === 'h_max') text = n.textContent;
+    });
+    expect(cards).toEqual(['h_max', 'h_add', 'Abstraction']);
+    expect(text).toContain('My way to remember it.');
+    expect(text).toContain('A newer worked case.');
+    expect(text).not.toContain('With goal facts costing 2 and 3');
   });
 });
 

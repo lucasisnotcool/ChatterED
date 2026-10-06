@@ -28,7 +28,9 @@
  */
 import { createHash } from 'node:crypto';
 import type { Node } from 'prosemirror-model';
+import { conceptWords } from '../../shared/doc/validate.js';
 import type {
+  ConceptDraft,
   DocBlockDraft,
   GeneratedBlockKind,
   OverviewMeta,
@@ -472,13 +474,17 @@ export const CONDENSE_SYSTEM = [
   'text, no JSON.',
 ].join('\n');
 
-export function condenseMessage(input: { sourceName: string; text: string; words: number }): string {
+export function condenseMessage(input: { sourceName: string; text: string; words: number; keepWorking?: boolean }): string {
   return [
     `SOURCE: ${input.sourceName}`,
     '',
     input.text,
     '',
     `Outline this source in at most ${input.words} words, every line starting with its [p. N] marker.`,
+    // Notes as cards (§11.2, amended 2026-10-06) are written from this outline, working and all.
+    ...(input.keepWorking
+      ? ['Keep every definition, every equation (as TeX), every worked example with its numbers, every table (as rows) and every algorithm step, verbatim. Drop only what the notes leave out.']
+      : []),
   ].join('\n');
 }
 
@@ -607,6 +613,13 @@ export interface OverviewSection {
   recommendation: OverviewRecommendationDraft | null;
   /** The optional last "what comes next" section. Never carries a recommendation. */
   next: boolean;
+  /**
+   * **The section's concept cards** (`notebooks.md` §11.2, amended 2026-10-06): set on notes
+   * written as cards (`cards.ts`), and then drawn in place of the key ideas. Absent on a map.
+   */
+  cards?: ConceptDraft[];
+  /** Where the section was in the model's `sections` array, so the card gate can find its cards. */
+  source?: number;
 }
 
 export interface OverviewObjective {
@@ -654,6 +667,8 @@ export interface ValidateOverviewContext {
   /** `OverviewPolicy.maxSections` and `.maxIdeas`; the slide caps when absent. */
   maxSections?: number;
   maxIdeas?: number;
+  /** Set by the card gate (`cards.ts`): each section remembers its index in the model's array. */
+  keepSource?: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -804,7 +819,7 @@ export function validateOverview(
     return value.replace(new RegExp(`\\s*${BLANK}\\s*`, 'g'), ' … ').replace(/\s+/g, ' ').trim();
   };
 
-  const sectionOf = (value: unknown, next: boolean): OverviewSection | null => {
+  const sectionOf = (value: unknown, next: boolean, source = -1): OverviewSection | null => {
     const record = asRecord(value);
     if (!record) return null;
     const heading = text(record.heading) || (next ? WHAT_COMES_NEXT_HEADING : '');
@@ -827,13 +842,13 @@ export function validateOverview(
     } else if (rec && next) {
       repairs.recommendationsDropped += 1;
     }
-    return { heading, pages, takeaway, ideas, recommendation, next };
+    return { heading, pages, takeaway, ideas, recommendation, next, ...(source >= 0 ? { source } : {}) };
   };
 
   // ── sections, then the optional last one ──
   const sections: OverviewSection[] = [];
-  for (const value of Array.isArray(root.sections) ? root.sections : []) {
-    const section = sectionOf(value, false);
+  for (const [index, value] of (Array.isArray(root.sections) ? root.sections : []).entries()) {
+    const section = sectionOf(value, false, ctx.keepSource ? index : -1);
     if (!section) {
       repairs.sectionsDropped += 1;
       continue;
@@ -1002,8 +1017,12 @@ export function overviewDrafts(overview: ValidOverview, objectiveTitles: readonl
     if (section.takeaway.length > 0) {
       drafts.push({ kind: 'paragraph', text: section.takeaway, prov: { pages: [...section.pages], reason: null } });
     }
-    for (const idea of section.ideas) {
-      drafts.push({ kind: 'bullets', items: [idea.text], prov: { pages: [...idea.pages], reason: null } });
+    // Notes as cards (§11.2, amended 2026-10-06): the section's cards stand where its ideas did.
+    if (section.cards) drafts.push(...section.cards);
+    else {
+      for (const idea of section.ideas) {
+        drafts.push({ kind: 'bullets', items: [idea.text], prov: { pages: [...idea.pages], reason: null } });
+      }
     }
     noteSlots.push(drafts.length);
     drafts.push({ kind: 'paragraph', text: '', prov: { pages: [...section.pages], reason: NOTE_SLOT_REASON } });
@@ -1011,9 +1030,22 @@ export function overviewDrafts(overview: ValidOverview, objectiveTitles: readonl
   return { drafts, sectionHeadings, noteSlots };
 }
 
-/** Words the overview writes, title excluded: the number logged against the budget. */
+/**
+ * Words the overview writes, title excluded: the number logged against the budget. A concept
+ * card counts its core line and its depth, maths and figures left out (§11.2: the 30–40% is of
+ * "slide words excluding math blocks and figures", so the notes' side is counted the same way).
+ */
 export function overviewWords(drafts: readonly DocBlockDraft[]): number {
-  return draftWords(drafts.filter((d) => !(d.kind === 'heading' && d.prov.reason === TITLE_REASON)));
+  let words = 0;
+  const plain: DocBlockDraft[] = [];
+  for (const d of drafts) {
+    if (d.kind === 'heading' && d.prov.reason === TITLE_REASON) continue;
+    if (d.kind === 'concept') {
+      const { core, depth } = conceptWords(d);
+      words += core + depth;
+    } else plain.push(d);
+  }
+  return words + draftWords(plain);
 }
 
 /** How far over the budget an overview may land before its third ideas are cut: a ceiling, loosely. */
@@ -1107,8 +1139,11 @@ export function overviewMeta(input: {
   words: number;
   wordBudget: number;
   genre?: SourceGenre;
+  /** On notes written as cards (§11.2): the form, and the always-visible layer against its budget. */
+  cards?: { coreWords: number; coreBudget: number };
 }): OverviewMeta {
   return {
+    ...(input.cards ? { form: 'cards' as const, coreWords: input.cards.coreWords, coreBudget: input.cards.coreBudget } : {}),
     version: OVERVIEW_META_VERSION,
     fingerprint: input.fingerprint,
     writtenAt: input.writtenAt,
