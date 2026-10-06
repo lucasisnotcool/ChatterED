@@ -31,6 +31,8 @@ import {
 import { parseMention } from '../shared/doc/mention.js';
 import { ownWordsOf } from '../core/ownwords.js';
 import { dropQuestionTail, questionText, settleVerdict, type TurnVerdict } from '../core/quizturn.js';
+import { extractChipNote } from '../core/chipnote.js';
+import { chipNoteBlock } from './prompts.chip.js';
 import { DECK_ANCHOR_ID } from '../shared/scope.js';
 import {
   buildQuestionEdit,
@@ -917,6 +919,12 @@ export class RoomActor {
    * press is filed against it once Ellie's answer lands (`#noteTurnForFlow`).
    */
   #actionObjective = new Map<string, { objectiveId: string; blockId: string }>();
+  /**
+   * Max's sentence for a question's chip (decision 12 of 6 Oct afternoon, #67), by question id,
+   * from the *Well done* turn until the resolution stores it on the Q block. In memory only: a
+   * question resolves in the turn that earned it.
+   */
+  #chipNotes = new Map<string, string>();
   /** True for the length of a Quiz me turn, so the question is pitched (§4.5) like a follow-up was. */
   #blockQuiz = false;
   /**
@@ -5258,6 +5266,12 @@ export class RoomActor {
     } else if (move === 'tutor_feedback' && tutor?.verdict) {
       ({ text: out, verdict, change } = settleVerdict(text, tutor.verdict.verdict));
     }
+    /**
+     * **Max's sentence for the chip** (decision 12 of 6 Oct afternoon, #67; `core/chipnote.ts`).
+     * His `Chip:` line is taken out of every marking turn's text; on a *Well done* on an open
+     * question, a sentence that passes is kept for the resolution to store on the Q block.
+     */
+    if (move === 'quiz_feedback' && tutor === null) out = this.#takeChipNote(out, verdict);
     const closing = tutor === null && (verdict === 'complete' || move === 'quiz_answer');
     const before = out;
     if (closing) out = dropQuestionTail(out);
@@ -5463,6 +5477,24 @@ export class RoomActor {
     }
   }
 
+  /** Take Max's `Chip:` line out of a marking turn, and keep its sentence on a *Well done*. */
+  #takeChipNote(text: string, verdict: TurnVerdict | null): string {
+    const quiz = this.#pendingQuiz;
+    const chip = extractChipNote(text, quiz?.answerText ?? null);
+    if (quiz === null || chip.refused === 'missing') return chip.text;
+    const open = !answersBlank(quiz);
+    const kept = verdict === 'complete' && open && chip.note !== null;
+    if (kept) this.#chipNotes.set(quiz.questionId ?? quiz.quizMessageId, chip.note!);
+    // What happened to it, never the words.
+    this.#event('challenger', 'quiz.chip_note', {
+      verdict,
+      kept,
+      refused: chip.refused ?? (verdict !== 'complete' ? 'not_well_done' : open ? null : 'blank'),
+      words: chip.words,
+    });
+    return chip.text;
+  }
+
   /**
    * A learner's question that Ellie answered on the notes (decision 8): her answer to something
    * they asked (`rule:ellie_answers`) or addressed to her (`rule:mention`). Never on a tutorial
@@ -5523,15 +5555,21 @@ export class RoomActor {
   ): Promise<void> {
     if (this.#retired || deps.docPort.docId() === null || deps.docPort.frozen()) return;
     const earned = resolution === 'you_got_this';
-    const learnerAnswer = earned ? input.learnerAnswer : null;
+    const questionId = quiz.questionId ?? quiz.quizMessageId;
+    // A correct blank after a release (decision 14): the learner's answer, with a *recall* tag.
+    const learnerAnswer = earned || resolution === 'recall' ? input.learnerAnswer : null;
+    // Decision 12: Max's sentence, on *you got this* only.
+    const maxNote = earned ? (this.#chipNotes.get(questionId) ?? null) : null;
+    this.#chipNotes.delete(questionId);
     const batch = buildResolveEdit(deps, {
-      questionId: quiz.questionId ?? quiz.quizMessageId,
+      questionId,
       resolution,
       text: '',
       learnerAnswer,
+      maxNote,
     });
     // How it closed, never the text.
-    this.#turnLog.event('info', 'doc.resolve', { resolution, quoted: learnerAnswer !== null });
+    this.#turnLog.event('info', 'doc.resolve', { resolution, quoted: learnerAnswer !== null, max_note: maxNote !== null });
     await this.#emitDocEdit(batch, { objectiveId: quiz.objectiveId ?? null, messageId: input.messageId, turnId: input.turnId }, deps.docPort);
   }
 
@@ -5809,6 +5847,9 @@ export class RoomActor {
           showMe: plan.next === 'show_me',
         });
         if (note) blocks.push(note);
+        // Decision 12 (6 Oct afternoon, #67): on a Well done, one sentence for the chip, marked as
+        // his. Only where there are notes for a chip to be in.
+        if (this.#docPort.docId() !== null) blocks.push(chipNoteBlock());
       }
       /**
        * **§4.7's second invariant, carried on whichever Max turn resolves the question.** A

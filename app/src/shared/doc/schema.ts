@@ -271,10 +271,13 @@ const math_block: NodeSpec = {
  * the question paragraph, and the block stays after it is resolved — the learner removes it if
  * they want to.
  *
- * `cardId` (6 Oct afternoon, #67, `notebooks.md` §11.10.4): the concept card the question is
- * about, set when Max's question goes in under a card (`insert_q`). A topic is complete only when
- * every card it covers has a *Well done* (decision 9), so a verdict has to know its card. Null
- * outside a card and on older blocks.
+ * Two attributes from 6 Oct afternoon (#67, `notebooks.md` §11.10):
+ *  - `cardId`: the concept card the question is about, set when Max's question goes in under a
+ *    card (`insert_q`). A topic is complete only when every card it covers has a *Well done*
+ *    (decision 9), so a verdict has to know its card. Null outside a card and on older blocks.
+ *  - `maxNote`: Max's one sentence for the closed question's chip (decision 12), set by
+ *    `resolve_q` on *you got this*. An attribute, never text, so it is never one of the learner's
+ *    spans and never in the outline an agent reads: the chip draws it, marked as his.
  */
 const q_block: NodeSpec = {
   content: 'block+',
@@ -288,6 +291,7 @@ const q_block: NodeSpec = {
     resolution: { default: null as string | null },
     objectiveId: { default: null as string | null },
     cardId: { default: null as string | null },
+    maxNote: { default: null as string | null },
     ...BLOCK_ATTRS,
   },
   parseDOM: [
@@ -301,6 +305,7 @@ const q_block: NodeSpec = {
         resolution: dom.getAttribute('data-resolution'),
         objectiveId: dom.getAttribute('data-objective-id'),
         cardId: dom.getAttribute('data-card-id'),
+        maxNote: dom.getAttribute('data-max-note'),
       }),
     },
   ],
@@ -317,6 +322,8 @@ const q_block: NodeSpec = {
     if (objectiveId) attrs['data-objective-id'] = objectiveId;
     const cardId = node.attrs.cardId as string | null;
     if (cardId) attrs['data-card-id'] = cardId;
+    const maxNote = node.attrs.maxNote as string | null;
+    if (maxNote) attrs['data-max-note'] = maxNote;
     return ['section', attrs, 0];
   },
 };

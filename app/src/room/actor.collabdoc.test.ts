@@ -1497,6 +1497,53 @@ describe('one verdict per message, and it is the logged one', () => {
   });
 });
 
+// ── decision 12 (6 Oct afternoon, #67): Max's one sentence on the chip ─────────────────────
+
+describe('the self-check chip carries one sentence of Max’s', () => {
+  const marking = (request: LlmRequest) =>
+    request.meta.scope === 'group' && request.messages.at(-1)!.content.includes('WHICH IS WHAT YOU MARK');
+  const ANSWER = 'a private thread, out of everyone else’s view';
+
+  it('asks for it on a marking turn, takes it out of the chat, and stores it on the resolution', async () => {
+    const h = build({}, null, (r) =>
+      marking(r)
+        ? 'Well done. It is private from the rest of the group, p. 3.\n\nChip: A side channel is a private turn with one agent that the group never sees.'
+        : null,
+    );
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage(ANSWER, DOC));
+    expect(flat(prompts(h).at(-1)!)).toContain('THE SELF-CHECK CHIP');
+    const feedback = h.store.messages.forRoom(h.roomId).at(-1)!;
+    expect(feedback.body).toBe('Well done. It is private from the rest of the group, p. 3.');
+    const resolve = h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'resolve_q');
+    expect(resolve).toMatchObject({
+      resolution: 'you_got_this',
+      learnerAnswer: ANSWER,
+      maxNote: 'A side channel is a private turn with one agent that the group never sees.',
+    });
+  });
+
+  it('keeps nothing that addresses the learner or quotes them, and still takes the line out', async () => {
+    for (const line of ['Chip: You said it is private, which is right.', 'Chip: It is a private thread, out of everyone else’s view.']) {
+      const h = build({}, null, (r) => (marking(r) ? `Well done. It is private, p. 3.\n${line}` : null));
+      await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+      await settle(h.clock, h.actor.sendMessage(ANSWER, DOC));
+      expect(h.store.messages.forRoom(h.roomId).at(-1)!.body).toBe('Well done. It is private, p. 3.');
+      const resolve = h.doc.edits.flatMap((e) => e.batch.ops).find((op) => op.op === 'resolve_q');
+      expect(resolve).toMatchObject({ resolution: 'you_got_this', learnerAnswer: ANSWER });
+      expect(resolve).not.toHaveProperty('maxNote');
+    }
+  });
+
+  it('keeps no sentence from a turn short of Well done', async () => {
+    const h = build({}, null, (r) => (marking(r) ? 'Partly there. Half of it, p. 3.\nChip: A side channel is private.' : null));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('it is a thread', DOC));
+    expect(h.store.messages.forRoom(h.roomId).at(-1)!.body).toBe('Partly there. Half of it, p. 3.');
+    expect(h.doc.edits.flatMap((e) => e.batch.ops).some((op) => op.op === 'resolve_q')).toBe(false);
+  });
+});
+
 // ── §5.5 (2026-10-01): an answer typed inside Max's Q block ───────────────────────────────
 
 describe('answerInPlace', () => {

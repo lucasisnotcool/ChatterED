@@ -9,8 +9,8 @@
  * All pure, all without a ProseMirror view: §8's own requirement for this half of the build.
  */
 import { describe, expect, it } from 'vitest';
-import type { OutlineEntry } from '../shared/doc/types.js';
-import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, notesFromTurn, outlineText, pagesCited, planBlockNote, planSuggestionEdit, provenanceFor, trimToWords, type DocEditDeps } from './docedit.js';
+import type { AgentDocOpBatch, OutlineEntry } from '../shared/doc/types.js';
+import { ANSWER_EDIT_PASSAGE_CHARS, BACKGROUND_REASON, NOTE_MAX_WORDS, blockNotePrompt, blocksFromTurn, buildQuestionEdit, buildResolveEdit, buildSuggestionEdit, buildWhisperInsert, noteAnchorOf, notesFromTurn, outlineText, pagesCited, planBlockNote, planSuggestionEdit, provenanceFor, trimToWords, type DocEditDeps } from './docedit.js';
 import { generateBlockPrompt, planGeneratedBlock } from './generate.js';
 import { NO_DOC, type DocPort } from './docport.js';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
@@ -503,6 +503,28 @@ describe('buildResolveEdit (§5.3)', () => {
       expect(batch.ops[0]).toMatchObject({ op: 'resolve_q', questionId: 'q_9', resolution });
       expect(batch.why.length).toBeGreaterThan(0);
     }
+  });
+
+  // Decisions 12 and 14 (6 Oct afternoon, #67).
+  it('carries Max’s chip sentence on you got this only, and says what a recall keeps', () => {
+    const note = 'An admissible heuristic never overestimates the remaining cost.';
+    const earned = buildResolveEdit(deps(), { questionId: 'q_9', resolution: 'you_got_this', text: '', maxNote: ` ${note} ` });
+    expect(earned.ops[0]).toMatchObject({ op: 'resolve_q', maxNote: note });
+    const revisit = buildResolveEdit(deps(), { questionId: 'q_9', resolution: 'revisit', text: '', maxNote: note });
+    expect(revisit.ops[0]).not.toHaveProperty('maxNote');
+    const recall = buildResolveEdit(deps(), { questionId: 'q_9', resolution: 'recall', text: '', learnerAnswer: 'admissible' });
+    expect(recall.ops[0]).toMatchObject({ resolution: 'recall', learnerAnswer: 'admissible' });
+    expect(recall.why).toMatch(/recalled/);
+    expect(recall.why).not.toMatch(/revisit/);
+  });
+
+  it('names the block a doc edit went to, for filing a doc-chat question (decision 8)', () => {
+    const prov = { pages: [4], reason: null };
+    const batch = (ops: AgentDocOpBatch['ops']): AgentDocOpBatch => ({ editId: 'e', author: 'ellie', cause: 'answer_missing', ops, focusBlockId: null, why: '' });
+    expect(noteAnchorOf(batch([{ op: 'card_attach', cardBlockId: 'c_1', role: 'note', mode: 'extend', blocks: [], prov }]))).toBe('c_1');
+    expect(noteAnchorOf(batch([{ op: 'insert_after', anchorBlockId: 'b_2', blocks: [] }]))).toBe('b_2');
+    expect(noteAnchorOf(batch([{ op: 'replace_block', blockId: 'b_3', blocks: [] }]))).toBe('b_3');
+    expect(noteAnchorOf(batch([{ op: 'resolve_q', questionId: 'q', resolution: 'revisit', blocks: [] }]))).toBeNull();
   });
 
   /** A question the app has closed is closed in the notes too, even with nothing to put under it. */

@@ -203,10 +203,35 @@ export function startAnswer(state: EditorState, qPos: number): Transaction | nul
  * progress bar's, and the notes keep only what the learner can use: their answer, or a pointer
  * back to a question worth another go. `null` is a legacy or half-written block: revisit.
  */
-export type SelfCheckLabel = 'your answer' | 'revisit';
+export type SelfCheckLabel = 'your answer' | 'recall' | 'revisit';
 
+/**
+ * *recall* (6 Oct afternoon, decision 14 on #67; `notebooks.md` §11.10.6): a correct
+ * fill-in-the-blank after a release. The learner's answer is kept and shown with a small *recall*
+ * tag; it fills no progress and is never called *revisit*. It used to say *revisit* beside a
+ * *Well done* in the chat.
+ */
 export function selfCheckLabel(resolution: QResolution | null | undefined): SelfCheckLabel {
-  return resolution === 'you_got_this' ? 'your answer' : 'revisit';
+  if (resolution === 'you_got_this') return 'your answer';
+  if (resolution === 'recall') return 'recall';
+  return 'revisit';
+}
+
+/** The `data-state` a chip's tag is styled by: `yours`, `recall` or `revisit`. */
+export function selfCheckState(label: SelfCheckLabel): 'yours' | 'recall' | 'revisit' {
+  return label === 'your answer' ? 'yours' : label;
+}
+
+/**
+ * **Max's one sentence on the chip** (6 Oct afternoon, decision 12 on #67; `notebooks.md`
+ * §11.10.5), or null. Only on a question the learner earned (*your answer*): it is stored as the
+ * Q block's `maxNote` attribute by `resolve_q`, never as text, so it can never be read back as the
+ * learner's words, and the chip draws it under their answer marked as his.
+ */
+export function selfCheckNote(node: Node): string | null {
+  if (!isSelfCheck(node) || (node.attrs.resolution as QResolution | null) !== 'you_got_this') return null;
+  const note = ((node.attrs.maxNote as string | null) ?? '').trim();
+  return note.length > 0 ? note : null;
 }
 
 /** An agent's question: Max's, or an older one's. `askedBy` predates the learner's own questions. */

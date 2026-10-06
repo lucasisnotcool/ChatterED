@@ -774,9 +774,10 @@
 
 /* ── Max's closed question: a one-line self-check (D4, 2026-10-06) ────────
    `collab-doc.md` §5.3, amended 2026-10-06: no resolution text in the notes, no grade. One line
-   under the block: *Self-check*, the question, and *your answer* or *revisit*. A click opens the
-   question and what is under it (the learner's answer; an old doc's resolution text); that is
-   the view's own state and is not saved. */
+   under the block: *Self-check*, the question, and *your answer*, *recall* or *revisit*. A click
+   opens the question and what is under it (the learner's answer; an old doc's resolution text),
+   and on *your answer* Max's one sentence (`notebooks.md` §11.10.5, decision 12); that is the
+   view's own state and is not saved. */
 .nd-q-chip { display: none; }
 .nd-q[data-view='chip'] {
   margin: 4px 0 16px;
@@ -840,6 +841,33 @@
   color: var(--text-2);
 }
 .nd-q-chip-state[data-state='yours'] { border-color: #c7c7e8; color: var(--indigo); }
+/* A correct blank after a release (decision 14 of 6 Oct afternoon, #67): the learner's answer
+   with a small *recall* tag, quieter than *your answer* and never *revisit*. */
+.nd-q-chip-state[data-state='recall'] { border-style: dashed; color: var(--text-2); }
+/* Max's one sentence under the learner's answer on an open chip (decision 12): his name in words
+   and his dashed rail, so it never reads as the learner's and never relies on colour alone. */
+.nd-q-maxnote { display: none; }
+.nd-q[data-view='chip'][data-expanded='true'] > .nd-q-maxnote:not([hidden]) {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px 0 0 10px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px dashed var(--nd-max-edge);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  user-select: text;
+}
+.nd-q-maxnote-who {
+  flex: none;
+  color: var(--nd-max);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nd-q-maxnote-text > p { margin: 0; }
 .nd-q[data-view='chip'] > .nd-q-chip .nd-q-remove { flex: none; margin-left: 0; }
 /* ── "Ready to check this?" on a section heading (D2, 2026-10-06) ─────────
    An offer, never a question: drawn only when `core/readiness` says the learner has done enough

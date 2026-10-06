@@ -278,6 +278,37 @@ describe('the other ops keep a card a card', () => {
     expect(docFromJson(inCard.tr!.doc.toJSON()).child(3).attrs.cardId).toBe('b_card');
   });
 
+  // Decision 12 (6 Oct afternoon, #67): Max's sentence for the chip is kept on the Q block, never as text.
+  it('resolve_q keeps Max’s chip sentence as an attribute, on you got this only', () => {
+    const asked = run({ op: 'insert_q', anchorBlockId: 'b_core', questionId: 'q1', objectiveId: null, text: 'Why?', prov: { pages: [39], reason: null } }).tr!.doc;
+    const note = 'Policy iteration stops when the policy no longer changes.';
+    const resolve = (resolution: 'you_got_this' | 'revisit' | 'recall') =>
+      applyBatch(
+        stateOf(asked),
+        {
+          editId: 'e_r',
+          author: 'max',
+          cause: 'q_resolved',
+          ops: [{ op: 'resolve_q', questionId: 'q1', resolution, blocks: [], learnerAnswer: 'Because it repeats.', maxNote: `  ${note}  ` }],
+          focusBlockId: null,
+          why: 't',
+        },
+        OPTS,
+      ).tr!.doc;
+    const earned = resolve('you_got_this').child(3);
+    expect(earned.attrs.maxNote).toBe(note);
+    // Not text: the learner's answer is the block's only text after the question.
+    expect(earned.childCount).toBe(2);
+    expect(earned.textContent).not.toContain('no longer changes');
+    expect(resolve('revisit').child(3).attrs.maxNote).toBeNull();
+    // A recall keeps the learner's answer and no sentence of Max's (decision 14).
+    const recalled = resolve('recall').child(3);
+    expect(recalled.attrs).toMatchObject({ resolution: 'recall', maxNote: null });
+    expect(recalled.child(1).textContent).toBe('Because it repeats.');
+    // It survives the round trip a saved doc makes.
+    expect(docFromJson(resolve('you_got_this').toJSON()).child(3).attrs.maxNote).toBe(note);
+  });
+
   it('finds the card of an older Q block, written before it carried one, from where it stands', () => {
     const q = (questionId: string) =>
       notesSchema.nodes.q_block!.create({ blockId: `b_${questionId}`, questionId, status: 'resolved' }, [para(`b_${questionId}_p`, 'Why?')]);

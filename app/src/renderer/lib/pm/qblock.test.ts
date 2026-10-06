@@ -14,8 +14,11 @@ import {
   questionParts,
   selfCheckLabel,
   selfCheckLine,
+  selfCheckNote,
+  selfCheckState,
   startAnswer,
 } from './qblock.js';
+import { qStatusLabel } from './chrome.js';
 
 type Span = { text: string; by: DocAuthor };
 
@@ -306,6 +309,28 @@ describe('the self-check chip (D4, 2026-10-06)', () => {
     expect(isRailQuestion(qBlock([QUESTION]))).toBe(true);
     expect(isRailQuestion(qBlock([QUESTION], { askedBy: 'user' }))).toBe(false);
     expect(isRailQuestion(qBlock([QUESTION], { status: 'resolved' }))).toBe(false);
+  });
+
+  // Decision 14 (6 Oct afternoon, #67): a correct blank after a release is a recall, not a revisit.
+  it('says "recall" for a correct fill-in-the-blank after a release, never "revisit"', () => {
+    expect(selfCheckLabel('recall')).toBe('recall');
+    expect(selfCheckState(selfCheckLabel('recall'))).toBe('recall');
+    expect(selfCheckState(selfCheckLabel('you_got_this'))).toBe('yours');
+    expect(selfCheckState(selfCheckLabel('released'))).toBe('revisit');
+    expect(qStatusLabel('resolved', 'recall')).toBe('recall');
+  });
+
+  // Decision 12: Max's one sentence, from the Q block's attribute, on an earned answer only.
+  it("reads Max's sentence for an earned answer, and never from the learner's text", () => {
+    const answer = para('b_a', [{ text: 'It contracts, so it converges.', by: 'user' }]);
+    const note = 'The Bellman update is a contraction, so value iteration converges.';
+    const earned = qBlock([QUESTION, answer], { status: 'resolved', resolution: 'you_got_this', maxNote: note });
+    expect(selfCheckNote(earned)).toBe(note);
+    // The learner's answer is still only their own words.
+    expect(questionParts(earned).answer).toBe('It contracts, so it converges.');
+    expect(selfCheckNote(qBlock([QUESTION, answer], { status: 'resolved', resolution: 'recall', maxNote: note }))).toBeNull();
+    expect(selfCheckNote(qBlock([QUESTION], { status: 'resolved', resolution: 'you_got_this', maxNote: '  ' }))).toBeNull();
+    expect(selfCheckNote(qBlock([QUESTION], { maxNote: note }))).toBeNull();
   });
 
   it("reads the question in one line, without an old block's chat preamble", () => {

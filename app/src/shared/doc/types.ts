@@ -285,8 +285,13 @@ export interface OutlineEntry {
  * `revisit` (2026-10-06, D4): closed by a correct fill-in-the-blank. One recalled term is not an
  * answer the learner earned, so the chip says *revisit*, never *you got this*; the same chip label
  * goes on `partly_yours` and `released` (`collab-doc.md` §5.3, amended 2026-10-06).
+ *
+ * `recall` (6 Oct afternoon, decision 14 on #67; `notebooks.md` §11.10.6): a **correct**
+ * fill-in-the-blank after a release. The chip shows the learner's answer with a small *recall*
+ * tag; it fills no progress and is never called *revisit*. Workstream X1 owns when it is set
+ * (`room/flow.ts`); the chip only draws it.
  */
-export type QResolution = 'you_got_this' | 'partly_yours' | 'released' | 'revisit';
+export type QResolution = 'you_got_this' | 'partly_yours' | 'released' | 'revisit' | 'recall';
 
 /**
  * **Agents address blocks, never offsets.** There is no position anywhere in this union, by
@@ -322,6 +327,14 @@ export type AgentDocOp =
       resolution: QResolution;
       blocks: DocBlockDraft[];
       learnerAnswer?: string | null;
+      /**
+       * **Max's one sentence for the chip** (6 Oct afternoon, decision 12 on #67;
+       * `notebooks.md` §11.10.5), on *you got this* only: supplied by his *Well done* turn and
+       * validated in code (`core/chipnote.ts`: one sentence, a word cap, nothing addressed to the
+       * learner). Stored as the Q block's `maxNote` attribute, never as text, so it is never in
+       * the learner's spans, the outline or the search index, and the chip draws it as his.
+       */
+      maxNote?: string | null;
     }
   /**
    * **An addition to a concept card's depth** (D1, 2026-10-06): Ellie as co-author. `extend` adds

@@ -669,10 +669,14 @@ export function applyBatch(
         if ((target.node.attrs.status as string) === 'resolved') return;
         // The Q block stays (§5): the question and its answer are the record of the exchange, and
         // the learner removes it if they want to.
+        // Max's one sentence for the chip (decision 12), on *you got this* only: the caller has
+        // validated it (`core/chipnote.ts`); here it is only kept off any other resolution.
+        const maxNote = op.resolution === 'you_got_this' ? op.maxNote?.trim() || null : null;
         tr.setNodeMarkup(target.pos, undefined, {
           ...target.node.attrs,
           status: 'resolved',
           resolution: op.resolution,
+          maxNote,
         });
         touched.push((target.node.attrs.blockId as string) || '');
         const nodes: Node[] = [];

@@ -7,7 +7,7 @@
  * |---|---|---|
  * | 5.1 | The learner asked in the doc chat, or pressed **Explain** / **Example** on a block (`notebooks.md` §4.2, which replaces §5.1's 40–150 words) | **one note** of at most `CARD_ADDITION_MAX_WORDS` words (a paragraph, a list, a formula or a table): **into the card's depth** when the block is in a concept card, else under the block, with provenance (`planBlockNote`; §11.2, amended 2026-10-06) |
  * | 5.2 | Max asks a question the doc **does not already answer** | the question alone (`core/quizturn.questionText`, 2026-10-06) goes in as a **Q block** at the segment it is about (after the card when it is in one); the renderer shows it in a side rail while it is open |
- * | 5.3 | A Max question is **closed** — the learner's *Well done*, a release, a closure | the Q block folds into a **self-check chip**, **once**: on *you got this* the learner's own answer (theirs, verbatim) and nothing of Max's; otherwise nothing at all, and the chip says *revisit* (2026-10-06, D4) |
+ * | 5.3 | A Max question is **closed** — the learner's *Well done*, a release, a closure | the Q block folds into a **self-check chip**, **once**: on *you got this* the learner's own answer (theirs, verbatim), plus since 6 Oct afternoon one sentence of Max's kept as the block's `maxNote` attribute, never as text (decision 12); on a correct blank after a release the learner's answer with a *recall* tag (decision 14); otherwise nothing at all, and the chip says *revisit* (2026-10-06, D4) |
  *
  * Four properties this module is responsible for keeping true.
  *
@@ -867,6 +867,11 @@ export function buildResolveEdit(
     math?: string | null;
     /** On *you got this*: the learner's answer, verbatim, when it came from the chat. */
     learnerAnswer?: string | null;
+    /**
+     * On *you got this*: Max's one sentence for the chip (decision 12 of 6 Oct afternoon, #67),
+     * already checked by `core/chipnote.ts`. Kept off any other resolution.
+     */
+    maxNote?: string | null;
     /** Where the provenance comes from when `text` cites no page itself. */
     pages?: readonly number[];
     pageCount?: number;
@@ -880,16 +885,28 @@ export function buildResolveEdit(
   const tex = input.math?.trim() ?? '';
   if (tex.length > 0) blocks.push({ kind: 'math', tex, prov });
   const learnerAnswer = input.learnerAnswer?.trim() ? input.learnerAnswer.trim() : null;
+  const maxNote = input.resolution === 'you_got_this' && input.maxNote?.trim() ? input.maxNote.trim() : null;
   return {
     editId: deps.newId('edit'),
     author: 'max',
     cause: 'q_resolved',
-    ops: [{ op: 'resolve_q', questionId: input.questionId, resolution: input.resolution, blocks, learnerAnswer }],
+    ops: [
+      {
+        op: 'resolve_q',
+        questionId: input.questionId,
+        resolution: input.resolution,
+        blocks,
+        learnerAnswer,
+        ...(maxNote !== null ? { maxNote } : {}),
+      },
+    ],
     focusBlockId: null,
     why:
       input.resolution === 'you_got_this'
         ? 'You answered this one; your answer is kept with the question.'
-        : 'This one is marked to revisit; the answer is in the chat.',
+        : input.resolution === 'recall'
+          ? 'You recalled the term; your answer is kept with the question.'
+          : 'This one is marked to revisit; the answer is in the chat.',
   };
 }
 

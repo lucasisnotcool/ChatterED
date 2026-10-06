@@ -39,9 +39,12 @@ import {
   questionParts,
   selfCheckLabel,
   selfCheckLine,
+  selfCheckNote,
+  selfCheckState,
   startAnswer,
   type QuestionAnswer,
 } from './qblock.js';
+import { paragraphs } from '../aitext.js';
 import type { SlideSource } from '../rasterise.js';
 import { hotspotQuestion, hotspotsIn, type PageLinesView } from '../../../shared/doc/cite.js';
 import { drawHotspots, toLineRect } from './sourcepop.js';
@@ -372,8 +375,10 @@ const RAIL_MIN_WIDTH = 560;
  *    notes.css `.nd-suggest`). On an editor under `RAIL_MIN_WIDTH` it stays in the flow
  *    (`data-rail="inline"`). Answer here and Submit are unchanged; the body is still `contentDOM`.
  *  - `chip`: Max's **closed** question, one line under the block: *Self-check*, the question in
- *    one line, and *your answer* or *revisit* (`selfCheckLabel`). A click opens it to the question
- *    and what is under it; that is this view's own state, never saved.
+ *    one line, and *your answer*, *recall* or *revisit* (`selfCheckLabel`; *recall* since 6 Oct
+ *    afternoon, decision 14). A click opens it to the question and what is under it, and on *your
+ *    answer* Max's one sentence after it, marked as his (`selfCheckNote`, decision 12); that is
+ *    this view's own state, never saved.
  *  - `block`: the learner's own question, open or closed, exactly as before.
  */
 class QBlockView implements NodeView {
@@ -388,6 +393,11 @@ class QBlockView implements NodeView {
   #chipToggle: HTMLButtonElement;
   #chipLine: HTMLElement;
   #chipState: HTMLElement;
+  /** Max's one sentence under the learner's answer on an open chip (decision 12), or hidden. */
+  #maxNote: HTMLElement;
+  #maxNoteText: HTMLElement;
+  /** The sentence `#maxNoteText` was last drawn from, so it is typeset only when it changes. */
+  #maxNoteDrawn: string | null = null;
   #node: Node;
   #view: EditorView;
   #getPos: () => number | undefined;
@@ -453,6 +463,24 @@ class QBlockView implements NodeView {
     this.contentDOM = document.createElement('div');
     this.contentDOM.className = 'nd-q-body';
     this.dom.append(this.contentDOM);
+
+    /**
+     * **Max's sentence on the chip** (6 Oct afternoon, decision 12 on #67; `notebooks.md`
+     * §11.10.5). Chrome, outside `contentDOM`: it is the Q block's `maxNote` attribute, not
+     * document text, so it can never be taken for the learner's answer above it. Marked as his by
+     * name and by his dashed rail, never by colour alone. CSS shows it only on an open chip.
+     */
+    this.#maxNote = document.createElement('div');
+    this.#maxNote.className = 'nd-q-maxnote';
+    this.#maxNote.contentEditable = 'false';
+    this.#maxNote.hidden = true;
+    const noteWho = document.createElement('span');
+    noteWho.className = 'nd-q-maxnote-who';
+    noteWho.textContent = AGENT_NAME.max;
+    this.#maxNoteText = document.createElement('div');
+    this.#maxNoteText.className = 'nd-q-maxnote-text';
+    this.#maxNote.append(noteWho, this.#maxNoteText);
+    this.dom.append(this.#maxNote);
 
     // The footer is chrome like the head: outside `contentDOM`, not editable, and its events are
     // its own (`stopEvent`), so a press on Submit is never a click in the document.
@@ -531,6 +559,13 @@ class QBlockView implements NodeView {
     const side = rail ? (this.#wide ? 'side' : 'inline') : null;
     if (side === null) delete this.dom.dataset.rail;
     else if (this.dom.dataset.rail !== side) this.dom.dataset.rail = side;
+    const note = selfCheckNote(node);
+    if (this.#maxNote.hidden !== (note === null)) this.#maxNote.hidden = note === null;
+    if (note !== null && note !== this.#maxNoteDrawn) {
+      // `paragraphs` escapes everything it does not typeset: the sentence is Max's text, as HTML.
+      this.#maxNoteText.innerHTML = paragraphs(note);
+      this.#maxNoteDrawn = note;
+    }
     if (!chip) {
       delete this.dom.dataset.expanded;
       return;
@@ -543,7 +578,7 @@ class QBlockView implements NodeView {
     const label = selfCheckLabel((node.attrs.resolution as QResolution | null) ?? null);
     if (this.#chipState.textContent !== label) {
       this.#chipState.textContent = label;
-      this.#chipState.dataset.state = label === 'your answer' ? 'yours' : 'revisit';
+      this.#chipState.dataset.state = selfCheckState(label);
     }
     const expanded = String(this.#expanded);
     if (this.dom.dataset.expanded !== expanded) this.dom.dataset.expanded = expanded;
@@ -551,8 +586,12 @@ class QBlockView implements NodeView {
     this.#chipToggle.title = this.#expanded
       ? 'Fold this question away'
       : label === 'your answer'
-        ? 'Show the question and your answer'
-        : 'Show the question, to try it again';
+        ? note !== null
+          ? "Show the question, your answer and Max's note"
+          : 'Show the question and your answer'
+        : label === 'recall'
+          ? 'Show the question and the term you recalled'
+          : 'Show the question, to try it again';
   }
 
   #own(): boolean {
@@ -572,7 +611,8 @@ class QBlockView implements NodeView {
     const resolution = (this.#node.attrs.resolution as QResolution | null) ?? null;
     const label = qStatusLabel(status, resolution);
     this.#tag.textContent = label;
-    this.#tag.dataset.status = status !== 'resolved' ? 'open' : label === 'your answer' ? 'yours' : 'revisit';
+    this.#tag.dataset.status =
+      status !== 'resolved' ? 'open' : selfCheckState(selfCheckLabel(resolution));
   }
 
   /**
