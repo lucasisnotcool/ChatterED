@@ -37,6 +37,7 @@ import type {
 import type { SearchResult, SearchStatus } from './search/types.js';
 import type { PageLinesView } from './doc/cite.js';
 import type { SlideOverride } from './doc/slidegroups.js';
+import type { BlockCommentView } from './doc/comments.js';
 import type { LearningObjectiveState, LearningTree } from './objectives.js';
 import type {
   CostAnalytics,
@@ -161,6 +162,8 @@ export const IPC = {
   /** The learner's slide moves between strips (migration 025). Bodies in `src/main/notes/ipc.ts`. */
   notesSlideGroups: 'notes:slideGroups',
   notesSetSlideGroup: 'notes:setSlideGroup',
+  /** The blocks' stored explain comments (migration 033). Body in `src/main/notes/ipc.ts`. */
+  notesComments: 'notes:comments',
   // The chats. Bodies in `src/main/docroom/ipc.ts`.
   notesDocText: 'notes:docText',
   notesAnswerQuestion: 'notes:answerQuestion',
@@ -521,6 +524,8 @@ export interface ChatterEdApi {
   notesPageTexts(input: { fileId: string }): Promise<Record<number, string>>;
   /** The learner's slide moves for this doc, in page order (`slideGroups`'s `overrides`). */
   notesSlideGroups(input: { docId: string }): Promise<SlideOverride[]>;
+  /** The doc's stored explain comments, one per block that has one (migration 033). Read-only. */
+  notesComments(input: { docId: string }): Promise<BlockCommentView[]>;
   /**
    * Move one slide to a strip: `key` is the section heading's `blockId`, or 'opening' / 'other';
    * `title` is the heading's text, so the move outlives a regenerated overview's new block ids.

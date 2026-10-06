@@ -1,5 +1,5 @@
 /**
- * **The semantic search index** (`docs/research/search.md` §3-§5, migration 027).
+ * **The semantic search index** (`docs/research/search.md` §3-§5, migrations 027 and 033).
  *
  * Main-process only. It keeps `search_chunks` in step with every notebook's notes doc and sources,
  * fills in vectors through the embedding process in the background, and answers a query over a
@@ -7,37 +7,38 @@
  *
  * ## Keeping it current
  *
- * A notebook's index is a pure function of two things: its notes doc (`notes_docs.version` bumps
- * on every accepted write, whoever made it: ingest, overview, an agent's edit or the learner) and
- * its sources (status, base, page count). `search_state` holds the pair the rows were made from,
- * so "is this notebook current?" is one row. `reconcile()` re-chunks a stale notebook (pure, a few
- * milliseconds), keeps every row whose text hash and model are unchanged, and clears the vector of
- * the rest. The pump then embeds what has no vector: notes and slides first, the per-block units
- * (used only to choose the highlight) after.
+ * A notebook's index is a pure function (`shared/search/build.ts`) of its notes doc
+ * (`notes_docs.version` bumps on every accepted write, whoever made it: ingest, overview, an
+ * agent's edit or the learner), its sources (status, base, page count), and its blocks' stored
+ * explain comments (`block_comments`, 033) read in the current `ExplainMode`. `search_state` holds
+ * the doc version and a signature of the rest, so "is this notebook current?" is one row.
+ * `reconcile()` re-chunks a stale notebook (pure, a few milliseconds), keeps every row whose text
+ * hash and model are unchanged, and clears the vector of the rest. The pump then embeds what has
+ * no vector: notes, explains and slides first, the per-block units (used only to choose the
+ * highlight) after.
  *
  * Triggers: boot (every notebook), a `notebook:changed` push (`touch`), a 20 s sweep that catches
- * doc saves from any writer, and every query (the scope is checked before it is searched, so an
- * edit made on the search page itself is found).
+ * doc saves from any writer and comments imported with the app quit, and every query (the scope
+ * is checked before it is searched, so an edit made on the search page itself is found).
  *
  * ## Ranking
  *
- * Notes and slides are ranked together by cosine similarity (the eval's best system: no keyword
- * fusion, no reranker). A chunk still waiting for its vector is not left out: those are ranked by
- * keyword and merged in by reciprocal rank. With no model at all, keyword ranks everything.
+ * `shared/search/rank.ts`, shared with the headless eval (`scripts/search-eval.mjs`).
  */
 import type { SqlDatabase } from '../db/driver.js';
 import { log } from '../log.js';
-import { noteChunks, pageChunks } from '../../shared/search/chunk.js';
-import { keywordScores } from '../../shared/search/keyword.js';
-import type { SearchHit, SearchResult, SearchStatus } from '../../shared/search/types.js';
+import { commentsRepo } from '../db/repos/comments.js';
+import { explainPlainText } from '../../shared/doc/comments.js';
+import { notebookRows, type IndexRow } from '../../shared/search/build.js';
+import { matchText, rankQuery, snippetOf, type RankNotebook, type RankRow } from '../../shared/search/rank.js';
+import { DEFAULT_EXPLAIN_MODE, type ExplainMode, type SearchResult, type SearchStatus } from '../../shared/search/types.js';
 import type { Embedder } from './embedder.js';
+
+export { snippetOf };
 
 const SWEEP_MS = 20_000;
 const TOUCH_DEBOUNCE_MS = 1500;
 const PUMP_BATCH = 16;
-const SNIPPET_CHARS = 260;
-/** Reciprocal-rank constant for merging the keyword-ranked pending chunks in. */
-const RRF_K = 60;
 
 export interface SearchIndexDeps {
   db: SqlDatabase;
@@ -45,30 +46,16 @@ export interface SearchIndexDeps {
   /** The notebooks a folder covers (`NotebookService.scopeNotebookIds`). */
   scope(folderId: string | null): string[];
   now?: () => string;
-}
-
-interface Row {
-  key: string;
-  kind: 'note' | 'page' | 'unit';
-  notebookId: string;
-  blockIds: string[];
-  page: number | null;
-  pages: number[];
-  section: string[];
-  title: string;
-  text: string;
-  vec: Float32Array | null;
-}
-
-interface Held {
-  rows: Row[];
-  /** unit rows by block id */
-  units: Map<string, Row>;
+  /**
+   * How the blocks' explain comments are read (`ExplainMode`), asked at every reconcile: a change
+   * re-chunks every notebook on the next sweep. Default `DEFAULT_EXPLAIN_MODE`.
+   */
+  explainMode?: () => ExplainMode;
 }
 
 interface DbRow {
   key: string;
-  kind: Row['kind'];
+  kind: RankRow['kind'];
   notebook_id: string;
   block_ids: string;
   page: number | null;
@@ -76,6 +63,7 @@ interface DbRow {
   section: string;
   title: string;
   text: string;
+  embed_text: string;
   vec: Buffer | null;
 }
 
@@ -91,31 +79,13 @@ function toBlob(v: Float32Array): Buffer {
   return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
 }
 
-function dot(a: Float32Array, b: Float32Array): number {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) s += a[i]! * b[i]!;
-  return s;
-}
-
-export function snippetOf(text: string, max = SNIPPET_CHARS): string {
-  const flat = text.replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim();
-  if (flat.length <= max) return flat;
-  let cut = flat.slice(0, max - 1);
-  // Cut mid-word: drop the partial word. Cut at a space: keep every whole word.
-  if (flat[max - 1] !== ' ') cut = cut.replace(/\s+\S*$/, '');
-  return `${cut.trimEnd()}…`;
-}
-
-function stripExt(name: string): string {
-  return name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
-}
-
 export class SearchIndex {
   readonly #db: SqlDatabase;
   readonly #embedder: Embedder;
   readonly #scope: (folderId: string | null) => string[];
   readonly #now: () => string;
-  readonly #cache = new Map<string, Held>();
+  readonly #mode: () => ExplainMode;
+  readonly #cache = new Map<string, RankNotebook>();
   readonly #touched = new Map<string, ReturnType<typeof setTimeout>>();
   #sweep: ReturnType<typeof setInterval> | null = null;
   #pumping = false;
@@ -126,6 +96,7 @@ export class SearchIndex {
     this.#embedder = deps.embedder;
     this.#scope = deps.scope;
     this.#now = deps.now ?? (() => new Date().toISOString());
+    this.#mode = deps.explainMode ?? (() => DEFAULT_EXPLAIN_MODE);
   }
 
   /** Boot: a new model clears old vectors, every notebook is reconciled, the pump starts. */
@@ -180,8 +151,14 @@ export class SearchIndex {
     this.#cache.delete(notebookId);
   }
 
-  /** What the notebook's rows are made from now: the doc's version and the sources' signature. */
-  #inputs(notebookId: string): { version: number; sig: string; doc: { doc_json: string; title: string } | null; sources: { file_id: string; display_name: string; page_base: number; status: string }[] } | null {
+  /** What the notebook's rows are made from now: the doc's version and the rest's signature. */
+  #inputs(notebookId: string): {
+    version: number;
+    sig: string;
+    mode: ExplainMode;
+    doc: { doc_json: string; title: string } | null;
+    sources: { file_id: string; display_name: string; page_base: number; status: string }[];
+  } | null {
     const nb = this.#db.prepare('SELECT name FROM notebooks WHERE id = @n').get<{ name: string }>({ n: notebookId });
     if (!nb) return null;
     const doc = this.#db
@@ -193,15 +170,24 @@ export class SearchIndex {
       )
       .all<{ file_id: string; display_name: string; page_base: number; page_count: number; status: string }>({ n: notebookId });
     const sig = sources.map((s) => `${s.file_id}:${s.status}:${s.page_base}:${s.page_count}:${s.display_name}`).join('|');
+    const mode = this.#mode();
+    // The comments are part of the signature in every mode: a hit shows its block's explain.
+    const comments = commentsRepo(this.#db).signature(notebookId);
     return {
       version: doc?.version ?? -1,
-      sig: `${nb.name}#${sig}`,
+      sig: `${nb.name}#${sig}#explain:${mode}:${comments}`,
+      mode,
       doc: doc ? { doc_json: doc.doc_json, title: doc.title.trim() || nb.name } : null,
       sources,
     };
   }
 
-  /** Re-chunk a notebook if its doc or sources moved since its rows were made. True if it did. */
+  /** Block id → explain body, for a notebook. */
+  #explainBodies(notebookId: string): Map<string, string> {
+    return new Map(commentsRepo(this.#db).forNotebook(notebookId).map((c) => [c.blockId, c.body]));
+  }
+
+  /** Re-chunk a notebook if its doc, sources or comments moved since its rows were made. True if it did. */
   reconcile(notebookId: string, force = false): boolean {
     const input = this.#inputs(notebookId);
     if (!input) {
@@ -213,30 +199,20 @@ export class SearchIndex {
       .get<{ doc_version: number; sources_sig: string }>({ n: notebookId });
     if (!force && state && state.doc_version === input.version && state.sources_sig === input.sig) return false;
 
-    type Want = { key: string; kind: Row['kind']; blockIds: string[]; page: number | null; pages: number[]; section: string[]; title: string; text: string; embedText: string; hash: string };
-    const want: Want[] = [];
-    if (input.doc) {
-      const { chunks, units } = noteChunks(input.doc.doc_json, { notebookId, title: input.doc.title });
-      const byBlock = new Map<string, (typeof chunks)[number]>();
-      for (const c of chunks) {
-        want.push({ key: c.key, kind: 'note', blockIds: c.blockIds, page: null, pages: c.pages, section: c.section, title: input.doc.title, text: c.text, embedText: c.embedText, hash: c.hash });
-        for (const b of c.blockIds) if (!byBlock.has(b)) byBlock.set(b, c);
-      }
-      for (const u of units) {
-        const owner = byBlock.get(u.blockId);
-        const text = u.embedText.slice(u.embedText.indexOf('\n') + 1);
-        want.push({ key: `unit:${notebookId}:${u.blockId}`, kind: 'unit', blockIds: [u.blockId], page: null, pages: owner?.pages ?? [], section: owner?.section ?? [], title: input.doc.title, text, embedText: u.embedText, hash: u.hash });
-      }
-    }
     const pageRows = this.#db.prepare('SELECT CAST(page AS INTEGER) AS page, body FROM file_text WHERE file_id = @f ORDER BY CAST(page AS INTEGER)');
-    for (const s of input.sources) {
-      if (s.status !== 'ready') continue;
-      const title = stripExt(s.display_name);
-      const pages = pageRows.all<{ page: number; body: string }>({ f: s.file_id }).map((r) => ({ page: s.page_base + r.page, text: r.body }));
-      for (const c of pageChunks(pages, { notebookId, title })) {
-        want.push({ key: c.key, kind: 'page', blockIds: [], page: c.page, pages: c.pages, section: [title], title, text: c.text, embedText: c.embedText, hash: c.hash });
-      }
-    }
+    const explains = new Map([...this.#explainBodies(notebookId)].map(([b, body]) => [b, explainPlainText(body)]));
+    const want: IndexRow[] = notebookRows({
+      notebookId,
+      doc: input.doc ? { docJson: input.doc.doc_json, title: input.doc.title } : null,
+      sources: input.sources.map((s) => ({
+        displayName: s.display_name,
+        pageBase: s.page_base,
+        status: s.status,
+        pages: s.status === 'ready' ? pageRows.all<{ page: number; body: string }>({ f: s.file_id }) : [],
+      })),
+      explains,
+      explainMode: input.mode,
+    });
 
     const have = new Map(
       this.#db
@@ -289,7 +265,7 @@ export class SearchIndex {
       throw err;
     }
     this.#cache.delete(notebookId);
-    log().info('search.reconciled', { notebook_id: notebookId, chunks: want.length, changed });
+    log().info('search.reconciled', { notebook_id: notebookId, chunks: want.length, changed, explain_mode: input.mode });
     return true;
   }
 
@@ -330,27 +306,34 @@ export class SearchIndex {
     }
   }
 
-  #held(notebookId: string): Held {
+  #held(notebookId: string, name: string): RankNotebook {
     const cached = this.#cache.get(notebookId);
-    if (cached) return cached;
+    if (cached) return { ...cached, name };
     const rows = this.#db
-      .prepare('SELECT key, kind, notebook_id, block_ids, page, pages, section, title, text, vec FROM search_chunks WHERE notebook_id = @n')
+      .prepare('SELECT key, kind, notebook_id, block_ids, page, pages, section, title, text, embed_text, vec FROM search_chunks WHERE notebook_id = @n')
       .all<DbRow>({ n: notebookId })
-      .map(
-        (r): Row => ({
+      .map((r): RankRow => {
+        const section = JSON.parse(r.section) as string[];
+        return {
           key: r.key,
           kind: r.kind,
           notebookId: r.notebook_id,
           blockIds: JSON.parse(r.block_ids) as string[],
           page: r.page,
           pages: JSON.parse(r.pages) as number[],
-          section: JSON.parse(r.section) as string[],
+          section,
           title: r.title,
           text: r.text,
+          match: matchText(r.kind, section, r.text, r.embed_text),
           vec: toVec(r.vec),
-        }),
-      );
-    const held: Held = { rows: rows.filter((r) => r.kind !== 'unit'), units: new Map(rows.filter((r) => r.kind === 'unit').map((r) => [r.blockIds[0]!, r])) };
+        };
+      });
+    const held: RankNotebook = {
+      name,
+      rows: rows.filter((r) => r.kind !== 'unit'),
+      units: new Map(rows.filter((r) => r.kind === 'unit').map((r) => [r.blockIds[0]!, r])),
+      explains: this.#explainBodies(notebookId),
+    };
     this.#cache.set(notebookId, held);
     return held;
   }
@@ -383,8 +366,7 @@ export class SearchIndex {
         .all<{ id: string; name: string }>()
         .map((r) => [r.id, r.name]),
     );
-    const helds = new Map(ids.map((id) => [id, this.#held(id)]));
-    const rows = [...helds.values()].flatMap((h) => h.rows);
+    const notebooks = new Map(ids.map((id) => [id, this.#held(id, names.get(id) ?? '')]));
 
     let qv: Float32Array | null = null;
     if (this.#embedder.available()) {
@@ -394,107 +376,8 @@ export class SearchIndex {
         log().warn('search.query_embed_failed', { error: String(err) });
       }
     }
-
-    const score = new Map<string, number>();
-    let ranked: Row[];
-    const pending = rows.filter((r) => !r.vec);
-    if (pending.length > 0) this.#kick();
-    if (qv) {
-      const dense = rows.filter((r) => r.vec).map((r) => ({ r, s: dot(qv, r.vec!) }));
-      dense.sort((a, b) => b.s - a.s);
-      for (const d of dense) score.set(d.r.key, d.s);
-      if (pending.length === 0) {
-        ranked = dense.map((d) => d.r);
-      } else {
-        // Chunks still waiting for a vector join by keyword, merged by reciprocal rank.
-        const kw = keywordScores(q, pending.map((r) => `${r.section.join(' ')} ${r.text}`));
-        const lexical = pending.map((r, i) => ({ r, s: kw[i]! })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
-        const rrf = new Map<Row, number>();
-        dense.forEach((d, i) => rrf.set(d.r, 1 / (RRF_K + i + 1)));
-        lexical.forEach((d, i) => rrf.set(d.r, (rrf.get(d.r) ?? 0) + 1 / (RRF_K + i + 1)));
-        ranked = [...rrf.entries()].sort((a, b) => b[1] - a[1]).map(([r]) => r);
-      }
-    } else {
-      const kw = keywordScores(q, rows.map((r) => `${r.section.join(' ')} ${r.text}`));
-      const lexical = rows.map((r, i) => ({ r, s: kw[i]! })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
-      for (const d of lexical) score.set(d.r.key, d.s);
-      ranked = lexical.map((d) => d.r);
-    }
-
-    const pageScore = (notebookId: string, page: number): number => score.get(`page:${notebookId}:${page}`) ?? -Infinity;
-    const bestUnit = (row: Row): Row | null => {
-      const units = row.blockIds.map((b) => helds.get(row.notebookId)!.units.get(b)).filter((u): u is Row => !!u);
-      if (units.length === 0) return null;
-      // A learner's label ("PREREQ: HUERISTICS") heads the group; it is never the answer to show
-      // while the group has a block with something in it.
-      const real = units.filter((u) => u.text.split(/\s+/).filter(Boolean).length > 5);
-      const pool = real.length > 0 ? real : units;
-      if (!qv) return pool[0]!;
-      return pool.reduce((best, u) => ((u.vec ? dot(qv!, u.vec) : -1) > (best.vec ? dot(qv!, best.vec) : -1) ? u : best));
-    };
-
-    const hits: SearchHit[] = [];
-    const seenPageText = new Map<string, SearchHit>();
-    for (const row of ranked) {
-      if (hits.length >= limit) break;
-      const notebookName = names.get(row.notebookId) ?? '';
-      if (row.kind === 'page') {
-        // The same slide in two decks of the scope is one hit, "also in" the other.
-        const twin = seenPageText.get(row.text);
-        if (twin) {
-          twin.alsoIn.push({ notebookId: row.notebookId, notebookName, page: row.page! });
-          continue;
-        }
-        // The notes that cite this page: the best-scoring note chunk of the notebook that does.
-        const citing = helds
-          .get(row.notebookId)!
-          .rows.filter((r) => r.kind === 'note' && r.pages.includes(row.page!))
-          .sort((a, b) => (score.get(b.key) ?? -Infinity) - (score.get(a.key) ?? -Infinity))[0];
-        const unit = citing ? bestUnit(citing) : null;
-        const hit: SearchHit = {
-          key: row.key,
-          kind: 'page',
-          notebookId: row.notebookId,
-          notebookName,
-          title: row.title,
-          section: row.section,
-          snippet: snippetOf(row.text.split('\n').slice(1).join('\n') || row.text),
-          heading: row.text.split('\n')[0] ?? '',
-          score: score.get(row.key) ?? 0,
-          page: row.page,
-          blockId: unit?.blockIds[0] ?? citing?.blockIds[0] ?? null,
-          blockIds: citing?.blockIds ?? [],
-          alsoIn: [],
-        };
-        seenPageText.set(row.text, hit);
-        hits.push(hit);
-        continue;
-      }
-      const unit = bestUnit(row);
-      // The slide this note came from: of its provenance pages, the one the query matches best.
-      const page = row.pages.length === 0 ? null : row.pages.reduce((best, p) => (pageScore(row.notebookId, p) > pageScore(row.notebookId, best) ? p : best), row.pages[0]!);
-      hits.push({
-        key: row.key,
-        kind: 'note',
-        notebookId: row.notebookId,
-        notebookName,
-        title: row.title,
-        section: row.section,
-        snippet: snippetOf(unit?.text ?? row.text),
-        heading: row.section.at(-1) ?? row.title,
-        score: score.get(row.key) ?? 0,
-        page,
-        blockId: unit?.blockIds[0] ?? row.blockIds[0] ?? null,
-        blockIds: row.blockIds,
-        alsoIn: [],
-      });
-    }
-    return {
-      query: q,
-      hits,
-      mode: qv ? 'semantic' : 'keyword',
-      pending: pending.length,
-      ms: Date.now() - started,
-    };
+    const ranked = rankQuery({ query: q, qv, notebooks, limit, explainMode: this.#mode() });
+    if (ranked.pending > 0) this.#kick();
+    return { query: q, hits: ranked.hits, mode: ranked.mode, pending: ranked.pending, ms: Date.now() - started };
   }
 }

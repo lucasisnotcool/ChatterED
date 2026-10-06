@@ -86,6 +86,7 @@ import { createEmbedder, type Embedder } from './search/embedder.js';
 import { SearchIndex } from './search/index.js';
 import { registerSearchIpc } from './search/ipc.js';
 import { resolveModelDir } from './search/modelpath.js';
+import { SEARCH_EXPLAIN_SETTING, parseExplainMode } from '../shared/search/types.js';
 import { importLegacyNotebooks } from './notebooks/legacy.js';
 // Tutorials (`docs/research/tutorials.md`, 2026-10-03): roles, the sheet's doc, checks and help.
 import { registerTutorialIpc, tutorialDepsFor } from './tutorial/ipc.js';
@@ -204,6 +205,10 @@ export class AppService {
       db: deps.db,
       embedder: this.#embedder,
       scope: (folderId) => this.#notebooks.scopeNotebookIds(folderId),
+      // How search reads the blocks' explain comments (`shared/search/types.ts`): the env var,
+      // else the setting, else the default. A change re-indexes on the next sweep.
+      explainMode: () =>
+        parseExplainMode(process.env.CHATTERED_SEARCH_EXPLAIN ?? deps.store.settings.get(SEARCH_EXPLAIN_SETTING)),
     });
     this.#notebookHost = createNotebookHost(deps.db, { absPath: (rel) => this.#notebooks.absPath(rel) });
     /**

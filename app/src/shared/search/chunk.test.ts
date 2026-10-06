@@ -361,12 +361,14 @@ describe('noteChunks: block units', () => {
       {
         notebookId: NB,
         blockId: 'lab',
+        text: 'PREREQ: HUERISTICS',
         embedText: 'Lecture-complex v4.0 › Heuristics › PREREQ: HUERISTICS\nPREREQ: HUERISTICS',
         hash: hashText('Lecture-complex v4.0 › Heuristics › PREREQ: HUERISTICS\nPREREQ: HUERISTICS'),
       },
       {
         notebookId: NB,
         blockId: 'l1',
+        text: '• Consistent',
         embedText: 'Lecture-complex v4.0 › Heuristics › PREREQ: HUERISTICS\n• Consistent',
         hash: hashText('Lecture-complex v4.0 › Heuristics › PREREQ: HUERISTICS\n• Consistent'),
       },

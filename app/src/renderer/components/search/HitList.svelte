@@ -12,6 +12,7 @@
   import { folderPath } from '../../../shared/folders.js';
   import type { HitFilter, SearchStore } from '../../lib/searchstore.svelte.js';
   import { folderTree } from '../../lib/notebookview.js';
+  import ExplainNote from './ExplainNote.svelte';
 
   let {
     search,
@@ -148,6 +149,9 @@
             </div>
             {#if h.kind === 'page' && h.heading}<div class="hl-head">{h.heading}</div>{/if}
             <div class="hl-snip">{h.snippet}</div>
+            {#if h.explain}
+              <ExplainNote body={h.explain} via={h.via === 'explain'} />
+            {/if}
             {#if h.alsoIn.length > 0}
               <div class="hl-also">Also in {h.alsoIn.map((a) => `${a.notebookName} (slide ${a.page})`).join(', ')}</div>
             {/if}
