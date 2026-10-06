@@ -5,7 +5,7 @@
  *
  * | # | Trigger | Edit |
  * |---|---|---|
- * | 5.1 | The learner asked in the doc chat, or pressed **Explain** / **Example** on a block (`notebooks.md` §4.2, which replaces §5.1's 40–150 words) | **one line** of at most `BLOCK_LINE_MAX_WORDS` words under the block, with provenance (`planBlockNote`) |
+ * | 5.1 | The learner asked in the doc chat, or pressed **Explain** / **Example** on a block (`notebooks.md` §4.2, which replaces §5.1's 40–150 words) | **one note** of at most `CARD_ADDITION_MAX_WORDS` words (a paragraph, a list, a formula or a table): **into the card's depth** when the block is in a concept card, else under the block, with provenance (`planBlockNote`; §11.2, amended 2026-10-06) |
  * | 5.2 | Max asks a question the doc **does not already answer** | the question goes in as a **Q block** at the segment it is about |
  * | 5.3 | A Max question is **closed** — the learner's *Well done*, or a release | the answer goes in under the Q block, **once**, tagged with how it closed: on *you got this* the learner's own answer (theirs, verbatim) and at most one line of Max's; otherwise the correct answer, written as notes |
  *
@@ -31,14 +31,17 @@
  */
 import type {
   AgentAuthor,
+  AgentDocOp,
   AgentDocOpBatch,
+  ConceptRole,
   DocBlockDraft,
   DocEditCause,
   OutlineEntry,
   Provenance,
   QResolution,
 } from '../shared/doc/types.js';
-import { BLOCK_LINE_MAX_WORDS } from '../shared/doc/types.js';
+import { BLOCK_LINE_MAX_WORDS, CARD_ADDITION_MAX_WORDS, CONCEPT_ROLES } from '../shared/doc/types.js';
+import { validateTableDraft } from '../shared/doc/validate.js';
 import type { DocPort } from './docport.js';
 import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 import { extractJson } from './orchestrator.js';
@@ -172,6 +175,11 @@ export function docEditMeta(deps: DocEditDeps): LlmRequest['meta'] {
  * The word limit is **enforced in code**, not asked for and hoped: a reply over the limit is asked
  * for once more, and a second overflow is cut to the last full clause within the limit, never
  * mid-word. The model counts words badly and the limit is the brief's.
+ *
+ * *Amended 2026-10-06 (`notebooks.md` §11.2):* the one plain line became one **note** of about 120
+ * words at most, in the form its content needs (a paragraph, a list, a formula with its symbols, a
+ * small table), and in a concept card it goes **into the card's depth** (`card_attach`), extending
+ * or replacing one item, never as a new block beside the card. The two outputs stand.
  */
 /**
  * **What the note is, decided by what the exchange uncovered** (`notebooks.md` §4.2, amended
@@ -187,11 +195,17 @@ export function docEditMeta(deps: DocEditDeps): LlmRequest['meta'] {
 export type NoteKind = 'background' | 'detail' | 'point';
 export const NOTE_KINDS: readonly NoteKind[] = ['background', 'detail', 'point'];
 
-/** Each kind's ceiling, enforced in code as the 25 words were. */
+/**
+ * **One ceiling for every kind: about 120 words** (`notebooks.md` §11.2, amended 2026-10-06). On the
+ * MDP study day the learner twice removed Ellie's short line and pasted her full chat answer in its
+ * place, and 63% of the words marked as his were her chat answers copied in by hand. The 25-word
+ * line and the 90/50/25 limits of 2 Oct are replaced by one addition of at most
+ * `CARD_ADDITION_MAX_WORDS`, maths not counted. The kind still decides *what* the note adds.
+ */
 export const NOTE_MAX_WORDS: Record<NoteKind, number> = {
-  background: 90,
-  detail: 50,
-  point: BLOCK_LINE_MAX_WORDS,
+  background: CARD_ADDITION_MAX_WORDS,
+  detail: CARD_ADDITION_MAX_WORDS,
+  point: CARD_ADDITION_MAX_WORDS,
 };
 
 /**
@@ -201,10 +215,14 @@ export const NOTE_MAX_WORDS: Record<NoteKind, number> = {
  */
 export const BACKGROUND_REASON = 'background Ellie added';
 
+/** The forms a note may take (§11.2: "a list, a formula or a table allowed"). */
+export const NOTE_FORMS = ['paragraph', 'bullets', 'numbers', 'math', 'table'] as const;
+export type NoteForm = (typeof NOTE_FORMS)[number];
+
 export const BLOCK_NOTE_SCHEMA: Record<string, unknown> = {
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
-  required: ['note_kind', 'line', 'why'],
+  required: ['note_kind', 'why'],
   additionalProperties: false,
   properties: {
     note_kind: {
@@ -212,13 +230,40 @@ export const BLOCK_NOTE_SCHEMA: Record<string, unknown> = {
       enum: [...NOTE_KINDS],
       description: 'background, detail or point: what the exchange uncovered.',
     },
+    blocks: {
+      type: 'array',
+      description: `The note, as one to four blocks, at most ${CARD_ADDITION_MAX_WORDS} words in all (formulas not counted).`,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['form'],
+        properties: {
+          form: { type: 'string', enum: [...NOTE_FORMS] },
+          text: { type: 'string', description: 'paragraph: the text; table: its caption.' },
+          items: { type: 'array', items: { type: 'string' }, description: 'bullets and numbers: one string per item.' },
+          tex: { type: 'string', description: 'math: the display formula as TeX, without $ delimiters.' },
+          columns: { type: 'array', items: { type: 'string' }, description: 'table: 2 to 6 column headings.' },
+          rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'table: one array of cells per row.' },
+        },
+      },
+    },
     line: {
       type: ['string', 'null'],
-      description: `The note itself, standing in the notes on its own: background at most ${NOTE_MAX_WORDS.background} words, detail at most ${NOTE_MAX_WORDS.detail}, a point one sentence of at most ${NOTE_MAX_WORDS.point}.`,
+      description: 'Only when no `blocks` are given: the note as one plain paragraph, or null for no note.',
+    },
+    role: {
+      type: 'string',
+      enum: [...CONCEPT_ROLES],
+      description: 'Only when the block is in a concept card: the depth item the note belongs in.',
+    },
+    mode: {
+      type: 'string',
+      enum: ['extend', 'replace'],
+      description: 'Only in a card: extend that item (the default), or replace it with a better one.',
     },
     anchor_block_id: {
       type: ['string', 'null'],
-      description: 'Only when no block was given: the block id from the outline the line belongs under, or null.',
+      description: 'Only when no block was given: the block id from the outline the note belongs under, or null.',
     },
     why: { type: 'string', description: 'One short sentence, for the log and the Remove · Keep tooltip.' },
   },
@@ -261,19 +306,78 @@ export type BlockNoteOutcome =
 const WHAT_HAPPENED: Record<BlockNoteKind, string> = {
   explain: 'Ellie has just explained this block in the chat.',
   example:
-    'Ellie has just worked an example of this block in the chat. Unless it uncovered a gap, its note is **the example in brief**, as a detail: what the case is and what it shows.',
+    'Ellie has just worked an example of this block in the chat. Unless it uncovered a gap, its note is **the example in brief**, as a detail: what the case is and what it shows, with its numbers.',
   answer: 'The learner asked a question in the chat and Ellie answered it there in full.',
 };
 
+/**
+ * **The card a note goes into** (§11.2, amended 2026-10-06), read off the outline: the card's own
+ * row and the rows of its depth items. `docOutlineNear` always carries the whole of the anchor's
+ * card, so this is complete whenever the anchor is in one. Null outside a card.
+ */
+export interface NoteCard {
+  cardId: string;
+  term: string;
+  items: { blockId: string; role: ConceptRole; text: string; learnerText: boolean }[];
+  /** The role of the item the anchor is in, when it is in one. */
+  anchorRole: ConceptRole | null;
+}
+
+export function noteCard(outline: readonly OutlineEntry[], anchorBlockId: string | null): NoteCard | null {
+  if (anchorBlockId === null) return null;
+  const anchor = outline.find((e) => e.blockId === anchorBlockId);
+  const cardId = anchor?.cardId;
+  if (!cardId) return null;
+  const card = outline.find((e) => e.blockId === cardId);
+  const items = outline
+    .filter((e) => e.cardId === cardId && e.kind === 'concept_item' && e.role !== undefined)
+    .map((e) => ({ blockId: e.blockId, role: e.role!, text: e.text, learnerText: e.learnerText }));
+  return {
+    cardId,
+    term: (card?.text ?? '').split(':')[0]!.trim(),
+    items,
+    anchorRole: anchor?.role ?? null,
+  };
+}
+
+/** The role a note goes into when the model names none: where it was asked, else by the action. */
+function defaultRole(kind: BlockNoteKind, card: NoteCard): ConceptRole {
+  if (card.anchorRole) return card.anchorRole;
+  return kind === 'example' ? 'example' : kind === 'explain' ? 'intuition' : 'note';
+}
+
 export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; words: number; max: number }): string {
   const block = input.blockId === null ? null : (input.outline.find((e) => e.blockId === input.blockId) ?? null);
+  const card = noteCard(input.outline, input.blockId);
   const lines = [
     `You are adding ONE note to the learner’s notes. ${WHAT_HAPPENED[input.kind]} The chat keeps the full`,
     'answer; the notes keep what the learner will need when they revise from them weeks later.',
     'You answer with the JSON object alone — no prose, no fence.',
   ];
   if (input.blockId !== null) {
-    lines.push('', `THE BLOCK IT GOES DIRECTLY UNDER (${input.blockId})`, '"""', block?.text ?? '(not in the outline)', '"""');
+    lines.push(
+      '',
+      card ? `THE BLOCK IT WAS ASKED ON (${input.blockId})` : `THE BLOCK IT GOES DIRECTLY UNDER (${input.blockId})`,
+      '"""',
+      block?.text ?? '(not in the outline)',
+      '"""',
+    );
+  }
+  if (card) {
+    lines.push(
+      '',
+      `THE CONCEPT CARD IT GOES INTO (“${card.term}”). The notes are concept cards: a core line, and a`,
+      'depth folded under it in this order: intuition, equation (a formula and a "where" list), steps,',
+      'example, table, figure, result, pitfall, note. Your note goes INTO this card’s depth. It now holds:',
+      ...(card.items.length > 0
+        ? card.items.map((i) => `- ${i.role}${i.learnerText ? ' (the learner wrote in this item)' : ''}: ${i.text}`)
+        : ['- (nothing yet: the core line only)']),
+      '',
+      'Set `role` to the item it belongs in. `mode` "extend" adds it at the end of that item (or starts',
+      'the item when the card has none); "replace" swaps the item for yours, only when yours says',
+      'everything the item says, better. An item the learner wrote in is never replaced.',
+      'Never repeat what the card already says: add what it lacks.',
+    );
   }
   lines.push('', 'THE NOTES AROUND IT', outlineText(input.outline));
   if (input.passage && input.passage.trim().length > 0) {
@@ -291,35 +395,38 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
     '"""',
     '',
     'WHAT KIND OF NOTE: decide from what this exchange uncovered, in this order.',
-    `- **background**, at most ${NOTE_MAX_WORDS.background} words: the question or the answer shows the notes assume`,
-    '  something they never explain (a term, a method, a prerequisite), and Ellie explained it. Write',
-    '  that explanation as a self-contained note: what it is and how it works, in two to four',
-    '  sentences, so that someone revising who still lacks the background can follow the notes. Take',
-    '  it from what Ellie said, not from your own knowledge. If the learner asked what something is,',
-    '  or how it works "in general", this is the kind.',
-    `- **detail**, at most ${NOTE_MAX_WORDS.detail} words: the source gives specifics the notes skip, and the answer`,
-    '  brought them out (an equation and what its terms are, settings, numbers, the steps of a method).',
+    '- **background**: the question or the answer shows the notes assume something they never explain',
+    '  (a term, a method, a prerequisite), and Ellie explained it. Write that explanation as a',
+    '  self-contained note: what it is and how it works, so that someone revising who still lacks the',
+    '  background can follow the notes. Take it from what Ellie said, not from your own knowledge. If',
+    '  the learner asked what something is, or how it works "in general", this is the kind.',
+    '- **detail**: the source gives specifics the notes skip, and the answer brought them out (an',
+    '  equation and what its terms are, settings, numbers, the steps of a method, a worked case).',
     '  Write the specifics themselves, not a sentence about them.',
-    `- **point**, one sentence of at most ${NOTE_MAX_WORDS.point} words: otherwise, the point most worth keeping.`,
+    '- **point**: otherwise, the point most worth keeping, in a sentence or two.',
     'Never restate the block or the notes around it: what the notes already say is not the note.',
     '',
     'HOW IT READS',
-    '- Every limit is counted, and a longer note is cut.',
+    `- At most ${CARD_ADDITION_MAX_WORDS} words in all, formulas not counted. It is counted, and a longer note is cut.`,
+    '  Use what the substance needs: most notes are 30 to 80 words.',
+    '- Its shape follows its content (`blocks`): a paragraph; a list (`bullets`, or `numbers` for',
+    '  steps); a formula as its own `math` block followed by a list giving each symbol in English; a',
+    '  small `table` for a comparison. Up to four blocks.',
     '- It stands in the notes on its own, read weeks later: no "as I said", "as above", "here" or',
     '  "this example"; no second person; no question; no mention of Ellie, Max, the chat or the learner.',
-    '- No page citation in it (the notes show the page beside it), no heading, no list, no bold.',
-    '- Maths is typeset: write a symbol or a formula as TeX between single dollars, inline in the',
-    '  sentence (`$h_{\\max}$`, `$U(s) = R(s) + \\gamma \\max_a Q(s,a)$`). Keep each formula short.',
+    '- No page citation in it (the notes show the page beside it), no heading.',
+    '- Maths is typeset: write a symbol or a short formula as TeX between single dollars, inline in the',
+    '  sentence (`$h_{\\max}$`, `$U(s) = R(s) + \\gamma \\max_a Q(s,a)$`); a longer one as a `math` block.',
     '- Open with the substance itself, not a stock opener ("In summary,", "Note that", "Key point:").',
   );
   if (input.blockId === null) {
     lines.push(
       '',
-      'No block was named. Put the id of the block in the outline the line belongs directly under in',
+      'No block was named. Put the id of the block in the outline the note belongs directly under in',
       '`anchor_block_id`. If nothing in the outline is about what was asked, answer',
-      '`{"line": null, "anchor_block_id": null, "why": "…"}`: a line is optional here, and one filed',
-      'under the wrong block is worse than none. A block marked "(the learner wrote in this block)"',
-      'may be chosen; the line goes after it and never changes it.',
+      '`{"blocks": [], "line": null, "anchor_block_id": null, "why": "…"}`: a note is optional here, and',
+      'one filed under the wrong block is worse than none. A block marked "(the learner wrote in this',
+      'block)" may be chosen; the note goes after it and never changes it.',
     );
   }
   if (retry) {
@@ -387,9 +494,9 @@ export function fallbackNoteLine(answer: string): string {
 }
 
 /**
- * Read a reply's note, or null when there is no usable one (absent, empty, a question). A
+ * Read a reply's paragraph, or null when there is no usable one (absent, empty, a question). A
  * background or detail note of several sentences may mention a question mark in passing; only a
- * point, which is one sentence, is refused for carrying one.
+ * point is refused for carrying one.
  */
 function readLine(raw: unknown, kind: NoteKind = 'point'): string | null {
   if (typeof raw !== 'string') return null;
@@ -399,24 +506,117 @@ function readLine(raw: unknown, kind: NoteKind = 'point'): string | null {
   return line;
 }
 
+/** Words of a note as the ceiling counts them: prose only, formulas out (§11.2). */
+export function noteWords(blocks: readonly DocBlockDraft[]): number {
+  const count = (t: string): number => wordCount(t.replace(/\$[^$]*\$/g, ' '));
+  let n = 0;
+  for (const b of blocks) {
+    if (b.kind === 'paragraph') n += count(b.text);
+    else if (b.kind === 'bullets' || b.kind === 'numbers') n += b.items.reduce((m, i) => m + count(i), 0);
+    else if (b.kind === 'table') n += count([b.caption ?? '', ...b.columns, ...b.rows.flatMap((r) => r.cells)].join(' '));
+  }
+  return n;
+}
+
 /**
- * **The one line, as a batch** (`notebooks.md` §4.2). Never throws: a call that fails, or a reply
- * that cannot be read, falls back on a block action to the first sentence of the chat answer
- * that could stand in notes (`notesFromTurn`'s filter), because the learner pressed a button that
- * promised a line; on a doc-chat answer it writes nothing, which the brief allows there.
+ * **A reply's note, as blocks** (§11.2): its `blocks` in the forms allowed, each checked, or its
+ * `line` as one paragraph. A table goes through the shared table gate; a paragraph that is a
+ * question is not a note. At most four blocks. `prov` is a placeholder the caller replaces.
+ */
+function readNote(parsed: Record<string, unknown>, kind: NoteKind): DocBlockDraft[] {
+  const prov: Provenance = { pages: [], reason: 'pending' };
+  const out: DocBlockDraft[] = [];
+  const raw = Array.isArray(parsed.blocks) ? (parsed.blocks as unknown[]) : [];
+  for (const item of raw) {
+    if (out.length === 4) break;
+    const b = item && typeof item === 'object' ? (item as Record<string, unknown>) : null;
+    if (!b) continue;
+    const strings = (v: unknown): string[] =>
+      (Array.isArray(v) ? v : []).map((s) => (typeof s === 'string' ? stripPageMarkers(s.replace(/\s+/g, ' ').trim()) : '')).filter((s) => s.length > 0);
+    switch (b.form) {
+      case 'paragraph': {
+        const text = readLine(b.text, kind === 'point' && raw.length === 1 ? 'point' : 'detail');
+        if (text) out.push({ kind: 'paragraph', text, prov });
+        break;
+      }
+      case 'bullets':
+      case 'numbers': {
+        const items = strings(b.items);
+        if (items.length > 0) out.push({ kind: b.form, items, prov });
+        break;
+      }
+      case 'math': {
+        const tex = typeof b.tex === 'string' ? b.tex.trim().replace(/^\$\$?|\$\$?$/g, '').trim() : '';
+        if (tex.length > 0) out.push({ kind: 'math', tex, prov });
+        break;
+      }
+      case 'table': {
+        const { draft } = validateTableDraft({ caption: b.text ?? null, columns: b.columns, rows: b.rows }, Number.MAX_SAFE_INTEGER, { pages: [], reason: 'pending' });
+        if (draft) out.push(draft);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  if (out.length > 0) return out;
+  const line = readLine(parsed.line, kind);
+  return line === null ? [] : [{ kind: 'paragraph', text: line, prov }];
+}
+
+/** The note cut to `max` words: trailing blocks go first, then a lone paragraph or list is trimmed. */
+function cutNote(blocks: DocBlockDraft[], max: number): DocBlockDraft[] {
+  let out = [...blocks];
+  while (out.length > 1 && noteWords(out) > max) out = out.slice(0, -1);
+  if (noteWords(out) <= max) return out;
+  const only = out[0]!;
+  if (only.kind === 'paragraph') return [{ ...only, text: trimToWords(only.text, max) }];
+  if (only.kind === 'bullets' || only.kind === 'numbers') {
+    const items: string[] = [];
+    for (const item of only.items) {
+      if (noteWords([{ ...only, items: [...items, item] }]) > max) break;
+      items.push(item);
+    }
+    return [{ ...only, items: items.length > 0 ? items : [trimToWords(only.items[0]!, max)] }];
+  }
+  return out;
+}
+
+/** A note on one line, for the retry prompt and the log. */
+function noteText(blocks: readonly DocBlockDraft[]): string {
+  return blocks
+    .map((b) =>
+      b.kind === 'paragraph' ? b.text : b.kind === 'bullets' || b.kind === 'numbers' ? b.items.join(' · ') : b.kind === 'math' ? `$$${b.tex}$$` : b.kind === 'table' ? b.columns.join(' | ') : '',
+    )
+    .join(' ');
+}
+
+/**
+ * **The note, as a batch** (`notebooks.md` §4.2, and §11.2 as amended 2026-10-06). Never throws: a
+ * call that fails, or a reply that cannot be read, falls back on a block action to the first
+ * sentence of the chat answer that could stand in notes (`notesFromTurn`'s filter), because the
+ * learner pressed a button that promised a note; on a doc-chat answer it writes nothing, which the
+ * brief allows there.
  *
- * Provenance, in order: the pages the line itself cites, else the block's own pages, else the
+ * **In a concept card the note goes into the card** (`card_attach`): into the item the model names
+ * (or, when it names none, the item the block is in, else intuition for Explain, example for
+ * Example, a note for an answer), extending it or, when the model says its version is better,
+ * replacing it; the op itself holds a replace of learner-written text to an extend. Outside a card
+ * (a paper's overview, a map, the learner's own blocks) it goes under the block, as before, but in
+ * the same richer forms.
+ *
+ * Provenance, in order: the pages the note itself cites, else the block's own pages, else the
  * pages the chat answer cited, else a reason — never neither (§3.4).
  */
 export async function planBlockNote(
   deps: DocEditDeps,
   input: BlockNoteInput,
-): Promise<{ batch: AgentDocOpBatch | null; outcome: BlockNoteOutcome; words: number; retried: boolean; noteKind: NoteKind }> {
+): Promise<{ batch: AgentDocOpBatch | null; outcome: BlockNoteOutcome; words: number; retried: boolean; noteKind: NoteKind; card: boolean }> {
   const actionOnBlock = input.kind !== 'answer' && input.blockId !== null;
   const ask = async (retry?: { line: string; words: number; max: number }) => {
     const request: LlmRequest = {
       model: deps.model,
-      max_tokens: 700,
+      max_tokens: 1_500,
       system: [{ type: 'text', text: blockNotePrompt(input, retry) }],
       messages: [{ role: 'user', content: 'Answer with the JSON object.' }],
       jsonSchema: BLOCK_NOTE_SCHEMA,
@@ -427,33 +627,33 @@ export async function planBlockNote(
   };
 
   let parsed: Record<string, unknown> | null = null;
-  let line: string | null = null;
+  let blocks: DocBlockDraft[] = [];
   let outcome: BlockNoteOutcome = 'written';
   let retried = false;
   let noteKind: NoteKind = 'point';
   try {
     parsed = await ask();
-    // A reply without a kind is the 1 Oct line, and is held to its 25 words.
     noteKind = NOTE_KINDS.includes(parsed.note_kind as NoteKind) ? (parsed.note_kind as NoteKind) : 'point';
     const max = NOTE_MAX_WORDS[noteKind];
-    line = readLine(parsed.line, noteKind);
-    if (line !== null && wordCount(line) > max) {
+    blocks = readNote(parsed, noteKind);
+    if (blocks.length > 0 && noteWords(blocks) > max) {
       retried = true;
-      const first = line;
+      const first = blocks;
       try {
-        const again = readLine((await ask({ line: first, words: wordCount(first), max })).line, noteKind);
-        line = again ?? first;
+        const again = await ask({ line: noteText(first), words: noteWords(first), max });
+        const next = readNote(again, noteKind);
+        blocks = next.length > 0 ? next : first;
       } catch {
-        line = first;
+        blocks = first;
       }
-      if (wordCount(line) > max) {
-        line = trimToWords(line, max);
+      if (noteWords(blocks) > max) {
+        blocks = cutNote(blocks, max);
         outcome = 'trimmed';
       }
     }
   } catch {
     parsed = null;
-    line = null;
+    blocks = [];
   }
 
   // The anchor: the block that was named, or the planner's pick from the outline for a doc-chat
@@ -462,16 +662,18 @@ export async function planBlockNote(
   const anchorBlockId =
     input.blockId ?? underHeading(deps, picked !== null && input.outline.some((e) => e.blockId === picked) ? picked : null, input.outline);
 
-  if (line === null) {
-    if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried, noteKind };
-    line = fallbackNoteLine(input.answer);
+  if (blocks.length === 0) {
+    if (!actionOnBlock) return { batch: null, outcome: parsed === null ? 'none' : 'declined', words: 0, retried, noteKind, card: false };
+    const line = fallbackNoteLine(input.answer);
     outcome = 'fallback';
     noteKind = 'point';
-    if (line.length === 0) return { batch: null, outcome: 'none', words: 0, retried, noteKind };
+    if (line.length === 0) return { batch: null, outcome: 'none', words: 0, retried, noteKind, card: false };
+    blocks = [{ kind: 'paragraph', text: line, prov: { pages: [], reason: 'pending' } }];
   }
-  if (anchorBlockId === null) return { batch: null, outcome: input.blockId === null ? 'declined' : 'none', words: 0, retried, noteKind };
+  if (anchorBlockId === null) return { batch: null, outcome: input.blockId === null ? 'declined' : 'none', words: 0, retried, noteKind, card: false };
 
-  const own = pagesCited(typeof parsed?.line === 'string' ? parsed.line : '', input.pageCount);
+  const cited = JSON.stringify(parsed?.blocks ?? '') + (typeof parsed?.line === 'string' ? parsed.line : '');
+  const own = pagesCited(cited, input.pageCount);
   const blockPages = input.outline.find((e) => e.blockId === anchorBlockId)?.pages ?? [];
   const answerPages = pagesCited(input.answer, input.pageCount);
   // A background note is Ellie's explanation rather than the source's text, so it is not cited to
@@ -486,25 +688,39 @@ export async function planBlockNote(
         : answerPages.length > 0
           ? { pages: answerPages, reason: null }
           : { pages: [], reason: input.kind === 'example' ? 'an example Ellie gave' : 'a point Ellie added from her answer' };
+  const drafts = blocks.map((b) => ({ ...b, prov }) as DocBlockDraft);
   const why =
     typeof parsed?.why === 'string' && parsed.why.trim().length > 0
       ? parsed.why.trim()
       : input.kind === 'example'
         ? 'Ellie added the example in brief.'
         : 'Ellie added the point most worth keeping.';
+
+  const card = noteCard(input.outline, anchorBlockId);
+  const op: AgentDocOp = card
+    ? {
+        op: 'card_attach',
+        cardBlockId: card.cardId,
+        role: (CONCEPT_ROLES as readonly unknown[]).includes(parsed?.role) ? (parsed!.role as ConceptRole) : defaultRole(input.kind, card),
+        mode: parsed?.mode === 'replace' ? 'replace' : 'extend',
+        blocks: drafts,
+        prov,
+      }
+    : { op: 'insert_after', anchorBlockId, blocks: drafts };
   return {
     batch: {
       editId: deps.newId('edit'),
       author: 'ellie',
       cause: 'block_action',
-      ops: [{ op: 'insert_after', anchorBlockId, blocks: [{ kind: 'paragraph', text: line, prov }] }],
+      ops: [op],
       focusBlockId: anchorBlockId,
       why,
     },
     outcome,
-    words: wordCount(line),
+    words: noteWords(blocks),
     retried,
     noteKind,
+    card: card !== null,
   };
 }
 

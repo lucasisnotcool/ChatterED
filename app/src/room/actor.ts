@@ -18,6 +18,7 @@ import {
   SPAN_THREAD_PREFIX,
   type AgentAuthor,
   type AgentDocOpBatch,
+  type ConceptRole,
   type DocQuizView,
   type PrivateTurnView,
   type ProgressView,
@@ -521,6 +522,17 @@ export function editNoteLine(kind: string | null, section: string | null, note: 
   // `notebooks.md` §4.2, amended 2026-10-02: the note is named for what it is.
   const added = note === 'background' ? 'Added a background note' : note === 'detail' ? 'Added the details' : 'Added one line';
   return `${added} under ${what}${where}.`;
+}
+
+/**
+ * **The line naming a note that went into a concept card** (`notebooks.md` §11.2, amended
+ * 2026-10-06): "Added a background note to the “Policy iteration” card, under Intuition."
+ */
+export function cardNoteLine(term: string | null, role: ConceptRole, note: NoteKind = 'point'): string {
+  const added = note === 'background' ? 'Added a background note' : note === 'detail' ? 'Added the details' : 'Added a note';
+  const card = term && term.length > 0 ? `the “${term}” card` : 'that card';
+  const under = role === 'note' ? '' : `, under ${role.charAt(0).toUpperCase()}${role.slice(1)}`;
+  return `${added} to ${card}${under}.`;
 }
 
 /**
@@ -5165,9 +5177,16 @@ export class RoomActor {
    */
   async #noteEditInChat(messageId: string, batch: AgentDocOpBatch, note: NoteKind = 'point', port: DocPort = this.#docPort): Promise<void> {
     const op = batch.ops[0];
-    if (!messageId || op === undefined || op.op !== 'insert_after') return;
-    const entry = port.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
-    const line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null), note);
+    if (!messageId || op === undefined || (op.op !== 'insert_after' && op.op !== 'card_attach')) return;
+    let line: string;
+    if (op.op === 'card_attach') {
+      // §11.2 (amended 2026-10-06): the note went into a concept card; say which, and where in it.
+      const card = port.outlineNear({ blockId: op.cardBlockId }, 0).find((e) => e.blockId === op.cardBlockId);
+      line = cardNoteLine(card?.text.split(':')[0]?.trim() ?? null, op.role, note);
+    } else {
+      const entry = port.outlineNear({ blockId: op.anchorBlockId }, 0).find((e) => e.blockId === op.anchorBlockId);
+      line = editNoteLine(entry?.kind ?? null, entry?.kind === 'heading' ? null : (entry?.path.at(-1) ?? null), note);
+    }
     await this.#mailbox.enqueue(() => {
       if (this.#retired) return;
       const row = this.#d.store.messages.get(messageId);
@@ -5355,6 +5374,8 @@ export class RoomActor {
           words: plan.words,
           retried: plan.retried,
           anchored: blockId !== null,
+          // §11.2 (amended 2026-10-06): into a concept card's depth, or under a block outside one.
+          card: plan.card,
         });
         if (plan.batch === null) return;
         const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId }, port);

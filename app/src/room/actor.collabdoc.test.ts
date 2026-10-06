@@ -962,7 +962,8 @@ describe('the doc-edit call', () => {
     const system = edit.system.map((b) => b.text).join('\n');
     expect(system).toContain('WHAT THEY ASKED');
     expect(system).toContain('what is the side channel?');
-    expect(system).toContain('at most 25 words');
+    // §11.2 (amended 2026-10-06): one note of about 120 words, not the 25-word line.
+    expect(system).toContain('At most 120 words in all');
   });
 
   /**

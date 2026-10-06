@@ -336,7 +336,7 @@ export function scriptedTutorReply(request: LlmRequest, cue: string): string {
 /** A scripted one-line note: built from the block it goes under, at most 25 words. */
 export function scriptedBlockNote(request: LlmRequest, cue: string): Record<string, unknown> {
   const kind = cue.slice('block_note:'.length);
-  const block = quoted(request, 'THE BLOCK IT GOES DIRECTLY UNDER');
+  const block = quoted(request, 'THE BLOCK IT GOES DIRECTLY UNDER') || quoted(request, 'THE BLOCK IT WAS ASKED ON');
   // A doc-chat answer names no block, and the scripted planner does not pretend to choose one.
   if (kind === 'answer' || block.length === 0) return { line: null, anchor_block_id: null, why: 'scripted: no line' };
   const body = block.replace(/[.!?]+$/, '');

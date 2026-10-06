@@ -135,22 +135,38 @@ describe('planBlockNote (notebooks §4.2)', () => {
     expect(d.requests[0]!.meta.costScope).toBe('docedit');
   });
 
-  it('asks once more on an overflow, and takes the second line when it fits', async () => {
-    const d = seq([{ line: LONG, why: 'x' }, { line: 'Admissible heuristics never overestimate, so A* is optimal.', why: 'x' }]);
+  /** Over the 120-word ceiling of §11.2 (amended 2026-10-06): four times LONG is about 140 words. */
+  const LONGER = `${LONG} ${LONG} ${LONG} ${LONG}`;
+
+  it('asks once more on an overflow, and takes the second note when it fits', async () => {
+    const d = seq([{ line: LONGER, why: 'x' }, { line: 'Admissible heuristics never overestimate, so A* is optimal.', why: 'x' }]);
     const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
     expect(d.requests).toHaveLength(2);
-    expect(d.requests[1]!.system[0]!.text).toContain('OVER ITS LIMIT OF 25');
+    expect(d.requests[1]!.system[0]!.text).toContain('OVER ITS LIMIT OF 120');
     expect(out).toMatchObject({ outcome: 'written', retried: true });
-    expect(out.words).toBeLessThanOrEqual(25);
+    expect(out.words).toBeLessThanOrEqual(120);
   });
 
-  it('cuts a second overflow at the last full clause within 25 words, never mid-word', async () => {
-    const d = seq([{ line: LONG, why: 'x' }, { line: LONG, why: 'x' }]);
+  it('cuts a second overflow at the last full clause within 120 words, never mid-word', async () => {
+    const d = seq([{ line: LONGER, why: 'x' }, { line: LONGER, why: 'x' }]);
     const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
     expect(out.outcome).toBe('trimmed');
     const text = (out.batch!.ops[0] as { blocks: { text: string }[] }).blocks[0]!.text;
-    expect(text).toBe('An admissible heuristic never overestimates the true cost to the goal, which is why A* with it returns an optimal path.');
-    expect(out.words).toBeLessThanOrEqual(25);
+    expect(LONGER.startsWith(text.slice(0, -1))).toBe(true);
+    expect(text.endsWith('.')).toBe(true);
+    expect(out.words).toBeLessThanOrEqual(120);
+    expect(out.words).toBeGreaterThan(100);
+  });
+
+  it('cuts a note of several blocks from its end first', async () => {
+    const para = (text: string) => ({ form: 'paragraph', text });
+    const d = seq([
+      { note_kind: 'detail', blocks: [para(LONG), para(LONG), para(LONG), para(LONG)], why: 'x' },
+      { note_kind: 'detail', blocks: [para(LONG), para(LONG), para(LONG), para(LONG)], why: 'x' },
+    ]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
+    expect(out.outcome).toBe('trimmed');
+    expect((out.batch!.ops[0] as { blocks: unknown[] }).blocks).toHaveLength(3);
   });
 
   it('cuts at a word when no clause ends within the budget, and says so', () => {
@@ -242,7 +258,7 @@ describe('planBlockNote (notebooks §4.2)', () => {
     expect(prompt).toContain('THE SOURCE PAGE (p. 4)');
     expect(prompt).toContain('THE-CHAT');
     expect(prompt).toContain('the example in brief');
-    expect(prompt).toContain('at most 25 words');
+    expect(prompt).toContain('At most 120 words in all');
     expect(prompt).toContain(passage.slice(0, ANSWER_EDIT_PASSAGE_CHARS).trim());
     expect(prompt).not.toContain(passage.trim());
     expect(blockNotePrompt({ kind: 'answer', answer: 'a', blockId: null, outline: OUTLINE })).toContain('anchor_block_id');
@@ -257,12 +273,14 @@ describe('planBlockNote (notebooks §4.2)', () => {
     'Fine-tuning continues training a pretrained model on a small task-specific dataset, so it adapts to the task instead of learning from scratch. ' +
     'LoRA freezes the original weights and trains small low-rank matrices added to them, which makes fine-tuning an 8-billion-parameter model affordable.';
 
-  it('says in the prompt what each kind is for, with its limit', () => {
+  it('says in the prompt what each kind is for, and one ceiling for all (§11.2)', () => {
     const prompt = blockNotePrompt({ kind: 'answer', answer: 'a', question: 'how is fine-tuning done in general?', blockId: 'b_2', outline: OUTLINE });
-    expect(prompt).toContain('**background**, at most 90 words');
-    expect(prompt).toContain('**detail**, at most 50 words');
-    expect(prompt).toContain('**point**, one sentence of at most 25 words');
+    expect(prompt).toContain('**background**: the question or the answer shows');
+    expect(prompt).toContain('**detail**: the source gives specifics');
+    expect(prompt).toContain('**point**: otherwise');
+    expect(prompt).toContain('At most 120 words in all, formulas not counted');
     expect(prompt.replace(/\s+/g, ' ')).toContain('what the notes already say is not the note');
+    expect(NOTE_MAX_WORDS).toEqual({ background: 120, detail: 120, point: 120 });
   });
 
   it('writes a background note of up to 90 words, labelled as background the source assumes', async () => {
@@ -277,8 +295,8 @@ describe('planBlockNote (notebooks §4.2)', () => {
     });
   });
 
-  it('holds a detail note to 50 words and a reply with no kind to the 25-word point', async () => {
-    const long = `${BACKGROUND} ${BACKGROUND}`;
+  it('holds every kind to the 120-word ceiling, and keeps a 50-word point whole (§11.2)', async () => {
+    const long = `${BACKGROUND} ${BACKGROUND} ${BACKGROUND}`;
     const detail = await planBlockNote(seq([{ note_kind: 'detail', line: long, why: 'x' }, { note_kind: 'detail', line: long, why: 'x' }]), {
       kind: 'explain',
       answer: 'a',
@@ -289,14 +307,76 @@ describe('planBlockNote (notebooks §4.2)', () => {
     expect(detail.words).toBeLessThanOrEqual(NOTE_MAX_WORDS.detail);
     expect(detail.batch!.ops[0]).toMatchObject({ blocks: [{ prov: { pages: [4], reason: null } }] });
 
-    const point = await planBlockNote(seq([{ line: BACKGROUND, why: 'x' }, { line: BACKGROUND, why: 'x' }]), {
-      kind: 'explain',
-      answer: 'a',
-      blockId: 'b_2',
-      outline: OUTLINE,
-    });
-    expect(point.noteKind).toBe('point');
-    expect(point.words).toBeLessThanOrEqual(25);
+    const point = await planBlockNote(seq([{ line: BACKGROUND, why: 'x' }]), { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
+    expect(point).toMatchObject({ noteKind: 'point', outcome: 'written', retried: false });
+    expect(point.words).toBeGreaterThan(25);
+  });
+
+  // ── §11.2 (amended 2026-10-06): forms, and Ellie writing into a concept card ──
+
+  it('writes a list, a formula and a table, not only a plain paragraph', async () => {
+    const d = seq([
+      {
+        note_kind: 'detail',
+        blocks: [
+          { form: 'paragraph', text: 'The update spreads value one step per sweep.' },
+          { form: 'math', tex: '$$U_{i+1}(s) = R(s) + \\gamma \\max_a \\sum_{s\'} P(s\'|s,a) U_i(s\')$$' },
+          { form: 'bullets', items: ['$\\gamma$: the discount', '$U_i$: the utilities after sweep $i$'] },
+          { form: 'table', text: 'VI vs PI', columns: ['Aspect', 'VI', 'PI'], rows: [['Sweep cost', '$O(|S|^2|A|)$', '$O(|S|^3)$']] },
+          { form: 'paragraph', text: 'A fifth block is one too many.' },
+        ],
+        why: 'x',
+      },
+    ]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
+    const blocks = (out.batch!.ops[0] as { blocks: { kind: string; tex?: string }[] }).blocks;
+    expect(blocks.map((b) => b.kind)).toEqual(['paragraph', 'math', 'bullets', 'table']);
+    expect(blocks[1]!.tex!.startsWith('U_{i+1}')).toBe(true);
+    // Formulas are not words.
+    expect(out.words).toBeLessThan(30);
+  });
+
+  const CARD_OUTLINE: OutlineEntry[] = [
+    { blockId: 'b_h', kind: 'heading', path: [], text: 'Policy iteration', pages: [39], learnerText: false, questionId: null },
+    { blockId: 'b_card', kind: 'concept', path: ['Policy iteration'], text: 'Policy iteration: evaluate, improve, repeat.', pages: [39], learnerText: false, questionId: null, cardId: 'b_card' },
+    { blockId: 'b_core', kind: 'paragraph', path: ['Policy iteration'], text: 'Policy iteration: evaluate, improve, repeat.', pages: [39], learnerText: false, questionId: null, cardId: 'b_card' },
+    { blockId: 'b_eq', kind: 'concept_item', path: ['Policy iteration'], text: '[equation] $$U = …$$', pages: [39], learnerText: false, questionId: null, cardId: 'b_card', role: 'equation' },
+    { blockId: 'b_eq_m', kind: 'math_block', path: ['Policy iteration'], text: 'U = …', pages: [39], learnerText: false, questionId: null, cardId: 'b_card', role: 'equation' },
+    { blockId: 'b_ex', kind: 'concept_item', path: ['Policy iteration'], text: '[example] my own case', pages: [40], learnerText: true, questionId: null, cardId: 'b_card', role: 'example' },
+  ];
+
+  it('in a card, goes into the card’s depth: the item the model names, extending or replacing it', async () => {
+    const d = seq([{ note_kind: 'background', line: 'Evaluation solves a linear system, because no max appears.', role: 'equation', mode: 'replace', why: 'x' }]);
+    const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_core', outline: CARD_OUTLINE });
+    expect(out.card).toBe(true);
+    expect(out.batch!.focusBlockId).toBe('b_core');
+    expect(out.batch!.ops).toEqual([
+      {
+        op: 'card_attach',
+        cardBlockId: 'b_card',
+        role: 'equation',
+        mode: 'replace',
+        blocks: [{ kind: 'paragraph', text: 'Evaluation solves a linear system, because no max appears.', prov: { pages: [], reason: BACKGROUND_REASON } }],
+        prov: { pages: [], reason: BACKGROUND_REASON },
+      },
+    ]);
+    const prompt = d.requests[0]!.system[0]!.text;
+    expect(prompt).toContain('THE CONCEPT CARD IT GOES INTO (“Policy iteration”)');
+    expect(prompt).toContain('- example (the learner wrote in this item): [example] my own case');
+    expect(prompt).toContain('THE BLOCK IT WAS ASKED ON (b_core)');
+  });
+
+  it('in a card with no role named, extends the item it was asked on, else intuition for Explain and example for Example', async () => {
+    const onEq = await planBlockNote(seq([{ line: 'Each symbol, in English.', why: 'x' }]), { kind: 'explain', answer: 'a', blockId: 'b_eq_m', outline: CARD_OUTLINE });
+    expect(onEq.batch!.ops[0]).toMatchObject({ op: 'card_attach', role: 'equation', mode: 'extend' });
+    const onCore = await planBlockNote(seq([{ line: 'A picture of it.', why: 'x' }]), { kind: 'explain', answer: 'a', blockId: 'b_core', outline: CARD_OUTLINE });
+    expect(onCore.batch!.ops[0]).toMatchObject({ role: 'intuition' });
+    const example = await planBlockNote(seq([{ line: 'A worked case: 0.8 × 1 = 0.8.', why: 'x' }]), { kind: 'example', answer: 'a', blockId: 'b_core', outline: CARD_OUTLINE });
+    expect(example.batch!.ops[0]).toMatchObject({ role: 'example', mode: 'extend' });
+    // Outside a card, under the block, as before.
+    const outside = await planBlockNote(seq([{ line: 'A line.', why: 'x' }]), { kind: 'explain', answer: 'a', blockId: 'b_h', outline: CARD_OUTLINE });
+    expect(outside).toMatchObject({ card: false });
+    expect(outside.batch!.ops[0]).toMatchObject({ op: 'insert_after', anchorBlockId: 'b_h' });
   });
 });
 

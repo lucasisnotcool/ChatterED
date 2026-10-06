@@ -23,7 +23,7 @@ import { FakeClock } from '../test-support/clock.js';
 import { DEFAULT_ROOM_CONFIG, seedRoom } from '../test-support/db.js';
 import { rosterFor } from './agents.js';
 import { PSD_HESSIAN_CONVEXITY_V1 } from './concepts/psd-hessian-convexity-v1.js';
-import { BLOCK_ACTION_REQUEST, RoomActor, blockActionLine, editNoteLine, type RoomActorDeps } from './actor.js';
+import { BLOCK_ACTION_REQUEST, RoomActor, blockActionLine, cardNoteLine, editNoteLine, type RoomActorDeps } from './actor.js';
 import type { DocPort } from './docport.js';
 import { ScriptedClient } from './llm/scripted.js';
 import { NOTES_SCRIPT } from './llm/script.notes.js';
@@ -258,6 +258,9 @@ describe('blockAction: Explain and Example', () => {
     // notebooks.md §4.2, amended 2026-10-02: the note is named for what it is.
     expect(editNoteLine('bullet_list', 'The side channel', 'background')).toBe('Added a background note under that bullet in “The side channel”.');
     expect(editNoteLine('paragraph', null, 'detail')).toBe('Added the details under that paragraph.');
+    // §11.2 (amended 2026-10-06): a note that went into a concept card names the card and the item.
+    expect(cardNoteLine('Policy iteration', 'example', 'detail')).toBe('Added the details to the “Policy iteration” card, under Example.');
+    expect(cardNoteLine(null, 'note')).toBe('Added a note to that card.');
     // Re-emitted under the same id, after the doc edit.
     const order = h.events
       .map((e, i) => ({ e, i }))
