@@ -335,6 +335,24 @@ describe('quiz:pass', () => {
   });
 });
 
+describe('quiz:hint', () => {
+  it('asks the actor for one hint in the question\u2019s thread', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.roomExists = true;
+    const out = await wire(fx).call('quiz:hint', { roomId: fx.roomId, threadId: 'span_q' });
+    expect(out).toEqual({ hinted: true, refused: null });
+    expect(fx.actor.last('hint')!.args).toEqual(['span_q']);
+  });
+
+  it('fails loudly, naming the method, while the actor has no `hint`', async () => {
+    const fx = fakeHost({ doc: deck() });
+    fx.actor.omit('hint');
+    await expect(wire(fx).call('quiz:hint', { roomId: fx.roomId, threadId: 'doc' })).rejects.toThrow(
+      /RoomActor\.hint is not available yet/,
+    );
+  });
+});
+
 describe('notes:answerQuestion', () => {
   const base = {
     fileId: 'f_deck',

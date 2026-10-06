@@ -405,6 +405,23 @@ export class ChatStore {
     return result.released ? null : result.refused;
   }
 
+  /**
+   * **Hint or Show me on Max's open question, from the rail** (decision 7, 6 Oct 2026 afternoon).
+   * Show me is Pass by another name (`quiz:pass`); Hint is `quiz:hint`, one plain hint from Max.
+   * Either way the learner is taken to the question's thread, where Max's turn lands.
+   */
+  async questionHelp(kind: 'hint' | 'show', questionId: string): Promise<string | null> {
+    const open = this.openQuiz;
+    const roomId = this.roomId;
+    if (!open || !roomId || (open.quiz.questionId && open.quiz.questionId !== questionId)) return 'This question is closed.';
+    this.focusThread(open.threadId);
+    if (kind === 'show') return this.pass();
+    const result = await bridge()
+      .quizHint({ roomId, threadId: open.threadId })
+      .catch(() => ({ hinted: false, refused: 'The app could not reach the room.' }));
+    return result.hinted ? null : result.refused;
+  }
+
   // ── private threads (§4.1) ────────────────────────────────────────────────────────────────
 
   async openPrivate(agent: AgentAuthor): Promise<void> {

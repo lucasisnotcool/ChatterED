@@ -576,14 +576,6 @@ export function createMockBridge(): ChatterEdApi {
   /** Threads by id: the doc chat, and one per span. Private threads are held separately. */
   const chatThreadMap = new Map<string, ThreadView>();
   const privateThreadMap = new Map<AgentAuthor, { threadId: string; turns: PrivateTurnView[] }>();
-  /** §4.3 fires **once per question**; this is that latch, plus the timer it is armed on. */
-  let cueHandle: ReturnType<typeof setTimeout> | null = null;
-  /**
-   * The silence threshold, shortened. `attempt-first.md` §5 scales it to reading time and floors
-   * it at 120 s; the Demo pacing profile shortens it, and a mock nobody can sit through is a mock
-   * nobody drives. 18 s is long enough to read Max's question and short enough to film.
-   */
-  const MOCK_SILENCE_MS = 18_000;
 
   const hex12 = () => globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12);
   /** Learner-authored questions whose answer Max is still marking (`notesAnswerQuestion`). */
@@ -927,16 +919,10 @@ export function createMockBridge(): ChatterEdApi {
     'Take your time. A wrong attempt is worth more to me than a right silence, and if you would rather ' +
     'have the answer, say so and it is yours.';
 
-  /** §4.3: unsure, partial, at most 60 words, and with one plausible student mistake in it. */
-  const ELLIE_CUE =
-    'I will go first, and I am genuinely not sure. Each stack is one move, so I think Max is 1. And Sum ' +
-    'is 2, but I *think* Max matches the true cost, because the planner can do both stacks at once. ' +
-    'Knock that last bit down if it is wrong.';
-
-  /** §4.3: Max neither confirms nor corrects; he names the part worth improving. At most 50. */
-  const MAX_PROMPT =
-    'Ellie has both numbers right. Look at her last sentence, about doing both stacks at once. A classical ' +
-    'plan is a sequence of actions (p. 3). Improve on it, or tell me whether she is right.';
+  /** Decision 7 (6 Oct): Hint on the open question, one plain hint, no page riddle. */
+  const MAX_HINT =
+    'One hint: each stack is cleared by a single move, so start by counting moves per stack and ' +
+    'then ask what Max and Sum do with those counts.';
 
   /**
    * **Explain** and **Example** on a block (§4.1, C7): Ellie's full answer for the chat, and the
@@ -992,23 +978,10 @@ export function createMockBridge(): ChatterEdApi {
 
   // ── the doc chat (§4.1) ──────────────────────────────────────────────────────────────────
 
-  /** Arm §4.3's cue on the open question. Fires once, then silence is left alone until closure. */
-  function armCue(threadId: string): void {
-    if (cueHandle) clearTimeout(cueHandle);
-    cueHandle = setTimeout(() => {
-      const t = chatThreadMap.get(threadId);
-      if (!t?.quiz?.open || t.quiz.cueGiven || t.quiz.attempts > 0) return;
-      t.quiz.cueGiven = true;
-      pushThread(t);
-      think(ellie, 4500, ELLIE_CUE, { anchorId: threadId, decidedBy: 'rule:ellie_cue' }, () => {
-        // Max answers *her*, aimed at the learner. Two agent turns back to back is the cap
-        // (MASG §5.4.4) and the silence rules are checked before it, which is contract E5.
-        later(2600, () => {
-          think(max, 6000, MAX_PROMPT, { anchorId: threadId, decidedBy: 'rule:max_prompt' });
-        });
-      });
-    }, MOCK_SILENCE_MS);
-  }
+  /*
+   * §4.3's cue and Max's prompt into the quiet are gone (decision 7, 6 Oct 2026 afternoon): an
+   * open question is left alone, and the rail offers Hint and Show me after a few quiet minutes.
+   */
 
   /**
    * Max asks one question — **only when asked** (C8: Quiz me, or a lesson's question): to the
@@ -1059,7 +1032,6 @@ export function createMockBridge(): ChatterEdApi {
           },
         ],
       }));
-      armCue(input.threadId);
     }));
   }
 
@@ -1078,7 +1050,6 @@ export function createMockBridge(): ChatterEdApi {
     quiz.open = false;
     quiz.resolution = resolution;
     pushThread(t);
-    if (cueHandle) clearTimeout(cueHandle);
     const anchor = questionAnchor.get(quiz.questionId) ?? mockBlockOnPage(23);
     emitEdit({
       author: 'max',
@@ -1118,7 +1089,6 @@ export function createMockBridge(): ChatterEdApi {
     quiz.feedbackGiven = false;
     quiz.verdict = null;
     pushThread(t);
-    if (cueHandle) clearTimeout(cueHandle);
     const second = quiz.attempts > 1;
     think(
       max,
@@ -1141,7 +1111,6 @@ export function createMockBridge(): ChatterEdApi {
     const t = chatThreadMap.get(threadId);
     const quiz = t?.quiz;
     if (!t || !quiz) return;
-    if (cueHandle) clearTimeout(cueHandle);
     think(
       max,
       9000,
@@ -2158,6 +2127,13 @@ export function createMockBridge(): ChatterEdApi {
       if (!t?.quiz?.open) return { released: false, refused: 'No question is open here.' };
       releaseDocAnswer(threadId, 'pass');
       return { released: true, refused: null };
+    },
+    /** Decision 7's Hint: one plain hint from Max in the question's thread; the question stays open. */
+    async quizHint({ threadId }) {
+      const t = chatThreadMap.get(threadId);
+      if (!t?.quiz?.open) return { hinted: false, refused: 'No question is open here.' };
+      think(max, 4000, MAX_HINT, { anchorId: threadId, decidedBy: 'rule:hint_requested' });
+      return { hinted: true, refused: null };
     },
 
     async progressGet({ fileId }) {

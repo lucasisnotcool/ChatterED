@@ -28,6 +28,8 @@ export interface DocActorMethods {
   ): Promise<void>;
   /** The **Pass** control on Max's open question (brief §4.4). */
   pass(anchorId: string): Promise<{ released: boolean; refused: string | null }>;
+  /** **Hint** on Max's open question (decision 7, 6 Oct): one plain hint, not an attempt. */
+  hint(anchorId: string): Promise<{ hinted: boolean; refused: string | null }>;
   /**
    * **A span thread's block, told to the actor before its first turn** (`notebooks.md` §4.2,
    * 2026-10-02). Main creates highlight and Ask… threads; without this the actor saw them as

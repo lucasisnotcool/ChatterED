@@ -843,7 +843,7 @@ describe('maxOnlyOnRequest', () => {
     expect(d.decidedBy).toBe('rule:mention');
   });
 
-  it('leaves feedback, clarify, release and the silence pair on a question he was asked', () => {
+  it('leaves feedback, clarify and release on a question he was asked', () => {
     const asked = openQuiz({ elementId: 'R1', quizMessageId: 'm_q' }, 0);
     const answered = answerQuiz(asked, 'm_a', { attempt: true, text: 'an answer' });
     expect(ruleDecision(input({ pendingQuiz: answered, maxOnlyOnRequest: true }))!.decidedBy).toBe('rule:quiz_feedback');
@@ -853,12 +853,42 @@ describe('maxOnlyOnRequest', () => {
     expect(ruleDecision(input({ pendingQuiz: asked, learnerTurn: 'give_up', maxOnlyOnRequest: true }))!.decidedBy).toBe(
       'rule:answer_released',
     );
-    const cue = ruleDecision(input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked, maxOnlyOnRequest: true }))!;
-    expect(cue.decidedBy).toBe('rule:ellie_cue');
-    const prompt = ruleDecision(
-      input({ trigger: 'silence', silenceStage: 2, pendingQuiz: markCueGiven(asked, { at: 1, hasMistake: false, claim: null }), maxOnlyOnRequest: true }),
-    )!;
-    expect(prompt.decidedBy).toBe('rule:max_prompt');
+  });
+
+  /**
+   * Decision 7 (6 Oct afternoon, `notebooks.md` §11.10): the MDP run's #4 (Ellie's planted guess)
+   * and #5 (Max asking whether she was right) came from these two stages. Under the flag neither
+   * fires, nor does anything else into the quiet on an open question.
+   */
+  it('leaves the quiet on an open question alone: no cue, no prompt, no nudge, no hint', () => {
+    const asked = openQuiz({ elementId: 'R1', quizMessageId: 'm_q' }, 0);
+    const cued = markCueGiven(asked, { at: 1, hasMistake: false, claim: null });
+    const tried = markFeedbackGiven(answerQuiz(asked, 'm_a', { attempt: true, text: 'an answer' }), 'partial');
+    for (const quiz of [asked, cued, tried]) {
+      for (const stage of [1, 2] as const) {
+        const d = ruleDecision(input({ trigger: 'silence', silenceStage: stage, pendingQuiz: quiz, maxOnlyOnRequest: true }))!;
+        expect(d.speak).toBe(false);
+        expect(d.decidedBy).toBe('rule:question_quiet');
+      }
+    }
+    // The #48 loop keeps the pair.
+    expect(ruleDecision(input({ trigger: 'silence', silenceStage: 1, pendingQuiz: asked }))!.decidedBy).toBe('rule:ellie_cue');
+    expect(ruleDecision(input({ trigger: 'silence', silenceStage: 2, pendingQuiz: cued }))!.decidedBy).toBe('rule:max_prompt');
+  });
+
+  it('gives a pressed Hint to Max as one hint on the open question, before and after a try', () => {
+    const asked = openQuiz({ elementId: 'R1', quizMessageId: 'm_q' }, 0);
+    const tried = markFeedbackGiven(answerQuiz(asked, 'm_a', { attempt: true, text: 'an answer' }), 'partial');
+    for (const quiz of [asked, tried]) {
+      const d = ruleDecision(input({ trigger: 'promote', pendingQuiz: quiz, hintRequest: true, maxOnlyOnRequest: true }))!;
+      expect(d.role).toBe('challenger');
+      expect(d.moveType).toBe('quiz_hint');
+      expect(d.decidedBy).toBe('rule:hint_requested');
+      expect(d.challenges).toEqual([]);
+    }
+    // No open question, no hint rule.
+    const none = ruleDecision(input({ trigger: 'promote', pendingQuiz: null, hintRequest: true, maxOnlyOnRequest: true }));
+    expect(none?.decidedBy ?? null).not.toBe('rule:hint_requested');
   });
 });
 

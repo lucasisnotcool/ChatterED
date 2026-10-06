@@ -363,6 +363,11 @@ export class DocStore {
   focusThread: ((threadId: string) => void) | null = null;
   spanThreads: (() => readonly SpanThreadView[]) | null = null;
   /**
+   * **Hint or Show me on Max's open question** (decision 7, 6 Oct 2026 afternoon): the rail's two
+   * buttons, through the chat store's `quiz:hint` / `quiz:pass`. A refusal line, or null.
+   */
+  questionHelp: ((kind: 'hint' | 'show', questionId: string) => Promise<string | null>) | null = null;
+  /**
    * **The tutorial as the main view** (2026-10-04): the tutorial the middle column shows, or null.
    * Set by the shell; sent with a block action on a sheet's line, so main tells the turn about the
    * sheet and the lecture behind it.

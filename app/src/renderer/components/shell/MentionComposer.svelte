@@ -21,6 +21,7 @@
    */
   import { AGENT_HUE, AGENT_NAME, mentionMatches, mentionPieces, mentionQuery, parseMention } from '../../lib/chatview.js';
   import type { AgentAuthor } from '../../../shared/doc/types.js';
+  import { noteDraft } from '../../lib/quiethelp.js';
 
   let {
     placeholder,
@@ -67,6 +68,16 @@
 
   $effect(() => {
     if (autofocus && box) box.focus();
+  });
+
+  /**
+   * **Text here is not quiet** (decision 7, 6 Oct): while this box has text, the open question's
+   * clock in the rail does not count towards offering Hint and Show me (`quiethelp.ts`).
+   */
+  const draftSource = `composer:${globalThis.crypto.randomUUID()}`;
+  $effect(() => {
+    noteDraft(draftSource, text.trim().length > 0);
+    return () => noteDraft(draftSource, false);
   });
 
   function sync(e: Event): void {

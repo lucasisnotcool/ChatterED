@@ -56,6 +56,7 @@ import { flashcardNodeViews } from './flashcards.js';
 import { infographicNodeViews } from './infographic.js';
 import { quizNodeViews } from './quiz.js';
 import { conceptNodeViews } from './concept.js';
+import { QUIET_TICK_MS, drafting, forgetQuiet, quietFor } from '../quiethelp.js';
 // The stylesheet of the three blocks of notebooks §5.3, carried by the views that need it so no
 // other file has to import it (`blocks.css`).
 import '../../components/notes/blocks.css';
@@ -86,6 +87,12 @@ export interface NodeViewContext {
   }) => void;
   /** Submit on a Q block: the learner's answer, in place, goes to main to be marked. */
   onAnswerQuestion: (input: QuestionAnswer) => Promise<NotesAnswerQuestionResult>;
+  /**
+   * **Hint** or **Show me** on Max's open question in the rail (decision 7, 6 Oct 2026 afternoon),
+   * offered once the learner has been quiet on it for `QUIET_HELP_MS`. Resolves to a refusal line,
+   * or null when Max is on it. Optional: without it the buttons are never drawn.
+   */
+  onQuestionHelp?: (kind: 'hint' | 'show', questionId: string) => Promise<string | null>;
   /** A slide's own text with its boxes: what a figure's hotspots are built from. Optional. */
   pageLines?: (page: number) => Promise<PageLinesView | null>;
   /** "Ask Ellie about this" on a figure's label: a span thread on the figure's block. Optional. */
@@ -398,6 +405,12 @@ class QBlockView implements NodeView {
   #maxNoteText: HTMLElement;
   /** The sentence `#maxNoteText` was last drawn from, so it is typeset only when it changes. */
   #maxNoteDrawn: string | null = null;
+  /** Hint and Show me (decision 7): drawn in the footer once the question's quiet clock offers them. */
+  #help: HTMLElement;
+  #hintButton: HTMLButtonElement;
+  #showButton: HTMLButtonElement;
+  #helpBusy: 'hint' | 'show' | null = null;
+  #helpTimer: ReturnType<typeof setInterval> | null = null;
   #node: Node;
   #view: EditorView;
   #getPos: () => number | undefined;
@@ -503,7 +516,15 @@ class QBlockView implements NodeView {
     this.#note.className = 'nd-q-note';
     this.#note.setAttribute('role', 'status');
 
-    this.#foot.append(this.#act, this.#note);
+    // Hint · Show me (decision 7): hidden until the learner has been quiet on the question a while.
+    this.#help = document.createElement('span');
+    this.#help.className = 'nd-q-help';
+    this.#help.hidden = true;
+    this.#hintButton = this.#helpButton('hint', 'Hint', 'One plain hint from Max. It is not a try, and the question stays yours.');
+    this.#showButton = this.#helpButton('show', 'Show me', 'Max shows you the answer. It fills nothing on your progress.');
+    this.#help.append(this.#hintButton, this.#showButton);
+
+    this.#foot.append(this.#act, this.#help, this.#note);
     this.dom.append(this.#foot);
 
     // The rail needs the editor's width, which a stylesheet cannot ask for: the notes column is
@@ -524,6 +545,83 @@ class QBlockView implements NodeView {
     this.#paintTag();
     this.#paintFoot();
     this.#paintView();
+    this.#armHelp();
+  }
+
+  #helpButton(kind: 'hint' | 'show', label: string, title: string): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `nd-q-help-${kind}`;
+    button.textContent = label;
+    button.title = title;
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.#askHelp(kind);
+    });
+    return button;
+  }
+
+  /** A Max question that is open and asked of the learner: the only one Hint and Show me are for. */
+  #helpable(): boolean {
+    return isRailQuestion(this.#node) && Boolean(this.#node.attrs.questionId) && this.#ctx.onQuestionHelp !== undefined;
+  }
+
+  /**
+   * The quiet clock (`quiethelp.ts`): ticks once a second while this view shows an open Max
+   * question, counting no time while the learner has text in a composer or under the question.
+   */
+  #armHelp(): void {
+    if (!this.#helpable()) {
+      this.#disarmHelp();
+      return;
+    }
+    if (this.#helpTimer !== null) return;
+    const tick = (): void => {
+      if (this.#destroyed || !this.#helpable()) return;
+      const questionId = this.#node.attrs.questionId as string;
+      const typing = drafting() || questionParts(this.#node).answer.length > 0;
+      const clock = quietFor(questionId, Date.now(), typing);
+      if (this.#help.hidden === clock.offered) {
+        this.#help.hidden = !clock.offered;
+        this.dom.dataset.help = clock.offered ? 'offered' : '';
+      }
+    };
+    tick();
+    this.#helpTimer = setInterval(tick, QUIET_TICK_MS);
+  }
+
+  #disarmHelp(): void {
+    if (this.#helpTimer !== null) clearInterval(this.#helpTimer);
+    this.#helpTimer = null;
+    if (!this.#help.hidden) this.#help.hidden = true;
+    const questionId = this.#node.attrs.questionId as string;
+    if (questionId && (this.#node.attrs.status as string) === 'resolved') forgetQuiet(questionId);
+  }
+
+  /** Hint or Show me, pressed. Main refuses only when the question is no longer open. */
+  #askHelp(kind: 'hint' | 'show'): void {
+    const ask = this.#ctx.onQuestionHelp;
+    const questionId = (this.#node.attrs.questionId as string) || '';
+    if (!ask || !questionId || this.#helpBusy !== null) return;
+    this.#helpBusy = kind;
+    this.#hintButton.disabled = true;
+    this.#showButton.disabled = true;
+    (kind === 'hint' ? this.#hintButton : this.#showButton).textContent = kind === 'hint' ? 'Asking…' : 'Showing…';
+    ask(kind, questionId)
+      .catch(() => FAILED_LINE)
+      .then((refused) => {
+        if (this.#destroyed) return;
+        this.#helpBusy = null;
+        this.#hintButton.disabled = false;
+        this.#showButton.disabled = false;
+        this.#hintButton.textContent = 'Hint';
+        this.#showButton.textContent = 'Show me';
+        if (refused !== null && this.#note.textContent !== refused) {
+          this.#note.textContent = refused;
+          this.#note.dataset.kind = 'refused';
+        }
+      });
   }
 
   /**
@@ -750,6 +848,7 @@ class QBlockView implements NodeView {
     this.#paintTag();
     this.#paintFoot();
     this.#paintView();
+    this.#armHelp();
     return true;
   }
 
@@ -766,6 +865,7 @@ class QBlockView implements NodeView {
 
   destroy(): void {
     this.#destroyed = true;
+    if (this.#helpTimer !== null) clearInterval(this.#helpTimer);
     this.#observer?.disconnect();
     Q_VIEWS.delete(this.dom);
   }

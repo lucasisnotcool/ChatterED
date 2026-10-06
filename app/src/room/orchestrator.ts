@@ -103,6 +103,12 @@ export interface DecisionInput {
    */
   showAnswer?: boolean;
   /**
+   * **Hint, pressed on the open question in the rail** (2026-10-06 afternoon, decision 7;
+   * `notebooks.md` §11.10). The learner asked for one plain hint: `rule:hint_requested`, Max's,
+   * one hint and no answer. The question stays open and this is not an attempt.
+   */
+  hintRequest?: boolean;
+  /**
    * **This turn came through "+ Ask here"** (issue #47, and `flow-build-plan.md` §2 beat 11).
    *
    * An Ask is an explicit request for the *Teacher*, and `attempt-first.md` §6 films it as the
@@ -345,6 +351,22 @@ export function ruleDecision(input: DecisionInput): TurnDecision | null {
           ? 'The learner passed on the question after attempting it; Max gives the answer in full.'
           : 'The learner passed on the question; Max gives the answer in full rather than refusing it.',
       );
+    }
+    if (input.hintRequest === true) {
+      return {
+        speak: true,
+        role: 'challenger',
+        moveType: 'quiz_hint',
+        probeType: null,
+        targetElementId: quiz.elementId,
+        challenges: [],
+        rationale:
+          'The learner pressed Hint on the open question. Max gives one plain hint and no answer; the ' +
+          'question stays open and this is not an attempt.',
+        decidedBy: 'rule:hint_requested',
+        handOffLine: null,
+        failure: null,
+      };
     }
     if (learnerTurn && input.learnerTurn === 'give_up') {
       return release(
@@ -793,7 +815,29 @@ export function silenceDecision(input: DecisionInput): TurnDecision {
    */
   if (quizOpen(quiz) && !feedbackDue(quiz)) {
     /**
-     * **Ellie's cue, then Max's prompt** (#48, `collab-doc.md` §4.3).
+     * **No interruptions while a notebook question is open** (2026-10-06 afternoon, decision 7;
+     * `notebooks.md` §11.10). On the MDP run of 6 Oct, two minutes of quiet on Max's first question
+     * drew Ellie's planted guess ("I'd guess the first update just gives the reward −0.04 for every
+     * state") and, ninety seconds later, Max asking whether she was right: the learner was reading
+     * and working, and both turns pulled him off his own answer onto hers. Under
+     * `maxOnlyOnRequest` (every notebook) the quiet on an open question is now left alone, whoever
+     * spoke last and whatever the stage: no cue, no prompt, no content-free line, no hint. Help is
+     * the learner's to ask for: Hint and Show me appear on the question in the rail after
+     * `QUIET_HELP_MS` of quiet (renderer, `quiethelp.ts`), and Pass is in the composer all along.
+     * The closure tick (the sitting's 20-minute gap) is a different clock and is unchanged.
+     */
+    if (input.maxOnlyOnRequest === true) {
+      return {
+        ...SILENT,
+        rationale:
+          'A notebook question is open and the learner is quiet. Nobody fills it: Hint and Show me ' +
+          'are offered on the question instead (decision 7, 6 Oct).',
+        decidedBy: 'rule:question_quiet',
+      };
+    }
+    /**
+     * **Ellie's cue, then Max's prompt** (#48, `collab-doc.md` §4.3). The #48 loop only
+     * (`maxOnlyOnRequest: false`) since 2026-10-06 afternoon; see above.
      *
      * This is the design decision the A1 report is built on, and it replaces the content-free
      * line and the hint **only in the case §4.3 is about**: Max's question has waited past the

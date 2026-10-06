@@ -112,6 +112,8 @@
       onInsertSlide: (target, afterBlockId) => void doc.insertSlide(target.page, target.rect, afterBlockId),
       onOpenImage: (input) => doc.openImage(input),
       onAnswerQuestion: (answer) => doc.answerQuestion(answer),
+      // Hint · Show me on Max's open question, once the learner has been quiet on it (decision 7).
+      onQuestionHelp: (kind, questionId) => doc.questionHelp?.(kind, questionId) ?? Promise.resolve('The chat is not ready yet.'),
       pageLines,
       onAskAboutFigure: (input) => onAskAboutFigure?.(input),
     });

@@ -476,3 +476,56 @@ describe('blockAction: Quiz me', () => {
     expect(h.actor.docThreads().find((t) => t.threadId === SPAN)!.quiz?.open).toBe(true);
   });
 });
+
+// ── Decision 7 (6 Oct afternoon, `notebooks.md` §11.10): no interruptions, and Hint on request ──
+
+describe('quiet on an open question, and Hint', () => {
+  const HINT = 'One hint: the side channel is a private thread, so think about which context it is kept out of.';
+  const hinting = (r: LlmRequest) =>
+    r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger') && r.meta.scriptCue?.startsWith('hint') ? HINT : null;
+
+  /** The MDP run's #4 and #5: Ellie's planted guess, then Max asking about it. Neither fires now. */
+  it('leaves the quiet on an open notebook question alone, however long', async () => {
+    const h = build();
+    await act(h, { kind: 'quiz' });
+    const before = rows(h).length;
+    // Thirteen minutes: past both silence stages, short of the sitting's 20-minute closure.
+    await h.clock.run(400_000);
+    await h.clock.run(400_000);
+    expect(rows(h)).toHaveLength(before);
+    // The timer still fires; the rule it reaches says nothing.
+    expect(rules(h)[0]).toBe('rule:try_here');
+    expect(rules(h).slice(1).length).toBeGreaterThan(0);
+    for (const r of rules(h).slice(1)) expect(r).toBe('rule:question_quiet');
+    expect(h.actor.docThreads().find((t) => t.threadId === SPAN)!.quiz?.open).toBe(true);
+  });
+
+  it('gives one hint from Max in the question’s thread, and leaves the question open and untried', async () => {
+    const h = build({}, hinting);
+    await act(h, { kind: 'quiz' });
+    const out = await settle(h.clock, h.actor.hint(SPAN));
+    expect(out).toEqual({ hinted: true, refused: null });
+    expect(rules(h).filter((r) => r !== 'rule:question_quiet')).toEqual(['rule:try_here', 'rule:hint_requested']);
+    const hint = rows(h).find((m) => m.decided_by === 'rule:hint_requested')!;
+    expect(hint.anchor_id).toBe(SPAN);
+    expect(hint.body).toBe(HINT);
+    // The directive asks for one plain hint and forbids the page riddle.
+    const asked = h.llm.requests.filter((r) => r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger')).at(-1)!;
+    const directive = asked.messages.at(-1)!.content;
+    expect(directive).toContain('They pressed **Hint**');
+    expect(directive).toContain('A page reference is never the');
+    // Not an attempt, nothing judged, still open.
+    const quiz = h.actor.flowSnapshot().pendingQuiz!;
+    expect(quiz.attempts).toBe(0);
+    expect(quiz.answerShown).toBe(false);
+    expect(h.llm.requests.some((r) => r.meta.scope === 'ledger')).toBe(false);
+    expect(h.doc.outcomes).toEqual([]);
+  });
+
+  it('refuses a Hint where no question is open', async () => {
+    const h = build({}, hinting);
+    expect(await h.actor.hint(SPAN)).toEqual({ hinted: false, refused: 'There is no open question here.' });
+    await act(h, { kind: 'quiz' });
+    expect(await h.actor.hint('span_elsewhere')).toEqual({ hinted: false, refused: 'There is no open question here.' });
+  });
+});

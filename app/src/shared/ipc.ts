@@ -172,6 +172,7 @@ export const IPC = {
   chatPrivateSend: 'chat:privateSend',
   chatInsertIntoDoc: 'chat:insertIntoDoc',
   quizPass: 'quiz:pass',
+  quizHint: 'quiz:hint',
   chatReset: 'chat:reset',
   chatCloseFile: 'chat:closeFile',
   // Progress. Bodies in `src/main/docroom/progress.ts`.
@@ -618,6 +619,12 @@ export interface ChatterEdApi {
   }): Promise<{ editId: string | null }>;
   /** The Pass control on Max's open question: releases the answer (brief §4.4). */
   quizPass(input: { roomId: string; threadId: string }): Promise<{ released: boolean; refused: string | null }>;
+  /**
+   * **Hint** on Max's open question, in the rail once the learner has been quiet a while
+   * (2026-10-06 afternoon, decision 7): one plain hint from Max in the question's thread. Not an
+   * attempt; the question stays open.
+   */
+  quizHint(input: { roomId: string; threadId: string }): Promise<{ hinted: boolean; refused: string | null }>;
   /**
    * **New Conversation**: main asks the learner to confirm, then retires the file's room — the doc
    * chat, span threads, private threads and any open question go; the notes and progress stay.

@@ -713,6 +713,21 @@
 }
 .nd-q-act:hover { border-color: var(--nd-max); }
 .nd-q-act:disabled { opacity: 0.5; cursor: default; border-color: var(--nd-max-edge); }
+/* Hint · Show me (decision 7, 6 Oct): offered on Max's open question after a few quiet minutes.
+   Quieter than Submit: an offer the learner may ignore, not the main way on. */
+.nd-q-help { display: inline-flex; gap: 6px; }
+.nd-q-help[hidden] { display: none; }
+.nd-q-help button {
+  border: 1px dashed var(--nd-max-edge);
+  border-radius: 6px;
+  padding: 2px 9px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--nd-max);
+}
+.nd-q-help button:hover { border-style: solid; border-color: var(--nd-max); }
+.nd-q-help button:disabled { opacity: 0.5; cursor: default; }
+.nd-q-foot { flex-wrap: wrap; }
 .nd-q-note { color: var(--text-2); }
 .nd-q-note:empty { display: none; }
 .nd-q-note[data-kind='hint'] { color: var(--muted); }

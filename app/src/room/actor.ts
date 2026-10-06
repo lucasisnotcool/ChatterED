@@ -1611,6 +1611,24 @@ export class RoomActor {
   }
 
   /**
+   * **Hint**, on the open question in the rail (2026-10-06 afternoon, decision 7; `notebooks.md`
+   * §11.10). It replaces what the quiet used to bring unasked (Ellie's planted guess and Max's
+   * prompt about it, `rule:question_quiet`): the learner asks, and Max gives **one plain hint**
+   * (`rule:hint_requested`, `quiz_hint`), in the question's thread. Not an attempt, nothing is
+   * judged, and the question stays open. Refused, like Pass, only when there is no open question.
+   */
+  async hint(anchorId: string): Promise<{ hinted: boolean; refused: string | null }> {
+    const quiz = this.#pendingQuiz;
+    if (quiz === null || !quizOpen(quiz) || this.#anchorOfQuiz(quiz) !== anchorId) {
+      return { hinted: false, refused: 'There is no open question here.' };
+    }
+    this.#noteLearnerActivity('ask', anchorId);
+    this.#event('student', 'quiz.hint_requested', { anchor_id: anchorId, attempts: attemptsOf(quiz) });
+    await this.#runAgentTurn('promote', { anchorId, hintRequest: true });
+    return { hinted: true, refused: null };
+  }
+
+  /**
    * **`rule:closure` — no question Max asked is left without its answer** (brief §4.7).
    *
    * Two callers, and the difference between them is the whole of architect §E3. The **inactivity
@@ -3094,6 +3112,8 @@ export class RoomActor {
       tryHere?: { objectiveId: string };
       /** **Pass** (#48 §4.4): the control's door into `rule:answer_released`. */
       showAnswer?: boolean;
+      /** **Hint** on the open question in the rail (decision 7, 6 Oct): `rule:hint_requested`. */
+      hintRequest?: boolean;
       /** **"+ Ask here"** (#47 §6): the explain path, which is the Teacher's even mid-question. */
       askedHere?: boolean;
       /** **`rule:max_followup`** (#48 §4.2): the second of the two chained agent turns. */
@@ -3251,6 +3271,7 @@ export class RoomActor {
       learnerTurn:
         trigger === 'student_message' || trigger === 'promote' ? this.#lastLearnerTurn : null,
       showAnswer: opts.showAnswer === true,
+      hintRequest: opts.hintRequest === true,
       askedHere: opts.askedHere === true,
       // C8: the rules close every unprompted door onto a new Max question (`notebooks.md` §5.2).
       maxOnlyOnRequest: this.#maxOnly,
@@ -3296,6 +3317,8 @@ export class RoomActor {
     const ledgerRuns =
       (trigger === 'student_message' || trigger === 'promote') &&
       opts.showAnswer !== true &&
+      // A Hint press is a request, not an answer: nothing new to judge (decision 7).
+      opts.hintRequest !== true &&
       opts.ownQuestion !== true &&
       /**
        * **Nor on a block action** (`notebooks.md` §4.3: *"Actions fill nothing"*). The row that
@@ -3458,7 +3481,9 @@ export class RoomActor {
        * check keeps the Tester's band: it is feedback on an answer, which is what the band is for.
        */
       decision.decidedBy === 'rule:tutor_hint' ||
-      decision.decidedBy === 'rule:tutor_reveal'
+      decision.decidedBy === 'rule:tutor_reveal' ||
+      // The rail's Hint (decision 7): asked for, like a tutorial hint, so it comes at the same pace.
+      decision.decidedBy === 'rule:hint_requested'
         ? agentByRole(this.#d.roster, 'peer').latency
         : agent.latency;
     const target = Math.max(

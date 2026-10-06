@@ -82,6 +82,7 @@ const api: ChatterEdApi = {
   chatReset: (input) => ipcRenderer.invoke(IPC.chatReset, input),
   chatCloseFile: (input) => ipcRenderer.invoke(IPC.chatCloseFile, input),
   quizPass: (input) => ipcRenderer.invoke(IPC.quizPass, input),
+  quizHint: (input) => ipcRenderer.invoke(IPC.quizHint, input),
   progressGet: (input) => ipcRenderer.invoke(IPC.progressGet, input),
   progressStart: (input) => ipcRenderer.invoke(IPC.progressStart, input),
   // The learning-objective tree (issue #38). Five channels, no events of their own: the two

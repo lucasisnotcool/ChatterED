@@ -59,6 +59,10 @@ export class FakeActor {
     this.#record('pass', args);
     return { released: true, refused: null };
   };
+  hint: DocActorMethods['hint'] = async (...args) => {
+    this.#record('hint', args);
+    return { hinted: true, refused: null };
+  };
   startLesson: DocActorMethods['startLesson'] = async (...args) => {
     this.#record('startLesson', args);
   };

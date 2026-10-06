@@ -67,11 +67,14 @@
     sendDraft?: (question: string) => Promise<string | null>;
     spanThreads?: readonly SpanThreadView[];
     openQuiz?: { quiz: { objectiveId?: string | null } } | null;
+    questionHelp?: (kind: 'hint' | 'show', questionId: string) => Promise<string | null>;
   }
   const chat = (): ChatSurface => store.chat as unknown as ChatSurface;
 
   doc.askAboutSpan = (input) => chat().openSpanThread?.(input);
   doc.focusThread = (threadId) => chat().focusThread?.(threadId);
+  // Decision 7: the rail's Hint and Show me go through the chat store, as Pass does.
+  doc.questionHelp = (kind, questionId) => chat().questionHelp?.(kind, questionId) ?? Promise.resolve('The chat is not ready yet.');
   doc.spanThreads = () => chat().spanThreads ?? [];
   doc.progressView = () => store.progress.view;
   // "Ready to check this?" (D2): nothing is offered while one of Max's questions waits in a thread.

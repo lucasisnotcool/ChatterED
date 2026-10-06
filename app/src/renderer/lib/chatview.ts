@@ -300,6 +300,12 @@ const TAGS: Record<string, ChatTag> = {
       "Ellie answered, so the rule gives Max the floor for one question. It is not a model deciding to quiz you.",
     kind: 'rule',
   },
+  'rule:hint_requested': {
+    label: 'hint you asked for · not a try',
+    title:
+      'You pressed Hint on the question, so Max gave one hint. It is not counted as a try, and the question is still yours to answer.',
+    kind: 'rule',
+  },
   'rule:mention': {
     label: 'by rule · you asked them',
     title: 'You named one of them, so only that one answered and no follow-up was scheduled.',

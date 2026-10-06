@@ -953,7 +953,20 @@ export function turnDirective(d: TurnDirective): string {
    * this build still classifies and renders its own history; there is nothing left for a directive
    * to say, because nothing will ask for one.
    */
-  if (d.move === 'quiz_hint') {
+  if (d.move === 'quiz_hint' && d.byRule === 'rule:hint_requested') {
+    /**
+     * **Hint, pressed on the open question** (2026-10-06 afternoon, decisions 7 and 1). One plain
+     * hint, no riddle: on the MDP run Max's pointers were "p. 6 settles it" and "p. 7 settles it,
+     * in how the 0.8, 0.1 and 0.1 are described", and the learner gave up angry twice.
+     */
+    bits.push(
+      'They pressed **Hint** on your open question. Give **one plain hint**, in at most 60 words:',
+      'if what they lack is a word or a fact, state it outright and ask them to use it; if it is a',
+      'step of reasoning, give one plain analogy or the first step. A page reference is never the',
+      'hint ("p. N settles it" is a riddle, not help). **Do not give the whole answer**, do not',
+      'rephrase the whole question, and ask nothing new.',
+    );
+  } else if (d.move === 'quiz_hint') {
     bits.push(
       'The learner has not answered your question. Give one hint that narrows it — a first step,',
       'a case to try, or the piece of it to look at first. **Do not answer it**, do not rephrase',

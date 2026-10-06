@@ -1,7 +1,7 @@
 /**
  * The chats' IPC bodies (#48). **Track T6 owns this file** — the lead placed only the hook.
  * Channels: `notes:docText`, `notes:answerQuestion`, `notes:generateBlock`, `notes:blockAction`, `chat:threads`, `chat:send`, `chat:openSpan`, `chat:privateOpen`,
- * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`, `chat:closeFile`. See `app/docs/COLLAB-CONTRACT.md`.
+ * `chat:privateSend`, `chat:insertIntoDoc`, `quiz:pass`, `quiz:hint`, `chat:closeFile`. See `app/docs/COLLAB-CONTRACT.md`.
  *
  * **Three things these handlers decide, and the renderer does not.**
  *
@@ -501,6 +501,19 @@ export function registerDocRoomIpc(host: DocHost, handle: IpcHandle): void {
       // A release writes an outcome row. It fills nothing, but the bar's cards show what happened
       // on each objective, so the view is stale until it is recomputed.
       if (fileId) void emitProgress(host, fileId);
+    }
+  });
+
+  /**
+   * **Hint** on Max's open question (2026-10-06 afternoon, decision 7): one plain hint in the
+   * question's thread. Nothing is judged and nothing fills, so the bar is not recomputed.
+   */
+  handle<{ roomId: string; threadId: string }>('quiz:hint', async (input) => {
+    const target = docActor(host.actorFor(input.roomId));
+    try {
+      return await requireActorMethod(target, 'hint').call(target, input.threadId);
+    } finally {
+      host.persistFlow();
     }
   });
 
