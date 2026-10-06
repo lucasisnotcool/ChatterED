@@ -308,7 +308,8 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
     '- It stands in the notes on its own, read weeks later: no "as I said", "as above", "here" or',
     '  "this example"; no second person; no question; no mention of Ellie, Max, the chat or the learner.',
     '- No page citation in it (the notes show the page beside it), no heading, no list, no bold.',
-    '- Inline `$...$` shows as TeX source, so keep it to a single symbol.',
+    '- Maths is typeset: write a symbol or a formula as TeX between single dollars, inline in the',
+    '  sentence (`$h_{\\max}$`, `$U(s) = R(s) + \\gamma \\max_a Q(s,a)$`). Keep each formula short.',
     '- Open with the substance itself, not a stock opener ("In summary,", "Note that", "Key point:").',
   );
   if (input.blockId === null) {
