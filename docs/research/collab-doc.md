@@ -13,6 +13,15 @@ bug in the code.
 > most 25 words (§4.6, §5.1 here). Everything else in this brief stands. `notebooks.md` §10 lists
 > exactly what changed.
 
+> **Amended 6 Oct 2026 by `notebooks.md` §11 (Lucas's decision), which wins where they differ.**
+> For a slide deck, the notes are concept cards whose depth is written at ingest, at 30–40% of the
+> slide words. A lesson's Start teaches first, and Max's question is offered when code judges the
+> learner ready. A blank that gives itself away is caught in code, and after two partial answers
+> the learner is offered Show me instead of a blank. An open question sits in a side rail and
+> resolves into a one-line chip; a released answer and an idle closure write nothing into the doc.
+> Dated notes below mark each section it touches (§2, §4.2, §4.4–§4.7, §5, §5.5, §5.7, §6).
+> `notebooks.md` §11.8 lists exactly what changed.
+
 **Read alongside.** `ai-use-transcripts/analysis/convergence.md` (the evidence, observed
 interactions only), `attempt-first.md` (the loop this replaces, and the rules that survive it),
 `learning-objectives.md` (the objective tree the progress bar is drawn from),
@@ -90,6 +99,12 @@ Real on any deck. Two passes.
    was 1.13–1.47× the slides (72–80 words a page, inside v2's own 60–90). What v3 changes is
    mainly the organisation: on Lecture-complex, regenerated live with page images, headings went
    48 → 25 and length 1.14× → 1.08× (4,289 words, no duplicates).
+
+   *Amended 2026-10-06 (`notebooks.md` §11.2):* the goal of notes "that can be read without ever
+   opening the slides" returns, after `notebooks.md` §10 retired it on 1 Oct, but not at this
+   length. For a slide deck the notes are concept cards: a visible core line per idea, and the
+   depth folded under it. The whole is 30–40% of the slide words, against 1.08× here and 5.7% for
+   the 1 Oct overview. The extract pass, page images and mandatory provenance stand.
 
 **Provenance is mandatory on every block**: either `pages: [n, …]` (where the content came from) or
 `reason: "…"` (why it is here when no slide says it), or both. A block with neither is a bug in the
@@ -251,6 +266,25 @@ Ellie's answer to a new learner question simply stands, and Max's open question 
   Code: `core/pitch.ts` (`followUpPlan`, `isGuess`, `OPEN_FOLLOW_UPS`), `prompts.doc.ts`
   (`followUpBlock`), `flow.ts` (`followUpBlank`).
 
+- **Amended 2026-10-06 (`notebooks.md` §11.4): no blank to end a run, and the correction waits.**
+  Of 47 follow-ups from 3 Oct, 31 were a blank or carried their own answer. Every chain that
+  reached a third verdict short of complete ended on a blank, 8 of 8, and all 8 were scored
+  complete, one of them on the wrong word. The answer was usually on screen, because the feedback
+  turn had just quoted the page for "what was missing".
+  - **"Two open follow-ups, then a blank" is superseded.** After two partial answers the learner
+    is offered **Show me**, a release (§4.4). Asking for one thing, and marking the answers
+    together from the second try, stand.
+  - **The feedback row above changes for partial answers.** The verdict and what landed stand.
+    The part still missing is not quoted or stated while a follow-up asks for it, and the
+    correction is given when the question closes. `attempt-first.md`'s grounds rule is narrowed
+    to match.
+  - **One verdict per message**, matching the outcome that is logged. **No "Why…?" tail** after
+    *Well done*.
+  - Any blank that is still asked (§4.5) passes a check in `core/pitch.ts`: the blanked term must
+    not be in Max's turn, in the sentence he quoted before the blank, or in the blank's mirror
+    sentence when that is on screen. On a hit the reply is regenerated once, then the blank is
+    dropped.
+
 All of the above are rules in the orchestrator, decided in code before any model is consulted, as
 today. The model writes the words of a turn; it never decides whether an answer is due.
 
@@ -281,6 +315,10 @@ open question.
 On `give_up`, at any time, with or without an attempt: Max gives the full answer with grounds, says
 what any earlier attempt had of it, and corrects Ellie's guess if she made one. Logged
 `quiz.answer_released`. **It fills no progress.** `rule:answer_withheld` is retired.
+
+*Amended 2026-10-06 (`notebooks.md` §11.4, §11.5):* after two partial answers the open question
+also offers **Show me**, which is this release. A released answer goes to the chat only; nothing
+is written into the doc for it.
 
 ### 4.5 Difficulty follows the learner
 
@@ -327,6 +365,11 @@ only the follow-up can be a blank.
 question, or the follow-up to a guess, is one blank (§4.2). Its verdict is recorded with
 `form: 'cloze'` for the same reason as above.
 
+*Amended 2026-10-06 (`notebooks.md` §11.4): the paragraph above is superseded.* A run of
+*Partly there* ends on an offer of Show me, not a blank (§4.2). The blank after a release (1 Oct)
+stands, and must pass the give-away check in `core/pitch.ts`. A question resolved by a blank shows
+*revisit* in the notes, never *You got this* (§5).
+
 ### 4.6 Size
 
 Max's turns stay at the `attempt-first.md` §4 sizes (feedback under 100; released answer under 150).
@@ -342,6 +385,9 @@ are kept short while longer explainers are written into notes"*). **When the doc
 can land, so she gives the full answer at the old size. Code: `prompts.doc.ts` `ellieAnswersBlock`,
 `prompts.ts` `turnDirective` (`docChat`), `actor.ts` `#answerSplitsIntoNotes`.
 
+*Amended 2026-10-06 (`notebooks.md` §11.2):* the doc half, cut to one line on 1 Oct, is now an
+addition to the card's depth of about 120 words at most, extending or replacing a depth item.
+
 ### 4.7 Closure: nothing is left hanging
 
 Two invariants, enforced by rule, not by prompt:
@@ -356,6 +402,11 @@ Two invariants, enforced by rule, not by prompt:
   feedback turn, a release or closure), **once**. It used to be repeated on every feedback turn
   until the question closed, six times in one run. A mistake is a claim the page contradicts, not
   a doubt. If the page shows her flagged claim is right, Max says so rather than inventing a fault.
+
+*Amended 2026-10-06 (`notebooks.md` §11.5):* both invariants stand in the chat. **Nothing is
+written into the doc on an idle closure.** The release goes to the chat, and the open question's
+chip shows *revisit*. In the studied notes, closure had released two answers 5 s and 11 s after
+asking, leaving questions in the notes the learner never had a chance at.
 
 ### 4.8 Where to look next (2026-10-01)
 
@@ -414,9 +465,25 @@ with the Q block marked resolved while the question was still open in the chat. 
 - **5.1 does not fire on a lesson's Start**, which is told not to teach yet.
 
 - **Q blocks stay** after they are resolved. The learner removes them if they want to.
+
 - **Every agent edit can be removed or edited in one click** (a small control on the edit: Remove ·
   Keep). *Keep* drops the colour and keeps the text and its provenance.
 - **Freeze** stops all of it (§3).
+
+*Amended 2026-10-06 (`notebooks.md` §11.5): rows 5.2 and 5.3, and the amendment of 25 Sep, are
+superseded as to where the question and its answer go.* In the studied MDP notes, Max's 1,406
+words outnumbered the generator's 264, and about 90% of them was text a learner would not keep:
+question prompts with their chat preamble, resolutions repeating the doc, one wrong resolution, and
+one-word "answers" from blanks shown as *you got this*. Now:
+- **An open question sits in a side rail beside its card**, not in the doc body (5.2).
+- **On resolution it folds into a one-line self-check chip under the card**: the question in one
+  line and the learner's earned answer, collapsed (5.3). It replaces "Q blocks stay".
+- **A question resolved by a blank, a give-up or closure shows *revisit*, never *you got this*.**
+  A released answer, including *partly yours*, goes to the chat only, and the 30–100-word "correct
+  answer, written as notes" is no longer written.
+- **No boilerplate** ("this tests the statement, not you"), **no verdict text and no tutorial
+  breadcrumbs** ("Checked: correct", "Hint 2: …", "Answer shown in the chat") go into the doc.
+- The edit controls (Remove · Keep), Freeze and the critical rule below stand.
 
 **The critical rule (Lucas's 5.4).** All doc content starts AI-generated, and agents have free rein
 over AI-written text: they may rewrite, move and merge it. **Learner-written text is never
@@ -443,6 +510,10 @@ answer** (⌘↩) once the learner has written in it.
 - **The pause watcher no longer reports text inside any Q block.** An answer there is marked on
   Submit only, so it cannot be marked twice, once by the pause and once by the button.
 - An answer to a question that is no longer the open one is refused, and the block says so.
+
+*Amended 2026-10-06 (`notebooks.md` §11.5):* the open question is in the side rail, so Answer here
+and Submit live there, not in the doc body. The rest of this section stands. A submitted answer that
+earns *Well done* becomes the learner's answer in the question's chip.
 
 ### 5.6 The learner's own questions (2026-10-01)
 
@@ -483,6 +554,10 @@ is in, with an optional line saying what it should show.
   It is the learner's act on the document and not a turn: no message, no timer, no ledger.
 - The ingest does not write tables or diagrams; its schema is unchanged.
 
+  *Amended 2026-10-06 (`notebooks.md` §11.2): superseded for tables.* A comparison the slide
+  itself gives as a table is written in at ingest, through the same validators, with provenance
+  set in code. The ingest still writes no diagrams. Insert works as above.
+
 Code: `room/docedit.ts` (`planGeneratedBlock`), `actor.generateBlock`, `notes:generateBlock`.
 
 ## 6. Progress
@@ -517,6 +592,16 @@ Code: `room/docedit.ts` (`planGeneratedBlock`), `actor.generateBlock`, `notes:ge
   *Revised 2026-10-01 (Lucas's decision).* Step 3 used to be "has Ellie prompt the learner to ask
   a question to begin". A lesson now opens on Max's first question on the objective, which is how
   the learner clears it.
+
+  *Amended 2026-10-06 (`notebooks.md` §11.3): step 3 above is superseded, and step 1 changes.*
+  In the five conversations from 3 Oct, all 30 of Max's opening questions came from a Start, each
+  within seconds of Ellie's announcement, and the cold ones found the learner unready. Now:
+  - **Ellie walks the learner through the objective's card** instead of only announcing it.
+  - **Max does not ask.** A pure function in `core/` judges readiness from what the learner has
+    done on that objective: depth opened, Explain or Example used, their own note written, time on
+    the section. When it is ready, the app offers *Ready to check this?*, and the learner presses.
+  - **A complete objective is never asked again**, even after New Conversation.
+  - Step 2 (the scroll) stands.
 
 ## 7. The demo and the report
 
@@ -562,3 +647,8 @@ provenance the learner has to click; nothing verifies the notes against the slid
 | Issue #16 whisper popover | **Superseded** by private threads; "insert into the document" survives. |
 | Issue #38 objectives tree panel | **Superseded as UI** by the progress bar and lesson cards; the tree and ledger survive as data. |
 | `docs/report/assignment1-draft.md` Steps 2–4, `video-storyboard.md` | To be rewritten against this brief. |
+
+The table above lists what this brief supersedes. What later briefs supersede in this one is listed
+there: `notebooks.md` §10 (1 Oct) and `notebooks.md` §11.8 (6 Oct). The time-based hand-off stays
+superseded. The readiness offer of `notebooks.md` §11.3 is not that hand-off: it never asks, and it
+only offers.
