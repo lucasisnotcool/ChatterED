@@ -1,0 +1,148 @@
+/**
+ * Concept cards (`notebooks.md` §11.2, amended 2026-10-06; decision D1): `pm/concept.ts` draws
+ * them and imports this file, as `pm/nodeviews.ts` carries `blocks.css`.
+ *
+ * The same global, `nd-`-prefixed namespace as `notes.css`, for the same reason. Colours are the
+ * app's tokens only (`--text`, `--text-2`, `--muted`, `--hairline`, `--pane`, `--ground`,
+ * `--indigo`), never a literal, so a theme that redefines the tokens restyles the cards with it.
+ *
+ * **Calm on purpose.** A card is a line of the notes, not a box: no border, no fill. The core line
+ * reads like any paragraph, with a small caret in the card's own left margin (inside the column,
+ * so a compact sheet with no gutter still has it) and, while folded, one quiet line under it naming
+ * what is folded. An open card's depth items each carry a small uppercase label, the way Max's
+ * question carries "Max asked", and a hairline rail on their left.
+ *
+ * **Folded is the absence of `nd-concept-open`** (the plugin's node decoration): the items are in
+ * the DOM and hidden, so their chips, toolbars and controls are hidden with them, and nothing is
+ * ever taken out of the document to fold it.
+ */
+
+.nd-concept {
+  position: relative;
+  margin: 10px 0 14px;
+  padding-left: 22px;
+}
+.nd-concept.nd-concept-flat { padding-left: 0; }
+
+/* The core line: an ordinary paragraph, a little closer to its hint and its depth. */
+.nd-editor .ProseMirror .nd-concept-body > p:first-child { margin-bottom: 2px; }
+
+/* The rows of a card are positioning contexts, like every top-level block (notes.css), so their
+   chips and toolbars sit in the gutters beside them rather than beside the card's first line.
+   Not the widgets between the rows (Remove · Keep on a whole new card, an action's running line):
+   those keep their own positioning. */
+.nd-editor .ProseMirror .nd-concept-body > :not(.ProseMirror-widget),
+.nd-editor .ProseMirror .nd-ci-body > :not(.ProseMirror-widget) { position: relative; }
+
+/* ── the caret and the hint ─────────────────────────────────────────────── */
+
+.nd-concept-caret {
+  position: absolute;
+  left: 0;
+  /* Level with the core line's first line: 15px at a 1.68 line height is a 25px line. */
+  top: 3.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-2);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.nd-concept-caret:hover { background: var(--ground); color: var(--text); }
+.nd-concept-caret:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.nd-concept.nd-concept-open > .nd-concept-caret { transform: rotate(90deg); }
+
+.nd-concept-hint {
+  display: block;
+  margin: 0 0 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+.nd-concept-hint:hover { color: var(--indigo); }
+.nd-concept-caret[hidden],
+.nd-concept-hint[hidden],
+.nd-concept.nd-concept-open > .nd-concept-hint { display: none; }
+
+/* ── folded: only the core line ─────────────────────────────────────────── */
+
+.nd-concept:not(.nd-concept-open) > .nd-concept-body > .nd-ci { display: none; }
+
+/* ── a depth item ───────────────────────────────────────────────────────── */
+
+.nd-ci {
+  position: relative;
+  margin: 10px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--hairline);
+}
+/* Not on the slides: the rail is dashed and the label says "added". The word is the signal; the
+   rail's shape only repeats it (never colour alone). */
+.nd-ci.nd-ci-is-added { border-left-style: dashed; }
+.nd-ci-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 1px;
+  user-select: none;
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+.nd-ci-role {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+/* The provenance chip's own look: what the app already shows for "added" content. */
+.nd-ci-added {
+  padding: 0 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--muted);
+}
+.nd-ci-added[hidden] { display: none; }
+.nd-editor .ProseMirror .nd-ci-body > :last-child { margin-bottom: 4px; }
+
+/* ── chips and toolbars on a card's rows ────────────────────────────────── */
+
+/* notes.css shows every chip in a hovered top-level block; a card is one top-level block with a
+   chip on each row, so only the hovered row's shows. A chip that says "no source" always shows. */
+.nd-editor .ProseMirror > .nd-concept:hover .nd-chip:not(.nd-chip-bad) { opacity: 0; }
+.nd-editor .ProseMirror > .nd-concept :is(.nd-concept-body, .nd-ci-body) > :hover > .nd-chip-holder .nd-chip,
+.nd-editor .ProseMirror > .nd-concept .nd-chip:focus-visible { opacity: 1; }
+
+/* The action toolbar on the hovered row, or the caret's row while the editor has focus. */
+.nd-editor .ProseMirror > .nd-concept :is(.nd-concept-body, .nd-ci-body) > *:hover > .nd-tools-holder .nd-tools,
+.nd-editor .ProseMirror.ProseMirror-focused > .nd-concept .nd-caret-block > .nd-tools-holder .nd-tools {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 0.12s ease, visibility 0s;
+}
+
+/* A compact sheet shows a row's chip beside its toolbar's handle while the handle is in use: the
+   row's own, not every row's in the card. */
+.nd-compact .nd-editor .ProseMirror > .nd-concept:has(.nd-tools:hover, .nd-tools:focus-within, .nd-tools-open) .nd-chip {
+  opacity: 0;
+  visibility: hidden;
+}
+.nd-compact .nd-editor .ProseMirror > .nd-concept :is(.nd-concept-body, .nd-ci-body) > *:has(.nd-tools:hover, .nd-tools:focus-within, .nd-tools-open) > .nd-chip-holder .nd-chip {
+  opacity: 1;
+  visibility: visible;
+}

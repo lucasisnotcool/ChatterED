@@ -93,6 +93,8 @@
         return true;
       },
       submitAnswer: submitAnswerAtSelection,
+      // The concept cards' folds are kept per document for the session (`pm/concept.ts`).
+      docKey: () => doc.docId,
       // A tutorial's part chrome (`pm/tutorial.ts`), or the main notes' practice rows.
       ...(tutorial ? { tutorial } : {}),
       ...(practice ? { practice } : {}),

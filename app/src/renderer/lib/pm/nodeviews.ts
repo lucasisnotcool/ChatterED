@@ -26,7 +26,7 @@
 import katex from 'katex';
 import type { Node } from 'prosemirror-model';
 import type { Command } from 'prosemirror-state';
-import type { EditorView, NodeView, ViewMutationRecord } from 'prosemirror-view';
+import type { EditorView, NodeView, NodeViewConstructor, ViewMutationRecord } from 'prosemirror-view';
 import type { AnswerQuestionRefusal, NotesAnswerQuestionResult } from '../../../shared/ipc.js';
 import { blockAttrs } from '../../../shared/doc/schema.js';
 import type { QResolution, Rect } from '../../../shared/doc/types.js';
@@ -42,6 +42,7 @@ import { diagramNodeViews } from './diagram.js';
 import { flashcardNodeViews } from './flashcards.js';
 import { infographicNodeViews } from './infographic.js';
 import { quizNodeViews } from './quiz.js';
+import { conceptNodeViews } from './concept.js';
 // The stylesheet of the three blocks of notebooks §5.3, carried by the views that need it so no
 // other file has to import it (`blocks.css`).
 import '../../components/notes/blocks.css';
@@ -618,10 +619,7 @@ export const submitAnswerAtSelection: Command = (state, _dispatch, view) => {
   return true;
 };
 
-export function nodeViews(ctx: NodeViewContext): Record<
-  string,
-  (node: Node, view: EditorView, getPos: () => number | undefined) => NodeView
-> {
+export function nodeViews(ctx: NodeViewContext): Record<string, NodeViewConstructor> {
   return {
     math_block: (node, view, getPos) => new MathBlockView(node, view, getPos),
     slide_figure: (node) => new SlideFigureView(node, ctx),
@@ -632,5 +630,7 @@ export function nodeViews(ctx: NodeViewContext): Record<
     ...flashcardNodeViews(ctx),
     ...quizNodeViews(ctx),
     ...infographicNodeViews(ctx),
+    // A concept card and its depth items (`notebooks.md` §11.2, amended 2026-10-06): `concept.ts`.
+    ...conceptNodeViews(),
   };
 }

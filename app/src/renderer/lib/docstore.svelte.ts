@@ -77,7 +77,8 @@ import { reveal, revealText } from './pm/reveal.js';
 import { insertOwnQuestion, type QuestionAnswer } from './pm/qblock.js';
 import { setReading } from './pm/readaloud.js';
 import { setSearchHit } from './pm/searchhit.js';
-import { insertTargetId } from './pm/insertat.js';
+import { caretInsertPos, insertPosAfter, insertTargetId } from './pm/insertat.js';
+import { revealInView } from './pm/concept.js';
 import { editFormula } from './pm/math.js';
 import { bumpStrips, type StripContext } from './pm/slidestrip.js';
 import { closeAllSlideWindows, openSlideWindow } from './pm/slidewindow.js';
@@ -1070,6 +1071,12 @@ export class DocStore {
 
     const ranges = insertedRanges([result.tr]);
     view.dispatch(result.tr.setMeta(AGENT_TR, true).setMeta('addToHistory', false));
+    // An addition to a folded concept card opens it, so nothing an agent writes lands out of sight
+    // (`notebooks.md` §11.2, amended 2026-10-06). View state: no steps, nothing saved or undoable.
+    // The touched blocks alone, never with the focus: an addition's focus is often the card itself,
+    // and a card named among the blocks reads as a whole new card, which stays folded.
+    revealInView(view, result.blockIds);
+    if (batch.focusBlockId) revealInView(view, [batch.focusBlockId]);
 
     const record: DocEditRecord = {
       editId: batch.editId,
@@ -1242,6 +1249,10 @@ export class DocStore {
   scrollToBlock(blockId: string, options: { flash?: boolean } = {}): void {
     const view = this.#view;
     if (!view) return;
+    if (!blockPos(view.state.doc, blockId)) return;
+    // A block folded inside a concept card is opened first, or there is nothing on screen to scroll
+    // to (`pm/concept.ts`). A steps-free transaction: not a learner edit, not saved.
+    revealInView(view, [blockId]);
     const target = blockPos(view.state.doc, blockId);
     if (!target) return;
     const dom = view.nodeDOM(target.pos) ?? view.domAtPos(target.pos + 1).node;
@@ -1589,18 +1600,10 @@ export class DocStore {
     const view = this.#view;
     if (!view) return null;
     const state = view.state;
-    let pos: number | null = null;
-    if (afterBlockId) {
-      state.doc.forEach((node, offset) => {
-        if (pos === null && node.attrs.blockId === afterBlockId) pos = offset + node.nodeSize;
-      });
-      // A block inside a container (a Q block's paragraph): after its top-level container.
-      if (pos === null) {
-        const hit = blockPos(state.doc, afterBlockId);
-        if (hit) pos = state.doc.resolve(hit.pos).after(1);
-      }
-    }
-    if (pos === null && this.#placed) pos = state.selection.$from.depth > 0 ? state.selection.$from.after(1) : null;
+    // After the block (a block inside a Q block: after the Q block). In a concept card's depth, in
+    // the same item; from its core line, after the card (`pm/insertat.ts`, as the ops place it).
+    let pos: number | null = afterBlockId ? insertPosAfter(state.doc, afterBlockId) : null;
+    if (pos === null && this.#placed) pos = caretInsertPos(state);
     if (pos === null) pos = state.doc.content.size;
     // A paragraph holding the image, in line with text (2026-10-03), with its id now, not at the
     // authorship stamp's leisure: the strips and the chips key on it.

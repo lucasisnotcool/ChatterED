@@ -23,6 +23,7 @@ import { liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-li
 import type { Command, Plugin } from 'prosemirror-state';
 import { notesSchema } from '../../../shared/doc/schema.js';
 import { blockKitPlugin } from './blockkit.js';
+import { conceptPlugin } from './concept.js';
 import { diagramPlugin } from './diagram.js';
 import { editFormula, mathInputRules, mathPlugin } from './math.js';
 import { imageKeysPlugin } from './image.js';
@@ -84,6 +85,11 @@ export interface EditorKeys {
   tutorial?: () => TutorialChromeContext;
   /** The **main notes**: each section's "Practise · Tutorial 1: P1a ✓ · P1b" row (`tutorial.ts`). */
   practice?: () => PracticeChipsContext;
+  /**
+   * The open document's id, which the concept cards' folds are kept under for the session
+   * (`concept.ts`, `notebooks.md` §11.2 as amended 2026-10-06). Without it a view's folds are its own.
+   */
+  docKey?: () => string | null;
 }
 
 export function editorPlugins(keys: EditorKeys): Plugin[] {
@@ -104,6 +110,9 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
     // and the keymaps, so → ← and Tab beside a blank reach the blank first (`tutorial.ts`).
     ...(keys.tutorial ? tutorialPlugins(keys.tutorial) : [tutorialNodeViewsPlugin()]),
     ...(keys.practice ? [practiceChipsPlugin(keys.practice)] : []),
+    // Concept cards: which are open, opening one the caret or a search reaches, ⌘⌥↩ and the click
+    // on a core line (`concept.ts`). View state only: nothing it does is a document change.
+    conceptPlugin({ docKey: keys.docKey ?? (() => null) }),
     // ⌥↩ / ⇧⌥↩ and the ＋ line edges: out of a component; a pasted part as a reference (`structure.ts`).
     structurePlugin(),
     // Formulas typeset at rest, stepped over as one unit, edited in a popover (`math.ts`). Ahead of

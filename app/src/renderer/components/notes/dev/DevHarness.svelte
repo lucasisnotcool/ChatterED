@@ -295,6 +295,89 @@
     });
   }
 
+  // ── a concept card (`notebooks.md` §11.2, amended 2026-10-06): written whole, it arrives folded
+  // to its core line; an addition to its depth opens it; a jump into its depth opens it too.
+
+  let lastCard = $state<{ cardId: string; exampleId: string | null } | null>(null);
+
+  function ellieWritesCard(): void {
+    edit({
+      author: 'ellie',
+      cause: 'answer_missing',
+      focusBlockId: anchor(),
+      why: 'One idea of the lecture as a concept card: its line, and its depth folded under it.',
+      ops: [
+        {
+          op: 'insert_after',
+          anchorBlockId: anchor(),
+          blocks: [
+            {
+              kind: 'concept',
+              term: 'Admissible heuristic',
+              core: '**Admissible heuristic**: a heuristic that never overestimates the true cost to reach the goal.',
+              prov: { pages: [12], reason: null },
+              depth: [
+                {
+                  role: 'intuition',
+                  blocks: [{ kind: 'paragraph', text: 'An optimist: it may promise the goal is nearer than it is, never further.', prov: { pages: [], reason: 'a way to remember it' } }],
+                  prov: { pages: [], reason: 'a way to remember it' },
+                },
+                {
+                  role: 'equation',
+                  blocks: [
+                    { kind: 'math', tex: 'h(n) \\le h^*(n) \\quad \\text{for every } n', prov: { pages: [12], reason: null } },
+                    { kind: 'bullets', items: ['$h^*(n)$: the true cheapest cost from $n$ to a goal'], prov: { pages: [12], reason: null } },
+                  ],
+                  prov: { pages: [12], reason: null },
+                },
+                {
+                  role: 'example',
+                  blocks: [{ kind: 'paragraph', text: 'Straight-line distance on a road map: no road is shorter than the straight line.', prov: { pages: [13], reason: null } }],
+                  prov: { pages: [13], reason: null },
+                },
+                {
+                  role: 'pitfall',
+                  blocks: [{ kind: 'paragraph', text: 'Admissible is not consistent: consistency is the stronger, per-edge condition.', prov: { pages: [], reason: 'a common confusion' } }],
+                  prov: { pages: [], reason: 'a common confusion' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    // The card is the edit's first block, its example the third item's first block.
+    const ids = doc.edits.at(-1)?.blockIds ?? [];
+    lastCard = ids[0] ? { cardId: ids[0], exampleId: null } : null;
+    note(lastCard ? `card ${lastCard.cardId} (folded)` : 'the card did not land');
+  }
+
+  function ellieExtendsCard(): void {
+    if (!lastCard) {
+      note('Write a card first.');
+      return;
+    }
+    edit({
+      author: 'ellie',
+      cause: 'answer_missing',
+      focusBlockId: lastCard.cardId,
+      why: 'Another example, added to the card’s depth (card_attach).',
+      ops: [
+        {
+          op: 'card_attach',
+          cardBlockId: lastCard.cardId,
+          role: 'example',
+          mode: 'extend',
+          blocks: [{ kind: 'paragraph', text: 'Manhattan distance on a grid where moves are only up, down, left and right.', prov: { pages: [13], reason: null } }],
+          prov: { pages: [13], reason: null },
+        },
+      ],
+    });
+    const ids = doc.edits.at(-1)?.blockIds ?? [];
+    lastCard = { ...lastCard, exampleId: ids.at(-1) ?? null };
+    note('card_attach → the card opens');
+  }
+
   function thinking(author: 'ellie' | 'max'): void {
     doc.apply({ type: 'doc.cursor', roomId: ROOM, docId: benchDocId(), author, blockId: anchor(), state: 'thinking' });
     note(`doc.cursor ${author} thinking`);
@@ -341,6 +424,12 @@
       <button class="btn" onclick={maxAsks}>Max asks a question</button>
       <button class="btn" onclick={maxResolves}>Max resolves it</button>
       <button class="btn" onclick={maxSuggests}>Max corrects your sentence</button>
+    </div>
+
+    <div class="group" role="group" aria-label="Concept cards">
+      <button class="btn" onclick={ellieWritesCard}>Ellie writes a concept card (folded)</button>
+      <button class="btn" onclick={ellieExtendsCard}>Ellie adds an example to it (opens)</button>
+      <button class="btn" onclick={() => lastCard?.exampleId && doc.scrollToBlock(lastCard.exampleId)}>Jump to that example</button>
     </div>
 
     <div class="group">

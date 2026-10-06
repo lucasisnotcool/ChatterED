@@ -207,6 +207,26 @@ describe('readQueue', () => {
   });
 });
 
+describe('readQueue — a concept card (notebooks.md §11.2, amended 2026-10-06)', () => {
+  it('reads the core line, then each depth item under its label, each under its own id', () => {
+    const card = notesSchema.node('concept', { ...attrs('c'), term: 'Gradient' }, [
+      para('c_core', 'Gradient: the direction of steepest ascent.'),
+      notesSchema.node('concept_item', { ...attrs('i_ex'), role: 'example' }, [para('i_ex_p', 'For x squared it is 2x.')]),
+      notesSchema.node('concept_item', { ...attrs('i_pf'), role: 'pitfall', reason: 'a common slip' }, [
+        para('i_pf_p', 'It is not the step size.'),
+      ]),
+    ]);
+    expect(readQueue(docOf(heading('h', 2, 'Descent'), card), null)).toEqual([
+      { blockId: 'h', text: 'Descent' },
+      { blockId: 'c_core', text: 'Gradient: the direction of steepest ascent.' },
+      { blockId: 'i_ex', text: 'Example.' },
+      { blockId: 'i_ex_p', text: 'For x squared it is 2x.' },
+      { blockId: 'i_pf', text: 'Pitfall.' },
+      { blockId: 'i_pf_p', text: 'It is not the step size.' },
+    ]);
+  });
+});
+
 describe('readQueue — flashcards, a quiz, an infographic', () => {
   it('reads the fronts, then the backs, of a deck', () => {
     const deck = flashcards('f', [['Admissible', 'Never overestimates'], ['f(n)', 'g plus h']], { title: 'Terms' });

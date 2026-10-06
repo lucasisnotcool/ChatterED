@@ -19,6 +19,7 @@
 
 import type { Node } from 'prosemirror-model';
 import { blockAttrs, diagramSpec, flashcardsSpec, infographicSpec, optionLabel, quizSpec, tableGrid } from '../../shared/doc/schema.js';
+import { roleLabel } from './pm/conceptmodel.js';
 
 // ── what to say ─────────────────────────────────────────────────────────────────────────────
 
@@ -34,8 +35,12 @@ export const FORMULA_WORD = 'formula';
 /** Blocks that are pictures of the deck: nothing in them is the notes' own words. */
 const SILENT = new Set(['slide_figure']);
 
-/** Containers whose children are read one by one, each under its own block id. */
-const READ_CHILDREN = new Set(['bullet_list', 'ordered_list', 'q_block']);
+/**
+ * Containers whose children are read one by one, each under its own block id. A concept card is
+ * read whole, core line then depth (`notebooks.md` §11.2, amended 2026-10-06): the highlight
+ * opens a folded card as it reaches the depth (`pm/concept.ts`), so what is heard is on screen.
+ */
+const READ_CHILDREN = new Set(['bullet_list', 'ordered_list', 'q_block', 'concept', 'concept_item']);
 
 const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
@@ -159,6 +164,11 @@ function readBlock(node: Node, fallbackId: string, out: ReadItem[]): void {
       else readBlock(child, blockId, out);
     });
     return;
+  }
+  if (name === 'concept_item') {
+    // Its label first ("Pitfall."), as the eye reads it: a listener needs to know what kind of
+    // line is coming, and an example or a pitfall said without it sounds like the definition.
+    say(`${roleLabel(node.attrs.role)}.`);
   }
   if (READ_CHILDREN.has(name)) {
     // A Q block is read whole: the question, then whatever is written under it (the learner's

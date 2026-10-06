@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_NAME, provenanceLabel, qStatusLabel } from './chrome.js';
+import type { Node } from 'prosemirror-model';
+import { EditorState, TextSelection } from 'prosemirror-state';
+import { blockPos, notesSchema } from '../../../shared/doc/schema.js';
+import {
+  AGENT_NAME,
+  chromeKey,
+  chromePlugin,
+  focusKey,
+  focusPlugin,
+  provenanceLabel,
+  qStatusLabel,
+  type ChromeContext,
+} from './chrome.js';
 
 describe('provenanceLabel', () => {
   it('names one page', () => {
@@ -58,5 +70,66 @@ describe('AGENT_NAME', () => {
   it('pairs every colour with a name, which is the colour-blind rule', () => {
     expect(AGENT_NAME.ellie).toBe('Ellie');
     expect(AGENT_NAME.max).toBe('Max');
+  });
+});
+
+// ── a concept card's rows carry the chips and the toolbar (notebooks.md §11.2, amended 2026-10-06)
+
+describe('chrome on a concept card', () => {
+  const para = (blockId: string, text: string): Node =>
+    notesSchema.node('paragraph', { blockId, pages: [3], reason: null, objectiveIds: [] }, [notesSchema.text(text)]);
+  const doc = notesSchema.node('doc', null, [
+    para('p0', 'Before the card.'),
+    notesSchema.node('concept', { blockId: 'c1', term: 'Gradient', pages: [3], reason: null, objectiveIds: [] }, [
+      para('c1p', 'Gradient: the direction of steepest ascent.'),
+      notesSchema.node('concept_item', { blockId: 'i1', role: 'example', pages: [3], reason: null, objectiveIds: [] }, [
+        para('i1a', 'For x squared it is 2x.'),
+      ]),
+    ]),
+  ]);
+  const noop = (): void => undefined;
+  const ctx: ChromeContext = {
+    frozen: false,
+    cursors: [],
+    edits: [],
+    suggestions: [],
+    spanThreads: [],
+    onRemoveEdit: noop,
+    onKeepEdit: noop,
+    onAcceptSuggestion: noop,
+    onRejectSuggestion: noop,
+    onOpenSlide: noop,
+    onFocusThread: noop,
+    blockActions: { i1a: { kind: 'explain', author: 'ellie', state: 'running', line: 'Ellie is writing…' } },
+    onBlockAction: noop,
+  };
+  const keys = (state: EditorState): string[] =>
+    chromeKey
+      .getState(state)!
+      .find()
+      .map((d) => String((d.spec as { key?: string }).key ?? ''));
+
+  it('puts a chip and a toolbar on the core line and on each block in the depth, none on the frames', () => {
+    const state = EditorState.create({ doc, plugins: [chromePlugin(() => ctx)] });
+    const all = keys(state);
+    const chips = all.filter((k) => k.startsWith('prov:')).map((k) => k.split(':')[1]);
+    const tools = all.filter((k) => k.startsWith('tools:')).map((k) => k.split(':')[1]);
+    expect(chips).toEqual(['p0', 'c1p', 'i1a']);
+    expect(tools).toEqual(['p0', 'c1p', 'i1a']);
+  });
+
+  it('draws an action’s running line under a block in the depth', () => {
+    const state = EditorState.create({ doc, plugins: [chromePlugin(() => ctx)] });
+    expect(keys(state).some((k) => k.startsWith('act:i1a:'))).toBe(true);
+  });
+
+  it('marks the caret’s row in a card as the caret block', () => {
+    const row = blockPos(doc, 'i1a')!;
+    const state = EditorState.create({ doc, selection: TextSelection.create(doc, row.pos + 2), plugins: [focusPlugin()] });
+    const marked = focusKey
+      .getState(state)!
+      .find()
+      .filter((d) => d.from === row.pos && d.to === row.pos + row.node.nodeSize);
+    expect(marked).toHaveLength(1);
   });
 });

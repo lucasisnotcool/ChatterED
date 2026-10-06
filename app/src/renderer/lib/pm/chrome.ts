@@ -64,6 +64,7 @@ import {
   type ObjectiveFillView,
 } from './overview.js';
 import { frontierOf, revealKey } from './reveal.js';
+import { cardRowAt, cardRows, isCardRow } from './conceptmodel.js';
 import { attachCitePreview, closeSourcePopover, type SlideReader } from './sourcepop.js';
 
 export const chromeKey = new PluginKey<DecorationSet>('chattered:chrome');
@@ -232,7 +233,11 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
   // Several sources: each named by what tells it from the others (`chipSourceNames`).
   const names = ctx.sources && ctx.sources.length > 1 ? chipSourceNames(ctx.sources) : null;
   eachBlock(doc, (node, pos, depth) => {
-    if (depth > 0) return; // a q_block's children hang off the Q block's own chrome
+    // A q_block's children hang off the Q block's own chrome. A concept card is the other way
+    // round (`notebooks.md` §11.2, amended 2026-10-06): its core line and each block in its depth
+    // carry their own chip, and the card and its items, whose provenance those rows repeat, none.
+    if (node.type.name === 'concept') return;
+    if (depth > 0 && !isCardRow(doc, pos)) return;
     const { blockId, pages, reason } = blockAttrs(node);
     // The overview's title, objectives and note slots carry no chip (C6): they are scaffolding.
     if (!blockId || !showsChip(node)) return;
@@ -325,7 +330,13 @@ function blockToolbars(doc: Node, ctx: ChromeContext): Decoration[] {
   const act = ctx.onBlockAction;
   if (!act) return [];
   const out: Decoration[] = [];
+  // A concept card's rows each get their own: its core line and every block in its depth (§11.2).
+  const rows: { node: Node; offset: number }[] = [];
   doc.forEach((node, offset) => {
+    if (node.type.name === 'concept') for (const row of cardRows(node, offset)) rows.push({ node: row.node, offset: row.pos });
+    else rows.push({ node, offset });
+  });
+  rows.forEach(({ node, offset }) => {
     if (!hasToolbar(node)) return;
     const { blockId } = blockAttrs(node);
     const busy = ctx.blockActions?.[blockId]?.state === 'running';
@@ -382,7 +393,11 @@ function blockActionLines(doc: Node, ctx: ChromeContext): Decoration[] {
     const target = blockPos(doc, blockId);
     if (!target) continue;
     const end = target.pos + target.node.nodeSize;
-    if (end > doc.content.size || doc.resolve(end).depth !== 0) continue;
+    if (end > doc.content.size) continue;
+    // Between top-level blocks, or between a concept card's rows (under its core line, or under a
+    // block in its depth), where Ellie's addition to the card will land.
+    const $end = doc.resolve(end);
+    if ($end.depth !== 0 && $end.parent.type.name !== 'concept' && $end.parent.type.name !== 'concept_item') continue;
     out.push(
       between(end, `act:${blockId}:${action.state}:${action.line}`, -2, () => {
         const line = el('div', `nd-actline nd-${action.author} nd-actline-${action.state}`);
@@ -734,6 +749,12 @@ export const NOTE_SLOT_PLACEHOLDER = 'Add your own note…';
 function focusDecorations(state: EditorState): DecorationSet {
   const decorations: Decoration[] = [];
   const caret = state.selection.$from.index(0);
+  // In a concept card the caret's block is the card's row it is in (§11.2): the core line, or a
+  // block in the depth.
+  const row = cardRowAt(state.doc, state.selection.from);
+  if (row && hasToolbar(row.node)) {
+    decorations.push(Decoration.node(row.pos, row.pos + row.node.nodeSize, { class: 'nd-caret-block' }));
+  }
   state.doc.forEach((node, offset, index) => {
     const classes: string[] = [];
     const empty = isEmptyNoteSlot(node);
