@@ -34,6 +34,7 @@ import type {
   NotesUpdateOverviewResult,
 } from '../../shared/ipc.js';
 import { isNotebookId, type NotebookView } from '../../shared/notebook.js';
+import type { BlockCommentView } from '../../shared/doc/comments.js';
 import { paginateText } from '../../shared/paginate.js';
 import { Node as PmNode } from 'prosemirror-model';
 import {
@@ -280,6 +281,11 @@ export class DocStore {
   blockActions = $state<Record<string, BlockActionView>>({});
   /** Per recommendation: being added, or why it was not (§5.3). */
   recommendationStates = $state<Record<string, RecommendationView>>({});
+  /**
+   * **The blocks' stored explain comments** (migration 033), by block id: what Ellie would answer
+   * to Explain on that line, readable offline. Loaded with the doc; read-only here.
+   */
+  comments = $state.raw<Record<string, BlockCommentView>>({});
   /** From Update overview's click until main has written the new overview (§2). */
   updatingOverview = $state(false);
   /**
@@ -730,6 +736,7 @@ export class DocStore {
     this.overview = null;
     this.blockActions = {};
     this.recommendationStates = {};
+    this.comments = {};
     this.updatingOverview = false;
     this.bannerDismissed = null;
     this.#awaitingRewrite = false;
@@ -780,6 +787,20 @@ export class DocStore {
     this.#docJson = view.doc;
     this.epoch++;
     void this.#loadSlideInputs(view.docId);
+    void this.#loadComments(view.docId);
+  }
+
+  /** The doc's explain comments (migration 033). A bridge without the call, or a failure, is none. */
+  async #loadComments(docId: string): Promise<void> {
+    if (!docId || !has('notesComments')) return;
+    try {
+      const list = await bridge().notesComments({ docId });
+      if (this.docId !== docId) return;
+      this.comments = Object.fromEntries(list.map((c) => [c.blockId, c]));
+      this.#bump();
+    } catch (err) {
+      console.warn('notes: the explain comments did not load —', message(err));
+    }
   }
 
   async #openSlides(fileId: string, token: number): Promise<void> {
@@ -964,6 +985,8 @@ export class DocStore {
       onRecommendation: (id, action) => void this.recommendation(id, action),
       readyHeadings: this.#takeOffers().map((offer) => offer.headingBlockId),
       onReadyCheck: (headingBlockId) => this.readyCheck(headingBlockId),
+      // A plain object of plain objects, never a proxy (`$state.raw`).
+      comments: this.comments,
     };
   }
 

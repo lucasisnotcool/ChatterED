@@ -69,6 +69,7 @@ const api: ChatterEdApi = {
   notesPageLines: (input) => ipcRenderer.invoke(IPC.notesPageLines, input),
   notesPageTexts: (input) => ipcRenderer.invoke(IPC.notesPageTexts, input),
   notesSlideGroups: (input) => ipcRenderer.invoke(IPC.notesSlideGroups, input),
+  notesComments: (input) => ipcRenderer.invoke(IPC.notesComments, input),
   notesSetSlideGroup: (input) => ipcRenderer.invoke(IPC.notesSetSlideGroup, input),
   notesDocText: (input) => ipcRenderer.invoke(IPC.notesDocText, input),
   notesAnswerQuestion: (input) => ipcRenderer.invoke(IPC.notesAnswerQuestion, input),

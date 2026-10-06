@@ -315,3 +315,42 @@ Behaviour that differs from §1–§5, or adds to them:
 `main` before this merges must renumber one side. The runner is keyed on `user_version`, so two
 different files both numbered 026 would mean one of them never runs on a database that already has
 the other.
+
+## 10. Stored explain comments (7 Oct 2026, branch `lucas/explain-comments`)
+
+**Why.** Lucas's open-book exam: Ellie needs the network, search does not. A block can carry a
+stored *explain* comment (what Ellie would answer to Explain on that line), written ahead of time
+by a runner outside the app and imported headless. Search is the main way in during the exam, so
+it shows a hit block's explain and can match on it.
+
+- **Storage.** Migration 033: `block_comments(doc_id, block_id, kind 'explain', body, text_sha,
+  model, created_at, updated_at)`, unique on (doc, block, kind), beside `doc_json`, never in it.
+  `text_sha` is stored as the writer computed it and never compared (no staleness check). The
+  same migration widens `search_chunks.kind` with `'explain'`.
+- **Import.** `node app/scripts/import-comments.mjs --db <app.db> --in <file.jsonl> [--dry-run]`,
+  app quit, database at 033. A line whose doc or block does not exist is skipped and reported.
+- **In the notes.** A badge (Ellie's dot and "Explain") in the right gutter of each commented block
+  at any depth, before the provenance chip, opens the explain in a popover with KaTeX. It folds to
+  its dot while the line is hovered so the chip keeps its room; in a compact sheet it is the dot,
+  under the toolbar's handle.
+- **In search.** Each hit carries its block's explain (`SearchHit.explain`), shown as an expandable
+  badge in the hit list and as a panel above the notes column. `via: 'explain'` says the hit came
+  from the explain ("Matched Ellie's explanation").
+- **Matching, one switch** (`ExplainMode`; setting `search_explain_mode`, or the env var
+  `CHATTERED_SEARCH_EXPLAIN`; default `separate`):
+  - `off`: as before 033; explains are shown, never matched.
+  - `append`: each note chunk's embedded text, and each block unit's, gets its blocks' explains
+    appended (a list's items included); the text and snippet are the notes'. Every commented chunk
+    re-embeds. `via` is a heuristic here: the query's words are in the explain and none in the text.
+  - `separate`: each explain is a chunk of its own (`explain:<notebook>:<block>`, embedded as the
+    header plus the explain) that resolves to its block; note chunks are untouched, so their vectors
+    are kept. A block's explain hit and its group's note hit are one hit, whichever ranks first.
+- **Shared code.** The rows a notebook indexes (`shared/search/build.ts`) and the ranking
+  (`shared/search/rank.ts`) moved out of `main/search/index.ts`, so the eval runs the same code.
+- **The eval (§8 step 6).** `node app/scripts/search-eval.mjs --db <app.db> --queries <q.json>
+  --mode off|append|separate|all [--folder <id>] [--map slug=nb_…,…] [--model-dir …] [--verbose]
+  [--json out.json]`, read-only. S@1, S@5, MRR and N@1, overall and by query `kind`. A hit is
+  correct when it is in the query's notebook and its pages meet `gold_pages`. Vectors are cached by
+  text hash and seeded from the database's own index; on a copy of the 7 Oct database every
+  `off`-mode row hash matched the app's index, so the eval chunks exactly as the app does. Which
+  mode ships should be decided on the real query set, not the five-query smoke test.

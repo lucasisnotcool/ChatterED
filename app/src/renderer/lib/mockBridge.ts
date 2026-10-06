@@ -1817,6 +1817,13 @@ export function createMockBridge(): ChatterEdApi {
     async notesSlideGroups({ docId }) {
       return docId === notes.docId ? slideMoves.map((m) => ({ ...m })) : [];
     },
+    /** One explain on the mock doc's first paragraph, so the badge can be seen without a database. */
+    async notesComments({ docId }) {
+      if (docId !== notes.docId) return [];
+      const first = (notes.doc as { content?: { type?: string; attrs?: { blockId?: string } }[] } | null)?.content?.find((n) => n.type === 'paragraph' && n.attrs?.blockId);
+      const blockId = first?.attrs?.blockId;
+      return blockId ? [{ blockId, kind: 'explain' as const, body: 'Ellie would say: this line is the **definition** to remember, $h(s) \\le h^*(s)$.', model: 'mock', updatedAt: '2026-10-07T00:00:00.000Z' }] : [];
+    },
     async notesSetSlideGroup({ docId, page, key, title }) {
       if (docId !== notes.docId) throw new Error('That document does not exist.');
       slideMoves = slideMoves.filter((m) => m.page !== page);

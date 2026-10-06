@@ -67,6 +67,7 @@ import { selfCheckLabel } from './qblock.js';
 import { frontierOf, revealKey } from './reveal.js';
 import { cardRowAt, cardRows, isCardRow } from './conceptmodel.js';
 import { attachCitePreview, closeSourcePopover, type SlideReader } from './sourcepop.js';
+import { closeCommentPopover, openCommentPopover } from './commentpop.js';
 
 export const chromeKey = new PluginKey<DecorationSet>('chattered:chrome');
 
@@ -148,6 +149,11 @@ export interface ChromeContext {
    */
   readyHeadings?: readonly string[];
   onReadyCheck?: (headingBlockId: string) => void;
+  /**
+   * **The blocks' stored explain comments** (migration 033), by block id. Each draws a badge in
+   * the right gutter, before the provenance chip, that opens the explain (`commentpop.ts`).
+   */
+  comments?: Readonly<Record<string, { body: string; updatedAt?: string }>>;
 }
 
 // ── labels (pure — these are the tested part) ───────────────────────────────────────────────
@@ -247,8 +253,9 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
     const label = chipLabel(pages, ctx.sources, () => provenanceLabel(pages, reason));
     const page = pages[0] ?? (node.type.name === 'slide_figure' ? (node.attrs.page as number) : null);
     const rect = node.type.name === 'slide_figure' ? ((node.attrs.rect as Rect | null) ?? null) : null;
+    const commented = commentOnTopLine(node, ctx.comments);
     out.push(
-      widget(pos + 1, `prov:${blockId}:${label}`, -1, (view) => {
+      widget(pos + 1, `prov:${blockId}:${label}:${commented ? 'c' : ''}`, -1, (view) => {
         const holder = el('span', 'nd-chip-holder');
         // Assigned below, once the chip exists: with a preview, the click opens the slide on the
         // region the block was drawn from rather than on the whole page.
@@ -296,12 +303,81 @@ function provenanceChips(doc: Node, ctx: ChromeContext): Decoration[] {
         }
         if (label === 'no source') chip.classList.add('nd-chip-bad');
         else if (page === null) chip.classList.add('nd-chip-flat');
+        // The explain badge sits where the chip starts: the chip moves over by its width.
+        if (commented) holder.classList.add('nd-chip-holder-cmt');
         holder.append(chip);
         return holder;
       }),
     );
   });
   return out;
+}
+
+/**
+ * Does a comment badge sit on this block's first line? Its own, or (a list) its first item's,
+ * which is drawn at the same height.
+ */
+export function commentOnTopLine(node: Node, comments: ChromeContext['comments']): boolean {
+  if (!comments) return false;
+  const { blockId } = blockAttrs(node);
+  if (blockId && comments[blockId]) return true;
+  if (node.type.name === 'bullet_list' || node.type.name === 'ordered_list') {
+    const first = node.firstChild;
+    const id = first ? blockAttrs(first).blockId : '';
+    return Boolean(id && comments[id]);
+  }
+  return false;
+}
+
+/**
+ * **The explain badges** (migration 033): one on every block that has a stored explain, at any
+ * depth (a list's item, a concept card's row). A widget like the chip, at the block's start, drawn
+ * in the right gutter (notes.css `.nd-cmt-holder`): zero-width and absolutely placed, so it shifts
+ * no line and takes no caret. Its click opens the explain (`commentpop.ts`).
+ */
+function commentBadges(doc: Node, ctx: ChromeContext): Decoration[] {
+  const comments = ctx.comments;
+  if (!comments || Object.keys(comments).length === 0) return [];
+  const out: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (!node.isBlock) return false;
+    const { blockId } = blockAttrs(node);
+    const comment = blockId ? comments[blockId] : undefined;
+    if (comment) {
+      // A leaf block (a display formula) has no inside to hang it in: the badge goes in a
+      // zero-height line just before it (`.nd-cmt-edge`), which collapses into the margin.
+      const leaf = node.isLeaf;
+      const key = `cmt:${blockId}:${leaf ? 'edge' : 'in'}:${comment.updatedAt ?? String(comment.body.length)}`;
+      out.push(
+        widget(leaf ? pos : pos + 1, key, leaf ? 1 : -2, () => {
+          const holder = commentBadge(blockId, comment.body, ctx);
+          if (!leaf) return holder;
+          const edge = el('div', 'nd-cmt-edge');
+          edge.contentEditable = 'false';
+          edge.append(holder);
+          return edge;
+        }),
+      );
+    }
+    // Into containers and lists; never into a textblock's inline content.
+    return !node.isTextblock;
+  });
+  return out;
+}
+
+/** The badge itself: Ellie's dot and "Explain", a button that opens the stored explain. */
+function commentBadge(blockId: string, body: string, ctx: ChromeContext): HTMLElement {
+  const holder = el('span', 'nd-cmt-holder');
+  holder.contentEditable = 'false';
+  const badge = button('nd-cmt', '', 'Ellie explains this line (saved, works offline)', () => {
+    openCommentPopover(badge, ctx.comments?.[blockId]?.body ?? body);
+  });
+  badge.append(agentDot('ellie'), el('span', 'nd-cmt-label', 'Explain'));
+  badge.setAttribute('aria-label', 'Ellie explains this line');
+  badge.setAttribute('aria-haspopup', 'dialog');
+  badge.setAttribute('aria-expanded', 'false');
+  holder.append(badge);
+  return holder;
 }
 
 // ── the learning overview ───────────────────────────────────────────────────────────────────
@@ -687,6 +763,7 @@ function spanHighlights(doc: Node, ctx: ChromeContext): Decoration[] {
 function build(state: EditorState, ctx: ChromeContext): DecorationSet {
   return DecorationSet.create(state.doc, [
     ...provenanceChips(state.doc, ctx),
+    ...commentBadges(state.doc, ctx),
     ...blockToolbars(state.doc, ctx),
     ...blockActionLines(state.doc, ctx),
     ...objectiveDecorations(state.doc, ctx),
@@ -743,7 +820,12 @@ export function chromePlugin(context: () => ChromeContext): Plugin<DecorationSet
     },
     view() {
       // A preview left open would outlive the editor it points into (a different deck opened).
-      return { destroy: closeSourcePopover };
+      return {
+        destroy: () => {
+          closeSourcePopover();
+          closeCommentPopover();
+        },
+      };
     },
     props: {
       decorations(state): DecorationSet | undefined {

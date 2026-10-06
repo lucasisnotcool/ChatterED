@@ -15,7 +15,10 @@ const hit = (key: string, kind: 'note' | 'page', page: number | null, blockId: s
   page,
   blockId,
   blockIds: blockId ? [blockId] : [],
+  pages: page === null ? [] : [page],
   alsoIn: [],
+  via: 'text',
+  explain: null,
 });
 
 describe('what each column shows', () => {

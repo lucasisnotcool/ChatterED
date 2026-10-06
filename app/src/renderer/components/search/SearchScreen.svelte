@@ -19,6 +19,7 @@
   import NotesPane from '../notes/NotesPane.svelte';
   import HitList from './HitList.svelte';
   import DeckColumn from './DeckColumn.svelte';
+  import ExplainNote from './ExplainNote.svelte';
   import { store } from '../../lib/store.svelte.js';
   import { bridge } from '../../lib/bridge.js';
   import { searchWidths } from '../../lib/searchlayout.js';
@@ -208,6 +209,14 @@
           <button type="button" class="sp-open" title="Open this notebook, with Ellie and Max" onclick={() => void openNotebook()}>Open notebook</button>
         {/if}
       </header>
+      {#if shown.note?.explain}
+        <!-- The hit block's stored explain (migration 033): open when it is what matched. -->
+        {#key shown.note.key}
+          <div class="sp-explain">
+            <ExplainNote body={shown.note.explain} via={shown.note.via === 'explain'} open={shown.note.via === 'explain'} variant="panel" />
+          </div>
+        {/key}
+      {/if}
       <div class="sp-body sp-notesbody">
         {#if noteNb && shown.note}
           {#key noteNb}
@@ -265,6 +274,7 @@
   .sp-open:hover { color: var(--indigo); border-color: var(--indigo); }
   .sp-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
   .sp-notesbody > :global(*) { flex: 1; min-height: 0; }
+  .sp-explain { padding: 8px 12px; border-bottom: 1px solid var(--hairline); background: var(--pane); flex: none; }
   .sp-empty { margin: 24px 18px; font-size: 13px; color: var(--text-2); }
   .sp-strip { flex: none; height: 100%; border: 0; border-right: 1px solid var(--hairline); background: var(--ground); color: var(--text-2); display: grid; place-items: start center; padding-top: 14px; }
   .sp-strip:hover { background: var(--pane); color: var(--indigo); }

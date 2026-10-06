@@ -25,6 +25,7 @@ import type {
 } from '../../shared/doc/types.js';
 import { isNotebookId, notebookContentKey } from '../../shared/notebook.js';
 import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/notes.js';
+import { commentsRepo } from '../db/repos/comments.js';
 import { log } from '../log.js';
 import { docFromJson, learnerSpans } from '../../shared/doc/schema.js';
 import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks, placeholderSuperseded } from './ingest.js';
@@ -275,6 +276,11 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
    * returns the whole list so the renderer never has to merge.
    */
   handle<{ docId: string }>(IPC.notesSlideGroups, ({ docId }) => repo.slideOverrides(docId));
+
+  /** The blocks' stored explain comments (migration 033): read here, written only by the importer. */
+  handle<{ docId: string }>(IPC.notesComments, (input) =>
+    typeof input?.docId === 'string' && input.docId ? commentsRepo(host.db).forDoc(input.docId) : [],
+  );
 
   handle<{ docId: string; page: number; key: string | null; title: string }>(
     IPC.notesSetSlideGroup,

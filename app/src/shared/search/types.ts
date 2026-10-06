@@ -5,20 +5,49 @@
  * service in `src/main/search/` consume them.
  */
 
-/** `note`: a group of notes blocks, or one row or card of a composite block. `page`: one slide or page. */
-export type ChunkKind = 'note' | 'page';
+/**
+ * `note`: a group of notes blocks, or one row or card of a composite block. `page`: one slide or
+ * page. `explain`: a block's stored explain comment (migration 033), embedded on its own and
+ * resolving to that block (mode `separate`).
+ */
+export type ChunkKind = 'note' | 'page' | 'explain';
+
+/**
+ * **How search reads the blocks' stored explain comments** (2026-10-07). One switch, so the modes
+ * can be measured against each other (`scripts/search-eval.mjs`):
+ * - `off`: comments are shown on hits but never matched (search as before 033).
+ * - `append`: each note chunk's (and each block unit's) embedded text gets its blocks' explains
+ *   appended. The snippet still shows the notes text.
+ * - `separate`: each explain is a chunk of its own (`explain:<notebook>:<block>`) that resolves
+ *   to its block; the note chunks are unchanged.
+ */
+export type ExplainMode = 'off' | 'append' | 'separate';
+export const EXPLAIN_MODES: readonly ExplainMode[] = ['off', 'append', 'separate'];
+/** What ships. Overridden by the setting `search_explain_mode` or `CHATTERED_SEARCH_EXPLAIN`. */
+export const DEFAULT_EXPLAIN_MODE: ExplainMode = 'separate';
+/** The `settings` key that overrides the default (`off`, `append` or `separate`). */
+export const SEARCH_EXPLAIN_SETTING = 'search_explain_mode';
+
+export function parseExplainMode(raw: unknown, fallback: ExplainMode = DEFAULT_EXPLAIN_MODE): ExplainMode {
+  const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return (EXPLAIN_MODES as readonly string[]).includes(v) ? (v as ExplainMode) : fallback;
+}
 
 export interface SearchChunk {
   /**
    * Stable across re-chunking while the blocks it starts at are unchanged:
    * - `note:<notebookId>:<firstBlockId>` for a block group,
+   * - `explain:<notebookId>:<blockId>` for a block's explain comment,
    * - `note:<notebookId>:<blockId>#<unitIndex>` for one row of a table or one card of a set,
    * - `page:<notebookId>:<page>` for a page.
    */
   key: string;
   kind: ChunkKind;
   notebookId: string;
-  /** Notes: the member top-level block ids, in doc order. Pages: `[]`. */
+  /**
+   * Notes: the member top-level block ids, in doc order. Pages: `[]`. Explain: the commented
+   * block, then the group member that holds it when that is another block (a list's item).
+   */
   blockIds: string[];
   /** Pages: the **notebook** page number given in the input. Notes: `null`. */
   page: number | null;
@@ -29,7 +58,7 @@ export interface SearchChunk {
   pages: number[];
   /** The heading path below the doc title, plus the learner's label when one applies (rule 4). */
   section: string[];
-  /** The normalised body text: the source of the hit's snippet. */
+  /** The normalised body text: the source of the hit's snippet. Explain: the commented block's own text. */
   text: string;
   /** `header + '\n' + text`: exactly what is embedded (rule 2). */
   embedText: string;
@@ -44,6 +73,8 @@ export interface SearchChunk {
 export interface BlockUnit {
   notebookId: string;
   blockId: string;
+  /** The block's own text, without the header or any appended explain: the snippet's source. */
+  text: string;
   embedText: string;
   hash: string;
 }
@@ -77,8 +108,18 @@ export interface SearchHit {
    */
   blockId: string | null;
   blockIds: string[];
+  /** The pages the hit stands for: a slide's own, a note's provenance. What the eval scores. */
+  pages: number[];
   /** The same slide in another notebook of the scope, folded into this hit. */
   alsoIn: { notebookId: string; notebookName: string; page: number }[];
+  /**
+   * `explain` when the hit came from the block's stored explain comment rather than the notes
+   * text: an explain chunk (mode `separate`), or, in mode `append`, a block whose query words are
+   * in its explain and not in its text.
+   */
+  via: 'text' | 'explain';
+  /** The stored explain comment of `blockId` (markup, `$tex$`), or null when it has none. */
+  explain: string | null;
 }
 
 export interface SearchResult {

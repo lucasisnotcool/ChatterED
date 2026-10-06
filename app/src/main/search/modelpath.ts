@@ -20,6 +20,14 @@ export const MODEL_DTYPE = 'q4';
 export const MODEL_DIMS = 768;
 export const MODEL_ID = `${MODEL_NAME}-${MODEL_DTYPE}@${MODEL_REVISION}`;
 
+/**
+ * EmbeddingGemma's prompts (search.md §4) and the token cap, used by the worker and by the
+ * headless eval (`scripts/search-eval.mjs`), so both embed exactly alike.
+ */
+export const QUERY_PREFIX = 'task: search result | query: ';
+export const DOC_PREFIX = 'title: none | text: ';
+export const MAX_LENGTH = 512;
+
 /** The files the worker reads. If any is missing the embedder reports itself unavailable. */
 export const MODEL_FILES = [
   'config.json',

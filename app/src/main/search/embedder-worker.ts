@@ -15,11 +15,7 @@
  */
 import { basename, dirname } from 'node:path';
 import type { EmbedKind, FromWorker, ToWorker } from './embedder.js';
-import { MODEL_DTYPE } from './modelpath.js';
-
-const QUERY_PREFIX = 'task: search result | query: ';
-const DOC_PREFIX = 'title: none | text: ';
-const MAX_LENGTH = 512;
+import { DOC_PREFIX, MAX_LENGTH, MODEL_DTYPE, QUERY_PREFIX } from './modelpath.js';
 
 interface ParentPort {
   on(event: 'message', listener: (e: { data: ToWorker }) => void): void;

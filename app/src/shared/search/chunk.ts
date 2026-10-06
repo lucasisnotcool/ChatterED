@@ -14,7 +14,7 @@
 
 import { infographicText, notesSchema, quizText } from '../doc/schema.js';
 import { OBJECTIVES_REASON } from '../doc/types.js';
-import type { BlockUnit, SearchChunk } from './types.js';
+import type { BlockUnit, ExplainMode, SearchChunk } from './types.js';
 
 // ── tunables (rule 3, rule 1) ────────────────────────────────────────────────────────────────
 
@@ -361,6 +361,51 @@ interface Member {
   text: string;
   words: number;
   pages: number[];
+  /** The stored explains on this block and the blocks inside it (a list's items), in doc order. */
+  explains: ExplainOf[];
+}
+
+/** A block's explain comment, as plain text (`explainPlainText`), with the block's own text. */
+interface ExplainOf {
+  blockId: string;
+  /** The commented block's own normalised text: the snippet of an explain hit. */
+  own: string;
+  explain: string;
+}
+
+/**
+ * A block's own text, for an explain hit's snippet: a list item's paragraphs without the lists
+ * nested in it; any other block's whole text.
+ */
+function ownText(node: PMJson): string {
+  if (typeOf(node) === 'list_item') {
+    return normalise(
+      childrenOf(node)
+        .filter((c) => typeOf(c) !== 'bullet_list' && typeOf(c) !== 'ordered_list')
+        .map(blockText)
+        .filter((t) => t.trim().length > 0)
+        .join('\n'),
+    );
+  }
+  return normalise(blockText(node));
+}
+
+/** The explains on `node` (under `ownId`, which a concept row may have minted) and on every block inside it. */
+function explainsIn(node: PMJson, ownId: string, explains: ReadonlyMap<string, string> | undefined, ownTextOf: () => string): ExplainOf[] {
+  if (!explains || explains.size === 0) return [];
+  const out: ExplainOf[] = [];
+  const top = explains.get(ownId);
+  if (top) out.push({ blockId: ownId, own: ownTextOf(), explain: top });
+  const walk = (n: PMJson): void => {
+    for (const child of childrenOf(n)) {
+      const id = stringAttr(child, 'blockId');
+      const e = id && id !== ownId ? explains.get(id) : undefined;
+      if (e) out.push({ blockId: id, own: ownText(child), explain: e });
+      walk(child);
+    }
+  };
+  walk(node);
+  return out;
 }
 
 function sortedUnique(pages: Iterable<number>): number[] {
@@ -392,7 +437,14 @@ function isLabel(text: string): boolean {
  */
 export function noteChunks(
   doc: unknown,
-  o: { notebookId: string; title: string },
+  o: {
+    notebookId: string;
+    title: string;
+    /** Block id → its explain comment as plain text (`explainPlainText`). */
+    explains?: ReadonlyMap<string, string>;
+    /** How the explains are read (`ExplainMode`). Default `off`: they are not. */
+    explainMode?: ExplainMode;
+  },
 ): { chunks: SearchChunk[]; units: BlockUnit[] } {
   let root: PMJson | null = null;
   if (typeof doc === 'string') {
@@ -409,6 +461,8 @@ export function noteChunks(
   if (!root) return { chunks, units };
 
   const title = normalise(o.title).replace(/\n/g, ' ');
+  const mode: ExplainMode = o.explainMode ?? 'off';
+  const explains = mode === 'off' ? undefined : o.explains;
   const keys = new Set<string>();
   const seenText = new Set<string>();
   const stack: HeadingEntry[] = [];
@@ -430,12 +484,33 @@ export function noteChunks(
     return out;
   };
 
+  /** Mode `separate`: one chunk per explain, resolving to its block (then its group member). */
+  const pushExplains = (list: ExplainOf[], memberId: string, pages: number[], path: string[], header: string): void => {
+    for (const e of list) {
+      const embedText = `${header}\n${e.explain}`;
+      chunks.push({
+        key: uniqueKey(`explain:${o.notebookId}:${e.blockId}`),
+        kind: 'explain',
+        notebookId: o.notebookId,
+        blockIds: e.blockId === memberId ? [e.blockId] : [e.blockId, memberId],
+        page: null,
+        pages,
+        section: path,
+        text: e.own,
+        embedText,
+        hash: hashText(embedText),
+      });
+    }
+  };
+
   const flush = (): void => {
     if (group.length === 0) return;
     const path = section();
     const header = headerOf(path);
     const text = group.map((m) => m.text).join('\n');
-    const embedText = `${header}\n${text}`;
+    const appended = (ms: Member[]): string =>
+      mode === 'append' ? ms.flatMap((m) => m.explains.map((e) => `\n${e.explain}`)).join('') : '';
+    const embedText = `${header}\n${text}${appended(group)}`;
     chunks.push({
       key: uniqueKey(`note:${o.notebookId}:${group[0]!.blockId}`),
       kind: 'note',
@@ -449,9 +524,10 @@ export function noteChunks(
       hash: hashText(embedText),
     });
     for (const m of group) {
-      const unitText = `${header}\n${m.text}`;
-      units.push({ notebookId: o.notebookId, blockId: m.blockId, embedText: unitText, hash: hashText(unitText) });
+      const unitText = `${header}\n${m.text}${appended([m])}`;
+      units.push({ notebookId: o.notebookId, blockId: m.blockId, text: m.text, embedText: unitText, hash: hashText(unitText) });
     }
+    if (mode === 'separate') for (const m of group) pushExplains(m.explains, m.blockId, m.pages, path, header);
     group = [];
     groupWords = 0;
   };
@@ -511,7 +587,8 @@ export function noteChunks(
         const pages = own.length > 0 ? own : cardPages.length > 0 ? cardPages : headingPages();
         const n = words(text);
         if (group.length > 0 && groupWords + n > GROUP_MAX_WORDS) flush();
-        group.push({ blockId: stringAttr(child, 'blockId') || `${blockId}#${String(i)}`, text, words: n, pages });
+        const rowId = stringAttr(child, 'blockId') || `${blockId}#${String(i)}`;
+        group.push({ blockId: rowId, text, words: n, pages, explains: explainsIn(child, rowId, explains, () => text) });
         groupWords += n;
       });
       flush();
@@ -531,8 +608,13 @@ export function noteChunks(
       // A row or card cites its own pages; one that cites none takes the block's, then the section's.
       const blockOwn = sortedUnique(numbersAttr(node, 'pages'));
       const fallback = blockOwn.length > 0 ? blockOwn : headingPages();
+      const tableExplains = explainsIn(node, blockId, explains, () => normalise(whole));
+      const tail = mode === 'append' ? tableExplains.map((e) => `\n${e.explain}`).join('') : '';
+      if (mode === 'separate') {
+        pushExplains(tableExplains, blockId, sortedUnique(parts.flatMap((p) => p.pages).concat(fallback)), path, header);
+      }
       parts.forEach((part, unitIndex) => {
-        const embedText = `${header}\n${part.text}`;
+        const embedText = `${header}\n${part.text}${tail}`;
         chunks.push({
           key: uniqueKey(`note:${o.notebookId}:${blockId}#${String(unitIndex)}`),
           kind: 'note',
@@ -563,7 +645,7 @@ export function noteChunks(
     const pages = own.length > 0 ? own : headingPages();
     const n = words(text);
     if (group.length > 0 && groupWords + n > GROUP_MAX_WORDS) flush();
-    group.push({ blockId, text, words: n, pages });
+    group.push({ blockId, text, words: n, pages, explains: explainsIn(node, blockId, explains, () => text) });
     groupWords += n;
     if (groupWords >= GROUP_MIN_WORDS) flush();
   });
