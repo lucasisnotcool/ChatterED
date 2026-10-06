@@ -103,6 +103,18 @@ describe('objectiveSections', () => {
     const doc = docOf(heading('h_a', 2, 'A'), question('q1'), para('p_a', 'Prose.'));
     expect(objectiveSections(doc, [objective('o_a', ['h_a'])])[0]?.target).toBe('p_a');
   });
+
+  /** W2's concept cards: Quiz me is pressed on a card's core line, never on the frame or its depth. */
+  it("presses Quiz me on a concept card's core line", () => {
+    const card = notesSchema.node('concept', { blockId: 'c1', term: 'Gradient', pages: [3], reason: null, objectiveIds: [] }, [
+      para('c1p', 'Gradient: the direction of steepest ascent.'),
+      notesSchema.node('concept_item', { blockId: 'i1', role: 'example', pages: [3], reason: null, objectiveIds: [] }, [
+        para('i1a', 'For x squared it is 2x.'),
+      ]),
+    ]);
+    const doc = docOf(heading('h_a', 2, 'A'), card);
+    expect(objectiveSections(doc, [objective('o_a', ['i1a'])])[0]).toMatchObject({ headingBlockId: 'h_a', target: 'c1p' });
+  });
 });
 
 describe('own words', () => {

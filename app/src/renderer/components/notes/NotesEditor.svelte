@@ -95,6 +95,10 @@
       submitAnswer: submitAnswerAtSelection,
       // The concept cards' folds are kept per document for the session (`pm/concept.ts`).
       docKey: () => doc.docId,
+      // Opening a card's depth counts towards "Ready to check this?" (D2, 2026-10-06).
+      onCardsOpened: (ids) => {
+        for (const id of ids) doc.noteDepthOpened(id);
+      },
       // A tutorial's part chrome (`pm/tutorial.ts`), or the main notes' practice rows.
       ...(tutorial ? { tutorial } : {}),
       ...(practice ? { practice } : {}),

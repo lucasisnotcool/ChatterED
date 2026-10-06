@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Node } from 'prosemirror-model';
-import { EditorState, NodeSelection, TextSelection } from 'prosemirror-state';
+import { EditorState, NodeSelection, TextSelection, type Transaction } from 'prosemirror-state';
+import type { EditorView } from 'prosemirror-view';
 import { blockPos, notesSchema } from '../../../shared/doc/schema.js';
 import { CONCEPT_ROLES, type ConceptRole } from '../../../shared/doc/types.js';
 import {
@@ -251,6 +252,27 @@ describe('conceptPlugin: folding is view state', () => {
     expect([...openCards(state)]).toEqual([]);
     state = state.apply(revealBlocks(state.tr, ['i2b']));
     expect([...openCards(state)]).toEqual(['c1']);
+  });
+
+  /** 2026-10-06 (D2): opening a card's depth is a readiness signal, reported once per opening. */
+  it('reports each card as it opens, not as it closes or as a view starts', () => {
+    const opened: string[][] = [];
+    const folds = new CardFolds();
+    folds.set('doc1', 'c0', true);
+    const plugin = conceptPlugin({ docKey: () => 'doc1', folds, onOpened: (ids) => opened.push(ids) });
+    let state = EditorState.create({ doc: sample(), plugins: [plugin] });
+    // The plugin's view half reads only `state`, so a stand-in view drives it without a DOM.
+    const view = { state } as unknown as EditorView;
+    const hooks = plugin.spec.view!(view);
+    const step = (tr: Transaction): void => {
+      state = state.apply(tr);
+      (view as { state: EditorState }).state = state;
+      hooks.update!(view, state);
+    };
+    step(toggleCardTr(state, posOf(state.doc, 'c1'))!);
+    step(toggleCardTr(state, posOf(state.doc, 'c1'))!);
+    step(toggleCardTr(state, posOf(state.doc, 'c1'))!);
+    expect(opened).toEqual([['c1'], ['c1']]);
   });
 
   it('a caret starting in the depth opens its card at once', () => {

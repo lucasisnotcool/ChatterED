@@ -28,7 +28,7 @@
  */
 
 import type { Node } from 'prosemirror-model';
-import { blockAttrs, blockPos, textRuns } from '../../shared/doc/schema.js';
+import { blockAttrs, blockPos, conceptCore, isConcept, textRuns } from '../../shared/doc/schema.js';
 import type { ProgressObjectiveView } from '../../shared/doc/types.js';
 import { offerCheck, type ReadinessSignals } from '../../core/readiness.js';
 import { OBJECTIVES_REASON, TITLE_REASON, hasToolbar } from './pm/overview.js';
@@ -109,8 +109,15 @@ export function objectiveSections(
       end++;
     }
     const body = tops.slice(head + 1, end);
+    // A concept card (W2, `notebooks.md` §11.2) is pressed on its core line, where its toolbar is;
+    // the question then lands under the card (`ops.ts`), never in its depth.
+    const line = (t: Top): string | null => {
+      if (!isConcept(t.node)) return t.blockId && hasToolbar(t.node) ? t.blockId : null;
+      const core = conceptCore(t.node);
+      return core && hasToolbar(core) ? blockAttrs(core).blockId || null : null;
+    };
     const target =
-      body.find((t) => t.blockId && hasToolbar(t.node))?.blockId ??
+      body.map(line).find((id): id is string => id !== null) ??
       body.find((t) => t.blockId && t.level === null && t.node.type.name !== 'q_block')?.blockId ??
       null;
     const last = tops[end - 1]!;

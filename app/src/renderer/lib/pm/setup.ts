@@ -90,6 +90,8 @@ export interface EditorKeys {
    * (`concept.ts`, `notebooks.md` §11.2 as amended 2026-10-06). Without it a view's folds are its own.
    */
   docKey?: () => string | null;
+  /** Cards opened in this view (`concept.ts`): a readiness signal, 2026-10-06 (D2). */
+  onCardsOpened?: (cardIds: string[]) => void;
 }
 
 export function editorPlugins(keys: EditorKeys): Plugin[] {
@@ -112,7 +114,10 @@ export function editorPlugins(keys: EditorKeys): Plugin[] {
     ...(keys.practice ? [practiceChipsPlugin(keys.practice)] : []),
     // Concept cards: which are open, opening one the caret or a search reaches, ⌘⌥↩ and the click
     // on a core line (`concept.ts`). View state only: nothing it does is a document change.
-    conceptPlugin({ docKey: keys.docKey ?? (() => null) }),
+    conceptPlugin({
+      docKey: keys.docKey ?? (() => null),
+      ...(keys.onCardsOpened ? { onOpened: keys.onCardsOpened } : {}),
+    }),
     // ⌥↩ / ⇧⌥↩ and the ＋ line edges: out of a component; a pasted part as a reference (`structure.ts`).
     structurePlugin(),
     // Formulas typeset at rest, stepped over as one unit, edited in a popover (`math.ts`). Ahead of

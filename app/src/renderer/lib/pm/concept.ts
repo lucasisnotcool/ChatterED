@@ -151,6 +151,13 @@ export interface ConceptPluginOptions {
   docKey: () => string | null;
   /** Where the folds outlive the view (`cardFolds`, the shared one, by default). */
   folds?: CardFolds;
+  /**
+   * **A card was opened** in this view, by the learner or by something they did (the caret, a
+   * search hit). Its id is the card's `blockId`. Opening a card's depth is one of readiness's
+   * signals (2026-10-06, D2: `core/readiness`, `DocStore.noteDepthOpened`). Not called for the
+   * folds a reopened view starts with: those were counted when they were opened.
+   */
+  onOpened?: (cardIds: string[]) => void;
 }
 
 export function conceptPlugin(options: ConceptPluginOptions): Plugin<ConceptState> {
@@ -207,7 +214,9 @@ export function conceptPlugin(options: ConceptPluginOptions): Plugin<ConceptStat
         update(view) {
           const now = conceptKey.getState(view.state)?.open;
           if (!now || now === last) return;
+          const opened = [...now].filter((id) => !last?.has(id));
           last = now;
+          if (opened.length > 0) options.onOpened?.(opened);
           const key = options.docKey();
           if (key) folds.replace(key, now);
         },
