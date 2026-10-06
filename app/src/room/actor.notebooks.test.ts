@@ -532,6 +532,64 @@ describe('quiet on an open question, and Hint', () => {
     await act(h, { kind: 'quiz' });
     expect(await h.actor.hint('span_elsewhere')).toEqual({ hinted: false, refused: 'There is no open question here.' });
   });
+
+  /** Decision 1's "no riddles", for the hint the learner pressed: "p. 6 settles it" is not a hint. */
+  it('aims the hint at a point not yet stated, and never lets a page be the hint', async () => {
+    let drafts = 0;
+    const h = build(
+      {
+        flowState: {
+          pendingQuiz: {
+            quizMessageId: 'm_q',
+            elementId: ELEMENT,
+            askedAt: 0,
+            answerMessageId: null,
+            feedbackGiven: false,
+            attempts: 0,
+            answerShown: false,
+            keyPoints: ['A side channel is private to one agent.', 'It never enters the shared context.'],
+            pointsCovered: [1],
+          },
+        },
+      },
+      (r) => {
+        if (r.meta.scope !== 'group' || !r.meta.agentKey?.startsWith('challenger')) return null;
+        drafts += 1;
+        return 'Look at what the other agents read. p. 3 settles it.';
+      },
+    );
+    // The question was asked in the doc chat in this restored sitting.
+    h.store.messages.insert({
+      id: 'm_q',
+      room_id: h.roomId,
+      participant_id: h.store.participants.forRoom(h.roomId).find((p) => p.agent_key?.startsWith('challenger'))!.id,
+      seq: 1,
+      body: 'Why does a side channel never reach the shared context?',
+      turn_decision_id: null,
+      model: null,
+      backend: null,
+      usage: null,
+      latency_target_ms: null,
+      ttft_actual_ms: null,
+      released_at: null,
+      promoted_from_whisper: null,
+      divider_cause: null,
+      disagreement: null,
+      anchor_id: DOC,
+      created_at: new Date(0).toISOString(),
+    });
+    await settle(h.clock, h.actor.hint(DOC));
+    expect(drafts).toBe(2);
+    const asks = h.llm.requests.filter((r) => r.meta.scope === 'group' && r.meta.agentKey?.startsWith('challenger'));
+    const note = asks[0]!.messages.at(-1)!.content;
+    expect(note).toContain('WHAT THEIR ANSWERS HAVE NOT STATED YET');
+    expect(note).toContain('2. It never enters the shared context.');
+    expect(note).not.toContain('1. A side channel is private');
+    expect(asks[1]!.messages.at(-1)!.content).toContain('YOUR LAST HINT POINTED AT A PAGE');
+    const hint = rows(h).find((m) => m.decided_by === 'rule:hint_requested')!;
+    expect(hint.body).not.toContain('settles');
+    expect(hint.body).toContain('Look at what the other agents read.');
+  });
 });
 
 // ── Decision 6 (6 Oct afternoon): Ellie explains but does not answer Max's open question ──────

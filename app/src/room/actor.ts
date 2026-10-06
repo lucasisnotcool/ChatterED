@@ -33,11 +33,13 @@ import { ownWordsOf } from '../core/ownwords.js';
 import {
   asksTwoThings,
   dropCreditOverclaim,
+  dropPagePointers,
   dropQuestionTail,
   dropTestingFrame,
   feedbackFaults,
   firstAsk,
   fixFeedback,
+  pagePointers,
   questionText,
   settleVerdict,
   verdictsIn,
@@ -4322,7 +4324,8 @@ export class RoomActor {
      * model answer, so it is told how (`modelAnswerAskBlock`).
      */
     const held = this.#heldMaxTurn(agent, decision);
-    const base = held === 'question' ? modelAnswerAskBlock() : undefined;
+    const base =
+      held === 'question' ? modelAnswerAskBlock() : decision.decidedBy === 'rule:hint_requested' ? this.#hintKeyBlock() : undefined;
     // What a held turn reports is about this turn only: nothing left by one that was cancelled.
     this.#pendingKey = null;
     this.#pendingMark = null;
@@ -4421,9 +4424,61 @@ export class RoomActor {
       next.meta.anchorId = request.meta.anchorId;
       return next;
     };
+    if (decision.decidedBy === 'rule:hint_requested') return this.#completeHintTurn(request, again, onDelta, signal);
     if (held === 'question') return this.#completeQuestionTurn(decision, request, again, onDelta, signal);
     if (held === 'feedback') return this.#completeFeedbackTurn(decision, request, again, onDelta, signal);
     return this.#d.llm.complete(request, onDelta, signal);
+  }
+
+  /**
+   * **The hint the learner pressed for, checked for riddles** (decisions 7 and 1, 6 Oct afternoon;
+   * `notebooks.md` §11.10). Held like Max's feedback: a hint whose pointer to the missing part is a
+   * page ("p. 6 settles it", `core/quizturn.pagePointers`) is written again once, and if it still
+   * is, those sentences are taken out (`dropPagePointers`).
+   */
+  async #completeHintTurn(
+    first: LlmRequest,
+    again: (extra: string) => LlmRequest,
+    onDelta: ((text: string) => void) | undefined,
+    signal: AbortSignal | undefined,
+  ): ReturnType<LLMClient['complete']> {
+    let result = await this.#d.llm.complete(first, undefined, signal);
+    if (pagePointers(result.text).length > 0) {
+      this.#turnLog.event('warn', 'hint.redo', { draft: 1, reason: 'page_pointer' });
+      result = await this.#d.llm.complete(
+        again(
+          'YOUR LAST HINT POINTED AT A PAGE. A page is not a hint. Say the missing word or fact outright, ' +
+            'or give one plain analogy or the first step, with no page reference as the pointer.',
+        ),
+        undefined,
+        signal,
+      );
+      if (pagePointers(result.text).length > 0) {
+        this.#turnLog.event('warn', 'hint.redo', { draft: 2, reason: 'page_pointer', dropped: true });
+        result = { ...result, text: dropPagePointers(result.text) };
+      }
+    }
+    onDelta?.(result.text);
+    return result;
+  }
+
+  /**
+   * **What the hint aims at** (decision 7): the open question's essential points the learner's
+   * answers have not stated yet (X1's hidden key, `PendingQuiz.keyPoints` / `pointsCovered`). For
+   * Max only; he gives one hint towards the first, never the points themselves in full.
+   */
+  #hintKeyBlock(): string | undefined {
+    const quiz = this.#pendingQuiz;
+    const points = quiz?.keyPoints ?? [];
+    if (points.length === 0) return undefined;
+    const covered = new Set(quiz?.pointsCovered ?? []);
+    const open = points.map((p, i) => ({ p, n: i + 1 })).filter(({ n }) => !covered.has(n));
+    if (open.length === 0) return undefined;
+    return [
+      'WHAT THEIR ANSWERS HAVE NOT STATED YET (your key, never shown; aim the one hint at the first):',
+      ...open.map(({ p, n }) => `${n}. ${p}`),
+      'Give one hint towards it. Do not state the whole point.',
+    ].join('\n');
   }
 
   /**
