@@ -8,8 +8,12 @@ import {
   OWN_QUESTION_REASON,
   answerTarget,
   insertOwnQuestion,
+  isRailQuestion,
+  isSelfCheck,
   newQuestionId,
   questionParts,
+  selfCheckLabel,
+  selfCheckLine,
   startAnswer,
 } from './qblock.js';
 
@@ -274,5 +278,39 @@ describe('answerTarget', () => {
     expect(answerTarget(at(stateOf(qBlock([QUESTION, answer])), 'b_qp'))).toBeNull();
     expect(answerTarget(at(stateOf(qBlock([QUESTION, answer], { status: 'resolved' })), 'b_a'))).toBeNull();
     expect(answerTarget(at(stateOf(para('b_one', []), qBlock([QUESTION, answer])), 'b_one'))).toBeNull();
+  });
+});
+
+describe('the self-check chip (D4, 2026-10-06)', () => {
+  it('says "your answer" only when the learner earned it, and "revisit" for everything else', () => {
+    expect(selfCheckLabel('you_got_this')).toBe('your answer');
+    for (const resolution of ['partly_yours', 'released', 'revisit', null, undefined] as const) {
+      expect(selfCheckLabel(resolution)).toBe('revisit');
+    }
+  });
+
+  it("never says Max's old grading words", () => {
+    const said = (['you_got_this', 'partly_yours', 'released', 'revisit', null] as const).map(selfCheckLabel);
+    expect(said.join(' ')).not.toMatch(/got this|partly|released/i);
+  });
+
+  it("is a closed question of Max's, including an old doc's, and never the learner's own", () => {
+    expect(isSelfCheck(qBlock([QUESTION], { status: 'resolved', resolution: 'you_got_this' }))).toBe(true);
+    expect(isSelfCheck(qBlock([QUESTION], { status: 'resolved', resolution: null }))).toBe(true);
+    expect(isSelfCheck(qBlock([QUESTION]))).toBe(false);
+    expect(isSelfCheck(qBlock([QUESTION], { askedBy: 'user', status: 'resolved' }))).toBe(false);
+    expect(isSelfCheck(para('b_one', []))).toBe(false);
+  });
+
+  it("puts Max's open question in the rail, and the learner's own nowhere but the text", () => {
+    expect(isRailQuestion(qBlock([QUESTION]))).toBe(true);
+    expect(isRailQuestion(qBlock([QUESTION], { askedBy: 'user' }))).toBe(false);
+    expect(isRailQuestion(qBlock([QUESTION], { status: 'resolved' }))).toBe(false);
+  });
+
+  it("reads the question in one line, without an old block's chat preamble", () => {
+    const old = para('b_old', [{ text: 'Max here. This one tests the statement, not you. Why does it converge?', by: 'max' }]);
+    expect(selfCheckLine(qBlock([old], { status: 'resolved' }))).toBe('Why does it converge?');
+    expect(selfCheckLine(qBlock([QUESTION], { status: 'resolved' }))).toBe('Why does it converge?');
   });
 });

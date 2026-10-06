@@ -343,6 +343,7 @@
       placeholder={draft ? 'Ask about this line…' : placeholder}
       note={draft ? null : composer.note}
       pass={composer.pass && !draft}
+      showMe={composer.showMe && !draft}
       passing={chat.passing}
       busy={chat.draftBusy}
       autofocus={draft !== null}

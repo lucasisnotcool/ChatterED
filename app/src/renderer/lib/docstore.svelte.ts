@@ -87,9 +87,50 @@ import { pageLinesFor } from './pagelines.js';
 import { slideGroups, type SlideGroup, type SlideOverride } from '../../shared/doc/slidegroups.js';
 import { learnerTextByBlock } from './pm/doctext.js';
 import { tutorialContentKey } from '../../shared/tutorial.js';
+import { taughtObjectives } from './progressview.js';
+import {
+  ReadinessCounters,
+  objectiveSections,
+  objectivesAt,
+  objectivesHolding,
+  offersKey,
+  readyOffers,
+  type ReadyOffer,
+} from './readinessview.js';
 
 /** ≈800 ms after the last change (the brief), and immediately after an agent edit. */
 const SAVE_DEBOUNCE_MS = 800;
+
+/**
+ * **How often the section being read is sampled** (D2, 2026-10-06). Readiness wants a minute on a
+ * section (`READY_DWELL_MS`), so 5 s is a twelfth of it: fine enough that the offer comes within a
+ * few seconds of being earned, coarse enough to cost one hit-test per tick.
+ */
+const READ_TICK_MS = 5_000;
+
+/**
+ * **The position being read**, for the dwell clock: the caret's, while the editor has focus and
+ * the caret is on screen (the learner is working there); else the line at the middle of the
+ * notes pane (they are reading, the caret left wherever they last clicked). Null when neither can
+ * be read, which counts no time anywhere.
+ */
+function readingPosition(view: EditorView): number | null {
+  const pane = view.dom.closest<HTMLElement>('.nd-scroll') ?? view.dom;
+  const box = pane.getBoundingClientRect();
+  if (box.height <= 0) return null;
+  if (view.hasFocus()) {
+    const head = view.state.selection.head;
+    try {
+      const at = view.coordsAtPos(head);
+      if (at.bottom >= box.top && at.top <= box.bottom) return head;
+    } catch {
+      // A position the view cannot draw (mid-rebuild): fall through to the pane's middle.
+    }
+  }
+  const editor = view.dom.getBoundingClientRect();
+  const hit = view.posAtCoords({ left: editor.left + editor.width / 2, top: box.top + box.height / 2 });
+  return hit ? hit.pos : null;
+}
 
 /**
  * How long a first ingest waits for the deck to open before it starts without the slides.
@@ -329,6 +370,18 @@ export class DocStore {
   mainTutorial: (() => string | null) | null = null;
   /** `store.progress.view` (N5's): the objectives list's fills (contract C5). */
   progressView: (() => ProgressView | null) | null = null;
+  /**
+   * `store.chat.openQuiz`, as much as readiness needs (D2): a question of Max's is open in a chat
+   * thread, so no section offers a check until it closes. Null while nothing is open.
+   */
+  openQuiz: (() => { objectiveId: string | null } | null) | null = null;
+
+  // ── "Ready to check this?" (D2, 2026-10-06; `readinessview.ts`). Plain: nothing renders these.
+  #readiness = new ReadinessCounters();
+  #readTimer: ReturnType<typeof setInterval> | null = null;
+  /** The offers the chrome last drew, and their `offersKey`, so a tick redraws only on a change. */
+  #offers: ReadyOffer[] = [];
+  #offersKey = '';
 
   // ── opening ───────────────────────────────────────────────────────────────────────────────
 
@@ -687,6 +740,9 @@ export class DocStore {
     this.#slideInputs++;
     this.#groupsMemo = null;
     this.#openStrips.clear();
+    this.#readiness.clear();
+    this.#offers = [];
+    this.#offersKey = '';
     // The windows read this deck's pages: a different notebook takes them with it. A tutorial
     // switching tabs is the same notebook, and the windows the notes opened stay.
     if (!this.#tutorial) closeAllSlideWindows();
@@ -811,6 +867,7 @@ export class DocStore {
       },
       { once: true },
     );
+    if (!this.#readTimer) this.#readTimer = setInterval(() => this.#readTick(), READ_TICK_MS);
   }
 
   /**
@@ -852,6 +909,8 @@ export class DocStore {
     }
     this.#view = null;
     this.#cancelAnimations();
+    if (this.#readTimer) clearInterval(this.#readTimer);
+    this.#readTimer = null;
   }
 
   /** Called by the host after every transaction it dispatched. */
@@ -898,7 +957,82 @@ export class DocStore {
       recommendationStates: $state.snapshot(this.recommendationStates) as Record<string, RecommendationView>,
       onBlockAction: (blockId, kind) => void this.blockAction(blockId, kind),
       onRecommendation: (id, action) => void this.recommendation(id, action),
+      readyHeadings: this.#takeOffers().map((offer) => offer.headingBlockId),
+      onReadyCheck: (headingBlockId) => this.readyCheck(headingBlockId),
     };
+  }
+
+  // ── "Ready to check this?" (D2, 2026-10-06) ───────────────────────────────────────────────
+
+  /**
+   * The offers now (`readinessview.ts`); `#takeOffers` records them as the ones drawn. Never on a
+   * tutorial's sheet (it has no objectives of its own) and never on a line whose Quiz me is
+   * already out: "Max is asking…" is under it until his question lands, and the open question
+   * then hides the offer until it closes.
+   */
+  #computeOffers(): ReadyOffer[] {
+    const view = this.#view;
+    const objectives = taughtObjectives(this.progressView?.() ?? null);
+    if (!view || this.#tutorial || objectives.length === 0) return [];
+    return readyOffers({
+      doc: view.state.doc,
+      objectives,
+      counters: this.#readiness,
+      threadQuizOpen: Boolean(this.openQuiz?.()),
+    }).filter((offer) => this.blockActions[offer.target]?.state !== 'running');
+  }
+
+  #takeOffers(): ReadyOffer[] {
+    const offers = this.#computeOffers();
+    this.#offers = offers;
+    this.#offersKey = offersKey(offers);
+    return offers;
+  }
+
+  /** Redraw the chrome only when an offer came or went. */
+  #refreshOffers(): void {
+    if (offersKey(this.#computeOffers()) !== this.#offersKey) this.#bump();
+  }
+
+  /**
+   * One sample of the section being read. Only while the window is on screen and focused: a
+   * section left open behind another app is not being read, and time alone is what made the cold
+   * openers (core's docstring).
+   */
+  #readTick(): void {
+    const view = this.#view;
+    if (!view || this.#tutorial) return;
+    if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+    const objectives = taughtObjectives(this.progressView?.() ?? null);
+    if (objectives.length === 0) return;
+    const pos = readingPosition(view);
+    if (pos !== null) {
+      this.#readiness.addDwell(objectivesAt(objectiveSections(view.state.doc, objectives), pos), READ_TICK_MS);
+    }
+    this.#refreshOffers();
+  }
+
+  /**
+   * **A fold opened under a line** (D2): the section's slide strip, a slide window opened from one
+   * of its lines, and (built elsewhere) a concept card's depth. Counts toward readiness for the
+   * objectives whose sections hold `blockId`. Public so a fold this store does not draw can say so.
+   */
+  noteDepthOpened(blockId: string | null | undefined): void {
+    const view = this.#view;
+    if (!view || !blockId || this.#tutorial) return;
+    const objectives = taughtObjectives(this.progressView?.() ?? null);
+    if (objectives.length === 0) return;
+    this.#readiness.addDepth(objectivesHolding(view.state.doc, objectiveSections(view.state.doc, objectives), blockId));
+    this.#refreshOffers();
+  }
+
+  /**
+   * **"Ready to check this?" pressed**: Quiz me on the section's first line, so the question goes
+   * the one way every question goes (C8: Max asks only when asked). Nothing else asks.
+   */
+  readyCheck(headingBlockId: string): void {
+    const offer = this.#offers.find((o) => o.headingBlockId === headingBlockId);
+    if (offer) void this.blockAction(offer.target, 'quiz');
   }
 
   /**
@@ -1462,10 +1596,16 @@ export class DocStore {
       isOpen: (key) => this.#openStrips.has(key),
       onToggle: (key) => {
         if (this.#openStrips.has(key)) this.#openStrips.delete(key);
-        else this.#openStrips.add(key);
+        else {
+          this.#openStrips.add(key);
+          // Opening a section's slides is depth opened on it (D2); folding them away is not.
+          const group = this.slideGroupList().find((g) => g.key === key);
+          this.noteDepthOpened(group?.headingBlockId ?? group?.lastBlockId);
+        }
         this.#bumpStrips();
       },
       onOpen: (group, page, anchor) => {
+        this.noteDepthOpened(group.headingBlockId ?? group.lastBlockId);
         openSlideWindow({
           anchor,
           pages: group.pages,
@@ -1528,6 +1668,8 @@ export class DocStore {
    * (the dev harness's buttons) it opens by the notes column's right edge.
    */
   openSlide(page: number, rect: Rect | null = null, anchor?: HTMLElement, afterBlockId: string | null = null): void {
+    // A slide opened from a line is depth opened on that line's section (D2).
+    this.noteDepthOpened(afterBlockId);
     openSlideWindow({
       anchor: anchor ?? this.#fallbackAnchor(),
       pages: [page],
@@ -1549,6 +1691,7 @@ export class DocStore {
     blockId: string | null;
     onRecrop: (rect: Rect | null) => void;
   }): void {
+    this.noteDepthOpened(input.blockId);
     openSlideWindow({
       anchor: input.anchor,
       pages: [input.page],

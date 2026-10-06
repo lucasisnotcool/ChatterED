@@ -27,6 +27,8 @@
     note = null,
     /** §4.4's control, shown only while a question is open and unreleased. */
     pass = false,
+    /** Max has offered the answer (D3, 2026-10-06): Pass reads *Show me*, emphasised. Same handler. */
+    showMe = false,
     passing = false,
     busy = false,
     disabled = false,
@@ -40,6 +42,7 @@
     placeholder: string;
     note?: string | null;
     pass?: boolean;
+    showMe?: boolean;
     passing?: boolean;
     busy?: boolean;
     disabled?: boolean;
@@ -202,13 +205,18 @@
     {#if pass}
       <!-- No confirm. The learner has decided, and asking "are you sure?" of a decision §4.4
            hands them on purpose is the app second-guessing its own design. -->
+      <!-- Show me (D3): the same release, offered by Max once smaller questions have run out, so
+           it is the emphasised way on rather than the quiet way out. -->
       <button
         type="button"
         class="ctrl"
+        class:show-me={showMe}
         disabled={passing}
-        title="Max gives the full answer. It fills nothing on your progress, and the next question on this will be smaller."
+        title={showMe
+          ? 'Max shows you the answer. It fills nothing on your progress.'
+          : 'Max gives the full answer. It fills nothing on your progress, and the next question on this will be smaller.'}
         onclick={() => onpass?.()}
-      >{passing ? 'Passing…' : 'Pass'}</button>
+      >{passing ? (showMe ? 'Showing…' : 'Passing…') : showMe ? 'Show me' : 'Pass'}</button>
     {/if}
     <button type="button" class="send" disabled={text.trim().length === 0 || busy || disabled} onclick={submit}>
       {busy ? 'Sending…' : 'Send'}
@@ -313,6 +321,14 @@
   }
   .ctrl:hover:not(:disabled) { border-color: var(--challenger); color: var(--challenger); }
   .ctrl:disabled { color: var(--muted); cursor: default; }
+  .ctrl.show-me {
+    color: var(--challenger);
+    border-color: var(--challenger);
+    font-weight: 600;
+    padding: 3px 12px;
+  }
+  .ctrl.show-me:hover:not(:disabled) { background: color-mix(in srgb, var(--challenger) 10%, transparent); }
+  .ctrl.show-me:disabled { color: var(--muted); border-color: var(--hairline); }
   .send {
     font-size: 11px;
     color: #fff;

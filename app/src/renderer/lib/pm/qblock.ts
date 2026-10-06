@@ -25,6 +25,8 @@
 import type { Node } from 'prosemirror-model';
 import { TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { blockAttrs, newBlockId, notesSchema, textRuns } from '../../../shared/doc/schema.js';
+import type { QResolution } from '../../../shared/doc/types.js';
+import { questionLine } from '../../../core/quizturn.js';
 
 export interface QuestionParts {
   /** The text of the Q block's first child. */
@@ -188,4 +190,50 @@ export function startAnswer(state: EditorState, qPos: number): Transaction | nul
     notesSchema.nodes.paragraph!.create({ blockId: newBlockId(), pages, reason: OWN_ANSWER_REASON, objectiveIds }),
   );
   return tr.setSelection(TextSelection.create(tr.doc, end + 1));
+}
+
+// ── Max's question in the rail, and closed as a self-check chip (D4, 2026-10-06) ─────────────
+
+/**
+ * What a closed question says it holds. **Only two words**, by Lucas's decision of 2026-10-06
+ * (D4, "a clean doc"; `collab-doc.md` §5.3, amended 2026-10-06): *your answer* when the learner's
+ * own answer earned it (`you_got_this`, the one resolution under which main files anything, and
+ * what it files is the learner's words), and *revisit* for everything else. "You got this",
+ * "partly yours" and "released" were Max grading the page; the grade is the chat's and the
+ * progress bar's, and the notes keep only what the learner can use: their answer, or a pointer
+ * back to a question worth another go. `null` is a legacy or half-written block: revisit.
+ */
+export type SelfCheckLabel = 'your answer' | 'revisit';
+
+export function selfCheckLabel(resolution: QResolution | null | undefined): SelfCheckLabel {
+  return resolution === 'you_got_this' ? 'your answer' : 'revisit';
+}
+
+/** An agent's question: Max's, or an older one's. `askedBy` predates the learner's own questions. */
+function agentAsked(node: Node): boolean {
+  return node.type.name === 'q_block' && (node.attrs.askedBy as string) !== 'user';
+}
+
+/**
+ * Is this Q block drawn as a one-line self-check chip? A **closed question the learner did not
+ * ask**. Old docs' resolved blocks qualify too, so a notebook written before 6 Oct opens clean.
+ */
+export function isSelfCheck(node: Node): boolean {
+  return agentAsked(node) && (node.attrs.status as string) === 'resolved';
+}
+
+/**
+ * Is this Q block Max's **open** question, which reads in the side rail rather than in the text
+ * (D4)? The learner's own open question stays in the flow: they are writing it there.
+ */
+export function isRailQuestion(node: Node): boolean {
+  return agentAsked(node) && ((node.attrs.status as string) || 'open') === 'open';
+}
+
+/**
+ * The chip's one line: the question paragraph through `questionLine`, so an old block that still
+ * carries the chat's preamble ("Max here. This one tests the statement…") shows the question.
+ */
+export function selfCheckLine(node: Node): string {
+  return questionLine(questionParts(node).question);
 }

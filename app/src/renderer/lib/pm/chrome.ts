@@ -63,6 +63,7 @@ import {
   showsChip,
   type ObjectiveFillView,
 } from './overview.js';
+import { selfCheckLabel } from './qblock.js';
 import { frontierOf, revealKey } from './reveal.js';
 import { cardRowAt, cardRows, isCardRow } from './conceptmodel.js';
 import { attachCitePreview, closeSourcePopover, type SlideReader } from './sourcepop.js';
@@ -141,6 +142,12 @@ export interface ChromeContext {
   /** The toolbar. Without it, no toolbar is drawn. */
   onBlockAction?: (blockId: string, kind: BlockActionKind) => void;
   onRecommendation?: (id: string, action: 'add' | 'dismiss') => void;
+  /**
+   * **"Ready to check this?"** (D2, 2026-10-06): the section headings that offer a check now
+   * (`readinessview.ts`), and the press, which is Quiz me on the section's first line.
+   */
+  readyHeadings?: readonly string[];
+  onReadyCheck?: (headingBlockId: string) => void;
 }
 
 // ── labels (pure — these are the tested part) ───────────────────────────────────────────────
@@ -175,19 +182,15 @@ export function provenanceLabel(pages: readonly number[], reason: string | null)
   return 'no source';
 }
 
-/** The tag on a Q block: *open* while it waits, then how it ended (§5.3). */
+/**
+ * The tag on a Q block: *open* while it waits, then *your answer* or *revisit* (§5.3, amended
+ * 2026-10-06, D4). It used to grade the page ("you got this", "partly yours", "released"); the
+ * grade is the chat's and the bar's now, and a closed question says only what it holds for the
+ * learner (`selfCheckLabel`).
+ */
 export function qStatusLabel(status: string, resolution: QResolution | null): string {
   if (status !== 'resolved') return 'open';
-  switch (resolution) {
-    case 'you_got_this':
-      return 'you got this';
-    case 'partly_yours':
-      return 'partly yours';
-    case 'released':
-      return 'released';
-    default:
-      return 'resolved';
-  }
+  return selfCheckLabel(resolution);
 }
 
 export const AGENT_NAME: Record<AgentAuthor, string> = { ellie: 'Ellie', max: 'Max' };
@@ -494,6 +497,38 @@ function recommendationCards(doc: Node, ctx: ChromeContext): Decoration[] {
 }
 
 /**
+ * **"Ready to check this?"** on a section's heading (D2, 2026-10-06; `collab-doc.md` §6 and
+ * `notebooks.md` §5.2, amended 2026-10-06). Max never asks unprompted any more: code decides the
+ * learner has done enough on the section to be checked (`core/readiness`, measured in
+ * `readinessview.ts`) and the heading *offers* it; the press goes through Quiz me, the one path a
+ * question takes. A widget at the end of the heading's text, like the chip: not in the document,
+ * so it is never typed into, copied or saved.
+ */
+function readyChecks(doc: Node, ctx: ChromeContext): Decoration[] {
+  const press = ctx.onReadyCheck;
+  if (!press || !ctx.readyHeadings || ctx.readyHeadings.length === 0) return [];
+  const out: Decoration[] = [];
+  for (const headingBlockId of new Set(ctx.readyHeadings)) {
+    const target = blockPos(doc, headingBlockId);
+    if (!target || target.node.type.name !== 'heading') continue;
+    out.push(
+      widget(target.pos + target.node.nodeSize - 1, `ready:${headingBlockId}`, 1, () => {
+        const holder = el('span', 'nd-ready');
+        holder.contentEditable = 'false';
+        const offer = button('nd-ready-btn', '', 'Max asks you one question on this section. Only when you press this.', () =>
+          press(headingBlockId),
+        );
+        offer.append(agentDot('max'), document.createTextNode('Ready to check this?'));
+        offer.setAttribute('aria-label', 'Ready to check this? Max asks you one question on this section');
+        holder.append(offer);
+        return holder;
+      }),
+    );
+  }
+  return out;
+}
+
+/**
  * Remove · Keep, one control per block that carries pending edits.
  *
  * **Grouped by block, not one per edit.** Two edits on the same block — Max asking a question and
@@ -656,6 +691,7 @@ function build(state: EditorState, ctx: ChromeContext): DecorationSet {
     ...blockActionLines(state.doc, ctx),
     ...objectiveDecorations(state.doc, ctx),
     ...recommendationCards(state.doc, ctx),
+    ...readyChecks(state.doc, ctx),
     ...editControls(state.doc, ctx),
     ...suggestionControls(state.doc, ctx),
     ...spanHighlights(state.doc, ctx),

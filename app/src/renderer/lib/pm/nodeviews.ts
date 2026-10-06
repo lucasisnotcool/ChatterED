@@ -16,7 +16,8 @@
  *    one-click remove. Its body is real editable content (`contentDOM`), because §5.3 writes the
  *    resolution *inside* the block and the learner may edit that like anything else. Since
  *    2026-10-01 it is also where the learner answers (a footer with Answer here and Submit), and
- *    a question may be the learner's own (`askedBy: 'user'`, "You asked").
+ *    a question may be the learner's own (`askedBy: 'user'`, "You asked"). Since 2026-10-06 (D4)
+ *    Max's open question reads in a side rail and a closed one folds to a one-line self-check.
  *
  * **`math_inline` is a mark, not a node**, so it cannot have a node view at all. Since 2026-10-03
  * it is typeset by a decoration instead (`math.ts`), with its source hidden at rest and edited in
@@ -31,7 +32,16 @@ import type { AnswerQuestionRefusal, NotesAnswerQuestionResult } from '../../../
 import { blockAttrs } from '../../../shared/doc/schema.js';
 import type { QResolution, Rect } from '../../../shared/doc/types.js';
 import { AGENT_NAME, qStatusLabel } from './chrome.js';
-import { answerTarget, questionParts, startAnswer, type QuestionAnswer } from './qblock.js';
+import {
+  answerTarget,
+  isRailQuestion,
+  isSelfCheck,
+  questionParts,
+  selfCheckLabel,
+  selfCheckLine,
+  startAnswer,
+  type QuestionAnswer,
+} from './qblock.js';
 import type { SlideSource } from '../rasterise.js';
 import { hotspotQuestion, hotspotsIn, type PageLinesView } from '../../../shared/doc/cite.js';
 import { drawHotspots, toLineRect } from './sourcepop.js';
@@ -340,8 +350,31 @@ type SubmitPhase = 'idle' | 'marking' | 'sent' | 'failed' | AnswerQuestionRefusa
 const Q_VIEWS = new WeakMap<HTMLElement, QBlockView>();
 
 /**
+ * **The narrowest editor that gets the side rail** (D4, 2026-10-06). Below it Max's open question
+ * stays a card in the flow, as it was. The rail card is about 260 px with its 22 px gap, and the
+ * text beside it needs about 280 px to read as prose rather than three words a line; the
+ * compact sheet (`layout.ts` `COMPACT_BELOW`) and the floor gutters' narrowest column (~390 px)
+ * both fall under it, so a docked tutorial or a zoomed narrow pane keep the in-flow card.
+ */
+const RAIL_MIN_WIDTH = 560;
+
+/**
  * A question in the document (§5.2): Max's, or since 2026-10-01 the learner's own. Its status tag,
  * the learner's remove, and the footer where an answer written in place is submitted.
+ *
+ * **Three ways to draw it** since 2026-10-06 (D4, "a clean doc"; `collab-doc.md` §5.2/§5.3 and
+ * `notebooks.md` §5.2, amended 2026-10-06), on the root's `data-view`:
+ *
+ *  - `rail`: Max's **open** question, a card floated into the column's right side beside the
+ *    lines under the block it asks about, so the notes read on around it instead of being split
+ *    by it. Not the gutter: the gutters are 104–132 px and already hold the chip and the toolbar,
+ *    and a card there was cut off the moment the column narrowed (the suggestion card's history,
+ *    notes.css `.nd-suggest`). On an editor under `RAIL_MIN_WIDTH` it stays in the flow
+ *    (`data-rail="inline"`). Answer here and Submit are unchanged; the body is still `contentDOM`.
+ *  - `chip`: Max's **closed** question, one line under the block: *Self-check*, the question in
+ *    one line, and *your answer* or *revisit* (`selfCheckLabel`). A click opens it to the question
+ *    and what is under it; that is this view's own state, never saved.
+ *  - `block`: the learner's own question, open or closed, exactly as before.
  */
 class QBlockView implements NodeView {
   readonly dom: HTMLElement;
@@ -351,6 +384,10 @@ class QBlockView implements NodeView {
   #foot: HTMLElement;
   #act: HTMLButtonElement;
   #note: HTMLElement;
+  #chip: HTMLElement;
+  #chipToggle: HTMLButtonElement;
+  #chipLine: HTMLElement;
+  #chipState: HTMLElement;
   #node: Node;
   #view: EditorView;
   #getPos: () => number | undefined;
@@ -361,6 +398,11 @@ class QBlockView implements NodeView {
   /** The question and answer the current `#phase` is about. A change to either clears it. */
   #about = '';
   #destroyed = false;
+  /** The chip is open. View-local: a reopened doc shows every chip closed again. */
+  #expanded = false;
+  /** The editor is wide enough for the rail (`RAIL_MIN_WIDTH`). */
+  #wide = false;
+  #observer: ResizeObserver | null = null;
 
   constructor(node: Node, view: EditorView, getPos: () => number | undefined, ctx: NodeViewContext) {
     this.#node = node;
@@ -371,6 +413,31 @@ class QBlockView implements NodeView {
     this.dom.className = 'nd-q';
     Q_VIEWS.set(this.dom, this);
 
+    // The closed question's one line. Chrome like the head: outside `contentDOM`, not editable,
+    // its events its own (`stopEvent`). CSS shows it only when `data-view` is `chip`.
+    this.#chip = document.createElement('div');
+    this.#chip.className = 'nd-q-chip';
+    this.#chip.contentEditable = 'false';
+    this.#chipToggle = document.createElement('button');
+    this.#chipToggle.type = 'button';
+    this.#chipToggle.className = 'nd-q-chip-toggle';
+    const mark = document.createElement('span');
+    mark.className = 'nd-q-chip-mark';
+    mark.textContent = 'Self-check';
+    this.#chipLine = document.createElement('span');
+    this.#chipLine.className = 'nd-q-chip-line';
+    this.#chipState = document.createElement('span');
+    this.#chipState.className = 'nd-q-chip-state';
+    this.#chipToggle.append(mark, this.#chipLine, this.#chipState);
+    this.#chipToggle.addEventListener('mousedown', (event) => event.preventDefault());
+    this.#chipToggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.#expanded = !this.#expanded;
+      this.#paintView();
+    });
+    this.#chip.append(this.#chipToggle, this.#removeButton());
+    this.dom.append(this.#chip);
+
     const head = document.createElement('div');
     head.className = 'nd-q-head';
 
@@ -380,24 +447,7 @@ class QBlockView implements NodeView {
     this.#tag = document.createElement('span');
     this.#tag.className = 'nd-q-tag';
 
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'nd-q-remove';
-    remove.textContent = 'Remove';
-    remove.title = 'Take this question out of the notes';
-    remove.addEventListener('mousedown', (event) => event.preventDefault());
-    remove.addEventListener('click', (event) => {
-      event.preventDefault();
-      const pos = getPos();
-      if (pos === undefined) return;
-      const target = view.state.doc.nodeAt(pos);
-      if (!target) return;
-      // The learner's own gesture, so it IS in the history: an accidental Remove is one ⌘Z away.
-      view.dispatch(view.state.tr.delete(pos, pos + target.nodeSize).scrollIntoView());
-      view.focus();
-    });
-
-    head.append(this.#who, this.#tag, remove);
+    head.append(this.#who, this.#tag, this.#removeButton());
     this.dom.append(head);
 
     this.contentDOM = document.createElement('div');
@@ -428,9 +478,81 @@ class QBlockView implements NodeView {
     this.#foot.append(this.#act, this.#note);
     this.dom.append(this.#foot);
 
+    // The rail needs the editor's width, which a stylesheet cannot ask for: the notes column is
+    // sized by `--nd-gutter` and `zoom`, not by the viewport, so a media query would be wrong.
+    // Read once now as well, so a question does not first draw in the flow and then jump.
+    this.#wide = view.dom.clientWidth >= RAIL_MIN_WIDTH;
+    if (typeof ResizeObserver !== 'undefined') {
+      this.#observer = new ResizeObserver(() => {
+        const wide = view.dom.clientWidth >= RAIL_MIN_WIDTH;
+        if (wide === this.#wide) return;
+        this.#wide = wide;
+        this.#paintView();
+      });
+      this.#observer.observe(view.dom);
+    }
+
     this.#paintHead();
     this.#paintTag();
     this.#paintFoot();
+    this.#paintView();
+  }
+
+  /**
+   * Remove, in the head and on the chip. The learner's own gesture, so it IS in the history: an
+   * accidental Remove is one ⌘Z away.
+   */
+  #removeButton(): HTMLButtonElement {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'nd-q-remove';
+    remove.textContent = 'Remove';
+    remove.title = 'Take this question out of the notes';
+    remove.addEventListener('mousedown', (event) => event.preventDefault());
+    remove.addEventListener('click', (event) => {
+      event.preventDefault();
+      const pos = this.#getPos();
+      if (pos === undefined) return;
+      const target = this.#view.state.doc.nodeAt(pos);
+      if (!target) return;
+      this.#view.dispatch(this.#view.state.tr.delete(pos, pos + target.nodeSize).scrollIntoView());
+      this.#view.focus();
+    });
+    return remove;
+  }
+
+  /** Rail, chip or block (see the class comment), from the node and the editor's width. */
+  #paintView(): void {
+    const node = this.#node;
+    const chip = isSelfCheck(node);
+    const rail = isRailQuestion(node);
+    const view = chip ? 'chip' : rail ? 'rail' : 'block';
+    if (this.dom.dataset.view !== view) this.dom.dataset.view = view;
+    const side = rail ? (this.#wide ? 'side' : 'inline') : null;
+    if (side === null) delete this.dom.dataset.rail;
+    else if (this.dom.dataset.rail !== side) this.dom.dataset.rail = side;
+    if (!chip) {
+      delete this.dom.dataset.expanded;
+      return;
+    }
+    const line = selfCheckLine(node) || 'A question from Max';
+    if (this.#chipLine.textContent !== line) {
+      this.#chipLine.textContent = line;
+      this.#chipLine.title = line;
+    }
+    const label = selfCheckLabel((node.attrs.resolution as QResolution | null) ?? null);
+    if (this.#chipState.textContent !== label) {
+      this.#chipState.textContent = label;
+      this.#chipState.dataset.state = label === 'your answer' ? 'yours' : 'revisit';
+    }
+    const expanded = String(this.#expanded);
+    if (this.dom.dataset.expanded !== expanded) this.dom.dataset.expanded = expanded;
+    this.#chipToggle.setAttribute('aria-expanded', expanded);
+    this.#chipToggle.title = this.#expanded
+      ? 'Fold this question away'
+      : label === 'your answer'
+        ? 'Show the question and your answer'
+        : 'Show the question, to try it again';
   }
 
   #own(): boolean {
@@ -448,8 +570,9 @@ class QBlockView implements NodeView {
   #paintTag(): void {
     const status = (this.#node.attrs.status as string) ?? 'open';
     const resolution = (this.#node.attrs.resolution as QResolution | null) ?? null;
-    this.#tag.textContent = qStatusLabel(status, resolution);
-    this.#tag.dataset.status = status === 'resolved' ? (resolution ?? 'resolved') : 'open';
+    const label = qStatusLabel(status, resolution);
+    this.#tag.textContent = label;
+    this.#tag.dataset.status = status !== 'resolved' ? 'open' : label === 'your answer' ? 'yours' : 'revisit';
   }
 
   /**
@@ -578,25 +701,32 @@ class QBlockView implements NodeView {
     // about one question must not follow the view onto another; a call still out for the old
     // one is left to land, and `#about` will not match it.
     if (node.attrs.questionId !== this.#node.attrs.questionId && this.#phase !== 'marking') this.#phase = 'idle';
+    // A question that has just closed (or a different one) starts folded: the chip is the point.
+    if (node.attrs.questionId !== this.#node.attrs.questionId || node.attrs.status !== this.#node.attrs.status) {
+      this.#expanded = false;
+    }
     this.#node = node;
     this.#paintHead();
     this.#paintTag();
     this.#paintFoot();
+    this.#paintView();
     return true;
   }
 
-  /** The footer's events are the footer's: ProseMirror must not read a press there as a click. */
+  /** The footer's and the chip's events are theirs: ProseMirror must not read a press as a click. */
   stopEvent(event: Event): boolean {
-    return event.target instanceof globalThis.Node && this.#foot.contains(event.target);
+    if (!(event.target instanceof globalThis.Node)) return false;
+    return this.#foot.contains(event.target) || this.#chip.contains(event.target);
   }
 
-  /** The head and the footer are chrome; a mutation there is ours, not the learner's. */
+  /** The head, the chip and the footer are chrome; a mutation there is ours, not the learner's. */
   ignoreMutation(mutation: ViewMutationRecord): boolean {
     return !this.contentDOM.contains(mutation.target);
   }
 
   destroy(): void {
     this.#destroyed = true;
+    this.#observer?.disconnect();
     Q_VIEWS.delete(this.dom);
   }
 }

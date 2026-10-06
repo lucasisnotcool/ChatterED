@@ -55,14 +55,15 @@ describe('qStatusLabel', () => {
     expect(qStatusLabel('open', null)).toBe('open');
   });
 
-  it('spells out each of the three resolutions in the learner register', () => {
-    expect(qStatusLabel('resolved', 'you_got_this')).toBe('you got this');
-    expect(qStatusLabel('resolved', 'partly_yours')).toBe('partly yours');
-    expect(qStatusLabel('resolved', 'released')).toBe('released');
+  it('says "your answer" when the learner earned it, "revisit" otherwise (D4, 2026-10-06)', () => {
+    expect(qStatusLabel('resolved', 'you_got_this')).toBe('your answer');
+    expect(qStatusLabel('resolved', 'partly_yours')).toBe('revisit');
+    expect(qStatusLabel('resolved', 'released')).toBe('revisit');
+    expect(qStatusLabel('resolved', 'revisit')).toBe('revisit');
   });
 
-  it('degrades rather than showing an empty tag', () => {
-    expect(qStatusLabel('resolved', null)).toBe('resolved');
+  it('reads a legacy block with no resolution as one to revisit, never an empty tag', () => {
+    expect(qStatusLabel('resolved', null)).toBe('revisit');
   });
 });
 
@@ -131,5 +132,42 @@ describe('chrome on a concept card', () => {
       .find()
       .filter((d) => d.from === row.pos && d.to === row.pos + row.node.nodeSize);
     expect(marked).toHaveLength(1);
+  });
+});
+
+describe('"Ready to check this?" (D2, 2026-10-06)', () => {
+  const doc = notesSchema.node('doc', null, [
+    notesSchema.node('heading', { blockId: 'h_a', level: 2, pages: [1], reason: null, objectiveIds: [] }, [notesSchema.text('A')]),
+    notesSchema.node('paragraph', { blockId: 'p_a', pages: [1], reason: null, objectiveIds: [] }, [notesSchema.text('Prose.')]),
+  ]);
+
+  function offers(extra: Partial<ChromeContext>): string[] {
+    const context: ChromeContext = {
+      frozen: false,
+      cursors: [],
+      edits: [],
+      suggestions: [],
+      spanThreads: [],
+      onRemoveEdit: () => undefined,
+      onKeepEdit: () => undefined,
+      onAcceptSuggestion: () => undefined,
+      onRejectSuggestion: () => undefined,
+      onOpenSlide: () => undefined,
+      onFocusThread: () => undefined,
+      ...extra,
+    };
+    const state = EditorState.create({ doc, plugins: [chromePlugin(() => context)] });
+    return (chromeKey.getState(state)?.find() ?? [])
+      .map((d) => (d.spec as { key?: string }).key ?? '')
+      .filter((key) => key.startsWith('ready:'));
+  }
+
+  it('draws the offer on the heading it was earned on, and only on a heading', () => {
+    expect(offers({ readyHeadings: ['h_a', 'p_a', 'gone'], onReadyCheck: () => undefined })).toEqual(['ready:h_a']);
+  });
+
+  it('draws nothing without the press to call, or with nothing ready', () => {
+    expect(offers({ readyHeadings: ['h_a'] })).toEqual([]);
+    expect(offers({ readyHeadings: [], onReadyCheck: () => undefined })).toEqual([]);
   });
 });

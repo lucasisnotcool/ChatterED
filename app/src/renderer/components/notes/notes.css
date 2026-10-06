@@ -676,9 +676,9 @@
   color: var(--nd-max);
   background: #fff;
 }
-.nd-q-tag[data-status='you_got_this'] { border-color: #a7d7c5; color: #14714f; }
-.nd-q-tag[data-status='partly_yours'] { border-color: #e2c391; color: #8a5a11; }
-.nd-q-tag[data-status='released'] { border-color: var(--hairline); color: var(--muted); }
+/* A closed question says only *your answer* or *revisit* (D4, 2026-10-06; `qStatusLabel`). */
+.nd-q-tag[data-status='yours'] { border-color: #c7c7e8; color: var(--indigo); }
+.nd-q-tag[data-status='revisit'] { border-color: var(--hairline); color: var(--text-2); }
 .nd-q-remove {
   margin-left: auto;
   font-size: 10.5px;
@@ -731,6 +731,146 @@
 .nd-q[data-asked-by='user'] .nd-q-act { border-color: #c7c7e8; color: var(--indigo); }
 .nd-q[data-asked-by='user'] .nd-q-act:hover { border-color: var(--indigo); }
 .nd-q[data-asked-by='user'] .nd-q-act:disabled { border-color: #c7c7e8; }
+
+/* ── Max's open question in the side rail (D4, 2026-10-06) ────────────────
+   `collab-doc.md` §5.2 / `notebooks.md` §5.2, amended 2026-10-06: the open question is not in
+   the text. It floats into the right of the column, beside the lines under the block it asks
+   about, and the prose wraps round it. Floated rather than put in the gutter: a gutter is
+   104–132 px and already holds the chip and the toolbar, and the suggestion card above was cut
+   off there the moment the column narrowed. Under `RAIL_MIN_WIDTH` (nodeviews.ts) the view
+   says `data-rail="inline"` and the card stays in the flow, exactly as it was. */
+.nd-editor .ProseMirror > .nd-q[data-rail='side'] {
+  float: right;
+  clear: right;
+  width: min(272px, 44%);
+  margin: 2px 0 16px 22px;
+  padding: 10px 12px 2px;
+  border: 1px solid var(--nd-max-edge);
+  border-left: 3px dashed var(--nd-max);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: 0 4px 14px rgb(20 20 40 / 7%);
+  font-size: 13.5px;
+  line-height: 1.55;
+  /* Over a following block's own positioning context (every top-level block has one). */
+  z-index: 2;
+}
+.nd-q[data-rail='side'] .nd-q-head { flex-wrap: wrap; gap: 4px 8px; margin-bottom: 6px; }
+.nd-q[data-rail='side'] .nd-q-body > p { margin-bottom: 8px; }
+/* Max's Remove · Keep on the question would sit left of its block, which in the rail is over the
+   prose, and inside the card it read "Max wrote this · Remove · Keep" under "Max asked · Remove"
+   (dev harness, 6 Oct). The card's own head already names Max and removes the question, and
+   Keep would only take the colour off his question; so in the rail it is not drawn. */
+.nd-q[data-rail='side'] .nd-editctl,
+.nd-q[data-rail='side'] .nd-chip-holder { display: none; }
+
+/* Only running text wraps round the card. A block with its own box (a figure, a table, code, a
+   heading, a note slot, another question) starts below it, or it would sit under the card;
+   a heading clearing also keeps the card inside the section it was asked in. With no card in
+   the column, `clear` does nothing. The zero-height insert edge between blocks (`structure.ts`)
+   must not clear: it would push the very next paragraph below the card. */
+.nd-editor .ProseMirror > :not(p:not(.nd-noteslot), ul:not(.nd-objectives), ol:not(.nd-objectives), [data-rail='side'], .nd-edge) {
+  clear: right;
+}
+
+/* ── Max's closed question: a one-line self-check (D4, 2026-10-06) ────────
+   `collab-doc.md` §5.3, amended 2026-10-06: no resolution text in the notes, no grade. One line
+   under the block: *Self-check*, the question, and *your answer* or *revisit*. A click opens the
+   question and what is under it (the learner's answer; an old doc's resolution text); that is
+   the view's own state and is not saved. */
+.nd-q-chip { display: none; }
+.nd-q[data-view='chip'] {
+  margin: 4px 0 16px;
+  padding: 0;
+  border-left: none;
+  background: none;
+  border-radius: 0;
+}
+.nd-q[data-view='chip'] > .nd-q-head,
+.nd-q[data-view='chip'] > .nd-q-foot { display: none; }
+.nd-q[data-view='chip']:not([data-expanded='true']) > .nd-q-body { display: none; }
+.nd-q[data-view='chip'] > .nd-q-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  user-select: none;
+}
+.nd-q-chip-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--text-2);
+  text-align: left;
+}
+.nd-q-chip-toggle:hover,
+.nd-q-chip-toggle:focus-visible { border-color: var(--nd-max-edge); color: var(--text); }
+.nd-q-chip-toggle[aria-expanded='true'] { border-color: var(--nd-max-edge); }
+/* Max's dashed shape, so the chip says whose question it was without the colour. */
+.nd-q-chip-mark {
+  flex: none;
+  padding: 0 6px;
+  border: 1px dashed var(--nd-max-edge);
+  border-radius: 4px;
+  color: var(--nd-max);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nd-q-chip-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.nd-q-chip-state {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.nd-q-chip-state[data-state='yours'] { border-color: #c7c7e8; color: var(--indigo); }
+.nd-q[data-view='chip'] > .nd-q-chip .nd-q-remove { flex: none; margin-left: 0; }
+/* ── "Ready to check this?" on a section heading (D2, 2026-10-06) ─────────
+   An offer, never a question: drawn only when `core/readiness` says the learner has done enough
+   on the section, and pressing it is Quiz me. Small and quiet, at the end of the heading's line,
+   in the body face rather than the heading's, so it reads as a control and not as a title. */
+.nd-ready { display: inline-block; margin-left: 12px; vertical-align: middle; user-select: none; }
+.nd-ready-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--nd-max-edge);
+  border-radius: 999px;
+  background: var(--pane);
+  color: var(--nd-max);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.5;
+  text-transform: none;
+  white-space: nowrap;
+}
+.nd-ready-btn:hover,
+.nd-ready-btn:focus-visible { border-color: var(--nd-max); background: var(--nd-max-tint); }
+
+.nd-q[data-view='chip'][data-expanded='true'] > .nd-q-body {
+  margin: 8px 0 0 12px;
+  padding: 2px 0 0 12px;
+  border-left: 3px dashed var(--nd-max-edge);
+}
 
 /* ── inline slide figures (§3) ──────────────────────────────────────────── */
 

@@ -1066,8 +1066,12 @@ export function createMockBridge(): ChatterEdApi {
   /** The block a question hangs off, by question id, so its resolution lands under it. */
   const questionAnchor = new Map<string, string>();
 
-  /** Resolve the open question in the document (§5.3). The Q block stays; the answer goes under it. */
-  function resolveDocQuestion(threadId: string, resolution: QResolution): void {
+  /**
+   * Resolve the open question in the document (§5.3, amended 2026-10-06, D4). The Q block stays
+   * and folds to a self-check chip; **no Max text is written under it**, as main does now: the
+   * answer and the grade are the chat's.
+   */
+  function resolveDocQuestion(threadId: string, resolution: QResolution, learnerAnswer: string | null = null): void {
     const t = chatThreadMap.get(threadId);
     const quiz = t?.quiz;
     if (!t || !quiz) return;
@@ -1080,19 +1084,15 @@ export function createMockBridge(): ChatterEdApi {
       author: 'max',
       cause: 'q_resolved',
       focusBlockId: anchor,
-      why: `The question is resolved (${resolution}), so the correct version goes under it.`,
+      why: 'The question is closed: it stays in the notes as a self-check.',
+      // Only an earned answer is filed under the question, in the learner's own words.
       ops: [
         {
           op: 'resolve_q',
           questionId: quiz.questionId,
           resolution,
-          blocks: [
-            {
-              kind: 'paragraph',
-              text: 'Max(Cost) = 1 and Sum(Cost) = 2; Sum is exact here because the two stacks are independent.',
-              prov: { pages: [23, 24], reason: null },
-            },
-          ],
+          blocks: [],
+          learnerAnswer: resolution === 'you_got_this' ? learnerAnswer : null,
         },
       ],
     });
@@ -1131,7 +1131,7 @@ export function createMockBridge(): ChatterEdApi {
         pushThread(t);
         // The learner's own words, and only those, move the bar.
         fillObjective(quiz.objectiveId ?? 'obj-abstraction', second ? 1 : 0.5, text);
-        if (second) resolveDocQuestion(threadId, 'you_got_this');
+        if (second) resolveDocQuestion(threadId, 'you_got_this', text);
       },
     );
   }
@@ -2167,39 +2167,24 @@ export function createMockBridge(): ChatterEdApi {
       return progressView();
     },
     /**
-     * A lesson card's **Start** (§6, revised 2026-10-01): Ellie says what we will be learning,
-     * asking nothing; the doc scrolls to the segment that carries it; then Max asks the first
-     * question on the objective in the doc chat, its Q block under the objective's first block.
-     * Skipped when a question is already open, as in the actor. The scroll target is returned
-     * rather than pushed, because the renderer owns where the document goes.
+     * A lesson card's **Start** (§6, revised 2026-10-06, D2): Ellie walks the learner through the
+     * section and asks nothing; the doc scrolls to the segment that carries it. Max does not ask:
+     * the check is offered later ("Ready to check this?"), as in the actor. The scroll target is
+     * returned rather than pushed, because the renderer owns where the document goes.
      */
     async progressStart({ objectiveId }) {
       const objective = objectives.find((o) => o.objectiveId === objectiveId) ?? objectives[0]!;
       const t = thread(DOC_ANCHOR_ID);
       const pages = objective.pages.length > 0 ? ` It is on ${objective.pages.map((n) => `p. ${n}`).join(', ')}.` : '';
-      const openQ = [...chatThreadMap.values()].some((x) => x.quiz?.open);
       const anchorBlockId = objective.blockIds[0] ?? null;
       think(
         ellie,
         3600,
         `Right — **${objective.title.toLowerCase()}**.\n\n` +
-          `What we will be learning: ${objective.statement}${pages} I have scrolled the notes to the ` +
-          'part that carries it, and Max has the first question on it.',
+          `${objective.statement}${pages} I have scrolled the notes to the part that carries it. ` +
+          'Press Explain or Example on any line you want more on.',
         { anchorId: DOC_ANCHOR_ID, decidedBy: 'rule:lesson_start' },
-        () => {
-          pushThread(t);
-          if (openQ || anchorBlockId === null) return;
-          const question = MAX_QUESTION_GENERIC(objective.statement, objective.pages);
-          questionAnchor.set(`q_mock_${questionSeq + 1}`, anchorBlockId);
-          askDocQuestion({
-            threadId: DOC_ANCHOR_ID,
-            objectiveId: objective.objectiveId,
-            anchorBlockId,
-            body: question,
-            question,
-            pages: objective.pages,
-          });
-        },
+        () => pushThread(t),
       );
       return { roomId: ROOM, threadId: DOC_ANCHOR_ID, blockId: anchorBlockId };
     },

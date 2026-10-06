@@ -195,6 +195,21 @@ describe('chatComposer', () => {
     expect(c.pass).toBe(true);
   });
 
+  it('keeps Pass in its plain words until Max offers Show me', () => {
+    expect(chatComposer(quiz()).showMe).toBe(false);
+    expect(chatComposer(quiz({ attempts: 1, feedbackGiven: true, verdict: 'partial' })).showMe).toBe(false);
+    expect(chatComposer(null).showMe).toBe(false);
+  });
+
+  it('turns Pass into Show me once Max has offered it, and says what it does (D3)', () => {
+    const c = chatComposer(quiz({ attempts: 2, feedbackGiven: true, verdict: 'partial', showMe: true }));
+    expect(c.showMe).toBe(true);
+    expect(c.pass).toBe(true);
+    expect(c.note).toContain('Show me');
+    expect(c.placeholder).toBe('Your next attempt…');
+    expect(chatComposer(quiz({ open: false, showMe: true })).showMe).toBe(false);
+  });
+
   it('goes back to asking once the question is closed', () => {
     const c = chatComposer(quiz({ open: false, answerShown: true, resolution: 'released' }));
     expect(c.answering).toBe(false);

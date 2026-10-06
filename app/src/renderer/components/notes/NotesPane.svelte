@@ -66,6 +66,7 @@
     focusThread?: (threadId: string) => void;
     sendDraft?: (question: string) => Promise<string | null>;
     spanThreads?: readonly SpanThreadView[];
+    openQuiz?: { quiz: { objectiveId?: string | null } } | null;
   }
   const chat = (): ChatSurface => store.chat as unknown as ChatSurface;
 
@@ -73,6 +74,11 @@
   doc.focusThread = (threadId) => chat().focusThread?.(threadId);
   doc.spanThreads = () => chat().spanThreads ?? [];
   doc.progressView = () => store.progress.view;
+  // "Ready to check this?" (D2): nothing is offered while one of Max's questions waits in a thread.
+  doc.openQuiz = () => {
+    const open = chat().openQuiz;
+    return open ? { objectiveId: open.quiz.objectiveId ?? null } : null;
+  };
 
   /**
    * The open notebook, to the doc store. Snapshotted here so the read is **deep**: a source going
@@ -85,10 +91,18 @@
     untrack(() => doc.setNotebook(snapshot));
   });
 
-  /** The objectives' fills are the progress view's: a fill moving changes nothing in the doc. */
+  /**
+   * The objectives' fills are the progress view's: a fill moving changes nothing in the doc. So
+   * is the readiness offer's half (D2): an Explain pressed, a question closing (`activity`), and a
+   * question opening in a thread, each of which can add or take away "Ready to check this?".
+   */
   $effect(() => {
-    const signature = (store.progress.view?.objectives ?? []).map((o) => `${o.objectiveId}:${o.fill}`).join('|');
+    const signature = (store.progress.view?.objectives ?? [])
+      .map((o) => `${o.objectiveId}:${o.fill}:${o.activity?.explains ?? 0}:${o.activity?.examples ?? 0}:${o.activity?.since ?? ''}`)
+      .join('|');
+    const asking = chat().openQuiz?.quiz.objectiveId ?? (chat().openQuiz ? 'open' : '');
     void signature;
+    void asking;
     untrack(() => doc.refreshChrome());
   });
 

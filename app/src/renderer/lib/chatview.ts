@@ -180,6 +180,12 @@ export interface ChatComposer {
   pass: boolean;
   /** True while Max's question is open: the box is answering, not asking. */
   answering: boolean;
+  /**
+   * **Pass reads "Show me"**, emphasised (2026-10-06, D3; `FlowQuizView.showMe`): Max has offered
+   * the answer, after a second answer that was not *Well done* or after a guess. The same control
+   * and the same release; only its words and weight change, because now it is the way on.
+   */
+  showMe: boolean;
 }
 
 /**
@@ -192,15 +198,26 @@ export interface ChatComposer {
  */
 export function chatComposer(quiz: DocQuizView | null | undefined, testerName = 'Max'): ChatComposer {
   if (!quiz || !quiz.open) {
-    return { placeholder: ASK_PLACEHOLDER, note: null, pass: false, answering: false };
+    return { placeholder: ASK_PLACEHOLDER, note: null, pass: false, answering: false, showMe: false };
   }
   const verdict = quiz.feedbackGiven ? (quiz.verdict ?? null) : null;
+  if (quiz.showMe === true) {
+    // Max has stopped asking smaller (D3): the way on is his answer, so Pass says so.
+    return {
+      placeholder: verdict === 'partial' ? NEXT_ATTEMPT_PLACEHOLDER : ATTEMPT_PLACEHOLDER,
+      note: `Press Show me and ${testerName} will give the answer, or have one more go here.`,
+      pass: true,
+      answering: true,
+      showMe: true,
+    };
+  }
   if (verdict === 'partial') {
     return {
       placeholder: NEXT_ATTEMPT_PLACEHOLDER,
       note: `${testerName} asked a follow-up on the same question. Answer it here.`,
       pass: true,
       answering: true,
+      showMe: false,
     };
   }
   return {
@@ -208,6 +225,7 @@ export function chatComposer(quiz: DocQuizView | null | undefined, testerName = 
     note: `Say *I don't know* or press Pass and ${testerName} will give the answer.`,
     pass: true,
     answering: true,
+    showMe: false,
   };
 }
 
