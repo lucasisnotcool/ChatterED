@@ -497,3 +497,41 @@ describe('pageChunks', () => {
     expect(pageChunks(pages, deck).map((c) => c.page)).toEqual([1]);
   });
 });
+
+// ── concept cards (2026-10-06, D1) ───────────────────────────────────────────────────────────
+
+describe('noteChunks: a concept card', () => {
+  const item = (id: string, role: string, children: Record<string, unknown>[], pages: number[] = [39]) => ({
+    type: 'concept_item',
+    attrs: { blockId: id, role, pages, reason: null, objectiveIds: [] },
+    content: children,
+  });
+  const card = (id: string, term: string, children: Record<string, unknown>[]) => ({
+    type: 'concept',
+    attrs: { blockId: id, term, pages: [39, 40], reason: null, objectiveIds: [] },
+    content: children,
+  });
+
+  it('is one group under its term, each item a unit with its own block id, never merged with the prose around it', () => {
+    const d = doc(
+      h('t', 1, 'Planning'),
+      h('s', 2, 'Policy iteration', [39]),
+      p('before', 'A paragraph before the card.', [38]),
+      card('c', 'Policy iteration', [
+        p('core', 'Policy iteration: evaluate, then improve, until the policy stops changing.', [39]),
+        item('i1', 'equation', [math('m', 'U(s) = \\sum P [R + \\gamma U]', [39]), list('l', ['$P$: the chance of landing there'], [39])]),
+        item('i2', 'pitfall', [p('pp', 'Evaluation does not average over actions.', [40])], [40]),
+      ]),
+      p('after', 'A paragraph after the card.', [41]),
+    );
+    const { chunks, units } = noteChunks(d, O);
+    const cardChunk = chunks.find((c) => c.blockIds.includes('core'))!;
+    expect(cardChunk.blockIds).toEqual(['core', 'i1', 'i2']);
+    expect(cardChunk.section).toEqual(['Policy iteration', 'Policy iteration']);
+    expect(cardChunk.text).toContain('U(s) = \\sum P');
+    expect(cardChunk.pages).toEqual([39, 40]);
+    expect(chunks.some((c) => c.blockIds.includes('before') && c.blockIds.includes('core'))).toBe(false);
+    expect(chunks.find((c) => c.blockIds.includes('after'))!.section).toEqual(['Policy iteration']);
+    expect(units.map((u) => u.blockId)).toEqual(expect.arrayContaining(['core', 'i1', 'i2']));
+  });
+});

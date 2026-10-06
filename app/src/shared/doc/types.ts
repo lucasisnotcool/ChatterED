@@ -72,7 +72,65 @@ export type DocBlockDraft =
   | DiagramDraft
   | FlashcardsDraft
   | QuizDraft
-  | InfographicDraft;
+  | InfographicDraft
+  | ConceptDraft;
+
+// ── concept cards (2026-10-06, notebooks.md §11.2, decision D1) ─────────────────────
+
+/**
+ * **What one item of a card's depth is for**, and the order the depth is read in. A card's core
+ * line is always visible; its depth is folded under it and opens in place, reading intuition →
+ * equation (with its "where" list) → steps → example → table → figure → result → pitfall → note.
+ *
+ *  - `intuition` and `pitfall` are never on the slides: they always carry a `reason` (§3.4).
+ *  - `equation` is a math block followed by a "where" list, one symbol per line.
+ *  - `steps` is an algorithm as a numbered list; `table` a comparison the slide draws.
+ *  - `figure` is a slide image (a crop of the page), for a concept whose slide is mostly a figure.
+ *  - `result` is a result the deck relies on whose proof the notes leave out (an appendix proof).
+ *  - `note` is anything else, and what an agent's addition is filed as when nothing else fits.
+ */
+export type ConceptRole =
+  | 'intuition'
+  | 'equation'
+  | 'steps'
+  | 'example'
+  | 'table'
+  | 'figure'
+  | 'result'
+  | 'pitfall'
+  | 'note';
+
+export const CONCEPT_ROLES: readonly ConceptRole[] = [
+  'intuition',
+  'equation',
+  'steps',
+  'example',
+  'table',
+  'figure',
+  'result',
+  'pitfall',
+  'note',
+];
+
+/** One item of a card's depth: blocks of the ordinary kinds (never another card), with provenance. */
+export interface ConceptItemDraft {
+  role: ConceptRole;
+  blocks: DocBlockDraft[];
+  prov: Provenance;
+}
+
+/**
+ * **A concept card** (D1): one per idea, not one per slide. `term` is the idea's name (what the
+ * outline, the search index and a self-check chip call it); `core` is the always-visible line,
+ * the term in bold and a one-sentence definition; `depth` is folded under it.
+ */
+export interface ConceptDraft {
+  kind: 'concept';
+  term: string;
+  core: string;
+  depth: ConceptItemDraft[];
+  prov: Provenance;
+}
 
 /**
  * A comparison table (2026-10-01). `columns` are the headings; every row has one cell per column.
@@ -210,6 +268,13 @@ export interface OutlineEntry {
   learnerText: boolean;
   /** Set on a `q_block`. */
   questionId: string | null;
+  /**
+   * The concept card the block belongs to (D1, 2026-10-06): the card's own `blockId` on the card,
+   * on its core line, on each depth item and on everything inside one. Absent outside a card.
+   */
+  cardId?: string;
+  /** On a card's depth item, and on the blocks inside one: which item it is. */
+  role?: ConceptRole;
 }
 
 // ── agent edits ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +316,20 @@ export type AgentDocOp =
       resolution: QResolution;
       blocks: DocBlockDraft[];
       learnerAnswer?: string | null;
+    }
+  /**
+   * **An addition to a concept card's depth** (D1, 2026-10-06): Ellie as co-author. `extend` adds
+   * the blocks at the end of the card's first item of that `role` (or makes the item, in reading
+   * order, when the card has none); `replace` swaps that item for one holding the blocks. A
+   * `replace` of an item the learner wrote in becomes an `extend`: their words stay (§5.4).
+   */
+  | {
+      op: 'card_attach';
+      cardBlockId: string;
+      role: ConceptRole;
+      mode: 'extend' | 'replace';
+      blocks: DocBlockDraft[];
+      prov: Provenance;
     };
 
 export type DocEditCause =
@@ -351,8 +430,19 @@ export interface NotesDocView {
 
 // ── the learning overview (`docs/research/notebooks.md`, 2026-10-01) ──────────────────────────
 
-/** The longest a block action's doc line may be (`notebooks.md` §4.2). Enforced in code. */
+/**
+ * The longest a block action's one *line* may be (`notebooks.md` §4.2): the 1 Oct line, still the
+ * ceiling on a `point` note and on Max's lines. Enforced in code.
+ */
 export const BLOCK_LINE_MAX_WORDS = 25;
+
+/**
+ * **The ceiling on one of Ellie's additions to the notes** (`notebooks.md` §4.2 as amended
+ * 2026-10-06, D1): about 120 words, a list, a formula or a table allowed, in place of the one
+ * plain 25-word line. Words of maths (a formula block) are not counted, as the slide-word budget
+ * leaves them out. Enforced in code.
+ */
+export const CARD_ADDITION_MAX_WORDS = 120;
 
 /**
  * **The learner's own-note slot under each overview section** (`notebooks.md` §3.1). An ordinary
@@ -411,6 +501,14 @@ export interface OverviewMeta {
   wordBudget: number;
   /** Which budget policy it was written under (§3.2, amended 2026-10-02). Absent before then. */
   genre?: 'slides' | 'prose';
+  /**
+   * `cards` for notes written as concept cards (D1, 2026-10-06); `map` (or absent) for the short
+   * overview of key-idea bullets. A doc written as a map keeps rendering as one.
+   */
+  form?: 'map' | 'cards';
+  /** On `cards`: words of the always-visible layer (title excluded), against `coreBudget` (§3.2). */
+  coreWords?: number;
+  coreBudget?: number;
 }
 
 export interface ThreadView {

@@ -56,7 +56,7 @@
  */
 
 import type { Node } from 'prosemirror-model';
-import { blockAttrs, blockPages, diagramText } from './schema.js';
+import { blockAttrs, blockPages, conceptCore, diagramText } from './schema.js';
 import { NOTE_SLOT_REASON, OBJECTIVES_REASON } from './types.js';
 
 // ── the public shape ─────────────────────────────────────────────────────────────────────────
@@ -423,7 +423,10 @@ function readDoc(doc: Node): { opening: Bucket; sections: Bucket[] } {
     previous = node;
     if (attrs.reason === TITLE_REASON || attrs.reason === OBJECTIVES_REASON) continue;
 
-    const by = authors(node);
+    // A concept card (2026-10-06) is the overview's frame by its core line: Ellie extending its
+    // depth, or the learner writing in it, does not make the card's slides stop being taught there.
+    const core = conceptCore(node);
+    const by = authors(core ?? node);
     const learner = node.type.name === 'q_block' || by.has('user');
     // The frame is what the overview itself wrote: text by the ingest and nobody else. A block the
     // learner has typed into has become theirs, and votes as theirs.

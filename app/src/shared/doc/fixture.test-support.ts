@@ -14,7 +14,7 @@ import type { Node } from 'prosemirror-model';
 import { EditorState } from 'prosemirror-state';
 import { inlineToNodes } from './inline.js';
 import { authorMark, notesSchema } from './schema.js';
-import type { DiagramEdge, DiagramLayout, DocAuthor, InfographicLayout } from './types.js';
+import type { ConceptRole, DiagramEdge, DiagramLayout, DocAuthor, InfographicLayout } from './types.js';
 
 export const AT = 1_758_000_000_000;
 
@@ -175,6 +175,19 @@ export function infographic(
       ]),
     ),
   );
+}
+
+/** A depth item of a concept card holding these blocks (2026-10-06). */
+export function cardItem(blockId: string, role: ConceptRole, blocks: Node[], pages: number[] = [6]): Node {
+  return notesSchema.nodes.concept_item!.create(
+    { blockId, role, pages, reason: role === 'intuition' || role === 'pitfall' ? 'added' : null, objectiveIds: [] },
+    blocks,
+  );
+}
+
+/** A concept card: the core line (a paragraph, `coreId`), then its depth items. */
+export function card(blockId: string, term: string, core: Node, items: Node[] = [], pages: number[] = [6]): Node {
+  return notesSchema.nodes.concept!.create({ blockId, term, pages, reason: null, objectiveIds: [] }, [core, ...items]);
 }
 
 export function docOf(...blocks: Node[]): Node {

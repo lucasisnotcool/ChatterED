@@ -39,6 +39,8 @@ import {
   authorMark,
   blockAttrs,
   blockPos,
+  cardOf,
+  conceptItems,
   eachBlock,
   hasLearnerText,
   isStructuredBlock,
@@ -56,6 +58,7 @@ import type {
   DocEditRecord,
   Suggestion,
 } from './types.js';
+import { CONCEPT_ROLES } from './types.js';
 
 export interface ApplyResult {
   tr: Transaction | null;
@@ -221,11 +224,63 @@ export function draftToNodes(
         out.push(schema.nodes.infographic!.create({ ...attrs, layout: draft.layout, title: draft.title ?? null }, panels));
         break;
       }
+      case 'concept': {
+        // The core line is the card: a card with nothing to say on its one visible line is not one.
+        if (draft.core.trim().length === 0) break;
+        const core = schema.nodes.paragraph!.create({ ...attrs, blockId: newBlockId() }, inline(coreText(draft.term, draft.core)));
+        const items = draft.depth
+          .map((item) => conceptItemNode(schema, item, author, editId, at))
+          .filter((node): node is Node => node !== null);
+        out.push(schema.nodes.concept!.create({ ...attrs, term: draft.term.trim() }, [core, ...items]));
+        break;
+      }
       default:
         break;
     }
   }
   return out;
+}
+
+/**
+ * **The core line opens with the term, in bold** (D1). A model asked for both writes the term into
+ * its line more often than not, sometimes bold and sometimes not; the term is put in front only
+ * when the line does not already start with it, and bolded there when it is plain.
+ */
+export function coreText(term: string, core: string): string {
+  const t = term.trim();
+  const line = core.trim();
+  if (t.length === 0) return line;
+  const plain = line.replace(/^\*\*/, '');
+  if (plain.toLowerCase().startsWith(t.toLowerCase())) {
+    return line.startsWith('**') ? line : `**${line.slice(0, t.length)}**${line.slice(t.length)}`;
+  }
+  return `**${t}**: ${line}`;
+}
+
+/**
+ * One depth item → a `concept_item` holding its blocks, or null when none of them minted. A card
+ * inside an item is not a card the schema can hold (`card` stands only at the top level), so one
+ * is skipped rather than flattened.
+ */
+export function conceptItemNode(
+  schema: Schema,
+  item: { role: string; blocks: readonly DocBlockDraft[]; prov?: { pages: number[]; reason: string | null } },
+  author: DocAuthor,
+  editId: string | null,
+  at?: number,
+): Node | null {
+  const inner = draftToNodes(
+    schema,
+    item.blocks.filter((b) => b.kind !== 'concept'),
+    author,
+    editId,
+    at,
+  );
+  if (inner.length === 0) return null;
+  return schema.nodes.concept_item!.create(
+    { blockId: newBlockId(), pages: [...(item.prov?.pages ?? [])], reason: item.prov?.reason ?? null, objectiveIds: [], role: item.role },
+    inner,
+  );
 }
 
 /** The ids of blocks this fragment introduces, including a list's items. */
@@ -276,11 +331,69 @@ function draftsToText(drafts: readonly DocBlockDraft[]): string {
       case 'infographic':
         parts.push(draft.title ?? '', ...draft.panels.map((p) => [p.value ?? '', p.heading, p.body].join(' ')));
         break;
+      case 'concept':
+        parts.push(coreText(draft.term, draft.core), ...draft.depth.map((item) => draftsToText(item.blocks)));
+        break;
       default:
         break;
     }
   }
   return parts.filter((part) => part.trim().length > 0).join(' ');
+}
+
+// ── where an op lands in a card (2026-10-06) ────────────────────────────────────────────────
+
+/**
+ * **A card's own structure is kept by the ops, not by the model.** A card is its core paragraph
+ * and then depth items only (`paragraph concept_item*`), so a block inserted next to the core
+ * line or next to an item has nowhere valid to go *inside* the card. Such an insert lands next to
+ * the **card**: after it for `insert_after` and `insert_q`, before it for `insert_before`. Inside
+ * an item (`block+`) anything goes, and the anchor stands.
+ */
+/** The top-level block a block is in (itself, when it is at the top level). */
+function topLevelTarget(doc: Node, anchorId: string): { pos: number; node: Node } | null {
+  const target = blockPos(doc, anchorId);
+  if (!target) return null;
+  const $pos = doc.resolve(target.pos);
+  return $pos.depth === 0 ? target : { pos: $pos.before(1), node: $pos.node(1) };
+}
+
+/**
+ * **A replacement fitted to where it lands in a card**, or null when it cannot fit:
+ *
+ *  - the **core line** takes exactly one paragraph (a card is one visible line, then its depth);
+ *  - a **depth item** is replaced by an item of the same role holding the new blocks;
+ *  - a **card** only by a card;
+ *  - anywhere else, and inside an item, the blocks as they are (no card inside an item).
+ */
+function shapeForCard(doc: Node, target: { pos: number; node: Node }, nodes: Node[]): Node[] | null {
+  const $pos = doc.resolve(target.pos);
+  const parent = $pos.depth >= 1 ? $pos.parent.type.name : 'doc';
+  if (target.node.type.name === 'concept') return nodes.every((n) => n.type.name === 'concept') ? nodes : null;
+  if (target.node.type.name === 'concept_item') {
+    const inner = nodes.filter((n) => n.type.name !== 'concept');
+    if (inner.length === 0) return null;
+    const attrs = blockAttrs(target.node);
+    return [
+      notesSchema.nodes.concept_item!.create(
+        { blockId: newBlockId(), pages: attrs.pages, reason: attrs.reason, objectiveIds: [], role: target.node.attrs.role as string },
+        inner,
+      ),
+    ];
+  }
+  if (parent === 'concept') return nodes.length === 1 && nodes[0]!.type.name === 'paragraph' ? nodes : null;
+  if (parent !== 'doc' && nodes.some((n) => n.type.name === 'concept')) return null;
+  return nodes;
+}
+
+function placementTarget(doc: Node, anchorId: string): { pos: number; node: Node } | null {
+  const target = blockPos(doc, anchorId);
+  if (!target) return null;
+  const $pos = doc.resolve(target.pos);
+  if ($pos.depth >= 1 && $pos.parent.type.name === 'concept') {
+    return { pos: $pos.before(1), node: $pos.node(1) };
+  }
+  return target;
 }
 
 // ── applying a batch ────────────────────────────────────────────────────────────────────────
@@ -365,26 +478,79 @@ export function applyBatch(
     return true;
   };
 
+  /**
+   * **Ellie writes into the card, not beside it** (D1; `notebooks.md` §4.2 as amended 2026-10-06).
+   * The card's first item of the op's role is extended (the blocks at its end) or replaced (a new
+   * item of the same role in its place); a card with no such item gets one, at the place its role
+   * has in the reading order (`CONCEPT_ROLES`). A replace of an item the learner wrote in is held
+   * to an extend, and the learner's runs are reported as the conflict, so their words stay put.
+   */
+  const attachToCard = (op: Extract<AgentDocOp, { op: 'card_attach' }>): void => {
+    const target = blockPos(tr.doc, op.cardBlockId);
+    if (!target || target.node.type.name !== 'concept') return;
+    const inner = nodesFor(op.blocks.filter((b) => b.kind !== 'concept'));
+    if (inner.length === 0) return;
+    const items = conceptItems(target.node);
+    const existing = items.find((item) => item.role === op.role) ?? null;
+    const base = target.pos + 1;
+    if (existing && op.mode === 'replace' && !hasLearnerText(existing.node)) {
+      const item = conceptItemNode(notesSchema, { role: op.role, blocks: op.blocks, prov: op.prov }, batch.author, batch.editId, at);
+      if (!item) return;
+      const from = base + existing.offset;
+      tr.replaceWith(from, from + existing.node.nodeSize, item);
+      touched.push(...idsOf([item]));
+      return;
+    }
+    if (existing) {
+      if (op.mode === 'replace') conflicts.push(...conflictsInBlock(existing.node, base + existing.offset));
+      // The end of the item's content: one before the item's closing token.
+      tr.insert(base + existing.offset + existing.node.nodeSize - 1, Fragment.fromArray(inner));
+      touched.push(...idsOf(inner));
+      return;
+    }
+    const item = conceptItemNode(notesSchema, { role: op.role, blocks: op.blocks, prov: op.prov }, batch.author, batch.editId, at);
+    if (!item) return;
+    const rank = (role: string): number => {
+      const i = (CONCEPT_ROLES as readonly string[]).indexOf(role);
+      return i < 0 ? CONCEPT_ROLES.length : i;
+    };
+    const after = items.find((it) => rank(it.role) > rank(op.role));
+    const where = after ? base + after.offset : target.pos + target.node.nodeSize - 1;
+    tr.insert(where, item);
+    touched.push(...idsOf([item]));
+  };
+
   const applyOp = (op: AgentDocOp): void => {
     switch (op.op) {
       case 'insert_after':
       case 'insert_before': {
         const anchorId = op.anchorBlockId;
-        const target = blockPos(tr.doc, anchorId);
-        if (!target) return;
         const nodes = nodesFor(op.blocks);
         if (nodes.length === 0) return;
+        // A card goes at the top level whatever it was anchored to; anything else as `placementTarget` says.
+        const target = nodes.some((n) => n.type.name === 'concept')
+          ? topLevelTarget(tr.doc, anchorId)
+          : placementTarget(tr.doc, anchorId);
+        if (!target) return;
         const where = op.op === 'insert_after' ? target.pos + target.node.nodeSize : target.pos;
         tr.insert(where, Fragment.fromArray(nodes));
         touched.push(...idsOf(nodes));
         return;
       }
 
+      case 'card_attach': {
+        attachToCard(op);
+        return;
+      }
+
       case 'replace_block': {
         const target = blockPos(tr.doc, op.blockId);
         if (!target) return;
-        const nodes = nodesFor(op.blocks);
+        let nodes = nodesFor(op.blocks);
         if (nodes.length === 0) return;
+        const shaped = shapeForCard(tr.doc, target, nodes);
+        if (shaped === null) return;
+        nodes = shaped;
         if (hasLearnerText(target.node)) {
           // Case 2a: the learner wrote here. The rewrite becomes an offer over the block's own
           // words — struck, with the agent's version beside it — and the learner decides.
@@ -411,6 +577,13 @@ export function applyBatch(
         if (!target) return;
         if (op.text.trim().length === 0) return;
         const attrs = blockAttrs(target.node);
+        if (target.node.type.name === 'concept_item') {
+          // Appending to a depth item is one more paragraph at its end: the item is `block+`.
+          const nodes = nodesFor([{ kind: 'paragraph', text: op.text, prov: { pages: attrs.pages, reason: attrs.reason } }]);
+          tr.insert(target.pos + target.node.nodeSize - 1, Fragment.fromArray(nodes));
+          touched.push(...idsOf(nodes));
+          return;
+        }
         if (hasLearnerText(target.node) || !target.node.isTextblock) {
           // Case 2c: relocated to an `insert_after` of the same block — the sentence still lands
           // where it was meant to, and not one character of the learner's is moved.
@@ -418,7 +591,8 @@ export function applyBatch(
           const nodes = nodesFor([
             { kind: 'paragraph', text: op.text, prov: { pages: attrs.pages, reason: attrs.reason } },
           ]);
-          tr.insert(target.pos + target.node.nodeSize, Fragment.fromArray(nodes));
+          const place = placementTarget(tr.doc, op.blockId) ?? target;
+          tr.insert(place.pos + place.node.nodeSize, Fragment.fromArray(nodes));
           touched.push(...idsOf(nodes));
           return;
         }
@@ -430,8 +604,11 @@ export function applyBatch(
       }
 
       case 'remove_block': {
-        const target = blockPos(tr.doc, op.blockId);
+        let target = blockPos(tr.doc, op.blockId);
         if (!target) return;
+        // A card without its core line is not a card: removing the core line removes the card.
+        const card = cardOf(tr.doc, op.blockId);
+        if (card?.isCore) target = { pos: card.pos, node: card.node };
         if (hasLearnerText(target.node)) {
           // Case 2b. Nothing an agent says removes the learner's writing — not even as a
           // suggestion, because a suggestion is an offer to change words, not to delete a block.
@@ -445,7 +622,8 @@ export function applyBatch(
       }
 
       case 'insert_q': {
-        const target = blockPos(tr.doc, op.anchorBlockId);
+        // Never inside a card's frame (`placementTarget`): a Q block on a core line goes under the card.
+        const target = placementTarget(tr.doc, op.anchorBlockId);
         if (!target) return;
         if (op.text.trim().length === 0) return;
         const blockId = newBlockId();

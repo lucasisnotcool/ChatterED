@@ -488,6 +488,37 @@ export function noteChunks(
       return;
     }
 
+    if (type === 'concept') {
+      /**
+       * **A concept card is its own group** (2026-10-06, D1), under its term as the label: the core
+       * line, then each depth item, each a unit with its own block id, so a hit lands on the item
+       * that matched (and the renderer opens the card to show it). A card is never merged with the
+       * prose around it, and a long one splits at `GROUP_MAX_WORDS` like any run of blocks.
+       */
+      flush();
+      const term = normalise(stringAttr(node, 'term')).replace(/\n/g, ' ');
+      label = term.length > 0 ? term : null;
+      const cardPages = sortedUnique(numbersAttr(node, 'pages'));
+      childrenOf(node).forEach((child, i) => {
+        const text = normalise(
+          typeOf(child) === 'concept_item'
+            ? childrenOf(child).map(blockText).filter((t) => t.trim().length > 0).join('\n')
+            : blockText(child),
+        );
+        if (text.length === 0 || seenText.has(text)) return;
+        seenText.add(text);
+        const own = sortedUnique(pagesIn(child));
+        const pages = own.length > 0 ? own : cardPages.length > 0 ? cardPages : headingPages();
+        const n = words(text);
+        if (group.length > 0 && groupWords + n > GROUP_MAX_WORDS) flush();
+        group.push({ blockId: stringAttr(child, 'blockId') || `${blockId}#${String(i)}`, text, words: n, pages });
+        groupWords += n;
+      });
+      flush();
+      label = null;
+      return;
+    }
+
     const composite = COMPOSITES[type];
     if (composite) {
       const parts = composite(node);

@@ -50,7 +50,7 @@ import type {
   Rect,
   TableGrid,
 } from './types.js';
-import { OBJECTIVES_REASON } from './types.js';
+import { CONCEPT_ROLES, OBJECTIVES_REASON, type ConceptRole } from './types.js';
 import type { TutorialAnswerKind, TutorialOption, TutorialPartOrigin } from '../tutorial.js';
 
 /**
@@ -146,7 +146,12 @@ function readBlockAttrs(dom: AttrSource): Record<string, unknown> {
 
 // ── nodes ───────────────────────────────────────────────────────────────────────────────────
 
-const doc: NodeSpec = { content: 'block+' };
+/**
+ * `card` is a group of one, `concept` (2026-10-06): a concept card may stand where a block stands
+ * at the top of the document and nowhere else, so a card is never nested in a card, a list, a
+ * Q block or a tutorial part, by construction rather than by care.
+ */
+const doc: NodeSpec = { content: '(block | card)+' };
 
 const text: NodeSpec = { group: 'inline' };
 
@@ -754,6 +759,69 @@ function childPages(node: Node): number[] {
   return Array.isArray(pages) ? [...(pages as number[])] : [];
 }
 
+// ── concept cards (2026-10-06; notebooks.md §11.2, decision D1) ──────────────────────
+
+/**
+ * **A concept card**: one idea of the lecture, as notes that can stand in for its slides.
+ *
+ * The first child is the **core line**, an ordinary paragraph: the term in bold and a one-sentence
+ * definition, always visible. Every child after it is a **depth item** (`concept_item`), folded
+ * under the core line and opened in place. Folding is view state (`pm/concept.ts`), never saved:
+ * the document holds all of the card, so the outline, the search index and every agent see it
+ * whole whether or not the learner has opened it.
+ *
+ * A container, as a `q_block` is, so every block in a card keeps its own `blockId`, provenance and
+ * author marks: the guard, the chips and the ops work on a card's paragraphs and formulas exactly
+ * as on any other. `isolating` keeps an editing gesture from merging the card into the prose
+ * around it. `term` is the card's name for the outline, the search index and anything that has to
+ * say which card it means (`cardOf`).
+ */
+const concept: NodeSpec = {
+  content: 'paragraph concept_item*',
+  group: 'card',
+  defining: true,
+  isolating: true,
+  attrs: { term: { default: '' }, ...BLOCK_ATTRS },
+  parseDOM: [
+    {
+      tag: 'section[data-concept]',
+      getAttrs: (dom: AttrSource) => ({ ...readBlockAttrs(dom), term: dom.getAttribute('data-term') ?? '' }),
+    },
+  ],
+  toDOM: (node) => [
+    'section',
+    { ...blockDataAttrs(node), 'data-concept': '', 'data-term': node.attrs.term as string },
+    0,
+  ],
+};
+
+export function isConceptRole(value: unknown): value is ConceptRole {
+  return typeof value === 'string' && (CONCEPT_ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * **One item of a card's depth**: intuition, an equation and its "where" list, an algorithm's
+ * steps, an example, a table, a figure, a result, a pitfall or a note (`ConceptRole`). `block+`,
+ * so an equation item is a formula block and a list, and an agent's addition to an item is one
+ * more block in it. A container: its blocks are addressable in their own right.
+ */
+const concept_item: NodeSpec = {
+  content: 'block+',
+  defining: true,
+  isolating: true,
+  attrs: { role: { default: 'note' as ConceptRole }, ...BLOCK_ATTRS },
+  parseDOM: [
+    {
+      tag: 'div[data-concept-item]',
+      getAttrs: (dom: AttrSource) => {
+        const role = dom.getAttribute('data-concept-item');
+        return { ...readBlockAttrs(dom), role: isConceptRole(role) ? role : 'note' };
+      },
+    },
+  ],
+  toDOM: (node) => ['div', { ...blockDataAttrs(node), 'data-concept-item': node.attrs.role as string }, 0],
+};
+
 // ── flashcards, a quiz, an infographic (2026-10-01; notebooks §5.3) ─────────────────────────
 //
 // All three follow the diagram: one addressable block (`BLOCK_ATTRS`, in `STRUCTURED`), children
@@ -1075,6 +1143,8 @@ export const notesSchema = new Schema({
     info_value: fieldSpec(FIELD_MARKERS.info_value),
     info_heading: fieldSpec(FIELD_MARKERS.info_heading),
     info_body: fieldSpec(FIELD_MARKERS.info_body),
+    concept,
+    concept_item,
     text,
   },
   marks: {
@@ -1096,8 +1166,12 @@ export const notesSchema = new Schema({
  * right). A list is *one* block — its `list_item`s and their paragraphs are its internals, not
  * separate blocks, because an agent op that landed on a bullet's paragraph would be an op that
  * bypassed the list. A `table` and a `diagram` are one block each for the same reason.
+ *
+ * A concept card and its depth items are containers too (2026-10-06): the card, its core line,
+ * each item and each block inside an item are all addressable, so an agent can extend one item or
+ * replace one formula without touching the rest of the card.
  */
-const CONTAINERS = new Set(['q_block', 'tut_part']);
+const CONTAINERS = new Set(['q_block', 'tut_part', 'concept', 'concept_item']);
 
 /**
  * The blocks that are one addressable unit with structure inside: a `table` and a `diagram`. They
@@ -1271,6 +1345,90 @@ export function blockPos(doc: Node, blockId: string): { pos: number; node: Node 
   return found;
 }
 
+// ── concept cards: which card a block is in (2026-10-06, D1) ────────────────────────────────
+
+export function isConcept(node: Node): boolean {
+  return node.type.name === 'concept';
+}
+
+/** A card's always-visible line: its first child, the paragraph with the term in bold. */
+export function conceptCore(card: Node): Node | null {
+  return isConcept(card) && card.firstChild?.type.name === 'paragraph' ? card.firstChild : null;
+}
+
+/** A card's depth items, in order, with where each starts relative to the card's content. */
+export function conceptItems(card: Node): { role: ConceptRole; node: Node; offset: number }[] {
+  const items: { role: ConceptRole; node: Node; offset: number }[] = [];
+  if (!isConcept(card)) return items;
+  card.forEach((child, offset) => {
+    if (child.type.name !== 'concept_item') return;
+    const role = child.attrs.role as unknown;
+    items.push({ role: isConceptRole(role) ? role : 'note', node: child, offset });
+  });
+  return items;
+}
+
+export interface CardRef {
+  /** The card's position in the document and the card itself. */
+  pos: number;
+  node: Node;
+  cardId: string;
+  term: string;
+  /** The depth item the block is in (or is), when it is in one; null for the card and its core. */
+  item: { pos: number; node: Node; role: ConceptRole } | null;
+  /** True when the block asked about is the card's core line. */
+  isCore: boolean;
+}
+
+/**
+ * **The card a block belongs to**: the card itself, its core line, one of its depth items, or any
+ * block inside an item. Null for a block outside every card, and for an unknown id.
+ *
+ * This is the one way to address "the card this block is in" (for Ellie's additions, which attach
+ * to the card's depth, and for anything that is placed *under* a card rather than inside it, such
+ * as a self-check: `insert_after` with the card's `cardId` as the anchor puts it straight after the
+ * card at the top level).
+ */
+export function cardOf(doc: Node, blockId: string): CardRef | null {
+  const at = blockPos(doc, blockId);
+  if (!at) return null;
+  const $pos = doc.resolve(at.pos);
+  // The card is the top-level ancestor (cards only stand at the top level), or the block itself.
+  const card = $pos.depth === 0 ? at.node : $pos.node(1);
+  const cardPos = $pos.depth === 0 ? at.pos : $pos.before(1);
+  if (!isConcept(card)) return null;
+  let item: CardRef['item'] = null;
+  if (at.node.type.name === 'concept_item') {
+    item = { pos: at.pos, node: at.node, role: isConceptRole(at.node.attrs.role) ? at.node.attrs.role : 'note' };
+  } else if ($pos.depth >= 2 && $pos.node(2).type.name === 'concept_item') {
+    const node = $pos.node(2);
+    item = { pos: $pos.before(2), node, role: isConceptRole(node.attrs.role) ? node.attrs.role : 'note' };
+  }
+  const core = conceptCore(card);
+  return {
+    pos: cardPos,
+    node: card,
+    cardId: blockAttrs(card).blockId,
+    term: (card.attrs.term as string) || '',
+    item,
+    isCore: core !== null && $pos.depth === 1 && $pos.index(1) === 0 && at.node === core,
+  };
+}
+
+/** The `blockId` of the card a block belongs to, or null (`cardOf`). */
+export function cardIdOf(doc: Node, blockId: string): string | null {
+  return cardOf(doc, blockId)?.cardId ?? null;
+}
+
+/** Every card in the document, in order: its id, term and position. */
+export function conceptCards(doc: Node): { cardId: string; term: string; pos: number; node: Node }[] {
+  const out: { cardId: string; term: string; pos: number; node: Node }[] = [];
+  doc.forEach((node, pos) => {
+    if (isConcept(node)) out.push({ cardId: blockAttrs(node).blockId, term: (node.attrs.term as string) || '', pos, node });
+  });
+  return out;
+}
+
 /** Every text run in a node, with absolute document positions. Atoms contribute nothing. */
 export function textRuns(node: Node, base: number): { from: number; to: number; text: string; marks: readonly Mark[] }[] {
   const runs: { from: number; to: number; text: string; marks: readonly Mark[] }[] = [];
@@ -1378,6 +1536,11 @@ function outlineText(node: Node): string {
   if (node.type.name === 'math_block') return truncateWords(node.attrs.tex as string);
   if (node.type.name === 'tut_choices') return truncateWords(choicesText(node), LEARNER_OUTLINE_WORDS);
   const limit = hasLearnerText(node) ? LEARNER_OUTLINE_WORDS : OUTLINE_WORDS;
+  // A card reads as its name and its core line; its items and their blocks have lines of their own.
+  if (node.type.name === 'concept') return truncateWords(conceptLine(node), limit);
+  if (node.type.name === 'concept_item') {
+    return truncateWords(`[${String(node.attrs.role)}] ${nodeText(node)}`, limit);
+  }
   if (node.type.name === 'table') return truncateWords(tableText(node), limit);
   if (node.type.name === 'diagram') return truncateWords(diagramText(node), limit);
   if (node.type.name === 'flashcards') return truncateWords(flashcardsText(node), limit);
@@ -1387,6 +1550,41 @@ function outlineText(node: Node): string {
   const text = node.textBetween(0, node.content.size, '\n', ' ');
   const images = imageMarkers(node);
   return truncateWords(images ? `${images} ${text}`.trim() : text, limit);
+}
+
+/** A block's text with its formulas as TeX and its images as `[slide p. N]`: an item's outline. */
+function nodeText(node: Node): string {
+  const parts: string[] = [];
+  node.forEach((child) => {
+    if (child.type.name === 'math_block') parts.push(`$$${String(child.attrs.tex)}$$`);
+    else if (child.type.name === 'table') parts.push(tableText(child));
+    else {
+      const images = imageMarkers(child);
+      parts.push(`${images} ${child.textBetween(0, child.content.size, '\n', ' ')}`.trim());
+    }
+  });
+  return parts.filter((p) => p.length > 0).join(' ');
+}
+
+/** `Term: the core line`, or the core line alone when it already opens with the term. */
+export function conceptLine(card: Node): string {
+  const term = ((card.attrs.term as string) || '').trim();
+  const core = conceptCore(card)?.textContent.trim() ?? '';
+  if (term.length === 0) return core;
+  return core.toLowerCase().startsWith(term.toLowerCase()) ? core : `${term}: ${core}`;
+}
+
+/**
+ * **A whole card as plain text**: its core line, then each depth item on its own line, labelled with
+ * its role, formulas as `$$tex$$`. For search, a quote, or anything that wants the card in one go.
+ */
+export function conceptText(card: Node): string {
+  const lines = [conceptLine(card)];
+  for (const item of conceptItems(card)) {
+    const body = nodeText(item.node);
+    if (body.length > 0) lines.push(`${item.role}: ${body}`);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -1448,9 +1646,9 @@ export function infographicText(node: Node): string {
   return `${title ? `${title} (${layout}): ` : `(${layout}) `}${lines.join(ROW_SEPARATOR)}`;
 }
 
-function entryFor(node: Node, path: string[]): OutlineEntry {
+function entryFor(node: Node, path: string[], card?: { cardId: string; role: ConceptRole | null }): OutlineEntry {
   const { blockId } = blockAttrs(node);
-  return {
+  const entry: OutlineEntry = {
     blockId,
     kind: node.type.name,
     path: [...path],
@@ -1459,6 +1657,12 @@ function entryFor(node: Node, path: string[]): OutlineEntry {
     learnerText: hasLearnerText(node),
     questionId: node.type.name === 'q_block' ? ((node.attrs.questionId as string) || null) : null,
   };
+  // Only inside a card, so an outline of a document with no cards is exactly what it was.
+  if (card && card.cardId) {
+    entry.cardId = card.cardId;
+    if (card.role) entry.role = card.role;
+  }
+  return entry;
 }
 
 /**
@@ -1477,15 +1681,26 @@ interface OutlineRow {
 function outlineRows(doc: Node): OutlineRow[] {
   const rows: OutlineRow[] = [];
   const stack: { level: number; text: string }[] = [];
-  eachBlock(doc, (node) => {
+  // The card (and the depth item) the walk is inside, by where it ends: `eachBlock` visits a
+  // container before its children, so everything visited before `end` is inside it.
+  let card: { cardId: string; end: number } | null = null;
+  let item: { role: ConceptRole; end: number } | null = null;
+  eachBlock(doc, (node, pos) => {
+    if (card && pos >= card.end) card = null;
+    if (item && pos >= item.end) item = null;
+    if (node.type.name === 'concept') card = { cardId: blockAttrs(node).blockId, end: pos + node.nodeSize };
+    if (node.type.name === 'concept_item') {
+      item = { role: isConceptRole(node.attrs.role) ? node.attrs.role : 'note', end: pos + node.nodeSize };
+    }
+    const inCard = card ? { cardId: card.cardId, role: item?.role ?? null } : undefined;
     if (node.type.name === 'heading') {
       const level = node.attrs.level as number;
       while (stack.length > 0 && stack[stack.length - 1]!.level >= level) stack.pop();
-      rows.push({ entry: entryFor(node, stack.map((h) => h.text)), level });
+      rows.push({ entry: entryFor(node, stack.map((h) => h.text), inCard), level });
       stack.push({ level, text: node.textContent.replace(/\s+/g, ' ').trim() });
       return;
     }
-    rows.push({ entry: entryFor(node, stack.map((h) => h.text)), level: null });
+    rows.push({ entry: entryFor(node, stack.map((h) => h.text), inCard), level: null });
   });
   return rows;
 }
@@ -1517,6 +1732,14 @@ export function docOutlineNear(doc: Node, blockId: string | null, radius = 6): O
   }
   for (let i = Math.max(0, anchorAt - radius); i <= Math.min(rows.length - 1, anchorAt + radius); i++) {
     picked.add(i);
+  }
+  // The whole of the anchor's card, however many lines it runs to (2026-10-06): an addition to a
+  // card is planned against what the card already holds, item by item, or it repeats it.
+  const cardId = rows[anchorAt]!.entry.cardId;
+  if (cardId) {
+    rows.forEach((row, index) => {
+      if (row.entry.cardId === cardId) picked.add(index);
+    });
   }
   // Every heading the anchor sits under, however far above it: walk back and take the nearest
   // heading of each level shallower than the last one taken.

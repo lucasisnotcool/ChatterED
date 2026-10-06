@@ -22,10 +22,21 @@
  * Pure, no DOM, no schema knowledge beyond `draftToNodes` — `src/main/notes` runs it.
  */
 
-import { DIAGRAM_LAYOUTS, INFOGRAPHIC_LAYOUTS, isDiagramLayout, isInfographicLayout, notesSchema, newBlockId } from './schema.js';
+import {
+  DIAGRAM_LAYOUTS,
+  INFOGRAPHIC_LAYOUTS,
+  isConceptRole,
+  isDiagramLayout,
+  isInfographicLayout,
+  notesSchema,
+  newBlockId,
+} from './schema.js';
 import { draftToNodes } from './ops.js';
 import { inlineToNodes } from './inline.js';
 import type {
+  ConceptDraft,
+  ConceptItemDraft,
+  ConceptRole,
   DiagramDraft,
   DocBlockDraft,
   FlashcardsDraft,
@@ -817,6 +828,118 @@ export const INFOGRAPHIC_DRAFT_JSON_SCHEMA: Record<string, unknown> = {
     },
   },
 };
+
+// ── a concept card (2026-10-06, D1) ─────────────────────────────────────────────────────────
+
+/** A card's per-card limits: a core line is one sentence, a table as `TABLE_LIMITS`. */
+export const CONCEPT_LIMITS = { maxTerm: 80, maxItems: 12 } as const;
+
+/**
+ * **A concept card, checked block by block** (D1). The structural gate every card passes before it
+ * is minted, whoever wrote it; the overview's own gate (`main/notes/overview.ts`) decides the
+ * budget, and this one only the shape and the provenance, in the file's "repair before reject"
+ * spirit:
+ *
+ *  - the card needs a term and a core line, and provenance of its own (a page of the deck or a
+ *    reason): no core line, no card;
+ *  - an item with a role this schema does not know becomes a `note`; an item needs provenance
+ *    too, and its blocks take the item's when they carry none of their own;
+ *  - an item's blocks go through `validateDrafts` (the ingest's kinds) or `validateTableDraft`, so
+ *    a bad page is dropped exactly as anywhere else; an item left with no block is dropped;
+ *  - no card inside a card: a nested one is dropped.
+ */
+export function validateConceptDraft(
+  raw: unknown,
+  pageCount: number,
+): { draft: ConceptDraft | null; problems: string[] } {
+  const problems: string[] = [];
+  const record = asRecord(raw);
+  if (!record) return { draft: null, problems: ['concept: not an object'] };
+  const term = asText(record.term).slice(0, CONCEPT_LIMITS.maxTerm);
+  const core = asText(record.core);
+  if (core.length === 0) return { draft: null, problems: ['concept: no core line'] };
+  const prov = checkedProv((asRecord(record.prov) ?? {}) as unknown as Provenance, pageCount, problems);
+  if (!prov) return { draft: null, problems };
+
+  const depth: ConceptItemDraft[] = [];
+  const rawItems = Array.isArray(record.depth) ? record.depth : [];
+  rawItems.forEach((rawItem, i) => {
+    const item = asRecord(rawItem);
+    if (!item) {
+      problems.push(`concept: item ${String(i + 1)} is not an object`);
+      return;
+    }
+    const role: ConceptRole = isConceptRole(item.role) ? item.role : 'note';
+    if (item.role !== role) problems.push(`concept: item ${String(i + 1)} had no known role, filed as a note`);
+    const itemProv = checkedProv((asRecord(item.prov) ?? prov) as unknown as Provenance, pageCount, problems) ?? prov;
+    const blocks: DocBlockDraft[] = [];
+    const rawBlocks = Array.isArray(item.blocks) ? item.blocks : [];
+    for (const rawBlock of rawBlocks) {
+      const block = asRecord(rawBlock);
+      if (!block) continue;
+      const withProv = asRecord(block.prov) ? block : { ...block, prov: itemProv };
+      if (block.kind === 'concept') {
+        problems.push('concept: a card inside a card, dropped');
+        continue;
+      }
+      if (block.kind === 'table') {
+        const { draft, problems: tableProblems } = validateTableDraft(withProv, pageCount, (withProv.prov as Provenance) ?? itemProv);
+        problems.push(...tableProblems);
+        if (draft) blocks.push(draft);
+        continue;
+      }
+      const checked = validateDrafts([withProv], pageCount);
+      for (const issue of checked.issues) problems.push(`concept: item ${String(i + 1)} block ${issue.reason}`);
+      blocks.push(...checked.blocks);
+    }
+    if (blocks.length === 0) {
+      problems.push(`concept: item ${String(i + 1)} (${role}) has no usable block, dropped`);
+      return;
+    }
+    if (depth.length === CONCEPT_LIMITS.maxItems) {
+      problems.push(`concept: more than ${String(CONCEPT_LIMITS.maxItems)} items, the rest dropped`);
+      return;
+    }
+    depth.push({ role, blocks, prov: itemProv });
+  });
+
+  return { draft: { kind: 'concept', term, core, depth, prov }, problems };
+}
+
+/**
+ * **Words a card writes, maths and figures left out** (D1's budget: "excluding math blocks and
+ * figures"). Inline `$tex$` is left out too: a symbol is not a word of explanation. Split into the
+ * core line and the depth, which the budget counts separately.
+ */
+export function conceptWords(draft: ConceptDraft): { core: number; depth: number } {
+  const count = (text: string): number =>
+    text
+      .replace(/\$[^$]*\$/g, ' ')
+      .split(/\s+/)
+      .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  const blockWords = (block: DocBlockDraft): number => {
+    switch (block.kind) {
+      case 'heading':
+      case 'paragraph':
+      case 'code':
+        return count(block.text);
+      case 'bullets':
+      case 'numbers':
+        return block.items.reduce((n, item) => n + count(item), 0);
+      case 'table':
+        return count(block.caption ?? '') + count(block.columns.join(' ')) + block.rows.reduce((n, r) => n + count(r.cells.join(' ')), 0);
+      case 'math':
+      case 'figure':
+        return 0;
+      default:
+        return 0;
+    }
+  };
+  return {
+    core: count(draft.core),
+    depth: draft.depth.reduce((n, item) => n + item.blocks.reduce((m, b) => m + blockWords(b), 0), 0),
+  };
+}
 
 /**
  * Validated drafts → a whole document, as ProseMirror JSON `docFromJson` accepts.
