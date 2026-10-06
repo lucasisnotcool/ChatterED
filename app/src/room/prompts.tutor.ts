@@ -346,6 +346,44 @@ export function sheetGuardBlock(unsolved: readonly string[]): string {
   ].join('\n');
 }
 
+/**
+ * **The same rule for Max's open notebook question** (2026-10-06 afternoon, decision 6;
+ * `notebooks.md` §11.10). The sheet's guard above, with the question in place of the parts: while
+ * the learner owes Max an answer, Ellie (in the chat, a span thread, a block action or privately)
+ * explains the ideas the question uses and does not answer it. Code checks the reply against the
+ * question's hidden key when it has one (`core/answerguard.ts`). The sheet's own guard is
+ * unchanged.
+ */
+export const OPEN_QUESTION_GUARD_HEADER = 'MAX’S OPEN QUESTION IS THE LEARNER’S TO ANSWER';
+
+export function openQuestionGuardBlock(question: string): string {
+  const q = question.replace(/\s+/g, ' ').trim();
+  return [
+    OPEN_QUESTION_GUARD_HEADER,
+    q.length > 0 ? `Max has asked the learner, and it is still open: "${q.slice(0, 600)}"` : 'Max has a question open for the learner.',
+    'You may explain the lecture ideas it uses, on the lecture’s own examples, cited as p. N. **Never**',
+    'give the answer to it, or any piece of one: not a step of the answer, not the term for a blank, not',
+    'the reason it asks for, not "for example" with the real thing in it. If they ask for it, explain the',
+    'idea on the lecture’s example and say that the question is theirs to try, and that Pass on it shows',
+    'the answer whenever they want it.',
+  ].join('\n');
+}
+
+/** What the reply is told when its first draft stated part of the open question's answer. */
+export function openQuestionLeakBlock(points: readonly string[]): string {
+  return [
+    'YOUR LAST DRAFT ANSWERED MAX’S OPEN QUESTION',
+    'It stated this part of the answer, which is the learner’s to find:',
+    ...points.map((p) => `- ${p.replace(/\s+/g, ' ').trim()}`),
+    'Write the reply again. Explain the idea the question uses on the lecture’s own example, and leave',
+    'that part out entirely, in any wording.',
+  ].join('\n');
+}
+
+/** What Ellie says in place of a reply that was all answer (decision 6). Code-written. */
+export const OPEN_QUESTION_HELD_LINE =
+  'That part is what Max’s open question asks you for, so I’ll leave it to you. Pass on the question shows the answer whenever you want it.';
+
 // ── The tutorial as the main view (2026-10-04, Lucas: "make the tutorial the main view") ───────
 
 /** The header of the block a turn reads while the sheet is the learner's main view. */

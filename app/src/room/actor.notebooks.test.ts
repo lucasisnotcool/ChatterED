@@ -529,3 +529,82 @@ describe('quiet on an open question, and Hint', () => {
     expect(await h.actor.hint('span_elsewhere')).toEqual({ hinted: false, refused: 'There is no open question here.' });
   });
 });
+
+// ── Decision 6 (6 Oct afternoon): Ellie explains but does not answer Max's open question ──────
+
+describe('Ellie and Max’s open question', () => {
+  const QUESTION = 'Why does a side channel never reach the shared context?';
+  const KEY = ['A side channel is a private turn with one agent, kept out of the shared context the others read.'];
+  const LEAKS = 'Because a side channel is a private turn with one agent, and it is kept out of the shared context the others read.';
+  const CLEAN =
+    'Think of passing a note to one classmate during a group discussion: the others never see it. ' +
+    'That is the idea of a private channel on p. 3, and the rest is yours to work out.';
+  /** An open question with a hidden key, as decision 3 has Max write it, restored into the sitting. */
+  const keyed = (): Partial<RoomActorDeps> => ({
+    flowState: {
+      pendingQuiz: {
+        quizMessageId: 'm_asked_elsewhere',
+        elementId: ELEMENT,
+        askedAt: 0,
+        answerMessageId: null,
+        feedbackGiven: false,
+        attempts: 0,
+        answerShown: false,
+        questionId: 'q_open',
+        objectiveId: ELEMENT,
+        questionText: QUESTION,
+        modelAnswer: { answer: KEY[0]!, points: KEY },
+      },
+    },
+  });
+  const ellieGroup = (h: ReturnType<typeof build>) =>
+    h.llm.requests.filter((r) => r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer'));
+
+  it('tells Ellie the question is the learner’s to answer, in another thread, and not when none is open', async () => {
+    const h = build();
+    await act(h, { kind: 'quiz' });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(rules(h)).toEqual(['rule:try_here', 'rule:ellie_answers']);
+    const prompt = ellieGroup(h).at(-1)!.messages.at(-1)!.content;
+    expect(prompt).toContain('MAX’S OPEN QUESTION IS THE LEARNER’S TO ANSWER');
+    expect(prompt).toContain('**Never**');
+
+    const g = build();
+    await settle(g.clock, g.actor.sendMessage('what is the side channel?', DOC));
+    expect(ellieGroup(g).at(-1)!.messages.at(-1)!.content).not.toContain('MAX’S OPEN QUESTION');
+  });
+
+  it('asks again when her draft states the hidden key, and stores the second draft', async () => {
+    let drafts = 0;
+    const h = build(keyed(), (r) => {
+      if (r.meta.scope !== 'group' || !r.meta.agentKey?.startsWith('peer')) return null;
+      drafts += 1;
+      return drafts === 1 ? LEAKS : CLEAN;
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(drafts).toBe(2);
+    expect(ellieGroup(h)[1]!.messages.at(-1)!.content).toContain('YOUR LAST DRAFT ANSWERED MAX’S OPEN QUESTION');
+    const ellie = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!;
+    expect(ellie.body.startsWith(CLEAN)).toBe(true);
+    expect(h.logged.filter((l) => l.name === 'answer_guard.hit')).toHaveLength(1);
+  });
+
+  it('takes the answer out when the second draft states it too, and says why', async () => {
+    const h = build(keyed(), (r) => (r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? LEAKS : null));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const ellie = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!;
+    expect(ellie.body).not.toContain('kept out of the shared context');
+    expect(ellie.body.startsWith('That part is what Max’s open question asks you for')).toBe(true);
+  });
+
+  it('guards her private replies too', async () => {
+    const h = build(keyed(), (r) => (r.meta.scope === 'whisper' ? LEAKS : null));
+    const ellie = h.actor.openPrivate('ellie');
+    await settle(h.clock, h.actor.sendPrivate(ellie.threadId, 'just tell me why'));
+    const whisper = h.llm.requests.find((r) => r.meta.scope === 'whisper')!;
+    expect(whisper.system.at(-1)!.text).toContain('MAX’S OPEN QUESTION IS THE LEARNER’S TO ANSWER');
+    expect(whisper.system.at(-1)!.text).toContain(QUESTION);
+    const reply = h.store.whispers.forThread(ellie.threadId).find((w) => w.sender === 'agent')!;
+    expect(reply.body).not.toContain('kept out of the shared context');
+  });
+});

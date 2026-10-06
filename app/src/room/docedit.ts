@@ -48,6 +48,7 @@ import { UNMARKED_OPENER, VERDICT_OPENERS } from './flow.js';
 import { extractJson } from './orchestrator.js';
 import type { LLMClient, LlmRequest } from './llm/types.js';
 import { wordCount } from './timer.js';
+import { answerLeaks } from '../core/answerguard.js';
 
 // ── reading the deck out of what an agent said ─────────────────────────────
 
@@ -290,6 +291,12 @@ export interface BlockNoteInput {
   outline: readonly OutlineEntry[];
   /** The deck's (notebook's) page count, so a citation outside it is dropped. */
   pageCount?: number;
+  /**
+   * **Max's question is open** (2026-10-06 afternoon, decision 6): the note must not hold its
+   * answer. `keyPoints` is its hidden key when it has one; a note that states a point is held back
+   * (`held`), checked in code (`core/answerguard.ts`).
+   */
+  openQuestion?: { text: string; keyPoints: readonly string[] } | null;
 }
 
 export type BlockNoteOutcome =
@@ -302,7 +309,9 @@ export type BlockNoteOutcome =
   /** A doc-chat answer, and nothing in the outline fits: no line, which is allowed there. */
   | 'declined'
   /** No block to put it under, or nothing usable at all. */
-  | 'none';
+  | 'none'
+  /** It stated part of the answer to Max's open question, so nothing was written (decision 6). */
+  | 'held';
 
 const WHAT_HAPPENED: Record<BlockNoteKind, string> = {
   explain: 'Ellie has just explained this block in the chat.',
@@ -387,6 +396,17 @@ export function blockNotePrompt(input: BlockNoteInput, retry?: { line: string; w
   }
   if (input.question && input.question.trim().length > 0) {
     lines.push('', 'WHAT THEY ASKED', '"""', input.question.trim(), '"""');
+  }
+  if (input.openQuestion && input.openQuestion.text.trim().length > 0) {
+    lines.push(
+      '',
+      'MAX HAS A QUESTION OPEN FOR THE LEARNER, AND ITS ANSWER IS THEIRS TO FIND',
+      '"""',
+      input.openQuestion.text.trim().slice(0, 600),
+      '"""',
+      'The note must not hold its answer or any piece of it, in any wording. Note the idea Ellie',
+      'explained, not the answer to that question.',
+    );
   }
   lines.push(
     '',
@@ -672,6 +692,11 @@ export async function planBlockNote(
     blocks = [{ kind: 'paragraph', text: line, prov: { pages: [], reason: 'pending' } }];
   }
   if (anchorBlockId === null) return { batch: null, outcome: input.blockId === null ? 'declined' : 'none', words: 0, retried, noteKind, card: false };
+  // Decision 6: a note that states the open question's answer is not written, button or not.
+  const key = input.openQuestion?.keyPoints ?? [];
+  if (key.length > 0 && answerLeaks(noteText(blocks), key).length > 0) {
+    return { batch: null, outcome: 'held', words: noteWords(blocks), retried, noteKind, card: false };
+  }
 
   const cited = JSON.stringify(parsed?.blocks ?? '') + (typeof parsed?.line === 'string' ? parsed.line : '');
   const own = pagesCited(cited, input.pageCount);

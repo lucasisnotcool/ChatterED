@@ -895,6 +895,14 @@ export interface PendingQuiz {
    */
   showMeOffered?: boolean;
   /**
+   * **Max's hidden model answer** (2026-10-06 afternoon, decision 3; written when he asks): a short
+   * answer and its one to three essential points, like a tutorial part's key. Never shown. Read by
+   * Ellie's guard (decision 6, `core/answerguard.ts`): while the question is open, a reply of hers
+   * that states one of `points` is asked for again. Absent on a question asked before it existed,
+   * and then the guard is the prompt's alone.
+   */
+  modelAnswer?: { answer: string; points: readonly string[] } | null;
+  /**
    * **The answer last marked was to a blank** (2026-10-06, D4). Read by `qResolutionOf`: a
    * question closed by a correct blank is *revisit*, not *you got this*.
    */

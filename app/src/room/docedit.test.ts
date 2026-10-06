@@ -138,6 +138,27 @@ describe('planBlockNote (notebooks §4.2)', () => {
   /** Over the 120-word ceiling of §11.2 (amended 2026-10-06): four times LONG is about 140 words. */
   const LONGER = `${LONG} ${LONG} ${LONG} ${LONG}`;
 
+  /** Decision 6 (6 Oct afternoon): while Max's question is open, the note may not hold its answer. */
+  it('tells the note about an open question, and writes nothing when the note states its key', async () => {
+    const openQuestion = {
+      text: 'Why does A* with an admissible heuristic return an optimal path?',
+      keyPoints: ['An admissible heuristic never overestimates the remaining cost, so A* never skips the optimal path.'],
+    };
+    const leaky = seq([{ line: 'An admissible heuristic never overestimates the remaining cost, so A* never skips the optimal path.', why: 'x' }]);
+    const held = await planBlockNote(leaky, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE, openQuestion });
+    expect(held).toMatchObject({ batch: null, outcome: 'held' });
+    expect(leaky.requests[0]!.system[0]!.text).toContain('MAX HAS A QUESTION OPEN FOR THE LEARNER');
+    expect(leaky.requests[0]!.system[0]!.text).toContain(openQuestion.text);
+
+    const fine = seq([{ line: 'A heuristic is a cheap estimate of the cost still to go.', why: 'x' }]);
+    const written = await planBlockNote(fine, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE, openQuestion });
+    expect(written.outcome).toBe('written');
+    // No open question, no such block in the prompt.
+    const plain = seq([{ line: 'A heuristic is a cheap estimate.', why: 'x' }]);
+    await planBlockNote(plain, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });
+    expect(plain.requests[0]!.system[0]!.text).not.toContain('MAX HAS A QUESTION OPEN');
+  });
+
   it('asks once more on an overflow, and takes the second note when it fits', async () => {
     const d = seq([{ line: LONGER, why: 'x' }, { line: 'Admissible heuristics never overestimate, so A* is optimal.', why: 'x' }]);
     const out = await planBlockNote(d, { kind: 'explain', answer: 'a', blockId: 'b_2', outline: OUTLINE });

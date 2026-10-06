@@ -211,7 +211,16 @@ import { roundCardFor } from './roundcard.js';
 import { SilenceTimer, silenceStagesMs, wordCount, type SilenceStages } from './timer.js';
 import { ledgerView, messageView, timerView, whisperTurnView } from './views.js';
 import type { HintLevel, PartKey } from '../shared/tutorial.js';
-import { sheetGuardBlock, tutorBlock, tutorMaxWordCeiling, type TutorKind } from './prompts.tutor.js';
+import {
+  OPEN_QUESTION_HELD_LINE,
+  openQuestionGuardBlock,
+  openQuestionLeakBlock,
+  sheetGuardBlock,
+  tutorBlock,
+  tutorMaxWordCeiling,
+  type TutorKind,
+} from './prompts.tutor.js';
+import { answerLeaks, withoutLeaks } from '../core/answerguard.js';
 import {
   TUTORIAL_REQUEST,
   isTutorRule,
@@ -524,6 +533,12 @@ export function wordCeilingOf(decision: Pick<TurnDecision, 'moveType' | 'role'>)
       return null;
   }
 }
+
+/**
+ * **A guarded reply with fewer words than this left is replaced by the held line alone** (decision
+ * 6): a sentence or two of explanation around a removed answer reads as a non-sequitur.
+ */
+const HELD_MIN_WORDS = 12;
 
 /**
  * **The line the chat reply ends with when a doc line landed** (`notebooks.md` §4.2), by the kind
@@ -2024,9 +2039,29 @@ export class RoomActor {
     request.meta.scriptCue = `whisper:${this.#whisperTurns}`;
     // The thread is already on `meta.anchorId` (`context.whisper.ts`); this is the other half.
     request.meta.turnId = whisperTurnId;
+    /**
+     * **Privately too, Ellie does not answer Max's open question** (decision 6, 6 Oct afternoon):
+     * the group conversation she reads holds it. The guard goes last in her system prompt, and with
+     * a hidden key her reply is checked as a group turn's is (`#completeGuardedTurn`).
+     */
+    const guarded = this.#openQuestionGuarded(agent, null);
+    if (guarded) {
+      const question = this.#pendingQuiz?.questionText?.trim() || questionText(this.#openQuestionText());
+      request.system = [...request.system, { type: 'text', text: openQuestionGuardBlock(question) }];
+    }
+    const key = guarded ? this.#openQuestionKey() : [];
 
     const started = this.#d.clock.now();
-    const result = await this.#d.llm.complete(request);
+    const result =
+      key.length > 0
+        ? await this.#completeGuardedTurn(
+            request,
+            (extra) => ({ ...request, system: [...request.system, { type: 'text', text: extra }] }),
+            key,
+            undefined,
+            undefined,
+          )
+        : await this.#d.llm.complete(request);
     const target = this.#floor(
       latencyTargetMs({ ...agent, latency: { ttftMinMs: 1000, ttftMaxMs: 2000 } }, this.#d.config.latency_scale, this.#rand),
     );
@@ -4253,7 +4288,11 @@ export class RoomActor {
     this.#pendingMark = null;
     // A closure, so a held turn that failed a check can be asked for again (`#completeQuestionTurn`).
     const build = (extra?: string): LlmRequest => {
-      const note = this.#withSheetGuard(decision, this.#withTutorialFocus(decision, this.#turnNote(decision)));
+      const note = this.#withOpenQuestionGuard(
+        agent,
+        decision,
+        this.#withSheetGuard(decision, this.#withTutorialFocus(decision, this.#turnNote(decision))),
+      );
       const built = buildGroupContext(this.#d.groupStore, {
         roomId: this.#d.roomId,
         speaker: agent,
@@ -4313,6 +4352,20 @@ export class RoomActor {
      * renderer would put `{"text":"I think` on screen; a 60-word turn loses nothing by arriving
      * whole, and it goes out through the same pump as one delta so the dispatch path is unchanged.
      */
+    /**
+     * **Ellie does not answer Max's open question** (decision 6): with a hidden key on it, her
+     * draft is held back, checked, and asked for once more when it states the answer.
+     */
+    const key = this.#openQuestionGuarded(agent, decision) ? this.#openQuestionKey() : [];
+    if (key.length > 0) {
+      const again = (extra: string): LlmRequest => {
+        const next = build(extra);
+        next.meta.turnId = request.meta.turnId;
+        next.meta.anchorId = request.meta.anchorId;
+        return next;
+      };
+      return this.#completeGuardedTurn(request, again, key, onDelta, signal);
+    }
     if (decision.moveType === 'peer_guess') {
       request.jsonSchema = ELLIE_CUE_SCHEMA;
       const result = await this.#d.llm.complete(request, undefined, signal);
@@ -4489,6 +4542,64 @@ export class RoomActor {
       }
     }
     return draft;
+  }
+
+  /**
+   * **Explain, never solve, checked in code** (2026-10-06 afternoon, decision 6; `notebooks.md`
+   * §11.10 (6 Oct afternoon); the tutorial sheet's rule of 4 Oct). Ellie's draft is held (not
+   * streamed) and compared with the open question's hidden key (`core/answerguard.ts`). A draft
+   * that states a key point is written again once, told which point to leave out; if the second
+   * still states it, the stating sentences are taken out and a code-written line says why, or the
+   * line alone when little is left. The turn then goes out as one delta, as a blank turn does.
+   */
+  async #completeGuardedTurn(
+    first: LlmRequest,
+    again: (extra: string) => LlmRequest,
+    key: readonly string[],
+    onDelta: ((text: string) => void) | undefined,
+    signal: AbortSignal | undefined,
+  ): ReturnType<LLMClient['complete']> {
+    let result = await this.#d.llm.complete(first, undefined, signal);
+    let leaks = answerLeaks(result.text, key);
+    if (leaks.length > 0) {
+      // Which points and how many, never the words.
+      this.#turnLog.event('warn', 'answer_guard.hit', { draft: 1, points: leaks.length });
+      result = await this.#d.llm.complete(again(openQuestionLeakBlock(leaks.map((l) => l.point))), undefined, signal);
+      leaks = answerLeaks(result.text, key);
+      if (leaks.length > 0) {
+        const kept = withoutLeaks(result.text, key);
+        const text = wordCount(kept) >= HELD_MIN_WORDS ? `${kept}\n\n${OPEN_QUESTION_HELD_LINE}` : OPEN_QUESTION_HELD_LINE;
+        this.#turnLog.event('warn', 'answer_guard.hit', { draft: 2, points: leaks.length, kept_words: wordCount(kept) });
+        result = { ...result, text };
+      }
+    }
+    onDelta?.(result.text);
+    return result;
+  }
+
+  /**
+   * **Max's notebook question is open, so this turn of Ellie's is guarded** (decision 6). Not her
+   * guess (the #48 loop's cue), not a tutorial turn (the sheet's own guard), and only in a notebook
+   * (`maxOnlyOnRequest`), where nothing of hers is meant to be a way into his question.
+   */
+  #openQuestionGuarded(agent: AgentProfile, decision: TurnDecision | null): boolean {
+    const quiz = this.#pendingQuiz;
+    if (!this.#maxOnly || agent.role !== 'peer' || quiz === null || !quizOpen(quiz)) return false;
+    if (decision === null) return true;
+    return decision.moveType !== 'peer_guess' && !isTutorRule(decision.decidedBy);
+  }
+
+  /** The open question's hidden key points (decision 3), or none. */
+  #openQuestionKey(): readonly string[] {
+    const points = this.#pendingQuiz?.modelAnswer?.points ?? [];
+    return points.map((p) => p.trim()).filter((p) => p.length > 0);
+  }
+
+  /** The guard's prompt half, after everything else in the note (decision 6). */
+  #withOpenQuestionGuard(agent: AgentProfile, decision: TurnDecision, note: string | undefined): string | undefined {
+    if (!this.#openQuestionGuarded(agent, decision)) return note;
+    const question = this.#pendingQuiz?.questionText?.trim() || questionText(this.#openQuestionText());
+    return [note, openQuestionGuardBlock(question)].filter((b): b is string => typeof b === 'string' && b.length > 0).join('\n\n');
   }
 
   /** The last agent message in this turn's thread: what is on screen just above the turn. */
@@ -5666,6 +5777,13 @@ export class RoomActor {
           passage: this.#actionPassage.get(anchorId ?? '') ?? (context?.scope === 'segment' ? context.passageText : null),
           page: typeof pages === 'number' ? pages : null,
           outline,
+          // Decision 6: while Max's question is open her note must not hold its answer either.
+          openQuestion: this.#openQuestionGuarded(agentByRole(this.#d.roster, 'peer'), decision)
+            ? {
+                text: this.#pendingQuiz?.questionText?.trim() || questionText(this.#openQuestionText()),
+                keyPoints: this.#openQuestionKey(),
+              }
+            : null,
         });
         // How the line was had and how long it is, never the line.
         this.#turnLog.event('info', 'doc.block_note', {
