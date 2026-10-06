@@ -308,8 +308,8 @@ function boot(): void {
       log().info('db.backup', { from, to, file: basename(file) });
     },
   });
-  // Migration 032's columns, if a build with a later migration but not 032 reached this database
-  // first (the runner would then skip 032 for good). A no-op everywhere else.
+  // Migration 032's columns and 034's table, if a build with a later migration but not these
+  // reached this database first (the runner would then skip them for good). A no-op elsewhere.
   const added = ensureResearchExcludeColumns(db);
   if (added.length > 0) log().warn('db.research_exclude_columns_added', { tables: added });
   const store = createStore(db);

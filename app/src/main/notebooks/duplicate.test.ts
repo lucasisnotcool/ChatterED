@@ -118,6 +118,11 @@ describe('duplicateFolder', () => {
       group_title: `Group ${a.mark}`,
     });
     expect(count(`SELECT COUNT(*) AS n FROM tutorial_parts WHERE doc_id = @d AND status = 'correct'`, { d: copyA.docs[a.tutorialDocId] })).toBe(1);
+    // The stored explain comments (migration 033), on the same block of the copied doc.
+    expect(db.prepare(`SELECT block_id, kind, body FROM block_comments WHERE doc_id = @d`).all({ d: copyA.docs[a.docId] })).toEqual([
+      { block_id: 'b_a1', kind: 'explain', body: `explain ${a.mark}` },
+    ]);
+    expect(verifyDuplicate(deps(), copyA).find((c) => c.what === `block_comments of ${copyA.docs[a.docId]}`)).toMatchObject({ original: 1, copy: 1, ok: true });
     const treeJson = db.prepare(`SELECT content_sha, json FROM learning_trees WHERE file_id = @n`).get<{ content_sha: string; json: string }>({ n: copyA.to })!;
     expect(treeJson.content_sha).toBe(`nb:${copyA.to}`);
     expect(JSON.parse(treeJson.json)[0].fileId).toBe(copyA.to);

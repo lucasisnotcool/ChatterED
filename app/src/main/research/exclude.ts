@@ -25,6 +25,16 @@
  *   its bytes' cache  `file_segmentations` / `segments` / `segments_touched` for a sha that no
  *                     remaining file still has
  *
+ * **Exclusion outlives deletion** (migration 034). Deleting a notebook keeps its docs, room, chat and
+ * outcomes as the record, but its `notebooks` row (and the mark on it) goes. So the delete records
+ * an excluded notebook's id, and its source files' ids, in `research_excluded_deleted`
+ * (`recordDeletedExclusion`), and `excludedNotebookIds` / `exclusionScope` union them in: every rule
+ * below then follows the keys from them as from a live notebook. Deleting an excluded folder moves
+ * its notebooks and subfolders up a level; `markMovedOutOfExcludedFolder` gives each the folder's
+ * mark as its own first, unless its new parent is excluded anyway. The table is a set that only
+ * grows and the folder case is a plain flag, so no derived state can drift out of step with the
+ * tree: the live flags still decide everything for live notebooks.
+ *
  * Two uses, one rule set: `applyResearchExclusion` deletes the rows from the export's **snapshot**
  * (never the live database), and `excludedCounts` counts them on the live database for
  * Settings ▸ Research trial, read-only. Every table and column is checked first, so an older or
@@ -35,6 +45,9 @@ import { hasColumn, listTables, quoteIdent } from './anonymise.js';
 
 /** The managed vault's id (`vault/managed.ts`), repeated so this module stays import-light. */
 const MANAGED_VAULT_ID = 'vault_notebooks';
+
+/** Migration 034's table: the excluded notebooks (and their files) that were deleted. */
+export const DELETED_TABLE = 'research_excluded_deleted';
 
 export interface ExclusionScope {
   /** Folders marked, and every folder under one. */
@@ -113,16 +126,65 @@ export function excludedFolderIds(db: SqlDatabase): string[] {
   );
 }
 
-/** Notebooks marked themselves, or in an excluded folder at any depth. Empty before 032. */
+/** Ids recorded by `recordDeletedExclusion` (migration 034), of one kind. Empty before 034. */
+function deletedExcluded(db: SqlDatabase, kind: 'notebook' | 'file'): string[] {
+  if (!new Schema(db).has(DELETED_TABLE)) return [];
+  return ids(db, `SELECT id FROM ${DELETED_TABLE} WHERE kind = @kind ORDER BY id`, { kind });
+}
+
+/**
+ * Notebooks marked themselves, or in an excluded folder at any depth, and every notebook that was
+ * excluded when it was deleted (migration 034). Empty before 032.
+ */
 export function excludedNotebookIds(db: SqlDatabase): string[] {
   const s = new Schema(db);
-  if (!s.has('notebooks')) return [];
+  const deleted = deletedExcluded(db, 'notebook');
+  if (!s.has('notebooks')) return deleted;
   const folders = excludedFolderIds(db);
   const own = s.col('notebooks', 'research_exclude');
   const inFolder = s.col('notebooks', 'folder_id');
-  if (!own && !inFolder) return [];
+  if (!own && !inFolder) return deleted;
   const where = [own ? 'research_exclude = 1' : null, inFolder ? `folder_id ${IN('folders')}` : null].filter(Boolean).join(' OR ');
-  return ids(db, `SELECT id FROM notebooks WHERE ${where} ORDER BY id`, inFolder ? { folders: JSON.stringify(folders) } : {});
+  const live = ids(db, `SELECT id FROM notebooks WHERE ${where} ORDER BY id`, inFolder ? { folders: JSON.stringify(folders) } : {});
+  return uniq(live, deleted).sort();
+}
+
+/**
+ * Before a notebook is deleted (inside the same transaction): if it is excluded, by its own mark
+ * or a folder's, record its id and its source files' ids so its kept record stays out of the
+ * export. Returns whether it recorded anything. A no-op before migration 034.
+ */
+export function recordDeletedExclusion(db: SqlDatabase, notebookId: string, at: string): boolean {
+  const s = new Schema(db);
+  if (!s.has(DELETED_TABLE) || !excludedNotebookIds(db).includes(notebookId)) return false;
+  const files = uniq(
+    deletedExcluded(db, 'file'),
+    s.has('notebook_sources') ? ids(db, `SELECT file_id AS id FROM notebook_sources WHERE notebook_id = @n`, { n: notebookId }) : [],
+    s.col('notebooks', 'legacy_file_id') ? ids(db, `SELECT legacy_file_id AS id FROM notebooks WHERE id = @n`, { n: notebookId }) : [],
+  );
+  const put = db.prepare(`INSERT OR IGNORE INTO ${DELETED_TABLE} (id, kind, at) VALUES (@id, @kind, @at)`);
+  put.run({ id: notebookId, kind: 'notebook', at });
+  for (const id of files) put.run({ id, kind: 'file', at });
+  return true;
+}
+
+/**
+ * Before an excluded folder is deleted (inside the same transaction): its notebooks and
+ * subfolders are about to move up to `parentId`, out of its subtree. Each takes the folder's mark
+ * as its own, unless the new parent is excluded anyway (then they stay covered, and keeping their
+ * own flags as they were lets an unmark of that parent release them as before). Returns how many
+ * it marked. A no-op when the folder is not excluded, or before migration 032.
+ */
+export function markMovedOutOfExcludedFolder(db: SqlDatabase, folderId: string, parentId: string | null): number {
+  const s = new Schema(db);
+  if (!s.col('folders', 'research_exclude')) return 0;
+  const excluded = new Set(excludedFolderIds(db));
+  if (!excluded.has(folderId) || (parentId !== null && excluded.has(parentId))) return 0;
+  let n = db.prepare(`UPDATE folders SET research_exclude = 1 WHERE parent_id = @f AND research_exclude = 0`).run({ f: folderId }).changes;
+  if (s.col('notebooks', 'research_exclude') && s.col('notebooks', 'folder_id')) {
+    n += db.prepare(`UPDATE notebooks SET research_exclude = 1 WHERE folder_id = @f AND research_exclude = 0`).run({ f: folderId }).changes;
+  }
+  return n;
 }
 
 /** Every id the rules below key on. Read-only. */
@@ -135,6 +197,7 @@ export function exclusionScope(db: SqlDatabase): ExclusionScope {
   const nb = p(notebooks);
 
   const files = uniq(
+    deletedExcluded(db, 'file'),
     s.has('notebook_sources') ? ids(db, `SELECT file_id AS id FROM notebook_sources WHERE notebook_id ${IN('nb')}`, { nb }) : [],
     s.col('notebooks', 'legacy_file_id') ? ids(db, `SELECT legacy_file_id AS id FROM notebooks WHERE id ${IN('nb')}`, { nb }) : [],
     s.has('files')
@@ -239,8 +302,15 @@ export function exclusionRules(db: SqlDatabase): ExclusionRule[] {
   }
   add('llm_usage', ownerCols('file_id'), ['room_id', `room_id ${IN('rooms')}`], ['turn_id', `turn_id ${IN('turns')}`]);
 
+  // Migration 033: a doc's stored explain comments. The export runs with foreign keys off, so
+  // the `ON DELETE CASCADE` from `notes_docs` never fires there: the rule has to say it.
+  add('block_comments', ['doc_id', `doc_id ${IN('docs')}`]);
+
   add('search_chunks', ['notebook_id', `notebook_id ${IN('notebooks')}`]);
   add('search_state', ['notebook_id', `notebook_id ${IN('notebooks')}`]);
+
+  // Migration 034: the deleted notebooks' ids are themselves a trace; the whole table goes.
+  add(DELETED_TABLE, ['id', '1 = 1']);
 
   for (const t of ['file_segmentations', 'segments', 'segments_touched']) add(t, ['content_sha', `content_sha ${IN('shas')}`]);
   return rules;
@@ -327,9 +397,11 @@ export function applyResearchExclusion(db: SqlDatabase): ExclusionReport {
 }
 
 /**
- * Add migration 032's two columns when a database lacks them although its `user_version` is
- * already past 31 — a database a build with a later migration but not this one has opened, where
- * `runMigrations` would skip 032 for good. Idempotent; a no-op on every database 032 reached.
+ * Add migration 032's two columns, and migration 034's table, when a database lacks them although
+ * its `user_version` is already past them — a database a build with a later migration but not
+ * these has opened, where `runMigrations` would skip them for good. Returns what it added (the
+ * tables given a column, and the table created). Idempotent; a no-op on every database 032 and
+ * 034 reached.
  */
 export function ensureResearchExcludeColumns(db: SqlDatabase): string[] {
   const added: string[] = [];
@@ -337,6 +409,16 @@ export function ensureResearchExcludeColumns(db: SqlDatabase): string[] {
     if (!listTables(db).includes(table) || hasColumn(db, table, 'research_exclude')) continue;
     db.exec(`ALTER TABLE ${table} ADD COLUMN research_exclude INTEGER NOT NULL DEFAULT 0`);
     added.push(table);
+  }
+  const version = db.prepare('PRAGMA user_version').get<{ user_version: number }>()?.user_version ?? 0;
+  if (version >= 34 && !listTables(db).includes(DELETED_TABLE)) {
+    // As migration 034 writes it.
+    db.exec(`CREATE TABLE ${DELETED_TABLE} (
+      id    TEXT PRIMARY KEY,
+      kind  TEXT NOT NULL CHECK (kind IN ('notebook', 'file')),
+      at    TEXT NOT NULL
+    )`);
+    added.push(DELETED_TABLE);
   }
   return added;
 }

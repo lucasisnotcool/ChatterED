@@ -198,6 +198,8 @@ export interface ExportSummary {
   messages: number;
   privateTurns: number;
   notesDocs: number;
+  /** Stored explain comments on notes blocks (migration 033). */
+  explainComments: number;
   objectiveStates: number;
   usageRows: number;
   events: number;

@@ -3,12 +3,17 @@
  * set's reach, on a real migrated SQLite. The export end to end is in `export.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openTestDatabase } from '../db/driver.js';
 import { runMigrations } from '../db/migrations.js';
 import { openTestDb } from '../../test-support/db.js';
 import { seedFolder, seedManagedVault, seedNotebook } from '../../test-support/notebookseed.js';
+import { NotebookService } from '../notebooks/service.js';
 import {
+  DELETED_TABLE,
   applyResearchExclusion,
   ensureResearchExcludeColumns,
   excludedCounts,
@@ -111,6 +116,78 @@ describe('what is excluded', () => {
   });
 });
 
+describe('exclusion outlives deletion (migration 034)', () => {
+  const n = (db: ReturnType<typeof tree>, sql: string) => db.prepare(sql).get<{ n: number }>()!.n;
+  function withService<T>(db: ReturnType<typeof tree>, fn: (s: NotebookService) => Promise<T> | T): Promise<T> {
+    const root = mkdtempSync(join(tmpdir(), 'chattered-exclude-'));
+    const s = new NotebookService({ db, root, now: () => '2026-10-07T09:00:00.000Z', confirm: async () => true });
+    return Promise.resolve(fn(s)).finally(() => {
+      s.dispose();
+      rmSync(root, { recursive: true, force: true });
+    });
+  }
+
+  it("a deleted notebook's kept record stays out, by its own mark or a folder's; an included one's stays in", async () => {
+    const db = tree();
+    const own = seedNotebook(db, 'own', { researchExclude: true });
+    const inFolder = seedNotebook(db, 'deep', { folderId: 'fd_day' });
+    seedNotebook(db, 'kept');
+    await withService(db, async (s) => {
+      for (const id of [own.notebookId, inFolder.notebookId, 'nb_kept']) expect(await s.delete(id)).toEqual({ deleted: true });
+    });
+    // The record is kept in the app (the docs, the room, the chat, the explains) …
+    expect(n(db, `SELECT COUNT(*) AS n FROM notes_docs WHERE id IN ('doc_own', 'doc_deep', 'doc_kept')`)).toBe(3);
+    expect(n(db, `SELECT COUNT(*) AS n FROM notebooks`)).toBe(0);
+    // … and stays excluded, its sources' ids with it; the included notebook's does not.
+    expect(excludedNotebookIds(db)).toEqual(['nb_deep', 'nb_own']);
+    const scope = exclusionScope(db);
+    expect(scope.files).toEqual(expect.arrayContaining([own.lectureFile, own.tutorialFile, inFolder.lectureFile]));
+    expect(scope.docs.sort()).toEqual(['doc_deep', 'doc_deeptut', 'doc_own', 'doc_owntut']);
+    expect(scope.rooms.sort()).toEqual(['room_deep', 'room_own']);
+
+    applyResearchExclusion(db);
+    for (const [table, col] of [
+      ['notes_docs', 'id'],
+      ['block_comments', 'doc_id'],
+      ['rooms', 'id'],
+      ['messages', 'room_id'],
+      ['quiz_outcomes', 'room_id'],
+      ['llm_usage', 'scope'],
+    ] as const) {
+      expect(n(db, `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} LIKE '%own%' OR ${col} LIKE '%deep%'`), table).toBe(0);
+      expect(n(db, `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} LIKE '%kept%'`), table).toBeGreaterThan(0);
+    }
+    // The record of what was deleted is itself a trace: gone from the copy.
+    expect(n(db, `SELECT COUNT(*) AS n FROM ${DELETED_TABLE}`)).toBe(0);
+  });
+
+  it("deleting an excluded folder hands its mark to what moves up out of it, at any depth", async () => {
+    const db = tree();
+    seedNotebook(db, 'top', { folderId: 'fd_term' });
+    seedNotebook(db, 'deep', { folderId: 'fd_day' });
+    seedNotebook(db, 'kept', { folderId: 'fd_inner' });
+    const flag = (t: string, id: string) => db.prepare(`SELECT research_exclude AS f FROM ${t} WHERE id = @id`).get<{ f: number }>({ id })!.f;
+    await withService(db, (s) => {
+      // Deleting fd_week (under the marked fd_term): fd_day moves into fd_term, covered as before,
+      // and keeps its own flag clear, so unmarking fd_term would still release it.
+      expect(s.deleteFolder('fd_week')).toMatchObject({ deleted: true, movedFolders: 1 });
+      expect(flag('folders', 'fd_day')).toBe(0);
+      expect(excludedNotebookIds(db)).toEqual(['nb_deep', 'nb_top']);
+      // Deleting the marked fd_term itself: its notebook and subfolder move to the top, marked.
+      expect(s.deleteFolder('fd_term')).toMatchObject({ deleted: true, movedNotebooks: 1, movedFolders: 1 });
+    });
+    expect(flag('folders', 'fd_day')).toBe(1);
+    expect(flag('notebooks', 'nb_top')).toBe(1);
+    expect(flag('notebooks', 'nb_deep')).toBe(0);
+    expect(excludedNotebookIds(db)).toEqual(['nb_deep', 'nb_top']);
+    expect(excludedFolderIds(db)).toEqual(['fd_day']);
+    // An unmarked folder's delete marks nothing.
+    await withService(db, (s) => s.deleteFolder('fd_kept'));
+    expect(flag('folders', 'fd_inner')).toBe(0);
+    expect(excludedNotebookIds(db)).toEqual(['nb_deep', 'nb_top']);
+  });
+});
+
 describe('ensureResearchExcludeColumns', () => {
   it('adds the columns to a database that a later migration reached without 032, once', () => {
     const db = openTestDatabase(':memory:');
@@ -123,5 +200,14 @@ describe('ensureResearchExcludeColumns', () => {
     expect(ensureResearchExcludeColumns(db)).toEqual([]);
     db.prepare(`INSERT INTO folders (id, name, ord, created_at, updated_at, research_exclude) VALUES ('fd_a', 'A', 0, 't', 't', 1)`).run();
     expect(excludedFolderIds(db)).toEqual(['fd_a']);
+  });
+
+  it("creates migration 034's table on a database past 34 that lacks it, once", () => {
+    const db = openTestDatabase(':memory:');
+    runMigrations(db, MIGRATIONS_DIR);
+    db.exec(`DROP TABLE ${DELETED_TABLE}`);
+    expect(ensureResearchExcludeColumns(db)).toEqual([DELETED_TABLE]);
+    expect(ensureResearchExcludeColumns(db)).toEqual([]);
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM ${DELETED_TABLE}`).get()).toEqual({ n: 0 });
   });
 });

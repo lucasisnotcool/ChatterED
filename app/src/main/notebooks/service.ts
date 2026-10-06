@@ -38,6 +38,7 @@ import type { SqlDatabase } from '../db/driver.js';
 import { objectivesRepo } from '../db/repos/objectives.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
 import type { ConfirmRequest } from '../dochost.js';
+import { markMovedOutOfExcludedFolder, recordDeletedExclusion } from '../research/exclude.js';
 import { log } from '../log.js';
 import { extractFile, NO_TEXT_LAYER } from '../vault/extract.js';
 import { createVaultRepo, newVaultId, type VaultRepo } from '../vault/repo.js';
@@ -404,6 +405,9 @@ export class NotebookService {
     });
     if (!ok) return { deleted: false };
     inSavepoint(this.#db, () => {
+      // First, while its sources and folder still say what it was: an excluded notebook's kept
+      // record stays out of the research export after the delete (migration 034).
+      recordDeletedExclusion(this.#db, notebookId, this.#now());
       for (const s of view.sources) this.#deleteFileRows(s.fileId);
       this.#repo.remove(notebookId);
       this.#repo.clearHighWater(notebookId);
@@ -483,6 +487,8 @@ export class NotebookService {
     const notebooks = this.#repo.notebooksIn(folderId);
     const subfolders = childFolders(this.folders(), folderId);
     inSavepoint(this.#db, () => {
+      // An excluded folder's mark goes with what moves out of it (`research/exclude.ts`).
+      markMovedOutOfExcludedFolder(this.#db, folderId, up);
       for (const id of notebooks) this.#repo.setNotebookFolder(id, up);
       const now = this.#now();
       for (const f of subfolders) this.#repo.setFolderParent(f.id, up, this.#repo.nextFolderOrd(up), now);

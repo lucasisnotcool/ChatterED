@@ -20,10 +20,11 @@
  *                status; a solutions sheet's `key_for` points at the copied tutorial); the page
  *                high-water mark; `notes_docs` (new id and content key; `doc_json`, `version`,
  *                `learner_touched`, `overview_json` kept, the overview's source fingerprint
- *                re-pointed at the new file ids); `notes_slide_groups`, `notes_objective_blocks`
- *                and `tutorial_parts` per doc; the objective tree with its cards
- *                (`learning_trees`); the search index (`search_chunks` with their vectors, and
- *                `search_state`), so search works at once without re-embedding.
+ *                re-pointed at the new file ids); `notes_slide_groups`, `notes_objective_blocks`,
+ *                `tutorial_parts` and the stored explain comments (`block_comments`) per doc;
+ *                the objective tree with its cards (`learning_trees`); the search index
+ *                (`search_chunks` with their vectors, and `search_state`), so search works at once
+ *                without re-embedding.
  *   shared       everything keyed on the **bytes** of a source rather than on its id: rendered
  *                page images under `<userData>/notes-pages/<sha>/`, the page-geometry cache and
  *                `file_segmentations`. The copy has the same bytes, so it finds them.
@@ -81,6 +82,13 @@ export interface DuplicatedFolder {
 }
 
 type Row = Record<string, unknown>;
+
+/**
+ * The tables keyed on a doc that a copy carries, `doc_id` re-pointed: slide groups, objective
+ * blocks, tutorial parts, and (migration 033) the blocks' stored explain comments — block ids are
+ * kept in a copied `doc_json`, so each comment still lands on its block.
+ */
+const PER_DOC_TABLES = ['notes_slide_groups', 'notes_objective_blocks', 'tutorial_parts', 'block_comments'] as const;
 
 function mint(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -276,7 +284,7 @@ class Duplicator {
     copy('settings', 'key = @k', { k: `notebook_page_hwm:${plan.from}` }, (r) => ({ ...r, updated_at: now }));
 
     copy('notes_docs', `id IN (SELECT value FROM json_each(@d))`, { d: docIds }, (r) => ({ ...r, created_at: now, updated_at: now }));
-    for (const t of ['notes_slide_groups', 'notes_objective_blocks', 'tutorial_parts']) {
+    for (const t of PER_DOC_TABLES) {
       copy(t, `doc_id IN (SELECT value FROM json_each(@d))`, { d: docIds });
     }
     // The objective tree and its cards: keyed on the notebook (or, for a tutorial's, on its file).
@@ -498,7 +506,7 @@ export function verifyDuplicate(
     add(`doc ${to} doc_json (${a?.doc_json.length ?? 0} chars)`, 'same', same(a?.doc_json, b?.doc_json));
     // The overview's source fingerprint names file ids: equal once they are swapped.
     add(`doc ${to} overview_json`, 'same', same(a?.overview_json, b?.overview_json));
-    for (const t of ['notes_slide_groups', 'notes_objective_blocks', 'tutorial_parts']) {
+    for (const t of PER_DOC_TABLES) {
       if (tableExists(db, t)) add(`${t} of ${to}`, count(t, 'doc_id', from), count(t, 'doc_id', to));
     }
   }

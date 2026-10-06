@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { openTestDatabase, type SqlDatabase } from '../db/driver.js';
@@ -173,8 +173,9 @@ function fixtureDirs(): { logDir: string; userDataDir: string; workDir: string }
   return { logDir, userDataDir, workDir };
 }
 
-async function stage(db: SqlDatabase) {
+async function stage(db: SqlDatabase, extraLog: string[] = []) {
   const dirs = fixtureDirs();
+  for (const line of extraLog) appendFileSync(join(dirs.logDir, 'main.log'), `${line}\n`);
   const staged = await stageResearchExport({
     db,
     openCopy: (file) => openTestDatabase(file),
@@ -450,6 +451,7 @@ describe('exclude from research data', () => {
     'notes_slide_groups', 'notes_objective_blocks', 'tutorial_parts', 'learning_trees', 'learning_objective_states', 'search_chunks',
     'search_state', 'materials', 'rooms', 'participants', 'sessions', 'messages', 'message_revisions', 'whispers', 'turn_decisions',
     'events', 'ledger', 'ledger_history', 'rubric_scores', 'message_refs', 'outbox', 'quiz_outcomes', 'objective_activity', 'llm_usage',
+    'block_comments',
   ];
   /** A value in each table that names the notebook `tag`: its id, an id derived from it, or its marker. */
   const needle = (table: string, tag: string): string =>
@@ -475,7 +477,18 @@ describe('exclude from research data', () => {
     for (const table of TABLES) {
       for (const tag of ['in', 'out', 'own']) expect(mentioning(db, table, needle(table, tag)), `${table} ${tag}`).toBeGreaterThan(0);
     }
-    const { staged } = await stage(db);
+    // Log events that name each notebook by one of its ids, as the app writes them (`log.ts`).
+    const ev = (event: string, fields: Record<string, string>) => JSON.stringify({ ts: T, level: 'info', event, ...fields });
+    const logLines = (tag: string) => [
+      ev('notebook.opened', { notebook_id: `nb_${tag}` }),
+      ev('notes.saved', { doc_id: `doc_${tag}` }),
+      ev('turn.done', { room_id: `room_${tag}`, turn_id: `turn_${tag}` }),
+      ev('source.indexed', { file_id: `f_${tag}lec` }),
+    ];
+    const { staged } = await stage(db, [...logLines('in'), ...logLines('out'), ...logLines('own'), ev('folder.created', { folder_id: 'fd_termweek' })]);
+    const log = readFileSync(join(staged.dir, 'logs', 'main.log'), 'utf8');
+    for (const line of logLines('in')) expect(log).toContain(line);
+    expect(log).toContain('app.start');
     const copy = openTestDatabase(join(staged.dir, 'database', 'chattered.db'));
     try {
       for (const table of TABLES) {
@@ -499,7 +512,10 @@ describe('exclude from research data', () => {
     // No byte of any exported file, the database included, carries an excluded notebook's trace.
     for (const file of walk(staged.dir)) {
       const text = readFileSync(file).toString('latin1');
-      for (const trace of ['MARK_out', 'MARK_own', 'nb_out', 'nb_own', 'room_out', 'room_own', 'doc_out', 'doc_own', 'Exam term', 'Week 9']) {
+      for (const trace of [
+        'MARK_out', 'MARK_own', 'nb_out', 'nb_own', 'room_out', 'room_own', 'doc_out', 'doc_own', 'turn_out', 'turn_own',
+        'f_outlec', 'f_ownlec', 'fd_termweek', 'Exam term', 'Week 9',
+      ]) {
         expect(text.includes(trace), `${relative(staged.dir, file)} contains ${trace}`).toBe(false);
       }
     }
@@ -512,6 +528,7 @@ describe('exclude from research data', () => {
     expect(manifest.researchExclusion.notebooks).toBe(2);
     expect(manifest.researchExclusion.folders).toBe(2);
     expect(manifest.researchExclusion.rowsRemoved).toBeGreaterThan(60);
+    expect(manifest.researchExclusion.logLinesRemoved).toBe(9);
     expect(readFileSync(join(staged.dir, 'README.txt'), 'utf8')).toContain('Exclude from research data');
   });
 
@@ -531,6 +548,7 @@ describe('exclude from research data', () => {
       messages: 2,
       privateTurns: 1,
       notesDocs: 2,
+      explainComments: 1,
       objectiveStates: 1,
       usageRows: 3,
       events: 1,
@@ -544,7 +562,7 @@ describe('exclude from research data', () => {
     seedNotebook(db, 'a');
     seedNotebook(db, 'b');
     const { staged } = await stage(db);
-    expect(staged.manifest.researchExclusion).toEqual({ notebooks: 0, folders: 0, rowsRemoved: 0 });
+    expect(staged.manifest.researchExclusion).toEqual({ notebooks: 0, folders: 0, rowsRemoved: 0, logLinesRemoved: 0 });
     const copy = openTestDatabase(join(staged.dir, 'database', 'chattered.db'));
     try {
       expect(copy.prepare(`SELECT COUNT(*) AS n FROM notebooks`).get<{ n: number }>()!.n).toBe(2);

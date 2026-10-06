@@ -12,8 +12,8 @@
  *     live process), unless `--force`;
  *  2. backs the database up with `VACUUM INTO <dir>/backups/before-duplicate-<time>.db`, unless
  *     `--no-backup` (nothing is pruned: the app's own `app-before-v…` backups are left alone);
- *  3. brings the schema up to date with the app's migrations, and adds migration 032's columns if a
- *     later migration already ran without it (`ensureResearchExcludeColumns`);
+ *  3. brings the schema up to date with the app's migrations, and adds migration 032's columns and
+ *     034's table if a later migration already ran without them (`ensureResearchExcludeColumns`);
  *  4. duplicates, then checks the copy against the original (`verifyDuplicate`), and prints one
  *     JSON object: the new folder id, each new notebook id with its old → new doc and file ids,
  *     what was copied on disk, and every check. Exit code 1 if any check failed.

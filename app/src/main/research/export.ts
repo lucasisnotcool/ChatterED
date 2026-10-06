@@ -16,7 +16,9 @@
  * **Excluded notebooks and folders** (migration 032, `exclude.ts`): everything tied to a notebook
  * the learner marked "Exclude from research data", or that sits in a folder so marked, is deleted
  * from the snapshot before anything else reads it — its docs, its room and chat, its progress, its
- * search rows, its usage rows. The manifest counts what was left out; it never names it.
+ * search rows, its usage rows, its stored explain comments — and every log line that names one of
+ * its ids is dropped from the exported logs. The manifest counts what was left out; it never
+ * names it.
  *
  * What is **not** in it, by construction rather than by filtering: the export copies the database
  * and an allowlist of small files, so the PDFs (which never leave the learner's own folder), the
@@ -45,7 +47,7 @@ import {
   type AnonymiseReport,
 } from './anonymise.js';
 import { writeReadable, type ReadableReport } from './readable.js';
-import { applyResearchExclusion, excludedCounts, exclusionScope, type ExclusionReport } from './exclude.js';
+import { applyResearchExclusion, excludedCounts, exclusionScope, type ExclusionReport, type ExclusionScope } from './exclude.js';
 
 export const EXPORT_FORMAT = 'chattered-research-export';
 export const EXPORT_FORMAT_VERSION = 1;
@@ -83,8 +85,11 @@ export interface ResearchManifest {
     valuesScrubbed: number;
   };
   contents: ReadableReport & { logFiles: number };
-  /** Migration 032: how many notebooks and folders were left out, and how many rows went with them. */
-  researchExclusion: { notebooks: number; folders: number; rowsRemoved: number };
+  /**
+   * Migration 032: how many notebooks and folders were left out, how many rows went with them,
+   * and how many log lines were dropped for naming one of them (`dropLinesMentioning`).
+   */
+  researchExclusion: { notebooks: number; folders: number; rowsRemoved: number; logLinesRemoved: number };
   contact: string;
   files: ManifestFile[];
 }
@@ -159,8 +164,11 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
   let readable: ReadableReport;
   let schema: number;
   let excluded: ExclusionReport;
+  let traces: string[];
   try {
     copy.exec('PRAGMA journal_mode = DELETE');
+    // The ids the logs are filtered on (step 3), read before the rows that hold them go.
+    traces = logTraceIds(exclusionScope(copy));
     // First, so nothing below reads, scrubs or counts a row the learner kept out of the trial.
     excluded = applyResearchExclusion(copy);
     report = anonymiseDatabase(copy, scrub);
@@ -180,12 +188,15 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
   progress('logs', 'Adding the app logs…');
   await tick();
   let logFiles = 0;
+  let logLinesRemoved = 0;
   if (existsSync(deps.logDir)) {
     mkdirSync(join(dir, 'logs'), { recursive: true });
     for (const file of readdirSync(deps.logDir).filter(isLogFile).sort()) {
       const from = join(deps.logDir, file);
       if (!statSync(from).isFile()) continue;
-      writeFileSync(join(dir, 'logs', file), scrub(readFileSync(from, 'utf8')), 'utf8');
+      const kept = dropLinesMentioning(readFileSync(from, 'utf8'), traces);
+      logLinesRemoved += kept.removed;
+      writeFileSync(join(dir, 'logs', file), scrub(kept.text), 'utf8');
       logFiles += 1;
     }
   }
@@ -230,6 +241,7 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
       notebooks: excluded.notebooks,
       folders: excluded.folders,
       rowsRemoved: Object.values(excluded.rows).reduce((a, b) => a + b, 0),
+      logLinesRemoved,
     },
     contact: TRIAL_CONTACT_EMAIL,
     files,
@@ -252,6 +264,46 @@ export function zipDirectory(dir: string, zipPath: string, ditto = '/usr/bin/dit
       else resolve();
     });
   });
+}
+
+// ── Logs: the lines that name an excluded notebook ─────────────────────────────────────────
+
+/**
+ * Every id an excluded notebook's log lines can carry: the notebook, its folders, files, docs,
+ * materials, rooms, sessions and turns. The log writes ids, never names or text (`log.ts`), and
+ * every id is minted `<prefix>_<12 hex>` (a file's sha is 64 hex), so a substring match cannot
+ * catch an unrelated line. The content keys (`nb:<id>…`, a file's sha) carry one of these anyway.
+ */
+export function logTraceIds(scope: ExclusionScope): string[] {
+  return [
+    ...new Set([
+      ...scope.notebooks,
+      ...scope.folders,
+      ...scope.files,
+      ...scope.docs,
+      ...scope.materials,
+      ...scope.rooms,
+      ...scope.sessions,
+      ...scope.turns,
+      ...scope.shas,
+    ]),
+  ].filter((id) => id.length >= 4);
+}
+
+/**
+ * The log, without each line (one JSON event per line) that mentions any of `ids`. A line is
+ * dropped whole: an event about an excluded notebook says nothing the trial may keep.
+ */
+export function dropLinesMentioning(text: string, ids: readonly string[]): { text: string; removed: number } {
+  if (ids.length === 0) return { text, removed: 0 };
+  const re = new RegExp(ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'));
+  let removed = 0;
+  const kept = text.split('\n').filter((line) => {
+    if (!re.test(line)) return true;
+    removed += 1;
+    return false;
+  });
+  return { text: kept.join('\n'), removed };
 }
 
 // ── Settings ▸ Research trial: what the export will contain ─────────────────────────────────
@@ -286,6 +338,7 @@ export function exportSummary(db: SqlDatabase, logDir: string): ExportSummary {
     messages: kept('messages'),
     privateTurns: kept('whispers'),
     notesDocs: kept('notes_docs'),
+    explainComments: kept('block_comments'),
     objectiveStates: kept('learning_objective_states'),
     usageRows: kept('llm_usage'),
     events: kept('events'),
@@ -329,7 +382,8 @@ What is here
     events.jsonl           the app's event log, one event per line.
     files.json             which file ID is which file name, and which notebook is which.
     settings.json          your settings (API keys and other secrets removed).
-  logs/                  The app's diagnostic logs (sizes, timings and errors; no message text).
+  logs/                  The app's diagnostic logs (sizes, timings and errors; no message text),
+                         without the lines about a notebook you excluded (below).
   settings/              Small interface preferences (text size).
 
 How it was anonymised
@@ -341,8 +395,10 @@ How it was anonymised
   - The text of your lecture documents is removed (${excluded}), as is the
     search index of your sources. File and notebook names are kept.
   - Notebooks you marked "Exclude from research data", and every notebook in a folder you
-    marked so, are left out entirely: their notes, chats, progress, search index and AI-call
-    rows. The manifest says how many; it does not name them.
+    marked so, are left out entirely: their notes and the explanations stored on them, chats,
+    progress, search index and AI-call rows, and every log line that names one of them, its
+    files, notes or chats. This still holds after you delete such a notebook or folder. The
+    manifest says how many; it does not name them.
   - You are identified only by the random participant ID above.
   - What you typed is included exactly as you typed it.
 

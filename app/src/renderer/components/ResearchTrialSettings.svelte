@@ -39,6 +39,7 @@
     <p class="quiet">
       An export now would contain {plural(s.rooms, 'conversation')}, {plural(s.messages, 'message')},
       {plural(s.privateTurns, 'private-chat turn')}, {plural(s.notesDocs, 'notes document')},
+      {plural(s.explainComments, 'stored explanation')},
       {plural(s.objectiveStates, 'objective record')}, {plural(s.usageRows, 'AI call')} and
       {plural(s.events, 'logged event')} — a {size(s.databaseBytes)} database — plus
       {plural(s.logFiles, 'log file')} ({size(s.logBytes)}).

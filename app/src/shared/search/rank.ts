@@ -143,11 +143,16 @@ export function rankQuery(input: RankInput): RankOutput {
   const hits: SearchHit[] = [];
   const seenPageText = new Map<string, SearchHit>();
   /**
-   * `<notebook> <block>` of the note and explain hits so far: a block's explain and its group are
-   * one hit, whichever ranked first. (Two rows of one table stay two hits, as they always were.)
+   * A block's explain and the note chunk that holds it are one hit, whichever ranked first. An
+   * explain's block is mapped to the note chunks whose blocks contain it (a list item's comment to
+   * its list's chunk, through the member it names), and the dedupe keys on those chunks as well as
+   * on the block. `<notebook> <block>` of the note and explain hits so far, and the keys of the
+   * note chunks either kind has claimed. (Two rows of one table stay two hits, as they always were.)
    */
   const noteBlocks = new Set<string>();
   const explainBlocks = new Set<string>();
+  const noteChunks = new Set<string>();
+  const explainChunks = new Set<string>();
   for (const row of ranked) {
     if (hits.length >= limit) break;
     const held = notebooks.get(row.notebookId)!;
@@ -192,9 +197,11 @@ export function rankQuery(input: RankInput): RankOutput {
       const blockId = row.blockIds[0]!;
       const member = row.blockIds[1] ?? blockId;
       const seen = `${row.notebookId} ${blockId}`;
-      if (noteBlocks.has(seen) || explainBlocks.has(seen)) continue;
+      const owners = held.rows.filter((r) => r.kind === 'note' && (r.blockIds.includes(member) || r.blockIds.includes(blockId)));
+      if (noteBlocks.has(seen) || explainBlocks.has(seen) || owners.some((o) => noteChunks.has(o.key))) continue;
       explainBlocks.add(seen);
-      const owner = held.rows.find((r) => r.kind === 'note' && r.blockIds.includes(member));
+      for (const o of owners) explainChunks.add(o.key);
+      const owner = owners.find((r) => r.blockIds.includes(member));
       hits.push({
         key: row.key,
         kind: 'note',
@@ -218,8 +225,9 @@ export function rankQuery(input: RankInput): RankOutput {
     const unit = bestUnit(row);
     const blockId = unit?.blockIds[0] ?? row.blockIds[0] ?? null;
     const seen = `${row.notebookId} ${blockId ?? row.key}`;
-    if (explainBlocks.has(seen)) continue;
+    if (explainBlocks.has(seen) || explainChunks.has(row.key)) continue;
     noteBlocks.add(seen);
+    noteChunks.add(row.key);
     const text = unit?.text ?? row.text;
     const explain = explainOf(row.notebookId, blockId);
     hits.push({

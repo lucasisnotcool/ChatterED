@@ -1,7 +1,7 @@
 /**
  * A notebook with **every row family the app keeps for one**, for the research-exclusion and
  * duplicate tests: its sources (files, FTS rows, copies on disk), its notes doc and a tutorial's,
- * their per-doc tables, its objective tree, search rows, and a room with a whole chat record
+ * their per-doc tables (a stored explain comment included), its objective tree, search rows, and a room with a whole chat record
  * under it (participants, a session, messages and a revision, a private turn, a turn decision,
  * events, ledger rows, a ref, an outbox row), progress rows and usage rows.
  *
@@ -157,6 +157,17 @@ export function seedNotebook(
     });
     put(db, 'notes_slide_groups', { doc_id: doc, page: 2, group_key: `b_${tag}1`, group_title: `Group ${mark}`, at: SEED_T });
     put(db, 'notes_objective_blocks', { doc_id: doc, objective_id: `obj_${tag}`, block_id: `b_${tag}1`, ord: 0 });
+    // Migration 033: a stored explain comment on the notes doc's block.
+    put(db, 'block_comments', {
+      doc_id: doc,
+      block_id: `b_${tag}1`,
+      kind: 'explain',
+      body: `explain ${mark}`,
+      text_sha: 'sha',
+      model: 'sonnet',
+      created_at: SEED_T,
+      updated_at: SEED_T,
+    });
     put(db, 'tutorial_parts', { doc_id: tdoc, part_id: 'P1a', key_json: JSON.stringify({ answer: mark }), status: 'correct', updated_at: SEED_T });
     put(db, 'learning_trees', {
       file_id: nb,

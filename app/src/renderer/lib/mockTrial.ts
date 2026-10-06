@@ -42,6 +42,7 @@ export function createMockTrial(): TrialApi {
         messages: 42,
         privateTurns: 6,
         notesDocs: 2,
+        explainComments: 14,
         objectiveStates: 9,
         usageRows: 57,
         events: 120,

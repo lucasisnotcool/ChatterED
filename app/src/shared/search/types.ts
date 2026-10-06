@@ -24,7 +24,7 @@ export type ChunkKind = 'note' | 'page' | 'explain';
 export type ExplainMode = 'off' | 'append' | 'separate';
 export const EXPLAIN_MODES: readonly ExplainMode[] = ['off', 'append', 'separate'];
 /** What ships. Overridden by the setting `search_explain_mode` or `CHATTERED_SEARCH_EXPLAIN`. */
-export const DEFAULT_EXPLAIN_MODE: ExplainMode = 'separate';
+export const DEFAULT_EXPLAIN_MODE: ExplainMode = 'append';
 /** The `settings` key that overrides the default (`off`, `append` or `separate`). */
 export const SEARCH_EXPLAIN_SETTING = 'search_explain_mode';
 

@@ -325,10 +325,17 @@ it shows a hit block's explain and can match on it.
 
 - **Storage.** Migration 033: `block_comments(doc_id, block_id, kind 'explain', body, text_sha,
   model, created_at, updated_at)`, unique on (doc, block, kind), beside `doc_json`, never in it.
-  `text_sha` is stored as the writer computed it and never compared (no staleness check). The
+  `text_sha` is stored as the writer computed it and never compared (no staleness check).
+  **Known limitation:** so a learner who edits a commented line still sees the old explain, written
+  for the text as it was, until the comments are re-imported. The
   same migration widens `search_chunks.kind` with `'explain'`.
-- **Import.** `node app/scripts/import-comments.mjs --db <app.db> --in <file.jsonl> [--dry-run]`,
-  app quit, database at 033. A line whose doc or block does not exist is skipped and reported.
+- **Import.** `node app/scripts/import-comments.mjs --db <app.db> --in <file.jsonl> [--dry-run]
+  [--no-backup] [--force]`, app quit. Like the headless Duplicate, it refuses while the app holds
+  the database (`SingletonLock`), backs it up to `backups/before-import-comments-<time>.db`, and
+  migrates it with the app's own runner (plus the 032/034 safety net), so a database an older
+  build left at 032 needs no "open the new build once" first (`main/notes/importcommentscli.ts`).
+  `--dry-run` runs on a scratch copy and writes nothing. A line whose doc or block does not exist
+  is skipped and reported.
 - **In the notes.** A badge (Ellie's dot and "Explain") in the right gutter of each commented block
   at any depth, before the provenance chip, opens the explain in a popover with KaTeX. It folds to
   its dot while the line is hovered so the chip keeps its room; in a compact sheet it is the dot,
@@ -337,14 +344,17 @@ it shows a hit block's explain and can match on it.
   badge in the hit list and as a panel above the notes column. `via: 'explain'` says the hit came
   from the explain ("Matched Ellie's explanation").
 - **Matching, one switch** (`ExplainMode`; setting `search_explain_mode`, or the env var
-  `CHATTERED_SEARCH_EXPLAIN`; default `separate`):
+  `CHATTERED_SEARCH_EXPLAIN`; default `DEFAULT_EXPLAIN_MODE` in `shared/search/types.ts`, one
+  constant to flip, now `append`):
   - `off`: as before 033; explains are shown, never matched.
   - `append`: each note chunk's embedded text, and each block unit's, gets its blocks' explains
     appended (a list's items included); the text and snippet are the notes'. Every commented chunk
     re-embeds. `via` is a heuristic here: the query's words are in the explain and none in the text.
   - `separate`: each explain is a chunk of its own (`explain:<notebook>:<block>`, embedded as the
     header plus the explain) that resolves to its block; note chunks are untouched, so their vectors
-    are kept. A block's explain hit and its group's note hit are one hit, whichever ranks first.
+    are kept. A block's explain hit and its group's note hit are one hit, whichever ranks first:
+    the explain's block is mapped to the note chunk that holds it, so a comment on a list item and
+    the hit for its list are one hit too.
 - **Shared code.** The rows a notebook indexes (`shared/search/build.ts`) and the ranking
   (`shared/search/rank.ts`) moved out of `main/search/index.ts`, so the eval runs the same code.
 - **The eval (§8 step 6).** `node app/scripts/search-eval.mjs --db <app.db> --queries <q.json>
@@ -353,4 +363,6 @@ it shows a hit block's explain and can match on it.
   correct when it is in the query's notebook and its pages meet `gold_pages`. Vectors are cached by
   text hash and seeded from the database's own index; on a copy of the 7 Oct database every
   `off`-mode row hash matched the app's index, so the eval chunks exactly as the app does. Which
-  mode ships should be decided on the real query set, not the five-query smoke test.
+  mode ships should be decided on the real query set, not the five-query smoke test. On the 84-query
+  blind set, `append` scored best (S@1 .917, MRR .950), then `off` (S@1 .881), with `separate`
+  worst (S@1 .845), so the default is `append`; that preference is pending the final eval numbers.
