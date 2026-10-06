@@ -557,7 +557,8 @@ describe('Ellie and Max’s open question', () => {
         questionId: 'q_open',
         objectiveId: ELEMENT,
         questionText: QUESTION,
-        modelAnswer: { answer: KEY[0]!, points: KEY },
+        modelAnswer: KEY[0]!,
+        keyPoints: KEY,
       },
     },
   });

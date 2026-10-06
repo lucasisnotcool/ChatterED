@@ -4632,7 +4632,8 @@ export class RoomActor {
 
   /** The open question's hidden key points (decision 3), or none. */
   #openQuestionKey(): readonly string[] {
-    const points = this.#pendingQuiz?.modelAnswer?.points ?? [];
+    // X1's key (decision 3): `PendingQuiz.keyPoints`, written when Max asks.
+    const points = this.#pendingQuiz?.keyPoints ?? [];
     return points.map((p) => p.trim()).filter((p) => p.length > 0);
   }
 
