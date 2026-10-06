@@ -11,6 +11,10 @@ clean doc.** For a slide deck the short overview gives way to concept cards whos
 ingest; Max's question is offered when code judges the learner ready; questions and their answers
 stay out of the notes body. Where §11 and an earlier section differ, §11 wins. The earlier text
 stays as the record, with a dated note where it is superseded, and §11.8 lists exactly what changed.
+**Amended again 6 Oct afternoon (§11.10, #67): Max without riddles, a three-try cap, quiet help.**
+Max states a missing fact plainly, shows the answer after a third try short of *Well done*, and
+asks one thing at a time; a quiet learner gets Hint and Show me buttons instead of Ellie's guess.
+§11.10 wins over the rest of §11 where they differ, and §11.10.9 lists what it changes.
 
 **Where it lives.** On `main`, as the direction of the ChatterED app (Lucas's call, 1 Oct: "replace
 on main", over keeping it off main until `a2-submitted`). It was first framed as group-project
@@ -272,6 +276,10 @@ What happens once he has asked is unchanged: one open question at a time, feedba
 clarifying questions, give-up releases the answer and lowers the next question, Ellie's cue on
 silence while his question is open, closure.
 
+*Amended 6 Oct afternoon (§11.10):* Ellie's cue on silence, and Max's prompt about it, are gone
+from notebook questions. A quiet question shows Hint and Show me buttons instead, and a run of
+answers short of *Well done* ends at the third, with the answer.
+
 *Amended 2026-10-06 (§11.3, §11.4):* "only when asked" stands, but in practice a lesson's Start
 asked for the learner: in the five conversations from 3 Oct, all 30 of Max's opening questions came
 from a Start, and Quiz me was never pressed. Now a lesson's Start opens with Ellie walking the
@@ -480,6 +488,10 @@ keep §3.2's prose budget and shape, unless the card form carries over to them t
     a depth item, never as new sibling blocks.
   - One addition is about 120 words at most, within the card's depth budget. This replaces §4.2's
     25 words and the 90/50/25 limits of 2 Oct, and is enforced in code as they were.
+
+  *Amended 6 Oct afternoon (§11.10, decision 11):* whether a new answer updates her earlier note on
+  that paragraph or adds a new one is Ellie's choice, outside cards too. Her doc edit states the
+  choice, and code validates it.
 - **The learner's your-note slot stays.**
 
 ### 11.3 D2: Max on cue
@@ -488,6 +500,10 @@ keep §3.2's prose budget and shape, unless the card form carries over to them t
 
 - **A lesson's Start opens with Ellie walking the learner through the card.** Max does not ask at
   once. This reverses the Start of `collab-doc.md` §6, revised 1 Oct.
+
+  *Amended 6 Oct afternoon (§11.10, decision 15):* pressing Start again on a topic Ellie has
+  already walked through gets a one-line recap, then only what is not yet covered or was got
+  wrong. The walkthrough is not repeated.
 - **A pure function in `app/src/core/` computes readiness** per objective (or section). Its
   signals:
   - the card's depth opened;
@@ -497,6 +513,10 @@ keep §3.2's prose budget and shape, unless the card form carries over to them t
 
   Explain and Example are therefore recorded against the block's objective. Until now they were only
   logged.
+
+  *Amended 6 Oct afternoon (§11.10, decision 8):* a fifth signal is added. **Questions the learner
+  asks Ellie about a section count**, like Explain and Example, and are recorded against the
+  objective in the same way.
 - **When it is ready, the app offers *Ready to check this?*** as a chip or a button, and the learner
   presses it. **There is no unrequested quiz.** Quiz me works at any time, as before.
 - **An objective that is complete is never asked again**, including after a reset (New Conversation).
@@ -509,11 +529,25 @@ keep §3.2's prose budget and shape, unless the card form carries over to them t
   reply is regenerated once. On a second hit, the blank is dropped.
 - **A correction waits.** Feedback after a partial answer does not quote or state the part still
   missing. The correction is given when the question closes, by a *Well done*, a release or closure.
+
+  *Amended 6 Oct afternoon (§11.10, decision 1): superseded.* Carried into the prompts as "name
+  it, never state or quote it", this turned every feedback turn into a riddle. In two Lecture-sdm
+  quizzes, all 10 feedback turns pointed to a page that "settles it", and both ended in an angry
+  give-up. Now a missing word or fact is stated plainly and the learner is asked to use it; a
+  missing reasoning step gets one plain hint. A page reference is never the hint.
 - **After two partial answers, the learner is offered Show me** (a release, `collab-doc.md` §4.4)
   instead of the question shrinking to a one-word blank. This reverses "Two open follow-ups, then
   a blank" (`collab-doc.md` §4.2 and §4.5, 3 Oct).
+
+  *Amended 6 Oct afternoon (§11.10, decisions 2 and 7, and the bugs):* the offer no longer leaves
+  the run open-ended. **On the third answer that is not *Well done*, Max shows the answer** and
+  credits what was right, and asks nothing more. Show me is also a button on a question left quiet
+  for a few minutes, and a typed "show me" or "give answer" releases the answer.
 - **No "Why…?" tail after *Well done*.**
 - **One verdict per message**, and it must match the outcome that is logged.
+
+  *Amended 6 Oct afternoon (§11.10.7, the bugs):* a release must match the marking too. It never
+  says an attempt "already had the core idea" when that attempt was marked partial.
 
 ### 11.5 D4: a clean doc
 
@@ -521,7 +555,17 @@ keep §3.2's prose budget and shape, unless the card form carries over to them t
   it there or in the chat.
 - **When it resolves, it folds into a one-line self-check chip under the card**: the question in one
   line, and the learner's earned answer, collapsed.
+
+  *Amended 6 Oct afternoon (§11.10, decision 12):* after *Well done* the chip shows the learner's
+  answer **plus one sentence from Max, visibly marked as his**. This settles §11.9's open question
+  on the chip.
 - **A question resolved by a blank, a give-up or closure shows *revisit*, never *You got this*.**
+
+  *Amended 6 Oct afternoon (§11.10, decision 14 and the bugs): amended for a correct blank.* A
+  correct fill-in-the-blank after a release (the only blank still asked, §11.7) shows the learner's
+  answer with a small ***recall*** tag. It fills no progress and is never called *revisit*. In the
+  Lecture-sdm session a correct blank got *Well done* in the chat and *revisit* in the notes. A
+  wrong blank, a give-up and closure still show *revisit*.
 - **A released answer goes to the chat only.** Nothing is written into the doc for it.
 - **Nothing is written into the doc on an idle closure.**
 - **None of the following goes into the doc:**
@@ -544,6 +588,8 @@ decision. It is recorded here because the stale lines are part of why the notes 
   (§4.2).
 - What fills the bar (§4.3, §7), and Max's roles once he has asked (§5.2): one open question,
   verdicts, clarifying, release on a give-up, a lower question after it, Ellie's cue, closure.
+  *Amended 6 Oct afternoon (§11.10, decision 7):* not Ellie's cue, which is removed from notebook
+  questions.
 - The after-release blank (`collab-doc.md` §4.5, 1 Oct), now under §11.4's check.
 - Recommended blocks other than a slide's own table, and the Insert menu (§5.3).
 - The chat (§6) and the layout (§8).
@@ -595,6 +641,9 @@ In `collab-doc.md`:
   out of the notes. Whether it also changes the sheet is a joint call with Valerie, and until it is
   made, the sheet's rule stands. The same goes for the "one line on why it works" after a sheet's
   Show answer.
+  *Proposed to Valerie on #66, 6 Oct* (§11.10.8), joint and not yet decided: text the learner
+  pastes is marked *pasted*; one hint chip per part of the sheet; no "why does it work?" on the
+  sheet. Until she agrees, tutorial sheets stay as they are.
 - **DG4** ("Short: room to think, based on task size", #66) is frozen for the group. The core layer
   keeps the notes short to read, and the notebook is A1's design, not claimed by the group. Whether
   #66 should note this is a joint call.
@@ -604,5 +653,158 @@ In `collab-doc.md`:
 - **The *you got this* chip.** It holds the learner's answer. Whether Max's one corrective sentence
   (`collab-doc.md` §5, 25 Sep) survives in it, or goes to the chat only, is left to the build to
   report.
+  *Settled 6 Oct afternoon (§11.10, decision 12):* it survives as one sentence, marked as Max's.
 - **The learner's own questions** (`collab-doc.md` §5.6) are the learner's text in the doc and are
   not moved to the rail by this amendment.
+
+### 11.10 Amendment of 6 Oct afternoon: Max without riddles, a three-try cap, quiet help
+
+**Status.** Decided by Lucas on 6 Oct 2026, in two comments on #67, after studying a lecture on
+Markov decision processes and reinforcement learning (the Lecture-sdm notebook, build 413) that
+afternoon. The decisions keep their numbers from #67 (1–15), and the bugs are listed with them.
+Where this section and §11.1–§11.9 differ, this section wins. The earlier text stays as the record,
+with a dated note at each rule it changes, and §11.10.9 lists them.
+
+#### 11.10.1 The evidence
+
+Two quizzes on one objective, both asked from Try here. Each ran to five marked answers, every one
+*Partly there*, and each ended in anger. The session's log is not committed. The numbers:
+
+- **Quiz one** (15:29–15:35). A two-part question ("why does the MDP need that sum to equal 1, and
+  what would go wrong…"), opened with "I'm testing the statement, not you".
+  - Five answers, five *Partly there*. Each of the five feedback turns pointed to a page that
+    "settles it" (pp. 12, 6, 6, 7, 7), never to what was missing: that $T(s,a,\cdot)$ is a
+    probability distribution.
+  - The fourth answer said the outcomes must total 1, and the fifth gave a reason. Both were
+    marked partial.
+  - It ended "fuck i give up", 5 min 40 s after the question. The release then said "Your attempt
+    already had the core idea", against five partial marks, and filed the question as *partly
+    yours*.
+  - The learner asked "so what on earth were you trying to tell me??". Ellie gave the point in one
+    analogy, the faces of a die.
+- **Quiz two** (15:38–15:53). Two-part again ("what does that sentence mean, and how is it
+  different…"), with the same opener.
+  - Five marked answers, five *Partly there*. All five feedback turns pointed to p. 14 (or p. 14
+    and p. 15) to "settle" the missing part.
+  - "huh what do you want" was rightly not marked.
+  - "show me", the button's own label, was read as a request for background. Max gave a
+    thermostat analogy and asked the same question again.
+  - "fuck just give answer" was marked *Partly there*, as the fifth try.
+  - It ended "GIVE UP", 15 min 24 s after the question. The release again said the attempt
+    "already had" part of it.
+- **Between the two**, a fill-in-the-blank after the release was answered correctly. It got
+  *Well done* in the chat and *revisit* in the notes.
+- **A second Start** on the same objective, a minute after Ellie's die analogy, repeated her whole
+  walkthrough.
+
+In all, 10 of 10 feedback turns were *Partly there*, and all 10 pointed to a page instead of
+saying what was missing.
+
+#### 11.10.2 How Max runs a question
+
+1. **No riddles.** When part of an answer is missing, Max says it plainly. A missing word or fact
+   is stated outright, and the learner is asked to use it. A missing reasoning step gets one plain
+   hint: an analogy, or the first step. "p. N settles it", or "the page that settles it", is never
+   a hint. A code check rejects a feedback turn whose only pointer to the missing part is a page
+   reference, and regenerates it once. This replaces §11.4's "a correction waits", which the
+   prompts carried as "name it, never state or quote it".
+2. **Three tries, then the answer.** On the third answer that is not *Well done*, Max asks nothing
+   more. He shows the answer and credits what was right. This is enforced in code
+   (`core/pitch.ts`, `followUpPlan`): no "try once more" after the third.
+3. **The idea in your own words earns *Well done*.** When Max asks, he also writes a short model
+   answer with its one to three essential points. It is stored with the question and kept from the
+   learner, like a tutorial's answer key. Marking compares the meaning of the learner's answer with
+   those points, and any wording passes. Max names the proper term in his reply afterwards. The
+   learner never has to hunt for the slide's exact word.
+4. **One question asks one thing.** A pure check in `core/` catches a two-part question before it
+   is shown ("…, and …?", two question marks, "what … and how …"). The question is regenerated
+   once, or else only its first ask is kept. The second part can be a later question. Both
+   Lecture-sdm quizzes were in two parts.
+5. **No "I'm testing the statement, not you"** before a question (safeguard S6). It is removed from
+   the prompts and stripped in code. §11.5 had already kept it out of the doc; now it is out of
+   the chat too.
+
+#### 11.10.3 Help while a question is open
+
+6. **Ellie explains but does not answer Max's open question**, in the chat or privately. This is
+   the tutorial-sheet rule ("explain, never solve", `tutorials.md`), now for notebook questions too.
+7. **No interruptions when the learner goes quiet.** Ellie's planted guess (`rule:ellie_cue`) and
+   Max's prompt about it (`rule:max_prompt`) are removed from notebook questions. After a few
+   minutes (a named constant, about 3 minutes, not counting time while the composer holds text),
+   **Hint** and **Show me** buttons appear on the open question in the rail. Hint gives one plain
+   hint, in decision 1's style. Show me releases the answer.
+
+#### 11.10.4 Readiness and progress
+
+8. **Questions to Ellie about a section count toward *Ready to check this?***, like Explain and
+   Example. They are recorded against the objective as those are.
+9. **A topic is done only when every concept card it covers has a *Well done*.** Until then it is
+   partly done. Tutorial parts fill the same bar, and their behaviour is unchanged.
+10. **A question the learner sets and answers themselves counts toward nothing.** This was already
+    the case, and is now decided.
+
+#### 11.10.5 The notes
+
+11. **Ellie chooses** whether a new answer updates her earlier note on that paragraph or adds a new
+    one, outside cards too. Her doc edit states the choice, and code validates it.
+12. **The self-check chip after *Well done*** shows the learner's answer plus one sentence from
+    Max, visibly marked as his.
+
+#### 11.10.6 Decided later the same afternoon
+
+13. **After a try, Max says only what is new.** Two or three sentences: what changed since the last
+    try, and what is still needed. He does not restate what the learner already got. Code caps the
+    feedback at about 60 words, formulas not counted.
+14. **A correct fill-in-the-blank after a release** shows the learner's answer with a small
+    ***recall*** tag. It fills no progress, and it is never called *revisit*.
+15. **Pressing Start again** on a topic Ellie has already walked through gets a one-line recap,
+    then only what is not yet covered or was got wrong, from the objective's outcomes and activity.
+    The walkthrough is not repeated.
+
+#### 11.10.7 The bugs
+
+These needed no decision.
+- **A typed "show me" was read as a request for background.** In `core/attempt.ts`, the strong
+  "tell me / show me" background rule runs before the give-up list. Max gave an analogy and asked
+  the same question again.
+- **"fuck just give answer" was marked *Partly there*.** "give answer" is not on the give-up list;
+  only "give me the answer" is.
+- **A correct blank got *Well done* in the chat and *revisit* in the notes.** `room/flow.ts`
+  marks every blank as revisit. Decision 14 is the fix.
+
+The rule that follows: **a typed request for the answer releases it.** A bare "show me", "give
+answer", "just give (me) (the) answer", "answer pls" and "just tell me", in any case and with or
+without swearing, release the answer. A demand or a complaint is never marked as an attempt.
+"huh what do you want" is a clarifying question, as now.
+
+Fixed in the same build, from the same session: **a release matches the marking.** It never says
+"your attempt already had the core idea" when that attempt was marked partial. If the model
+answer's essential points (decision 3) were all in the learner's answers, the outcome is the
+learner's (*complete*), not *partly yours*.
+
+#### 11.10.8 Joint items, proposed to Valerie on #66
+
+These touch the tutorial sheet, which is a joint call (§11.9), so they are proposals, not
+decisions: text the learner pastes is marked *pasted*; one hint chip per part of the sheet; no
+"why does it work?" on the sheet. Until Valerie agrees, tutorial sheets stay as they are.
+
+#### 11.10.9 What this supersedes, and caveats
+
+In this brief (each with a dated note):
+- §11.4: "a correction waits" (decision 1); the open-ended run after "offer Show me" (decision 2);
+  and "one verdict per message" gains the release (the bugs).
+- §11.3: the readiness signals gain questions to Ellie (decision 8); Start again (decision 15).
+- §11.5: the chip gains Max's marked sentence (decision 12); a correct blank shows *recall*, not
+  *revisit* (decision 14).
+- §11.2: Ellie's choice to update or add (decision 11).
+- §11.7: "Ellie's cue" no longer stands for notebook questions. §5.2's "Ellie's cue on silence"
+  likewise.
+- §11.9: the open question on the chip is settled, and the joint items are added as proposals.
+
+In `collab-doc.md`: §4.3 (Ellie's cue and Max's prompt), with §4.2's silence row, for notebook
+questions. §4.7's invariant that Ellie's mistake is corrected then has no cue to check on them.
+
+**Caveats.** This rests on one session of about 25 minutes, by one learner who is also the
+developer. The values (three tries, about 3 minutes, about 60 words) are set in code and may be
+tuned on use. The model answer of decision 3 is the model's, so marking against it is only as good
+as its essential points.

@@ -304,6 +304,14 @@ it) and the learner has not attempted:
 This fires **once per question**. After it, silence is left alone until the closure rule (§4.7).
 This is the peer of Xu et al. (2026): something to improve on, in place of an answer.
 
+*Amended 6 Oct afternoon (`notebooks.md` §11.10, decision 7): removed for notebook questions.*
+Ellie's planted guess (`rule:ellie_cue`) and Max's prompt about it (`rule:max_prompt`) no longer
+fire on a notebook question, and §4.2's silence row goes with them. A quiet learner is not
+interrupted. After a few minutes (about 3, not counting time while the composer holds text),
+**Hint** and **Show me** buttons appear on the open question instead: Hint gives one plain hint,
+and Show me releases the answer (§4.4). §4.7's second invariant then has no cue to check on these
+questions. The text above stays as the record.
+
 ### 4.4 Releasing the answer
 
 `classifyLearnerTurn` (kept, `room/attempt.ts`) gains a `give_up` class that absorbs today's
