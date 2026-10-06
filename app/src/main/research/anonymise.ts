@@ -174,6 +174,15 @@ export function anonymiseDatabase(db: SqlDatabase, scrub: Scrub): AnonymiseRepor
 }
 
 function anonymiseInTransaction(db: SqlDatabase, scrub: Scrub): AnonymiseReport {
+  // The copy's triggers go first. Migration 029's keep the live record from being rewritten, which
+  // is exactly what scrubbing this copy does: left in, a scrubbed `messages.body` would file its
+  // unscrubbed text in `message_revisions`, and a scrubbed whisper would abort the export.
+  const triggers = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'`)
+    .all<{ name: string }>()
+    .map((r) => r.name);
+  for (const name of triggers) db.exec(`DROP TRIGGER IF EXISTS ${quoteIdent(name)}`);
+
   const droppedTables = virtualTables(db);
   for (const name of droppedTables) db.exec(`DROP TABLE IF EXISTS ${quoteIdent(name)}`);
 
