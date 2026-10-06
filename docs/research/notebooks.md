@@ -6,8 +6,8 @@ the **source of truth** for the three areas below from this date. It amends
 `collab-doc.md` (#48), which stays the source of truth for everything this file does not change;
 §10 lists exactly what is superseded. Code that contradicts this brief is a bug in the code.
 
-**Amended 6 Oct 2026 (Lucas's decision, §11): notes that replace the slides, Max on cue, a clean
-doc.** For a slide deck the short overview gives way to concept cards whose depth is written at
+**Amended 6 Oct 2026 (Lucas's decision, §11, #67): notes that replace the slides, Max on cue, a
+clean doc.** For a slide deck the short overview gives way to concept cards whose depth is written at
 ingest; Max's question is offered when code judges the learner ready; questions and their answers
 stay out of the notes body. Where §11 and an earlier section differ, §11 wins. The earlier text
 stays as the record, with a dated note where it is superseded, and §11.8 lists exactly what changed.
@@ -381,7 +381,7 @@ list is §11.8. "Answers in place" now means in the side rail (§11.5).
 **Status.** Decided by Lucas on 6 Oct 2026, after a day of studying one lecture (Markov decision
 processes, 60 slides) in the app on 5 Oct and an analysis of what that left behind. This section
 is the source of truth for what it covers and wins over §0–§10 and `collab-doc.md` where they
-differ. It amends #58 (this brief), #56 and #48. The goal it serves is Lucas's: **the notes should
+differ. Recorded as #67. It amends #58 (this brief), #56 and #48. The goal it serves is Lucas's: **the notes should
 replace studying the slides, without being verbose.**
 
 **The evidence.** It is Lucas's own dogfooding of the app, and nothing else. It comes from the stored
