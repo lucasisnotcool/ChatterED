@@ -5,11 +5,15 @@
 //
 //   node app/scripts/search-eval.mjs --db <app.db> --queries <queries.json> --mode off|append|separate|all
 //        [--folder <fd_id>] [--map slug=nb_id,… | --map <map.json>] [--model-dir <dir>]
-//        [--cache <dir>] [--limit 40] [--json <out.json>] [--verbose]
+//        [--cache <dir>] [--limit 40] [--json <out.json>] [--verbose] [--no-tutorials]
 //
 // queries.json is an array of {id, notebook | slug, query, gold_pages: [int], kind}. A hit is
 // correct when it is in that notebook and its pages intersect gold_pages. `notebook`/`slug` is
 // resolved through --map, then as a notebook id, then as an exact notebook name.
+//
+// The index holds each notebook's tutorial sheets' docs (sources with the role `tutorial`) as the
+// app's does, so a hit in a sheet counts when its pages (the sheet's page, and the lecture pages
+// its solution cites) meet gold_pages. `--no-tutorials` leaves them out, for comparison.
 //
 // The scope is every notebook (or --folder and everything under it), as the search page's scope
 // chip would have it. The database is opened read-only. Embeddings are cached on disk by text
@@ -41,6 +45,7 @@ const cacheDir = resolve(arg('--cache', join(appDir, 'node_modules', '.cache', '
 const limit = Number.parseInt(arg('--limit', '40'), 10);
 const jsonOut = arg('--json', null);
 const verbose = process.argv.includes('--verbose');
+const withTutorials = !process.argv.includes('--no-tutorials');
 if (!dbPath || !queriesPath) fail('usage: --db <app.db> --queries <queries.json> --mode off|append|separate|all [--folder <id>] [--map slug=nb,…]');
 if (!existsSync(dbPath)) fail(`no database at ${dbPath}`);
 
@@ -76,9 +81,20 @@ const inScope = new Set(notebookRows.map((n) => n.id));
 for (const q of queries) if (!inScope.has(q.notebook)) console.warn(`  query ${q.id}: its notebook ${q.notebook} is outside the scope; it can only miss`);
 
 const pageQuery = db.prepare('SELECT CAST(page AS INTEGER) AS page, body FROM file_text WHERE file_id = ? ORDER BY CAST(page AS INTEGER)');
+// The notebook's notes doc and, unless --no-tutorials, its tutorial sheets' docs (as main/db/repos/comments.ts).
 const commentsOf = has('block_comments')
   ? db.prepare(
-      `SELECT c.block_id, c.body FROM block_comments c JOIN notes_docs d ON d.id = c.doc_id WHERE d.content_sha = ? AND c.kind = 'explain'`,
+      `SELECT c.block_id, c.body FROM block_comments c JOIN notes_docs d ON d.id = c.doc_id
+       WHERE (d.content_sha = @k OR (@tut = 1 AND substr(d.content_sha, 1, length(@t)) = @t)) AND c.kind = 'explain'`,
+    )
+  : null;
+const hasRoles = db.prepare("SELECT 1 FROM pragma_table_info('notebook_sources') WHERE name = 'role'").get() !== undefined;
+// As main/search/index.ts reads them: a source whose role is `tutorial`, with its doc.
+const tutorialsOf = hasRoles
+  ? db.prepare(
+      `SELECT s.file_id, s.display_name, d.doc_json, d.title FROM notebook_sources s
+       JOIN notes_docs d ON d.content_sha = 'nb:' || s.notebook_id || ':tut:' || s.file_id
+       WHERE s.notebook_id = ? AND s.role = 'tutorial' ORDER BY s.ord, s.added_at, s.file_id`,
     )
   : null;
 
@@ -88,11 +104,16 @@ function inputsOf(nb) {
     .prepare('SELECT file_id, display_name, page_base, status FROM notebook_sources WHERE notebook_id = ? ORDER BY ord, added_at, file_id')
     .all(nb.id)
     .map((s) => ({ displayName: s.display_name, pageBase: s.page_base, status: s.status, pages: s.status === 'ready' ? pageQuery.all(s.file_id) : [] }));
-  const bodies = new Map((commentsOf ? commentsOf.all(`nb:${nb.id}`) : []).map((c) => [c.block_id, c.body]));
-  return { doc: doc ? { docJson: doc.doc_json, title: doc.title.trim() || nb.name } : null, sources, bodies };
+  const tutorials = withTutorials && tutorialsOf
+    ? tutorialsOf.all(nb.id).map((t) => ({ fileId: t.file_id, docJson: t.doc_json, title: t.title.trim() || kit.stripExt(t.display_name) }))
+    : [];
+  const keys = { k: `nb:${nb.id}`, t: `nb:${nb.id}:tut:`, tut: withTutorials ? 1 : 0 };
+  const bodies = new Map((commentsOf ? commentsOf.all(keys) : []).map((c) => [c.block_id, c.body]));
+  return { doc: doc ? { docJson: doc.doc_json, title: doc.title.trim() || nb.name } : null, sources, tutorials, bodies };
 }
 const inputs = new Map(notebookRows.map((nb) => [nb.id, inputsOf(nb)]));
 const commentCount = [...inputs.values()].reduce((n, i) => n + i.bodies.size, 0);
+const tutorialCount = [...inputs.values()].reduce((n, i) => n + i.tutorials.length, 0);
 
 // ── the vector cache ───────────────────────────────────────────────────────────────────────
 mkdirSync(cacheDir, { recursive: true });
@@ -173,9 +194,10 @@ async function queryVec(text) {
 }
 
 // ── one run per mode ───────────────────────────────────────────────────────────────────────
-const report = { db: dbPath, folder: folderId, notebooks: notebookRows.length, comments: commentCount, seeded, runs: {} };
+const report = { db: dbPath, folder: folderId, notebooks: notebookRows.length, tutorials: tutorialCount, comments: commentCount, seeded, runs: {} };
 console.log(
-  `${notebookRows.length} notebooks in scope${folderId ? ` (folder ${folderId})` : ''}, ${commentCount} explain comments, ` +
+  `${notebookRows.length} notebooks in scope${folderId ? ` (folder ${folderId})` : ''}, ` +
+    `${withTutorials ? `${tutorialCount} tutorial sheets` : 'tutorial sheets left out (--no-tutorials)'}, ${commentCount} explain comments, ` +
     `${queries.length} queries; ${seeded} vectors seeded from the database`,
 );
 for (const mode of modes) {
@@ -184,7 +206,7 @@ for (const mode of modes) {
   for (const nb of notebookRows) {
     const input = inputs.get(nb.id);
     const explains = new Map([...input.bodies].map(([b, body]) => [b, kit.explainPlainText(body)]));
-    const rows = kit.notebookRows({ notebookId: nb.id, doc: input.doc, sources: input.sources, explains, explainMode: mode });
+    const rows = kit.notebookRows({ notebookId: nb.id, doc: input.doc, sources: input.sources, tutorials: input.tutorials, explains, explainMode: mode });
     allRows.push(...rows);
     notebooks.set(nb.id, { name: nb.name, rows, bodies: input.bodies });
   }
@@ -216,15 +238,24 @@ for (const mode of modes) {
     const qv = await queryVec(q.query);
     const { hits } = kit.rankQuery({ query: q.query, qv, notebooks: held, limit, explainMode: mode });
     const s = kit.scoreQuery(q, hits);
-    scored.push({ ...s, top: hits.slice(0, 5).map((h) => ({ kind: h.kind, via: h.via, notebook: h.notebookName, pages: h.pages, blockId: h.blockId, snippet: h.snippet.slice(0, 100) })) });
+    scored.push({
+      ...s,
+      top: hits.slice(0, 5).map((h) => ({ kind: h.kind, via: h.via, notebook: h.notebookName, tutorial: h.tutorial ? h.tutorial.label ?? h.tutorial.title : null, pages: h.pages, blockId: h.blockId, snippet: h.snippet.slice(0, 100) })),
+    });
   }
   const summary = kit.summarise(scored);
-  const counts = allRows.reduce((m, r) => ((m[r.kind] = (m[r.kind] ?? 0) + 1), m), {});
+  const counts = allRows.reduce((m, r) => {
+    const k = r.key.startsWith('tut:') ? 'tutorial note' : r.kind;
+    m[k] = (m[k] ?? 0) + 1;
+    return m;
+  }, {});
   console.log(`\n${kit.formatSummary(summary, `mode ${mode}: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ')}; ${embedded} embedded this run`)}`);
   if (verbose) {
     for (const s of scored) {
       console.log(`  ${s.id.padEnd(10)} rank ${String(s.rank ?? '-').padStart(2)}  ${s.viaExplain ? 'via explain ' : ''}${s.query}`);
-      for (const [i, t] of s.top.entries()) console.log(`      ${i + 1}. ${t.kind}${t.via === 'explain' ? '/explain' : ''} ${t.notebook} p.${t.pages.join(',')}  ${t.snippet}`);
+      for (const [i, t] of s.top.entries()) {
+        console.log(`      ${i + 1}. ${t.kind}${t.via === 'explain' ? '/explain' : ''}${t.tutorial ? ` [tutorial ${t.tutorial}]` : ''} ${t.notebook} p.${t.pages.join(',')}  ${t.snippet}`);
+      }
     }
   }
   report.runs[mode] = { summary, queries: scored };

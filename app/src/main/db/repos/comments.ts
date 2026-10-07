@@ -32,14 +32,20 @@ function toView(row: CommentRow): BlockCommentView {
 export interface CommentsRepo {
   /** A doc's comments, in block-id order. */
   forDoc(docId: string, kind?: BlockCommentKind): BlockCommentView[];
-  /** A notebook's doc's comments (`notes_docs.content_sha = 'nb:<id>'`). */
+  /**
+   * A notebook's docs' comments: its notes doc's (`content_sha = 'nb:<id>'`) and its tutorial
+   * sheets' (`'nb:<id>:tut:<fileId>'`, 2026-10-07), as search reads them.
+   */
   forNotebook(notebookId: string, kind?: BlockCommentKind): BlockCommentView[];
-  /** Changes whenever a notebook's comments do: count and newest write. For search's freshness. */
+  /** Changes whenever a notebook's docs' comments do: count and newest write. For search's freshness. */
   signature(notebookId: string): string;
 }
 
+/** The notebook's notes doc, or one of its tutorial sheets' docs (`tutorialContentKey`). */
+const NOTEBOOK_DOCS = `(d.content_sha = @k OR substr(d.content_sha, 1, length(@t)) = @t)`;
 const BY_NOTEBOOK = `SELECT c.* FROM block_comments c JOIN notes_docs d ON d.id = c.doc_id
-  WHERE d.content_sha = @k AND c.kind = @kind ORDER BY c.block_id`;
+  WHERE ${NOTEBOOK_DOCS} AND c.kind = @kind ORDER BY c.block_id`;
+const docKeys = (notebookId: string): { k: string; t: string } => ({ k: `nb:${notebookId}`, t: `nb:${notebookId}:tut:` });
 
 export function commentsRepo(db: SqlDatabase): CommentsRepo {
   return {
@@ -51,15 +57,15 @@ export function commentsRepo(db: SqlDatabase): CommentsRepo {
       ).map(toView);
     },
     forNotebook(notebookId, kind = 'explain') {
-      return plainAll(db.prepare(BY_NOTEBOOK).all<CommentRow>({ k: `nb:${notebookId}`, kind })).map(toView);
+      return plainAll(db.prepare(BY_NOTEBOOK).all<CommentRow>({ ...docKeys(notebookId), kind })).map(toView);
     },
     signature(notebookId) {
       const row = db
         .prepare(
           `SELECT COUNT(*) AS n, MAX(c.updated_at) AS at FROM block_comments c JOIN notes_docs d ON d.id = c.doc_id
-           WHERE d.content_sha = @k`,
+           WHERE ${NOTEBOOK_DOCS}`,
         )
-        .get<{ n: number; at: string | null }>({ k: `nb:${notebookId}` });
+        .get<{ n: number; at: string | null }>(docKeys(notebookId));
       return `${String(row?.n ?? 0)}@${row?.at ?? ''}`;
     },
   };

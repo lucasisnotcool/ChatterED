@@ -12,6 +12,7 @@
   import { folderPath } from '../../../shared/folders.js';
   import type { HitFilter, SearchStore } from '../../lib/searchstore.svelte.js';
   import { folderTree } from '../../lib/notebookview.js';
+  import { hitWhere } from '../../lib/searchhits.js';
   import ExplainNote from './ExplainNote.svelte';
 
   let {
@@ -38,13 +39,9 @@
   const FILTERS: { id: HitFilter; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'note', label: 'Notes' },
+    { id: 'tutorial', label: 'Tutorials' },
     { id: 'page', label: 'Slides' },
   ];
-
-  function where(h: SearchHit): string {
-    if (h.kind === 'page') return `${h.notebookName} · slide ${h.page}`;
-    return [h.notebookName, ...h.section].filter(Boolean).join(' › ');
-  }
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -70,8 +67,8 @@
     <input
       bind:this={inputEl}
       type="search"
-      placeholder={`Search slides and notes in ${scopeName}`}
-      aria-label="Search slides and notes"
+      placeholder={`Search slides, notes and tutorials in ${scopeName}`}
+      aria-label="Search slides, notes and tutorials"
       autocomplete="off"
       spellcheck="false"
       value={search.query}
@@ -120,7 +117,7 @@
     {#if !search.query.trim()}
       <div class="hl-empty">
         <p>Type what you remember. A word, a phrase, a question, even misspelt.</p>
-        <p class="hl-hint">Searches the slides and notes of every notebook in scope, offline. Chats are not searched.</p>
+        <p class="hl-hint">Searches the slides, notes and tutorial sheets of every notebook in scope, offline. Chats are not searched.</p>
       </div>
     {:else if search.result && search.hits.length === 0 && !search.searching}
       <div class="hl-empty"><p>Nothing in {scopeName} matches “{search.result.query}”.</p></div>
@@ -140,10 +137,13 @@
             <div class="hl-top">
               {#if h.kind === 'page'}
                 <svg class="hl-kind" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-label="Slide"><rect x="1.5" y="3" width="13" height="9" rx="1.2" /><path d="M5 14.5h6" /></svg>
+              {:else if h.tutorial}
+                <!-- A sheet with a pencil: a tutorial's worked part, not the lecture notes. -->
+                <svg class="hl-kind hl-kind-tut" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-label="Tutorial"><path d="M3.5 1.8h6L12 4.3v4.2" /><path d="M3.5 1.8v12.4h4.2" /><path d="M5.5 6h4M5.5 8.5h2.5" /><path d="m9.6 14.6.4-2 3.6-3.6 1.6 1.6-3.6 3.6z" stroke-linejoin="round" /></svg>
               {:else}
                 <svg class="hl-kind" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-label="Note"><path d="M4 1.8h5.5L12.5 5v9.2H4z" /><path d="M6 8h4.5M6 10.5h4.5" /></svg>
               {/if}
-              <span class="hl-where">{where(h)}</span>
+              <span class="hl-where">{hitWhere(h)}</span>
               {#if !search.picked && shown.slide?.key === h.key}<span class="hl-shown">in slides</span>{/if}
               {#if !search.picked && shown.note?.key === h.key}<span class="hl-shown">in notes</span>{/if}
             </div>
@@ -200,6 +200,7 @@
   .hl-row.sel { background: var(--pane); border-color: var(--indigo); box-shadow: inset 3px 0 0 var(--indigo); }
   .hl-top { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--text-2); min-width: 0; }
   .hl-kind { width: 14px; height: 14px; flex: none; color: var(--muted); }
+  .hl-kind-tut { color: var(--indigo); }
   .hl-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
   .hl-shown { font-size: 10px; border-radius: 4px; padding: 0 5px; background: var(--indigo); color: var(--pane); font-weight: 600; white-space: nowrap; }
   .hl-head { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

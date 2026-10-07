@@ -37,6 +37,8 @@ export interface SearchChunk {
   /**
    * Stable across re-chunking while the blocks it starts at are unchanged:
    * - `note:<notebookId>:<firstBlockId>` for a block group,
+   * - `tut:<notebookId>:<fileId>:<firstBlockId>` for a group of a tutorial sheet's doc (kind
+   *   `note`; `tutorialFileOfKey` reads the sheet back from the key),
    * - `explain:<notebookId>:<blockId>` for a block's explain comment,
    * - `note:<notebookId>:<blockId>#<unitIndex>` for one row of a table or one card of a set,
    * - `page:<notebookId>:<page>` for a page.
@@ -120,6 +122,27 @@ export interface SearchHit {
   via: 'text' | 'explain';
   /** The stored explain comment of `blockId` (markup, `$tex$`), or null when it has none. */
   explain: string | null;
+  /**
+   * **A hit in a tutorial sheet's doc** (2026-10-07): which sheet, so the list can label it
+   * ("Tutorial 3 · P1b") and the notes column opens that doc rather than the notebook's notes.
+   * Null for the notebook's notes and for a slide whose citing notes are the notebook's.
+   */
+  tutorial: SearchHitTutorial | null;
+}
+
+export interface SearchHitTutorial {
+  /** The tutorial source's file id (`tutorialContentKey(notebookId, fileId)` is its doc). */
+  fileId: string;
+  /** The sheet's doc title ("Tutorial 3 Week 5: …"). */
+  title: string;
+  /** The part's label ("Problem 1 Part B"), or the problem's heading for its stem; null if neither. */
+  label: string | null;
+}
+
+/** The tutorial sheet a `tut:` chunk key belongs to (`tut:<notebookId>:<fileId>:<block>`), or null. */
+export function tutorialFileOfKey(key: string): string | null {
+  const m = /^tut:[^:]+:([^:]+):/.exec(key);
+  return m ? m[1]! : null;
 }
 
 export interface SearchResult {

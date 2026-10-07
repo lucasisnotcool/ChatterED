@@ -19,6 +19,7 @@ const hit = (notebookId: string, pages: number[], kind: 'note' | 'page' = 'note'
   alsoIn: [],
   via,
   explain: null,
+  tutorial: null,
 });
 
 const NBS = [

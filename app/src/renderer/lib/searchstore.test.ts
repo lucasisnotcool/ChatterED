@@ -19,6 +19,7 @@ const hit = (key: string, kind: 'note' | 'page', page: number | null, blockId: s
   alsoIn: [],
   via: 'text',
   explain: null,
+  tutorial: null,
 });
 
 describe('what each column shows', () => {

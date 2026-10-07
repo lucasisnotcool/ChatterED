@@ -9,9 +9,11 @@
  *
  * A notebook's index is a pure function (`shared/search/build.ts`) of its notes doc
  * (`notes_docs.version` bumps on every accepted write, whoever made it: ingest, overview, an
- * agent's edit or the learner), its sources (status, base, page count), and its blocks' stored
- * explain comments (`block_comments`, 033) read in the current `ExplainMode`. `search_state` holds
- * the doc version and a signature of the rest, so "is this notebook current?" is one row.
+ * agent's edit or the learner), its tutorial sheets' docs (each its own `notes_docs` row and
+ * version, `TUTORIAL-CONTRACT.md` S2), its sources (status, base, page count, role), and its
+ * blocks' stored explain comments (`block_comments`, 033) read in the current `ExplainMode`.
+ * `search_state` holds the notes doc's version and a signature of the rest (the sheets' versions
+ * included), so "is this notebook current?" is one row.
  * `reconcile()` re-chunks a stale notebook (pure, a few milliseconds), keeps every row whose text
  * hash and model are unchanged, and clears the vector of the rest. The pump then embeds what has
  * no vector: notes, explains and slides first, the per-block units (used only to choose the
@@ -29,7 +31,7 @@ import type { SqlDatabase } from '../db/driver.js';
 import { log } from '../log.js';
 import { commentsRepo } from '../db/repos/comments.js';
 import { explainPlainText } from '../../shared/doc/comments.js';
-import { notebookRows, type IndexRow } from '../../shared/search/build.js';
+import { notebookRows, stripExt, type IndexRow } from '../../shared/search/build.js';
 import { matchText, rankQuery, snippetOf, type RankNotebook, type RankRow } from '../../shared/search/rank.js';
 import { DEFAULT_EXPLAIN_MODE, type ExplainMode, type SearchResult, type SearchStatus } from '../../shared/search/types.js';
 import type { Embedder } from './embedder.js';
@@ -158,6 +160,7 @@ export class SearchIndex {
     mode: ExplainMode;
     doc: { doc_json: string; title: string } | null;
     sources: { file_id: string; display_name: string; page_base: number; status: string }[];
+    tutorials: { file_id: string; doc_json: string; title: string }[];
   } | null {
     const nb = this.#db.prepare('SELECT name FROM notebooks WHERE id = @n').get<{ name: string }>({ n: notebookId });
     if (!nb) return null;
@@ -170,19 +173,36 @@ export class SearchIndex {
       )
       .all<{ file_id: string; display_name: string; page_base: number; page_count: number; status: string }>({ n: notebookId });
     const sig = sources.map((s) => `${s.file_id}:${s.status}:${s.page_base}:${s.page_count}:${s.display_name}`).join('|');
+    const tutorials = this.#tutorialDocs(notebookId);
+    const tutSig = tutorials.map((t) => `${t.file_id}@${t.version}`).join('|');
     const mode = this.#mode();
     // The comments are part of the signature in every mode: a hit shows its block's explain.
     const comments = commentsRepo(this.#db).signature(notebookId);
     return {
       version: doc?.version ?? -1,
-      sig: `${nb.name}#${sig}#explain:${mode}:${comments}`,
+      sig: `${nb.name}#${sig}#tut:${tutSig}#explain:${mode}:${comments}`,
       mode,
       doc: doc ? { doc_json: doc.doc_json, title: doc.title.trim() || nb.name } : null,
       sources,
+      tutorials: tutorials.map((t) => ({ file_id: t.file_id, doc_json: t.doc_json, title: t.title.trim() || stripExt(t.display_name) })),
     };
   }
 
-  /** Block id → explain body, for a notebook. */
+  /**
+   * The notebook's tutorial sheets' docs, in the sources' order: a source whose role is
+   * `tutorial` now (a sheet set back to `lecture` leaves search with its role) and that has a doc.
+   */
+  #tutorialDocs(notebookId: string): { file_id: string; doc_json: string; title: string; version: number; display_name: string }[] {
+    return this.#db
+      .prepare(
+        `SELECT s.file_id, s.display_name, d.doc_json, d.title, d.version FROM notebook_sources s
+         JOIN notes_docs d ON d.content_sha = 'nb:' || s.notebook_id || ':tut:' || s.file_id
+         WHERE s.notebook_id = @n AND s.role = 'tutorial' ORDER BY s.ord, s.added_at, s.file_id`,
+      )
+      .all<{ file_id: string; display_name: string; doc_json: string; title: string; version: number }>({ n: notebookId });
+  }
+
+  /** Block id → explain body, for a notebook's notes and tutorial sheets. */
   #explainBodies(notebookId: string): Map<string, string> {
     return new Map(commentsRepo(this.#db).forNotebook(notebookId).map((c) => [c.blockId, c.body]));
   }
@@ -210,6 +230,7 @@ export class SearchIndex {
         status: s.status,
         pages: s.status === 'ready' ? pageRows.all<{ page: number; body: string }>({ f: s.file_id }) : [],
       })),
+      tutorials: input.tutorials.map((t) => ({ fileId: t.file_id, docJson: t.doc_json, title: t.title })),
       explains,
       explainMode: input.mode,
     });

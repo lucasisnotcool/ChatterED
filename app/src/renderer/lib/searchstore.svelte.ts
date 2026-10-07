@@ -8,6 +8,9 @@
 import type { SearchHit, SearchResult, SearchStatus } from '../../shared/search/types.js';
 import { bridge } from './bridge.js';
 import { readColumns, type SearchColumns } from './searchlayout.js';
+import { matchesFilter, type HitFilter } from './searchhits.js';
+
+export type { HitFilter };
 
 const COLUMNS_KEY = 'chattered.search.columns';
 /** Typing settles this long before a query goes: one query per pause, not per key. */
@@ -32,8 +35,6 @@ export function shownHits(hits: readonly SearchHit[], picked: string | null): { 
   return { slide, note };
 }
 
-export type HitFilter = 'all' | 'note' | 'page';
-
 export class SearchStore {
   query = $state('');
   result: SearchResult | null = $state(null);
@@ -52,7 +53,7 @@ export class SearchStore {
 
   get hits(): SearchHit[] {
     const all = this.result?.hits ?? [];
-    return this.filter === 'all' ? all : all.filter((h) => h.kind === this.filter);
+    return this.filter === 'all' ? all : all.filter((h) => matchesFilter(h, this.filter));
   }
 
   get shown(): { slide: SearchHit | null; note: SearchHit | null } {

@@ -12,7 +12,7 @@
  * block at a time, to reuse the schema's one-line text helpers, with a plain-text fallback.
  */
 
-import { infographicText, notesSchema, quizText } from '../doc/schema.js';
+import { blankText, infographicText, notesSchema, quizText } from '../doc/schema.js';
 import { OBJECTIVES_REASON } from '../doc/types.js';
 import type { BlockUnit, ExplainMode, SearchChunk } from './types.js';
 
@@ -167,6 +167,9 @@ function inlineText(node: PMJson): string {
   for (const child of childrenOf(node)) {
     if (typeof child.text === 'string') {
       out += child.text;
+    } else if (typeOf(child) === 'tut_blank') {
+      // A tutorial sheet's blank: what the learner typed in it, or the rule (`blankText`).
+      out += blankText(stringAttr(child, 'value'));
     } else if (PICTURE_TYPES.has(typeOf(child))) {
       const caption = stringAttr(child, 'caption');
       if (caption) out += ` ${caption} `;
@@ -283,6 +286,14 @@ function blockText(node: PMJson): string {
       );
     case 'infographic':
       return viaSchema(node, infographicText);
+    case 'tut_answer':
+      // A tutorial part's answer slot: its blocks, one per line.
+      return childrenOf(node)
+        .map(blockText)
+        .filter((t) => t.trim().length > 0)
+        .join('\n');
+    case 'tut_choices':
+      return choicesLines(node);
     case 'table':
       return tableUnits(node).map((u) => u.text).join('\n');
     case 'flashcards':
@@ -650,6 +661,260 @@ export function noteChunks(
     if (groupWords >= GROUP_MIN_WORDS) flush();
   });
   flush();
+  return { chunks, units };
+}
+
+// ── a tutorial sheet's doc (2026-10-07) ──────────────────────────────────────────────────────
+
+/** `reason` of the sheet's housekeeping (`SHEET_ADMIN_REASON`): folded in the sheet, not indexed. */
+const SHEET_ADMIN = 'sheet_admin';
+/** `reason` of Max's check and hint lines (`room/tutor.ts`): his marking chatter, not indexed. */
+const TUTOR_HINT = 'tutor_hint';
+/** `reason` of Ellie's worked solution under a part (exam prep, 7 Oct): indexed with its part. */
+export const SOLUTION_REASON = 'exam_prep_solution';
+/**
+ * A part (question, the learner's answer, the solution) is one group up to this many words; a
+ * longer one splits at a block boundary, never into the next part. Above `GROUP_MAX_WORDS`
+ * because a part is one idea by construction, and splitting it parts the question from its answer.
+ * The model reads 512 tokens, about 350 words with the header.
+ */
+export const TUTORIAL_PART_MAX_WORDS = 300;
+
+/** A tick-box answer's options, one per line, ticked ones marked (`choicesText`'s shape). */
+function choicesLines(node: PMJson): string {
+  const options = Array.isArray(attr(node, 'options')) ? (attr(node, 'options') as unknown[]) : [];
+  const picked = new Set(Array.isArray(attr(node, 'picked')) ? (attr(node, 'picked') as unknown[]).filter((p) => typeof p === 'string') : []);
+  return options
+    .map((raw) => asNode(raw) as { id?: unknown; text?: unknown } | null)
+    .filter((o): o is { id?: unknown; text?: unknown } => o !== null && typeof o.text === 'string')
+    .map((o) => `${typeof o.id === 'string' && picked.has(o.id) ? '[x]' : '[ ]'} ${o.text as string}`)
+    .join('\n');
+}
+
+/**
+ * **A tutorial sheet's doc → chunks and block units** (`TUTORIAL-CONTRACT.md` S2; search.md §10).
+ * The notes' rules where they apply, with the sheet's own structure as the groups:
+ *
+ * - **A part is one group**: the sheet's question, the learner's answer (slot, blanks, ticks),
+ *   and Ellie's solution blocks (`reason: 'exam_prep_solution'`) whether they sit inside the part
+ *   or right after it. Never across two parts; over `TUTORIAL_PART_MAX_WORDS` it splits at a block.
+ *   Header `Sheet title › part label`, section `[label]`.
+ * - **The problem's stem** (the sheet's words between a heading and its first part) groups as the
+ *   notes do (rule 3), never across a heading, under `Sheet title › heading path`.
+ * - Skipped: the title, the sheet's housekeeping (`sheet_admin`), and Max's check and hint lines
+ *   (`tutor_hint`), which say how an attempt was marked, not what the answer is.
+ * - Each member block is a unit for the highlight (rule 7); a member with no block id of its own
+ *   (an answer slot's paragraph minted none) highlights its part.
+ * - The blocks' explains are read as the notes' are (`explainMode`, §10), the part's own explain
+ *   with its first member.
+ *
+ * Keys are `tut:<notebookId>:<fileId>:<firstBlockId>` (kind `note`), so a hit names its sheet.
+ */
+export function tutorialChunks(
+  doc: unknown,
+  o: {
+    notebookId: string;
+    fileId: string;
+    title: string;
+    explains?: ReadonlyMap<string, string>;
+    explainMode?: ExplainMode;
+  },
+): { chunks: SearchChunk[]; units: BlockUnit[] } {
+  let root: PMJson | null = null;
+  if (typeof doc === 'string') {
+    try {
+      root = asNode(JSON.parse(doc) as unknown);
+    } catch {
+      root = null;
+    }
+  } else {
+    root = asNode(doc);
+  }
+  const chunks: SearchChunk[] = [];
+  const units: BlockUnit[] = [];
+  if (!root) return { chunks, units };
+
+  const title = normalise(o.title).replace(/\n/g, ' ');
+  const mode: ExplainMode = o.explainMode ?? 'off';
+  const explains = mode === 'off' ? undefined : o.explains;
+  const keys = new Set<string>();
+  const unitIds = new Set<string>();
+  const stack: HeadingEntry[] = [];
+  let titleSeen = false;
+  const uniqueKey = (key: string): string => {
+    let out = key;
+    for (let n = 2; keys.has(out); n++) out = `${key}~${String(n)}`;
+    keys.add(out);
+    return out;
+  };
+  const headerOf = (path: string[]): string => [title, ...path].filter((s) => s.length > 0).join(HEADER_SEP);
+  const headingPath = (): string[] => stack.map((h) => h.text);
+  const headingPages = (): number[] => {
+    for (let i = stack.length - 1; i >= 0; i--) if (stack[i]!.pages.length > 0) return stack[i]!.pages;
+    return [];
+  };
+
+  /** One chunk of members under a path, with a unit per member (and the explains, by mode). */
+  const emit = (members: Member[], path: string[]): void => {
+    if (members.length === 0) return;
+    const header = headerOf(path);
+    const text = members.map((m) => m.text).join('\n');
+    const appended = (ms: Member[]): string =>
+      mode === 'append' ? ms.flatMap((m) => m.explains.map((e) => `\n${e.explain}`)).join('') : '';
+    const embedText = `${header}\n${text}${appended(members)}`;
+    chunks.push({
+      key: uniqueKey(`tut:${o.notebookId}:${o.fileId}:${members[0]!.blockId}`),
+      kind: 'note',
+      notebookId: o.notebookId,
+      blockIds: [...new Set(members.map((m) => m.blockId))],
+      page: null,
+      pages: sortedUnique(members.flatMap((m) => m.pages)),
+      section: path,
+      text,
+      embedText,
+      hash: hashText(embedText),
+    });
+    for (const m of members) {
+      if (unitIds.has(m.blockId)) continue;
+      unitIds.add(m.blockId);
+      const unitText = `${header}\n${m.text}${appended([m])}`;
+      units.push({ notebookId: o.notebookId, blockId: m.blockId, text: m.text, embedText: unitText, hash: hashText(unitText) });
+    }
+    if (mode === 'separate') {
+      for (const m of members) {
+        for (const e of m.explains) {
+          const embed = `${header}\n${e.explain}`;
+          chunks.push({
+            key: uniqueKey(`explain:${o.notebookId}:${e.blockId}`),
+            kind: 'explain',
+            notebookId: o.notebookId,
+            blockIds: e.blockId === m.blockId ? [e.blockId] : [e.blockId, m.blockId],
+            page: null,
+            pages: m.pages,
+            section: path,
+            text: e.own,
+            embedText: embed,
+            hash: hashText(embed),
+          });
+        }
+      }
+    }
+  };
+
+  /** Members split into runs of at most `max` words, at block boundaries. */
+  const runs = (members: Member[], max: number): Member[][] => {
+    const out: Member[][] = [];
+    let run: Member[] = [];
+    let n = 0;
+    for (const m of members) {
+      if (run.length > 0 && n + m.words > max) {
+        out.push(run);
+        run = [];
+        n = 0;
+      }
+      run.push(m);
+      n += m.words;
+    }
+    if (run.length > 0) out.push(run);
+    return out;
+  };
+
+  /** A block → a member, or null when it says nothing or is not indexed. */
+  const memberOf = (node: PMJson, fallbackId: string, fallbackPages: number[]): Member | null => {
+    const reason = attr(node, 'reason');
+    if (reason === SHEET_ADMIN || reason === TUTOR_HINT) return null;
+    const text = normalise(blockText(node));
+    if (text.length === 0) return null;
+    const ownId = stringAttr(node, 'blockId');
+    const own = sortedUnique(pagesIn(node));
+    return {
+      blockId: ownId || fallbackId,
+      text,
+      words: words(text),
+      pages: own.length > 0 ? own : fallbackPages,
+      // Under its own id only: a block that borrows its part's id must not take the part's explain.
+      explains: explainsIn(node, ownId, explains, () => text),
+    };
+  };
+
+  // The stem being gathered (rule 3: flushed at 40 words, never past 220, never across a heading).
+  let stem: Member[] = [];
+  let stemWords = 0;
+  const flushStem = (): void => {
+    emit(stem, headingPath());
+    stem = [];
+    stemWords = 0;
+  };
+  // The part just closed, kept open for Ellie's solution blocks that follow it at the top level.
+  let open: { members: Member[]; path: string[]; pages: number[]; partId: string } | null = null;
+  const closePart = (): void => {
+    if (!open) return;
+    for (const run of runs(open.members, TUTORIAL_PART_MAX_WORDS)) emit(run, open.path);
+    open = null;
+  };
+
+  childrenOf(root).forEach((node, index) => {
+    const type = typeOf(node);
+    const reason = attr(node, 'reason');
+    const blockId = stringAttr(node, 'blockId') || `pos${String(index)}`;
+
+    // Ellie's solution right after a part belongs to that part.
+    if (open && reason === SOLUTION_REASON) {
+      const m = memberOf(node, open.partId, open.pages);
+      if (m) open.members.push(m);
+      return;
+    }
+    closePart();
+
+    if (type === 'heading') {
+      flushStem();
+      const level = typeof attr(node, 'level') === 'number' ? (attr(node, 'level') as number) : 1;
+      if (reason === 'title' || (level === 1 && !titleSeen)) {
+        titleSeen = true;
+        stack.length = 0;
+        return;
+      }
+      while (stack.length > 0 && stack[stack.length - 1]!.level >= level) stack.pop();
+      const text = normalise(inlineText(node)).replace(/\n/g, ' ');
+      if (text.length > 0) stack.push({ level, text, pages: sortedUnique(numbersAttr(node, 'pages')) });
+      return;
+    }
+
+    if (type === 'tut_part') {
+      flushStem();
+      const label = normalise(stringAttr(node, 'label')).replace(/\n/g, ' ');
+      const own = sortedUnique(numbersAttr(node, 'pages'));
+      const pages = own.length > 0 ? own : headingPages();
+      const members: Member[] = [];
+      for (const child of childrenOf(node)) {
+        const m = memberOf(child, blockId, pages);
+        if (m) members.push(m);
+      }
+      // The part's own explain rides with its first member.
+      const partExplain = explains?.get(blockId);
+      if (partExplain && members.length > 0) {
+        const first = members[0]!;
+        first.explains = [{ blockId, own: first.text, explain: partExplain }, ...first.explains];
+      }
+      const path = label ? [label] : headingPath();
+      open = { members, path, pages, partId: blockId };
+      return;
+    }
+
+    if (type === 'paragraph' && inlineText(node).trim().length === 0) {
+      if (childrenOf(node).every((child) => typeof child.text === 'string')) flushStem();
+      return;
+    }
+
+    const m = memberOf(node, blockId, headingPages());
+    if (!m) return;
+    if (stem.length > 0 && stemWords + m.words > GROUP_MAX_WORDS) flushStem();
+    stem.push(m);
+    stemWords += m.words;
+    if (stemWords >= GROUP_MIN_WORDS) flushStem();
+  });
+  closePart();
+  flushStem();
   return { chunks, units };
 }
 

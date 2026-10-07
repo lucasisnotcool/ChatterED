@@ -9,7 +9,7 @@
  */
 import { explainPlainText } from '../doc/comments.js';
 import { keywordScores, stem, tokens } from './keyword.js';
-import type { SearchHit } from './types.js';
+import { tutorialFileOfKey, type SearchHit, type SearchHitTutorial } from './types.js';
 
 export const SNIPPET_CHARS = 260;
 /** Reciprocal-rank constant for merging the keyword-ranked pending rows in. */
@@ -139,6 +139,11 @@ export function rankQuery(input: RankInput): RankOutput {
   };
   const explainOf = (notebookId: string, blockId: string | null): string | null =>
     blockId ? (notebooks.get(notebookId)?.explains.get(blockId) ?? null) : null;
+  /** A row of a tutorial sheet's doc → the sheet, for the hit's label and the notes column. */
+  const tutorialOf = (row: RankRow | null | undefined): SearchHitTutorial | null => {
+    const fileId = row ? tutorialFileOfKey(row.key) : null;
+    return row && fileId ? { fileId, title: row.title, label: row.section.at(-1) ?? null } : null;
+  };
 
   const hits: SearchHit[] = [];
   const seenPageText = new Map<string, SearchHit>();
@@ -164,10 +169,12 @@ export function rankQuery(input: RankInput): RankOutput {
         twin.alsoIn.push({ notebookId: row.notebookId, notebookName, page: row.page! });
         continue;
       }
-      // The notes that cite this page: the best-scoring note chunk of the notebook that does.
-      const citing = held.rows
+      // The notes that cite this page: the best-scoring note chunk of the notebook that does, the
+      // notebook's notes before a tutorial sheet's (a sheet's own page is cited only by the sheet).
+      const citers = held.rows
         .filter((r) => r.kind === 'note' && r.pages.includes(row.page!))
-        .sort((a, b) => (score.get(b.key) ?? -Infinity) - (score.get(a.key) ?? -Infinity))[0];
+        .sort((a, b) => (score.get(b.key) ?? -Infinity) - (score.get(a.key) ?? -Infinity));
+      const citing = citers.find((r) => !tutorialFileOfKey(r.key)) ?? citers[0];
       const unit = citing ? bestUnit(citing) : null;
       const blockId = unit?.blockIds[0] ?? citing?.blockIds[0] ?? null;
       const hit: SearchHit = {
@@ -187,6 +194,7 @@ export function rankQuery(input: RankInput): RankOutput {
         alsoIn: [],
         via: 'text',
         explain: explainOf(row.notebookId, blockId),
+        tutorial: tutorialOf(citing),
       };
       seenPageText.set(row.text, hit);
       hits.push(hit);
@@ -219,6 +227,7 @@ export function rankQuery(input: RankInput): RankOutput {
         alsoIn: [],
         via: 'explain',
         explain: explainOf(row.notebookId, blockId),
+        tutorial: tutorialOf(owner),
       });
       continue;
     }
@@ -248,6 +257,7 @@ export function rankQuery(input: RankInput): RankOutput {
       alsoIn: [],
       via: input.explainMode === 'append' && explain && matchedOnlyInExplain(q, `${row.section.join(' ')} ${text}`, explain) ? 'explain' : 'text',
       explain,
+      tutorial: tutorialOf(row),
     });
   }
   return { hits, pending: pending.length, mode: qv ? 'semantic' : 'keyword' };

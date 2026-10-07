@@ -10,6 +10,9 @@
    *   them. Ellie and Max do not run here (no room is opened); their edits made elsewhere still
    *   arrive. Switching to a hit in another notebook flushes the doc first.
    * - **Results** (`HitList`): one list, best match first.
+   * - **A tutorial hit** (§10) puts its sheet in the notes column instead (`TutorialColumn`, on the
+   *   tutorial store's own `DocStore`), highlighted at the hit; *Open in notebook* opens the
+   *   notebook with the tutorial column at that block.
    *
    * The arithmetic of the columns is `lib/searchlayout.ts`: the results keep their width whatever
    * happens to the other two, and a column squeezed below usable hides.
@@ -20,6 +23,9 @@
   import HitList from './HitList.svelte';
   import DeckColumn from './DeckColumn.svelte';
   import ExplainNote from './ExplainNote.svelte';
+  import TutorialColumn from './TutorialColumn.svelte';
+  import { tutorialHitLabel } from '../../lib/searchhits.js';
+  import type { DocStore } from '../../lib/docstore.svelte.js';
   import { store } from '../../lib/store.svelte.js';
   import { bridge } from '../../lib/bridge.js';
   import { searchWidths } from '../../lib/searchlayout.js';
@@ -43,9 +49,12 @@
 
   // ── The notes column: whose notebook is mounted, and the hit in it ──────────────────────
   let noteNb = $state<string | null>(null);
+  /** The tutorial sheet the column shows instead of the notes (a tutorial hit), or null. */
+  let noteTut = $state<string | null>(null);
   let token = 0;
   /** A hit whose block should get the caret once it is on screen (↵, double click). */
   let caretFor: string | null = null;
+  const tutDoc = store.tutorial.doc;
 
   $effect(() => {
     const hit = shown.note;
@@ -54,19 +63,26 @@
 
   async function showNote(hit: SearchHit | null): Promise<void> {
     const mine = (token += 1);
-    if (!hit || !hit.blockId) {
-      store.doc.markSearchHit(null);
-      return;
-    }
+    store.doc.markSearchHit(null);
+    tutDoc.markSearchHit(null);
+    if (!hit || !hit.blockId) return;
     if (noteNb !== hit.notebookId) {
       // Whatever was typed in the notebook on screen is written before another replaces it.
-      await store.doc.flush();
+      await Promise.all([store.doc.flush(), tutDoc.flush()]);
       const view = await bridge().notebookGet({ notebookId: hit.notebookId });
       if (mine !== token || !view) return;
       store.notebook.view = view;
       noteNb = hit.notebookId;
     }
+    noteTut = hit.tutorial?.fileId ?? null;
     markWhenReady(hit, mine);
+  }
+
+  /** The doc on screen for a hit: the notebook's notes, or its tutorial sheet's. */
+  function docFor(hit: SearchHit): DocStore | null {
+    if (!hit.tutorial) return store.doc.fileId === hit.notebookId && !store.doc.tutorialOf() ? store.doc : null;
+    const t = tutDoc.tutorialOf();
+    return t && t.notebookId === hit.notebookId && t.fileId === hit.tutorial.fileId ? tutDoc : null;
   }
 
   /** The doc may still be loading: try for a few seconds, then give up quietly. */
@@ -74,11 +90,16 @@
     let tries = 0;
     const attempt = (): void => {
       if (mine !== token) return;
-      if (store.doc.fileId === hit.notebookId && hit.blockId && store.doc.markSearchHit(hit.blockId)) {
-        store.doc.scrollToBlock(hit.blockId, { flash: false });
+      const doc = docFor(hit);
+      if (doc && hit.blockId && doc.markSearchHit(hit.blockId)) {
+        doc.scrollToBlock(hit.blockId, { flash: false });
+        // A sheet that has just mounted settles after the first scroll (its part chrome folds the
+        // course admin and draws the cards): once more when it has, or the hit ends up off screen.
+        const blockId = hit.blockId;
+        if (hit.tutorial) setTimeout(() => mine === token && doc.scrollToBlock(blockId, { flash: false }), 400);
         if (caretFor === hit.key) {
           caretFor = null;
-          store.doc.placeCaret(hit.blockId);
+          doc.placeCaret(hit.blockId);
         }
         return;
       }
@@ -111,24 +132,59 @@
     inputEl?.select();
   }
 
-  /** "Open notebook": the full notebook, with Ellie and Max, at the block on screen. */
-  async function openNotebook(): Promise<void> {
+  /**
+   * "Open notebook": the full notebook, with Ellie and Max, at the block on screen. For a tutorial
+   * hit, the notebook with the tutorial column on that sheet, at the hit's block; `then` runs there
+   * (a part's Check or help, pressed on this page).
+   */
+  async function openNotebook(at?: { notesBlock?: string; then?: () => void }): Promise<void> {
     const hit = shown.note;
     const id = noteNb;
     if (!id) return;
-    await store.doc.flush();
+    const sheet = at?.notesBlock ? null : noteTut;
+    const blockId = at?.notesBlock ?? hit?.blockId ?? null;
+    await Promise.all([store.doc.flush(), tutDoc.flush()]);
+    tutDoc.markSearchHit(null);
     await store.openNotebook(id);
-    if (!hit?.blockId) return;
+    if (sheet) {
+      void openSheetWhenReady(id, sheet, blockId, at?.then);
+      return;
+    }
+    if (!blockId) return;
     let tries = 0;
     const attempt = (): void => {
       if (store.screen !== 'notebook') return;
       if (store.doc.fileId === id && store.doc.markSearchHit(null)) {
-        store.doc.scrollToBlock(hit.blockId!, { flash: true });
+        store.doc.scrollToBlock(blockId, { flash: true });
         return;
       }
       if ((tries += 1) < 60) setTimeout(attempt, 100);
     };
     attempt();
+  }
+
+  /** The notebook's shell hands the tutorial store its notebook as it mounts: then open the sheet. */
+  async function openSheetWhenReady(id: string, sheet: string, blockId: string | null, then?: () => void): Promise<void> {
+    for (let tries = 0; tries < 60; tries++) {
+      if (store.screen !== 'notebook' || store.notebook.id !== id) return;
+      if (store.tutorial.notebookId === id) {
+        if (blockId) await store.tutorial.openAt(sheet, blockId);
+        else await store.tutorial.open(sheet);
+        then?.();
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  /** A part's Check or help on this page: in the notebook, at the part, where Max answers. */
+  function partAction(partId: string, kind: 'check' | 'hint' | 'refresher' | 'reveal'): void {
+    void openNotebook({
+      then: () => {
+        if (kind === 'check') void store.tutorial.check(partId);
+        else void store.tutorial.help(partId, kind);
+      },
+    });
   }
 
   // ── Ctrl or ⌘ with + − 0 over the notes: their text size, not the app's ─────────────────
@@ -146,6 +202,7 @@
 
   onDestroy(() => {
     store.doc.markSearchHit(null);
+    tutDoc.markSearchHit(null);
   });
 
   // The slides column's page and what to outline on it.
@@ -203,10 +260,17 @@
     >
       <header class="sp-head">
         <button type="button" class="sp-hide" title="Hide the notes (⌘K)" aria-label="Hide the notes" onclick={() => search.setColumns({ notes: false })}>⟨</button>
-        <span class="sp-title">Notes</span>
-        {#if shown.note}<span class="sp-sub">{shown.note.notebookName}</span>{/if}
+        <span class="sp-title">{noteTut ? 'Tutorial' : 'Notes'}</span>
+        {#if shown.note}
+          <span class="sp-sub">{shown.note.notebookName}{shown.note.tutorial ? ` · ${tutorialHitLabel(shown.note.tutorial)}` : ''}</span>
+        {/if}
         {#if noteNb}
-          <button type="button" class="sp-open" title="Open this notebook, with Ellie and Max" onclick={() => void openNotebook()}>Open notebook</button>
+          <button
+            type="button"
+            class="sp-open"
+            title={noteTut ? 'Open this notebook with the tutorial at this part, with Ellie and Max' : 'Open this notebook, with Ellie and Max'}
+            onclick={() => void openNotebook()}
+          >{noteTut ? 'Open in notebook' : 'Open notebook'}</button>
         {/if}
       </header>
       {#if shown.note?.explain}
@@ -218,7 +282,14 @@
         {/key}
       {/if}
       <div class="sp-body sp-notesbody">
-        {#if noteNb && shown.note}
+        {#if noteNb && shown.note && noteTut}
+          <TutorialColumn
+            notebookId={noteNb}
+            fileId={noteTut}
+            onaction={partAction}
+            onnotes={(blockId) => void openNotebook({ notesBlock: blockId })}
+          />
+        {:else if noteNb && shown.note}
           {#key noteNb}
             <NotesPane fileId={noteNb} />
           {/key}

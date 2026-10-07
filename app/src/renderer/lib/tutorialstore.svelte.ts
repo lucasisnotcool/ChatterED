@@ -359,6 +359,16 @@ export class TutorialStore {
     if (blockId) this.#focusWhenMounted(blockId);
   }
 
+  /**
+   * **A block of a known tutorial** (a search hit's *Open in notebook*, `search.md` §10): open it
+   * and flash the block once the editor is there. Unlike `focusBlock`, the sheet is named, so it
+   * works before the list has loaded.
+   */
+  async openAt(fileId: string, blockId: string): Promise<void> {
+    await this.open(fileId);
+    this.#focusWhenMounted(blockId);
+  }
+
   /** A block of a tutorial (a span thread's jump): open that tutorial and flash the block. */
   async focusBlock(blockId: string): Promise<boolean> {
     const fileId = this.tutorialOfBlock(blockId);

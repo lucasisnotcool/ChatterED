@@ -378,3 +378,22 @@ it shows a hit block's explain and can match on it.
   `separate` lets an explain outrank the notes block it explains, and explains of neighbouring
   lines crowd each other; folding them into the block's own text (`append`) helps every query kind
   and hurts none. 84 queries is a small set: `append` vs `off` is 5 queries at S@1.
+- **Tutorial sheets (7 Oct 2026, branch `lucas/search-tutorials`).** Search is the way in during
+  the exam, so it reaches each notebook's tutorial sheets' docs too (`TUTORIAL-CONTRACT.md` S2: a
+  source with the role `tutorial` and its own `notes_docs` row). `tutorialChunks` makes **a part one
+  group**: the sheet's question, the learner's answer (slot, blanks, ticks) and Ellie's solution
+  blocks (`reason: 'exam_prep_solution'`, inside the part or right after it), never across two
+  parts, split at a block only past 300 words; header `Sheet title › part label`. The problem's
+  stem groups as notes do (rule 3); the title, the course housekeeping (`sheet_admin`) and Max's
+  check and hint lines (`tutor_hint`) are left out. Explains on a sheet's lines (keyed by the
+  sheet's doc) are read in the same `ExplainMode`. Keys are `tut:<notebook>:<file>:<block>` (kind
+  `note`, so no migration), and a hit carries `tutorial: { fileId, title, label }`: the list labels
+  it "Tutorial 2 · Problem 1 Part B" with its own icon and a **Tutorials** filter, and the notes
+  column opens that sheet (`TutorialColumn`, the tutorial store's `DocStore` and part chrome) at the
+  block, with the explain panel; Check and help there, and *Open in notebook*, open the notebook
+  with the tutorial column at that part. Freshness: each sheet's doc version and the sources' roles
+  are in the notebook's signature, so a save, a re-read or a role change re-chunks it. The eval
+  indexes the sheets as the app does (`--no-tutorials` leaves them out). On the 84-query set
+  before the solutions were written (4 sheets, 84 sheet chunks), `append` is unchanged with the
+  sheets in (S@1 .940, N@1 .929), and 9 queries have a sheet's part in the top five; re-run it once
+  the solutions and their explains are imported.

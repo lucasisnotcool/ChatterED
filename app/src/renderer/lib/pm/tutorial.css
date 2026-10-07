@@ -465,3 +465,11 @@
 .nd-practice-part[data-status='partial'] { border-color: var(--nd-half-edge); color: var(--nd-half); }
 .nd-practice-part[data-status='incorrect'] { border-color: var(--nd-bad-edge); color: var(--nd-bad); }
 .nd-practice-part[data-status='revealed'] { border-style: dashed; }
+
+/* ── the explain badge (migration 033) on a line inside a part (search.md §10, 7 Oct) ──
+   The badge is placed against its block (`left: 100%`), and a part's lines are not positioned:
+   without this every badge in a part sat at the part's top. A part's line carries no provenance
+   chip of its own, so in a compact sheet the badge stays on the line's first row rather than
+   dropping below the chip row the top-level blocks have. */
+.nd-editor .ProseMirror :is(section[data-tut-part], div[data-tut-answer]) > :has(> .nd-cmt-holder) { position: relative; }
+.nd-compact .nd-editor .ProseMirror :is(section[data-tut-part], div[data-tut-answer]) > * > .nd-cmt-holder { top: 0.24em; }
