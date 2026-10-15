@@ -37,6 +37,12 @@ export const SOURCE_TEXT_COLUMNS: ReadonlyArray<readonly [string, string]> = [
   ['materials', 'extracted_text'],
   ['materials', 'padding_text'],
   ['message_refs', 'page_text'],
+  // The search index holds every source page's text verbatim (kind 'page'), and the notes text
+  // that is already in `notes_docs`. It is derived, so blanking it loses nothing (2026-10-15).
+  ['search_chunks', 'text'],
+  ['search_chunks', 'embed_text'],
+  // A tutorial's hidden answer key, written from the official solutions.
+  ['tutorial_parts', 'key_json'],
 ];
 
 export function sourceTextMarker(chars: number): string {

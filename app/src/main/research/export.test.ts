@@ -265,6 +265,21 @@ describe('anonymiseDatabase', () => {
   });
 });
 
+describe('the search index and answer keys (2026-10-15)', () => {
+  it('blanks the slide text the search index holds, which the README says is removed', () => {
+    const db = seed();
+    db.prepare(
+      `INSERT INTO search_chunks (key, notebook_id, kind, text, embed_text, hash, updated_at)
+       VALUES ('k1', 'nb1', 'page', 'Slide 4: a lecturer''s sentence', 'title: none | text: Slide 4', 'h', '2026-10-15')`,
+    ).run();
+    const report = anonymiseDatabase(db, makeScrubber({ home: HOME, username: USER }));
+    expect(report.excludedColumns).toEqual(expect.arrayContaining(['search_chunks.text', 'search_chunks.embed_text', 'tutorial_parts.key_json']));
+    const row = db.prepare(`SELECT text, embed_text FROM search_chunks WHERE key = 'k1'`).get<{ text: string; embed_text: string }>()!;
+    expect(row.text).toMatch(/^\[excluded from the research export: \d+ characters/);
+    expect(row.embed_text).toMatch(/^\[excluded from the research export/);
+  });
+});
+
 describe('stageResearchExport', () => {
   it('leaves no trace of the home directory, the username or the key in any byte of any file', async () => {
     const { staged } = await stage(seed());
