@@ -5,6 +5,10 @@
 #   tools/release.sh                      clean build → verify → out/ChatterED-<v>-arm64.dmg + SHA256SUMS.txt
 #   tools/release.sh --publish v0.1.0     the same, then `gh release create` on $RELEASES_REPO
 #   tools/release.sh --publish v0.1.0 --notes path/to/notes.md   use these notes instead of the default
+#   tools/release.sh --study ~/data/chattered-study/keys.json   a study build: the sealed key bundle
+#                                         ships in Resources/study → out/ChatterED-Study-<v>-arm64.dmg.
+#                                         Never published: it goes to participants privately
+#                                         (app/docs/STUDY-RELEASE.md).
 #
 # Uses the node_modules already installed (no `npm ci`). What it checks before it prints a hash:
 #   - dist/ and out/ were rebuilt from scratch (no stale compiled file or old DMG can ship);
@@ -24,11 +28,13 @@ cd "$APP_DIR"
 
 TAG=""
 NOTES_FILE=""
+STUDY_BUNDLE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --publish) TAG="${2:?--publish needs a tag, e.g. v0.1.0}"; shift 2 ;;
     --notes) NOTES_FILE="${2:?--notes needs a file}"; shift 2 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --study) STUDY_BUNDLE="${2:?--study needs the keys.json from npm run study:keys}"; shift 2 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "release.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -38,6 +44,23 @@ die() { printf '\033[31m[release] %s\033[0m\n' "$*" >&2; exit 1; }
 
 VERSION="$(node -p "require('./package.json').version")"
 [ "$(uname -m)" = "arm64" ] || die "Build on Apple Silicon: the DMG is arm64-only."
+
+# ── the study bundle: in a study build, and in no other ─────────────────────
+# electron-builder copies study/keys.json into Resources/study whenever it exists, so an ordinary
+# build refuses to start with one lying there, and a study build removes its copy when it ends.
+STUDY_DEST="$APP_DIR/study/keys.json"
+if [ -n "$STUDY_BUNDLE" ]; then
+  [ -z "$TAG" ] || die "A study build carries participants' sealed keys: it is never published. Drop --publish."
+  [ -f "$STUDY_BUNDLE" ] || die "No study bundle at $STUDY_BUNDLE."
+  node -e "const b=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if (b.format!=='chattered-study-keys'||!b.slots||!Object.keys(b.slots).length) process.exit(1)" "$STUDY_BUNDLE" \
+    || die "$STUDY_BUNDLE is not a study bundle (npm run study:keys makes one)."
+  STUDY_SLOTS="$(node -p "Object.keys(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).slots).length" "$STUDY_BUNDLE")"
+  cp "$STUDY_BUNDLE" "$STUDY_DEST"
+  trap 'rm -f "$STUDY_DEST"' EXIT
+  say "Study build: $STUDY_SLOTS participant slot(s) sealed in."
+elif [ -e "$STUDY_DEST" ]; then
+  die "$STUDY_DEST exists, and an ordinary build must not carry it. Remove it, or pass --study."
+fi
 
 if [ -n "$TAG" ]; then
   command -v gh >/dev/null || die "gh is not installed."
@@ -56,6 +79,11 @@ npx --no-install electron-builder --mac dmg
 DMG="$APP_DIR/out/$APP_NAME-$VERSION-arm64.dmg"
 [ -f "$DMG" ] || die "electron-builder produced no $DMG."
 BUILT_APP="$APP_DIR/out/mac-arm64/$APP_NAME.app"
+if [ -n "$STUDY_BUNDLE" ]; then
+  rm -f "$STUDY_DEST"
+  mv "$DMG" "$APP_DIR/out/$APP_NAME-Study-$VERSION-arm64.dmg"
+  DMG="$APP_DIR/out/$APP_NAME-Study-$VERSION-arm64.dmg"
+fi
 
 # ── shipped-content checks (on dist/, which is what app.asar holds) ─────────
 if grep -rIlE 'A0[0-9]{6}[A-Z]' --exclude='*.map' dist >/dev/null; then
@@ -69,7 +97,7 @@ fi
 
 # ── verify what a user actually gets: the app inside the DMG ────────────────
 MNT="$(mktemp -d "${TMPDIR:-/tmp}/chattered-dmg.XXXXXX")"
-cleanup() { hdiutil detach -quiet "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+cleanup() { hdiutil detach -quiet "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; [ -z "$STUDY_BUNDLE" ] || rm -f "$STUDY_DEST"; }
 trap cleanup EXIT
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$DMG"
 DMG_APP="$MNT/$APP_NAME.app"
@@ -93,6 +121,14 @@ for want in 'RunAsNode is Disabled' 'EnableNodeOptionsEnvironmentVariable is Dis
             'EnableEmbeddedAsarIntegrityValidation is Enabled'; do
   grep -q "$want" <<<"$fuses" || die "Fuse check failed: expected \"$want\"."
 done
+
+SHIPPED_BUNDLE="$DMG_APP/Contents/Resources/study/keys.json"
+if [ -n "$STUDY_BUNDLE" ]; then
+  cmp -s "$STUDY_BUNDLE" "$SHIPPED_BUNDLE" || die "The study bundle inside the DMG is missing or differs from $STUDY_BUNDLE."
+  say "Study bundle: in Contents/Resources/study, identical to $STUDY_BUNDLE."
+elif [ -e "$SHIPPED_BUNDLE" ]; then
+  die "An ordinary build carries a study bundle ($SHIPPED_BUNDLE)."
+fi
 
 MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$DMG_APP/Contents/Info.plist")"
 cleanup

@@ -51,6 +51,7 @@ import type {
 } from './cost.js';
 import type { StopTurnResult, TurnTraceView } from './types.js';
 import type { TrialApi } from './trial.js';
+import type { StudyApi } from './study.js';
 
 import type {
   AgentAuthor,
@@ -233,6 +234,8 @@ export const IPC = {
 export interface ChatterEdApi {
   /** The experimental trial: consent and the research export (`shared/trial.ts`). */
   trial: TrialApi;
+  /** The study build: unlock with a participant code, and the API credit left (`shared/study.ts`). */
+  study: StudyApi;
   bootstrap(): Promise<Bootstrap>;
   /** Stored in <userData>/anthropic-api-key, mode 0600. Never written to SQLite (#15). */
   setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;

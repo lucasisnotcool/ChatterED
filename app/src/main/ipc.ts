@@ -77,6 +77,10 @@ import { buildProgress, registerProgressIpc } from './docroom/progress.js';
 import { outcomesRepo } from './db/repos/outcomes.js';
 // The experimental trial: consent gate and research export (src/shared/trial.ts).
 import { registerResearchIpc, trialGate } from './research/ipc.js';
+// The study build (`shared/study.ts`): a participant code unlocks a sealed key and a fixed credit.
+import { StudyService } from './study/service.js';
+import { registerStudyIpc, resolveBundlePath } from './study/ipc.js';
+import { STUDY_IPC } from '../shared/study.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
 // Notebooks (`docs/research/notebooks.md`, 2026-10-01): the service, its host and its channels.
 import { NotebookService } from './notebooks/service.js';
@@ -115,6 +119,11 @@ export interface IpcDeps {
    * it from `index.ts`; the unit tests that build an AppService never invoke a handler.
    */
   isTrustedSender?(event: IpcSenderLike): boolean;
+  /**
+   * The study build's key bundle. Absent: resolved from the packaged resources (or `app/study` in
+   * dev). Null: no bundle, as the unit tests want.
+   */
+  studyBundlePath?: string | null;
 }
 
 /**
@@ -132,6 +141,19 @@ function roomLog(roomId: string): TurnLog {
 }
 
 /** Where the bundled model is. '' (keyword-only search) wherever Electron cannot say, as in tests. */
+function studyBundlePath(): string | null {
+  try {
+    return resolveBundlePath({
+      packaged: app.isPackaged === true,
+      resourcesPath: process.resourcesPath ?? '',
+      appPath: app.getAppPath(),
+      env: process.env.CHATTERED_STUDY_BUNDLE,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function searchModelDir(): string {
   try {
     return resolveModelDir({ packaged: app.isPackaged === true, resourcesPath: process.resourcesPath ?? '', appPath: app.getAppPath() });
@@ -154,6 +176,8 @@ export class AppService {
   readonly #notebookHost: NotebookHostImpl;
   #tutorialDeps: TutorialDeps | null = null;
   readonly #cost: CostLedger;
+  /** The study build's unlock, credit and guard. Inert on a build without a key bundle. */
+  readonly #study: StudyService;
   /** Running app-level totals since launch, so `cost.updated` needs no second query per call. */
   #sessionTokens: CostTokens = emptyTokens();
   #sessionCalls = 0;
@@ -218,6 +242,13 @@ export class AppService {
      * the ledger needs to file a room's calls under its document; it is injected rather than
      * queried inside the ledger so that module needs no repository of its own.
      */
+    this.#study = new StudyService({
+      db: deps.db,
+      settings: deps.store.settings,
+      anthropicKey: this.#apiKey,
+      bundlePath: deps.studyBundlePath === undefined ? studyBundlePath() : deps.studyBundlePath,
+      onChanged: (status) => this.#d.getWindow()?.webContents.send(STUDY_IPC.changed, status),
+    });
     this.#cost = new CostLedger({
       db: deps.db,
       readSetting: (key) => deps.store.settings.get(key),
@@ -380,7 +411,7 @@ export class AppService {
     resolved: ResolvedBackend = this.backend(),
     material?: { fileName?: string | null; contentSha?: string | null },
   ): LLMClient {
-    return createClient({
+    const client = createClient({
       settings: this.#d.store.settings,
       hasApiKey: this.#apiKey.has(),
       keys: this.#providers.keyFlags(),
@@ -391,6 +422,12 @@ export class AppService {
       cost: this.#costSink(),
       ...(material ? { material } : {}),
     });
+    // The study build's credit stops a call before it is made, not after (`main/study/service.ts`).
+    return this.#study.guard(client, resolved.kind);
+  }
+
+  get study(): StudyService {
+    return this.#study;
   }
 
   cli(): CliDetection {
@@ -1357,6 +1394,8 @@ export class AppService {
       log().info('cost.export', { rows: result.rows, bytes: result.bytes });
       return result;
     });
+    // The study build: the participant code and the credit left — `src/main/study/`.
+    registerStudyIpc({ service: this.#study, handle, onUnlocked: () => this.rebindActor() });
     // Per-message cost and the Usage page (#42 items B and D) — `src/main/cost/ipc.ts`.
     registerCostIpc({ db: this.#d.db, sessionStart: () => this.#cost.sessionStart, handle });
     // The experimental trial: consent and File ▸ Export Research Data… (`src/main/research/`).
@@ -1369,6 +1408,12 @@ export class AppService {
       backendInfo: () => {
         const resolved = this.backend();
         return { kind: resolved.kind, models: { ...resolved.models } };
+      },
+      studyInfo: () => {
+        const s = this.#study.status();
+        if (!s.unlocked) return null;
+        const { slot, budgetUsd, spentUsd, exhausted, serverCapped, endedReason } = s;
+        return { slot, budgetUsd, spentUsd, exhausted, serverCapped, endedReason };
       },
       getWindow: this.#d.getWindow,
       handle,

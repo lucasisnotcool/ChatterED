@@ -22,6 +22,8 @@
   } from '../lib/cost.js';
   import { COST_SCOPE_LABEL, totalTokens, type CostScope, type CostSlice } from '../../shared/cost.js';
   import ResearchTrialSettings from './ResearchTrialSettings.svelte';
+  import StudySettings from './study/StudySettings.svelte';
+  import { study } from '../lib/studystore.svelte.js';
   import ProviderKeys from './settings/ProviderKeys.svelte';
 
   const settings = $derived(store.settings);
@@ -43,6 +45,11 @@
     },
     { value: 'scripted', label: 'Scripted demo', hint: 'Replays a fixed transcript. No network calls at all.' },
   ];
+
+  /** While the study key is the Anthropic key, the radio describes it, not a key of one's own. */
+  const STUDY_ANTHROPIC_HINT = "The study's key, paid by the study. Add your own key below to use it instead.";
+  const hintFor = (b: { value: BackendChoice; hint: string }): string =>
+    b.value === 'anthropic' && study.showCredit ? STUDY_ANTHROPIC_HINT : b.hint;
 
   const BACKEND_LABEL: Record<string, string> = {
     claude_cli: 'Claude Code on this Mac',
@@ -159,6 +166,8 @@
   {#if !settings}
     <p class="quiet">Loading…</p>
   {:else}
+    <StudySettings />
+
     <section>
       <h2>Where the study partners run</h2>
 
@@ -187,7 +196,7 @@
             />
             <span class="choice-text">
               <span class="choice-label">{b.label}</span>
-              <span class="quiet">{b.hint}</span>
+              <span class="quiet">{hintFor(b)}</span>
             </span>
           </label>
         {/each}

@@ -67,6 +67,13 @@ extraResources:
     filter:
       - '**/*'
       - '!**/*.part'
+  # The study build's sealed key bundle (src/main/study/). study/keys.json exists only while
+  # `tools/release.sh --study` runs, which puts it there and removes it after; any other build
+  # finds just the README and ships nothing from this folder.
+  - from: study
+    to: study
+    filter:
+      - keys.json
 asar: true
 # pdf.js is loaded with a real dynamic `import()` of a file:// URL (src/main/vault/pdf.ts).
 # Node's ESM loader does not read out of an asar archive, so this one package stays unpacked.

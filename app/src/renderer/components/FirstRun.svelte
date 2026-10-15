@@ -11,6 +11,9 @@
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
   import type { ApiProvider } from '../../shared/types.js';
+  import { study } from '../lib/studystore.svelte.js';
+  import { usd } from '../../shared/study.js';
+  import StudyUnlock from './study/StudyUnlock.svelte';
 
   let card = $state(1);
   let key = $state('');
@@ -30,6 +33,14 @@
   ];
   const chosen = $derived(KEY_PROVIDERS.find((p) => p.id === provider) ?? KEY_PROVIDERS[0]!);
 
+  /**
+   * **A study build asks for the study code here instead** (`shared/study.ts`). Claude Code is
+   * not offered and the scripted demo is not offered: a participant who skips past the code should
+   * not end up on canned replies without knowing it. Bringing their own key stays possible.
+   */
+  let ownKey = $state(false);
+  const studyCard = $derived(study.status.available && !ownKey);
+
   const cli = $derived(store.settings?.cli ?? store.boot?.cli ?? null);
   const cliReady = $derived(cli?.found === true && cli.loggedIn === true);
 
@@ -44,7 +55,7 @@
 
   function toCard(n: number): void {
     card = n;
-    if (n === 2) void checkCli();
+    if (n === 2 && !studyCard) void checkCli();
   }
 
   async function saveKey(): Promise<void> {
@@ -95,6 +106,28 @@
       <div class="acts">
         <button type="button" class="btn-primary" onclick={() => toCard(2)}>Next</button>
       </div>
+    {:else if card === 2 && studyCard}
+      <h1>Your study code</h1>
+      {#if study.status.unlocked}
+        <p>
+          Unlocked. Ellie and Max run on the study's API credit: {usd(study.status.budgetUsd)}, paid by the
+          study. What is left is always shown at the top right.
+        </p>
+        <div class="acts">
+          <button type="button" class="btn-primary" onclick={() => toCard(3)}>Next</button>
+        </div>
+      {:else}
+        <p>
+          Enter the code you were sent with this download. It unlocks the API credit the study provides,
+          so Ellie and Max can answer. Nothing is billed to you.
+        </p>
+        <StudyUnlock onunlocked={() => toCard(3)} />
+        <div class="acts">
+          <button type="button" class="btn-link" onclick={() => { ownKey = true; void checkCli(); }}>
+            I'll use my own API key instead
+          </button>
+        </div>
+      {/if}
     {:else if card === 2}
       <h1>Who answers</h1>
       {#if checking}
@@ -152,9 +185,13 @@
         {:else}
           <button type="button" class="btn-primary" onclick={() => toCard(3)} disabled={checking}>Next</button>
         {/if}
-        <button type="button" class="btn-link" onclick={() => void store.completeFirstRun()}>
-          Skip — use the scripted demo
-        </button>
+        {#if ownKey}
+          <button type="button" class="btn-link" onclick={() => (ownKey = false)}>Back to the study code</button>
+        {:else}
+          <button type="button" class="btn-link" onclick={() => void store.completeFirstRun()}>
+            Skip — use the scripted demo
+          </button>
+        {/if}
       </div>
     {:else}
       <h1>Start a notebook</h1>

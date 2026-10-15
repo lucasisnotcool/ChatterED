@@ -26,7 +26,7 @@ import {
   type ExportProgress,
 } from '../../shared/trial.js';
 import { acceptConsent, consentGate, readTrialStatus } from './consent.js';
-import { exportSummary, stageResearchExport, zipDirectory } from './export.js';
+import { exportSummary, stageResearchExport, zipDirectory, type ManifestStudy } from './export.js';
 
 export interface ResearchIpcDeps {
   db: SqlDatabase;
@@ -36,6 +36,8 @@ export interface ResearchIpcDeps {
   appVersion: string;
   /** The resolved backend, for the manifest: kind and model ids, never a key. */
   backendInfo(): { kind: string; models: Record<string, string> };
+  /** The study build's slot and credit for the manifest, or null on an ordinary build. */
+  studyInfo?(): ManifestStudy | null;
   getWindow(): BrowserWindow | null;
   /** The same `handle` wrapper the rest of `AppService.register()` uses. */
   handle: <T>(channel: string, fn: (payload: T) => unknown) => void;
@@ -130,6 +132,7 @@ export function registerResearchIpc(deps: ResearchIpcDeps): void {
         appVersion: deps.appVersion,
         platform: { os: process.platform, arch: process.arch, osVersion: macVersion() },
         backend: deps.backendInfo(),
+        study: deps.studyInfo?.() ?? null,
         now,
         onProgress: push,
       });

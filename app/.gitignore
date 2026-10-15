@@ -2,3 +2,7 @@ node_modules/
 dist/
 out/
 *.tsbuildinfo
+
+# The study build's sealed key bundle (app/study/README.md). Never committed.
+study/*
+!study/README.md

@@ -9,6 +9,7 @@
 import type { ChatterEdApi } from '../../shared/ipc.js';
 import type { SlideOverride } from '../../shared/doc/slidegroups.js';
 import { createMockTrial } from './mockTrial.js';
+import { createMockStudy } from './mockStudy.js';
 import {
   contextFingerprint,
   type AddSourcesResult,
@@ -1544,6 +1545,7 @@ export function createMockBridge(): ChatterEdApi {
 
   return {
     trial: createMockTrial(),
+    study: createMockStudy(),
     async bootstrap(): Promise<Bootstrap> {
       return {
         appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted',

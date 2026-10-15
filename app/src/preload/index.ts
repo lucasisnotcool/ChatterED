@@ -9,9 +9,11 @@ import type { CostUpdate } from '../shared/cost.js';
 import type { NotebookChange } from '../shared/notebook.js';
 import type { TutorialChange } from '../shared/tutorial.js';
 import { trialApi } from './trial.js';
+import { studyApi } from './study.js';
 
 const api: ChatterEdApi = {
   trial: trialApi,
+  study: studyApi,
   bootstrap: () => ipcRenderer.invoke(IPC.bootstrap),
   setApiKey: (key) => ipcRenderer.invoke(IPC.setApiKey, key),
   clearApiKey: () => ipcRenderer.invoke(IPC.clearApiKey),

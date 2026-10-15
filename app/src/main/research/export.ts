@@ -90,8 +90,19 @@ export interface ResearchManifest {
    * and how many log lines were dropped for naming one of them (`dropLinesMentioning`).
    */
   researchExclusion: { notebooks: number; folders: number; rowsRemoved: number; logLinesRemoved: number };
+  /** The study build's slot and credit, or null on an ordinary build (`shared/study.ts`). */
+  study: ManifestStudy | null;
   contact: string;
   files: ManifestFile[];
+}
+
+export interface ManifestStudy {
+  slot: string | null;
+  budgetUsd: number;
+  spentUsd: number;
+  exhausted: boolean;
+  serverCapped: boolean;
+  endedReason: string | null;
 }
 
 export interface ResearchExportDeps {
@@ -111,6 +122,7 @@ export interface ResearchExportDeps {
   appVersion: string;
   platform: { os: string; arch: string; osVersion: string };
   backend: { kind: string; models: Record<string, string> };
+  study?: ManifestStudy | null;
   now: Date;
   onProgress?(progress: ExportProgress): void;
 }
@@ -243,6 +255,7 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
       rowsRemoved: Object.values(excluded.rows).reduce((a, b) => a + b, 0),
       logLinesRemoved,
     },
+    study: deps.study ?? null,
     contact: TRIAL_CONTACT_EMAIL,
     files,
   };

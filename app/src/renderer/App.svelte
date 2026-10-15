@@ -23,8 +23,15 @@
   import ResearchTrialConsent from './components/ResearchTrialConsent.svelte';
   import ResearchTrialLayer from './components/ResearchTrialLayer.svelte';
   import { trial } from './lib/trialstore.svelte.js';
+  // The study build (src/shared/study.ts): the code, the credit left, and the sheet when it runs out.
+  import StudyUsedUp from './components/study/StudyUsedUp.svelte';
+  import { study } from './lib/studystore.svelte.js';
 
-  void trial.whenOpen().then(() => store.init());
+  // The study status is read before the main store, so first run knows to ask for a code.
+  void trial.whenOpen().then(async () => {
+    await study.load();
+    await store.init();
+  });
 
   /**
    * A notebook deleted, or gone, while it is open (`notebook:changed` with a null view): the
@@ -108,6 +115,7 @@
   {/key}
 {/if}
 <ResearchTrialLayer />
+<StudyUsedUp />
 {/if}
 
 <style>
