@@ -76,7 +76,7 @@
 import type { CostTokens } from '../../shared/cost.js';
 
 /** The date the `claude-api` skill's model table was cached. Shown wherever a dollar figure is. */
-export const RATE_CARD_DATE = '2026-06-24';
+export const RATE_CARD_DATE = '2026-10-15';
 
 /** Dollars per million tokens. `cacheWrite`/`cacheRead` are derived unless a model overrides. */
 export interface ModelRate {
@@ -123,6 +123,12 @@ export const RATE_CARD: readonly ModelRate[] = [
   rate('claude-haiku-4-5', 1.0, 5.0),
   rate('claude-sonnet-5', 2.0, 10.0),
   rate('claude-opus-5', 5.0, 25.0),
+  // The Claude 5.5 generation (2026-10-15; the study build runs Sonnet 5.5 on the API path).
+  // After the 5.0 rows so a bare CLI alias (`sonnet`) still prices as it did; an exact id finds
+  // its own row either way, because matching is longest-prefix.
+  rate('claude-haiku-5-5', 0.1, 0.5),
+  rate('claude-sonnet-5-5', 2.0, 10.0),
+  rate('claude-opus-5-5', 4.0, 20.0, 0.05), // cache reads $0.20, half the usual 10%
   // Previous generation. Reachable only by typing the id into Settings; priced so that a room
   // played on one is not silently free.
   rate('claude-sonnet-4-6', 3.0, 15.0),

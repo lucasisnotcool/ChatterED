@@ -43,10 +43,11 @@ export class AnthropicClient implements LLMClient {
     let ttftMs = -1;
     let text = '';
 
+    const shape = requestShape(request);
     const stream = this.#client.messages.stream(
       {
       model: request.model,
-      max_tokens: request.max_tokens,
+      max_tokens: shape.maxTokens,
       system: request.system.map((block) => ({
         type: 'text' as const,
         text: block.text,
@@ -54,8 +55,13 @@ export class AnthropicClient implements LLMClient {
       })),
       messages: withImages(request),
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-      ...(request.jsonSchema
-        ? { output_config: { format: { type: 'json_schema' as const, schema: request.jsonSchema } } }
+      ...(request.jsonSchema || shape.effort
+        ? {
+            output_config: {
+              ...(shape.effort ? { effort: shape.effort } : {}),
+              ...(request.jsonSchema ? { format: { type: 'json_schema' as const, schema: request.jsonSchema } } : {}),
+            },
+          }
         : {}),
       },
       // Stop. The SDK aborts the HTTP request, the iterator throws, and the actor keeps the
@@ -72,6 +78,7 @@ export class AnthropicClient implements LLMClient {
     }
 
     const final = await stream.finalMessage();
+    if ((final.stop_reason as string | null) === 'refusal') throw new Error(REFUSAL_MESSAGE);
     if (text.length === 0) {
       text = final.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -87,6 +94,40 @@ export class AnthropicClient implements LLMClient {
       backend: 'anthropic',
     };
   }
+}
+
+/** What the learner reads when a safety classifier declines the call (`stop_reason: "refusal"`). */
+export const REFUSAL_MESSAGE = 'Claude declined to answer this one. Try asking it a different way.';
+
+/**
+ * **Models that think unless told otherwise** (the Claude 5 generation: Opus 5 and 5.5, Sonnet 5
+ * and 5.5, Haiku 5.5). On them an omitted `thinking` means adaptive thinking, and thinking tokens
+ * count against `max_tokens`.
+ *
+ * Every budget in this app (700 for a Teacher turn, 400 for a whisper) was set on calls that did
+ * not think, so on these models a turn could spend its whole budget thinking and come back empty
+ * or cut off. Found preparing the study build (2026-10-15), whose participants run Sonnet 5.5 on
+ * the API path: the dogfood ran on the Claude CLI, which never sends `max_tokens`.
+ *
+ * So for these models a call keeps its visible-text budget and gets headroom for thinking on
+ * top: output is billed on what is generated, not on the ceiling. A schema-bound call also runs
+ * at `low` effort, which is the API's nearest match to the CLI's `MAX_THINKING_TOKENS=0` for the
+ * same calls (`claude-cli.ts`, `cliEnv`): there is nothing to deliberate about in filling a form.
+ * Free-text calls keep the model's default effort, as the CLI did.
+ */
+export function thinksByDefault(model: string): boolean {
+  return /^claude-(opus|sonnet|haiku)-5(-\d+)?$/.test(model.trim().toLowerCase());
+}
+
+export const THINKING_HEADROOM = { schema: 2_000, prose: 8_000 } as const;
+
+export function requestShape(request: Pick<LlmRequest, 'model' | 'max_tokens' | 'jsonSchema'>): {
+  maxTokens: number;
+  effort: 'low' | null;
+} {
+  if (!thinksByDefault(request.model)) return { maxTokens: request.max_tokens, effort: null };
+  if (request.jsonSchema) return { maxTokens: request.max_tokens + THINKING_HEADROOM.schema, effort: 'low' };
+  return { maxTokens: request.max_tokens + THINKING_HEADROOM.prose, effort: null };
 }
 
 /**

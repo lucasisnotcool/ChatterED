@@ -14,7 +14,7 @@ describe('the rate card', () => {
    * fails it is because somebody edited the table, which is exactly when a human should look.
    */
   it('prices the three models the app runs on', () => {
-    expect(RATE_CARD_DATE).toBe('2026-06-24');
+    expect(RATE_CARD_DATE).toBe('2026-10-15');
     const haiku = rateFor('claude-haiku-4-5').rate;
     expect([haiku.inputPerMTok, haiku.outputPerMTok]).toEqual([1, 5]);
     const sonnet = rateFor('claude-sonnet-5').rate;
@@ -184,5 +184,13 @@ describe('the settings override', () => {
     const { card, errors } = parseRateCardOverride('{not json');
     expect(card).toBe(RATE_CARD);
     expect(errors[0]).toContain('not JSON');
+  });
+});
+
+describe('the Claude 5.5 rows (2026-10-15)', () => {
+  it('prices each 5.5 id on its own row, exactly', () => {
+    expect(rateFor('claude-sonnet-5-5')).toMatchObject({ exact: true, rate: { model: 'claude-sonnet-5-5', inputPerMTok: 2, outputPerMTok: 10 } });
+    expect(rateFor('claude-haiku-5-5')).toMatchObject({ exact: true, rate: { model: 'claude-haiku-5-5', inputPerMTok: 0.1, outputPerMTok: 0.5 } });
+    expect(rateFor('claude-opus-5-5')).toMatchObject({ exact: true, rate: { model: 'claude-opus-5-5', inputPerMTok: 4, cacheReadPerMTok: 0.2 } });
   });
 });

@@ -101,7 +101,7 @@ export const PROVIDER_PLANS: Record<ApiProviderId, ModelPlan | null> = {
 
 /** The dropdown suggestions per provider, cheapest-to-strongest. Free text is always allowed too. */
 export const PROVIDER_MODEL_SUGGESTIONS: Record<ApiProviderId, readonly string[]> = {
-  anthropic: ['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
+  anthropic: ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5'],
   openai: ['gpt-6-luna', 'gpt-6-sol', 'gpt-6-astra', 'gpt-5.4-mini', 'gpt-5.4'],
   gemini: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-pro-preview'],
   openai_compatible: [],
