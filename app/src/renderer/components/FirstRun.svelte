@@ -4,9 +4,12 @@
    * carries a backend card, because the study partners can run on the copy of Claude Code
    * already installed on this Mac and only fall back to a key if it cannot, issue #19).
    *
-   * Card 1 describes notebooks and the learning overview (#58, `docs/research/notebooks.md` §0),
-   * and card 3 says how a notebook starts. It used to open a folder vault; notebooks replaced it,
-   * so there is nothing to pick here any more and the card only explains.
+   * Card 1 describes notebooks and the learning overview (#58, `docs/research/notebooks.md` §0).
+   * **Card 3 starts with a tutorial** (2026-10-25): the learner picks or drops a tutorial sheet,
+   * and its lecture deck if they have it, and lands in a notebook with the sheet as the main view,
+   * so the first thing they do is attempt part 1 (`store.startFromTutorial`). Skipping it goes to
+   * the Notebooks home as before. A preloaded study copy has nothing to unlock and opens on card 3
+   * itself, so a participant goes from the consent notice straight to adding their sheet.
    */
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
@@ -14,8 +17,11 @@
   import { study } from '../lib/studystore.svelte.js';
   import { usd } from '../../shared/study.js';
   import StudyUnlock from './study/StudyUnlock.svelte';
+  import { createFileDrop, filesToPaths, noPathNotice } from '../lib/dropguard.js';
 
-  let card = $state(1);
+  // A preloaded copy is unlocked in main before the window opens, and `study.load()` runs before
+  // first run mounts, so this reads the settled status.
+  let card = $state(study.status.available && study.status.unlocked ? 3 : 1);
   let key = $state('');
   let saving = $state(false);
   let keyError = $state<string | null>(null);
@@ -53,9 +59,54 @@
     showKeyField = !(store.settings?.cli.found && store.settings.cli.loggedIn);
   }
 
+  /** A preloaded copy (`release.sh --preload`) is unlocked before first run: no card 2 to show. */
+  const preloaded = $derived(study.status.available && study.status.unlocked && !ownKey);
+
   function toCard(n: number): void {
+    if (n === 2 && preloaded) n = 3;
     card = n;
     if (n === 2 && !studyCard) void checkCli();
+  }
+
+  // ── Card 3: the tutorial, and the lecture deck that goes with it ──
+  let tutorialPath = $state<string | null>(null);
+  let lecturePath = $state<string | null>(null);
+  let starting = $state(false);
+  let overSlot = $state<'tutorial' | 'lecture' | null>(null);
+  const baseName = (p: string): string => p.split('/').pop() ?? p;
+
+  function slotDrop(slot: 'tutorial' | 'lecture') {
+    return createFileDrop<File>({
+      onover: (o) => (overSlot = o ? slot : overSlot === slot ? null : overSlot),
+      ondrop: (files) => {
+        const { paths, refused } = filesToPaths(files, (f) => bridge().pathForFile(f));
+        store.notebook.say(noPathNotice(refused));
+        if (paths[0]) setSlot(slot, paths[0]);
+      },
+    });
+  }
+  const tutorialDrop = slotDrop('tutorial');
+  const lectureDrop = slotDrop('lecture');
+
+  function setSlot(slot: 'tutorial' | 'lecture', path: string): void {
+    if (slot === 'tutorial') tutorialPath = path;
+    else lecturePath = path;
+  }
+
+  async function pickInto(slot: 'tutorial' | 'lecture'): Promise<void> {
+    try {
+      const picked = (await bridge().notebookPickFiles()).paths;
+      if (picked[0]) setSlot(slot, picked[0]);
+    } catch {
+      // The picker failed to open; the slot stays as it was and a drop still works.
+    }
+  }
+
+  async function startTutorial(): Promise<void> {
+    if (!tutorialPath || starting) return;
+    starting = true;
+    const ok = await store.startFromTutorial(tutorialPath, lecturePath);
+    if (!ok) starting = false;
   }
 
   async function saveKey(): Promise<void> {
@@ -77,9 +128,11 @@
 
 <div class="screen">
   <section class="card">
-    <span class="steps" aria-label="Step {card} of 3">
-      {#each [1, 2, 3] as n (n)}<span class="pip" class:on={n === card}></span>{/each}
-    </span>
+    {#if !preloaded}
+      <span class="steps" aria-label="Step {card} of 3">
+        {#each [1, 2, 3] as n (n)}<span class="pip" class:on={n === card}></span>{/each}
+      </span>
+    {/if}
 
     {#if card === 1}
       <h1>What this is</h1>
@@ -194,19 +247,57 @@
         {/if}
       </div>
     {:else}
-      <h1>Start a notebook</h1>
+      <h1>Start with a tutorial</h1>
       <p>
-        A notebook is the files for one week or one topic: slides, notes, Word, Markdown, text or
-        images. Drop them on the Notebooks screen, or press <strong>New notebook</strong> and pick
-        them.
+        Add this week's tutorial sheet. If you have the lecture slides it goes with, add them too:
+        Ellie and Max then answer from the lecture. The sheet opens with an answer slot under every
+        part, and help is beside each one.
       </p>
+      {#if preloaded}
+        <p class="quiet">
+          Two study partners work beside you: <strong>Ellie</strong> explains from the lecture, and
+          <strong>Max</strong> gives hints, checks your answers, and quizzes you. Their API credit is
+          paid by the study ({usd(study.status.budgetUsd)}); what is left is always shown at the top
+          right.
+        </p>
+      {/if}
+
+      <div class="slots">
+        {#each [{ slot: 'tutorial', label: 'Tutorial sheet', hint: 'PDF, Word or an image', path: tutorialPath, drop: tutorialDrop }, { slot: 'lecture', label: 'Lecture slides (optional)', hint: 'the deck this tutorial is on', path: lecturePath, drop: lectureDrop }] as s (s.slot)}
+          <button
+            type="button"
+            class="slot"
+            class:filled={s.path !== null}
+            class:over={overSlot === s.slot}
+            data-dropzone
+            disabled={starting}
+            onclick={() => void pickInto(s.slot as 'tutorial' | 'lecture')}
+            ondragenter={s.drop.dragenter}
+            ondragover={s.drop.dragover}
+            ondragleave={s.drop.dragleave}
+            ondrop={s.drop.drop}
+          >
+            <span class="slot-label">{s.label}</span>
+            {#if s.path}
+              <span class="slot-file">{baseName(s.path)}</span>
+              <span class="quiet slot-hint">Click to choose another</span>
+            {:else}
+              <span class="quiet slot-hint">Drop it here, or click to choose · {s.hint}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
       <p class="quiet">
-        ChatterED keeps its own copy of each file on this Mac, so moving or deleting the original
-        changes nothing. Nothing is uploaded anywhere. Tick which files count, and Ellie, Max and the
-        overview read only those.
+        ChatterED keeps its own copy of each file on this Mac; nothing is uploaded anywhere. Max
+        reads the sheet first, which takes a minute or two.
       </p>
       <div class="acts">
-        <button type="button" class="btn-primary" onclick={() => void store.completeFirstRun()}>Start</button>
+        <button type="button" class="btn-primary" onclick={() => void startTutorial()} disabled={!tutorialPath || starting}>
+          {starting ? 'Opening…' : 'Open the tutorial'}
+        </button>
+        <button type="button" class="btn-link" disabled={starting} onclick={() => void store.completeFirstRun()}>
+          Skip — I'll add files later
+        </button>
       </div>
     {/if}
   </section>
@@ -244,4 +335,24 @@
     font-size: 13px;
   }
   .acts { display: flex; align-items: center; gap: 16px; margin-top: 22px; }
+  .slots { display: flex; flex-direction: column; gap: 10px; margin: 16px 0 12px; }
+  .slot {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    text-align: left;
+    padding: 12px 14px;
+    border: 1px dashed var(--hairline);
+    border-radius: var(--radius);
+    background: var(--ground);
+    font: inherit;
+    cursor: pointer;
+  }
+  .slot.filled { border-style: solid; background: var(--pane); }
+  .slot.over { border-color: var(--indigo); }
+  .slot:disabled { cursor: default; opacity: 0.7; }
+  .slot-label { font-size: 13px; font-weight: 600; }
+  .slot-file { font-size: 13px; }
+  .slot-hint { font-size: 12px; }
 </style>

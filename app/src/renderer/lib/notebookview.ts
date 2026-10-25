@@ -371,3 +371,13 @@ export function helpRefusal(
       return 'That did not work. Try again.';
   }
 }
+
+/**
+ * The source a picked or dropped file became, by its name: a notebook keeps its own copy under its
+ * own name, so the path itself is not in the view. The first match, or null when the file was
+ * refused.
+ */
+export function sourceForPath(sources: readonly { fileId: string; name: string }[], path: string): string | null {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  return sources.find((s) => s.name === name)?.fileId ?? null;
+}

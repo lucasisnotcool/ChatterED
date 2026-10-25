@@ -131,7 +131,10 @@ calls at low effort, but this was tested against a fake SDK only. Check it live:
 > 4. Read and agree to the trial notice. Your copy already has its credit: the amount left is
 >    always at the top right. (A shared DMG asks for your study code here: `S..-....-....-....`.)
 >    When it runs out, you can keep going with Claude Code or your own API key in Settings.
-> 5. At the end of the study, choose **File ▸ Export Research Data…** and email us the zip.
+> 5. Drop in this week's tutorial sheet, and the lecture slides it goes with if you have them,
+>    and press **Open the tutorial**. Max reads the sheet (a minute or two), then every part has
+>    an answer slot: write your attempt there, and use Hint or Check beside it.
+> 6. At the end of the study, choose **File ▸ Export Research Data…** and email us the zip.
 
 ## 7. End of the study
 

@@ -43,6 +43,7 @@ import { NotebookStore } from './notebookstore.svelte.js';
 import { TutorialStore } from './tutorialstore.svelte.js';
 import { SearchStore } from './searchstore.svelte.js';
 import type { NotebookView } from '../../shared/notebook.js';
+import { sourceForPath } from './notebookview.js';
 import { regenerateCommand } from './pm/overview.js';
 
 /**
@@ -543,6 +544,31 @@ class Store {
     const view = await this.notebook.create(paths);
     if (view) await this.openNotebook(view.id);
     return view;
+  }
+
+  /**
+   * **First run's last step** (2026-10-25): a tutorial sheet, and its lecture deck if the learner
+   * has it, become a notebook that opens straight onto the sheet as the main view. The sheet is
+   * typed a tutorial here rather than left to the guess, which errs to `lecture`; the read then
+   * starts by itself as the source turns ready (`tutorialstore`). False when nothing was made, and
+   * first run stays open so the learner can try another file.
+   */
+  async startFromTutorial(tutorialPath: string, lecturePath: string | null): Promise<boolean> {
+    const view = await this.notebook.create(lecturePath ? [tutorialPath, lecturePath] : [tutorialPath]);
+    if (!view) return false;
+    const fileId = sourceForPath(view.sources, tutorialPath);
+    if (fileId) {
+      try {
+        await bridge().notebookSetRole({ notebookId: view.id, fileId, role: 'tutorial' });
+        layout.setTutorialMain(view.id, fileId);
+      } catch (err) {
+        this.notebook.say(message(err));
+      }
+    }
+    await run(this, () => bridge().completeFirstRun());
+    if (this.boot) this.boot.firstRun = false;
+    await this.openNotebook(view.id);
+    return true;
   }
 
   /**

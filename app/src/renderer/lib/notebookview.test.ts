@@ -259,3 +259,16 @@ describe('tutorials in the sources panel and the tutorial column', () => {
     expect(helpRefusal(null, 'reveal')).toBeNull();
   });
 });
+
+describe('sourceForPath (first run, 2026-10-25)', () => {
+  it('finds the source a picked file became by its name, or null when it was refused', async () => {
+    const { sourceForPath } = await import('./notebookview.js');
+    const sources = [
+      { fileId: 'f_lec', name: 'Lecture 5.pdf' },
+      { fileId: 'f_tut', name: 'Tutorial 3.pdf' },
+    ];
+    expect(sourceForPath(sources, '/Users/x/Downloads/Tutorial 3.pdf')).toBe('f_tut');
+    expect(sourceForPath(sources, 'Lecture 5.pdf')).toBe('f_lec');
+    expect(sourceForPath(sources, '/Users/x/Tutorial 4.pdf')).toBeNull();
+  });
+});
