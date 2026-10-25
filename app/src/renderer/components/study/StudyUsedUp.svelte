@@ -23,8 +23,9 @@
         using ChatterED this much.
       </p>
       <p>
-        To keep going, add your own API key (Anthropic, OpenAI or Google Gemini) in Settings. Your
-        notebooks and progress stay as they are.
+        To keep going, open Settings and either choose <strong>Claude Code on this Mac</strong> (if
+        you have Claude Code signed in) or add your own API key (Anthropic, OpenAI or Google Gemini).
+        Your notebooks and progress stay as they are.
       </p>
       <p class="quiet">
         Either way, please still send your research data at the end of the study (File ▸ Export

@@ -154,7 +154,9 @@ export async function checkPart(deps: TutorialDeps, input: TutorialCheckInput): 
     log().error('tutorial.check.judge_failed', { part_id: input.partId, cause: (err as Error).message.slice(0, 200) });
     throw new Error("Max couldn't check this answer just now. Try Check again in a moment.");
   }
-  const status = statusAfterCheck(judged.verdict);
+  // After Show answer the part stays revealed and fills nothing: an answer that matches the shown
+  // one is a copy (DG5). Max still gives feedback on it.
+  const status = statusAfterCheck(judged.verdict, before);
   const now = nowOf(deps);
   const parts = tutorialRepo(deps.db);
   if (!parts.part(resolved.record.id, input.partId)) {
@@ -164,7 +166,7 @@ export async function checkPart(deps: TutorialDeps, input: TutorialCheckInput): 
 
   // A check is a learner action: it opens the room, as a first message does.
   const { roomId, actor } = await deps.openRoom(input.notebookId);
-  if (judged.verdict !== 'not_yet' && resolved.part.objectiveIds.length > 0) {
+  if (judged.verdict !== 'not_yet' && status !== 'revealed' && resolved.part.objectiveIds.length > 0) {
     const outcomes = outcomesRepo(deps.db);
     for (const objectiveId of resolved.part.objectiveIds) {
       outcomes.insert({

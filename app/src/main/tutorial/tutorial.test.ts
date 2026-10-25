@@ -270,6 +270,18 @@ describe('checking a part', () => {
     expect(listViews(deps, notebookId)[0]!.parts[1]).toMatchObject({ status: 'correct', attempts: 1, checkedBy: 'simulation' });
   });
 
+  it('keeps a revealed part revealed when its answer is checked, and fills nothing (DG5)', async () => {
+    await ingested();
+    await helpPart(deps, { notebookId, fileId: tutorialId, partId: 'P1b', kind: 'reveal' });
+    answer('P1b', (p) => slot(p, plan(['Move(X, Y, Table)', 'Move(Y, Table, X)'])));
+    const result = await checkPart(deps, { notebookId, fileId: tutorialId, partId: 'P1b' });
+    expect(result).toMatchObject({ accepted: true, status: 'revealed' });
+    expect(turns.at(-1)).toMatchObject({ kind: 'feedback', verdict: { verdict: 'complete' } });
+    const rows = outcomesRepo(db).forContent(notebookContentKey(notebookId));
+    expect(rows.map((r) => [r.kind, r.releasedBy, r.verdict])).toEqual([['released', 'give_up', null]]);
+    expect(listViews(deps, notebookId)[0]!.parts[1]!.status).toBe('revealed');
+  });
+
   it('marks a plan that does not reach the goal incorrect and fills nothing', async () => {
     await ingested();
     answer('P1b', (p) => slot(p, plan(['Move(Y, Table, X)'])));

@@ -8,7 +8,10 @@
  *   - the home directory (`/Users/<name>`, any case) becomes `~`;
  *   - the macOS short username, as a whole word (any case), becomes `<user>`;
  *   - anything shaped like a provider API key becomes `[redacted-key]` — keys live in files, not
- *     here, but a pasted key in a chat message must not ride along.
+ *     here, but a pasted key in a chat message must not ride along;
+ *   - an e-mail address becomes `[redacted-email]`, and an NUS matriculation number (`A0123456X`)
+ *     or NUSNET ID (`E0123456`) becomes `[student-id]`. Students name their submissions with
+ *     these, so file names carry them, and so does what they type (2026-10-25).
  *
  * Three things are removed rather than scrubbed:
  *
@@ -19,6 +22,11 @@
  *   - **the columns that hold source-document text** (`SOURCE_TEXT_COLUMNS`): the lecture PDFs'
  *     extracted text. The trial shares what the learner did, not the lecturer's material.
  *
+ * And **file rows nothing uses** go (`pruneUnusedFiles`). Before notebooks (#58) the app scanned
+ * whole folders, so an older install's `files` table names everything in them: a whole cloud
+ * drive, in the first export. Only the files a notebook, a doc, a room or a usage row points at,
+ * and the notebooks' own copies, are kept.
+ *
  * `secure_delete` is on and the copy is `VACUUM`ed at the end, so nothing removed here survives
  * in a free page of the exported file.
  */
@@ -27,6 +35,11 @@ import type { SqlDatabase } from '../db/driver.js';
 export const HOME_REPLACEMENT = '~';
 export const USER_REPLACEMENT = '<user>';
 export const KEY_REPLACEMENT = '[redacted-key]';
+export const EMAIL_REPLACEMENT = '[redacted-email]';
+export const STUDENT_ID_REPLACEMENT = '[student-id]';
+
+/** The managed vault's id (`vault/managed.ts`): the notebooks' own copies of their sources. */
+const MANAGED_VAULT_ID = 'vault_notebooks';
 
 /**
  * `[table, column]` pairs holding text extracted from the learner's source documents. Replaced
@@ -59,6 +72,15 @@ export function isSecretSettingKey(key: string): boolean {
   ) || /apikey|secret|password|credential/i.test(key);
 }
 
+const EMAIL_SHAPED = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+
+/**
+ * An NUS matriculation number (`A` + 7 digits + a letter, any case) or a NUSNET ID (`E` + 7
+ * digits). Letters and digits are the boundary, so `A0123456X_Report.pdf` loses it. The NUSNET
+ * form is upper-case only: lower-case `e` + 7 digits is a common run inside a hex id.
+ */
+const STUDENT_ID_SHAPED = /(?<![A-Za-z0-9])(?:[Aa]\d{7}[A-Za-z]|E\d{7})(?![A-Za-z0-9])/g;
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -86,6 +108,8 @@ export function makeScrubber(id: ScrubIdentity): Scrub {
     if (homeRe) out = out.replace(homeRe, HOME_REPLACEMENT);
     if (userRe) out = out.replace(userRe, USER_REPLACEMENT);
     out = out.replace(KEY_SHAPED, KEY_REPLACEMENT);
+    out = out.replace(EMAIL_SHAPED, EMAIL_REPLACEMENT);
+    out = out.replace(STUDENT_ID_SHAPED, STUDENT_ID_REPLACEMENT);
     return out;
   };
 }
@@ -153,6 +177,8 @@ function rowsOf(db: SqlDatabase, table: string): { rows: Record<string, unknown>
 export interface AnonymiseReport {
   droppedTables: string[];
   droppedSettings: number;
+  /** `files` rows dropped because nothing points at them (`pruneUnusedFiles`). */
+  unusedFilesDropped: number;
   excludedColumns: string[];
   valuesScrubbed: number;
   tablesWalked: number;
@@ -200,6 +226,8 @@ function anonymiseInTransaction(db: SqlDatabase, scrub: Scrub): AnonymiseReport 
       droppedSettings += 1;
     }
   }
+
+  const unusedFilesDropped = pruneUnusedFiles(db);
 
   const excludedColumns: string[] = [];
   for (const [table, column] of SOURCE_TEXT_COLUMNS) {
@@ -256,7 +284,26 @@ function anonymiseInTransaction(db: SqlDatabase, scrub: Scrub): AnonymiseReport 
     }
   }
 
-  return { droppedTables, droppedSettings, excludedColumns, valuesScrubbed, tablesWalked: tables.length };
+  return { droppedTables, droppedSettings, unusedFilesDropped, excludedColumns, valuesScrubbed, tablesWalked: tables.length };
+}
+
+/**
+ * Delete the `files` rows outside the managed vault that no `file_id` or `legacy_file_id` column
+ * of any table points at. Generic like the scrub: a table that gains a `file_id` next month keeps
+ * its files without anyone remembering this function. Returns how many rows went.
+ */
+export function pruneUnusedFiles(db: SqlDatabase): number {
+  const tables = listTables(db);
+  if (!tables.includes('files')) return 0;
+  const used = tables
+    .filter((t) => t !== 'files')
+    .flatMap((t) =>
+      columns(db, t)
+        .filter((c) => c.name === 'file_id' || c.name === 'legacy_file_id')
+        .map((c) => `SELECT ${quoteIdent(c.name)} FROM ${quoteIdent(t)} WHERE ${quoteIdent(c.name)} IS NOT NULL`),
+    );
+  const keep = used.length > 0 ? ` AND id NOT IN (${used.join(' UNION ')})` : '';
+  return db.prepare(`DELETE FROM files WHERE vault_id <> @managed${keep}`).run({ managed: MANAGED_VAULT_ID }).changes;
 }
 
 /**

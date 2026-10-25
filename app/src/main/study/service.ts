@@ -15,9 +15,15 @@
  *  3. **When to stop.** `guard()` wraps the client every call goes through. On the Anthropic
  *     backend with the study key active, a call over budget is refused before it is made, and an
  *     Anthropic refusal that names the spend limit marks the credit used up.
+ *
+ * **A preloaded copy** (2026-10-25) is one participant's own DMG: `release.sh --preload <slot>`
+ * puts that slot's code beside the bundle as `preload.txt`, and `unlockPreloaded()` enters it on
+ * the first launch, so there is no code to type. Whoever holds that DMG holds that key, as whoever
+ * holds a leaked code does.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { ApiKeyStore } from '../apikey.js';
 import type { SqlDatabase } from '../db/driver.js';
 import type { SettingsRepo } from '../db/repos/core.js';
@@ -54,6 +60,9 @@ export interface StudyServiceDeps {
   /** Pushed whenever the status may have changed. */
   onChanged?: (status: StudyStatus) => void;
 }
+
+/** A preloaded copy's code, beside the bundle (`tools/release.sh --preload`). */
+export const PRELOAD_FILE = 'preload.txt';
 
 export function keyFingerprint(key: string): string {
   return createHash('sha256').update(key.trim(), 'utf8').digest('hex').slice(0, 16);
@@ -157,6 +166,17 @@ export class StudyService {
     const status = this.status();
     this.#d.onChanged?.(status);
     return { ok: true, status };
+  }
+
+  /**
+   * Enter the code a preloaded copy carries, once: only while no slot has ever been unlocked on
+   * this Mac, so a participant who later moves to their own key is not moved back. Null when there
+   * is nothing to do.
+   */
+  unlockPreloaded(): UnlockOutcome | null {
+    const path = this.#d.bundlePath ? join(dirname(this.#d.bundlePath), PRELOAD_FILE) : null;
+    if (!path || !existsSync(path) || !this.bundle() || this.#d.settings.get(STUDY_SETTINGS.slot)) return null;
+    return this.unlock(readFileSync(path, 'utf8').trim());
   }
 
   /**

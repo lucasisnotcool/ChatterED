@@ -9,6 +9,10 @@
 #                                         ships in Resources/study → out/ChatterED-Study-<v>-arm64.dmg.
 #                                         Never published: it goes to participants privately
 #                                         (app/docs/STUDY-RELEASE.md).
+#   tools/release.sh --study <keys.json> --preload 3   one participant's own copy: slot 3's code
+#                                         (from codes.csv beside the bundle, or --codes <file>) ships
+#                                         too and is entered on first launch, so there is nothing to
+#                                         type → out/ChatterED-Study-<v>-S03-arm64.dmg.
 #
 # Uses the node_modules already installed (no `npm ci`). What it checks before it prints a hash:
 #   - dist/ and out/ were rebuilt from scratch (no stale compiled file or old DMG can ship);
@@ -29,12 +33,16 @@ cd "$APP_DIR"
 TAG=""
 NOTES_FILE=""
 STUDY_BUNDLE=""
+PRELOAD_SLOT=""
+CODES_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --publish) TAG="${2:?--publish needs a tag, e.g. v0.1.0}"; shift 2 ;;
     --notes) NOTES_FILE="${2:?--notes needs a file}"; shift 2 ;;
     --study) STUDY_BUNDLE="${2:?--study needs the keys.json from npm run study:keys}"; shift 2 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --preload) PRELOAD_SLOT="${2:?--preload needs a slot number}"; shift 2 ;;
+    --codes) CODES_FILE="${2:?--codes needs the codes.csv from npm run study:keys}"; shift 2 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "release.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -49,17 +57,34 @@ VERSION="$(node -p "require('./package.json').version")"
 # electron-builder copies study/keys.json into Resources/study whenever it exists, so an ordinary
 # build refuses to start with one lying there, and a study build removes its copy when it ends.
 STUDY_DEST="$APP_DIR/study/keys.json"
+# A preloaded copy's code (src/main/study/service.ts, `unlockPreloaded`), under the same rule.
+PRELOAD_DEST="$APP_DIR/study/preload.txt"
+[ -z "$PRELOAD_SLOT" ] || [ -n "$STUDY_BUNDLE" ] || die "--preload is for a study build: pass --study too."
 if [ -n "$STUDY_BUNDLE" ]; then
   [ -z "$TAG" ] || die "A study build carries participants' sealed keys: it is never published. Drop --publish."
   [ -f "$STUDY_BUNDLE" ] || die "No study bundle at $STUDY_BUNDLE."
   node -e "const b=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if (b.format!=='chattered-study-keys'||!b.slots||!Object.keys(b.slots).length) process.exit(1)" "$STUDY_BUNDLE" \
     || die "$STUDY_BUNDLE is not a study bundle (npm run study:keys makes one)."
   STUDY_SLOTS="$(node -p "Object.keys(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).slots).length" "$STUDY_BUNDLE")"
+  PRELOAD_CODE=""
+  if [ -n "$PRELOAD_SLOT" ]; then
+    [[ "$PRELOAD_SLOT" =~ ^[0-9]{1,3}$ ]] || die "--preload takes a slot number, not $PRELOAD_SLOT."
+    PRELOAD_SLOT="$(printf '%02d' "$((10#$PRELOAD_SLOT))")"
+    CODES_FILE="${CODES_FILE:-$(dirname "$STUDY_BUNDLE")/codes.csv}"
+    [ -f "$CODES_FILE" ] || die "No codes file at $CODES_FILE (pass --codes)."
+    PRELOAD_CODE="$(awk -F, -v s="$PRELOAD_SLOT" '$1 == s { print $2 }' "$CODES_FILE" | tr -d '[:space:]')"
+    [ -n "$PRELOAD_CODE" ] || die "Slot $PRELOAD_SLOT is not in $CODES_FILE."
+  fi
   cp "$STUDY_BUNDLE" "$STUDY_DEST"
-  trap 'rm -f "$STUDY_DEST"' EXIT
-  say "Study build: $STUDY_SLOTS participant slot(s) sealed in."
-elif [ -e "$STUDY_DEST" ]; then
-  die "$STUDY_DEST exists, and an ordinary build must not carry it. Remove it, or pass --study."
+  trap 'rm -f "$STUDY_DEST" "$PRELOAD_DEST"' EXIT
+  if [ -n "$PRELOAD_CODE" ]; then
+    ( umask 022; printf '%s\n' "$PRELOAD_CODE" > "$PRELOAD_DEST" )
+    say "Study build: $STUDY_SLOTS participant slot(s) sealed in; slot $PRELOAD_SLOT preloaded."
+  else
+    say "Study build: $STUDY_SLOTS participant slot(s) sealed in."
+  fi
+elif [ -e "$STUDY_DEST" ] || [ -e "$PRELOAD_DEST" ]; then
+  die "$APP_DIR/study holds a key bundle or a preloaded code, and an ordinary build must not carry either. Remove it, or pass --study."
 fi
 
 if [ -n "$TAG" ]; then
@@ -80,9 +105,10 @@ DMG="$APP_DIR/out/$APP_NAME-$VERSION-arm64.dmg"
 [ -f "$DMG" ] || die "electron-builder produced no $DMG."
 BUILT_APP="$APP_DIR/out/mac-arm64/$APP_NAME.app"
 if [ -n "$STUDY_BUNDLE" ]; then
-  rm -f "$STUDY_DEST"
-  mv "$DMG" "$APP_DIR/out/$APP_NAME-Study-$VERSION-arm64.dmg"
-  DMG="$APP_DIR/out/$APP_NAME-Study-$VERSION-arm64.dmg"
+  rm -f "$STUDY_DEST" "$PRELOAD_DEST"
+  STUDY_DMG="$APP_DIR/out/$APP_NAME-Study-$VERSION${PRELOAD_SLOT:+-S$PRELOAD_SLOT}-arm64.dmg"
+  mv "$DMG" "$STUDY_DMG"
+  DMG="$STUDY_DMG"
 fi
 
 # ── shipped-content checks (on dist/, which is what app.asar holds) ─────────
@@ -97,7 +123,7 @@ fi
 
 # ── verify what a user actually gets: the app inside the DMG ────────────────
 MNT="$(mktemp -d "${TMPDIR:-/tmp}/chattered-dmg.XXXXXX")"
-cleanup() { hdiutil detach -quiet "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; [ -z "$STUDY_BUNDLE" ] || rm -f "$STUDY_DEST"; }
+cleanup() { hdiutil detach -quiet "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; [ -z "$STUDY_BUNDLE" ] || rm -f "$STUDY_DEST" "$PRELOAD_DEST"; }
 trap cleanup EXIT
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$DMG"
 DMG_APP="$MNT/$APP_NAME.app"
@@ -128,6 +154,14 @@ if [ -n "$STUDY_BUNDLE" ]; then
   say "Study bundle: in Contents/Resources/study, identical to $STUDY_BUNDLE."
 elif [ -e "$SHIPPED_BUNDLE" ]; then
   die "An ordinary build carries a study bundle ($SHIPPED_BUNDLE)."
+fi
+SHIPPED_PRELOAD="$DMG_APP/Contents/Resources/study/preload.txt"
+if [ -n "$PRELOAD_SLOT" ]; then
+  [ "$(tr -d '[:space:]' < "$SHIPPED_PRELOAD" 2>/dev/null)" = "$PRELOAD_CODE" ] \
+    || die "The preloaded code inside the DMG is missing or is not slot $PRELOAD_SLOT's."
+  say "Preloaded: slot $PRELOAD_SLOT's code, entered on first launch."
+elif [ -e "$SHIPPED_PRELOAD" ]; then
+  die "This build carries a preloaded code it was not asked for ($SHIPPED_PRELOAD)."
 fi
 
 MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$DMG_APP/Contents/Info.plist")"

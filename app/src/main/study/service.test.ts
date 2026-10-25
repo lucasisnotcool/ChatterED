@@ -14,7 +14,7 @@ import { agentModelKey, orchestratorModelKey } from '../llm/providers.js';
 import type { LLMClient, LlmRequest, LlmResult } from '../../room/llm/types.js';
 import { CREDIT_USED_UP_MESSAGE, STUDY_SETTINGS, type StudyStatus } from '../../shared/study.js';
 import { BUNDLE_FORMAT, BUNDLE_VERSION, newCode, sealSlot, type KdfParams, type StudyBundle } from './crypto.js';
-import { StudyCreditUsedUpError, StudyService, keyFingerprint } from './service.js';
+import { PRELOAD_FILE, StudyCreditUsedUpError, StudyService, keyFingerprint } from './service.js';
 
 const FAST: KdfParams = { name: 'scrypt', N: 2 ** 10, r: 8, p: 1, keyLen: 32 };
 const STUDY_KEY = 'sk-ant-api03-studystudystudystudystudy';
@@ -75,7 +75,8 @@ function setup(opts: { bundle?: boolean } = {}) {
          VALUES (@id, @at, 'group', 'claude-sonnet-5-5', @backend, @usd)`,
       )
       .run({ id: `u${++n}`, at, backend, usd });
-  return { service, store, key, code, spend, pushed, setClock: (t: string) => (clock = t) };
+  const preload = (text: string) => writeFileSync(join(dir, PRELOAD_FILE), text);
+  return { service, store, key, code, spend, pushed, preload, setClock: (t: string) => (clock = t) };
 }
 
 function client(fail?: Error): LLMClient & { calls: number } {
@@ -126,6 +127,41 @@ describe('unlocking', () => {
     expect(out).toEqual({ ok: false, error: expect.stringMatching(/did not work/) });
     expect(key.get()).toBeNull();
     expect(service.status().unlocked).toBe(false);
+  });
+});
+
+describe('a preloaded copy (2026-10-25)', () => {
+  it('enters the code it carries on the first launch, with no typing', () => {
+    const { service, store, key, code, preload } = setup();
+    preload(`${code}\n`);
+    const outcome = service.unlockPreloaded();
+    expect(outcome).toMatchObject({ ok: true, status: { unlocked: true, slot: '07', budgetUsd: 30 } });
+    expect(key.get()).toBe(STUDY_KEY);
+    expect(store.settings.get(SETTINGS_KEYS.backend)).toBe('anthropic');
+  });
+
+  it('does nothing without a preload file, or on an ordinary build', () => {
+    expect(setup().service.unlockPreloaded()).toBeNull();
+    const plain = setup({ bundle: false });
+    plain.preload('S07-AAAA-BBBB-CCCC');
+    expect(plain.service.unlockPreloaded()).toBeNull();
+  });
+
+  it('never moves a participant back once a slot has been unlocked on this Mac', () => {
+    const { service, key, code, preload } = setup();
+    preload(code);
+    expect(service.unlockPreloaded()?.ok).toBe(true);
+    key.set('sk-ant-api03-mineminemineminemineminemine');
+    expect(service.unlockPreloaded()).toBeNull();
+    expect(key.get()).toBe('sk-ant-api03-mineminemineminemineminemine');
+    expect(service.status()).toMatchObject({ active: false, endedReason: 'key_replaced' });
+  });
+
+  it('reports a code that does not open the bundle, and changes nothing', () => {
+    const { service, key, preload } = setup();
+    preload('S07-AAAA-BBBB-CCCC');
+    expect(service.unlockPreloaded()).toMatchObject({ ok: false });
+    expect(key.get()).toBeNull();
   });
 });
 

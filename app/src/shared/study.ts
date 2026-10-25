@@ -7,11 +7,12 @@
  * partners run), or stop. Ordinary builds have no bundle, and none of this shows.
  *
  * **The credit shown is the app's own estimate**: the sum of `llm_usage.estimated_cost_usd` for
- * Anthropic calls since the code was entered. The cap that actually holds is the spend limit on
- * the slot's Anthropic workspace, which nothing on the participant's Mac can change. The estimate
- * stops calls at the budget so the participant meets a clear screen rather than an API error, and
- * a refusal from Anthropic that names the limit is recorded as "used up" too
- * (`main/study/service.ts`).
+ * Anthropic calls since the code was entered, and the app stops calling at the budget. Where the
+ * slot's Anthropic workspace also has a spend limit, that is the cap nothing on the Mac can change,
+ * and a refusal that names it is recorded as "used up" too (`main/study/service.ts`). **Without
+ * one (the Oct 2026 field phase: keys with no per-key limit), the local count is the only cap**: it
+ * holds against ordinary use, not against someone who deletes the app's data or reads the key
+ * file. Revoking the key in the Console is the backstop.
  *
  * Shared by main, preload and renderer, so it imports nothing.
  */
@@ -110,7 +111,7 @@ function round2(n: number): number {
 
 /** What the participant reads when a call is refused because the credit is spent. */
 export const CREDIT_USED_UP_MESSAGE =
-  'Your study credit is used up. To keep going, add your own API key in Settings ▸ Where the study partners run.';
+  'Your study credit is used up. To keep going, choose Claude Code or add your own API key in Settings ▸ Where the study partners run.';
 
 /**
  * Whether an Anthropic error says the workspace's spend limit was reached. Deliberately broad on

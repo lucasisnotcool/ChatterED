@@ -36,7 +36,9 @@ import type { SqlDatabase } from '../db/driver.js';
 import { CONSENT_VERSION, TRIAL_CONTACT_EMAIL, exportBaseName, noticeAsText, type ExportProgress, type ExportSummary } from '../../shared/trial.js';
 import {
   HOME_REPLACEMENT,
+  EMAIL_REPLACEMENT,
   KEY_REPLACEMENT,
+  STUDENT_ID_REPLACEMENT,
   SOURCE_TEXT_COLUMNS,
   USER_REPLACEMENT,
   anonymiseDatabase,
@@ -82,6 +84,7 @@ export interface ResearchManifest {
     droppedTables: string[];
     excludedColumns: string[];
     droppedSettings: number;
+    unusedFilesDropped: number;
     valuesScrubbed: number;
   };
   contents: ReadableReport & { logFiles: number };
@@ -246,6 +249,7 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
       droppedTables: report.droppedTables,
       excludedColumns: report.excludedColumns,
       droppedSettings: report.droppedSettings,
+      unusedFilesDropped: report.unusedFilesDropped,
       valuesScrubbed: report.valuesScrubbed,
     },
     contents: { ...readable, logFiles },
@@ -403,17 +407,20 @@ How it was anonymised
 ---------------------
   - Your home folder path is replaced with "${HOME_REPLACEMENT}" and your Mac username with "${USER_REPLACEMENT}",
     everywhere: every table of the database, the readable files and the logs.
-  - Anything that looks like an API key is replaced with "${KEY_REPLACEMENT}".
+  - Anything that looks like an API key is replaced with "${KEY_REPLACEMENT}", an e-mail address
+    with "${EMAIL_REPLACEMENT}", and an NUS matriculation number or NUSNET ID with
+    "${STUDENT_ID_REPLACEMENT}", in file names and in what you typed alike.
   - Settings whose name marks them as secret are removed.
   - The text of your lecture documents is removed (${excluded}), as is the
-    search index of your sources. File and notebook names are kept.
+    search index of your sources. Names are kept only for the files your notebooks, notes,
+    chats and AI calls use, and for notebooks.
   - Notebooks you marked "Exclude from research data", and every notebook in a folder you
     marked so, are left out entirely: their notes and the explanations stored on them, chats,
     progress, search index and AI-call rows, and every log line that names one of them, its
     files, notes or chats. This still holds after you delete such a notebook or folder. The
     manifest says how many; it does not name them.
   - You are identified only by the random participant ID above.
-  - What you typed is included exactly as you typed it.
+  - Apart from the replacements above, what you typed is included exactly as you typed it.
 
 What is not here
 ----------------

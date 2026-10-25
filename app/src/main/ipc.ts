@@ -1396,6 +1396,8 @@ export class AppService {
     });
     // The study build: the participant code and the credit left — `src/main/study/`.
     registerStudyIpc({ service: this.#study, handle, onUnlocked: () => this.rebindActor() });
+    const preloaded = this.#study.unlockPreloaded();
+    if (preloaded) log().info('study.unlock', preloaded.ok ? { ok: true, slot: preloaded.status.slot, preloaded: true } : { ok: false, preloaded: true });
     // Per-message cost and the Usage page (#42 items B and D) — `src/main/cost/ipc.ts`.
     registerCostIpc({ db: this.#d.db, sessionStart: () => this.#cost.sessionStart, handle });
     // The experimental trial: consent and File ▸ Export Research Data… (`src/main/research/`).

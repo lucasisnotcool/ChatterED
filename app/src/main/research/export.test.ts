@@ -17,7 +17,9 @@ import { openTestDatabase, type SqlDatabase } from '../db/driver.js';
 import { openTestDb, seedRoom } from '../../test-support/db.js';
 import { CONSENT_VERSION, TRIAL_CONTACT_EMAIL } from '../../shared/trial.js';
 import {
+  EMAIL_REPLACEMENT,
   KEY_REPLACEMENT,
+  STUDENT_ID_REPLACEMENT,
   anonymiseDatabase,
   findLeaks,
   isSecretSettingKey,
@@ -211,6 +213,19 @@ describe('the scrubber', () => {
     expect(scrub('sk-proj-abcdefghijklmnopqrstuvwx')).toBe(KEY_REPLACEMENT);
   });
 
+  it('redacts e-mail addresses, NUS matriculation numbers and NUSNET IDs (2026-10-25)', () => {
+    expect(scrub('A0123456X_Report.pdf')).toBe(`${STUDENT_ID_REPLACEMENT}_Report.pdf`);
+    expect(scrub('CS3263/E0111111-E0222222/README.md')).toBe(`CS3263/${STUDENT_ID_REPLACEMENT}-${STUDENT_ID_REPLACEMENT}/README.md`);
+    expect(scrub('mail me at e0123456@u.nus.edu or jo.tan+x@gmail.com')).toBe(`mail me at ${EMAIL_REPLACEMENT} or ${EMAIL_REPLACEMENT}`);
+    expect(scrub('my matric is a0123456x.')).toBe(`my matric is ${STUDENT_ID_REPLACEMENT}.`);
+    // Ids and hashes are left alone: lower-case e + digits inside hex, and longer runs.
+    for (const v of ['8e5b0f10a5d0e1059593975', 'f_e1234567ab', 'e1234567-89ab-4cde-8f01-23456789abcd', 'A01234567X', 'E01234567']) {
+      expect(scrub(v)).toBe(v);
+    }
+    const once = scrub('A0123456X e0123456@u.nus.edu');
+    expect(scrub(once)).toBe(once);
+  });
+
   it('is idempotent, even for an account named "user"', () => {
     const s = makeScrubber({ home: '/Users/user', username: 'user' });
     const once = s('/Users/user/a and user b');
@@ -262,6 +277,35 @@ describe('anonymiseDatabase', () => {
     const text = db.prepare(`SELECT extracted_text FROM materials`).get<{ extracted_text: string }>()!.extracted_text;
     expect(text).toMatch(/^\[excluded from the research export: \d+ characters/);
     expect(db.prepare(`SELECT name FROM sqlite_master WHERE name LIKE 'file_text%'`).all()).toEqual([]);
+  });
+});
+
+describe('file rows nothing uses (2026-10-25)', () => {
+  it('drops the old folder scans\' files, and keeps those a doc, a notebook or a usage row points at', () => {
+    const db = seed();
+    const file = db.prepare(
+      `INSERT INTO files (id, vault_id, rel_path, name, ext, kind, size, mtime_ms) VALUES (@id, 'v1', @n, @n, 'pdf', 'pdf', 1, 1)`,
+    );
+    file.run({ id: 'f_resume', n: 'Resume Jo Tan A0123456X.pdf' });
+    file.run({ id: 'f_used', n: 'Week 5.pdf' });
+    db.prepare(`UPDATE llm_usage SET file_id = 'f_used'`).run();
+    const report = anonymiseDatabase(db, makeScrubber({ home: HOME, username: USER }));
+    expect(report.unusedFilesDropped).toBe(1);
+    expect(db.prepare(`SELECT id FROM files ORDER BY id`).all().map((r) => (r as { id: string }).id)).toEqual(['f1', 'f_nb', 'f_used']);
+  });
+
+  it('keeps no trace of a dropped file\'s name, or of a student id typed in a chat, in any exported byte', async () => {
+    const db = seed();
+    db.prepare(
+      `INSERT INTO files (id, vault_id, rel_path, name, ext, kind, size, mtime_ms) VALUES ('f_resume', 'v1', @n, @n, 'pdf', 'pdf', 1, 1)`,
+    ).run({ n: 'Resume of Jo Tan.pdf' });
+    db.prepare(`UPDATE messages SET body = body || ' (A0123456X, e0123456@u.nus.edu)' WHERE seq = 1`).run();
+    const { staged } = await stage(db);
+    expect(JSON.parse(readFileSync(join(staged.dir, 'manifest.json'), 'utf8')).anonymisation.unusedFilesDropped).toBe(1);
+    for (const f of walk(staged.dir)) {
+      const bytes = readFileSync(f).toString('latin1').toLowerCase();
+      for (const needle of ['resume of jo tan', 'a0123456x', 'e0123456@']) expect(bytes.includes(needle), `${needle} in ${relative(staged.dir, f)}`).toBe(false);
+    }
   });
 });
 
