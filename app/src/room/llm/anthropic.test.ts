@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AnthropicClient, IMAGE_BYTES_PER_REQUEST, REFUSAL_MESSAGE, THINKING_HEADROOM, requestShape, thinksByDefault, withImages } from './anthropic.js';
+import { AnthropicClient, IMAGE_BYTES_PER_REQUEST, REFUSAL_MESSAGE, THINKING_HEADROOM, requestShape, schemaTooLarge, thinksByDefault, withImages } from './anthropic.js';
 import type { LlmRequest } from './types.js';
 
 let dir: string;
@@ -157,6 +157,66 @@ describe('requests to models that think by default', () => {
     expect(sent[0]!.max_tokens).toBe(400);
     expect(sent[0]!.output_config).toBeUndefined();
     expect(requestShape({ model: 'claude-haiku-4-5', max_tokens: 400 })).toEqual({ maxTokens: 400, effort: null });
+  });
+
+  it('states a schema the API will not compile in the prompt, and remembers it (study pilot, 2026-10-25)', async () => {
+    const sent: Record<string, unknown>[] = [];
+    let refusals = 0;
+    const sdk = {
+      messages: {
+        stream(body: Record<string, unknown>) {
+          sent.push(body);
+          const constrained = (body.output_config as { format?: unknown } | undefined)?.format !== undefined;
+          return {
+            async *[Symbol.asyncIterator]() {
+              if (constrained) {
+                refusals += 1;
+                throw Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools."}}'), { status: 400 });
+              }
+              yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Here it is:\n```json\n{"parts":[]}\n```' } };
+            },
+            async finalMessage() {
+              return { model: body.model, content: [], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } };
+            },
+          };
+        },
+      },
+    };
+    const client = new AnthropicClient({ apiKey: 'x', client: sdk as never });
+    const schema = { type: 'object', properties: { parts: { type: 'array' } }, required: ['parts'] };
+    const first = await client.complete(request({ model: 'claude-sonnet-5-5', jsonSchema: schema }));
+    expect(first.text).toBe('{"parts":[]}');
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.output_config).toEqual({ effort: 'low' });
+    const system = sent[1]!.system as { text: string }[];
+    expect(system[0]!.text).toBe('SYSTEM');
+    expect(system.at(-1)!.text).toContain('"parts"');
+    // The next call with that schema goes straight to the prompted form.
+    await client.complete(request({ model: 'claude-sonnet-5-5', jsonSchema: schema }));
+    expect(sent).toHaveLength(3);
+    expect(refusals).toBe(1);
+  });
+
+  it('throws any other bad request as it was', async () => {
+    const sdk = {
+      messages: {
+        stream() {
+          return {
+            // eslint-disable-next-line require-yield
+            async *[Symbol.asyncIterator]() {
+              throw Object.assign(new Error('400 messages: text content blocks must be non-empty'), { status: 400 });
+            },
+            async finalMessage() {
+              return {};
+            },
+          };
+        },
+      },
+    };
+    const client = new AnthropicClient({ apiKey: 'x', client: sdk as never });
+    await expect(client.complete(request({ model: 'claude-sonnet-5-5', jsonSchema: { type: 'object' } }))).rejects.toThrow(/non-empty/);
+    expect(schemaTooLarge({ status: 400, message: 'The compiled grammar is too large' })).toBe(true);
+    expect(schemaTooLarge({ status: 429, message: 'The compiled grammar is too large' })).toBe(false);
   });
 
   it('turns a refusal into an error the learner can read', async () => {

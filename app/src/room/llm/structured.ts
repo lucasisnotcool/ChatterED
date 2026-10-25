@@ -1,7 +1,8 @@
 /**
  * **Structured output, when the provider cannot promise it.**
  *
- * The Anthropic API and the Claude CLI both enforce `LlmRequest.jsonSchema` server-side. OpenAI
+ * The Claude CLI enforces `LlmRequest.jsonSchema`, and the Anthropic API does unless the schema is
+ * too large to compile (`anthropic.ts`, which then falls back to `schemaInstruction`). OpenAI
  * and Gemini do too when the schema is inside what their constrained decoder accepts; an
  * arbitrary OpenAI-compatible endpoint (Ollama, LM Studio, a vLLM box, a router) may accept
  * `json_schema`, may accept only `json_object`, or may reject both. Every caller of a structured

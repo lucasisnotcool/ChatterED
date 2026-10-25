@@ -45,7 +45,10 @@ If the keys already exist and cannot have a spend limit (the Oct 2026 case), ski
 2. In each workspace, under **Spend limits**, set a monthly limit equal to the budget ($50), plus
    an alert at 80%.
 3. Create one API key in each workspace.
-4. Put them in a CSV **outside every repo**, e.g. `~/data/chattered-study/slots.csv`:
+4. Put them in a CSV **outside every repo and every synced folder**: `~/.config/chattered-study/`
+   (mode 700), not `~/data/…`, which the Mac copies to gram-server. The easy way: make the file
+   with placeholder lines, open it in TextEdit, paste each key over its placeholder, save, then
+   `chmod 600` it (TextEdit can loosen the mode on save):
 
    ```
    slot,key
@@ -61,7 +64,7 @@ study ends (§6).
 
 ```sh
 cd app
-npm run study:keys -- --keys ~/data/chattered-study/slots.csv --out ~/data/chattered-study \
+npm run study:keys -- --keys ~/.config/chattered-study/slots.csv --out ~/.config/chattered-study \
   --budget 50 --model claude-sonnet-5-5 --study "CS3249 field phase, Oct 2026"
 ```
 
@@ -73,7 +76,7 @@ codes keep working. Then delete `slots.csv`: the keys are in the Console and in 
 
 ```sh
 cd app
-tools/release.sh --study ~/data/chattered-study/keys.json
+tools/release.sh --study ~/.config/chattered-study/keys.json
 ```
 
 **Preloaded copies, one per participant** (each build wipes `out/`, so move each DMG away):
@@ -81,8 +84,8 @@ tools/release.sh --study ~/data/chattered-study/keys.json
 ```sh
 cd app
 for s in 1 2 3 4; do
-  tools/release.sh --study ~/data/chattered-study/keys.json --preload "$s" &&
-    mv out/ChatterED-Study-*-S0"$s"-arm64.dmg ~/data/chattered-study/
+  tools/release.sh --study ~/.config/chattered-study/keys.json --preload "$s" &&
+    mv out/ChatterED-Study-*-S0"$s"-arm64.dmg ~/.config/chattered-study/
 done
 ```
 

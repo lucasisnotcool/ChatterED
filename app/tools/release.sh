@@ -5,7 +5,7 @@
 #   tools/release.sh                      clean build → verify → out/ChatterED-<v>-arm64.dmg + SHA256SUMS.txt
 #   tools/release.sh --publish v0.1.0     the same, then `gh release create` on $RELEASES_REPO
 #   tools/release.sh --publish v0.1.0 --notes path/to/notes.md   use these notes instead of the default
-#   tools/release.sh --study ~/data/chattered-study/keys.json   a study build: the sealed key bundle
+#   tools/release.sh --study ~/.config/chattered-study/keys.json   a study build: the sealed key bundle
 #                                         ships in Resources/study → out/ChatterED-Study-<v>-arm64.dmg.
 #                                         Never published: it goes to participants privately
 #                                         (app/docs/STUDY-RELEASE.md).

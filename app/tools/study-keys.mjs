@@ -59,7 +59,7 @@ if (a.help || !a.keys || !a.out) {
 
 const outDir = resolve(String(a.out));
 const rel = relative(REPO_ROOT, outDir);
-if (!rel.startsWith('..') && !rel.startsWith('/')) die(`--out ${outDir} is inside the repo. Use a folder outside it, e.g. ~/data/chattered-study.`);
+if (!rel.startsWith('..') && !rel.startsWith('/')) die(`--out ${outDir} is inside the repo. Use a folder outside it, e.g. ~/.config/chattered-study.`);
 
 const budget = a.budget === undefined ? 30 : Number(a.budget);
 if (!(budget > 0)) die('--budget must be a positive number of US dollars.');
