@@ -123,6 +123,22 @@ calls at low effort, but this was tested against a fake SDK only. Check it live:
 5. Measure: $ per hour of use, from Settings ▸ Usage. At about $8–9 for a heavy day (the dogfood
    rate on Sonnet), $50 lasts about 6 heavy days.
 
+**Pilot run, 2026-10-25** (packaged preloaded DMG, Sonnet 5.5 on the API, $0.50 budget). It found
+that the API refuses three of the app's schemas as `output_config.format` (the tutorial reader's
+is too large; the ledger's and the pack draft's use unsupported keywords), which the CLI dogfood
+never met; fixed in `3d16a2b` and `97d36f9` by stating such a schema in the prompt. After the fix:
+
+| What | Measured |
+|---|---|
+| Reading a tutorial sheet (8 parts) | 56 s, about $0.12 |
+| The overview of a 58-page deck | about $0.09 |
+| One question to Ellie (with its doc edit and ledger) | about $0.03–0.04, replies complete |
+| The cap | stopped at $0.5064 of $0.50 (one call over); the used-up sheet appeared |
+| After the cap | Settings ▸ Claude Code on this Mac: the next turn ran on `claude-cli` |
+
+So $50 is roughly 1,000 questions, or a sheet plus its deck about 200 times over: heavy use for
+two weeks stays well inside it.
+
 ## 6. Participant install guide (paste this into the message with the link)
 
 > 1. Download `ChatterED-Study-….dmg`, open it, and drag **ChatterED** onto **Applications**.
