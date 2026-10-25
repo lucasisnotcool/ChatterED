@@ -28,16 +28,6 @@ export interface AnthropicClientOptions {
 export class AnthropicClient implements LLMClient {
   readonly kind = 'anthropic' as const;
   readonly #client: Anthropic;
-  /**
-   * **Schemas the API would not compile**, by their JSON. Structured outputs turn a schema into a
-   * grammar, and a big one (the tutorial reader's: parts, keys, links, figure boxes) is refused
-   * with a 400 before anything is generated — found in the study pilot, 2026-10-25; the Claude
-   * CLI's `--json-schema` takes the same schema without complaint, so the dogfood never saw it.
-   * Such a schema is stated in the system prompt instead and the reply unwrapped
-   * (`structured.ts`), as the OpenAI and Gemini clients do; every caller validates what it gets.
-   * Remembered for the life of the client, so only the first call pays the refused round trip.
-   */
-  readonly #promptedSchemas = new Set<string>();
 
   constructor(opts: AnthropicClientOptions) {
     this.#client =
@@ -51,12 +41,12 @@ export class AnthropicClient implements LLMClient {
 
   async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
     const key = request.jsonSchema ? JSON.stringify(request.jsonSchema) : null;
-    if (key === null || this.#promptedSchemas.has(key)) return this.#run(request, key !== null, onDelta, signal);
+    if (key === null || promptedSchemas.has(key)) return this.#run(request, key !== null, onDelta, signal);
     try {
       return await this.#run(request, false, onDelta, signal);
     } catch (err) {
-      if (!schemaTooLarge(err)) throw err;
-      this.#promptedSchemas.add(key);
+      if (!schemaRefused(err)) throw err;
+      promptedSchemas.add(key);
       return this.#run(request, true, onDelta, signal);
     }
   }
@@ -127,13 +117,30 @@ export class AnthropicClient implements LLMClient {
 }
 
 /**
- * The 400 the API gives a schema it will not compile into a grammar. Matched on the message
- * because no error type or code tells it apart from any other bad request; anything else is
- * thrown as it was.
+ * **Schemas the API would not take as `output_config.format`**, by their JSON. Structured outputs
+ * compile a schema into a grammar, and refuse with a 400, before generating anything, one that is
+ * too large (the tutorial reader's) or uses a keyword they do not support (`minimum`/`maximum` on
+ * the ledger's integers, `minItems` above 1 on the pack draft). Found in the study pilot,
+ * 2026-10-25: the Claude CLI's `--json-schema` takes all of them, so the dogfood never met it.
+ * Such a schema is stated in the system prompt instead and the reply unwrapped (`structured.ts`),
+ * as the OpenAI and Gemini clients do; every caller validates what it gets. Module-wide, because
+ * the app builds a client per room and the refusal depends on the schema alone, so each schema
+ * pays the refused round trip once per launch.
  */
-export function schemaTooLarge(err: unknown): boolean {
+const promptedSchemas = new Set<string>();
+
+/**
+ * The 400 the API gives a schema it will not use as `output_config.format`. Matched on the
+ * message because no error type or code tells it apart from any other bad request; anything else
+ * is thrown as it was.
+ */
+export function schemaRefused(err: unknown): boolean {
   const e = err as { status?: unknown; message?: unknown } | null;
-  return e?.status === 400 && typeof e.message === 'string' && /compiled grammar is too large|reduce the number of strict tools/i.test(e.message);
+  return (
+    e?.status === 400 &&
+    typeof e.message === 'string' &&
+    /output_config\.format|compiled grammar is too large|reduce the number of strict tools/i.test(e.message)
+  );
 }
 
 /** What the learner reads when a safety classifier declines the call (`stop_reason: "refusal"`). */

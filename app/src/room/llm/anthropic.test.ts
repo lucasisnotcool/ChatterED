@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AnthropicClient, IMAGE_BYTES_PER_REQUEST, REFUSAL_MESSAGE, THINKING_HEADROOM, requestShape, schemaTooLarge, thinksByDefault, withImages } from './anthropic.js';
+import { AnthropicClient, IMAGE_BYTES_PER_REQUEST, REFUSAL_MESSAGE, THINKING_HEADROOM, requestShape, schemaRefused, thinksByDefault, withImages } from './anthropic.js';
 import type { LlmRequest } from './types.js';
 
 let dir: string;
@@ -183,7 +183,7 @@ describe('requests to models that think by default', () => {
       },
     };
     const client = new AnthropicClient({ apiKey: 'x', client: sdk as never });
-    const schema = { type: 'object', properties: { parts: { type: 'array' } }, required: ['parts'] };
+    const schema = { type: 'object', properties: { parts: { type: 'array' } }, required: ['parts'], title: 'pilot-too-large' };
     const first = await client.complete(request({ model: 'claude-sonnet-5-5', jsonSchema: schema }));
     expect(first.text).toBe('{"parts":[]}');
     expect(sent).toHaveLength(2);
@@ -215,8 +215,9 @@ describe('requests to models that think by default', () => {
     };
     const client = new AnthropicClient({ apiKey: 'x', client: sdk as never });
     await expect(client.complete(request({ model: 'claude-sonnet-5-5', jsonSchema: { type: 'object' } }))).rejects.toThrow(/non-empty/);
-    expect(schemaTooLarge({ status: 400, message: 'The compiled grammar is too large' })).toBe(true);
-    expect(schemaTooLarge({ status: 429, message: 'The compiled grammar is too large' })).toBe(false);
+    expect(schemaRefused({ status: 400, message: 'The compiled grammar is too large' })).toBe(true);
+    expect(schemaRefused({ status: 429, message: 'The compiled grammar is too large' })).toBe(false);
+    expect(schemaRefused({ status: 400, message: "output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported" })).toBe(true);
   });
 
   it('turns a refusal into an error the learner can read', async () => {

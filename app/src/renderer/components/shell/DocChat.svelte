@@ -304,7 +304,12 @@
     {#each chat.failures as failure (failure.id)}
       <div class="failed-turn" role="status">
         <span class="mark" aria-hidden="true">!</span>
-        <p>{failure.displayName ?? 'A reply'} couldn't reply — {failure.reason}.</p>
+        <!-- A ledger call is in the background: say what did not happen, as TurnFailureCard does. -->
+        <p>
+          {failure.kind === 'ledger'
+            ? `Your progress didn't update — ${failure.reason}.`
+            : `${failure.displayName ?? 'Ellie'} couldn't reply — ${failure.reason}.`}
+        </p>
         <button type="button" onclick={() => void chat.retry(failure.id)}>Retry</button>
       </div>
     {/each}
