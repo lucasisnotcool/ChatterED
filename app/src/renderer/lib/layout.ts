@@ -22,7 +22,7 @@ export interface PanelBounds {
 }
 
 /** The file panel: the vault sidebar, in the shell and beside the page viewer. */
-export const FILES: PanelBounds = { min: 180, max: 440, initial: 244 };
+export const FILES: PanelBounds = { min: 280, max: 440, initial: 300 };
 /**
  * The chat column. The ceiling was 620; a learner who has turned the interface text up has
  * longer lines to fit, and the document keeps its own 380 px floor whatever this says.

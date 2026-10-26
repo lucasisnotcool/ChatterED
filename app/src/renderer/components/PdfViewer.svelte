@@ -51,6 +51,7 @@
     pageCount = $bindable(0),
     /** Read-only mode: no toolbar, no range marking, page-locked (the room's source pane). */
     locked = false,
+    initialFit,
     /**
      * Render only these pages. The room's source pane shows the slide being explained, not the
      * whole deck: §B0 calls it "the slide you are explaining", and a learner who can page away
@@ -67,6 +68,7 @@
     currentPage?: number;
     pageCount?: number;
     locked?: boolean;
+    initialFit?: 'width' | 'page';
     pageWindow?: { from: number; to: number } | null;
     initialScroll?: number;
     onscrolled?: (scrollTop: number) => void;
@@ -88,14 +90,14 @@
    * is the one a learner wants (ui-review-code.md §1 — a fitted-to-width slide is still taller
    * than the pane, and a slide you have to scroll is not a glance).
    */
-  let fitMode = $state<FitMode>(lastFitMode);
+  let fitMode = $state<FitMode>(untrack(() => initialFit ?? lastFitMode));
   /**
    * A page-locked pane always fits the whole page: it is glanced at, not read, and nothing in it
    * can change the zoom anyway (no toolbar, no gestures, no menu registration).
    */
   const mode = $derived<FitMode>(locked ? 'page' : fitMode);
   /** The fit a double-click (and "Actual size") comes back to. */
-  let rememberedFit = $state<Exclude<FitMode, null>>(lastFitMode ?? 'width');
+  let rememberedFit = $state<Exclude<FitMode, null>>(untrack(() => initialFit ?? lastFitMode ?? 'width'));
   let error = $state<string | null>(null);
   let scroller = $state<HTMLDivElement | null>(null);
   let width = $state(0);

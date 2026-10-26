@@ -68,7 +68,7 @@ function readWidth(key: string, bounds: PanelBounds): number {
 }
 
 export class LayoutStore {
-  filesOpen = $state(read(KEYS.filesOpen) === 'true');
+  filesOpen = $state(false);
   filesWidth = $state(readWidth(KEYS.filesWidth, FILES));
   chatWidth = $state(readWidth(KEYS.chatWidth, CHAT));
   chatOpen = $state(read(KEYS.chatOpen) !== 'false');
@@ -82,7 +82,7 @@ export class LayoutStore {
   tutorialZoom = $state(readZoom(read(KEYS.tutorialZoom), NOTES_ZOOM));
   homeZoom = $state(readZoom(read(KEYS.homeZoom), HOME_ZOOM));
   /** The map of the notes in the file panel: open until the learner folds it away. */
-  mapOpen = $state(read(KEYS.mapOpen) === 'true');
+  mapOpen = $state(read(KEYS.mapOpen) !== 'false');
   /**
    * The sources panel is folded away to make room for a docked tutorial, by the app rather than
    * the learner (`roomForTutorial`). Never persisted: what is stored is still the learner's own

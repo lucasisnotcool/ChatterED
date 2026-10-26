@@ -31,6 +31,7 @@
 }
 .nd-editor .ProseMirror .nd-tut-sheet code,
 .nd-editor .ProseMirror pre.nd-tut-sheet { font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+.tp-nd.main:not(.working) .nd-editor .ProseMirror pre.nd-tut-sheet { white-space: pre-wrap; overflow-wrap: anywhere; }
 .nd-editor .ProseMirror h2.nd-tut-sheet,
 .nd-editor .ProseMirror h3.nd-tut-sheet { letter-spacing: 0; }
 
@@ -484,6 +485,9 @@
 .tp-nd.working .nd-editor .ProseMirror section.nd-tut-part > :not(.nd-tut-head):not(.nd-tut-slot):not(.nd-tut-hint) { display: none; }
 .tp-nd.working .nd-editor .ProseMirror section.nd-tut-part { margin: 0; border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0; box-shadow: none; padding: 18px 14px; }
 .tp-nd.working .nd-editor .ProseMirror .nd-tut-slot { min-height: 150px; margin: 8px 0 2px; background: #fff; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; }
+.tp-nd.working .nd-tut-head-left { flex-basis: 100%; flex-wrap: wrap; }
+.tp-nd.working .nd-tut-actions { width: 100%; margin-left: 0; flex-wrap: wrap; justify-content: flex-start; }
+.tp-nd.working .nd-tut-controls { flex-wrap: wrap; }
 .tp-nd.working .nd-editctl { position: static; width: auto; margin: 8px 0; flex-direction: row; text-align: left; }
 .tp-nd.working .nd-editctl-one { border-right: 0; border-left: 2px solid; padding: 0 0 0 8px; }
 .tp-nd.working .nd-editctl-row { justify-content: flex-start; }

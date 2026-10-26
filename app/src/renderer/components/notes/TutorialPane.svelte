@@ -425,7 +425,7 @@
       <span class="tp-title" title={view?.title ?? ''}>{view ? tutorialTabLabel(view, sourceName(view.fileId), 60) : 'Tutorial'}</span>
     {/if}
     {#if views.length > 1}<span class="tp-spacer"></span>{/if}
-    {#if parts}
+    {#if parts && !main}
       <span class="tp-parts" title={`${done.done} of ${done.total} parts correct`}>
         {#if narrowHead}<span aria-label={parts}>{done.done}/{done.total}</span>{:else}{parts}{/if}
         <span class="tp-bar" aria-hidden="true"><i style:width={`${done.total ? (done.done / done.total) * 100 : 0}%`}></i></span>
@@ -709,6 +709,7 @@
   .tp-nd { position: relative; height: 100%; border-left: 1px solid var(--hairline); }
   .tp-nd.floating,
   .tp-nd.main { border-left: 0; }
+  .tp-nd.main { width: 100%; min-width: 0; overflow: hidden; }
   .tp-notes-btn.on { border-color: var(--indigo); background: var(--indigo-tint); color: var(--indigo); }
 
   .tp-head {
@@ -722,6 +723,8 @@
     background: var(--pane);
     user-select: none;
   }
+  .tp-nd.main .tp-head { flex-wrap: wrap; min-width: 0; }
+  .tp-nd.main .tp-tabs { max-width: 100%; }
   .tp-head.grab { cursor: grab; background: var(--ground); }
   /* Docked beside the notes the header is narrow: the zoom keeps its three buttons, tighter. */
   .tp-zoom-narrow :global(button) { padding: 3px 5px; }

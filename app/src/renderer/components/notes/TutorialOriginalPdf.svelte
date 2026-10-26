@@ -67,7 +67,7 @@
   {:else if error}
     <div class="state" role="alert"><p>{error}</p><button type="button" onclick={() => revision += 1}>Try again</button></div>
   {:else if bytes}
-    <PdfViewer {bytes} />
+    <PdfViewer {bytes} initialFit="width" />
   {/if}
 </section>
 

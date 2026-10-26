@@ -55,10 +55,8 @@
   import { taughtObjectives } from '../../lib/progressview.js';
   import {
     CHAT,
-    NOTES_SPLIT_MIN,
     TUTORIAL,
     TUTORIAL_WINDOW_MIN,
-    filesCrowdTutorial,
     floatFrame,
     mainTutorialFor,
     notesFloatFrame,
@@ -79,7 +77,6 @@
   import SourcesPanel from '../SourcesPanel.svelte';
   import TutorialPane from '../notes/TutorialPane.svelte';
   import TutorialOriginalPdf from '../notes/TutorialOriginalPdf.svelte';
-  import TutorialWindow from '../notes/TutorialWindow.svelte';
 
   let { notebookId }: { notebookId: string } = $props();
 
@@ -121,7 +118,6 @@
   });
   $effect(() => () => untrack(() => tutorial.setNotebook(null)));
 
-  const tutorialOpen = $derived(tutorial.openFileId !== null);
 
   /**
    * **The swap** (2026-10-04): the tutorial the middle column shows instead of the notes, or null.
@@ -170,25 +166,9 @@
     }),
   );
 
-  const docked = $derived(tutorialOpen && !tutorial.floating && !tutorialMain);
-
-  /**
-   * **Room for the docked tutorial.** Notes and tutorial side by side want two readable sheets;
-   * when the sources panel and the chat leave the doc column less than that
-   * (`filesCrowdTutorial`), the sources fold away while the tutorial is docked, and come back
-   * when it closes, pops out or the window grows — unless the learner reopened or closed them in
-   * the meantime (`LayoutStore.roomForTutorial`).
-   */
-  let shellWidth = $state(0);
   let docWidth = $state(0);
-  const pdfWidth = $derived(Math.max(260, Math.min(layout.tutorialWidth, docWidth - 360)));
-  $effect(() => {
-    const crowded = docked || (tutorialMain && layout.tutorialView === 'pdf')
-      ? filesCrowdTutorial(shellWidth, layout.filesWidth, layout.chatOpen ? layout.chatWidth : 0)
-      : null;
-    untrack(() => layout.roomForTutorial(crowded));
-  });
-  $effect(() => () => untrack(() => layout.roomForTutorial(null)));
+  const stackedTutorial = $derived(docWidth < 980);
+  const pdfWidth = $derived(Math.max(300, Math.min(layout.tutorialWidth, docWidth - 380)));
 
   /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
   const pages = $derived(
@@ -360,7 +340,7 @@
 
 <svelte:window onkeydown={onwindowkey} {onresize} />
 
-<div class="shell" bind:clientWidth={shellWidth} role="region" aria-label="Notebook">
+<div class="shell" role="region" aria-label="Notebook">
   {#if filesOpen}
     <div
       class="files"
@@ -372,19 +352,13 @@
       ondragleave={drop.dragleave}
       ondrop={drop.drop}
     >
-      <SourcesPanel {over} oncollapse={() => layout.setFilesOpen(false)}>
-        {#snippet below()}
-          <!-- The overview's outline, with each section's fill (§7). Its clicks are the same
-               `jump` a lesson card's Start and a span thread use. -->
-          <NotesMap root={docbody} onjump={jump} />
-        {/snippet}
-      </SourcesPanel>
+      <SourcesPanel {over} oncollapse={() => layout.setFilesOpen(false)} />
     </div>
   {/if}
 
   <!-- Docked, the doc column holds two floors (the notes' and the tutorial's): the chat gives way
        first, as it does to the notes alone. -->
-  <main class="doc" bind:clientWidth={docWidth} style:min-width={docked ? `${NOTES_SPLIT_MIN + TUTORIAL.min}px` : null}>
+  <main class="doc" bind:clientWidth={docWidth}>
     <header class="dochead">
       <button
         type="button"
@@ -408,12 +382,16 @@
       {/if}
 
       <!-- The bar, in the doc header, where §6 puts it. The popover hangs off this wrapper. -->
-      <div class="progress">
-        <ProgressBar />
-        {#if store.progress.open}
-          <LessonPath onstart={(id) => void start(id)} />
-        {/if}
-      </div>
+      {#if !tutorialMain}
+        <div class="progress">
+          <ProgressBar />
+          {#if store.progress.open}
+            <LessonPath onstart={(id) => void start(id)} />
+          {/if}
+        </div>
+      {:else}
+        <span class="header-spacer" aria-hidden="true"></span>
+      {/if}
 
       <!-- What this document has cost (#42 item C), beside the bar. It is `flex: none` and about
            six characters wide, and it renders nothing at all when there is no ledger or no call
@@ -446,7 +424,6 @@
       aria-hidden={notesHidden ? 'true' : null}
       tabindex={notesFloating ? -1 : null}
       onkeydown={notesKey}
-      style:min-width={docked ? `${NOTES_SPLIT_MIN}px` : null}
       style:left={notesFloating && notesFrame ? `${notesFrame.left}px` : null}
       style:top={notesFloating && notesFrame ? `${notesFrame.top}px` : null}
       style:width={notesFloating && notesFrame ? `${notesFrame.width}px` : null}
@@ -476,33 +453,26 @@
       {/if}
       <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
       <NotesPane fileId={notebookId} />
+      {#if notesFloating}
+        <div class="notes-map-overlay"><NotesMap root={docbody} onjump={jump} /></div>
+      {/if}
     </div>
+    {#if !tutorialMain}
+      <div class="notes-map-overlay"><NotesMap root={docbody} onjump={jump} /></div>
+    {/if}
     {#if tutorialMain}
       <!-- The swap: the sheet is the middle column, the whole of it. -->
       <section class="tutmain" id="tutorial-column" aria-label="Tutorial">
         <div class="tutmain-pacing"><PacingStrip /></div>
-        <div class="pdf-layout">
+        <div class="pdf-layout" class:stacked={stackedTutorial}>
           {#if layout.tutorialView === 'pdf' && mainFileId}
-            <div class="pdf-side" id="tutorial-pdf" style:width={`${pdfWidth}px`}>
+            <div class="pdf-side" id="tutorial-pdf" style:width={stackedTutorial ? '100%' : `${pdfWidth}px`}>
               <TutorialOriginalPdf fileId={mainFileId} name={activeTutorialName} onquestions={(numbers) => pdfQuestionNumbers = numbers} />
             </div>
-            <PaneSplitter size={pdfWidth} bounds={TUTORIAL} sign={1} label="Resize the original PDF" controls="tutorial-pdf" onsize={(width) => layout.setTutorialWidth(width)} />
+            {#if !stackedTutorial}<PaneSplitter size={pdfWidth} bounds={TUTORIAL} sign={1} label="Resize the original PDF" controls="tutorial-pdf" onsize={(width) => layout.setTutorialWidth(width)} />{/if}
           {/if}
           <div class="working-side"><TutorialPane main working={layout.tutorialView === 'pdf'} printedQuestions={pdfQuestionNumbers} /></div>
         </div>
-      </section>
-    {:else if docked}
-      <PaneSplitter
-        size={layout.tutorialWidth}
-        bounds={TUTORIAL}
-        sign={-1}
-        label="Resize the tutorial"
-        controls="tutorial-column"
-        onsize={(width) => layout.setTutorialWidth(width)}
-        oncollapse={() => tutorial.close()}
-      />
-      <section class="tutcol" id="tutorial-column" aria-label="Tutorial" style:width={`${layout.tutorialWidth}px`}>
-        <TutorialPane />
       </section>
     {/if}
     </div>
@@ -521,9 +491,6 @@
     <ChatColumn {pages} onjump={jump} onpage={goToPage} />
   </div>
 
-  {#if tutorialOpen && tutorial.floating && !tutorialMain}
-    <TutorialWindow />
-  {/if}
 </div>
 
 <style>
@@ -563,21 +530,24 @@
      a spacer beside it would halve its width and squeeze the status line out of existence,
      which is what the first browser run showed. */
   .progress { position: relative; flex: 1 1 auto; min-width: 0; max-width: 560px; margin-right: auto; }
+  .header-spacer { flex: 1 1 auto; min-width: 0; }
   .mini { font-size: 12px; color: var(--text-2); flex: none; white-space: nowrap; border: 1px solid var(--hairline); padding: 5px 9px; border-radius: 7px; }
   .mini:hover { color: var(--indigo); }
   .tutorial-select { max-width: 215px; min-width: 120px; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 24px 5px 8px; background: var(--pane); color: var(--text); overflow: hidden; text-overflow: ellipsis; }
   .chats-toggle { flex: none; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 9px; font-size: 12px; }
   .chats-toggle:hover { color: var(--indigo); border-color: var(--indigo); }
 
-  .docrow { flex: 1; display: flex; min-height: 0; min-width: 0; }
-  .docbody { flex: 1 1 0; overflow-y: auto; min-height: 0; min-width: 0; }
-  /* The tutorial yields before the notes do: its width is the learner's, with a floor. */
-  .tutcol { flex: 0 1 auto; min-width: 360px; min-height: 0; display: flex; flex-direction: column; }
-  .tutcol > :global(.tp-nd) { flex: 1 1 auto; }
+  .docrow { position: relative; flex: 1; display: flex; min-height: 0; min-width: 0; }
+  .docbody { position: relative; flex: 1 1 0; overflow-y: auto; min-height: 0; min-width: 0; }
+  .notes-map-overlay { position: absolute; z-index: 8; top: 54px; right: 12px; width: min(300px, calc(100% - 24px)); pointer-events: none; }
+  .notes-map-overlay :global(.map) { pointer-events: auto; }
 
   /* ── The swap (2026-10-04): the sheet in the middle, the notes hidden or in a window ── */
   .tutmain { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .pdf-layout { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+  .pdf-layout.stacked { flex-direction: column; }
+  .pdf-layout.stacked .pdf-side { flex: 0 0 42%; max-height: 42%; border-bottom: 1px solid var(--hairline); }
+  .pdf-layout.stacked .working-side { flex: 1 1 58%; }
   .pdf-side { flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .pdf-side > :global(.original-pdf) { flex: 1 1 auto; }
   .working-side { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; }

@@ -231,3 +231,23 @@ The original PDF is read through the existing source-byte bridge and rendered as
 text extraction is only a convenience for proposing section numbers, never the source of truth
 for grading. This supplements §§2–4 rather than replacing the copied-sheet design or its
 attributed help line.
+
+## 11. Mode and panel presentation (Valerie, 26 Oct 2026)
+
+The global **Tutorial** and **Summary notes** modes show one primary document at a time. In
+Summary notes, an open tutorial no longer docks beside the notes; the earlier docked behavior in
+§2 is superseded for this renderer. Lecture objective progress and its lesson path appear only in
+Summary notes. Tutorial parts keep their existing grading and progress state, but their count is
+not repeated in the tutorial pane header.
+
+Sources start collapsed. When opened, they group files by role in simple cards. Each card can
+still be removed; its disclosure retains role changes, source-context selection, status, retry,
+and the tutorial action. The map of the notes moves out of Sources into a temporary overlay in
+the notes pane while the reader scrolls. It fades after scrolling stops, and stays available
+while pointed at. This presentation change supersedes the map placement in `notebooks.md` §8;
+it does not alter objectives, provenance, or document content.
+
+PDF + working keeps the source page fitted to its pane. When Sources and Chat leave too little
+horizontal room for both the PDF and answer controls, the PDF and working panes stack. At wider
+sizes the learner can drag their divider. Combined sheet continues to use the same saved
+tutorial document and actions.
