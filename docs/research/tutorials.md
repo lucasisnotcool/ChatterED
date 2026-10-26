@@ -214,3 +214,20 @@ so the learner practises at differing levels of cognitive forcing by topic. The 
 | F | Where does help appear? | In the chat, plus one line under the part. |
 | G | How much in the first pass? | All of it. |
 | — | "The checkbox toggle will need to now track provenance" | Withdrawn (a leftover from another idea). |
+
+## 10. Optional original-PDF working view (Valerie, 26 Oct 2026)
+
+The copied, AI-generated sheet and its answer slots remain available as **Combined sheet**.
+Some source PDFs contain figures or numbered questions that ingest does not reproduce reliably.
+The learner may instead choose **PDF + working**: the unchanged source PDF is shown beside the
+same tutorial's working area. This is a renderer view choice, not a new source role, tutorial
+document, grader, or agent workflow. Changing views retains the selected tutorial, existing
+answer slots, progress, chat threads, and inline Ellie/Max edits with Keep/Remove.
+
+The renderer may show local draft sections for printed questions that have no generated part.
+Those drafts are labelled as local working and cannot offer Check, Hint, or Refresher until a real
+part ID exists. The backend's part ID is still required for every checked answer and agent action.
+The original PDF is read through the existing source-byte bridge and rendered as supplied; PDF
+text extraction is only a convenience for proposing section numbers, never the source of truth
+for grading. This supplements §§2–4 rather than replacing the copied-sheet design or its
+attributed help line.

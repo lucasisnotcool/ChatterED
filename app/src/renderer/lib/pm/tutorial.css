@@ -410,7 +410,7 @@
 .nd-editor .ProseMirror .nd-tut-hint {
   margin: 0 0 10px;
   padding: 2px 0 2px 10px;
-  border-left: 2px dashed var(--nd-max, #b91c1c);
+  border-left: 2px solid var(--nd-max, #b91c1c);
   font-family: var(--font);
   font-size: 13.5px;
   color: var(--text-2);
@@ -473,3 +473,17 @@
    dropping below the chip row the top-level blocks have. */
 .nd-editor .ProseMirror :is(section[data-tut-part], div[data-tut-answer]) > :has(> .nd-cmt-holder) { position: relative; }
 .nd-compact .nd-editor .ProseMirror :is(section[data-tut-part], div[data-tut-answer]) > * > .nd-cmt-holder { top: 0.24em; }
+
+/* PDF + working presents the existing saved tutorial document as answer sections. The original
+   PDF carries the printed questions; hiding their generated copy here does not remove or rewrite
+   a ProseMirror node. Switching back to Combined sheet shows the same document and undo history. */
+.tp-nd.working .nd-scroll { background: var(--pane); }
+.tp-nd.working .nd-sheet { max-width: none; padding: 0; }
+.tp-nd.working .nd-editor .ProseMirror { max-width: none; padding: 0; }
+.tp-nd.working .nd-editor .ProseMirror > :not(section.nd-tut-part) { display: none; }
+.tp-nd.working .nd-editor .ProseMirror section.nd-tut-part > :not(.nd-tut-head):not(.nd-tut-slot):not(.nd-tut-hint) { display: none; }
+.tp-nd.working .nd-editor .ProseMirror section.nd-tut-part { margin: 0; border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0; box-shadow: none; padding: 18px 14px; }
+.tp-nd.working .nd-editor .ProseMirror .nd-tut-slot { min-height: 150px; margin: 8px 0 2px; background: #fff; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; }
+.tp-nd.working .nd-editctl { position: static; width: auto; margin: 8px 0; flex-direction: row; text-align: left; }
+.tp-nd.working .nd-editctl-one { border-right: 0; border-left: 2px solid; padding: 0 0 0 8px; }
+.tp-nd.working .nd-editctl-row { justify-content: flex-start; }

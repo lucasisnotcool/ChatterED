@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A local preview of the ChatterED tutorial workspace, with original PDFs, working, and agent chats." />
+  <title>ChatterED · Tutorial workspace preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Hedvig+Letters+Serif:opsz@12..24&display=swap" rel="stylesheet">
+  <style>
+    /* Hallmark v2 · Studio by request · prototype type and colour only; existing layout and interactions remain. */
+    /* Critique: the prior cool-blue interface was clear but small and generic; Studio adds type hierarchy and a single warm action accent. */
+    :root {
+      --color-paper: oklch(97.2% 0.006 215);
+      --color-paper-2: oklch(94% 0.009 215);
+      --color-paper-3: oklch(90.5% 0.011 215);
+      --color-paper-hi: oklch(99% 0.004 215);
+      --color-ink: oklch(16% 0.032 250);
+      --color-ink-2: oklch(34% 0.022 245);
+      --color-muted: oklch(49% 0.018 240);
+      --color-rule: oklch(84% 0.010 225);
+      --color-accent: oklch(68% 0.172 50);
+      --color-accent-ink: oklch(16% 0.032 250);
+      --color-focus: oklch(52% 0.15 48);
+      --color-shadow-soft: color-mix(in oklab, var(--color-ink) 14%, transparent);
+      --color-accent-soft: color-mix(in oklab, var(--color-accent) 14%, var(--color-paper-hi));
+      --color-danger: oklch(48% 0.18 24);
+      --color-danger-soft: oklch(96% 0.025 24);
+      --color-peer: oklch(49% 0.1 170);
+      --color-challenger: oklch(50% 0.14 24);
+      --font-display: "Hedvig Letters Serif", ui-serif, Georgia, serif;
+      --font-body: "Geist", ui-sans-serif, system-ui, sans-serif;
+      font-family: var(--font-body); color: var(--color-ink); background: var(--color-paper); font-size: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { overflow-x: clip; }
+    body { margin: 0; min-width: 0; }
+    ::selection { background: var(--color-accent-soft); color: var(--color-ink); }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, .divider:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+    .app { height: 100vh; display: flex; flex-direction: column; }
+    .shell { display: flex; flex: 1; min-height: 0; }
+    .shell-main { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+    .nav-rail { width: 48px; flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 6px 12px; background: var(--color-paper); border-right: 1px solid var(--color-rule); }
+    .nav-rail button { width: 36px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--color-muted); position: relative; }
+    .nav-rail button:hover { background: var(--color-paper-2); }
+    .nav-rail button[aria-current="page"] { background: var(--color-accent-soft); color: var(--color-ink); }
+    .nav-rail button[aria-current="page"]::before { content: ''; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 2px; border-radius: 1px; background: var(--color-accent); }
+    .nav-rail svg { width: 18px; height: 18px; }
+    .top { height: 66px; flex: none; position: relative; display: flex; align-items: center; gap: 14px; padding: 0 24px; background: var(--color-paper-hi); border-bottom: 1px solid var(--color-rule); }
+    .brand { font-size: 19px; font-weight: 760; letter-spacing: -.04em; white-space: nowrap; }
+    .brand i { color: var(--color-accent); font-style: normal; }
+    .top-title { flex: none; width: min(25vw, 290px); min-width: 130px; height: 36px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--color-ink); padding: 4px 8px; font-family: var(--font-display); font-size: 17px; text-overflow: ellipsis; }
+    .top-title:hover { border-color: var(--color-rule); background: var(--color-paper-hi); }
+    .top-title:focus { border-color: var(--color-focus); background: var(--color-paper-hi); outline: none; }
+    .top-title:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+    .top-title[hidden] { display: none; }
+    .top small { margin-left: auto; color: var(--color-muted); font-size: 12px; }
+    .tabs { position: absolute; left: 50%; top: 0; height: 100%; transform: translateX(-50%); display: flex; gap: 4px; }
+    .tabs[hidden] { display: none; }
+    .tabs button { min-width: 116px; border: 0; border-bottom: 3px solid transparent; background: none; color: var(--color-muted); font-weight: 600; padding: 12px 15px 9px; }
+    .tabs button[aria-selected="true"] { color: var(--color-focus); border-bottom-color: var(--color-accent); }
+    .toolbar { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--color-rule); background: var(--color-paper-hi); }
+    .name-error { color: var(--color-danger); font-size: 12px; }
+    .tutorial-picker { max-width: min(34vw, 320px); min-height: 32px; border: 1px solid var(--color-rule); border-radius: 7px; background: var(--color-paper-hi); color: var(--color-ink); padding: 4px 22px 4px 9px; font-size: 12px; }
+    .tutorial-picker[hidden] { display: none; }
+    .view-choice { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .view-choice[hidden] { display: none; }
+    .view-options { display: inline-flex; padding: 3px; border: 1px solid var(--color-rule); border-radius: 8px; background: var(--color-paper-2); }
+    .view-options button { min-height: 29px; border: 0; border-radius: 5px; background: transparent; color: var(--color-ink-2); padding: 4px 9px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+    .view-options button:hover { color: var(--color-ink); }
+    .view-options button[aria-pressed="true"] { background: var(--color-paper-hi); color: var(--color-ink); box-shadow: 0 1px 3px var(--color-shadow-soft); }
+    .toolbar .spacer { flex: 1; }
+    .quiet { color: var(--color-muted); font-size: 12px; }
+    .btn { min-height: 38px; border-radius: 8px; border: 1px solid var(--color-rule); background: var(--color-paper-hi); color: var(--color-ink-2); padding: 7px 12px; font-weight: 600; }
+    .btn:hover { background: var(--color-paper-2); }
+    .btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-ink); }
+    .btn.primary:hover { background: var(--color-accent); filter: brightness(1.05); }
+    .btn.mini { min-height: 30px; padding: 4px 9px; font-size: 12px; }
+    .workspace { display: flex; flex: 1; min-height: 0; min-width: 0; }
+    .sources { width: var(--sources-width, 220px); flex: none; padding: 16px; overflow: auto; background: var(--color-paper-hi); }
+    .sources[hidden], .chatpanel[hidden], .pdfpanel[hidden], .divider[hidden] { display: none; }
+    .sources h2 { font-size: 13px; margin: 1px 0 6px; }
+    .sources p { font-size: 12px; line-height: 1.45; color: var(--color-muted); margin: 0 0 18px; }
+    .group { margin-bottom: 19px; }
+    .grouphead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+    .grouphead h3 { font-size: 12px; letter-spacing: .025em; color: var(--color-ink-2); margin: 0; }
+    .grouphead .add-source { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--color-ink-2); font-size: 19px; font-weight: 400; line-height: 1; padding: 0; }
+    .grouphead .add-source:hover { border-color: var(--color-rule); background: var(--color-paper-2); color: var(--color-focus); }
+    .group input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .filelist { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+    .filelist li { border: 1px solid var(--color-rule); background: var(--color-paper-hi); border-radius: 8px; padding: 5px 5px 5px 9px; font-size: 12px; overflow-wrap: anywhere; display: flex; align-items: center; gap: 4px; }
+    .filelist .file-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .filelist button.file-name { text-align: left; padding: 4px 0; background: none; border: 0; color: var(--color-ink); }
+    .filelist button.file-name[aria-current="true"] { color: var(--color-focus); font-weight: 700; }
+    .filelist .remove-source { flex: none; width: 28px; height: 28px; padding: 5px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); }
+    .filelist .remove-source svg { width: 16px; height: 16px; }
+    .filelist .remove-source:hover, .filelist .remove-source:focus-visible { color: var(--color-danger); background: var(--color-danger-soft); }
+    .filelist .empty { color: var(--color-muted); font-style: italic; }
+    .main { display: flex; flex: 1; min-width: 0; min-height: 0; }
+    .panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .pdfpanel { width: var(--pdf-width, 50%); flex: none; }
+    .answerpanel { flex: 1; }
+    .chatpanel { width: var(--chat-width, 320px); flex: none; background: var(--color-paper-hi); }
+    .divider { width: 7px; flex: none; background: var(--color-rule); cursor: col-resize; position: relative; touch-action: none; }
+    .divider:hover, .divider.dragging, .divider:focus-visible { background: var(--color-focus); }
+    .divider::before { content: ''; width: 2px; height: 35px; border-radius: 2px; background: var(--color-rule); position: absolute; top: calc(50% - 17px); left: 2px; }
+    .panelhead { min-height: 56px; padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--color-rule); background: var(--color-paper-hi); }
+    .panelhead .title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .panelhead .hint { color: var(--color-muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+    .pdfarea { flex: 1; min-height: 0; overflow: auto; background: var(--color-paper-2); padding: 12px; }
+    .pdfarea canvas { display: block; max-width: 100%; height: auto; margin: 0 auto 14px; background: var(--color-paper-hi); box-shadow: 0 2px 10px var(--color-shadow-soft); }
+    .pdfempty { height: 100%; display: grid; place-content: center; text-align: center; padding: 28px; color: var(--color-ink-2); }
+    .pdfempty strong { color: var(--color-ink); font-size: 17px; margin-bottom: 8px; }
+    .sample-pdf-page { max-width: 640px; min-height: 760px; margin: 0 auto 14px; padding: 36px; background: white; box-shadow: 0 2px 10px var(--color-shadow-soft); color: var(--color-ink); font-family: var(--font-body); line-height: 1.6; }
+    .sample-pdf-page h2 { font: 25px var(--font-display); margin: 0 0 8px; }
+    .sample-pdf-page h3 { font: 18px var(--font-display); margin: 25px 0 6px; }
+    .sample-pdf-page .sample-figure { display: block; width: min(100%, 380px); height: auto; margin: 16px auto; border: 1px solid var(--color-rule); background: #fff; }
+    .sample-badge { color: var(--color-muted); font-size: 11px; }
+    .editorbg { flex: 1; min-height: 0; overflow: auto; padding: 0; background: var(--color-paper-hi); }
+    .page { width: 100%; min-height: 100%; margin: 0; background: var(--color-paper-hi); padding: 16px; }
+    .question-card { border: 1px solid var(--color-rule); border-radius: 9px; margin: 0 0 18px; overflow: hidden; }
+    .question-card.highlighted { background: var(--color-accent-soft); outline: 2px solid var(--color-accent); }
+    .question-card header { padding: 11px 13px; background: var(--color-paper-hi); border-bottom: 1px solid var(--color-rule); display: flex; align-items: center; gap: 8px; }
+    .question-card h2 { margin: 0; font-size: 14px; }
+    .question-card .origin { margin-left: auto; color: var(--color-muted); font-size: 11px; }
+    .question-prompt { padding: 4px 13px 11px; color: var(--color-ink-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .question-card textarea { min-height: 155px; padding: 12px 13px; resize: vertical; }
+    .combined-lead { margin: 0 0 18px; padding: 11px 13px; border-left: 3px solid var(--color-accent); background: var(--color-paper-2); color: var(--color-ink-2); font-size: 12px; line-height: 1.5; }
+    .combined-lead[hidden] { display: none; }
+    .main.combined .question-card { border: 0; border-bottom: 1px solid var(--color-rule); border-radius: 0; margin-bottom: 14px; }
+    .main.combined .question-card header { border: 0; padding: 9px 0 4px; }
+    .main.combined .question-prompt { padding: 3px 0 12px; }
+    .main.combined .question-card textarea { border: 1px solid var(--color-rule); border-radius: 7px; background: var(--color-paper-hi); }
+    .main.combined .question-actions { border: 0; padding: 9px 0 13px; }
+    .question-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 11px; border-top: 1px solid var(--color-rule); }
+    textarea { display: block; width: 100%; border: 0; outline: none; color: var(--color-ink); background: transparent; line-height: 1.6; font-size: 14px; }
+    textarea::placeholder { color: var(--color-muted); }
+    .add-row { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+    .add-row input { width: 70px; min-height: 32px; border: 1px solid var(--color-rule); border-radius: 7px; padding: 5px 8px; }
+    .detect-note { color: var(--color-muted); font-size: 11px; line-height: 1.4; margin: 9px 0 0; }
+    .chatpanel .panelhead { min-height: 42px; padding: 6px 10px 0; gap: 2px; background: var(--color-paper); }
+    .chat-tabs { display: flex; min-width: 0; gap: 2px; align-self: stretch; }
+    .chat-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 35px; border: 0; border-bottom: 2px solid transparent; border-radius: 7px 7px 0 0; background: transparent; color: var(--color-ink-2); font-size: 13px; font-weight: 400; padding: 6px 9px; white-space: nowrap; }
+    .chat-tabs button:hover { color: var(--color-ink); }
+    .chat-tabs button[aria-selected="true"] { background: var(--color-paper-hi); color: var(--color-ink); font-weight: 500; border-bottom-color: var(--tab-hue); }
+    .chat-tabs .agent-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tab-hue); }
+    .chat-reset, .chat-close { flex: none; align-self: center; display: grid; place-items: center; border: 1px solid var(--color-rule); background: var(--color-paper-hi); color: var(--color-ink-2); border-radius: 50%; width: 25px; height: 25px; padding: 0; }
+    .chat-reset { margin-left: auto; }
+    .chat-close { margin-left: 5px; }
+    .chat-reset:hover, .chat-close:hover { border-color: var(--color-rule); color: var(--color-ink); }
+    .chat-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 14px 4px; color: var(--color-ink-2); line-height: 1.6; font-size: 14px; }
+    .chat-limits { margin: 2px 0 12px; padding: 8px 10px; border: 1px dashed var(--color-rule); border-radius: 8px; font-size: 12px; line-height: 1.5; color: var(--color-muted); }
+    .chat-limits strong { color: var(--color-ink-2); font-weight: 500; }
+    .chat-empty { margin: 16px 2px; color: var(--color-muted); font-size: 14px; }
+    .chat-message { position: relative; max-width: 88%; border-radius: 16px; padding: 10px 12px 10px 38px; margin: 12px 0; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--color-paper-2); color: var(--color-ink); }
+    .chat-message.you { margin-left: auto; padding: 10px 38px 10px 12px; background: #e2eef7; }
+    .chat-message.sample { background: #e4f3eb; }
+    .chat-message.sample.max { background: #fff0df; }
+    .chat-message.status { max-width: 100%; margin-inline: auto; padding: 4px 8px; background: transparent; color: var(--color-muted); font-size: 12px; text-align: center; }
+    .chat-message:not(.status)::before { content: 'E'; position: absolute; left: 9px; top: 9px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-peer); color: white; font: 600 11px var(--font-body); }
+    .chat-message.max::before { content: 'M'; background: var(--color-challenger); }
+    .chat-message.you::before { content: '•'; left: auto; right: 9px; background: #5f849f; }
+    .chat-message b { display: block; font-size: 12px; font-weight: 500; margin-bottom: 3px; color: var(--color-ink-2); letter-spacing: 0; text-transform: none; }
+    .chat-message b { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+    .chat-message .btn { display: block; width: fit-content; margin-bottom: 6px; border-radius: 999px; min-height: 24px; font-size: 11px; }
+    .chat-compose { border-top: 1px solid var(--color-rule); padding: 8px 14px 10px; position: relative; }
+    .chat-compose textarea { border: 1px solid var(--color-rule); border-radius: 16px; padding: 10px 44px 10px 11px; min-height: 64px; resize: none; font-size: 14px; }
+    .chat-compose textarea:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+    .chat-compose-foot { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+    .chat-compose-foot .hint { flex: 1; color: var(--color-muted); font-size: 12px; }
+    .chat-compose-foot button { position: absolute; right: 23px; top: 24px; width: 30px; min-height: 30px; padding: 0; font-size: 18px; border-radius: 50%; }
+    .max-asked { margin-left: auto; border: 0; border-radius: 50%; width: 25px; height: 25px; color: white; background: var(--color-challenger); font-size: 12px; font-weight: 700; }
+    .max-asked:hover { filter: brightness(1.15); }
+    .summary { display: none; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; margin: 0; background: var(--color-paper); }
+    .summary h1 { font-size: 30px; }
+    .summary p { line-height: 1.65; color: var(--color-ink-2); }
+    .notes-toolbar { min-height: 56px; display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 8px 15px; background: var(--color-paper-hi); border-bottom: 1px solid var(--color-rule); }
+    .notes-toolbar strong { font-size: 15px; color: var(--color-ink); }
+    .notes-toolbar-spacer { flex: 1; }
+    .notes-zoom { display: flex; align-items: center; gap: 4px; }
+    .notes-zoom output { min-width: 40px; text-align: center; font-size: 12px; color: var(--color-muted); }
+    .notes-menu { position: relative; }
+    .notes-menu summary { list-style: none; cursor: pointer; }
+    .notes-menu summary::-webkit-details-marker { display: none; }
+    .notes-menu-items { position: absolute; z-index: 5; right: 0; top: 34px; min-width: 145px; padding: 5px; display: grid; background: var(--color-paper-hi); border: 1px solid var(--color-rule); border-radius: 8px; box-shadow: 0 8px 24px var(--color-shadow-soft); }
+    .notes-menu-items button { padding: 7px 9px; border: 0; text-align: left; color: var(--color-ink); background: transparent; border-radius: 5px; font-size: 12px; }
+    .notes-menu-items button:hover { background: var(--color-paper-2); }
+    .notes-layout { flex: 1; min-height: 0; display: flex; }
+    .notes-map { width: 205px; flex: none; display: flex; flex-direction: column; gap: 7px; padding: 18px 12px; border-right: 1px solid var(--color-rule); background: var(--color-paper-hi); }
+    .notes-map strong { font-size: 12px; color: var(--color-muted); margin-bottom: 6px; }
+    .notes-map a { padding: 7px 8px; border-radius: 6px; color: var(--color-ink-2); text-decoration: none; font-size: 12px; }
+    .notes-map a:hover, .notes-map a:focus-visible { background: var(--color-accent-soft); color: var(--color-ink); }
+    .notes-scroll { flex: 1; min-width: 0; overflow: auto; scroll-behavior: smooth; }
+    .notes-page { width: min(760px, 100%); margin: 0 auto; padding: 34px 36px 80px; zoom: var(--notes-zoom, 1); }
+    .notes-page h1 { margin: 0 0 10px; }
+    .notes-overview { max-width: 460px; padding: 15px 20px; margin: 24px 0 48px; border: 1px solid var(--color-rule); border-radius: 10px; background: var(--color-paper-hi); font-size: 13px; }
+    .notes-overview ol { margin: 8px 0 0; padding-left: 22px; }
+    .notes-overview li { margin: 4px 0; }
+    .note-section { position: relative; padding: 20px 0 32px; border-top: 1px solid var(--color-rule); scroll-margin-top: 15px; }
+    .note-section:hover, .note-section:focus-within, .note-section.highlighted { background: color-mix(in oklab, var(--color-accent-soft) 22%, transparent); }
+    .note-section h2 { margin: 0 34px 12px 0; font: 23px var(--font-display); }
+    .note-section p { margin: 0 0 12px; }
+    .note-section [contenteditable] { min-height: 56px; border-radius: 4px; outline: none; }
+    .note-section [contenteditable]:focus { box-shadow: 0 0 0 2px var(--color-focus); background: var(--color-paper-hi); }
+    .note-citation { font-size: 11px; color: var(--color-muted); }
+    .note-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 12px; opacity: .2; transition: opacity .15s; }
+    .note-section:hover .note-actions, .note-section:focus-within .note-actions { opacity: 1; }
+    .note-actions button, .note-edit-controls button { border: 1px solid var(--color-rule); border-radius: 6px; background: var(--color-paper-hi); color: var(--color-ink-2); padding: 5px 8px; font-size: 12px; }
+    .note-actions button:hover, .note-edit-controls button:hover { background: var(--color-paper-2); color: var(--color-ink); }
+    .note-max-asked { position: absolute; top: 17px; right: 0; }
+    .note-edits, .question-edits { display: grid; gap: 8px; }
+    .note-edits { margin-top: 12px; }
+    .question-edits { padding: 0 12px 11px; }
+    .question-edits:empty { display: none; }
+    .main.combined .question-edits { padding: 0 0 11px; }
+    .inline-edit { border-left: 3px solid var(--edit-color, var(--color-peer)); border-radius: 0 6px 6px 0; background: var(--edit-bg, #e4f3eb); padding: 8px 10px; color: var(--color-ink); font-size: 13px; line-height: 1.5; }
+    .inline-edit[data-author="max"] { --edit-color: var(--color-challenger); --edit-bg: #fff0df; }
+    .inline-edit-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+    .inline-edit-agent { color: var(--edit-color, var(--color-peer)); font-size: 11px; font-weight: 600; }
+    .inline-edit-controls { display: flex; gap: 3px; margin-left: auto; }
+    .inline-edit-controls button { border: 0; border-radius: 5px; background: transparent; color: var(--color-ink-2); padding: 3px 6px; font-size: 11px; }
+    .inline-edit-controls button:hover { background: var(--color-paper-hi); color: var(--color-ink); }
+    .inline-edit-controls button:last-child { font-weight: 600; }
+    .inline-edit.kept { border-left-color: transparent; background: transparent; padding-left: 10px; }
+    .inline-edit.kept .inline-edit-head { display: none; }
+    .user-note-block { padding: 8px 10px; border-radius: 6px; background: var(--color-paper-hi); color: var(--color-ink); }
+    @media (max-width: 1050px) { .notes-map { display: none; } .notes-page { padding-inline: 18px; } }
+    .preview-screen { display: none; flex: 1; min-height: 0; overflow: auto; padding: 32px; background: var(--color-paper); }
+    .preview-screen h1 { margin: 0 0 8px; font-size: 24px; }
+    .preview-screen p { color: var(--color-muted); line-height: 1.5; }
+    .notebook-list { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0 24px; }
+    .notebook-card { width: min(320px, 100%); padding: 18px; border: 1px solid var(--color-rule); border-radius: 10px; background: var(--color-paper-hi); text-align: left; color: var(--color-ink); }
+    .notebook-card:hover { border-color: var(--color-accent); }
+    .notebook-card strong, .notebook-card span { display: block; }
+    .notebook-card span { margin-top: 8px; color: var(--color-muted); font-size: 12px; }
+    .create-workspace { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .create-workspace input { width: min(320px, 100%); min-height: 38px; border: 1px solid var(--color-rule); border-radius: 7px; padding: 7px 10px; }
+    .search-layout { display: grid; grid-template-columns: 1fr 1fr minmax(260px, 330px); gap: 1px; background: var(--color-rule); min-height: calc(100% - 56px); border: 1px solid var(--color-rule); }
+    .search-col { background: var(--color-paper-hi); min-width: 0; padding: 14px; }
+    .search-col h2 { margin: 0 0 12px; font-size: 13px; }
+    .search-col input { width: 100%; border: 1px solid var(--color-rule); border-radius: 7px; padding: 8px 10px; }
+    .search-col button { display: block; width: 100%; margin-top: 8px; padding: 8px; border: 1px solid var(--color-rule); background: var(--color-paper-hi); border-radius: 7px; text-align: left; color: var(--color-ink); }
+    .search-col .search-empty { font-size: 12px; }
+    .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--color-ink); color: var(--color-paper-hi); padding: 11px 17px; border-radius: 9px; box-shadow: 0 10px 30px var(--color-shadow-soft); max-width: min(560px, 90vw); font-size: 13px; display: none; z-index: 10; }
+    .brand, .preview-screen h1, .summary h1, .panelhead .title, .toolbar strong, .question-card h2, .sources h2, .sources h3, .search-col h2, .notebook-card strong, .pdfempty strong { font-family: var(--font-display); font-weight: 400; color: var(--color-ink); font-optical-sizing: auto; }
+    .brand { font-size: 23px; letter-spacing: -.022em; }
+    .preview-screen h1, .summary h1 { font-size: 30px; letter-spacing: -.022em; line-height: 1.08; }
+    .preview-screen h1, .summary h1, .sources h2, .question-card h2 { text-wrap: balance; }
+    .panelhead .title, .toolbar strong { font-size: 18px; letter-spacing: -.01em; }
+    .question-card h2, .sources h2, .notebook-card strong, .pdfempty strong { font-size: 17px; line-height: 1.2; }
+    .sources h3, .search-col h2 { font-size: 14px; letter-spacing: 0; }
+    .btn.primary { color: var(--color-accent-ink); }
+    .btn.primary:hover { color: var(--color-accent-ink); }
+    .chat-message b { text-transform: none; letter-spacing: 0; }
+    .grouphead label, .tabs button, .btn, .filelist, .question-card .origin, .detect-note, .chat-tabs button { font-family: var(--font-body); }
+    input, textarea { caret-color: var(--color-focus); }
+    .editorbg, .pdfarea, .sources, .chat-body, .preview-screen { scrollbar-color: var(--color-rule) var(--color-paper-hi); }
+    @media (max-width: 1050px) { .top-title { width: 170px; } .tutorial-picker { max-width: 200px; } .panelhead .hint { display: none; } .page { padding: 12px; } .quiet { display: none; } .view-options button { padding-inline: 6px; } .search-layout { grid-template-columns: 1fr minmax(220px, 40%); } .search-col:first-child { display: none; } }
+    @media (max-width: 980px) { .top { height: 98px; align-items: flex-start; padding-top: 8px; } .tabs { top: 47px; height: 50px; } .toolbar { gap: 7px; padding-inline: 10px; } }
+    @media (max-width: 900px) { .workspace { position: relative; } .sources:not([hidden]) { position: absolute; inset: 0 auto 0 0; z-index: 9; width: min(82vw, 290px) !important; box-shadow: 8px 0 20px var(--color-shadow-soft); } .chatpanel:not([hidden]) { position: absolute; inset: 0 0 0 auto; z-index: 10; width: min(90vw, 360px) !important; box-shadow: -8px 0 20px var(--color-shadow-soft); } #sourceDivider, #chatDivider { display: none; } }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><div class="brand">Chatter<i>ED</i></div><input id="workspaceTitleInput" class="top-title" aria-label="Workspace name" title="Click to rename workspace" maxlength="60" value="Tutorial workspace"><nav class="tabs" aria-label="Main view"><button id="tutorialTab" aria-selected="true">Tutorial</button><button id="summaryTab" aria-selected="false">Summary notes</button></nav><small>Local UI preview</small></header>
+  <div class="shell"><nav class="nav-rail" aria-label="Main"><button id="homeNav" type="button" aria-label="Notebooks" title="Notebooks" aria-current="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 9 7.5-6 7.5 6v8H2.5z"/><path d="M8 17v-5h4v5"/></svg></button><button id="searchNav" type="button" aria-label="Search" title="Search all notebooks (⇧⌘F)" aria-current="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="7" r="4.8"/><path d="M10.6 10.6 14 14" stroke-linecap="round"/></svg></button></nav><div class="shell-main">
+  <div class="toolbar"><button id="toggleSources" class="btn mini" aria-expanded="false" aria-controls="sources">☰ Sources</button><select id="tutorialPicker" class="tutorial-picker" aria-label="Choose tutorial" hidden></select><span class="spacer"></span><div class="view-choice" role="group" aria-label="Tutorial view"><div class="view-options"><button id="splitView" type="button" aria-pressed="true" title="Original PDF beside a separate working document">PDF + working</button><button id="combinedView" type="button" aria-pressed="false" title="Question text and answer spaces in one AI-generated sheet in Electron">Combined sheet</button></div></div><button id="toggleChat" class="btn mini" aria-expanded="false" aria-controls="chatPanel">💬 Chats</button></div>
+  <div class="workspace" id="tutorialView">
+    <aside class="sources" id="sources" hidden><h2>Sources</h2><p>Add as many files as you need in each category. Choose a tutorial PDF to view it here.</p>
+      <div class="group"><div class="grouphead"><h3>Lecture notes</h3><button class="add-source" id="addLecture" type="button" aria-label="Add lecture notes" title="Add lecture notes">+</button><input id="lectureFiles" type="file" accept=".pdf,.doc,.docx,.md,.txt" multiple></div><ul class="filelist" id="lectureList"><li class="empty">No files yet</li></ul></div>
+      <div class="group"><div class="grouphead"><h3>Tutorials</h3><button class="add-source" id="addTutorial" type="button" aria-label="Add tutorials" title="Add tutorials">+</button><input id="tutorialFiles" type="file" accept=".pdf" multiple></div><ul class="filelist" id="tutorialList"><li class="empty">No files yet</li></ul></div>
+      <div class="group"><div class="grouphead"><h3>Tutorial answers</h3><button class="add-source" id="addAnswers" type="button" aria-label="Add tutorial answers" title="Add tutorial answers">+</button><input id="answersFiles" type="file" accept=".pdf,.doc,.docx,.md,.txt" multiple></div><ul class="filelist" id="answersList"><li class="empty">No files yet</li></ul></div>
+    </aside>
+    <div class="divider" id="sourceDivider" role="separator" aria-label="Resize sources panel" aria-orientation="vertical" tabindex="0" hidden></div>
+    <main class="main" id="main"><section class="panel pdfpanel" id="pdfPanel" aria-label="Original tutorial PDF"><div class="panelhead"><span class="title" id="pdfTitle">Original tutorial PDF</span><span class="sample-badge" id="pdfBadge"></span></div><div class="pdfarea" id="pdfArea"><div class="pdfempty"><strong>Open your tutorial PDF</strong><span>Use Sources → Tutorials → +.</span></div></div></section>
+      <div class="divider" id="workDivider" role="separator" aria-label="Resize PDF and answer sheet" aria-orientation="vertical" tabindex="0"></div>
+      <section class="panel answerpanel" id="answerPanel" aria-label="Working document"><div class="panelhead"><span class="title" id="workingTitle">My working</span><span class="hint" id="saveStatus">Saved on this computer</span></div><div class="editorbg"><div class="page"><p class="combined-lead" id="combinedLead" hidden>Combined sheet layout preview. In Electron, AI generates the question text and answer spaces; this browser preview uses text extracted from your PDF. Your working is shared between both views.</p><div id="questionList"></div><div class="add-row"><button class="btn mini" id="addQuestion">+ Add missing question</button><label for="questionNumber">Q</label><input id="questionNumber" aria-label="Question number to add" value="1" inputmode="numeric"></div><p class="detect-note" id="detectNote">Choose a tutorial PDF to find its questions. You can add any missed question yourself.</p></div></div></section></main>
+    <div class="divider" id="chatDivider" role="separator" aria-label="Resize chat panel" aria-orientation="vertical" tabindex="0" hidden></div>
+    <aside class="panel chatpanel" id="chatPanel" aria-label="Chats with Ellie and Max" hidden><div class="panelhead"><div class="chat-tabs" role="tablist" aria-label="Which conversation"><button data-agent="doc" role="tab" aria-selected="false" tabindex="-1" style="--tab-hue:var(--color-accent)">Doc chat</button><button data-agent="ellie" role="tab" aria-selected="true" tabindex="0" style="--tab-hue:var(--color-peer)"><span class="agent-dot" aria-hidden="true"></span>Ellie</button><button data-agent="max" role="tab" aria-selected="false" tabindex="-1" style="--tab-hue:var(--color-challenger)"><span class="agent-dot" aria-hidden="true"></span>Max</button></div><button class="chat-reset" id="resetChat" type="button" aria-label="New conversation" title="Clear preview chats and start again">↺</button><button class="chat-close" id="closeChat" type="button" aria-label="Collapse chats" title="Collapse chats">⟩</button></div><div class="chat-body" id="chatBody" role="tabpanel"></div><div class="chat-compose"><textarea id="chatDraft" rows="3" aria-label="Message" placeholder="Type a message…"></textarea><div class="chat-compose-foot"><span class="hint" id="chatDestination">To Ellie in Doc chat · Enter sends</span><button class="btn primary" id="sendChat" type="button" aria-label="Send message" title="Send message">➤</button></div></div></aside>
+  </div>
+  <section class="summary" id="summaryView" aria-label="Summary notes document">
+    <header class="notes-toolbar"><strong>Graph traversal · sample notes</strong><span class="sample-badge" id="notesSave">Sample document</span><span class="notes-toolbar-spacer"></span><button class="btn mini" id="notesListen">Listen</button><div class="notes-zoom" role="group" aria-label="Notes zoom"><button class="btn mini" id="notesZoomOut" aria-label="Zoom out">−</button><output id="notesZoomValue">100%</output><button class="btn mini" id="notesZoomIn" aria-label="Zoom in">+</button></div><details class="notes-menu"><summary class="btn mini">Insert</summary><div class="notes-menu-items"><button type="button" data-insert="Formula">Formula</button><button type="button" data-insert="Table">Table</button><button type="button" data-insert="Diagram">Diagram</button><button type="button" data-insert="Flashcards">Flashcards</button><button type="button" data-insert="Quiz">Quiz</button><button type="button" data-insert="Infographic">Infographic</button></div></details><button class="btn mini" id="notesAddQuestion">Add a question</button><button class="btn mini" id="notesFreeze" aria-pressed="false">Freeze</button></header>
+    <div class="notes-layout"><nav class="notes-map" aria-label="Map of the notes"><strong>Map of the notes</strong><a href="#note-foundations">1. Search foundations</a><a href="#note-bfs">2. Breadth-first search</a><a href="#note-dfs">3. Comparing strategies</a></nav><div class="notes-scroll" id="notesScroll"><div class="notes-page"><p class="sample-badge">Interactive sample · the Electron app generates and saves real notes from your sources.</p><h1>Graph traversal</h1><div class="notes-overview"><strong>Learning overview</strong><ol><li>Search foundations</li><li>Breadth-first search</li><li>Comparing strategies</li></ol></div>
+      <section class="note-section" id="note-foundations" data-note-id="foundations"><h2>Search foundations</h2><button class="max-asked note-max-asked" type="button" aria-label="Open Max question about Search foundations" data-max-note="foundations">M</button><p contenteditable="true" spellcheck="true" data-note-edit="foundations">A graph contains vertices and edges. A search starts at one vertex and visits connected vertices in an order set by its frontier.</p><span class="note-citation">Source: sample lecture · p. 1–2</span><div class="note-actions" role="group" aria-label="Actions for Search foundations"><button type="button" data-note-action="explain" data-note-target="foundations">Explain</button><button type="button" data-note-action="example" data-note-target="foundations">Example</button><button type="button" data-note-action="quiz" data-note-target="foundations">Quiz me</button><button type="button" data-note-action="ask" data-note-target="foundations">Ask…</button></div><div class="note-edits" data-note-edits="foundations"></div></section>
+      <section class="note-section" id="note-bfs" data-note-id="bfs"><h2>Breadth-first search</h2><p contenteditable="true" spellcheck="true" data-note-edit="bfs">Breadth-first search visits vertices in increasing distance from the start. A FIFO queue holds the next frontier; a visited set prevents repeated work.</p><span class="note-citation">Source: sample lecture · p. 3–4</span><div class="note-actions" role="group" aria-label="Actions for Breadth-first search"><button type="button" data-note-action="explain" data-note-target="bfs">Explain</button><button type="button" data-note-action="example" data-note-target="bfs">Example</button><button type="button" data-note-action="quiz" data-note-target="bfs">Quiz me</button><button type="button" data-note-action="ask" data-note-target="bfs">Ask…</button></div><div class="note-edits" data-note-edits="bfs"></div></section>
+      <section class="note-section" id="note-dfs" data-note-id="dfs"><h2>Comparing strategies</h2><p contenteditable="true" spellcheck="true" data-note-edit="dfs">Depth-first search follows one path as far as possible before returning. Breadth-first search explores one distance layer at a time, which matters when an unweighted shortest path is needed.</p><span class="note-citation">Source: sample lecture · p. 5–6</span><div class="note-actions" role="group" aria-label="Actions for Comparing strategies"><button type="button" data-note-action="explain" data-note-target="dfs">Explain</button><button type="button" data-note-action="example" data-note-target="dfs">Example</button><button type="button" data-note-action="quiz" data-note-target="dfs">Quiz me</button><button type="button" data-note-action="ask" data-note-target="dfs">Ask…</button></div><div class="note-edits" data-note-edits="dfs"></div></section><div id="notesExtra"></div>
+    </div></div></div>
+  </section>
+  <section class="preview-screen" id="homeView" aria-label="Notebooks"><h1>Notebooks</h1><p>Tutorial workspaces in this local preview. The Electron app shows all your notebooks here.</p><div class="notebook-list" id="workspaceList"></div><div class="create-workspace"><input id="newWorkspaceName" aria-label="New workspace name" maxlength="60" placeholder="Name a new workspace"><button class="btn primary" id="createWorkspace" type="button">New workspace</button><span class="name-error" id="createError" role="status"></span></div></section>
+  <section class="preview-screen" id="searchView" aria-label="Search all notebooks"><div class="search-layout"><div class="search-col"><h2>Slides</h2><p class="search-empty">The matching slide appears here in the Electron app.</p></div><div class="search-col"><h2>Notes</h2><p class="search-empty">The matching notes appear here in the Electron app.</p></div><div class="search-col"><h2>Results</h2><input id="searchInput" type="search" aria-label="Search preview content" placeholder="Search all notebooks…"><div id="searchResults"><p class="search-empty">Search source names and working in this local preview.</p></div></div></div></section>
+  </div></div>
+  <div class="toast" id="toast" role="status"></div>
+</div>
+<script type="module">
+  import * as pdfjs from 'pdfjs-dist';
+  import workerSrc from 'pdfjs-dist/build/pdf.worker.mjs?url';
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+  const $ = (id) => document.getElementById(id);
+  const workspaceMetaKey = 'chattered.preview.workspaces.v1';
+  function blankWorkspace(id, name) { return { id, name, groups: { lecture: [], tutorial: [], answers: [] }, selected: null, questions: [], chats: { doc: [], ellie: [], max: [] } }; }
+  function readWorkspaceNames() { try { const value = JSON.parse(localStorage.getItem(workspaceMetaKey) || 'null'); if (Array.isArray(value) && value.length) return value.filter(item => typeof item.id === 'string' && typeof item.name === 'string' && item.name.trim()).map(item => blankWorkspace(item.id, item.name.trim())); } catch {} return [blankWorkspace('default', 'Tutorial workspace')]; }
+  let workspaces = readWorkspaceNames();
+  let currentWorkspace = workspaces[0];
+  let groups = currentWorkspace.groups;
+  let selected = currentWorkspace.selected;
+  let questions = currentWorkspace.questions;
+  let tutorialLayout = readTutorialLayout(currentWorkspace.id);
+  let promptByQuestion = new Map();
+  let agent = 'ellie';
+  let chats = currentWorkspace.chats;
+  let activeNote = null;
+  let activeQuestion = null;
+  let activeReplyAgent = null;
+  let notesFrozen = false;
+  let notesZoom = 100;
+  let pdfToken = 0;
+  let toastTimer;
+  const sampleTutorials = {
+    'CS4225_tutorial_1_sample.pdf': {
+      1: 'Trace breadth-first search from node A. In what order are the nodes visited?',
+      2: 'Why does a queue give the shortest path in an unweighted graph?',
+      3: 'What changes if the edges have different weights?'
+    },
+    'CS4225_tutorial_2_sample.pdf': {
+      1: 'Inspect the directed graph. Which nodes are reachable from A?',
+      2: 'Write the queue contents after visiting B.',
+      3: 'Compare breadth-first and depth-first traversal for this graph.'
+    }
+  };
+  function sampleFile(name) { return { name, size: 0, lastModified: 1, sample: true }; }
+  function seedSamples() {
+    if (Object.values(groups).some(files => files.length)) return;
+    groups.lecture.push(sampleFile('Graph traversal lecture notes · sample.pdf'));
+    groups.tutorial.push(...Object.keys(sampleTutorials).map(sampleFile));
+    groups.answers.push(sampleFile('Tutorial 1 solutions · sample.pdf'));
+    selected = groups.tutorial[0]; currentWorkspace.selected = selected;
+  }
+  function notice(message) { const el = $('toast'); el.textContent = message; el.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.style.display = 'none', 5200); }
+  function saveWorkspaceNames() { try { localStorage.setItem(workspaceMetaKey, JSON.stringify(workspaces.map(({ id, name }) => ({ id, name })))); } catch { notice('Workspace names could not be saved on this computer.'); } }
+  function readTutorialLayout(id) { try { return localStorage.getItem(`chattered.preview.tutorial-layout.${id}`) === 'combined' ? 'combined' : 'split'; } catch { return 'split'; } }
+  function setTutorialLayout(mode, persist = true) {
+    tutorialLayout = mode;
+    const combined = mode === 'combined';
+    $('main').classList.toggle('combined', combined);
+    $('pdfPanel').hidden = combined;
+    $('workDivider').hidden = combined;
+    $('combinedLead').hidden = !combined;
+    $('workingTitle').textContent = combined ? 'Combined tutorial sheet' : 'My working';
+    $('answerPanel').setAttribute('aria-label', combined ? 'Combined tutorial sheet' : 'Working document');
+    $('splitView').setAttribute('aria-pressed', String(!combined));
+    $('combinedView').setAttribute('aria-pressed', String(combined));
+    if (persist) { try { localStorage.setItem(`chattered.preview.tutorial-layout.${currentWorkspace.id}`, mode); } catch {} }
+    renderQuestions();
+    if (!combined && selected && persist) void showPdf(selected);
+  }
+  $('splitView').onclick = () => setTutorialLayout('split');
+  $('combinedView').onclick = () => setTutorialLayout('combined');
+  function uniqueName(name, except = null) { return !workspaces.some(space => space !== except && space.name.toLocaleLowerCase() === name.toLocaleLowerCase()); }
+  function key() { const base = selected ? `${selected.name}.${selected.size}.${selected.lastModified}` : 'unspecified'; return `chattered.preview.answers.${currentWorkspace.id === 'default' ? '' : `${currentWorkspace.id}.`}${base}`; }
+  function save() { try { localStorage.setItem(key(), JSON.stringify(questions)); $('saveStatus').textContent = 'Saved on this computer'; } catch { $('saveStatus').textContent = 'Could not save locally'; } }
+  function load() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(key()) || 'null');
+      questions = Array.isArray(stored) ? stored.filter(q => Number.isInteger(q.number) && typeof q.answer === 'string') : [];
+      if (!questions.length && selected) {
+        const legacy = localStorage.getItem(`chattered.preview.working.${selected.name}`);
+        if (legacy) questions = [{ number: 1, answer: legacy, origin: 'Imported draft' }];
+      }
+    } catch { questions = []; }
+    renderQuestions();
+  }
+  function renderQuestions() {
+    const list = $('questionList');
+    list.replaceChildren();
+    questions.sort((a, b) => a.number - b.number);
+    for (const q of questions) {
+      const card = document.createElement('section'); card.className = 'question-card'; card.setAttribute('aria-label', `Question ${q.number} answer`);
+      const head = document.createElement('header'); const title = document.createElement('h2'); title.textContent = `Question ${q.number}`;
+      const origin = document.createElement('span'); origin.className = 'origin'; origin.textContent = q.origin || 'From PDF'; head.append(title, origin);
+      if (q.number === 2 && selected?.sample) { const asked = document.createElement('button'); asked.type = 'button'; asked.className = 'max-asked'; asked.textContent = 'M'; asked.title = 'Sample Max question · open in Doc chat'; asked.setAttribute('aria-label', 'Open Max question for Question 2'); asked.onclick = () => { togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat'), true); setAgent('doc'); if (!chats.doc.some(message => message.sampleAsked && message.question === 2)) { chats.doc.push({ role: 'sample', author: 'max', question: 2, sampleAsked: true, text: 'Before you calculate anything: why would a queue help you answer Question 2?' }); renderChat(); } $('chatDraft').focus(); }; head.append(asked); }
+      const prompt = document.createElement('div'); prompt.className = 'question-prompt'; prompt.textContent = promptByQuestion.get(q.number) || 'Question text will appear here when a tutorial PDF is added.';
+      const answer = document.createElement('textarea'); answer.setAttribute('aria-label', `Answer for question ${q.number}`); answer.placeholder = `Write your working and answer for Question ${q.number}…`; answer.value = q.answer;
+      answer.oninput = () => { q.answer = answer.value; save(); };
+      const edits = document.createElement('div'); edits.className = 'question-edits'; edits.setAttribute('aria-label', `Agent edits for Question ${q.number}`);
+      for (const edit of q.edits || []) {
+        if (edit.status === 'removed') continue;
+        edits.append(makeInlineEdit(edit, () => { edit.status = 'removed'; save(); renderQuestions(); }, () => { edit.status = 'kept'; save(); renderQuestions(); }));
+      }
+      const actions = document.createElement('div'); actions.className = 'question-actions';
+      for (const [label, kind] of [['Check', 'check'], ['Hint', 'hint'], ['Refresher', 'refresher'], ['Show answer', 'reveal']]) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = `btn mini${kind === 'check' ? ' primary' : ''}`; button.textContent = label;
+        button.onclick = () => askFor(kind, q.number); actions.append(button);
+      }
+      card.append(head); if (tutorialLayout === 'combined') card.append(prompt); card.append(answer, edits, actions); list.append(card);
+    }
+  }
+  function addQuestion(number, origin = 'Added by you') {
+    if (!Number.isInteger(number) || number < 1 || number > 99) { notice('Enter a question number from 1 to 99.'); return; }
+    const existing = questions.find(q => q.number === number);
+    if (!existing) { questions.push({ number, answer: '', origin }); renderQuestions(); save(); }
+    $('questionList').querySelector(`[aria-label="Answer for question ${number}"]`)?.focus();
+  }
+  function applyDetected(found) {
+    if (found.length) {
+      const highest = Math.min(30, Math.max(...found));
+      for (let n = 1; n <= highest; n++) if (!questions.some(q => q.number === n)) questions.push({ number: n, answer: '', origin: found.includes(n) ? 'From PDF' : 'Check PDF' });
+      $('detectNote').textContent = `Detected questions through ${highest}. Check the PDF for subparts or any missed headings; add them here.`;
+    } else if (!questions.length) {
+      for (let n = 1; n <= 3; n++) questions.push({ number: n, answer: '', origin: 'Starter section' });
+      $('detectNote').textContent = 'No question headings were found in the PDF text. Starter sections 1–3 are editable; add or ignore sections to match the PDF.';
+    }
+    renderQuestions(); save();
+  }
+  async function showPdf(file) {
+    const token = ++pdfToken;
+    const area = $('pdfArea');
+    $('pdfBadge').textContent = file.sample ? 'Interactive sample' : '';
+    if (file.sample) {
+      const prompts = sampleTutorials[file.name] || {};
+      promptByQuestion = new Map(Object.entries(prompts).map(([number, prompt]) => [Number(number), prompt]));
+      area.replaceChildren();
+      const page = document.createElement('article'); page.className = 'sample-pdf-page';
+      const title = document.createElement('h2'); title.textContent = file.name.includes('_2_') ? 'Tutorial 2 · Graphs' : 'Tutorial 1 · Search'; page.append(title);
+      const subtitle = document.createElement('p'); subtitle.className = 'sample-badge'; subtitle.textContent = 'Sample sheet for UI testing. Upload your own PDF with Tutorials +.'; page.append(subtitle);
+      for (const [number, prompt] of Object.entries(prompts)) {
+        const heading = document.createElement('h3'); heading.textContent = `Question ${number}`;
+        const text = document.createElement('p'); text.textContent = prompt; page.append(heading, text);
+        if (number === '1') {
+          const figure = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); figure.setAttribute('viewBox', '0 0 380 160'); figure.setAttribute('role', 'img'); figure.setAttribute('aria-label', 'Sample graph: A connects to B and C; B connects to D'); figure.setAttribute('class', 'sample-figure');
+          figure.innerHTML = '<path d="M70 78L190 38M70 78L190 118M190 38L310 78" fill="none" stroke="#8295a0" stroke-width="3"/><g fill="#fff" stroke="#cf6815" stroke-width="3"><circle cx="70" cy="78" r="19"/><circle cx="190" cy="38" r="19"/><circle cx="190" cy="118" r="19"/><circle cx="310" cy="78" r="19"/></g><g text-anchor="middle" dominant-baseline="central" font-size="17" fill="#17232f"><text x="70" y="78">A</text><text x="190" y="38">B</text><text x="190" y="118">C</text><text x="310" y="78">D</text></g>';
+          page.append(figure);
+        }
+      }
+      area.append(page); applyDetected(Object.keys(prompts).map(Number)); return;
+    }
+    area.textContent = 'Opening PDF…';
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjs.getDocument({ data }).promise;
+      if (token !== pdfToken) return;
+      area.replaceChildren();
+      const found = new Set();
+      const prompts = new Map();
+      let activeQuestion = null;
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        if (token !== pdfToken) return;
+        const textItems = (await page.getTextContent()).items;
+        const pageText = textItems.map(item => 'str' in item ? item.str : '').join(' ');
+        for (const match of pageText.matchAll(/\b(?:question|problem|Q)\s*([1-9][0-9]?)(?=\b|[.):])/gi)) found.add(Number(match[1]));
+        for (const item of textItems) {
+          const match = 'str' in item ? item.str.match(/^\s*([1-9][0-9]?)[.):]\s+\S/) : null;
+          if (match) found.add(Number(match[1]));
+          if (!('str' in item)) continue;
+          const line = item.str.trim();
+          const heading = line.match(/^(?:question|problem|Q)\s*([1-9][0-9]?)(?:\b|[.):])/i) || line.match(/^([1-9][0-9]?)[.):]\s+\S/);
+          if (heading) activeQuestion = Number(heading[1]);
+          if (activeQuestion && line && (prompts.get(activeQuestion)?.length ?? 0) < 1200) prompts.set(activeQuestion, `${prompts.get(activeQuestion) || ''} ${line}`.trim());
+        }
+        const base = page.getViewport({ scale: 1 });
+        const visibleWidth = area.clientWidth || Math.max(320, $('main').clientWidth / 2);
+        const scale = Math.min(1.8, Math.max(.5, (visibleWidth - 30) / base.width));
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.setAttribute('aria-label', `PDF page ${n} of ${pdf.numPages}`);
+        area.append(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport, canvas }).promise;
+      }
+      if (token === pdfToken) { promptByQuestion = prompts; applyDetected([...found]); }
+    } catch { if (token === pdfToken) area.textContent = 'This PDF could not be displayed. Try another file.'; }
+  }
+  function select(file) { if (!file || selected === file) return; const unspecific = !selected ? questions.map(q => ({ ...q })) : []; selected = file; currentWorkspace.selected = file; promptByQuestion = new Map(); $('pdfTitle').textContent = file.name; $('detectNote').textContent = 'Finding question headings in the original PDF…'; load(); if (!questions.length && unspecific.length) { questions = unspecific; renderQuestions(); save(); } void showPdf(file); render('tutorial'); updatePicker(); }
+  function updatePicker() { const picker = $('tutorialPicker'); picker.replaceChildren(); groups.tutorial.forEach((file, index) => { const option = document.createElement('option'); option.value = String(index); option.textContent = file.name; picker.append(option); }); picker.hidden = groups.tutorial.length < 2; if (selected) { picker.value = String(groups.tutorial.indexOf(selected)); const context = document.createElement('canvas').getContext('2d'); context.font = getComputedStyle(picker).font; picker.style.width = `${Math.min(320, Math.max(105, Math.ceil(context.measureText(selected.name).width + 55)))}px`; } }
+  function removeSource(group, file) {
+    const index = groups[group].indexOf(file); if (index < 0) return;
+    groups[group].splice(index, 1);
+    if (group === 'tutorial' && file === selected) {
+      selected = null; currentWorkspace.selected = null; questions = []; promptByQuestion = new Map(); ++pdfToken;
+      if (groups.tutorial.length) select(groups.tutorial[Math.min(index, groups.tutorial.length - 1)]);
+      else { $('pdfTitle').textContent = 'Original tutorial PDF'; $('pdfArea').innerHTML = '<div class="pdfempty"><strong>Open your tutorial PDF</strong><span>Use Sources → Tutorials → Add more.</span></div>'; questions = []; renderQuestions(); $('detectNote').textContent = 'Choose a tutorial PDF to find its questions. You can add any missed question yourself.'; }
+    }
+    render(group); if (group === 'tutorial') updatePicker(); renderSearchResults();
+  }
+  function render(group) { const list = $(`${group}List`); list.replaceChildren(); for (const file of groups[group]) { const li = document.createElement('li'); let name; if (group === 'tutorial') { name = document.createElement('button'); name.type = 'button'; name.className = 'file-name'; name.textContent = file.name; name.setAttribute('aria-current', String(file === selected)); name.onclick = () => select(file); } else { name = document.createElement('span'); name.className = 'file-name'; name.textContent = file.name; } const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-source'; remove.title = `Remove ${file.name}`; remove.setAttribute('aria-label', `Remove ${file.name}`); remove.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h12M7 5V3.5h6V5m-7 0 .7 11.5h6.6L14 5M8.5 8v6m3-6v6"/></svg>'; remove.onclick = () => removeSource(group, file); li.append(name, remove); list.append(li); } if (!groups[group].length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'No files yet'; list.append(li); } }
+  for (const group of Object.keys(groups)) { $(`${group}Files`).addEventListener('change', (event) => { const files = [...event.target.files]; groups[group].push(...files); render(group); if (group === 'tutorial') { updatePicker(); if (!selected && files[0]) select(files[0]); } event.target.value = ''; }); }
+  for (const [button, input] of [['addLecture', 'lectureFiles'], ['addTutorial', 'tutorialFiles'], ['addAnswers', 'answersFiles']]) $(button).onclick = () => $(input).click();
+  $('tutorialPicker').onchange = (event) => select(groups.tutorial[Number(event.target.value)]);
+  function togglePanel(panel, divider, button, force) { const open = force ?? panel.hidden; panel.hidden = !open; divider.hidden = !open; button.setAttribute('aria-expanded', String(open)); }
+  $('toggleSources').onclick = () => { if ($('sources').hidden && window.innerWidth < 1100 && !$('chatPanel').hidden) togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat'), false); togglePanel($('sources'), $('sourceDivider'), $('toggleSources')); };
+  $('toggleChat').onclick = () => { if ($('chatPanel').hidden && window.innerWidth < 1100 && !$('sources').hidden) togglePanel($('sources'), $('sourceDivider'), $('toggleSources'), false); togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat')); };
+  $('closeChat').onclick = () => togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat'), false);
+  function renderChat() {
+    const body = $('chatBody'); body.replaceChildren();
+    if (agent !== 'doc') {
+      const limits = document.createElement('p'); limits.className = 'chat-limits'; limits.style.setProperty('--agent-hue', agent === 'ellie' ? 'var(--color-peer)' : 'var(--color-challenger)');
+      const strong = document.createElement('strong'); strong.textContent = 'Private'; limits.append(strong, ` — ${agent === 'ellie' ? 'Max' : 'Ellie'} can't see this. ${agent === 'ellie' ? 'Ellie' : 'Max'} can see the document and the shared chat. Nothing here reaches the document unless you put it there.`); body.append(limits);
+    }
+    if (!chats[agent].length) { const intro = document.createElement('p'); intro.className = 'chat-empty'; intro.textContent = agent === 'doc' ? $('summaryView').style.display === 'flex' ? 'Ask about these notes, or @Ellie / @Max. This is the shared chat.' : 'Ask about this tutorial, or @Ellie / @Max. This is the shared chat.' : `Ask ${agent === 'ellie' ? 'Ellie' : 'Max'} anything. It stays here.`; body.append(intro); }
+    for (const message of chats[agent]) {
+      const bubble = document.createElement('article'); bubble.className = `chat-message ${message.role}${message.role === 'sample' ? ` ${message.author}` : ''}`;
+      const label = document.createElement('b'); label.textContent = message.role === 'you' ? 'You' : message.role === 'sample' ? `Sample ${message.author === 'max' ? 'Max' : 'Ellie'} response` : 'Preview notice';
+      const content = document.createElement('span'); content.textContent = message.text; bubble.append(label);
+      if (message.question || message.note) {
+        const pill = document.createElement('button'); pill.className = 'btn mini';
+        const note = message.note && document.querySelector(`[data-note-id="${message.note}"]`);
+        pill.textContent = message.question ? `Question ${message.question}` : note?.querySelector('h2')?.textContent || 'Note';
+        pill.title = 'Jump to the referenced section';
+        const target = () => message.question ? $('questionList').querySelector(`[aria-label="Question ${message.question} answer"]`) : document.querySelector(`[data-note-id="${message.note}"]`);
+        pill.onclick = () => { tab(message.question ? 'tutorial' : 'summary'); target()?.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+        const highlight = on => target()?.classList.toggle('highlighted', on);
+        bubble.append(pill); bubble.onmouseenter = () => highlight(true); bubble.onmouseleave = () => highlight(false); bubble.onfocusin = () => highlight(true); bubble.onfocusout = () => highlight(false);
+      }
+      bubble.append(content); body.append(bubble);
+    }
+    if (!chats[agent].length) { const note = document.createElement('p'); note.className = 'chat-empty'; note.textContent = $('summaryView').style.display === 'flex' ? 'Hover over a notes section to try its actions. No model call is made in this preview.' : 'Try a working-section action to see a sample response. No model call is made in this preview.'; body.append(note); }
+    body.scrollTop = body.scrollHeight;
+  }
+  function setAgent(next) { agent = next; document.querySelectorAll('.chat-tabs button').forEach(button => { const current = button.dataset.agent === agent; button.setAttribute('aria-selected', String(current)); button.tabIndex = current ? 0 : -1; }); $('chatDraft').placeholder = 'Type a message…'; $('chatDraft').setAttribute('aria-label', `Message ${agent === 'doc' ? 'in Doc chat' : `to ${agent === 'ellie' ? 'Ellie' : 'Max'} privately`}`); $('chatDestination').textContent = agent === 'doc' ? 'To Ellie in Doc chat · @Max to challenge · Enter sends' : `Private to ${agent === 'ellie' ? 'Ellie' : 'Max'} · Enter sends`; renderChat(); }
+  document.querySelectorAll('.chat-tabs button').forEach(button => button.onclick = () => { activeNote = null; activeQuestion = null; activeReplyAgent = null; setAgent(button.dataset.agent); });
+  document.querySelector('.chat-tabs').onkeydown = event => { const keys = ['doc', 'ellie', 'max']; const index = keys.indexOf(agent); const next = event.key === 'ArrowRight' ? keys[(index + 1) % keys.length] : event.key === 'ArrowLeft' ? keys[(index + keys.length - 1) % keys.length] : event.key === 'Home' ? keys[0] : event.key === 'End' ? keys[keys.length - 1] : null; if (next) { event.preventDefault(); setAgent(next); document.querySelector(`.chat-tabs [data-agent="${next}"]`).focus(); } };
+  $('resetChat').onclick = () => { if (!Object.values(chats).some(messages => messages.length)) return; if (!confirm('Start a new preview conversation? This clears the chat shown here. Your working stays.')) return; for (const messages of Object.values(chats)) messages.length = 0; renderChat(); };
+  function postPreview(target, text, author = 'ellie', reply = 'This is a sample response, not a live model answer.', question = null, note = null) { chats[target].push({ role: 'you', text, question, note }, { role: 'sample', author, text: reply, question, note }); renderChat(); }
+  function sampleReply(kind, number, answer) {
+    if (kind === 'check') return answer ? `I can see your attempt. In the live app, Max checks it against the hidden answer key and tells you what is right or missing. This sample does not grade your answer.` : 'Try writing your own reasoning first. In the live app, Max checks the saved answer against the hidden key.';
+    if (kind === 'hint') return 'Start from node A. Which nodes enter the queue immediately? This previews Max’s first hint rung; later hints become more explicit in the live app.';
+    if (kind === 'refresher') return 'Breadth-first search uses a FIFO queue, so it explores one distance layer before the next. This previews Ellie’s lecture refresher.';
+    return 'In the live app, Show answer releases the hidden answer and Max asks why it works. This sample does not reveal a real tutorial key.';
+  }
+  function askFor(kind, number) {
+    if (window.innerWidth < 1100 && !$('sources').hidden) togglePanel($('sources'), $('sourceDivider'), $('toggleSources'), false);
+    togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat'), true);
+    const author = kind === 'refresher' ? 'ellie' : 'max'; setAgent('doc');
+    const answer = questions.find(q => q.number === number)?.answer.trim() || '';
+    const lead = kind === 'check' ? `Check my working for Question ${number}.` : kind === 'hint' ? `Give me a hint for Question ${number}.` : kind === 'refresher' ? `Refresh the lecture ideas for Question ${number}.` : `Show the answer to Question ${number}.`;
+    postPreview('doc', answer ? `${lead}\n\nMy working:\n${answer}` : lead, author, sampleReply(kind, number, answer), number);
+    if (kind !== 'check') {
+      const line = kind === 'hint' ? number === 1 ? 'Start with the next item in the queue; name what it lets you discover.' : number === 2 ? 'Compare when each vertex is first enqueued with its distance from the start.' : 'Check whether the queue still explores paths in increasing total cost.' : kind === 'refresher' ? 'A FIFO queue explores one distance layer before the next.' : 'The live app places a short answer-release line here after showing the key.';
+      const question = questions.find(q => q.number === number);
+      if (question) { (question.edits ||= []).push({ id: crypto.randomUUID(), author, kind, text: line, status: 'pending' }); save(); renderQuestions(); }
+    }
+    activeQuestion = number; activeNote = null; activeReplyAgent = 'max'; $('chatDestination').textContent = `Replying to Max about Question ${number}`;
+    $('chatDraft').value = ''; $('chatDraft').focus();
+  }
+  $('sendChat').onclick = () => { const draft = $('chatDraft'); const text = draft.value.trim(); if (!text) { draft.focus(); return; } const author = agent === 'doc' ? /^@ellie\b/i.test(text) ? 'ellie' : /^@max\b/i.test(text) || activeReplyAgent === 'max' ? 'max' : 'ellie' : agent; postPreview(agent, text, author, agent === 'doc' ? author === 'max' ? 'Sample Max: What would you try first, and why?' : 'Sample Ellie: Let’s work from the lecture idea and your current reasoning.' : `Sample ${author === 'max' ? 'Max' : 'Ellie'} private reply. This stays in the private preview channel.`, activeQuestion, activeNote); draft.value = ''; activeNote = null; activeQuestion = null; activeReplyAgent = null; setAgent(agent); draft.focus(); };
+  const noteTitles = { foundations: 'Search foundations', bfs: 'Breadth-first search', dfs: 'Comparing strategies' };
+  const noteReplies = {
+    explain: 'The frontier is the set of discovered vertices waiting to be visited. The data structure holding it determines the order.',
+    example: 'If A connects to B and C, a queue visits B and C before the vertices they discover.',
+    quiz: 'Why does breadth-first search use a queue when finding a shortest path in an unweighted graph?'
+  };
+  function makeInlineEdit(item, onRemove, onKeep) {
+    const edit = document.createElement('div'); edit.className = `inline-edit${item.status === 'kept' ? ' kept' : ''}`; edit.dataset.author = item.author;
+    const head = document.createElement('div'); head.className = 'inline-edit-head';
+    const agent = document.createElement('span'); agent.className = 'inline-edit-agent'; agent.textContent = `${item.author === 'max' ? 'Max' : 'Ellie'} · ${item.kind}`;
+    const controls = document.createElement('div'); controls.className = 'inline-edit-controls';
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove'; remove.setAttribute('aria-label', `Remove ${item.author} ${item.kind}`); remove.onclick = onRemove;
+    const keep = document.createElement('button'); keep.type = 'button'; keep.textContent = 'Keep'; keep.setAttribute('aria-label', `Keep ${item.author} ${item.kind}`); keep.onclick = onKeep;
+    controls.append(remove, keep); head.append(agent, controls);
+    const body = document.createElement('div'); body.className = 'inline-edit-body'; body.textContent = item.text;
+    if (item.status === 'kept') { body.contentEditable = 'true'; body.setAttribute('aria-label', 'Kept text'); body.oninput = () => { item.text = body.textContent || ''; save(); }; }
+    edit.append(head, body); return edit;
+  }
+  function addInlineEdit(noteId, kind, text) {
+    const host = document.querySelector(`[data-note-edits="${noteId}"]`); if (!host) return;
+    if (host.previousElementSibling?.classList.contains('note-actions')) host.parentNode.insertBefore(host, host.previousElementSibling);
+    const item = { author: 'ellie', kind, text, status: 'pending' };
+    let edit;
+    edit = makeInlineEdit(item, () => edit.remove(), () => { edit.classList.add('kept'); item.status = 'kept'; const body = edit.querySelector('.inline-edit-body'); body.contentEditable = 'true'; body.setAttribute('aria-label', 'Kept text'); });
+    host.append(edit);
+  }
+  function openNoteChat(noteId) {
+    if (window.innerWidth < 1100 && !$('sources').hidden) togglePanel($('sources'), $('sourceDivider'), $('toggleSources'), false);
+    togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat'), true); setAgent('doc');
+    activeNote = noteId; activeQuestion = null; activeReplyAgent = null; $('chatDestination').textContent = `Replying about ${noteTitles[noteId]} · Ellie by default`; $('chatDraft').focus();
+  }
+  document.querySelectorAll('[data-note-action]').forEach(button => button.onclick = () => {
+    const kind = button.dataset.noteAction; const noteId = button.dataset.noteTarget;
+    openNoteChat(noteId);
+    if (kind === 'ask') return;
+    const author = kind === 'quiz' ? 'max' : 'ellie';
+    const request = kind === 'quiz' ? `Quiz me on ${noteTitles[noteId]}.` : kind === 'example' ? `Give me an example of ${noteTitles[noteId]}.` : `Explain ${noteTitles[noteId]}.`;
+    postPreview('doc', request, author, `Sample ${author === 'max' ? 'Max' : 'Ellie'}: ${noteReplies[kind]}`, null, noteId);
+    if (!notesFrozen && kind !== 'quiz') addInlineEdit(noteId, kind === 'explain' ? 'Explanation' : 'Example', noteReplies[kind]);
+    if (kind === 'quiz') { activeNote = noteId; activeReplyAgent = 'max'; $('chatDestination').textContent = `Replying to Max about ${noteTitles[noteId]}`; }
+    else { activeNote = null; activeReplyAgent = null; setAgent('doc'); }
+  });
+  document.querySelectorAll('[data-max-note]').forEach(button => button.onclick = () => {
+    const noteId = button.dataset.maxNote; openNoteChat(noteId);
+    if (!chats.doc.some(message => message.sampleAsked && message.note === noteId)) {
+      chats.doc.push({ role: 'sample', author: 'max', note: noteId, sampleAsked: true, text: `Sample Max: ${noteReplies.quiz}` }); renderChat();
+    }
+    activeReplyAgent = 'max'; $('chatDestination').textContent = `Replying to Max about ${noteTitles[noteId]}`;
+  });
+  document.querySelectorAll('[data-note-edit]').forEach(edit => edit.addEventListener('input', () => { $('notesSave').textContent = 'Edits stay in this tab'; }));
+  $('notesZoomOut').onclick = () => { notesZoom = Math.max(70, notesZoom - 10); $('notesZoomValue').textContent = `${notesZoom}%`; $('summaryView').style.setProperty('--notes-zoom', String(notesZoom / 100)); };
+  $('notesZoomIn').onclick = () => { notesZoom = Math.min(150, notesZoom + 10); $('notesZoomValue').textContent = `${notesZoom}%`; $('summaryView').style.setProperty('--notes-zoom', String(notesZoom / 100)); };
+  $('notesFreeze').onclick = () => { notesFrozen = !notesFrozen; $('notesFreeze').textContent = notesFrozen ? 'Frozen' : 'Freeze'; $('notesFreeze').setAttribute('aria-pressed', String(notesFrozen)); notice(notesFrozen ? 'Sample agent edits paused. Chat actions still work.' : 'Sample agent edits can appear again.'); };
+  $('notesListen').onclick = () => { if (!('speechSynthesis' in window)) { notice('Speech playback is unavailable in this browser.'); return; } if (speechSynthesis.speaking) { speechSynthesis.cancel(); $('notesListen').textContent = 'Listen'; return; } const text = [...document.querySelectorAll('[data-note-edit]')].map(el => el.textContent).join(' '); const utterance = new SpeechSynthesisUtterance(text); utterance.onend = () => $('notesListen').textContent = 'Listen'; speechSynthesis.speak(utterance); $('notesListen').textContent = 'Stop'; };
+  $('notesAddQuestion').onclick = () => { const block = document.createElement('p'); block.contentEditable = 'true'; block.className = 'user-note-block'; block.textContent = 'My question: '; block.setAttribute('aria-label', 'Your question in notes'); $('notesExtra').append(block); block.focus(); block.scrollIntoView({ block: 'center' }); };
+  document.querySelectorAll('[data-insert]').forEach(button => button.onclick = () => { const block = document.createElement('div'); block.className = 'user-note-block'; block.textContent = `Sample ${button.dataset.insert} block. In Electron, Insert opens its real creation flow.`; $('notesExtra').append(block); button.closest('details').open = false; block.scrollIntoView({ block: 'center' }); });
+  addInlineEdit('bfs', 'Example', noteReplies.example);
+  $('chatDraft').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('sendChat').click(); } };
+  function renderHome() { const list = $('workspaceList'); list.replaceChildren(); for (const space of workspaces) { const button = document.createElement('button'); button.type = 'button'; button.className = 'notebook-card'; const title = document.createElement('strong'); title.textContent = space.name; const subtitle = document.createElement('span'); subtitle.textContent = 'Open tutorial workspace'; button.append(title, subtitle); button.onclick = () => openWorkspace(space); list.append(button); } }
+  function openWorkspace(space) { if (space !== currentWorkspace) { currentWorkspace.selected = selected; currentWorkspace.questions = questions; currentWorkspace = space; groups = space.groups; selected = space.selected; questions = space.questions; chats = space.chats; promptByQuestion = new Map(); ++pdfToken; setTutorialLayout(readTutorialLayout(space.id), false); for (const group of Object.keys(groups)) render(group); updatePicker(); if (selected) { $('pdfTitle').textContent = selected.name; load(); void showPdf(selected); } else { $('pdfTitle').textContent = 'Original tutorial PDF'; $('pdfArea').innerHTML = '<div class="pdfempty"><strong>Open your tutorial PDF</strong><span>Use Sources → Tutorials → Add more.</span></div>'; load(); $('detectNote').textContent = 'Choose a tutorial PDF to find its questions. You can add any missed question yourself.'; } renderChat(); } $('workspaceTitleInput').value = currentWorkspace.name; tab('tutorial'); }
+  function commitWorkspaceTitle() {
+    const input = $('workspaceTitleInput');
+    const name = input.value.trim();
+    if (!name) { notice('Enter a workspace name.'); input.value = currentWorkspace.name; return; }
+    if (!uniqueName(name, currentWorkspace)) { notice('Each workspace needs a different name.'); input.value = currentWorkspace.name; return; }
+    if (name !== currentWorkspace.name) { currentWorkspace.name = name; saveWorkspaceNames(); renderHome(); }
+    input.value = currentWorkspace.name;
+  }
+  $('workspaceTitleInput').onfocus = event => event.target.select();
+  $('workspaceTitleInput').onblur = commitWorkspaceTitle;
+  $('workspaceTitleInput').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); event.target.blur(); } else if (event.key === 'Escape') { event.target.value = currentWorkspace.name; event.target.blur(); } };
+  $('createWorkspace').onclick = () => { const name = $('newWorkspaceName').value.trim(); if (!name) { $('createError').textContent = 'Enter a name.'; $('newWorkspaceName').focus(); return; } if (!uniqueName(name)) { $('createError').textContent = 'Each workspace needs a different name.'; $('newWorkspaceName').focus(); return; } const space = blankWorkspace(crypto.randomUUID(), name); workspaces.push(space); saveWorkspaceNames(); $('newWorkspaceName').value = ''; $('createError').textContent = ''; renderHome(); openWorkspace(space); };
+  $('newWorkspaceName').oninput = () => $('createError').textContent = '';
+  $('newWorkspaceName').onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); $('createWorkspace').click(); } };
+  function tab(which) { $('tutorialView').style.display = which === 'tutorial' || which === 'summary' ? 'flex' : 'none'; $('main').style.display = which === 'tutorial' ? 'flex' : 'none'; $('summaryView').style.display = which === 'summary' ? 'flex' : 'none'; $('homeView').style.display = which === 'home' ? 'block' : 'none'; $('searchView').style.display = which === 'search' ? 'block' : 'none'; document.querySelector('.top .tabs').hidden = which === 'home' || which === 'search'; $('workspaceTitleInput').hidden = which === 'home' || which === 'search'; document.querySelector('.view-choice').hidden = which !== 'tutorial'; document.querySelector('.toolbar').style.display = which === 'tutorial' || which === 'summary' ? 'flex' : 'none'; if (which === 'tutorial') updatePicker(); else $('tutorialPicker').hidden = true; $('tutorialTab').setAttribute('aria-selected', String(which === 'tutorial')); $('summaryTab').setAttribute('aria-selected', String(which === 'summary')); $('homeNav').setAttribute('aria-current', which === 'home' ? 'page' : 'false'); $('searchNav').setAttribute('aria-current', which === 'search' ? 'page' : 'false'); if (which === 'home') renderHome(); if (which === 'search') { renderSearchResults(); $('searchInput').focus(); } if (which === 'tutorial' || which === 'summary') renderChat(); }
+  $('tutorialTab').onclick = () => tab('tutorial'); $('summaryTab').onclick = () => tab('summary');
+  $('homeNav').onclick = () => tab('home'); $('searchNav').onclick = () => tab('search');
+  window.addEventListener('keydown', event => { if (event.key.toLowerCase() === 'f' && event.shiftKey && (event.metaKey || event.ctrlKey)) { event.preventDefault(); tab('search'); } });
+  function renderSearchResults() { const list = $('searchResults'); list.replaceChildren(); const query = $('searchInput').value.trim().toLocaleLowerCase(); if (!query) { const empty = document.createElement('p'); empty.className = 'search-empty'; empty.textContent = 'Search source names and working in this local preview.'; list.append(empty); return; } let found = 0; for (const group of Object.keys(groups)) for (const file of groups[group]) if (file.name.toLocaleLowerCase().includes(query)) { const button = document.createElement('button'); button.type = 'button'; button.textContent = `${file.name} · ${group === 'lecture' ? 'Lecture notes' : group === 'tutorial' ? 'Tutorial' : 'Tutorial answers'}`; button.onclick = () => { tab('tutorial'); togglePanel($('sources'), $('sourceDivider'), $('toggleSources'), true); if (group === 'tutorial') select(file); }; list.append(button); found++; } for (const q of questions) if (`question ${q.number} ${q.answer}`.toLocaleLowerCase().includes(query)) { const button = document.createElement('button'); button.type = 'button'; button.textContent = `Question ${q.number} · My working`; button.onclick = () => { tab('tutorial'); $(`questionList`).querySelector(`[aria-label="Answer for question ${q.number}"]`)?.focus(); }; list.append(button); found++; } if (!found) { const empty = document.createElement('p'); empty.className = 'search-empty'; empty.textContent = 'No matches in this local preview.'; list.append(empty); } }
+  $('searchInput').oninput = renderSearchResults;
+  $('addQuestion').onclick = () => addQuestion(Number($('questionNumber').value));
+  function sizeKey(name) { return `chattered.preview.width.${name}`; }
+  function setSize(name, width) { const target = name === 'sources' ? $('sources') : name === 'chat' ? $('chatPanel') : $('pdfPanel'); const max = name === 'pdf' ? Math.max(220, $('main').clientWidth - 220) : name === 'sources' ? 420 : 500; const min = name === 'pdf' ? 220 : name === 'sources' ? 170 : 280; const next = Math.max(min, Math.min(max, Math.round(width))); target.style.width = `${next}px`; const divider = $(name === 'sources' ? 'sourceDivider' : name === 'chat' ? 'chatDivider' : 'workDivider'); divider.setAttribute('aria-valuenow', String(next)); divider.setAttribute('aria-valuemin', String(min)); divider.setAttribute('aria-valuemax', String(max)); try { localStorage.setItem(sizeKey(name), String(next)); } catch {} }
+  for (const [id, name, direction] of [['sourceDivider', 'sources', 1], ['workDivider', 'pdf', 1], ['chatDivider', 'chat', -1]]) {
+    const handle = $(id); let startX = 0; let startWidth = 0;
+    handle.onpointerdown = event => { if (event.button !== 0) return; startX = event.clientX; const target = name === 'sources' ? $('sources') : name === 'chat' ? $('chatPanel') : $('pdfPanel'); startWidth = target.getBoundingClientRect().width; handle.setPointerCapture(event.pointerId); handle.classList.add('dragging'); document.body.style.cursor = 'col-resize'; event.preventDefault(); };
+    handle.onpointermove = event => { if (handle.hasPointerCapture(event.pointerId)) setSize(name, startWidth + direction * (event.clientX - startX)); };
+    handle.onpointerup = event => { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); };
+    handle.onlostpointercapture = () => { handle.classList.remove('dragging'); document.body.style.cursor = ''; };
+    handle.onpointercancel = () => { handle.classList.remove('dragging'); document.body.style.cursor = ''; };
+    handle.onkeydown = event => { if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return; event.preventDefault(); const target = name === 'sources' ? $('sources') : name === 'chat' ? $('chatPanel') : $('pdfPanel'); setSize(name, target.getBoundingClientRect().width + direction * (event.key === 'ArrowRight' ? 16 : -16)); };
+    handle.ondblclick = () => { const target = name === 'sources' ? $('sources') : name === 'chat' ? $('chatPanel') : $('pdfPanel'); target.style.width = ''; try { localStorage.removeItem(sizeKey(name)); } catch {} };
+    try { const stored = Number(localStorage.getItem(sizeKey(name))); if (stored > 0) setSize(name, stored); } catch {}
+  }
+  $('chatDivider').before($('summaryView'));
+  seedSamples();
+  for (const group of Object.keys(groups)) render(group);
+  updatePicker();
+  load(); setTutorialLayout(tutorialLayout, false);
+  if (selected) { $('pdfTitle').textContent = selected.name; void showPdf(selected); }
+  togglePanel($('sources'), $('sourceDivider'), $('toggleSources'), window.innerWidth >= 1200);
+  togglePanel($('chatPanel'), $('chatDivider'), $('toggleChat'), window.innerWidth >= 1200);
+  setAgent('doc'); renderHome(); $('workspaceTitleInput').value = currentWorkspace.name;
+</script>
+</body>
+</html>

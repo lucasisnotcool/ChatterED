@@ -17,6 +17,7 @@
    */
   import { untrack } from 'svelte';
   import * as pdfjs from 'pdfjs-dist';
+  import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
   import type { PDFDocumentProxy } from 'pdfjs-dist';
   import {
     IDLE_MS,
@@ -73,7 +74,7 @@
 
   // Bundled by Vite as a same-origin asset. A module worker from file:// works in Electron —
   // verified against the packaged renderer before this was written.
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   /** Must match `.scroll`'s top padding and `.page`'s bottom margin below. */
   const PAD_TOP = 14;

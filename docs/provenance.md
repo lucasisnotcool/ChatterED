@@ -8,6 +8,7 @@ individual assignment says so in that assignment.
 
 | Path | Origin | Author | Entered | Notes |
 |---|---|---|---|---|
+| `app/src/renderer/` UX revamp components and styles; `docs/research/tutorials.md` §10; `UX-REVAMP-PLAN.md`; `app/docs/ux-revamp/` | Optional original-PDF working view, tutorial and source controls, inline workspace title, collapsible chat, and Studio presentation while retaining existing Electron actions | Valerie, with Codex | 2026-10-26 | Branch `UX-Revamp`; renderer and mock-preview changes only; no agent, grader, IPC, or database changes |
 | `app/` (all of the app up to 2026-10-01), `docs/research/`, `docs/report/` | ChatterED: Lucas's A1 prototype, carried into his A2 | Lucas, with Claude Code | 2026-09-13 onwards | The app both A2s now build on |
 | `app/src/core/` | ChatterED, the learner-turn logic both A1 designs share (#54) | Lucas, with Claude Code | 2026-09-26 | Was mirrored to the group repo's `core/` until 2026-10-01; this is now the only copy |
 | `docs/report/assignment1-final.md`, `docs/report/figures/` | ChatterED A1 report as submitted (22 Sep 2026) | Lucas | 2026-09-23 | Word for word (the L- evidence) |

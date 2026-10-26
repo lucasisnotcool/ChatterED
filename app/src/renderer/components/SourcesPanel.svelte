@@ -30,7 +30,6 @@
   import {
     allState,
     badgeTone,
-    inUseLine,
     roleHint,
     roleLabel,
     roleOf,
@@ -39,6 +38,7 @@
     typeBadge,
   } from '../lib/notebookview.js';
   import { store } from '../lib/store.svelte.js';
+  import { bridge } from '../lib/bridge.js';
   import PaneSplitter from './PaneSplitter.svelte';
 
   let {
@@ -57,7 +57,22 @@
   const nb = store.notebook;
   const sources = $derived<NotebookSourceView[]>(nb.view?.sources ?? []);
   const all = $derived(allState(sources));
-  const count = $derived(inUseLine(sources));
+
+  async function addForRole(role: SourceRole): Promise<void> {
+    try {
+      const { paths } = await bridge().notebookPickFiles();
+      if (!paths.length) return;
+      const result = await nb.addSources(paths);
+      for (const source of result?.added ?? []) {
+        if (role === 'lecture') continue;
+        const changed = await tut.setRole(source.fileId, role);
+        if (changed.error) nb.say(changed.error);
+        if (changed.view && nb.view?.id === changed.view.id) nb.view = changed.view;
+      }
+    } catch (error) {
+      nb.say(error instanceof Error ? error.message : 'Could not add sources.');
+    }
+  }
 
   /** The All box's indeterminate state is a DOM property, not an attribute. */
   let allBox = $state<HTMLInputElement | null>(null);
@@ -144,7 +159,6 @@
   <div class="top">
   <header class="head">
     <span class="title">Sources</span>
-    {#if count}<span class="sub">{count}</span>{/if}
   </header>
 
   <button type="button" class="add" disabled={nb.busy} onclick={() => void nb.pickAndAdd()}>
@@ -165,8 +179,13 @@
       </label>
     </div>
 
+    {#each SOURCE_ROLES as section (section)}
+    <div class="section-head">
+      <span>{section === 'lecture' ? 'Lecture notes' : section === 'tutorial' ? 'Tutorials' : 'Tutorial answers'}</span>
+      <button type="button" aria-label={`Add ${section === 'solutions' ? 'tutorial answers' : section === 'lecture' ? 'lecture notes' : 'tutorials'}`} title="Add files" disabled={nb.busy} onclick={() => void addForRole(section)}>+</button>
+    </div>
     <ul class="list">
-      {#each sources as source (source.fileId)}
+      {#each sources.filter((source) => roleOf(source) === section) as source (source.fileId)}
         {@const role = roleOf(source)}
         <li
           class="src"
@@ -243,7 +262,7 @@
             title={`Remove ${source.name} from this notebook`}
             aria-label={`Remove ${source.name}`}
             onclick={() => void nb.remove(source.fileId)}
-          >×</button>
+          ><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7" /></svg></button>
           {#if role === 'solutions'}
             <span aria-hidden="true"></span>
           {:else}
@@ -258,6 +277,7 @@
         </li>
       {/each}
     </ul>
+    {/each}
 
     <p class="ctxnote">Ellie, Max and the overview see only the ticked sources.</p>
   {:else if nb.view}
@@ -297,6 +317,9 @@
   .top { flex: 0 1 auto; max-height: 58%; overflow-y: auto; min-height: 0; padding-bottom: 12px; }
 
   .head { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 10px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 5px; font-family: var(--font-display, Georgia, serif); font-size: 16px; }
+  .section-head button { width: 24px; height: 24px; border-radius: 5px; font-family: var(--font); font-size: 19px; line-height: 1; }
+  .section-head button:hover { background: var(--indigo-tint); color: var(--indigo); }
   .title { font-size: 13px; font-weight: 600; }
   .sub { margin-left: auto; font-size: 11.5px; color: var(--text-2); }
 

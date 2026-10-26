@@ -71,10 +71,13 @@
   }
   const chat = (): ChatSurface => store.chat as unknown as ChatSurface;
 
-  doc.askAboutSpan = (input) => chat().openSpanThread?.(input);
-  doc.focusThread = (threadId) => chat().focusThread?.(threadId);
+  doc.askAboutSpan = (input) => { layout.setChatOpen(true); chat().openSpanThread?.(input); };
+  doc.focusThread = (threadId) => { layout.setChatOpen(true); chat().focusThread?.(threadId); };
   // Decision 7: the rail's Hint and Show me go through the chat store, as Pass does.
-  doc.questionHelp = (kind, questionId) => chat().questionHelp?.(kind, questionId) ?? Promise.resolve('The chat is not ready yet.');
+  doc.questionHelp = (kind, questionId) => {
+    layout.setChatOpen(true);
+    return chat().questionHelp?.(kind, questionId) ?? Promise.resolve('The chat is not ready yet.');
+  };
   doc.spanThreads = () => chat().spanThreads ?? [];
   doc.progressView = () => store.progress.view;
   // "Ready to check this?" (D2): nothing is offered while one of Max's questions waits in a thread.

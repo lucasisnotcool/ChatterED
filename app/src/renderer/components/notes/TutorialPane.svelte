@@ -64,9 +64,13 @@
   let {
     floating = false,
     main = false,
+    working = false,
+    printedQuestions = [],
     onbardown,
   }: {
     floating?: boolean;
+    working?: boolean;
+    printedQuestions?: number[];
     /**
      * **The swap** (2026-10-04, `tutorials.md` §2): the sheet is the middle column and the notes are
      * hidden. The header's Pop out / Dock and × give way to **Notes**, which opens the notes in a
@@ -88,8 +92,8 @@
     spanThreads?: readonly SpanThreadView[];
   }
   const chat = (): ChatSurface => store.chat as unknown as ChatSurface;
-  doc.askAboutSpan = (input) => chat().openSpanThread?.(input);
-  doc.focusThread = (threadId) => chat().focusThread?.(threadId);
+  doc.askAboutSpan = (input) => { layout.setChatOpen(true); chat().openSpanThread?.(input); };
+  doc.focusThread = (threadId) => { layout.setChatOpen(true); chat().focusThread?.(threadId); };
   doc.spanThreads = () => chat().spanThreads ?? [];
 
   $effect(() => {
@@ -107,6 +111,7 @@
   function askAboutFigure(input: { blockId: string; quote: string; question: string }): void {
     const surface = chat();
     if (!surface.openSpanThread) return;
+    layout.setChatOpen(true);
     const which = doc.tutorialOf();
     surface.openSpanThread({
       blockId: input.blockId,
@@ -126,6 +131,41 @@
   const failure = $derived(fileId ? (tut.localError[fileId] ?? (view?.status === 'failed' ? (view.error ?? '') : null)) : null);
   const done = $derived(view ? partsDone(view) : { done: 0, total: 0 });
   const parts = $derived(partsLabel(view));
+  /** Printed questions omitted by sheet generation have no backend part ID. Give them local
+   * working space, but never offer a Check action the fixed backend cannot target. */
+  let localDrafts = $state<Record<number, string>>({});
+  let manualQuestions = $state<number[]>([]);
+  const generatedNumbers = $derived((view?.parts ?? []).map((part) => {
+    const match = /(?:question|problem|part|^q)\s*(\d+)/i.exec(part.label);
+    return match ? Number(match[1]) : null;
+  }).filter((number): number is number => number !== null && number > 0 && number <= 30));
+  const missingQuestions = $derived.by(() => {
+    const last = Math.max(0, ...generatedNumbers);
+    return Array.from({ length: last }, (_, index) => index + 1).filter((number) => !generatedNumbers.includes(number));
+  });
+  const localQuestions = $derived([...new Set([...missingQuestions, ...printedQuestions.filter((number) => !generatedNumbers.includes(number)), ...manualQuestions])].sort((a, b) => a - b));
+  $effect(() => {
+    if (!fileId) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`chattered.working.drafts.${fileId}`) ?? '{}') as { drafts?: Record<number, string>; manual?: number[] };
+      localDrafts = saved.drafts ?? {};
+      manualQuestions = saved.manual ?? [];
+    } catch {
+      localDrafts = {};
+      manualQuestions = [];
+    }
+  });
+  function saveLocal(): void {
+    if (!fileId) return;
+    try {
+      localStorage.setItem(`chattered.working.drafts.${fileId}`, JSON.stringify({ drafts: localDrafts, manual: manualQuestions }));
+    } catch { /* The editor remains usable if browser storage is unavailable. */ }
+  }
+  function addLocalQuestion(): void {
+    const next = Math.max(0, ...generatedNumbers, ...localQuestions) + 1;
+    manualQuestions = [...manualQuestions, next];
+    saveLocal();
+  }
   /** The sheet is on screen: main has a document and this store has loaded that same one. */
   const ready = $derived(
     Boolean(view && view.status === 'ready' && view.docId && doc.docId === view.docId && !reading),
@@ -357,9 +397,10 @@
   }
 </script>
 
-<div class="nd tp-nd" class:floating class:main class:nd-compact={fit.compact} aria-label="Tutorial" bind:this={root}>
+<div class="nd tp-nd" class:floating class:main class:working class:nd-compact={fit.compact} aria-label={working ? 'My working' : 'Tutorial'} bind:this={root}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="tp-head" class:grab={Boolean(onbardown)} class:narrow={narrowHead} onpointerdown={headdown}>
+    {#if working}<span class="tp-working-title">My working</span>{/if}
     {#if views.length > 1}
       <div class="tp-tabs" role="tablist" aria-label="Tutorials" tabindex="-1" onkeydown={ontabkey}>
         {#each views as v (v.fileId)}
@@ -543,6 +584,21 @@
   {/if}
   <div class="nd-scroll" bind:this={scroller} bind:clientWidth={paneWidth} {onwheel}>
     <div class="nd-sheet tp-sheet" style:zoom={zoomStyle} style:--nd-gutter={`${fit.gutter}px`}>
+      {#if working}
+        <div class="local-working">
+          {#each localQuestions as number (number)}
+            <section class="local-question" aria-label={`Question ${number} local working`}>
+              <h3>Question {number}</h3>
+              <textarea aria-label={`Working for Question ${number}`} placeholder="Write your working here…" value={localDrafts[number] ?? ''} oninput={(event) => {
+                localDrafts = { ...localDrafts, [number]: event.currentTarget.value };
+                saveLocal();
+              }}></textarea>
+              <p>Local draft · This question has no generated part to check yet.</p>
+            </section>
+          {/each}
+          <button type="button" class="local-add" onclick={addLocalQuestion}>+ Add missing question</button>
+        </div>
+      {/if}
       {#if phase === 'unavailable'}
         <div class="nd-state">
           <div class="nd-state-title">Tutorials are not available yet</div>
@@ -640,6 +696,16 @@
 </div>
 
 <style>
+  .local-working { display: grid; gap: 0; }
+  .local-question { border-bottom: 1px solid var(--hairline); padding: 16px 14px; }
+  .local-question h3 { font-family: var(--font-display, Georgia, serif); font-size: 18px; font-weight: 400; margin: 0 0 10px; }
+  .local-question textarea { width: 100%; min-height: 150px; resize: vertical; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; background: var(--pane); font-size: 14px; }
+  .local-question textarea:focus { outline: 2px solid var(--indigo); }
+  .local-question p { margin: 5px 0 0; color: var(--text-2); font-size: 11px; }
+  .local-add { margin: 12px 14px; padding: 7px 11px; width: fit-content; border: 1px solid var(--hairline); border-radius: 7px; color: var(--text-2); }
+  .local-add:hover { color: var(--indigo); border-color: var(--indigo); }
+  .tp-working-title { font-family: var(--font-display, Georgia, serif); font-size: 17px; white-space: nowrap; }
+  .working .tp-tabs, .working .tp-kicker, .working .tp-title { display: none; }
   .tp-nd { position: relative; height: 100%; border-left: 1px solid var(--hairline); }
   .tp-nd.floating,
   .tp-nd.main { border-left: 0; }

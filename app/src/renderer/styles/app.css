@@ -2,30 +2,32 @@
 
 :root {
   /* Ground and surfaces */
-  --ground: #f7f7fa;
-  --pane: #ffffff;
-  --hairline: #e6e6ef;
+  --ground: oklch(97.2% 0.006 215);
+  --pane: oklch(99% 0.004 215);
+  --hairline: oklch(84% 0.010 225);
   --radius: 8px;
 
   /* Text */
-  --text: #1b1b22;
-  --text-2: #56566b;
-  --muted: #b4b4c4;
+  --text: oklch(16% 0.032 250);
+  --text-2: oklch(34% 0.022 245);
+  --muted: oklch(49% 0.018 240);
 
   /* Learner + primary */
-  --indigo: #4f46e5;
-  --indigo-tint: #eeedfb;
+  --indigo: oklch(52% 0.15 48);
+  --indigo-tint: oklch(94% 0.03 50);
+  --studio-accent: oklch(68% 0.172 50);
 
   /* Agent hues — used ONLY on that agent's rule, avatar and label (§C2 rule 2) */
-  --peer: #0f7b6c;
-  --challenger: #b45309;
+  --peer: oklch(49% 0.1 170);
+  --challenger: oklch(50% 0.14 24);
   --tutee: #7c3aed;
 
   /* Neutral ledger glyphs (§D2) — the rail is never tinted by an agent hue */
   --glyph: #6b6b80;
   --waitline: #d8d8e2;
 
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --font: 'Geist', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --font-display: 'Hedvig Letters Serif', Georgia, serif;
 }
 
 * { box-sizing: border-box; }

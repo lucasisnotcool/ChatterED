@@ -11,12 +11,15 @@ import {
 } from '../../shared/trial.js';
 
 export function createMockTrial(): TrialApi {
+  // The functional parity page is a local fixture, not a research participant session.
+  // Start it past the consent gate so UI review never has to accept trial terms.
+  const parityPreview = globalThis.location?.pathname.endsWith('/tutorial-workspace-parity.html') ?? false;
   let status: TrialStatus = {
     consentVersion: CONSENT_VERSION,
-    consentedVersion: null,
-    needsConsent: true,
-    participantId: null,
-    consentedAt: null,
+    consentedVersion: parityPreview ? CONSENT_VERSION : null,
+    needsConsent: !parityPreview,
+    participantId: parityPreview ? 'P-0000beef' : null,
+    consentedAt: parityPreview ? '2026-10-26T00:00:00.000Z' : null,
     contactEmail: TRIAL_CONTACT_EMAIL,
   };
   const listeners = new Set<(p: ExportProgress) => void>();

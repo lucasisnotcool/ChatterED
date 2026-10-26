@@ -370,10 +370,8 @@
   .empty .sub { font-size: 11.5px; line-height: 1.55; color: var(--text-2); max-width: 46ch; }
   .greeting {
     padding: 9px 11px;
-    background: var(--pane);
-    border: 1px solid var(--hairline);
-    border-left: 3px solid var(--peer);
-    border-radius: var(--radius);
+    background: oklch(94% 0.025 170);
+    border-radius: 15px 15px 15px 4px;
   }
   .greeting header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
   .greeting .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--peer); }
@@ -399,17 +397,19 @@
   }
 
   .mine {
-    margin: 10px 0;
-    padding: 8px 12px;
-    background: var(--indigo-tint);
-    border-right: 3px solid var(--indigo);
-    border-radius: var(--radius);
+    margin: 10px 0 10px auto;
+    width: fit-content;
+    max-width: 88%;
+    padding: 9px 13px;
+    background: oklch(93% 0.025 230);
+    border-radius: 15px 15px 4px 15px;
   }
   .mine header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
-  .mine .label-caps { color: var(--indigo); }
-  .mine p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .mine .label-caps { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: oklch(79% 0.055 230); color: transparent; font-size: 0; }
+  .mine .label-caps::before { content: 'Y'; color: var(--text); font-size: 11px; }
+  .mine p { margin: 0; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
   .mine.sending { opacity: 0.58; }
-  .mine.failed { border-right-color: #b4543a; background: var(--pane); }
+  .mine.failed { outline: 1px solid #b4543a; background: var(--pane); }
   .gap { flex: 1; }
   .state { font-size: 10px; color: var(--muted); }
   .state.bad { color: #8a2708; }
