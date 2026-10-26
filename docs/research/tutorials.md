@@ -273,8 +273,10 @@ The tutorial dropdown in the global action bar is the sole tutorial selector in 
 The generated combined sheet retains its saved content and controls, without its duplicate row
 of tutorial tabs. In PDF + working, the PDF pane shows the original pages without a repeated
 filename heading or page and fit toolbar. Scrolling, gesture zoom, and divider resizing remain.
-An empty aligned header keeps the PDF and working pane boundaries level. Long generated question
-labels and cards wrap within the available column instead of extending beyond it. A missing
+The PDF and working bodies begin directly below the workspace action bar, without their local
+toolbar strips. A compact menu in the action bar retains sheet zoom, split, reread, and the notes
+window. The chat and document action bars have the same height so their divider lines align.
+Long generated question labels and cards wrap within the available column. A missing
 provenance marker does not show a “no source” pill.
 
 Model usage and token figures move out of the title bar, document header, and chat messages and

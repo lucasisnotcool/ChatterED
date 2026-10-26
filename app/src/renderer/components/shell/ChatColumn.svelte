@@ -173,6 +173,8 @@
     padding: 7px 10px 0;
     border-bottom: 1px solid var(--hairline);
     background: var(--ground);
+    height: 48px;
+    align-items: flex-end;
   }
   .tab {
     flex: none;

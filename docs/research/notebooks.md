@@ -50,6 +50,15 @@ tutorials, and answers, then use the existing ingest and generation flow. Droppi
 still creates a notebook from those files. This replaces the picker-first **New notebook** action
 below; notebook storage, ingestion, and agent behavior are unchanged.
 
+*Presentation update, 26 Oct 2026:* Home uses one **New Workspace** action. Its dialog names the
+workspace and selects an existing parent folder or creates one inside the selected parent through
+the existing folder API. Folders and workspaces share the same card grid. **Recent** sorts
+workspaces by edit time and includes earlier practice sessions as distinct cards; those legacy
+sessions keep their original open action. The persistent navigation rail uses uniform line icons
+with a filled active tile. These changes replace the separate header folder button, inline name
+field, dashed creation card, and practice-session footer; they do not change stored notebook or
+room records.
+
 - **A notebook is a named set of sources.** Sources are files the learner added: PDF, slides,
   Word, Markdown, text, images. There is no "open folder", no vault root, no file tree.
 - **Sources are copied into app storage** (answer C), under the app's data directory, one folder

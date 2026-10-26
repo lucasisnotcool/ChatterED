@@ -78,9 +78,9 @@ export class NotebookStore {
   }
 
   /** A new folder inside the one on screen. Returns it so the home can open its name for typing. */
-  async createFolder(name?: string): Promise<FolderView | null> {
+  async createFolder(name?: string, parentId: string | null = this.folderId): Promise<FolderView | null> {
     try {
-      const folder = await bridge().folderCreate({ name: name ?? null, parentId: this.folderId });
+      const folder = await bridge().folderCreate({ name: name ?? null, parentId });
       await this.loadFolders();
       return folder;
     } catch (err) {
@@ -255,11 +255,11 @@ export class NotebookStore {
    * for the caller to open, or null when nothing was made. Refusals are said; the files that did
    * go in are the notebook's sources either way.
    */
-  async create(paths: string[] = [], name?: string): Promise<NotebookView | null> {
+  async create(paths: string[] = [], name?: string, folderId: string | null = this.folderId): Promise<NotebookView | null> {
     if (this.busy) return null;
     this.busy = true;
     try {
-      const result = await bridge().notebookCreate({ paths: [...paths], folderId: this.folderId, name });
+      const result = await bridge().notebookCreate({ paths: [...paths], folderId, name });
       this.say(refusalNotice(result.refused));
       void this.loadList();
       return result.notebook;

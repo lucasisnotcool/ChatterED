@@ -57,9 +57,12 @@
     CHAT,
     TUTORIAL,
     TUTORIAL_WINDOW_MIN,
+    NOTES_ZOOM,
     floatFrame,
     mainTutorialFor,
     notesFloatFrame,
+    zoomIn,
+    zoomOut,
     type FloatFrame,
     type FloatView,
   } from '../../lib/layout.js';
@@ -124,6 +127,13 @@
    */
   const mainFileId = $derived(mainTutorialFor(layout.tutorialMain, notebookId, tutorial.views));
   const tutorialMain = $derived(mainFileId !== null);
+  let tutorialTools = $state<HTMLDetailsElement | null>(null);
+  let confirmingReread = $state(false);
+  function closeTutorialTools(): void {
+    if (tutorialTools) tutorialTools.open = false;
+    confirmingReread = false;
+  }
+  $effect(() => { if (!tutorialMain) closeTutorialTools(); });
   let pdfQuestionNumbers = $state<number[]>([]);
   /** With the swap on, the notes are a window over the app while open, and hidden while not. */
   const notesFloating = $derived(tutorialMain && layout.notesWindowOpen);
@@ -329,14 +339,22 @@
 
   /** Ctrl+= / Ctrl+− / Ctrl+0 as the menu's ⌘ ones. */
   function onwindowkey(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && tutorialTools?.open) {
+      closeTutorialTools();
+      e.preventDefault();
+      return;
+    }
     if (e.defaultPrevented || !e.ctrlKey || e.metaKey || e.altKey) return;
     const command = e.key === '=' || e.key === '+' ? 'zoom.in' : e.key === '-' ? 'zoom.out' : e.key === '0' ? 'zoom.reset' : null;
     if (!command) return;
     if (runViewerCommand(command)) e.preventDefault();
   }
+  function onwindowclick(e: MouseEvent): void {
+    if (tutorialTools?.open && !tutorialTools.contains(e.target as Node)) closeTutorialTools();
+  }
 </script>
 
-<svelte:window onkeydown={onwindowkey} {onresize} />
+<svelte:window onkeydown={onwindowkey} onclick={onwindowclick} {onresize} />
 
 <div class="shell" role="region" aria-label="Notebook">
   {#if filesOpen}
@@ -397,6 +415,21 @@
           <button type="button" class="mv-opt" class:on={layout.tutorialView === 'pdf'} aria-pressed={layout.tutorialView === 'pdf'} onclick={() => layout.setTutorialView('pdf')}>PDF + working</button>
           <button type="button" class="mv-opt" class:on={layout.tutorialView === 'combined'} aria-pressed={layout.tutorialView === 'combined'} onclick={() => layout.setTutorialView('combined')}>Combined sheet</button>
         </div>
+        <details class="tutorial-tools" bind:this={tutorialTools} ontoggle={() => { if (!tutorialTools?.open) confirmingReread = false; }}>
+          <summary aria-label="Tutorial tools" title="Tutorial tools">⋯</summary>
+          <div class="tools-menu">
+            <button type="button" onclick={() => { openNotes(); closeTutorialTools(); }}>Open summary notes</button>
+            <button type="button" onclick={() => { tutorial.toggleSplit(); closeTutorialTools(); }}>{tutorial.split ? 'Remove sheet split' : 'Split sheet'}</button>
+            <button type="button" onclick={() => layout.setTutorialZoom(zoomOut(layout.tutorialZoom, NOTES_ZOOM))}>Zoom sheet out</button>
+            <button type="button" onclick={() => layout.setTutorialZoom(zoomIn(layout.tutorialZoom, NOTES_ZOOM))}>Zoom sheet in</button>
+            <button type="button" onclick={() => { layout.setTutorialZoom(1); closeTutorialTools(); }}>Reset sheet zoom</button>
+            <button type="button" onclick={() => {
+              if (!confirmingReread) { confirmingReread = true; return; }
+              if (mainFileId) void tutorial.reread(mainFileId);
+              closeTutorialTools();
+            }}>{confirmingReread ? 'Confirm read again' : 'Read sheet again…'}</button>
+          </div>
+        </details>
       {/if}
       <button type="button" class="chats-toggle" aria-expanded={layout.chatOpen} aria-controls="chat-column" onclick={() => layout.setChatOpen(!layout.chatOpen)}>💬 Chats</button>
     </header>
@@ -514,6 +547,7 @@
     padding: 7px 14px;
     border-bottom: 1px solid var(--hairline);
     background: var(--ground);
+    height: 48px;
   }
   /* Every item in this header must be able to give ground, or the row overflows its own column
      and ends up drawn over the chat's tabs — which is what 1100 px looked like in the browser. */
@@ -528,6 +562,13 @@
   .tutorial-select { max-width: 215px; min-width: 120px; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 24px 5px 8px; background: var(--pane); color: var(--text); overflow: hidden; text-overflow: ellipsis; }
   .chats-toggle { flex: none; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 9px; font-size: 12px; }
   .chats-toggle:hover { color: var(--indigo); border-color: var(--indigo); }
+  .tutorial-tools { position: relative; flex: none; }
+  .tutorial-tools summary { list-style: none; width: 30px; height: 29px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer; font-size: 19px; line-height: 1; }
+  .tutorial-tools summary::-webkit-details-marker { display: none; }
+  .tutorial-tools summary:hover { border-color: var(--indigo); color: var(--indigo); }
+  .tools-menu { position: absolute; z-index: 30; right: 0; top: calc(100% + 6px); width: 185px; display: grid; padding: 5px; border: 1px solid var(--hairline); border-radius: 9px; background: var(--pane); box-shadow: 0 12px 28px rgb(20 20 40 / 13%); }
+  .tools-menu button { padding: 7px 9px; border-radius: 6px; text-align: left; }
+  .tools-menu button:hover { background: var(--indigo-tint); }
 
   .docrow { position: relative; flex: 1; display: flex; min-height: 0; min-width: 0; }
   .docbody { position: relative; flex: 1 1 0; overflow-y: auto; min-height: 0; min-width: 0; }

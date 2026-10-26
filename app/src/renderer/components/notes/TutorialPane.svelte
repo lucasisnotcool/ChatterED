@@ -398,6 +398,7 @@
 </script>
 
 <div class="nd tp-nd" class:floating class:main class:working class:nd-compact={fit.compact} aria-label={working ? 'My working' : 'Tutorial'} bind:this={root}>
+  {#if !main}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="tp-head" class:grab={Boolean(onbardown)} class:narrow={narrowHead} onpointerdown={headdown}>
     {#if working}<span class="tp-working-title">My working</span>{/if}
@@ -538,6 +539,7 @@
       <button type="button" class="tp-btn tp-close" aria-label="Close the tutorial" title="Close the tutorial" onclick={() => tut.close()}>×</button>
     {/if}
   </header>
+  {/if}
 
   <div
     class="tp-body"

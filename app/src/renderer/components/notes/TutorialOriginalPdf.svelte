@@ -61,7 +61,6 @@
 </script>
 
 <section class="original-pdf" aria-label="Original tutorial PDF">
-  <div class="pdf-head" aria-hidden="true"></div>
   {#if loading}
     <p class="state" role="status">Opening PDF…</p>
   {:else if error}
@@ -73,7 +72,6 @@
 
 <style>
   .original-pdf { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #e8eef0; }
-  .pdf-head { flex: none; height: 40px; border-bottom: 1px solid var(--hairline); background: var(--pane); }
   .state { margin: auto; padding: 20px; text-align: center; color: var(--text-2); }
   .state button { color: var(--indigo); font-weight: 600; }
 </style>
