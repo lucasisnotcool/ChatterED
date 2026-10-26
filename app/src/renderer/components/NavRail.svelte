@@ -44,8 +44,6 @@
     </svg>
   </button>
 
-  <span class="spacer"></span>
-
   <!-- Usage (#42 item D). A real item with its own screen, next to Settings rather than inside
        it: what a semester of this app costs is a question with a page, not a section. -->
   <button
@@ -67,7 +65,7 @@
     aria-label="Settings"
     onclick={() => void store.openSettings()}
   >
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2h4l.6 2.3 1.7.7 2-1.2 2.9 2.9-1.2 2 .7 1.7L23 11v2l-2.3.6-.7 1.7 1.2 2-2.9 2.9-2-1.2-1.7.7L14 22h-4l-.6-2.3-1.7-.7-2 1.2-2.9-2.9 1.2-2-.7-1.7L1 13v-2l2.3-.6.7-1.7-1.2-2 2.9-2.9 2 1.2 1.7-.7z"/><circle cx="12" cy="12" r="3"/></svg>
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.8 10.3 2.2h3.4L15 4.8l2.7-1 2.5 2.5-1 2.7 2.6 1.3v3.4L19.2 15l1 2.7-2.5 2.5-2.7-1-1.3 2.6h-3.4L9 19.2l-2.7 1-2.5-2.5 1-2.7-2.6-1.3v-3.4L4.8 9l-1-2.7 2.5-2.5z"/><circle cx="12" cy="12" r="3"/></svg>
   </button>
 </nav>
 
@@ -83,8 +81,6 @@
     gap: 4px;
     overflow: hidden;
   }
-  .spacer { flex: 1; }
-
   .item {
     display: flex;
     align-items: center;

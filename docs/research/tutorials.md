@@ -281,6 +281,6 @@ provenance marker does not show a “no source” pill.
 
 Model usage and token figures move out of the title bar, document header, and chat messages and
 threads. The existing ledger and analytics screen remain available through the circled information
-button at the bottom of the persistent navigation rail. Study credit remains visible because it
+button in the persistent navigation rail. Study credit remains visible because it
 controls whether a participant can make another call. No model request, grading, source, or
 document persistence contract changes.

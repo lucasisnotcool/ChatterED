@@ -161,11 +161,6 @@
       localStorage.setItem(`chattered.working.drafts.${fileId}`, JSON.stringify({ drafts: localDrafts, manual: manualQuestions }));
     } catch { /* The editor remains usable if browser storage is unavailable. */ }
   }
-  function addLocalQuestion(): void {
-    const next = Math.max(0, ...generatedNumbers, ...localQuestions) + 1;
-    manualQuestions = [...manualQuestions, next];
-    saveLocal();
-  }
   /** The sheet is on screen: main has a document and this store has loaded that same one. */
   const ready = $derived(
     Boolean(view && view.status === 'ready' && view.docId && doc.docId === view.docId && !reading),
@@ -598,7 +593,6 @@
               <p>Local draft · This question has no generated part to check yet.</p>
             </section>
           {/each}
-          <button type="button" class="local-add" onclick={addLocalQuestion}>+ Add missing question</button>
         </div>
       {/if}
       {#if phase === 'unavailable'}
@@ -704,8 +698,6 @@
   .local-question textarea { width: 100%; min-height: 150px; resize: vertical; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; background: var(--pane); font-size: 14px; }
   .local-question textarea:focus { outline: 2px solid var(--indigo); }
   .local-question p { margin: 5px 0 0; color: var(--text-2); font-size: 11px; }
-  .local-add { margin: 12px 14px; padding: 7px 11px; width: fit-content; border: 1px solid var(--hairline); border-radius: 7px; color: var(--text-2); }
-  .local-add:hover { color: var(--indigo); border-color: var(--indigo); }
   .tp-working-title { font-family: var(--font-display, Georgia, serif); font-size: 17px; white-space: nowrap; }
   .working .tp-tabs, .working .tp-kicker, .working .tp-title { display: none; }
   .tp-nd { position: relative; height: 100%; border-left: 1px solid var(--hairline); }
