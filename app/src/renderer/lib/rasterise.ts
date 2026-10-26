@@ -27,6 +27,7 @@
  */
 
 import type { PageImage, Rect } from '../../shared/doc/types.js';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import {
   citationLabel,
   locatePage,
@@ -247,9 +248,8 @@ let workerConfigured = false;
 export async function openPdf(bytes: Uint8Array): Promise<PdfDoc> {
   const pdfjs = await import('pdfjs-dist');
   if (!workerConfigured) {
-    // The same line `PdfViewer.svelte` uses: bundled by Vite as a same-origin asset, and a
-    // module worker from `file://` works in Electron (verified against the packaged renderer).
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+    // The same bundled same-origin asset as `PdfViewer.svelte`.
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
     workerConfigured = true;
   }
   const task = pdfjs.getDocument({ data: new Uint8Array(bytes) });

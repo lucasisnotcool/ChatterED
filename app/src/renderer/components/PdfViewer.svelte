@@ -17,6 +17,7 @@
    */
   import { untrack } from 'svelte';
   import * as pdfjs from 'pdfjs-dist';
+  import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
   import type { PDFDocumentProxy } from 'pdfjs-dist';
   import {
     IDLE_MS,
@@ -50,6 +51,9 @@
     pageCount = $bindable(0),
     /** Read-only mode: no toolbar, no range marking, page-locked (the room's source pane). */
     locked = false,
+    /** Tutorial workbench: scrolling and gesture zoom remain, but the toolbar is hidden. */
+    minimal = false,
+    initialFit,
     /**
      * Render only these pages. The room's source pane shows the slide being explained, not the
      * whole deck: §B0 calls it "the slide you are explaining", and a learner who can page away
@@ -66,6 +70,8 @@
     currentPage?: number;
     pageCount?: number;
     locked?: boolean;
+    minimal?: boolean;
+    initialFit?: 'width' | 'page';
     pageWindow?: { from: number; to: number } | null;
     initialScroll?: number;
     onscrolled?: (scrollTop: number) => void;
@@ -73,7 +79,7 @@
 
   // Bundled by Vite as a same-origin asset. A module worker from file:// works in Electron —
   // verified against the packaged renderer before this was written.
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
   /** Must match `.scroll`'s top padding and `.page`'s bottom margin below. */
   const PAD_TOP = 14;
@@ -87,14 +93,14 @@
    * is the one a learner wants (ui-review-code.md §1 — a fitted-to-width slide is still taller
    * than the pane, and a slide you have to scroll is not a glance).
    */
-  let fitMode = $state<FitMode>(lastFitMode);
+  let fitMode = $state<FitMode>(untrack(() => initialFit ?? lastFitMode));
   /**
    * A page-locked pane always fits the whole page: it is glanced at, not read, and nothing in it
    * can change the zoom anyway (no toolbar, no gestures, no menu registration).
    */
   const mode = $derived<FitMode>(locked ? 'page' : fitMode);
   /** The fit a double-click (and "Actual size") comes back to. */
-  let rememberedFit = $state<Exclude<FitMode, null>>(lastFitMode ?? 'width');
+  let rememberedFit = $state<Exclude<FitMode, null>>(untrack(() => initialFit ?? lastFitMode ?? 'width'));
   let error = $state<string | null>(null);
   let scroller = $state<HTMLDivElement | null>(null);
   let width = $state(0);
@@ -623,7 +629,7 @@
 </script>
 
 <div class="pdf">
-  {#if !locked}
+  {#if !locked && !minimal}
     <div class="bar no-drag">
       <button type="button" class="step" onclick={() => goTo(currentPage - 1)} disabled={currentPage <= 1}>‹</button>
       <span class="counter">

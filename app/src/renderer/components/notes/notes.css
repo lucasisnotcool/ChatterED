@@ -544,8 +544,7 @@
 .nd-chip:hover { color: var(--indigo); border-color: #c7c7e8; }
 .nd-chip-flat { cursor: default; }
 .nd-chip-flat:hover { color: var(--muted); border-color: var(--hairline); }
-.nd-chip-bad { cursor: default; color: var(--challenger); border-color: #e8d4b4; opacity: 1; }
-.nd-chip-bad:hover { color: var(--challenger); border-color: #e8d4b4; }
+.nd-chip-bad { display: none; }
 
 /* ── the explain badge (migration 033), in the right gutter, before the chip ──
    A block with a stored explain (what Ellie would answer to Explain on it, readable offline)
@@ -641,7 +640,7 @@
   padding-right: 8px;
 }
 .nd-editctl-one.nd-ellie { border-right-style: solid; border-right-color: var(--nd-ellie); }
-.nd-editctl-one.nd-max { border-right-style: dashed; border-right-color: var(--nd-max); }
+.nd-editctl-one.nd-max { border-right-style: solid; border-right-color: var(--nd-max); }
 
 .nd-editctl-who { display: block; font-weight: 600; }
 .nd-editctl-one.nd-ellie .nd-editctl-who { color: var(--nd-ellie); }
@@ -2069,3 +2068,92 @@
   opacity: 1;
   pointer-events: auto;
 }
+
+/* The summary document keeps the existing block actions, but shows them as a short row beside
+   the active passage. Keyboard focus reveals the same row as pointer hover. */
+.nd:not(.tp-nd) .nd-editor .ProseMirror h1,
+.nd:not(.tp-nd) .nd-editor .ProseMirror h2 {
+  font-family: var(--font-display, Georgia, serif);
+  font-weight: 500;
+}
+.nd:not(.tp-nd) .nd-editor .ProseMirror h2 { font-size: 24px; line-height: 1.3; }
+.nd:not(.tp-nd) .nd-tools-holder { left: 0; top: calc(100% + 3px); width: max-content; max-width: 100%; }
+.nd:not(.tp-nd) .nd-tools,
+.nd:not(.tp-nd).nd-compact .nd-tools {
+  flex-direction: row;
+  margin-left: 0;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--pane);
+  box-shadow: 0 4px 14px rgb(20 20 40 / 8%);
+}
+.nd:not(.tp-nd) .nd-tools::before { display: none; }
+.nd:not(.tp-nd) .nd-tools-more { display: none; }
+.nd:not(.tp-nd) .nd-tools-list,
+.nd:not(.tp-nd).nd-compact .nd-tools-list {
+  position: static;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  visibility: visible;
+  opacity: 1;
+  transition: none;
+}
+.nd:not(.tp-nd) .nd-tool { padding: 5px 8px; font-size: 12px; }
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, h1, h2, h3, blockquote):has(> .nd-tools-holder):is(:hover, :focus-within),
+.nd:not(.tp-nd) .nd-editor .ProseMirror > .nd-caret-block:has(> .nd-tools-holder) {
+  margin-bottom: 44px;
+}
+
+/* Pending agent edits read as compact inline cards. The mark still identifies the exact words;
+   Keep and Remove keep their existing document-edit semantics. */
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, blockquote):has(> .nd-editctl > .nd-editctl-one) {
+  padding: 11px 14px 12px;
+  border-radius: 0 9px 9px 0;
+  border-left: 4px solid var(--nd-ellie);
+  background: var(--nd-ellie-tint);
+}
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, blockquote):has(> .nd-editctl > .nd-editctl-one.nd-max) {
+  border-left-color: var(--nd-max);
+  background: var(--nd-max-tint);
+}
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, blockquote) > .nd-editctl,
+.nd:not(.tp-nd).nd-compact .nd-editor .ProseMirror > :is(p, blockquote) > .nd-editctl {
+  position: static;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 6px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, blockquote) > .nd-editctl > .nd-editctl-one {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
+  padding: 0;
+  border: 0;
+}
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, blockquote) > .nd-editctl .nd-editctl-why {
+  flex: 1 1 160px;
+  min-width: 0;
+  margin: 0;
+  -webkit-line-clamp: 1;
+}
+.nd:not(.tp-nd) .nd-editor .ProseMirror > :is(p, blockquote) > .nd-editctl .nd-editctl-row { margin: 0 0 0 auto; }
+.nd:not(.tp-nd) .nd-editctl-btn,
+.tp-nd .nd-editctl-btn { padding: 3px 6px; border-bottom: 0; border-radius: 5px; font-size: 11px; }
+.nd:not(.tp-nd) .nd-editctl-btn:hover,
+.tp-nd .nd-editctl-btn:hover { background: rgb(255 255 255 / 65%); }
+.nd:not(.tp-nd) .nd-editctl-btn:focus-visible,
+.tp-nd .nd-editctl-btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.nd:not(.tp-nd) .nd-editctl-dot,
+.tp-nd .nd-editctl-dot { display: none; }

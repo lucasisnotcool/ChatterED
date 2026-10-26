@@ -31,6 +31,7 @@
 }
 .nd-editor .ProseMirror .nd-tut-sheet code,
 .nd-editor .ProseMirror pre.nd-tut-sheet { font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+.tp-nd.main:not(.working) .nd-editor .ProseMirror pre.nd-tut-sheet { white-space: pre-wrap; overflow-wrap: anywhere; }
 .nd-editor .ProseMirror h2.nd-tut-sheet,
 .nd-editor .ProseMirror h3.nd-tut-sheet { letter-spacing: 0; }
 
@@ -57,6 +58,10 @@
 /* ── a part: a card ────────────────────────────────────────────────────── */
 
 .nd-editor .ProseMirror section.nd-tut-part {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 16px 0 24px;
   padding: 10px 18px 6px;
   border: 1px solid var(--hairline);
@@ -95,7 +100,9 @@
   font-weight: 650;
   font-size: 12.5px;
   color: var(--text);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 /* The status: a word, quiet while untried; its colour as well once judged. */
@@ -152,6 +159,7 @@
 .nd-tut-btn:disabled:not(.nd-tut-check) { opacity: 0.45; }
 .nd-tut-btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
 .nd-tut-btn[hidden] { display: none; }
+.nd-tut-reveal-direct { display: none; }
 .nd-tut-rung { color: var(--nd-max, #b91c1c); font-weight: 550; }
 .nd-tut-rung::before { content: '·'; margin: 0 5px; color: var(--muted); font-weight: 400; }
 .nd-tut-busy { animation: nd-shimmer 1.4s ease-in-out infinite; }
@@ -408,14 +416,16 @@
 /* An agent's note, as the notes draw one: the agent's name in words, its rail's shape, its hue. */
 
 .nd-editor .ProseMirror .nd-tut-hint {
-  margin: 0 0 10px;
-  padding: 2px 0 2px 10px;
-  border-left: 2px dashed var(--nd-max, #b91c1c);
+  margin: 8px 0;
+  padding: 11px 14px 12px;
+  border-left: 4px solid var(--nd-max, #b91c1c);
+  border-radius: 0 9px 9px 0;
+  background: var(--nd-max-tint, #fdedec);
   font-family: var(--font);
   font-size: 13.5px;
-  color: var(--text-2);
+  color: var(--text);
 }
-.nd-editor .ProseMirror .nd-tut-hint.nd-ellie { border-left: 2px solid var(--nd-ellie, #0f7b6c); }
+.nd-editor .ProseMirror .nd-tut-hint.nd-ellie { border-left-color: var(--nd-ellie, #0f7b6c); background: var(--nd-ellie-tint, #e9f5f2); }
 .nd-editor .ProseMirror .nd-tut-hint::before {
   content: attr(data-who);
   display: block;
@@ -428,6 +438,22 @@
   pointer-events: none;
 }
 .nd-editor .ProseMirror .nd-tut-hint.nd-ellie::before { color: var(--nd-ellie, #0f7b6c); }
+.nd-editor .ProseMirror .nd-tut-hint:has(> .nd-editctl)::before { display: none; }
+.tp-nd .nd-tut-hint > .nd-editctl {
+  position: static;
+  width: 100%;
+  margin: 0 0 6px;
+  text-align: left;
+}
+.tp-nd .nd-tut-hint > .nd-editctl > .nd-editctl-one {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 0;
+  border: 0;
+}
+.tp-nd .nd-tut-hint > .nd-editctl > .nd-editctl-one .nd-editctl-row { margin: 0 0 0 auto; }
 
 /* ── the main notes: each section's practice row (`practiceChipsPlugin`) ── */
 
@@ -473,3 +499,31 @@
    dropping below the chip row the top-level blocks have. */
 .nd-editor .ProseMirror :is(section[data-tut-part], div[data-tut-answer]) > :has(> .nd-cmt-holder) { position: relative; }
 .nd-compact .nd-editor .ProseMirror :is(section[data-tut-part], div[data-tut-answer]) > * > .nd-cmt-holder { top: 0.24em; }
+
+/* PDF + working presents the existing saved tutorial document as answer sections. The original
+   PDF carries the printed questions; hiding their generated copy here does not remove or rewrite
+   a ProseMirror node. Switching back to Combined sheet shows the same document and undo history. */
+.tp-nd.working .nd-scroll { background: var(--pane); }
+.tp-nd.main .nd-sheet { box-sizing: border-box; width: 100%; }
+.tp-nd.main .nd-editor .ProseMirror { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.tp-nd.working .nd-sheet { max-width: none; padding: 0; }
+.tp-nd.working .nd-editor .ProseMirror { max-width: none; padding: 0; }
+.tp-nd.working .nd-editor .ProseMirror > :not(section.nd-tut-part) { display: none; }
+.tp-nd.working .nd-editor .ProseMirror section.nd-tut-part > :not(.nd-tut-head):not(.nd-tut-slot):not(.nd-tut-hint) { display: none; }
+.tp-nd.working .nd-editor .ProseMirror section.nd-tut-part { margin: 0; border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0; box-shadow: none; padding: 18px 14px; }
+.tp-nd.working .nd-editor .ProseMirror .nd-tut-slot { min-height: 150px; margin: 8px 0 2px; background: #fff; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; }
+.tp-nd.working .nd-tut-head-left { flex-basis: 100%; flex-wrap: wrap; }
+.tp-nd.working .nd-tut-actions { width: 100%; margin-left: 0; flex-wrap: wrap; justify-content: flex-start; }
+.tp-nd.working .nd-tut-controls { flex-wrap: wrap; }
+.tp-nd.working .nd-editctl { position: static; width: auto; margin: 8px 0; flex-direction: row; text-align: left; }
+.tp-nd.working .nd-editctl-one { border-right: 0; border-left: 2px solid; padding: 0 0 0 8px; }
+.tp-nd.working .nd-editctl-row { justify-content: flex-start; }
+
+/* The main tutorial offers the same four actions in one wrapping row. Show answer still opens
+   the existing confirmation; the Help menu remains available in smaller/docked presentations. */
+.tp-nd.main .nd-tut-wide,
+.tp-nd.main .nd-tut-reveal-direct { display: inline-flex; }
+.tp-nd.main .nd-tut-help-wrap { display: none; }
+.tp-nd.main .nd-tut-controls { flex-wrap: wrap; gap: 6px; }
+.tp-nd.main .nd-tut-btn { padding: 5px 10px; font-size: 12px; }
+.tp-nd.main .nd-tut-confirm { border-style: solid; background: var(--ground); }

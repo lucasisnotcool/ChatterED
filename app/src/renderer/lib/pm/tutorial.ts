@@ -459,7 +459,12 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
   }
 
   wrap.append(helpButton, menu);
-  controls.append(hint, refresher, check, wrap);
+  const reveal = helpMenuItems(chrome).some((item) => item.id === 'reveal')
+    ? button('nd-tut-btn nd-tut-reveal-direct', 'Show answer', 'Show the answer; this part will not count', askReveal)
+    : null;
+  controls.append(check, hint, refresher);
+  if (reveal) controls.append(reveal);
+  controls.append(wrap);
   actions.append(controls, confirm);
   row.append(left, actions);
   head.append(row);

@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * **The map of the notes**, in the file panel (#48, §0 and §6).
+   * **The map of the notes**, shown over the notes while they scroll.
    *
    * An outline of the open file's notes by idea — its headings — with each entry marked by how
    * far the learner has got on the objectives that section covers. The progress bar says *how
@@ -56,6 +56,8 @@
   // `$state.raw`: replaced whole, never mutated, and only when the reading actually differs.
   let blocks = $state.raw<MapBlock[]>([]);
   let current = $state<string | null>(null);
+  let visible = $state(false);
+  let hovering = $state(false);
 
   const entries = $derived(mapEntries(blocks, store.progress.view));
   const depths = $derived(entryDepths(entries));
@@ -108,6 +110,7 @@
     if (!host) return;
 
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
     let frame = 0;
     // Throttled, not debounced: an agent typing an edit in is one long burst, and a reading that
     // waited for silence would hold the map still until the last character.
@@ -129,6 +132,9 @@
 
     // `scroll` does not bubble, so it is caught on the way down; one measurement per frame.
     const onscroll = (): void => {
+      visible = true;
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => { if (!hovering) visible = false; }, 1500);
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
@@ -145,6 +151,7 @@
       observer.disconnect();
       host.removeEventListener('scroll', onscroll, { capture: true });
       if (timer) clearTimeout(timer);
+      if (hideTimer) clearTimeout(hideTimer);
       if (frame) cancelAnimationFrame(frame);
     };
   });
@@ -152,7 +159,7 @@
 
 <!-- No notes document, or one with no heading in it yet: no map. It grows as the ingest writes. -->
 {#if store.doc.docId && entries.length > 0}
-  <section class="map" aria-label="Map of the notes">
+  <section class="map" class:visible aria-label="Map of the notes" inert={!visible} onpointerenter={() => { hovering = true; }} onpointerleave={() => { hovering = false; visible = false; }} onfocusin={() => { hovering = true; }} onfocusout={() => { hovering = false; visible = false; }}>
     <button
       type="button"
       class="head"
@@ -206,8 +213,17 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-top: 1px solid var(--hairline);
+    max-height: min(48vh, 420px);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--pane);
+    box-shadow: 0 10px 28px rgb(20 20 40 / 12%);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-5px);
+    transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   }
+  .map.visible { opacity: 1; visibility: visible; transform: translateY(0); }
 
   .head {
     flex: none;

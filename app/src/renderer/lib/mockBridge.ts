@@ -1702,12 +1702,15 @@ export function createMockBridge(): ChatterEdApi {
     async closeWhisper({ threadId }) { emit({ type: 'whisper.cleared', roomId: ROOM, threadId }); },
 
     /**
-     * A **source's** bytes (C2: `openDocument` still takes a source's file id). The mock has no
-     * disk and no pdf.js bytes, so a source opens as its name and page count and the slide
-     * previews degrade to their captions; everything else is real.
+     * A **source's** bytes (C2: `openDocument` still takes a source's file id). The parity route
+     * supplies a clearly labelled one-page PDF fixture to exercise the new viewer. Other mock
+     * routes have no disk or PDF bytes, and slide previews degrade to their captions.
      */
     openDocument: async ({ fileId }) => {
       const source = notebooks.sourceById(fileId);
+      const parityPdf = source?.kind === 'pdf' && globalThis.location?.pathname.endsWith('/tutorial-workspace-parity.html')
+        ? new Uint8Array(await (await fetch('./tutorial-sample.pdf')).arrayBuffer())
+        : null;
       return source
         ? {
             fileId,
@@ -1719,7 +1722,7 @@ export function createMockBridge(): ChatterEdApi {
             size: 0,
             pageCount: source.pageCount,
             text: source.kind === 'text' ? '(The dev mock has no file contents.)' : null,
-            bytes: null,
+            bytes: parityPdf,
             error: null,
           }
         : {

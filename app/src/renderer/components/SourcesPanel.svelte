@@ -22,7 +22,6 @@
    * agreed would say a source was in Ellie's context when it was not, which is the one thing the
    * checkbox exists to tell the truth about.
    */
-  import type { Snippet } from 'svelte';
   import type { NotebookSourceView } from '../../shared/notebook.js';
   import { FILES } from '../lib/layout.js';
   import { layout } from '../lib/layoutstore.svelte.js';
@@ -30,7 +29,6 @@
   import {
     allState,
     badgeTone,
-    inUseLine,
     roleHint,
     roleLabel,
     roleOf,
@@ -39,25 +37,38 @@
     typeBadge,
   } from '../lib/notebookview.js';
   import { store } from '../lib/store.svelte.js';
+  import { bridge } from '../lib/bridge.js';
   import PaneSplitter from './PaneSplitter.svelte';
 
   let {
     over = false,
     oncollapse,
-    below,
   }: {
     /** Files are being dragged over this column: the drop box says they go in here. */
     over?: boolean;
     /** Dragging the edge all the way in (or Enter on it) closes the panel. */
     oncollapse?: () => void;
-    /** Under the sources: the overview's outline. */
-    below?: Snippet;
   } = $props();
 
   const nb = store.notebook;
   const sources = $derived<NotebookSourceView[]>(nb.view?.sources ?? []);
   const all = $derived(allState(sources));
-  const count = $derived(inUseLine(sources));
+
+  async function addForRole(role: SourceRole): Promise<void> {
+    try {
+      const { paths } = await bridge().notebookPickFiles();
+      if (!paths.length) return;
+      const result = await nb.addSources(paths);
+      for (const source of result?.added ?? []) {
+        if (role === 'lecture') continue;
+        const changed = await tut.setRole(source.fileId, role);
+        if (changed.error) nb.say(changed.error);
+        if (changed.view && nb.view?.id === changed.view.id) nb.view = changed.view;
+      }
+    } catch (error) {
+      nb.say(error instanceof Error ? error.message : 'Could not add sources.');
+    }
+  }
 
   /** The All box's indeterminate state is a DOM property, not an attribute. */
   let allBox = $state<HTMLInputElement | null>(null);
@@ -144,29 +155,22 @@
   <div class="top">
   <header class="head">
     <span class="title">Sources</span>
-    {#if count}<span class="sub">{count}</span>{/if}
   </header>
 
-  <button type="button" class="add" disabled={nb.busy} onclick={() => void nb.pickAndAdd()}>
-    <span aria-hidden="true">＋</span> {nb.busy ? 'Adding…' : 'Add sources'}
-  </button>
+  <p class="intro">Add as many files as you need in each category. Choose a tutorial PDF to view it here.</p>
 
   <div class="drop" class:over aria-hidden="true">
     Drop files here
     <small>PDF, Word, Markdown, text, images</small>
   </div>
 
-  {#if sources.length > 0}
-    <div class="selall">
-      <span>Use in this notebook</span>
-      <label>
-        <input type="checkbox" bind:this={allBox} checked={all.checked} onchange={toggleAll} aria-label="Use every source" />
-        All
-      </label>
+    {#each SOURCE_ROLES as section (section)}
+    <div class="section-head">
+      <span>{section === 'lecture' ? 'Lecture notes' : section === 'tutorial' ? 'Tutorials' : 'Tutorial answers'}</span>
+      <button type="button" aria-label={`Add ${section === 'solutions' ? 'tutorial answers' : section === 'lecture' ? 'lecture notes' : 'tutorials'}`} title="Add files" disabled={nb.busy} onclick={() => void addForRole(section)}>+</button>
     </div>
-
     <ul class="list">
-      {#each sources as source (source.fileId)}
+      {#each sources.filter((source) => roleOf(source) === section) as source (source.fileId)}
         {@const role = roleOf(source)}
         <li
           class="src"
@@ -175,9 +179,15 @@
           class:hidden-role={role === 'solutions'}
           class:open={tut.openFileId === source.fileId}
         >
-          <span class="badge {badgeTone(source.name)}" aria-hidden="true">{typeBadge(source.name)}</span>
           <div class="body">
-            <div class="name" title={source.name}>{source.name}</div>
+            <details class="source-details">
+              <summary class="name" title={source.name} onclick={() => {
+                if (role !== 'tutorial' || source.status !== 'ready') return;
+                if (nb.view) layout.setTutorialMain(nb.view.id, source.fileId);
+                void tut.open(source.fileId);
+              }}>{source.name}</summary>
+              <div class="source-options">
+              <span class="badge {badgeTone(source.name)}" aria-hidden="true">{typeBadge(source.name)}</span>
             <div class="meta">
               <button
                 type="button"
@@ -203,6 +213,10 @@
                 {/if}
               </div>
             {/if}
+            {#if role !== 'solutions'}
+              <label class="use-source"><input type="checkbox" checked={source.enabled} disabled={source.status === 'failed'} aria-label={`Use ${source.name}`} onchange={(e) => toggle(source, e)} /> Use for AI context</label>
+            {/if}
+              </div>
             {#if menuFor === source.fileId}
               <div
                 class="rolemenu"
@@ -236,6 +250,7 @@
             {:else if source.status === 'failed' && source.error}
               <div class="error">{source.error}</div>
             {/if}
+            </details>
           </div>
           <button
             type="button"
@@ -243,31 +258,17 @@
             title={`Remove ${source.name} from this notebook`}
             aria-label={`Remove ${source.name}`}
             onclick={() => void nb.remove(source.fileId)}
-          >×</button>
-          {#if role === 'solutions'}
-            <span aria-hidden="true"></span>
-          {:else}
-          <input
-            type="checkbox"
-            checked={source.enabled}
-            disabled={source.status === 'failed'}
-            aria-label={`Use ${source.name}`}
-            onchange={(e) => toggle(source, e)}
-          />
-          {/if}
+          ><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m5 4v7m4-7v7" /></svg></button>
         </li>
       {/each}
     </ul>
+    {/each}
 
-    <p class="ctxnote">Ellie, Max and the overview see only the ticked sources.</p>
-  {:else if nb.view}
-    <p class="ctxnote">No sources yet. Add files, or drop them anywhere on this window.</p>
-  {/if}
+    {#if sources.length > 0}
+      <div class="selall"><span>Use in this notebook</span><label><input type="checkbox" bind:this={allBox} checked={all.checked} onchange={toggleAll} aria-label="Use every source" /> All</label></div>
+      <p class="ctxnote">Ellie, Max and the overview see only the ticked sources.</p>
+    {/if}
   </div>
-
-  {#if below}
-    <div class="below">{@render below()}</div>
-  {/if}
 </aside>
 
 <!-- The panel's right edge. Its width is the learner's and survives a relaunch. -->
@@ -294,10 +295,14 @@
   }
   /* The sources take what they need and scroll past about half the column; the outline below
      takes the rest, so neither can push the other off the bottom of the window. */
-  .top { flex: 0 1 auto; max-height: 58%; overflow-y: auto; min-height: 0; padding-bottom: 12px; }
+  .top { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-bottom: 18px; }
 
-  .head { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 10px; }
-  .title { font-size: 13px; font-weight: 600; }
+  .head { display: flex; align-items: baseline; gap: 8px; padding: 20px 20px 4px; }
+  .title { font-family: var(--font-display, Georgia, serif); font-size: 23px; }
+  .intro { margin: 0 20px 16px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+  .section-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 9px; font-family: var(--font-display, Georgia, serif); font-size: 18px; }
+  .section-head button { width: 24px; height: 24px; border-radius: 5px; font-family: var(--font); font-size: 19px; line-height: 1; }
+  .section-head button:hover { background: var(--indigo-tint); color: var(--indigo); }
   .sub { margin-left: auto; font-size: 11.5px; color: var(--text-2); }
 
   .add {
@@ -325,12 +330,12 @@
     text-align: center;
     color: var(--text-2);
     font-size: 12px;
-    display: grid;
+    display: none;
     gap: 2px;
     transition: background 120ms ease-out, border-color 120ms ease-out;
   }
   .drop small { font-size: 11px; color: var(--muted); }
-  .drop.over { border-color: var(--indigo); background: var(--indigo-tint); color: var(--indigo); }
+  .drop.over { display: grid; border-color: var(--indigo); background: var(--indigo-tint); color: var(--indigo); }
 
   .selall {
     display: flex;
@@ -342,17 +347,19 @@
   }
   .selall label { display: inline-flex; align-items: center; gap: 5px; }
 
-  .list { list-style: none; margin: 0; padding: 0 8px; display: grid; gap: 1px; }
+  .list { list-style: none; margin: 0; padding: 0 20px; display: grid; gap: 7px; }
   .src {
     position: relative;
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) 16px 16px;
-    gap: 7px;
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 8px;
     align-items: center;
-    padding: 6px 6px;
-    border-radius: 8px;
+    padding: 9px 10px 9px 13px;
+    border: 1px solid var(--hairline);
+    background: var(--pane);
+    border-radius: 9px;
   }
-  .src:hover { background: var(--pane); }
+  .src:hover { border-color: var(--text-2); }
   .badge {
     width: 26px;
     height: 30px;
@@ -370,7 +377,12 @@
   .badge.doc { color: var(--indigo); }
   .badge.plain { color: var(--text-2); }
   .body { min-width: 0; }
-  .name { font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { cursor: pointer; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; list-style: none; }
+  .name::-webkit-details-marker { display: none; }
+  .name:hover { color: var(--indigo); }
+  .source-options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; }
+  .source-options .meta { flex-basis: 100%; }
+  .use-source { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-2); }
   .meta { font-size: 10.5px; color: var(--text-2); }
   .error { margin-top: 2px; font-size: 10.5px; line-height: 1.4; color: #8a2708; }
 
@@ -399,7 +411,7 @@
   .role.solutions { border-style: dashed; color: var(--text-2); }
   .caret { margin-left: 2px; font-size: 8px; opacity: 0.75; }
   .src.hidden-role .name { color: var(--text-2); }
-  .src.open { background: var(--indigo-tint); }
+  .src.open .name { color: #b34b00; font-weight: 700; }
 
   .tutrow { display: flex; gap: 6px; margin-top: 4px; }
   .opentut,
@@ -466,24 +478,18 @@
 
   /* The × is there on hover and on keyboard focus, never in the way of the name otherwise. */
   .remove {
-    width: 16px;
-    height: 16px;
+    width: 28px;
+    height: 28px;
     display: grid;
     place-items: center;
     border-radius: 4px;
     font-size: 13px;
     line-height: 1;
     color: var(--text-2);
-    opacity: 0;
+    opacity: 1;
   }
-  .src:hover .remove,
-  .remove:focus-visible { opacity: 1; }
-  .remove:hover { color: #8a2708; background: var(--ground); }
+  .remove:hover { color: #b91c1c; background: #fff0ed; }
 
   .ctxnote { margin: 8px 14px 0; font-size: 11px; line-height: 1.5; color: var(--text-2); }
 
-  .below { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
-  /* The outline's own cap (46%) was for sharing the column with a file tree; here it has the
-     rest of the column to itself. */
-  .below > :global(.map) { max-height: none; flex: 1 1 auto; }
 </style>

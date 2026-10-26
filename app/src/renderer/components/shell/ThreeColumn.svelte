@@ -55,13 +55,14 @@
   import { taughtObjectives } from '../../lib/progressview.js';
   import {
     CHAT,
-    NOTES_SPLIT_MIN,
     TUTORIAL,
     TUTORIAL_WINDOW_MIN,
-    filesCrowdTutorial,
+    NOTES_ZOOM,
     floatFrame,
     mainTutorialFor,
     notesFloatFrame,
+    zoomIn,
+    zoomOut,
     type FloatFrame,
     type FloatView,
   } from '../../lib/layout.js';
@@ -69,7 +70,6 @@
   import type { NotebookView } from '../../../shared/notebook.js';
   import { layout } from '../../lib/layoutstore.svelte.js';
   import ChatColumn from './ChatColumn.svelte';
-  import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
   import NotesMap from '../notes/NotesMap.svelte';
   import NotesPane from '../notes/NotesPane.svelte';
@@ -78,7 +78,7 @@
   import ProgressBar from './ProgressBar.svelte';
   import SourcesPanel from '../SourcesPanel.svelte';
   import TutorialPane from '../notes/TutorialPane.svelte';
-  import TutorialWindow from '../notes/TutorialWindow.svelte';
+  import TutorialOriginalPdf from '../notes/TutorialOriginalPdf.svelte';
 
   let { notebookId }: { notebookId: string } = $props();
 
@@ -109,7 +109,10 @@
    * is a field inside the view). Help and Check bring their thread up in the chat.
    */
   const tutorial = store.tutorial;
-  tutorial.focusThread = (threadId) => store.chat.focusThread(threadId);
+  tutorial.focusThread = (threadId) => {
+    layout.setChatOpen(true);
+    store.chat.focusThread(threadId);
+  };
   $effect(() => {
     const view = store.notebook.view;
     const snapshot = view && view.id === notebookId ? ($state.snapshot(view) as NotebookView) : null;
@@ -117,7 +120,6 @@
   });
   $effect(() => () => untrack(() => tutorial.setNotebook(null)));
 
-  const tutorialOpen = $derived(tutorial.openFileId !== null);
 
   /**
    * **The swap** (2026-10-04): the tutorial the middle column shows instead of the notes, or null.
@@ -125,7 +127,14 @@
    */
   const mainFileId = $derived(mainTutorialFor(layout.tutorialMain, notebookId, tutorial.views));
   const tutorialMain = $derived(mainFileId !== null);
-  const hasTutorials = $derived(tutorial.views.length > 0);
+  let tutorialTools = $state<HTMLDetailsElement | null>(null);
+  let confirmingReread = $state(false);
+  function closeTutorialTools(): void {
+    if (tutorialTools) tutorialTools.open = false;
+    confirmingReread = false;
+  }
+  $effect(() => { if (!tutorialMain) closeTutorialTools(); });
+  let pdfQuestionNumbers = $state<number[]>([]);
   /** With the swap on, the notes are a window over the app while open, and hidden while not. */
   const notesFloating = $derived(tutorialMain && layout.notesWindowOpen);
   const notesHidden = $derived(tutorialMain && !layout.notesWindowOpen);
@@ -165,31 +174,11 @@
     }),
   );
 
-  /** *Main view*: the tutorial on screen (or the first), or back to the notes. */
-  function setMain(on: boolean): void {
-    if (!on) {
-      layout.setTutorialMain(notebookId, null);
-      return;
-    }
-    const fileId = tutorial.openFileId ?? tutorial.views[0]?.fileId ?? null;
-    if (fileId) layout.setTutorialMain(notebookId, fileId);
-  }
-
-  const docked = $derived(tutorialOpen && !tutorial.floating && !tutorialMain);
-
-  /**
-   * **Room for the docked tutorial.** Notes and tutorial side by side want two readable sheets;
-   * when the sources panel and the chat leave the doc column less than that
-   * (`filesCrowdTutorial`), the sources fold away while the tutorial is docked, and come back
-   * when it closes, pops out or the window grows — unless the learner reopened or closed them in
-   * the meantime (`LayoutStore.roomForTutorial`).
-   */
-  let shellWidth = $state(0);
-  $effect(() => {
-    const crowded = docked ? filesCrowdTutorial(shellWidth, layout.filesWidth, layout.chatWidth) : null;
-    untrack(() => layout.roomForTutorial(crowded));
-  });
-  $effect(() => () => untrack(() => layout.roomForTutorial(null)));
+  let docWidth = $state(0);
+  // Side by side (PDF left, working right) unless the column is too narrow for both: the PDF
+  // keeps a 300 px floor and the working side the 380 px that `pdfWidth` leaves it.
+  const stackedTutorial = $derived(docWidth < 700);
+  const pdfWidth = $derived(Math.max(300, Math.min(layout.tutorialWidth, docWidth - 380)));
 
   /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
   const pages = $derived(
@@ -324,6 +313,7 @@
     // §6's three effects, in order: Ellie's intro is already posted by the call, the chat column
     // comes to the front, and the document scrolls to the segment that carries the objective.
     store.chat.focusDocChat();
+    layout.setChatOpen(true);
     if (result.blockId) jump(result.blockId);
   }
 
@@ -351,16 +341,24 @@
 
   /** Ctrl+= / Ctrl+− / Ctrl+0 as the menu's ⌘ ones. */
   function onwindowkey(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && tutorialTools?.open) {
+      closeTutorialTools();
+      e.preventDefault();
+      return;
+    }
     if (e.defaultPrevented || !e.ctrlKey || e.metaKey || e.altKey) return;
     const command = e.key === '=' || e.key === '+' ? 'zoom.in' : e.key === '-' ? 'zoom.out' : e.key === '0' ? 'zoom.reset' : null;
     if (!command) return;
     if (runViewerCommand(command)) e.preventDefault();
   }
+  function onwindowclick(e: MouseEvent): void {
+    if (tutorialTools?.open && !tutorialTools.contains(e.target as Node)) closeTutorialTools();
+  }
 </script>
 
-<svelte:window onkeydown={onwindowkey} {onresize} />
+<svelte:window onkeydown={onwindowkey} onclick={onwindowclick} {onresize} />
 
-<div class="shell" bind:clientWidth={shellWidth} role="region" aria-label="Notebook">
+<div class="shell" role="region" aria-label="Notebook">
   {#if filesOpen}
     <div
       class="files"
@@ -372,19 +370,13 @@
       ondragleave={drop.dragleave}
       ondrop={drop.drop}
     >
-      <SourcesPanel {over} oncollapse={() => layout.setFilesOpen(false)}>
-        {#snippet below()}
-          <!-- The overview's outline, with each section's fill (§7). Its clicks are the same
-               `jump` a lesson card's Start and a span thread use. -->
-          <NotesMap root={docbody} onjump={jump} />
-        {/snippet}
-      </SourcesPanel>
+      <SourcesPanel {over} oncollapse={() => layout.setFilesOpen(false)} />
     </div>
   {/if}
 
   <!-- Docked, the doc column holds two floors (the notes' and the tutorial's): the chat gives way
        first, as it does to the notes alone. -->
-  <main class="doc" style:min-width={docked ? `${NOTES_SPLIT_MIN + TUTORIAL.min}px` : null}>
+  <main class="doc" bind:clientWidth={docWidth}>
     <header class="dochead">
       <button
         type="button"
@@ -393,43 +385,55 @@
         aria-controls="files-panel"
         title={filesOpen ? 'Hide the sources (⌃⌘S)' : 'Show the sources (⌃⌘S)'}
         onclick={() => layout.toggleFiles()}
-      >{filesOpen ? '⟨' : '⟩'}</button>
+      >☰ Sources</button>
+
+      {#if tutorialMain}
+        <select class="tutorial-select" aria-label="Choose tutorial" value={mainFileId ?? ''} onchange={(e) => {
+          const id = e.currentTarget.value;
+          layout.setTutorialMain(notebookId, id);
+          void tutorial.open(id);
+        }}>
+          {#each tutorial.views as v (v.fileId)}
+            <option value={v.fileId}>{store.notebook.view?.sources.find((s) => s.fileId === v.fileId)?.name ?? v.title ?? 'Tutorial'}</option>
+          {/each}
+        </select>
+      {/if}
 
       <!-- The bar, in the doc header, where §6 puts it. The popover hangs off this wrapper. -->
-      <div class="progress">
-        <ProgressBar />
-        {#if store.progress.open}
-          <LessonPath onstart={(id) => void start(id)} />
-        {/if}
-      </div>
-
-      <!-- What this document has cost (#42 item C), beside the bar. It is `flex: none` and about
-           six characters wide, and it renders nothing at all when there is no ledger or no call
-           on this file — so the header's own rule holds: nothing here may push the buttons over
-           the chat column's tabs at 1100px. -->
-      <CostCounter />
+      {#if !tutorialMain}
+        <div class="progress">
+          <ProgressBar />
+          {#if store.progress.open}
+            <LessonPath onstart={(id) => void start(id)} />
+          {/if}
+        </div>
+      {:else}
+        <span class="header-spacer" aria-hidden="true"></span>
+      {/if}
 
       <!-- The swap (2026-10-04): only in a notebook with a tutorial. -->
-      {#if hasTutorials}
-        <div class="mainview" role="group" aria-label="Main view">
-          <button
-            type="button"
-            class="mv-opt"
-            class:on={!tutorialMain}
-            aria-pressed={!tutorialMain}
-            title="The lecture notes in the middle, the tutorial beside them"
-            onclick={() => setMain(false)}
-          >Lecture notes</button>
-          <button
-            type="button"
-            class="mv-opt"
-            class:on={tutorialMain}
-            aria-pressed={tutorialMain}
-            title="The tutorial sheet in the middle; the notes open in a window when you need them"
-            onclick={() => setMain(true)}
-          >Tutorial</button>
+      {#if tutorialMain}
+        <div class="mainview" role="group" aria-label="Tutorial view">
+          <button type="button" class="mv-opt" class:on={layout.tutorialView === 'pdf'} aria-pressed={layout.tutorialView === 'pdf'} onclick={() => layout.setTutorialView('pdf')}>PDF + working</button>
+          <button type="button" class="mv-opt" class:on={layout.tutorialView === 'combined'} aria-pressed={layout.tutorialView === 'combined'} onclick={() => layout.setTutorialView('combined')}>Combined sheet</button>
         </div>
+        <details class="tutorial-tools" bind:this={tutorialTools} ontoggle={() => { if (!tutorialTools?.open) confirmingReread = false; }}>
+          <summary aria-label="Tutorial tools" title="Tutorial tools">⋯</summary>
+          <div class="tools-menu">
+            <button type="button" onclick={() => { openNotes(); closeTutorialTools(); }}>Open summary notes</button>
+            <button type="button" onclick={() => { tutorial.toggleSplit(); closeTutorialTools(); }}>{tutorial.split ? 'Remove sheet split' : 'Split sheet'}</button>
+            <button type="button" onclick={() => layout.setTutorialZoom(zoomOut(layout.tutorialZoom, NOTES_ZOOM))}>Zoom sheet out</button>
+            <button type="button" onclick={() => layout.setTutorialZoom(zoomIn(layout.tutorialZoom, NOTES_ZOOM))}>Zoom sheet in</button>
+            <button type="button" onclick={() => { layout.setTutorialZoom(1); closeTutorialTools(); }}>Reset sheet zoom</button>
+            <button type="button" onclick={() => {
+              if (!confirmingReread) { confirmingReread = true; return; }
+              if (mainFileId) void tutorial.reread(mainFileId);
+              closeTutorialTools();
+            }}>{confirmingReread ? 'Confirm read again' : 'Read sheet again…'}</button>
+          </div>
+        </details>
       {/if}
+      <button type="button" class="chats-toggle" aria-expanded={layout.chatOpen} aria-controls="chat-column" onclick={() => layout.setChatOpen(!layout.chatOpen)}>💬 Chats</button>
     </header>
 
     <div class="docrow">
@@ -447,7 +451,6 @@
       aria-hidden={notesHidden ? 'true' : null}
       tabindex={notesFloating ? -1 : null}
       onkeydown={notesKey}
-      style:min-width={docked ? `${NOTES_SPLIT_MIN}px` : null}
       style:left={notesFloating && notesFrame ? `${notesFrame.left}px` : null}
       style:top={notesFloating && notesFrame ? `${notesFrame.top}px` : null}
       style:width={notesFloating && notesFrame ? `${notesFrame.width}px` : null}
@@ -477,46 +480,44 @@
       {/if}
       <!-- The editor: self-sufficient, and it loads, ingests, renders and saves on its own. -->
       <NotesPane fileId={notebookId} />
+      {#if notesFloating}
+        <div class="notes-map-overlay"><NotesMap root={docbody} onjump={jump} /></div>
+      {/if}
     </div>
+    {#if !tutorialMain}
+      <div class="notes-map-overlay"><NotesMap root={docbody} onjump={jump} /></div>
+    {/if}
     {#if tutorialMain}
       <!-- The swap: the sheet is the middle column, the whole of it. -->
       <section class="tutmain" id="tutorial-column" aria-label="Tutorial">
         <div class="tutmain-pacing"><PacingStrip /></div>
-        <TutorialPane main />
-      </section>
-    {:else if docked}
-      <PaneSplitter
-        size={layout.tutorialWidth}
-        bounds={TUTORIAL}
-        sign={-1}
-        label="Resize the tutorial"
-        controls="tutorial-column"
-        onsize={(width) => layout.setTutorialWidth(width)}
-        oncollapse={() => tutorial.close()}
-      />
-      <section class="tutcol" id="tutorial-column" aria-label="Tutorial" style:width={`${layout.tutorialWidth}px`}>
-        <TutorialPane />
+        <div class="pdf-layout" class:stacked={stackedTutorial}>
+          {#if layout.tutorialView === 'pdf' && mainFileId}
+            <div class="pdf-side" id="tutorial-pdf" style:width={stackedTutorial ? '100%' : `${pdfWidth}px`}>
+              <TutorialOriginalPdf fileId={mainFileId} onquestions={(numbers) => pdfQuestionNumbers = numbers} />
+            </div>
+            {#if !stackedTutorial}<PaneSplitter size={pdfWidth} bounds={TUTORIAL} sign={1} label="Resize the original PDF" controls="tutorial-pdf" onsize={(width) => layout.setTutorialWidth(width)} />{/if}
+          {/if}
+          <div class="working-side"><TutorialPane main working={layout.tutorialView === 'pdf'} printedQuestions={pdfQuestionNumbers} /></div>
+        </div>
       </section>
     {/if}
     </div>
   </main>
 
-  <PaneSplitter
+  {#if layout.chatOpen}<PaneSplitter
     size={layout.chatWidth}
     bounds={CHAT}
     sign={-1}
     label="Resize the conversation"
     controls="chat-column"
     onsize={(width) => layout.setChatWidth(width)}
-  />
+  />{/if}
 
-  <div class="chats" id="chat-column" style:width={`${layout.chatWidth}px`}>
+  <div class="chats" class:closed={!layout.chatOpen} id="chat-column" style:width={layout.chatOpen ? `${layout.chatWidth}px` : '0px'} aria-hidden={!layout.chatOpen}>
     <ChatColumn {pages} onjump={jump} onpage={goToPage} />
   </div>
 
-  {#if tutorialOpen && tutorial.floating && !tutorialMain}
-    <TutorialWindow />
-  {/if}
 </div>
 
 <style>
@@ -548,6 +549,7 @@
     padding: 7px 14px;
     border-bottom: 1px solid var(--hairline);
     background: var(--ground);
+    height: 48px;
   }
   /* Every item in this header must be able to give ground, or the row overflows its own column
      and ends up drawn over the chat's tabs — which is what 1100 px looked like in the browser. */
@@ -556,18 +558,35 @@
      a spacer beside it would halve its width and squeeze the status line out of existence,
      which is what the first browser run showed. */
   .progress { position: relative; flex: 1 1 auto; min-width: 0; max-width: 560px; margin-right: auto; }
-  .mini { font-size: 11px; color: var(--text-2); flex: none; white-space: nowrap; }
+  .header-spacer { flex: 1 1 auto; min-width: 0; }
+  .mini { font-size: 12px; color: var(--text-2); flex: none; white-space: nowrap; border: 1px solid var(--hairline); padding: 5px 9px; border-radius: 7px; }
   .mini:hover { color: var(--indigo); }
+  .tutorial-select { max-width: 215px; min-width: 120px; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 24px 5px 8px; background: var(--pane); color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+  .chats-toggle { flex: none; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 9px; font-size: 12px; }
+  .chats-toggle:hover { color: var(--indigo); border-color: var(--indigo); }
+  .tutorial-tools { position: relative; flex: none; }
+  .tutorial-tools summary { list-style: none; width: 30px; height: 29px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer; font-size: 19px; line-height: 1; }
+  .tutorial-tools summary::-webkit-details-marker { display: none; }
+  .tutorial-tools summary:hover { border-color: var(--indigo); color: var(--indigo); }
+  .tools-menu { position: absolute; z-index: 30; right: 0; top: calc(100% + 6px); width: 185px; display: grid; padding: 5px; border: 1px solid var(--hairline); border-radius: 9px; background: var(--pane); box-shadow: 0 12px 28px rgb(20 20 40 / 13%); }
+  .tools-menu button { padding: 7px 9px; border-radius: 6px; text-align: left; }
+  .tools-menu button:hover { background: var(--indigo-tint); }
 
-  .docrow { flex: 1; display: flex; min-height: 0; min-width: 0; }
-  .docbody { flex: 1 1 0; overflow-y: auto; min-height: 0; min-width: 0; }
-  /* The tutorial yields before the notes do: its width is the learner's, with a floor. */
-  .tutcol { flex: 0 1 auto; min-width: 360px; min-height: 0; display: flex; flex-direction: column; }
-  .tutcol > :global(.tp-nd) { flex: 1 1 auto; }
+  .docrow { position: relative; flex: 1; display: flex; min-height: 0; min-width: 0; }
+  .docbody { position: relative; flex: 1 1 0; overflow-y: auto; min-height: 0; min-width: 0; }
+  .notes-map-overlay { position: absolute; z-index: 8; top: 54px; right: 12px; width: min(300px, calc(100% - 24px)); pointer-events: none; }
+  .notes-map-overlay :global(.map) { pointer-events: auto; }
 
   /* ── The swap (2026-10-04): the sheet in the middle, the notes hidden or in a window ── */
-  .tutmain { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  .tutmain > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
+  .tutmain { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .pdf-layout { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+  .pdf-layout.stacked { flex-direction: column; }
+  .pdf-layout.stacked .pdf-side { flex: 0 0 42%; max-height: 42%; border-bottom: 1px solid var(--hairline); }
+  .pdf-layout.stacked .working-side { flex: 1 1 58%; }
+  .pdf-side { flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--hairline); }
+  .pdf-side > :global(.original-pdf) { flex: 1 1 auto; }
+  .working-side { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
+  .working-side > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
   /* The disclosure, once per install, above the sheet; it scrolls rather than crowd it out. */
   .tutmain-pacing { flex: 0 1 auto; max-height: 50%; overflow-y: auto; }
   .tutmain-pacing:empty { display: none; }
@@ -628,6 +647,7 @@
   /* Its width is the learner's, but it yields before the document does: `flex-shrink: 1` with a
      floor, so a narrow window takes it back to 300 px instead of squeezing the doc to nothing. */
   .chats { flex: 0 1 auto; min-width: 300px; min-height: 0; }
+  .chats.closed { flex: none; min-width: 0; overflow: hidden; visibility: hidden; }
 
   @media (max-width: 1280px) {
     /* A narrow window gives the document the room first; the conversation keeps its floor. */

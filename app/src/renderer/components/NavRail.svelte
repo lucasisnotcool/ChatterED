@@ -8,7 +8,7 @@
    * taxonomies of "a course" 76 px apart**, and the one on the left was a single fabricated
    * entry (ui-review-code.md §3, ui-review-ux.md M1/M2/M3).
    *
-   * So: 48 px, icons only. The 120 px this gives back goes to the document. Since #58 the one
+   * So: a compact icon rail. Since #58 the one
    * taxonomy is the notebook (`docs/research/notebooks.md` §1), and Home is the Notebooks grid.
    *
    * **History is absent, not greyed.** The data is there — `sessions`, `rooms`, `ledger` — and
@@ -27,7 +27,7 @@
     aria-label="Notebooks"
     onclick={() => store.goHome()}
   >
-    <span class="icon" aria-hidden="true">⌂</span>
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-7h6v7"/></svg>
   </button>
 
   <!-- Search (`docs/research/search.md` §5): directly under Notebooks, a page of its own. -->
@@ -39,12 +39,10 @@
     aria-label="Search"
     onclick={() => void store.openSearch()}
   >
-    <svg class="icon svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.8" /><path d="M10.6 10.6 14 14" stroke-linecap="round" />
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" />
     </svg>
   </button>
-
-  <span class="spacer"></span>
 
   <!-- Usage (#42 item D). A real item with its own screen, next to Settings rather than inside
        it: what a semester of this app costs is a question with a page, not a section. -->
@@ -52,11 +50,11 @@
     type="button"
     class="item"
     class:active={store.screen === 'usage'}
-    title="Usage"
-    aria-label="Usage"
+    title="Information and usage"
+    aria-label="Information and usage"
     onclick={() => void store.openUsage()}
   >
-    <span class="icon" aria-hidden="true">◴</span>
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5h.01"/></svg>
   </button>
 
   <button
@@ -67,45 +65,35 @@
     aria-label="Settings"
     onclick={() => void store.openSettings()}
   >
-    <span class="icon" aria-hidden="true">⚙</span>
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   </button>
 </nav>
 
 <style>
   .rail {
-    width: 48px;
+    width: 60px;
     flex: none;
     background: var(--ground);
     border-right: 1px solid var(--hairline);
-    padding: 10px 6px 12px;
+    padding: 10px 8px 12px;
     display: flex;
     flex-direction: column;
     gap: 4px;
     overflow: hidden;
   }
-  .spacer { flex: 1; }
-
   .item {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 34px;
-    border-radius: 7px;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
     color: var(--text-2);
   }
-  .item:hover { background: #eeeef5; }
-  /* NUSSync's active row: an indigo tint with a 2 px marker, not a grey wash (§p1). */
-  .item.active { background: var(--indigo-tint); color: var(--text); position: relative; }
-  .item.active::before {
-    content: '';
-    position: absolute;
-    left: -6px;
-    top: 7px;
-    bottom: 7px;
-    width: 2px;
-    border-radius: 1px;
-    background: var(--indigo);
-  }
-  .icon { font-size: 15px; line-height: 1; }
-  .icon.svg { width: 15px; height: 15px; }
+  .item:hover { background: color-mix(in srgb, var(--indigo-tint) 55%, var(--pane)); }
+  .item.active { background: var(--indigo-tint); color: var(--indigo); }
+  .icon { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 </style>

@@ -214,3 +214,73 @@ so the learner practises at differing levels of cognitive forcing by topic. The 
 | F | Where does help appear? | In the chat, plus one line under the part. |
 | G | How much in the first pass? | All of it. |
 | — | "The checkbox toggle will need to now track provenance" | Withdrawn (a leftover from another idea). |
+
+## 10. Optional original-PDF working view (Valerie, 26 Oct 2026)
+
+The copied, AI-generated sheet and its answer slots remain available as **Combined sheet**.
+Some source PDFs contain figures or numbered questions that ingest does not reproduce reliably.
+The learner may instead choose **PDF + working**: the unchanged source PDF is shown beside the
+same tutorial's working area. This is a renderer view choice, not a new source role, tutorial
+document, grader, or agent workflow. Changing views retains the selected tutorial, existing
+answer slots, progress, chat threads, and inline Ellie/Max edits with Keep/Remove.
+
+The renderer may show local draft sections for printed questions that have no generated part.
+Those drafts are labelled as local working and cannot offer Check, Hint, or Refresher until a real
+part ID exists. The backend's part ID is still required for every checked answer and agent action.
+The original PDF is read through the existing source-byte bridge and rendered as supplied; PDF
+text extraction is only a convenience for proposing section numbers, never the source of truth
+for grading. This supplements §§2–4 rather than replacing the copied-sheet design or its
+attributed help line.
+
+## 11. Mode and panel presentation (Valerie, 26 Oct 2026)
+
+The global **Tutorial** and **Summary notes** modes show one primary document at a time. In
+Summary notes, an open tutorial no longer docks beside the notes; the earlier docked behavior in
+§2 is superseded for this renderer. Lecture objective progress and its lesson path appear only in
+Summary notes. Tutorial parts keep their existing grading and progress state, but their count is
+not repeated in the tutorial pane header.
+
+Sources start collapsed. When opened, they group files by role in simple cards. Each card can
+still be removed; its disclosure retains role changes, source-context selection, status, retry,
+and the tutorial action. The map of the notes moves out of Sources into a temporary overlay in
+the notes pane while the reader scrolls. It fades after scrolling stops, and stays available
+while pointed at. This presentation change supersedes the map placement in `notebooks.md` §8;
+it does not alter objectives, provenance, or document content.
+
+PDF + working keeps the source page fitted to its pane. When Sources and Chat leave too little
+horizontal room for both the PDF and answer controls, the PDF and working panes stack. At wider
+sizes the learner can drag their divider. Combined sheet continues to use the same saved
+tutorial document and actions.
+
+## 12. Inline document controls (Valerie, 26 Oct 2026)
+
+The summary notes keep the existing block-level Explain, Example, Quiz me, and Ask actions.
+The renderer presents all four in a short row below the active passage on hover or keyboard
+focus, including when the notes column is narrow. Agent-written lines keep their existing
+attribution and Keep/Remove behavior; pending edits are shown as compact Ellie or Max cards in
+the document. The card styling does not accept an edit or change which agent wrote it.
+
+Tutorial parts expose Check, Hint, Refresher, and Show answer together in the main sheet.
+Show answer still uses the existing confirmation and grading consequence. Narrow or docked
+tutorial presentations retain their Help menu. Agent-written tutorial feedback uses the same
+compact card treatment and existing Keep/Remove actions. These changes affect presentation
+and action placement only; the tutorial controller, hint ladder, agent routing, and saved
+document operations are unchanged.
+
+## 13. Tutorial workbench cleanup (Valerie, 26 Oct 2026)
+
+The tutorial dropdown in the global action bar is the sole tutorial selector in the main view.
+The generated combined sheet retains its saved content and controls, without its duplicate row
+of tutorial tabs. In PDF + working, the PDF pane shows the original pages without a repeated
+filename heading or page and fit toolbar. Scrolling, gesture zoom, and divider resizing remain.
+The PDF and working bodies begin directly below the workspace action bar, without their local
+toolbar strips. A compact menu in the action bar retains sheet zoom, split, reread, and the notes
+window. The chat and document action bars have the same height so their divider lines align.
+Long generated question labels and cards wrap within the available column. A missing
+provenance marker does not show a “no source” pill.
+
+Model usage and token figures move out of the title bar, document header, and chat messages and
+threads. The existing ledger and analytics screen remain available through the circled information
+button in the persistent navigation rail. Study credit remains visible because it
+controls whether a participant can make another call. No model request, grading, source, or
+document persistence contract changes.

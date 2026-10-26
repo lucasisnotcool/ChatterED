@@ -33,6 +33,8 @@ const KEYS = {
   filesOpen: 'chattered.files.open',
   filesWidth: 'chattered.files.width',
   chatWidth: 'chattered.chat.width',
+  chatOpen: 'chattered.chat.open',
+  tutorialView: 'chattered.tutorial.view',
   notesZoom: 'chattered.notes.zoom',
   tutorialZoom: 'chattered.tutorial.zoom',
   homeZoom: 'chattered.home.zoom',
@@ -66,9 +68,11 @@ function readWidth(key: string, bounds: PanelBounds): number {
 }
 
 export class LayoutStore {
-  filesOpen = $state(read(KEYS.filesOpen) !== 'false');
+  filesOpen = $state(false);
   filesWidth = $state(readWidth(KEYS.filesWidth, FILES));
   chatWidth = $state(readWidth(KEYS.chatWidth, CHAT));
+  chatOpen = $state(read(KEYS.chatOpen) !== 'false');
+  tutorialView = $state<'pdf' | 'combined'>(read(KEYS.tutorialView) === 'combined' ? 'combined' : 'pdf');
   /** The tutorial column docked beside the notes (`tutorials.md` §2). */
   tutorialWidth = $state(readWidth(KEYS.tutorialWidth, TUTORIAL));
   /** The tutorial's Split: the top view's share of the pane's body (`TUTORIAL_SPLIT`). */
@@ -134,6 +138,16 @@ export class LayoutStore {
   setChatWidth(width: number): void {
     this.chatWidth = Math.round(clamp(width, CHAT.min, CHAT.max));
     write(KEYS.chatWidth, String(this.chatWidth));
+  }
+
+  setChatOpen(open: boolean): void {
+    this.chatOpen = open;
+    write(KEYS.chatOpen, String(open));
+  }
+
+  setTutorialView(view: 'pdf' | 'combined'): void {
+    this.tutorialView = view;
+    write(KEYS.tutorialView, view);
   }
 
   setTutorialWidth(width: number): void {

@@ -60,7 +60,7 @@ describe('dragging a panel edge', () => {
 
 describe('the splitter keys', () => {
   it('moves the splitter with the arrows, so → grows the left panel and shrinks the right one', () => {
-    expect(keySize(244, 'ArrowRight', false, 1, FILES)).toBe(260);
+    expect(keySize(FILES.min, 'ArrowRight', false, 1, FILES)).toBe(296);
     expect(keySize(396, 'ArrowRight', false, -1, CHAT)).toBe(380);
     expect(keySize(396, 'ArrowLeft', true, -1, CHAT)).toBe(444);
   });

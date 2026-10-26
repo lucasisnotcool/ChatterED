@@ -23,8 +23,6 @@
   import { monogram } from '../../lib/labels.js';
   import { clockTime } from '../../lib/time.js';
   import { store } from '../../lib/store.svelte.js';
-  import CostFooter from '../cost/CostFooter.svelte';
-  import CostMeter from '../cost/CostMeter.svelte';
   import MentionComposer from './MentionComposer.svelte';
 
   let { agent }: { agent: AgentAuthor } = $props();
@@ -110,7 +108,6 @@
           </div>
           <!-- A whisper is a model call like any other, and the map is keyed by the whisper turn
                id (`whispers.turn_id`, migration 021). Privacy is about the words, not the meter. -->
-          <CostMeter messageId={turn.id} />
         </article>
       {/if}
     {/each}
@@ -121,7 +118,6 @@
   </div>
 
   <div class="foot">
-    <CostFooter anchorId={channel.threadId} />
     <MentionComposer
       placeholder={`Ask ${AGENT_NAME[agent]}, privately…`}
       disabled={channel.threadId === null}
@@ -138,10 +134,9 @@
   /* The disclosure. Dashed, muted and at the top of the thread — the app's voice, not an
      agent's, which is why it is not a card with an avatar on it. */
   .limits {
-    margin: 2px 0 12px;
-    padding: 8px 10px;
-    border: 1px dashed var(--hairline);
-    border-radius: var(--radius);
+    margin: 7px auto 16px;
+    padding: 0 12px;
+    text-align: center;
     font-size: 11.5px;
     line-height: 1.55;
     color: var(--muted);
@@ -151,25 +146,28 @@
   .empty { margin: 16px 2px; font-size: 12.5px; color: var(--muted); }
 
   .mine {
-    margin: 10px 0;
-    padding: 8px 12px;
-    background: var(--indigo-tint);
-    border-right: 3px solid var(--indigo);
-    border-radius: var(--radius);
+    margin: 10px 0 10px auto;
+    width: fit-content;
+    max-width: 88%;
+    padding: 9px 13px;
+    background: oklch(93% 0.025 230);
+    border-radius: 15px 15px 4px 15px;
   }
   .mine header { margin-bottom: 3px; }
-  .mine .label-caps { color: var(--indigo); }
-  .mine p { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .mine .label-caps { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: oklch(79% 0.055 230); color: transparent; font-size: 0; }
+  .mine .label-caps::before { content: 'Y'; color: var(--text); font-size: 11px; }
+  .mine p { margin: 0; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
   .mine.sending { opacity: 0.58; }
 
   .theirs {
-    margin: 10px 0;
-    padding: 8px 12px 10px;
-    background: var(--pane);
-    border: 1px solid var(--hairline);
-    border-left: 3px solid var(--hue);
-    border-radius: var(--radius);
+    margin: 10px auto 10px 0;
+    max-width: 94%;
+    padding: 10px 13px 12px;
+    background: oklch(94% 0.025 170);
+    border: 0;
+    border-radius: 15px 15px 15px 4px;
   }
+  .private:has(.theirs) .theirs { background: color-mix(in oklab, var(--hue) 10%, white); }
   .theirs header { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
   .gap { flex: 1; }
   .name { color: var(--hue); }
@@ -182,7 +180,7 @@
   }
   .avatar.ringed { background: transparent; color: var(--hue); border: 1.5px solid var(--hue); }
 
-  .body :global(p) { margin: 0 0 8px; font-size: 13px; line-height: 1.6; }
+  .body :global(p) { margin: 0 0 8px; font-size: 14px; line-height: 1.6; }
   .body :global(p:last-child) { margin-bottom: 0; }
   .body :global(strong) { font-weight: 600; }
   .body :global(em) { font-style: italic; }

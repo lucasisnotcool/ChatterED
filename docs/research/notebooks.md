@@ -44,6 +44,21 @@ unasked: the app offers his question when code judges the learner ready, and the
 
 ## 1. Notebooks replace the folder vault
 
+*Amended 2026-10-26 (Valerie, UX-Revamp):* The home screen now asks for a workspace name before
+creating an empty notebook. It opens with Sources expanded so the learner can add lecture notes,
+tutorials, and answers, then use the existing ingest and generation flow. Dropping files on Home
+still creates a notebook from those files. This replaces the picker-first **New notebook** action
+below; notebook storage, ingestion, and agent behavior are unchanged.
+
+*Presentation update, 26 Oct 2026:* Home uses one **New Workspace** action. Its dialog names the
+workspace and selects an existing parent folder or creates one inside the selected parent through
+the existing folder API. Folders and workspaces share the same card grid. **Recent** sorts
+workspaces by edit time and includes earlier practice sessions as distinct cards; those legacy
+sessions keep their original open action. The persistent navigation rail uses uniform line icons
+with a filled active tile. These changes replace the separate header folder button, inline name
+field, dashed creation card, and practice-session footer; they do not change stored notebook or
+room records.
+
 - **A notebook is a named set of sources.** Sources are files the learner added: PDF, slides,
   Word, Markdown, text, images. There is no "open folder", no vault root, no file tree.
 - **Sources are copied into app storage** (answer C), under the app's data directory, one folder

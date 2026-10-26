@@ -20,7 +20,8 @@
   import { bridge } from '../lib/bridge.js';
   import { titleBarInset } from '../lib/chrome.js';
   import { store } from '../lib/store.svelte.js';
-  import CostIndicator from './cost/CostIndicator.svelte';
+  import { layout } from '../lib/layoutstore.svelte.js';
+  import { mainTutorialFor } from '../lib/layout.js';
   import TrialBadge from './TrialBadge.svelte';
   import StudyCreditChip from './study/StudyCreditChip.svelte';
 
@@ -29,13 +30,14 @@
 
   const inset = $derived(titleBarInset(fullScreen));
 
-  const onHome = $derived(store.screen === 'notebooks');
   const open = $derived(store.screen === 'notebook' ? store.notebook.view : null);
-  const onSearch = $derived(store.screen === 'search');
-  const crumbs = $derived(onHome || onSearch || open !== null);
+  const tutorialMain = $derived(open ? mainTutorialFor(layout.tutorialMain, open.id, store.tutorial.views) !== null : false);
 
   let renaming = $state(false);
   let draft = $state('');
+  $effect(() => {
+    if (!renaming) draft = open?.name ?? '';
+  });
 
   function startRename(): void {
     if (!open) return;
@@ -49,58 +51,54 @@
     if (open && draft.trim() && draft.trim() !== open.name) void store.notebook.rename(open.id, draft);
   }
 
-  function focusSelect(el: HTMLInputElement): void {
-    el.focus();
-    el.select();
+  function setMain(on: boolean): void {
+    if (!open) return;
+    const fileId = store.tutorial.openFileId ?? store.tutorial.views[0]?.fileId ?? null;
+    layout.setTutorialMain(open.id, on ? fileId : null);
   }
 </script>
 
 <header class="titlebar" style="--tl-inset: {inset}px">
   <div class="lights" aria-hidden="true"></div>
-  {#if crumbs}
+  <span class="brand">Chatter<span>ED</span></span>
+  {#if open}
     <nav class="crumb" aria-label="Breadcrumb">
       {#if open}
-        <button type="button" class="home no-drag" onclick={() => store.goHome()}>Notebooks</button>
-        <span class="sep" aria-hidden="true">›</span>
-        {#if renaming}
-          <input
-            class="rename no-drag"
-            aria-label="Notebook name"
-            bind:value={draft}
-            use:focusSelect
-            onkeydown={(e) => {
-              if (e.key === 'Enter') commit();
-              if (e.key === 'Escape') renaming = false;
-            }}
-            onblur={commit}
-          />
-        {:else}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <b class="name no-drag" title="Double-click to rename" ondblclick={startRename} aria-current="page">{open.name}</b>
-        {/if}
-      {:else if onSearch}
-        <b class="name" aria-current="page">Search</b>
-      {:else}
-        <b class="name" aria-current="page">Notebooks</b>
+        <input
+          class="rename no-drag"
+          aria-label="Workspace name"
+          title="Click to rename workspace"
+          bind:value={draft}
+          onfocus={startRename}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+            if (e.key === 'Escape') {
+              draft = open.name;
+              renaming = false;
+              (e.currentTarget as HTMLInputElement).blur();
+            }
+          }}
+          onblur={commit}
+        />
       {/if}
     </nav>
-  {:else}
-    <span class="brand">◆ ChatterED</span>
+  {/if}
+  {#if open}
+    <nav class="workspace-modes no-drag" aria-label="Workspace mode">
+      <button type="button" class:active={tutorialMain} aria-current={tutorialMain ? 'page' : undefined} disabled={store.tutorial.views.length === 0} onclick={() => setMain(true)}>Tutorial</button>
+      <button type="button" class:active={!tutorialMain} aria-current={!tutorialMain ? 'page' : undefined} onclick={() => setMain(false)}>Summary notes</button>
+    </nav>
   {/if}
   <span class="gap"></span>
-  <!-- The app-level cost indicator (#42 item C). Here rather than in `StatusBar` because this is
-       the only chrome present on every screen; the status bar renders inside the old room only.
-       `.no-drag` is not optional — without it the button is part of the window's drag handle and
-       never receives the click. -->
   <StudyCreditChip />
   <TrialBadge />
-  <CostIndicator />
 </header>
 
 <style>
   .titlebar {
+    position: relative;
     flex: none;
-    height: 38px;
+    height: 52px;
     display: flex;
     align-items: center;
     background: var(--ground);
@@ -120,36 +118,33 @@
 
   .gap { flex: 1; min-width: 12px; }
 
-  .crumb { display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: 4px; font-size: 12px; color: var(--text-2); }
-  .crumb .home { color: var(--text-2); font-size: 12px; white-space: nowrap; }
-  .crumb .home:hover { color: var(--indigo); }
-  .crumb .sep { color: var(--muted); }
-  .crumb .name {
-    color: var(--text);
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 48ch;
-    cursor: default;
-  }
+  .crumb { display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: 14px; font-size: 13px; color: var(--text-2); }
   .rename {
-    font-size: 12px;
-    font-weight: 600;
-    border: 1px solid var(--indigo);
+    width: min(28vw, 280px);
+    font-size: 15px;
+    font-weight: 500;
+    border: 1px solid transparent;
     border-radius: 5px;
-    padding: 1px 6px;
-    min-width: 24ch;
+    background: transparent;
+    padding: 4px 7px;
     outline: none;
   }
+  .rename:hover { border-color: var(--hairline); }
+  .rename:focus { border-color: var(--indigo); background: var(--pane); }
 
   .brand {
-    font-size: 12px;
-    font-weight: 600;
+    font-family: var(--font-display, Georgia, serif);
+    font-size: 22px;
+    font-weight: 400;
     color: var(--text);
     white-space: nowrap;
-    padding-left: 4px;
+    padding-left: 8px;
   }
+  .brand span { color: var(--indigo); }
+  .workspace-modes { position: absolute; inset: 0 auto 0 50%; transform: translateX(-50%); display: flex; align-items: stretch; gap: 8px; }
+  .workspace-modes button { padding: 0 16px; border-bottom: 3px solid transparent; color: var(--text-2); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .workspace-modes button.active { color: var(--indigo); border-bottom-color: var(--indigo); }
+  .workspace-modes button:disabled { opacity: .45; cursor: default; }
 
   :global(.titlebar .no-drag) {
     -webkit-app-region: no-drag;

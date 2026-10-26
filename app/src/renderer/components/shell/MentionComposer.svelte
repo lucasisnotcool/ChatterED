@@ -144,6 +144,7 @@
 </script>
 
 <div class="composer">
+  <p class="destination">{placeholder}</p>
   <div class="field">
     <!-- The token mirror. Purely decorative: it repeats what the textarea holds, in the same
          metrics, so the coloured `@Max` sits exactly under the characters it is about. -->
@@ -163,7 +164,7 @@
       bind:this={box}
       bind:value={text}
       rows="3"
-      {placeholder}
+      placeholder="Type a message…"
       {disabled}
       aria-label={placeholder}
       onkeydown={onkeydown}
@@ -172,6 +173,9 @@
       onkeyup={sync}
       onblur={() => (caret = -1)}
     ></textarea>
+    <button type="button" class="send" aria-label={busy ? 'Sending message' : 'Send message'} title="Send message" disabled={text.trim().length === 0 || busy || disabled} onclick={submit}>
+      <span aria-hidden="true">➤</span><span class="sr-only">{busy ? 'Sending…' : 'Send'}</span>
+    </button>
 
     {#if menuOpen}
       <ul class="menu" role="listbox" aria-label="Who to ask">
@@ -229,14 +233,12 @@
         onclick={() => onpass?.()}
       >{passing ? (showMe ? 'Showing…' : 'Passing…') : showMe ? 'Show me' : 'Pass'}</button>
     {/if}
-    <button type="button" class="send" disabled={text.trim().length === 0 || busy || disabled} onclick={submit}>
-      {busy ? 'Sending…' : 'Send'}
-    </button>
   </div>
 </div>
 
 <style>
   .composer { margin: 8px 0 2px; }
+  .destination { margin: 0 0 5px; color: var(--text-2); font-size: 11px; }
   .field { position: relative; }
 
   /* The two layers share every metric that affects where a character lands. */
@@ -244,7 +246,7 @@
     font: inherit;
     font-size: 13px;
     line-height: 1.55;
-    padding: 8px 11px;
+    padding: 9px 42px 9px 11px;
     border: 1px solid transparent;
     border-radius: var(--radius);
     white-space: pre-wrap;
@@ -341,11 +343,18 @@
   .ctrl.show-me:hover:not(:disabled) { background: color-mix(in srgb, var(--challenger) 10%, transparent); }
   .ctrl.show-me:disabled { color: var(--muted); border-color: var(--hairline); }
   .send {
-    font-size: 11px;
-    color: #fff;
-    background: var(--indigo);
-    border-radius: 5px;
-    padding: 3px 12px;
+    position: absolute;
+    z-index: 2;
+    right: 9px;
+    bottom: 10px;
+    width: 29px;
+    height: 29px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--studio-accent);
+    border-radius: 50%;
   }
-  .send:disabled { background: var(--hairline); color: var(--muted); cursor: default; }
+  .send:disabled { background: var(--hairline); color: var(--text-2); cursor: default; }
 </style>
