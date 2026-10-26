@@ -51,6 +51,8 @@
     pageCount = $bindable(0),
     /** Read-only mode: no toolbar, no range marking, page-locked (the room's source pane). */
     locked = false,
+    /** Tutorial workbench: scrolling and gesture zoom remain, but the toolbar is hidden. */
+    minimal = false,
     initialFit,
     /**
      * Render only these pages. The room's source pane shows the slide being explained, not the
@@ -68,6 +70,7 @@
     currentPage?: number;
     pageCount?: number;
     locked?: boolean;
+    minimal?: boolean;
     initialFit?: 'width' | 'page';
     pageWindow?: { from: number; to: number } | null;
     initialScroll?: number;
@@ -626,7 +629,7 @@
 </script>
 
 <div class="pdf">
-  {#if !locked}
+  {#if !locked && !minimal}
     <div class="bar no-drag">
       <button type="button" class="step" onclick={() => goTo(currentPage - 1)} disabled={currentPage <= 1}>‹</button>
       <span class="counter">

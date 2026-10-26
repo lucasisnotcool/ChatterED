@@ -23,7 +23,6 @@
   import { monogram } from '../../lib/labels.js';
   import { clockTime } from '../../lib/time.js';
   import { AGENT_HUE, AGENT_NAME, AGENT_ROLE_WORD, agentOf, chatTag } from '../../lib/chatview.js';
-  import CostMeter from '../cost/CostMeter.svelte';
 
   let {
     message,
@@ -143,9 +142,6 @@
       <p class="meta" class:loud>{meta.join(' · ')}</p>
     {/if}
 
-    <!-- What this reply cost (#42 item C). Nothing at all for a rule-written line, a message
-         older than migration 021, or the provisional streaming card — none of them has a row. -->
-    <CostMeter messageId={message.id} />
   </article>
 {/if}
 

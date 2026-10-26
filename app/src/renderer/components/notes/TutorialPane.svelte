@@ -401,7 +401,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <header class="tp-head" class:grab={Boolean(onbardown)} class:narrow={narrowHead} onpointerdown={headdown}>
     {#if working}<span class="tp-working-title">My working</span>{/if}
-    {#if views.length > 1}
+    {#if views.length > 1 && !main}
       <div class="tp-tabs" role="tablist" aria-label="Tutorials" tabindex="-1" onkeydown={ontabkey}>
         {#each views as v (v.fileId)}
           <button
@@ -420,11 +420,11 @@
           </button>
         {/each}
       </div>
-    {:else}
+    {:else if !main}
       <span class="tp-kicker">Tutorial</span>
       <span class="tp-title" title={view?.title ?? ''}>{view ? tutorialTabLabel(view, sourceName(view.fileId), 60) : 'Tutorial'}</span>
     {/if}
-    {#if views.length > 1}<span class="tp-spacer"></span>{/if}
+    {#if views.length > 1 && !main}<span class="tp-spacer"></span>{/if}
     {#if parts && !main}
       <span class="tp-parts" title={`${done.done} of ${done.total} parts correct`}>
         {#if narrowHead}<span aria-label={parts}>{done.done}/{done.total}</span>{:else}{parts}{/if}

@@ -266,3 +266,19 @@ tutorial presentations retain their Help menu. Agent-written tutorial feedback u
 compact card treatment and existing Keep/Remove actions. These changes affect presentation
 and action placement only; the tutorial controller, hint ladder, agent routing, and saved
 document operations are unchanged.
+
+## 13. Tutorial workbench cleanup (Valerie, 26 Oct 2026)
+
+The tutorial dropdown in the global action bar is the sole tutorial selector in the main view.
+The generated combined sheet retains its saved content and controls, without its duplicate row
+of tutorial tabs. In PDF + working, the PDF pane shows the original pages without a repeated
+filename heading or page and fit toolbar. Scrolling, gesture zoom, and divider resizing remain.
+An empty aligned header keeps the PDF and working pane boundaries level. Long generated question
+labels and cards wrap within the available column instead of extending beyond it. A missing
+provenance marker does not show a “no source” pill.
+
+Model usage and token figures move out of the title bar, document header, and chat messages and
+threads. The existing ledger and analytics screen remain available through the circled information
+button at the bottom of the persistent navigation rail. Study credit remains visible because it
+controls whether a participant can make another call. No model request, grading, source, or
+document persistence contract changes.

@@ -5,8 +5,8 @@
    *
    * A grid of notebooks — title, the overview's own title under it, how many sources and when it
    * was last edited, and the own-words fill as a bar — then a card that says what a drop does.
-   * **New notebook** opens the picker; dropping files **anywhere** on this screen starts a
-   * notebook named after the first file and opens it (the screen is one drop zone, marked
+   * **New workspace** creates an empty named notebook with Sources open; dropping files
+   * **anywhere** on this screen starts a notebook named after the first file (the screen is one drop zone, marked
    * `data-dropzone`, so the app-wide guard stands aside here). Nothing is opened from a folder on
    * disk: each notebook keeps its own copy of its sources (answer C).
    *
@@ -40,6 +40,14 @@
 
   const nb = store.notebook;
   const recents = $derived((store.boot?.recentSessions ?? []).slice(0, 3));
+  let newWorkspaceName = $state('');
+  let newWorkspaceInput: HTMLInputElement;
+
+  async function createNamedWorkspace(): Promise<void> {
+    const name = newWorkspaceName.trim();
+    if (!name || nb.busy) return;
+    if (await store.createEmptyNotebook(name)) newWorkspaceName = '';
+  }
 
   let over = $state(false);
   const drop = createFileDrop<File>({
@@ -278,9 +286,10 @@
         <button type="button" class="new" onclick={() => void newFolder()}>
           <span aria-hidden="true">＋</span> New folder
         </button>
-        <button type="button" class="new" disabled={nb.busy} onclick={() => void store.newNotebook()}>
-          <span aria-hidden="true">＋</span> {nb.busy ? 'Adding…' : 'New notebook'}
-        </button>
+        <form class="workspace-create" onsubmit={(e) => { e.preventDefault(); void createNamedWorkspace(); }}>
+          <input aria-label="New workspace name" placeholder="Name a new workspace" bind:value={newWorkspaceName} bind:this={newWorkspaceInput} />
+          <button type="submit" class="new" disabled={nb.busy || !newWorkspaceName.trim()}>{nb.busy ? 'Creating…' : 'New workspace'}</button>
+        </form>
       </div>
     </header>
     <p class="hint">
@@ -389,10 +398,10 @@
         </div>
       {/each}
 
-      <button type="button" class="card new-card" onclick={() => void store.newNotebook()}>
+      <button type="button" class="card new-card" onclick={() => newWorkspaceInput?.focus()}>
         <span class="plus" aria-hidden="true">＋</span>
-        <span>Drop files to start a notebook</span>
-        <span class="s">or click to choose them</span>
+        <span>Create a named workspace</span>
+        <span class="s">Add sources after opening it</span>
       </button>
     </div>
 
@@ -609,6 +618,9 @@
     color: var(--text-2);
     font-size: 13px;
   }
+  .workspace-create { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .workspace-create input { min-width: 180px; max-width: 280px; border: 1px solid var(--hairline); border-radius: 7px; padding: 8px 10px; background: var(--pane); color: var(--text); }
+  .workspace-create input:focus { outline: 2px solid var(--indigo); outline-offset: 1px; }
   .new-card .plus { font-size: 18px; }
 
   .empty { margin: 0; font-size: 13px; color: var(--text-2); }

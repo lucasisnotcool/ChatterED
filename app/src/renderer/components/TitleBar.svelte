@@ -22,7 +22,6 @@
   import { store } from '../lib/store.svelte.js';
   import { layout } from '../lib/layoutstore.svelte.js';
   import { mainTutorialFor } from '../lib/layout.js';
-  import CostIndicator from './cost/CostIndicator.svelte';
   import TrialBadge from './TrialBadge.svelte';
   import StudyCreditChip from './study/StudyCreditChip.svelte';
 
@@ -91,13 +90,8 @@
     </nav>
   {/if}
   <span class="gap"></span>
-  <!-- The app-level cost indicator (#42 item C). Here rather than in `StatusBar` because this is
-       the only chrome present on every screen; the status bar renders inside the old room only.
-       `.no-drag` is not optional — without it the button is part of the window's drag handle and
-       never receives the click. -->
   <StudyCreditChip />
   <TrialBadge />
-  <CostIndicator />
 </header>
 
 <style>

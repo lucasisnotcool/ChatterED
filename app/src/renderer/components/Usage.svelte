@@ -101,7 +101,7 @@
 <main class="usage">
   <div class="sheet">
     <header>
-      <h1>Usage</h1>
+      <h1>Information and usage</h1>
       <p class="quiet">
         What ChatterED has asked a model to do, and what the rate card makes of it. Tokens are the
         fact; the dollars are this app's own arithmetic.

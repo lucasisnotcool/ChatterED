@@ -52,11 +52,11 @@
     type="button"
     class="item"
     class:active={store.screen === 'usage'}
-    title="Usage"
-    aria-label="Usage"
+    title="Information and usage"
+    aria-label="Information and usage"
     onclick={() => void store.openUsage()}
   >
-    <span class="icon" aria-hidden="true">◴</span>
+    <span class="icon info-icon" aria-hidden="true">i</span>
   </button>
 
   <button
@@ -108,4 +108,5 @@
   }
   .icon { font-size: 15px; line-height: 1; }
   .icon.svg { width: 15px; height: 15px; }
+  .info-icon { width: 17px; height: 17px; display: grid; place-items: center; border: 1.5px solid currentColor; border-radius: 50%; font: 700 12px/1 var(--font-ui, sans-serif); }
 </style>

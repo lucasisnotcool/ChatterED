@@ -539,6 +539,17 @@ class Store {
     if (view) await this.openNotebook(view.id);
   }
 
+  /** Start a named workspace with its sources open, ready for the learner to add files. */
+  async createEmptyNotebook(name: string): Promise<boolean> {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    const view = await this.notebook.create([], trimmed);
+    if (!view) return false;
+    layout.setFilesOpen(true);
+    await this.openNotebook(view.id);
+    return true;
+  }
+
   /** Files dropped on the home (§1): a new notebook named after the first, open. */
   async createNotebook(paths: string[]): Promise<NotebookView | null> {
     const view = await this.notebook.create(paths);

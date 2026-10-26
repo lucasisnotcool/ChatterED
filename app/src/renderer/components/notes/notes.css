@@ -544,8 +544,7 @@
 .nd-chip:hover { color: var(--indigo); border-color: #c7c7e8; }
 .nd-chip-flat { cursor: default; }
 .nd-chip-flat:hover { color: var(--muted); border-color: var(--hairline); }
-.nd-chip-bad { cursor: default; color: var(--challenger); border-color: #e8d4b4; opacity: 1; }
-.nd-chip-bad:hover { color: var(--challenger); border-color: #e8d4b4; }
+.nd-chip-bad { display: none; }
 
 /* ── the explain badge (migration 033), in the right gutter, before the chip ──
    A block with a stored explain (what Ellie would answer to Explain on it, readable offline)

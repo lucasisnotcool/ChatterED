@@ -5,7 +5,7 @@
   import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
   import PdfViewer from '../PdfViewer.svelte';
 
-  let { fileId, name, onquestions }: { fileId: string; name: string; onquestions?: (questions: number[]) => void } = $props();
+  let { fileId, onquestions }: { fileId: string; onquestions?: (questions: number[]) => void } = $props();
   let bytes = $state<Uint8Array | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
@@ -61,21 +61,19 @@
 </script>
 
 <section class="original-pdf" aria-label="Original tutorial PDF">
-  <header><span>Original tutorial PDF</span><small title={name}>{name}</small></header>
+  <div class="pdf-head" aria-hidden="true"></div>
   {#if loading}
     <p class="state" role="status">Opening PDF…</p>
   {:else if error}
     <div class="state" role="alert"><p>{error}</p><button type="button" onclick={() => revision += 1}>Try again</button></div>
   {:else if bytes}
-    <PdfViewer {bytes} initialFit="width" />
+    <PdfViewer {bytes} initialFit="width" minimal />
   {/if}
 </section>
 
 <style>
   .original-pdf { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #e8eef0; }
-  header { height: 43px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--hairline); background: var(--ground); }
-  header span { font-family: var(--font-display, Georgia, serif); font-size: 17px; white-space: nowrap; }
-  header small { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+  .pdf-head { flex: none; height: 40px; border-bottom: 1px solid var(--hairline); background: var(--pane); }
   .state { margin: auto; padding: 20px; text-align: center; color: var(--text-2); }
   .state button { color: var(--indigo); font-weight: 600; }
 </style>

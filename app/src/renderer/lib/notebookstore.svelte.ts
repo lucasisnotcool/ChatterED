@@ -255,11 +255,11 @@ export class NotebookStore {
    * for the caller to open, or null when nothing was made. Refusals are said; the files that did
    * go in are the notebook's sources either way.
    */
-  async create(paths: string[] = []): Promise<NotebookView | null> {
+  async create(paths: string[] = [], name?: string): Promise<NotebookView | null> {
     if (this.busy) return null;
     this.busy = true;
     try {
-      const result = await bridge().notebookCreate({ paths: [...paths], folderId: this.folderId });
+      const result = await bridge().notebookCreate({ paths: [...paths], folderId: this.folderId, name });
       this.say(refusalNotice(result.refused));
       void this.loadList();
       return result.notebook;

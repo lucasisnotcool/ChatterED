@@ -18,7 +18,6 @@
   import type { MessageView, ThinkingView } from '../../../shared/types.js';
   import type { ThreadView } from '../../../shared/doc/types.js';
   import ChatMessage from './ChatMessage.svelte';
-  import CostFooter from '../cost/CostFooter.svelte';
 
   let {
     thread,
@@ -92,9 +91,6 @@
           {/if}
         </div>
       {/if}
-      <!-- What this aside has cost (#42 item C). Inside the fold: a collapsed thread is a thread
-           the learner has put away, and a number is not a reason to reopen it. -->
-      <CostFooter anchorId={thread.threadId} />
     </div>
   {:else}
     <p class="folded">{messages.length} {messages.length === 1 ? 'turn' : 'turns'}</p>

@@ -67,7 +67,6 @@
   import type { NotebookView } from '../../../shared/notebook.js';
   import { layout } from '../../lib/layoutstore.svelte.js';
   import ChatColumn from './ChatColumn.svelte';
-  import CostCounter from '../cost/CostCounter.svelte';
   import LessonPath from './LessonPath.svelte';
   import NotesMap from '../notes/NotesMap.svelte';
   import NotesPane from '../notes/NotesPane.svelte';
@@ -125,7 +124,6 @@
    */
   const mainFileId = $derived(mainTutorialFor(layout.tutorialMain, notebookId, tutorial.views));
   const tutorialMain = $derived(mainFileId !== null);
-  const activeTutorialName = $derived(store.notebook.view?.sources.find((s) => s.fileId === mainFileId)?.name ?? 'Tutorial');
   let pdfQuestionNumbers = $state<number[]>([]);
   /** With the swap on, the notes are a window over the app while open, and hidden while not. */
   const notesFloating = $derived(tutorialMain && layout.notesWindowOpen);
@@ -393,12 +391,6 @@
         <span class="header-spacer" aria-hidden="true"></span>
       {/if}
 
-      <!-- What this document has cost (#42 item C), beside the bar. It is `flex: none` and about
-           six characters wide, and it renders nothing at all when there is no ledger or no call
-           on this file — so the header's own rule holds: nothing here may push the buttons over
-           the chat column's tabs at 1100px. -->
-      <CostCounter />
-
       <!-- The swap (2026-10-04): only in a notebook with a tutorial. -->
       {#if tutorialMain}
         <div class="mainview" role="group" aria-label="Tutorial view">
@@ -467,7 +459,7 @@
         <div class="pdf-layout" class:stacked={stackedTutorial}>
           {#if layout.tutorialView === 'pdf' && mainFileId}
             <div class="pdf-side" id="tutorial-pdf" style:width={stackedTutorial ? '100%' : `${pdfWidth}px`}>
-              <TutorialOriginalPdf fileId={mainFileId} name={activeTutorialName} onquestions={(numbers) => pdfQuestionNumbers = numbers} />
+              <TutorialOriginalPdf fileId={mainFileId} onquestions={(numbers) => pdfQuestionNumbers = numbers} />
             </div>
             {#if !stackedTutorial}<PaneSplitter size={pdfWidth} bounds={TUTORIAL} sign={1} label="Resize the original PDF" controls="tutorial-pdf" onsize={(width) => layout.setTutorialWidth(width)} />{/if}
           {/if}
@@ -548,9 +540,9 @@
   .pdf-layout.stacked { flex-direction: column; }
   .pdf-layout.stacked .pdf-side { flex: 0 0 42%; max-height: 42%; border-bottom: 1px solid var(--hairline); }
   .pdf-layout.stacked .working-side { flex: 1 1 58%; }
-  .pdf-side { flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .pdf-side { flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--hairline); }
   .pdf-side > :global(.original-pdf) { flex: 1 1 auto; }
-  .working-side { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; }
+  .working-side { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
   .working-side > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
   /* The disclosure, once per install, above the sheet; it scrolls rather than crowd it out. */
   .tutmain-pacing { flex: 0 1 auto; max-height: 50%; overflow-y: auto; }

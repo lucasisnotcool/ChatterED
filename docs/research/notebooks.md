@@ -44,6 +44,12 @@ unasked: the app offers his question when code judges the learner ready, and the
 
 ## 1. Notebooks replace the folder vault
 
+*Amended 2026-10-26 (Valerie, UX-Revamp):* The home screen now asks for a workspace name before
+creating an empty notebook. It opens with Sources expanded so the learner can add lecture notes,
+tutorials, and answers, then use the existing ingest and generation flow. Dropping files on Home
+still creates a notebook from those files. This replaces the picker-first **New notebook** action
+below; notebook storage, ingestion, and agent behavior are unchanged.
+
 - **A notebook is a named set of sources.** Sources are files the learner added: PDF, slides,
   Word, Markdown, text, images. There is no "open folder", no vault root, no file tree.
 - **Sources are copied into app storage** (answer C), under the app's data directory, one folder

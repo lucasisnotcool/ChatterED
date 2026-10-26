@@ -94,17 +94,6 @@
     if (out.turn !== 0) select(stepTab(strip.map((t) => t.key), chat.tab, out.turn));
   }
 
-  /**
-   * **The per-message meters for this room, asked for once** (#42 item C).
-   *
-   * One query for the whole room rather than one per card: forty turns on screen is forty
-   * meters, and forty round trips behind one IPC lane to draw grey text would be the counter
-   * costing more than the thing it counts. `ensureMessageCosts` is idempotent per room and
-   * re-reads the map itself on `cost.updated`, so this runs once per opened document.
-   */
-  $effect(() => {
-    store.ensureMessageCosts(chat.roomId);
-  });
 </script>
 
 <section class="column" aria-label="Conversation" {onwheel}>

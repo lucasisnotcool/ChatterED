@@ -23,8 +23,6 @@
   import { monogram } from '../../lib/labels.js';
   import { clockTime } from '../../lib/time.js';
   import { store } from '../../lib/store.svelte.js';
-  import CostFooter from '../cost/CostFooter.svelte';
-  import CostMeter from '../cost/CostMeter.svelte';
   import MentionComposer from './MentionComposer.svelte';
 
   let { agent }: { agent: AgentAuthor } = $props();
@@ -110,7 +108,6 @@
           </div>
           <!-- A whisper is a model call like any other, and the map is keyed by the whisper turn
                id (`whispers.turn_id`, migration 021). Privacy is about the words, not the meter. -->
-          <CostMeter messageId={turn.id} />
         </article>
       {/if}
     {/each}
@@ -121,7 +118,6 @@
   </div>
 
   <div class="foot">
-    <CostFooter anchorId={channel.threadId} />
     <MentionComposer
       placeholder={`Ask ${AGENT_NAME[agent]}, privately…`}
       disabled={channel.threadId === null}
