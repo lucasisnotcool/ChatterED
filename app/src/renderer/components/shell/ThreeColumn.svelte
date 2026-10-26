@@ -175,7 +175,9 @@
   );
 
   let docWidth = $state(0);
-  const stackedTutorial = $derived(docWidth < 980);
+  // Side by side (PDF left, working right) unless the column is too narrow for both: the PDF
+  // keeps a 300 px floor and the working side the 380 px that `pdfWidth` leaves it.
+  const stackedTutorial = $derived(docWidth < 700);
   const pdfWidth = $derived(Math.max(300, Math.min(layout.tutorialWidth, docWidth - 380)));
 
   /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
