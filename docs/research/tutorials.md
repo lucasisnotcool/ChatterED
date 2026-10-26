@@ -251,3 +251,18 @@ PDF + working keeps the source page fitted to its pane. When Sources and Chat le
 horizontal room for both the PDF and answer controls, the PDF and working panes stack. At wider
 sizes the learner can drag their divider. Combined sheet continues to use the same saved
 tutorial document and actions.
+
+## 12. Inline document controls (Valerie, 26 Oct 2026)
+
+The summary notes keep the existing block-level Explain, Example, Quiz me, and Ask actions.
+The renderer presents all four in a short row below the active passage on hover or keyboard
+focus, including when the notes column is narrow. Agent-written lines keep their existing
+attribution and Keep/Remove behavior; pending edits are shown as compact Ellie or Max cards in
+the document. The card styling does not accept an edit or change which agent wrote it.
+
+Tutorial parts expose Check, Hint, Refresher, and Show answer together in the main sheet.
+Show answer still uses the existing confirmation and grading consequence. Narrow or docked
+tutorial presentations retain their Help menu. Agent-written tutorial feedback uses the same
+compact card treatment and existing Keep/Remove actions. These changes affect presentation
+and action placement only; the tutorial controller, hint ladder, agent routing, and saved
+document operations are unchanged.

@@ -153,6 +153,7 @@
 .nd-tut-btn:disabled:not(.nd-tut-check) { opacity: 0.45; }
 .nd-tut-btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
 .nd-tut-btn[hidden] { display: none; }
+.nd-tut-reveal-direct { display: none; }
 .nd-tut-rung { color: var(--nd-max, #b91c1c); font-weight: 550; }
 .nd-tut-rung::before { content: '·'; margin: 0 5px; color: var(--muted); font-weight: 400; }
 .nd-tut-busy { animation: nd-shimmer 1.4s ease-in-out infinite; }
@@ -409,14 +410,16 @@
 /* An agent's note, as the notes draw one: the agent's name in words, its rail's shape, its hue. */
 
 .nd-editor .ProseMirror .nd-tut-hint {
-  margin: 0 0 10px;
-  padding: 2px 0 2px 10px;
-  border-left: 2px solid var(--nd-max, #b91c1c);
+  margin: 8px 0;
+  padding: 11px 14px 12px;
+  border-left: 4px solid var(--nd-max, #b91c1c);
+  border-radius: 0 9px 9px 0;
+  background: var(--nd-max-tint, #fdedec);
   font-family: var(--font);
   font-size: 13.5px;
-  color: var(--text-2);
+  color: var(--text);
 }
-.nd-editor .ProseMirror .nd-tut-hint.nd-ellie { border-left: 2px solid var(--nd-ellie, #0f7b6c); }
+.nd-editor .ProseMirror .nd-tut-hint.nd-ellie { border-left-color: var(--nd-ellie, #0f7b6c); background: var(--nd-ellie-tint, #e9f5f2); }
 .nd-editor .ProseMirror .nd-tut-hint::before {
   content: attr(data-who);
   display: block;
@@ -429,6 +432,22 @@
   pointer-events: none;
 }
 .nd-editor .ProseMirror .nd-tut-hint.nd-ellie::before { color: var(--nd-ellie, #0f7b6c); }
+.nd-editor .ProseMirror .nd-tut-hint:has(> .nd-editctl)::before { display: none; }
+.tp-nd .nd-tut-hint > .nd-editctl {
+  position: static;
+  width: 100%;
+  margin: 0 0 6px;
+  text-align: left;
+}
+.tp-nd .nd-tut-hint > .nd-editctl > .nd-editctl-one {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 0;
+  border: 0;
+}
+.tp-nd .nd-tut-hint > .nd-editctl > .nd-editctl-one .nd-editctl-row { margin: 0 0 0 auto; }
 
 /* ── the main notes: each section's practice row (`practiceChipsPlugin`) ── */
 
@@ -491,3 +510,12 @@
 .tp-nd.working .nd-editctl { position: static; width: auto; margin: 8px 0; flex-direction: row; text-align: left; }
 .tp-nd.working .nd-editctl-one { border-right: 0; border-left: 2px solid; padding: 0 0 0 8px; }
 .tp-nd.working .nd-editctl-row { justify-content: flex-start; }
+
+/* The main tutorial offers the same four actions in one wrapping row. Show answer still opens
+   the existing confirmation; the Help menu remains available in smaller/docked presentations. */
+.tp-nd.main .nd-tut-wide,
+.tp-nd.main .nd-tut-reveal-direct { display: inline-flex; }
+.tp-nd.main .nd-tut-help-wrap { display: none; }
+.tp-nd.main .nd-tut-controls { flex-wrap: wrap; gap: 6px; }
+.tp-nd.main .nd-tut-btn { padding: 5px 10px; font-size: 12px; }
+.tp-nd.main .nd-tut-confirm { border-style: solid; background: var(--ground); }
