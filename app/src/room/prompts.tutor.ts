@@ -78,6 +78,28 @@ export function tutorWordCeiling(kind: TutorKind, level: HintLevel = 1): number 
   }
 }
 
+/** Choice feedback is factual grading output, so no generated option claim can override it. */
+export function checkedChoiceFeedback(input: {
+  verdict: 'complete' | 'partial' | 'not_yet';
+  picked: readonly string[];
+  correct: readonly string[];
+  pages: readonly number[];
+}): string {
+  const right = new Set(input.correct);
+  const selectedRight = input.picked.filter((id) => right.has(id));
+  const selectedWrong = input.picked.filter((id) => !right.has(id));
+  const missing = input.correct.filter((id) => !input.picked.includes(id)).length;
+  const opener = input.verdict === 'complete' ? 'Well done.' : input.verdict === 'partial' ? 'Partly there.' : 'Not yet.';
+  const facts = [
+    selectedRight.length ? `${selectedRight.join(', ')} ${selectedRight.length === 1 ? 'matches' : 'match'} the answer key` : '',
+    selectedWrong.length ? `${selectedWrong.join(', ')} ${selectedWrong.length === 1 ? 'does' : 'do'} not` : '',
+    missing ? `${missing} correct ${missing === 1 ? 'option is' : 'options are'} still unticked` : '',
+  ].filter(Boolean).join('; ');
+  const pages = [...new Set(input.pages)].slice(0, 3);
+  const reference = pages.length ? ` Review the relevant lecture material on ${pages.map((p) => `p. ${p}`).join(', ')}.` : '';
+  return `${opener}\nI checked your selections against the answer key: ${facts}.${reference}`;
+}
+
 /** The largest ceiling of a kind, whatever the rung: what the over-length log measures against. */
 export function tutorMaxWordCeiling(kind: TutorKind): number {
   return kind === 'hint' ? tutorWordCeiling('hint', 3) : tutorWordCeiling(kind);

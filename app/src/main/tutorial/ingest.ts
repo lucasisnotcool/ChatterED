@@ -49,6 +49,8 @@ import {
   SOLUTIONS_JSON_SCHEMA,
   SOLUTIONS_SYSTEM,
   solutionsMessage,
+  VISUAL_CHOICES_JSON_SCHEMA,
+  VISUAL_CHOICES_SYSTEM,
   TUTORIAL_JSON_SCHEMA,
   TUTORIAL_PROMPT_VERSION,
   TUTORIAL_SYSTEM,
@@ -56,6 +58,7 @@ import {
 } from './prompt.js';
 import { tutorialRepo, type LandedPart } from './repo.js';
 import { keyFrom, validateTutorial, type TutorialRepairs } from './validate.js';
+import { choiceEvidenceFromText, quoteSupportsAnswer, type SolutionPage } from './solution-evidence.js';
 import type { RoleChange } from '../notebooks/service.js';
 
 /** The ceiling on the read's answer: a faithful copy of a sheet plus a key per part. */
@@ -104,7 +107,14 @@ export function ingestTutorial(deps: TutorialDeps, input: TutorialIngestInput): 
   const key = tutorialContentKey(input.notebookId, input.fileId);
   const repo = notesRepo(deps.db);
   const existing = repo.byContentSha(key);
-  if (inFlight.has(key)) return viewOf(deps, input.notebookId, input.fileId)!;
+  if (inFlight.has(key)) {
+    if (input.forceSolutions) void inFlight.get(key)!.then(() => rewriteKeys(deps, input.notebookId, input.fileId));
+    return viewOf(deps, input.notebookId, input.fileId)!;
+  }
+  if (input.forceSolutions && existing?.ingestStatus === 'ready') {
+    start(key, rewriteKeys(deps, input.notebookId, input.fileId).then(() => undefined));
+    return viewOf(deps, input.notebookId, input.fileId)!;
+  }
   // Ready stays ready without `force`; failed is a Retry; pending with nothing running is a read
   // an app quit cut short, and is run again.
   if (existing && existing.ingestStatus === 'ready' && !input.force) return viewOf(deps, input.notebookId, input.fileId)!;
@@ -572,17 +582,51 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         rewritten += 1;
       }
     } else {
-      const text = solutions
-        .map((s) => {
-          const body = deps.notebooks.textFor({
+      const pages: SolutionPage[] = solutions.flatMap((s) =>
+        Array.from({ length: s.pageCount }, (_, i) => ({
+          fileId: s.fileId,
+          page: i + 1,
+          text: deps.notebooks.textFor({
             notebookId,
-            pageFrom: s.pageBase + 1,
-            pageTo: s.pageBase + Math.max(1, s.pageCount),
+            pageFrom: s.pageBase + i + 1,
+            pageTo: s.pageBase + i + 1,
             includeSolutions: true,
-          });
-          return `=== ${s.name} ===\n${body}`;
-        })
-        .join('\n\n');
+          }),
+        })),
+      );
+      // Old keys have no evidence marker. Invalidate them before an asynchronous re-read, so a
+      // Check arriving meanwhile cannot use a legacy "high" confidence solution key.
+      for (const p of parts.parts(record.id)) {
+        if (p.key.from === 'solutions') parts.setKey(record.id, p.partId, { ...p.key, confidence: 'low', solutionEvidence: undefined }, now);
+      }
+      for (const answer of answers) {
+        if (answer.kind !== 'choice') continue;
+        const evidence = choiceEvidenceFromText(pages, answer.partId, answer.label, answer.options);
+        const current = parts.part(record.id, answer.partId);
+        if (!evidence || !current) continue;
+        parts.setKey(record.id, answer.partId, {
+          ...current.key,
+          answer: evidence.correct.join(', '),
+          correct: evidence.correct,
+          from: 'solutions',
+          confidence: 'high',
+          solutionEvidence: { fileId: evidence.fileId, page: evidence.page, method: evidence.method, version: 1 },
+        }, now);
+        rewritten += 1;
+      }
+      const unresolved = answers.filter((a) => !parts.part(record.id, a.partId)?.key.solutionEvidence);
+      if (unresolved.length === 0) {
+        log().info('tutorial.solutions', { notebook_id: notebookId, file_id: tutorialFileId, doc_id: record.id, rewritten, parts: answers.length });
+        pushView(deps, notebookId, tutorialFileId);
+        return rewritten;
+      }
+      const text = pages.map((p) => `=== source ${p.fileId}, page ${p.page} ===\n${p.text}`).join('\n\n');
+      const images = (await Promise.all(solutions.map(async (s) => {
+        const located = deps.notebooks.locate(notebookId, s.pageBase + 1);
+        return located?.contentSha
+          ? pageImagesFor(pageImageDir(deps.userDataDir, located.contentSha), Array.from({ length: Math.min(s.pageCount, TUTORIAL_MAX_IMAGES) }, (_, i) => i + 1))
+          : [];
+      }))).flat();
       const raw = (await callJson(
         deps,
         llm,
@@ -594,7 +638,7 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
             {
               role: 'user',
               content: solutionsMessage({
-                parts: answers.map((a) => ({
+                parts: unresolved.map((a) => ({
                   partId: a.partId,
                   label: a.label,
                   kind: a.kind,
@@ -607,25 +651,72 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
             },
           ],
           jsonSchema: SOLUTIONS_JSON_SCHEMA,
+          ...(images.length > 0 ? { images } : {}),
           meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
         },
         'tutorial.solutions',
       )) as { parts?: unknown[] };
       const byId = new Map(answers.map((a) => [a.partId, a]));
+      const visualCandidates = new Map<string, { page: number; correct: string[] }>();
       for (const entry of Array.isArray(raw.parts) ? raw.parts : []) {
         const r = entry as Record<string, unknown>;
         const answer = typeof r.partId === 'string' ? byId.get(r.partId) : undefined;
         const current = answer ? parts.part(record.id, answer.partId) : null;
         if (!answer || !current) continue;
+        if (current.key.solutionEvidence) continue;
+        const page = Number(r.sourcePage);
+        const quote = typeof r.sourceQuote === 'string' ? r.sourceQuote.trim() : '';
+        const sourcePage = pages.find((p) => p.page === page && p.text.includes(quote) && quote.length >= 6);
         const fresh = keyFrom(sheetPartOf(answer), r);
         if (!fresh.answer) continue;
+        // For choices, a quote merely containing the question is not evidence of which options
+        // are ticked. The deterministic parser above owns text-layer choice keys.
+        if (answer.kind === 'choice') {
+          if (solutions.length === 1 && fresh.correct?.length && images.some((i) => i.page === page)) {
+            visualCandidates.set(answer.partId, { page, correct: fresh.correct });
+          }
+          continue;
+        }
+        if (!sourcePage || !quoteSupportsAnswer(quote, fresh.answer)) continue;
         parts.setKey(
           record.id,
           answer.partId,
-          { ...fresh, ...(current.key.check ? { check: current.key.check } : {}), from: 'solutions', confidence: 'high' },
+          { ...fresh, ...(current.key.check ? { check: current.key.check } : {}), from: 'solutions', confidence: 'high',
+            solutionEvidence: { fileId: sourcePage.fileId, page, method: 'text', version: 1 } },
           now,
         );
         rewritten += 1;
+      }
+      if (visualCandidates.size > 0 && images.length > 0) {
+        const independent = (await callJson(deps, llm, {
+          model: deps.models().orchestrator,
+          max_tokens: 1_200,
+          system: [{ type: 'text', text: VISUAL_CHOICES_SYSTEM }],
+          messages: [{ role: 'user', content: unresolved
+            .filter((a) => visualCandidates.has(a.partId))
+            .map((a) => `PART ${a.partId} (${a.label})\n${a.prompt}\n${a.options.map((o) => `(${o.id}) ${o.text}`).join('\n')}`)
+            .join('\n\n') }],
+          images,
+          jsonSchema: VISUAL_CHOICES_JSON_SCHEMA,
+          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+        }, 'tutorial.solutions.visual')) as { parts?: unknown[] };
+        for (const entry of Array.isArray(independent.parts) ? independent.parts : []) {
+          const r = entry as Record<string, unknown>;
+          const answer = typeof r.partId === 'string' ? byId.get(r.partId) : undefined;
+          const candidate = answer ? visualCandidates.get(answer.partId) : undefined;
+          const correct = Array.isArray(r.correct) ? r.correct.filter((id): id is string => typeof id === 'string') : [];
+          if (!answer || !candidate || candidate.page !== r.sourcePage ||
+              correct.length !== candidate.correct.length ||
+              !correct.every((id) => candidate.correct.includes(id))) continue;
+          const source = solutions.length === 1 ? solutions[0] : undefined;
+          if (!source) continue;
+          const current = parts.part(record.id, answer.partId);
+          if (!current) continue;
+          parts.setKey(record.id, answer.partId, { ...current.key, answer: candidate.correct.join(', '),
+            correct: candidate.correct, from: 'solutions', confidence: 'high',
+            solutionEvidence: { fileId: source.fileId, page: candidate.page, method: 'image', version: 1 } }, now);
+          rewritten += 1;
+        }
       }
     }
     log().info('tutorial.solutions', { notebook_id: notebookId, file_id: tutorialFileId, doc_id: record.id, rewritten, parts: answers.length });

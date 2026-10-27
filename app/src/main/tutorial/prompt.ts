@@ -309,14 +309,18 @@ export const SOLUTIONS_JSON_SCHEMA: Record<string, unknown> = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: Object.keys(KEY_PROPERTIES),
-        properties: KEY_PROPERTIES,
+        required: [...Object.keys(KEY_PROPERTIES), 'sourcePage', 'sourceQuote'],
+        properties: {
+          ...KEY_PROPERTIES,
+          sourcePage: { type: 'integer', description: 'The numbered page of the answer source containing this answer.' },
+          sourceQuote: { type: 'string', description: 'An exact short passage from that page supporting the answer.' },
+        },
       },
     },
   },
 };
 
-export const SOLUTIONS_SYSTEM = `You are given a tutorial sheet's parts and its OFFICIAL SOLUTIONS. For each part, write the hidden key from the solutions: the solutions' answer (complete, in the inline subset: **bold**, *italic*, \`code\`, $TeX$), for blanks each blank's accepted answers, for choice the correct option ids, two to four sub-steps, likely mistakes and prerequisites. The solutions are ground truth: never contradict them. A part the solutions do not answer is left out.`;
+export const SOLUTIONS_SYSTEM = `You are given a tutorial sheet's parts and its OFFICIAL SOLUTIONS. For each part answered by the solutions, write the hidden key: the answer, for blanks each accepted answer, for choice the correct option ids, two to four sub-steps, likely mistakes and prerequisites. Also give sourcePage and an exact sourceQuote from the labelled page that supports the answer. Never invent a quote or fill a part the solutions do not answer.`;
 
 export function solutionsMessage(input: {
   parts: readonly { partId: string; label: string; kind: string; prompt: string; options: string; blanks: string[] }[];
@@ -334,3 +338,13 @@ export function solutionsMessage(input: {
     input.solutionsText,
   ].join('\n');
 }
+
+/** A separate read of image-only marked choices, without seeing the proposed key. */
+export const VISUAL_CHOICES_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object', additionalProperties: false, required: ['parts'],
+  properties: { parts: { type: 'array', items: {
+    type: 'object', additionalProperties: false, required: ['partId', 'sourcePage', 'correct'],
+    properties: { partId: { type: 'string' }, sourcePage: { type: 'integer' }, correct: STRINGS },
+  } } },
+};
+export const VISUAL_CHOICES_SYSTEM = 'Independently read the attached official answer-sheet page images. Return only visibly marked correct option ids for each listed question and the image page they appear on. If marks are unclear or the question is absent, omit it. Do not solve the question yourself.';

@@ -81,6 +81,7 @@ export interface ViewInput {
   records: readonly PartRecord[];
   objectives: readonly LearningObjective[];
   isLecturePage(page: number): boolean;
+  hasLinkedSolutions?: boolean;
 }
 
 export function tutorialView(input: ViewInput): TutorialView {
@@ -100,6 +101,8 @@ export function tutorialView(input: ViewInput): TutorialView {
           hintLevel: r?.hintLevel ?? 0,
           attempts: r?.attempts ?? 0,
           checkedBy: r?.checkedBy ?? null,
+          verifiedSolution: r?.key.solutionEvidence?.version === 1,
+          solutionNeedsReview: input.hasLinkedSolutions && r?.key.solutionEvidence?.version !== 1,
           links: r ? { notesBlockIds: [...r.links.notesBlockIds], pages: [...r.links.pages] } : { notesBlockIds: [], pages: [] },
           objectiveIds: r ? [...r.objectiveIds] : [],
         };
@@ -115,7 +118,7 @@ export function tutorialView(input: ViewInput): TutorialView {
     status: tutorialStatus(record),
     error: record?.error ?? null,
     parts,
-    hasSolutions: keyed.length > 0 && keyed.every((r) => r.key.from === 'solutions'),
+    hasSolutions: keyed.length > 0 && keyed.every((r) => r.key.solutionEvidence?.version === 1),
     gaps: doc ? tutorialGaps(input.objectives, parts, input.isLecturePage) : [],
   };
 }

@@ -40,6 +40,8 @@ export interface TutorialTurnInput {
   /** The part was shown, so a `reply` may discuss its answer. */
   revealed?: boolean;
   verdict?: { verdict: 'complete' | 'partial' | 'not_yet'; checkedBy: 'simulation' | 'model'; detail: string };
+  /** For choice feedback, code owns every option-specific claim in Max's final message. */
+  choice?: { picked: string[]; correct: string[] };
   notes: { blockId: string; heading: string | null; text: string }[];
   slides: { page: number; label: string; text: string }[];
   objectiveId: string | null;
@@ -125,6 +127,7 @@ export function viewOf(deps: TutorialDeps, notebookId: string, fileId: string): 
     records: record ? tutorialRepo(deps.db).parts(record.id) : [],
     objectives: deps.objectivesTree(notebookId)?.objectives ?? [],
     isLecturePage: lecturePageTest(subject),
+    hasLinkedSolutions: subject?.sources.some((s) => s.role === 'solutions' && s.keyFor === fileId && s.status === 'ready') ?? false,
   });
 }
 

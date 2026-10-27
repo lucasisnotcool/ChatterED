@@ -148,6 +148,8 @@ export class TutorialStore {
   /** Reads this renderer has asked for this session, so a pending one is not started twice. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping nothing renders
   #requested = new Set<string>();
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping nothing renders
+  #solutionsRequested = new Set<string>();
   /** Read again was pressed: the next `ready` replaces the document on screen. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping nothing renders
   #rereading = new Set<string>();
@@ -223,7 +225,7 @@ export class TutorialStore {
     if (!plain) return;
     const signature = plain.sources
       .filter((s) => roleOf(s) !== 'lecture')
-      .map((s) => `${s.fileId}:${roleOf(s)}:${s.status}`)
+      .map((s) => `${s.fileId}:${roleOf(s)}:${s.status}:${s.keyFor ?? ''}`)
       .join('|');
     if (signature !== this.#signature) {
       this.#signature = signature;
@@ -248,6 +250,7 @@ export class TutorialStore {
       // A tutorial whose role was taken away goes with its column.
       if (this.openFileId && !views.some((v) => v.fileId === this.openFileId)) this.close();
       for (const v of views) this.#maybeRead(v);
+      for (const v of views) this.#maybeVerifySolutions(v);
     } catch (err) {
       console.warn('tutorials: the list did not load —', message(err));
     }
@@ -264,6 +267,7 @@ export class TutorialStore {
     this.toast = null;
     this.#signature = '';
     this.#requested.clear();
+    this.#solutionsRequested.clear();
     this.#rereading.clear();
     this.#listToken++;
     this.revision++;
@@ -410,6 +414,20 @@ export class TutorialStore {
     void this.read(view.fileId);
   }
 
+  /** Refresh legacy or incomplete solution keys, with the answer PDF's page images available. */
+  #maybeVerifySolutions(view: TutorialView): void {
+    const nb = this.#notebook;
+    const notebookId = this.notebookId;
+    const linked = nb?.sources.filter((s) => s.role === 'solutions' && s.keyFor === view.fileId && s.status === 'ready') ?? [];
+    if (!nb || !notebookId || view.status !== 'ready' || linked.length === 0 ||
+        view.parts.length === 0 || view.parts.every((p) => p.verifiedSolution) || this.#solutionsRequested.has(view.fileId)) return;
+    this.#solutionsRequested.add(view.fileId);
+    void (async () => {
+      for (const source of linked) await this.#sendPageImages(notebookId, nb, source.fileId);
+      if (notebookId === this.notebookId) await api().tutorialIngest?.({ notebookId, fileId: view.fileId, forceSolutions: true });
+    })().catch((err) => console.warn('tutorials: answer PDF verification failed —', message(err)));
+  }
+
   /**
    * **Read the sheet**: its pages as images first, through the channel the overview uses (main
    * stores them by notebook page, additively), then `tutorial:ingest`, which answers at once with
@@ -543,7 +561,7 @@ export class TutorialStore {
       if (result.status) this.#patchPart(fileId, partId, { status: result.status });
       if (result.threadId && (result.accepted || result.reason === 'busy')) this.focusThread?.(result.threadId);
     } catch (err) {
-      this.say(checkRefusal('failed') ?? message(err));
+      this.say(message(err));
       console.warn('tutorials: check failed —', message(err));
     } finally {
       this.#setBusy(partId, null);

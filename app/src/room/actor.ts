@@ -219,6 +219,7 @@ import {
   openQuestionLeakBlock,
   sheetGuardBlock,
   tutorBlock,
+  checkedChoiceFeedback,
   tutorMaxWordCeiling,
   type TutorKind,
 } from './prompts.tutor.js';
@@ -629,6 +630,7 @@ export interface TutorialTurnInput {
   /** The part was released, so a `reply` may discuss its answer. */
   revealed?: boolean;
   verdict?: { verdict: QuizVerdict3; checkedBy: 'simulation' | 'model'; detail: string };
+  choice?: { picked: string[]; correct: string[] };
   /** The linked notes blocks. */
   notes: { blockId: string; heading: string | null; text: string }[];
   /** The linked lecture pages. */
@@ -3677,7 +3679,18 @@ export class RoomActor {
     const stampGeneration = (): void => {
       generationMs ??= this.#d.clock.now() - generatingFrom;
     };
-    const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta), pending.abort.signal).then(
+    // Option-specific marking is completely determined by the key. It needs no model call and
+    // must never stream a contradictory draft before the final card arrives.
+    const choice = opts.tutor?.input.choice;
+    const choiceVerdict = opts.tutor?.input.verdict;
+    const generated = choice && choiceVerdict
+      ? Promise.resolve({
+          text: checkedChoiceFeedback({ verdict: choiceVerdict.verdict, picked: choice.picked,
+            correct: choice.correct, pages: opts.tutor!.input.slides.map((s) => s.page) }),
+          model: 'rule:choice_key', usage: {}, ttftMs: 0, backend: undefined,
+        })
+      : this.#generate(agent, decision, turnCue, (delta) => stream.push(delta), pending.abort.signal);
+    const generation = generated.then(
       (value) => {
         stampGeneration();
         return { ok: true as const, value };
@@ -3761,6 +3774,7 @@ export class RoomActor {
       this.#cancelTurn(decision.role, pending);
       return;
     }
+    if (opts.tutor?.input.choice) stream.push(text);
     stream.close();
     /**
      * `ttft_actual_ms` is the **visible** first token, which is the number the manipulation is
@@ -5673,6 +5687,14 @@ export class RoomActor {
    */
   #settleTurnText(decision: TurnDecision, text: string, tutor: TutorialTurnInput | null): string {
     const move = decision.moveType;
+    if (move === 'tutor_feedback' && tutor?.choice && tutor.verdict) {
+      return checkedChoiceFeedback({
+        verdict: tutor.verdict.verdict,
+        picked: tutor.choice.picked,
+        correct: tutor.choice.correct,
+        pages: tutor.slides.map((s) => s.page),
+      });
+    }
     let out = text;
     let verdict: TurnVerdict | null = null;
     let change: 'none' | 'added' | 'corrected' = 'none';

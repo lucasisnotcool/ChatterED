@@ -411,7 +411,50 @@ describe('official solutions', () => {
     await service.whenIdle();
     expect(service.get(notebookId)!.sources[2]).toMatchObject({ role: 'solutions', keyFor: tutorialId });
     expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(5);
-    expect(listViews(deps, notebookId)[0]!.hasSolutions).toBe(true);
+    // Scripted mode never inspected that file, so it cannot claim a verified solution.
+    expect(listViews(deps, notebookId)[0]!.hasSolutions).toBe(false);
+  });
+
+  it('verifies an image-only choice only when two independent reads agree', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'The marked answer is on the attached page image.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    const source = service.get(notebookId)!.sources[2]!;
+    const located = deps.notebooks.locate(notebookId, source.pageBase + 1)!;
+    const dir = join(deps.userDataDir, 'notes-pages', located.contentSha!);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'p-1.jpg'), 'fake-image-for-stub');
+    const calls: LlmRequest[] = [];
+    llm = { kind: 'anthropic', async complete(request) {
+      calls.push(request);
+      const visual = request.system[0]!.text.includes('Independently read');
+      const parts = visual
+        ? [{ partId: 'P3B', sourcePage: 1, correct: ['i'] }]
+        : [{ partId: 'P3B', answer: 'i', correct: ['i'], sourcePage: 1, sourceQuote: '', steps: [], mistakes: [], prerequisites: [], blanks: [] }];
+      return { text: JSON.stringify({ parts }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(1);
+    expect(calls).toHaveLength(2);
+    expect(calls.every((c) => c.images?.length === 1)).toBe(true);
+    const key = tutorialRepo(db).part(savedDoc().docId, 'P3B')!.key;
+    expect(key.solutionEvidence).toEqual({ fileId: source.fileId, page: 1, method: 'image', version: 1 });
+    expect(key.correct).toEqual(['i']);
+  });
+
+  it('does not grade an answer absent from a linked partial solutions file', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'Only Problem 1 has an answer here.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    llm = { kind: 'anthropic', async complete(request) {
+      return { text: JSON.stringify({ parts: [] }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(0);
+    expect(listViews(deps, notebookId)[0]!.parts.find((p) => p.partId === 'P3B')!.solutionNeedsReview).toBe(true);
+    await expect(checkPart(deps, { notebookId, fileId: tutorialId, partId: 'P3B' })).rejects.toThrow(/verified answer/);
   });
 });
 

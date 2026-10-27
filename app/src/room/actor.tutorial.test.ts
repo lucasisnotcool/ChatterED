@@ -284,6 +284,31 @@ describe('tutorialTurn: refresher, check and reveal', () => {
     expect(reply.body).toBe('**Not yet.** The plan reaches the goal.');
   });
 
+  it('never shows or stores contradictory option claims from a choice feedback draft', async () => {
+    const base = client();
+    const llm: LLMClient = {
+      kind: 'scripted',
+      async complete(request, onDelta, signal) {
+        if (request.meta.scope !== 'group') return base.complete(request, onDelta, signal);
+        const text = 'Not yet. A, D, E, and F are correct. G needs checking.';
+        onDelta?.(text);
+        return { text, model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
+      },
+    };
+    const h = build({ llm });
+    await run(h, {
+      kind: 'feedback',
+      answer: '(A) one\n(D) two\n(E) three\n(F) four\n(G) five',
+      key: { ...KEY, correct: ['A', 'D', 'G'] },
+      choice: { picked: ['A', 'D', 'E', 'F', 'G'], correct: ['A', 'D', 'G'] },
+      verdict: { verdict: 'not_yet', checkedBy: 'simulation', detail: '3 right, 2 not' },
+    });
+    const reply = rows(h).find((m) => m.decided_by === 'rule:tutor_feedback')!;
+    expect(reply.body).toContain('A, D, G match the answer key; E, F do not');
+    expect(reply.body).not.toContain('G needs checking');
+    expect(h.events.filter((e) => e.type === 'turn.delta').map((e) => JSON.stringify(e)).join(' ')).not.toContain('G needs checking');
+  });
+
   it('a reveal gives the key’s answer and asks for one line on why; the line says only that it was shown', async () => {
     const h = build();
     await run(h, { kind: 'reveal' });

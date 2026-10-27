@@ -50,6 +50,7 @@ const partView = (partId: string, over: Partial<TutorialPartView> = {}): Tutoria
   hintLevel: 0,
   attempts: 0,
   checkedBy: null,
+  verifiedSolution: false,
   links: { notesBlockIds: [], pages: [] },
   objectiveIds: [],
   ...over,
@@ -90,7 +91,7 @@ describe('the help ladder and the status pill', () => {
     expect(statusLook('incorrect').label).toBe('✗ not yet');
     expect(statusLook('revealed').label).toBe('revealed');
     expect(statusLook('untried').glyph).toBe('');
-    expect(statusLook('correct', 'simulation').title).toMatch(/checked by simulation/i);
+    expect(statusLook('correct', 'simulation').title).toMatch(/checked by code/i);
     expect(statusLook('correct', 'model').title).toMatch(/Judged by Max/);
   });
 

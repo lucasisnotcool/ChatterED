@@ -144,6 +144,12 @@ export async function judgePart(deps: TutorialDeps, notebookId: string, resolved
 export async function checkPart(deps: TutorialDeps, input: TutorialCheckInput): Promise<TutorialCheckResult> {
   const resolved = resolvePart(deps, input);
   if (!resolved) return { accepted: false, reason: 'no_doc', status: null, threadId: null };
+  const linked = deps.notebooks.subject(input.notebookId)?.sources.some(
+    (s) => s.role === 'solutions' && s.keyFor === input.fileId && s.status === 'ready',
+  );
+  if (linked && deps.llm(input.notebookId) && (resolved.part.key.from !== 'solutions' || resolved.part.key.solutionEvidence?.version !== 1)) {
+    throw new Error('The uploaded answer PDF has not yielded a verified answer for this question. Check the PDF is readable and linked to this tutorial, then retry its import.');
+  }
   const before = partStatus(resolved.part, resolved.answer);
   if (resolved.answer.empty) return { accepted: false, reason: 'empty', status: before, threadId: null };
 
@@ -222,6 +228,9 @@ export async function checkPart(deps: TutorialDeps, input: TutorialCheckInput): 
     answer: answerText(resolved.answer),
     key: resolved.part.key,
     verdict: judged,
+    ...(resolved.answer.kind === 'choice' && resolved.part.key.correct?.length
+      ? { choice: { picked: resolved.answer.picked, correct: resolved.part.key.correct } }
+      : {}),
     ...partMaterial(deps, input.notebookId, resolved.part),
     objectiveId,
   });

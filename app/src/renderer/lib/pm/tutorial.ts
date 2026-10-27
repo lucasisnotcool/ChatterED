@@ -177,6 +177,8 @@ interface HeaderInput {
   partId: string;
   label: string;
   chrome: PartChromeState;
+  verifiedSolution: boolean;
+  solutionNeedsReview: boolean;
   notes: { blockId: string; label: string }[];
   /** Each page run, its link's short words and its full citation (the tooltip). */
   pages: { pages: number[]; label: string; full: string }[];
@@ -251,6 +253,15 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
   status.dataset.status = chrome.status;
   status.title = chrome.look.title;
   left.append(status);
+  if (input.verifiedSolution) {
+    const source = el('span', 'nd-tut-source-key', 'Answer PDF verified');
+    source.title = 'This question’s answer was checked against the uploaded tutorial answers.';
+    left.append(source);
+  } else if (input.solutionNeedsReview) {
+    const source = el('span', 'nd-tut-source-review', 'Answer PDF needs review');
+    source.title = 'The uploaded answer for this question could not be verified. Check is unavailable until it can be read.';
+    left.append(source);
+  }
   if (chrome.hintLevel > 0) left.append(rungDots(chrome));
 
   // ── right: [Hint] [Refresher] (wide only) · Check · Help ▾, or the reveal's confirm ──
@@ -277,7 +288,8 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
     markBusy(self);
     context().onCheck(partId);
   });
-  check.disabled = !chrome.canCheck;
+  check.disabled = !chrome.canCheck || input.solutionNeedsReview;
+  if (input.solutionNeedsReview) check.title = 'The uploaded answer for this question needs review before Check is available.';
 
   // The confirm, where the controls were: "Show the answer? It won't count. [Show it] [Keep trying]".
   const confirm = el('span', 'nd-tut-confirm');
@@ -534,11 +546,14 @@ function partDecorations(
     chrome.status,
     String(chrome.hintLevel),
     view?.checkedBy ?? '-',
+    String(view?.verifiedSolution ?? false),
+    String(view?.solutionNeedsReview ?? false),
     String(view?.attempts ?? 0),
     notes.map((n) => `${n.blockId}=${n.label}`).join(','),
     pages.map((p) => `${p.label}=${p.full}`).join(','),
   ].join('|');
-  out.push(widget(pos + 1, key, -1, () => partHeader({ partId, label, chrome, notes, pages }, context)));
+  out.push(widget(pos + 1, key, -1, () => partHeader({ partId, label, chrome,
+    verifiedSolution: view?.verifiedSolution ?? false, solutionNeedsReview: view?.solutionNeedsReview ?? false, notes, pages }, context)));
 
   part.forEach((child, offset) => {
     if (child.type.name !== 'tut_answer') return;

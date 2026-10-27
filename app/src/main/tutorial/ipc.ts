@@ -71,6 +71,7 @@ export function registerTutorialIpc(deps: TutorialDeps, handle: IpcHandle): void
       notebookId: requireNotebook(input?.notebookId),
       fileId: requireString(input?.fileId, 'the tutorial'),
       force: input?.force === true,
+      forceSolutions: input?.forceSolutions === true,
     }),
   );
 
