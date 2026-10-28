@@ -87,6 +87,17 @@ describe('tutorBlock: what every kind carries', () => {
     expect(c).not.toContain('The correct options');
   });
 
+  it('gives choice feedback the computed option classifications while leaving the explanation to Max', () => {
+    const block = flat(tutorBlock(input({
+      kind: 'feedback',
+      choice: { picked: ['A', 'D', 'E', 'F', 'G'], correct: ['A', 'D', 'G'] },
+      verdict: { verdict: 'not_yet', checkedBy: 'simulation', detail: '3 right, 2 wrong.' },
+    })));
+    expect(block).toContain('A, D, G are correct; E, F are incorrect.');
+    expect(block).toContain('These classifications are authoritative.');
+    expect(block).toContain('Explain the underlying concept');
+  });
+
   it('gives the answer, the blanks and the options on a release, and asks for one line on why', () => {
     const block = flat(tutorBlock(input({ kind: 'reveal', key: FIXTURE_KEYS[1]! })));
     expect(block).toContain(TUTOR_ANSWER_HEADER);

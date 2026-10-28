@@ -176,6 +176,13 @@ function slot(part: Node, content: Node): Node {
   return part.type.create(part.attrs, children);
 }
 
+function pickChoice(part: Node, picked: string[]): Node {
+  const children: Node[] = [];
+  part.forEach((child) => children.push(child.type.name === 'tut_choices'
+    ? child.type.create({ ...child.attrs, picked }) : child));
+  return part.type.create(part.attrs, children);
+}
+
 const user = () => [authorMark('user', null)];
 const plan = (steps: string[]) =>
   notesSchema.nodes.ordered_list!.create(
@@ -411,7 +418,93 @@ describe('official solutions', () => {
     await service.whenIdle();
     expect(service.get(notebookId)!.sources[2]).toMatchObject({ role: 'solutions', keyFor: tutorialId });
     expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(5);
-    expect(listViews(deps, notebookId)[0]!.hasSolutions).toBe(true);
+    // Scripted mode never inspected that file, so it cannot claim a verified solution.
+    expect(listViews(deps, notebookId)[0]!.hasSolutions).toBe(false);
+  });
+
+  it('verifies an image-only choice only when two independent reads agree', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'The marked answer is on the attached page image.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    const source = service.get(notebookId)!.sources[2]!;
+    const located = deps.notebooks.locate(notebookId, source.pageBase + 1)!;
+    const dir = join(deps.userDataDir, 'notes-pages', located.contentSha!);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'p-1.jpg'), 'fake-image-for-stub');
+    const calls: LlmRequest[] = [];
+    llm = { kind: 'anthropic', async complete(request) {
+      calls.push(request);
+      const visual = request.system[0]!.text.includes('Independently read');
+      const parts = visual
+        ? [{ partId: 'P3B', sourcePage: 1, correct: ['i'] }]
+        : [{ partId: 'P3B', answer: 'i', correct: ['i'], sourcePage: 1, sourceQuote: '', steps: [], mistakes: [], prerequisites: [], blanks: [] }];
+      return { text: JSON.stringify({ parts }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(1);
+    expect(calls).toHaveLength(2);
+    expect(calls.every((c) => c.images?.length === 1)).toBe(true);
+    const key = tutorialRepo(db).part(savedDoc().docId, 'P3B')!.key;
+    expect(key.solutionEvidence).toEqual({ fileId: source.fileId, page: 1, method: 'image', version: 1 });
+    expect(key.correct).toEqual(['i']);
+  });
+
+  it('uses a formal check to grade and brief Max when the uploaded choice key is wrong', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'The marked answer is on the attached page image.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    const source = service.get(notebookId)!.sources[2]!;
+    const located = deps.notebooks.locate(notebookId, source.pageBase + 1)!;
+    const dir = join(deps.userDataDir, 'notes-pages', located.contentSha!);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'p-1.jpg'), 'fake-image-for-stub');
+    llm = { kind: 'anthropic', async complete(request) {
+      const parts = request.system[0]!.text.includes('Independently read')
+        ? [{ partId: 'P3B', sourcePage: 1, correct: ['ii'] }]
+        : [{ partId: 'P3B', answer: 'ii', correct: ['ii'], sourcePage: 1, sourceQuote: '', steps: [], mistakes: [], prerequisites: [], blanks: [] }];
+      return { text: JSON.stringify({ parts }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(1);
+    expect(tutorialRepo(db).part(savedDoc().docId, 'P3B')!.key.correct).toEqual(['ii']);
+
+    answer('P3B', (part) => pickChoice(part, ['i']));
+    expect(await checkPart(deps, { notebookId, fileId: tutorialId, partId: 'P3B' })).toMatchObject({ accepted: true, status: 'correct' });
+    expect(turns.at(-1)?.choice).toEqual({
+      picked: ['i'], correct: ['i'], source: 'code-verified answer', suppressExplanation: true,
+    });
+  });
+
+  it('uses a high-confidence worked choice key when no answer PDF exists', async () => {
+    await ingested();
+    const record = savedDoc();
+    const current = tutorialRepo(db).part(record.docId, 'P3B')!.key;
+    tutorialRepo(db).setKey(record.docId, 'P3B', {
+      ...current, check: undefined, from: 'model', confidence: 'high', correct: ['i'],
+    }, '2026-10-03T01:00:00.000Z');
+    answer('P3B', (part) => pickChoice(part, ['i']));
+
+    expect(await checkPart(deps, { notebookId, fileId: tutorialId, partId: 'P3B' })).toMatchObject({ accepted: true, status: 'correct' });
+    expect(turns.at(-1)?.choice).toEqual({
+      picked: ['i'], correct: ['i'], source: 'worked answer', suppressExplanation: false,
+    });
+  });
+
+  it('checks against the worked answer when a linked partial solutions file has no answer for this part', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'Only Problem 1 has an answer here.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    llm = { kind: 'anthropic', async complete(request) {
+      return { text: JSON.stringify({ parts: [] }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(0);
+    expect(listViews(deps, notebookId)[0]!.parts.find((p) => p.partId === 'P3B')!.solutionNeedsReview).toBe(true);
+    answer('P2', (p) => slot(p, para('The relaxed problem ignores delete lists.')));
+    await expect(checkPart(deps, { notebookId, fileId: tutorialId, partId: 'P2' })).resolves.toMatchObject({ accepted: true });
   });
 });
 

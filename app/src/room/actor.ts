@@ -219,6 +219,8 @@ import {
   openQuestionLeakBlock,
   sheetGuardBlock,
   tutorBlock,
+  checkedChoiceFeedback,
+  settleChoiceFeedback,
   tutorMaxWordCeiling,
   type TutorKind,
 } from './prompts.tutor.js';
@@ -629,6 +631,7 @@ export interface TutorialTurnInput {
   /** The part was released, so a `reply` may discuss its answer. */
   revealed?: boolean;
   verdict?: { verdict: QuizVerdict3; checkedBy: 'simulation' | 'model'; detail: string };
+  choice?: { picked: string[]; correct: string[]; source?: 'uploaded answer sheet' | 'worked answer' | 'code-verified answer'; suppressExplanation?: boolean };
   /** The linked notes blocks. */
   notes: { blockId: string; heading: string | null; text: string }[];
   /** The linked lecture pages. */
@@ -3677,7 +3680,13 @@ export class RoomActor {
     const stampGeneration = (): void => {
       generationMs ??= this.#d.clock.now() - generatingFrom;
     };
-    const generation = this.#generate(agent, decision, turnCue, (delta) => stream.push(delta), pending.abort.signal).then(
+    // Option classifications come from the key; Max still generates the conceptual explanation.
+    // Hold choice feedback until settlement so an incorrect option claim is never shown transiently.
+    const choice = opts.tutor?.input.choice;
+    const generated = choice?.suppressExplanation && opts.tutor?.input.verdict
+      ? Promise.resolve({ text: '', model: 'rule:formal_choice', usage: {}, ttftMs: 0, backend: undefined })
+      : this.#generate(agent, decision, turnCue, choice ? () => undefined : (delta) => stream.push(delta), pending.abort.signal);
+    const generation = generated.then(
       (value) => {
         stampGeneration();
         return { ok: true as const, value };
@@ -3761,6 +3770,7 @@ export class RoomActor {
       this.#cancelTurn(decision.role, pending);
       return;
     }
+    if (opts.tutor?.input.choice) stream.push(text);
     stream.close();
     /**
      * `ttft_actual_ms` is the **visible** first token, which is the number the manipulation is
@@ -5673,6 +5683,20 @@ export class RoomActor {
    */
   #settleTurnText(decision: TurnDecision, text: string, tutor: TutorialTurnInput | null): string {
     const move = decision.moveType;
+    if (move === 'tutor_feedback' && tutor?.choice && tutor.verdict) {
+      if (tutor.choice.suppressExplanation) {
+        return `${checkedChoiceFeedback({ verdict: tutor.verdict.verdict, picked: tutor.choice.picked,
+          correct: tutor.choice.correct, pages: tutor.slides.map((s) => s.page), source: tutor.choice.source })}\nThe stored answer key disagrees with the code check for this question.`;
+      }
+      return settleChoiceFeedback({
+        draft: text,
+        verdict: tutor.verdict.verdict,
+        picked: tutor.choice.picked,
+        correct: tutor.choice.correct,
+        pages: tutor.slides.map((s) => s.page),
+        source: tutor.choice.source,
+      });
+    }
     let out = text;
     let verdict: TurnVerdict | null = null;
     let change: 'none' | 'added' | 'corrected' = 'none';

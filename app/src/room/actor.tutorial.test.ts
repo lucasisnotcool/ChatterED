@@ -284,6 +284,49 @@ describe('tutorialTurn: refresher, check and reveal', () => {
     expect(reply.body).toBe('**Not yet.** The plan reaches the goal.');
   });
 
+  it('never shows or stores contradictory option claims from a choice feedback draft', async () => {
+    const base = client();
+    const llm: LLMClient = {
+      kind: 'scripted',
+      async complete(request, onDelta, signal) {
+        if (request.meta.scope !== 'group') return base.complete(request, onDelta, signal);
+        const text = 'Not yet. A, D, E, and F are correct. G needs checking. Relationship cardinalities determine where a foreign key is stored.';
+        onDelta?.(text);
+        return { text, model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'scripted' as const };
+      },
+    };
+    const h = build({ llm });
+    await run(h, {
+      kind: 'feedback',
+      answer: '(A) one\n(D) two\n(E) three\n(F) four\n(G) five',
+      key: { ...KEY, correct: ['A', 'D', 'G'] },
+      choice: { picked: ['A', 'D', 'E', 'F', 'G'], correct: ['A', 'D', 'G'] },
+      verdict: { verdict: 'not_yet', checkedBy: 'simulation', detail: '3 right, 2 not' },
+    });
+    const reply = rows(h).find((m) => m.decided_by === 'rule:tutor_feedback')!;
+    expect(reply.body).toContain('A, D, G are correct; E, F are incorrect');
+    expect(reply.body).not.toContain('G needs checking');
+    expect(reply.body).toContain('Relationship cardinalities determine where a foreign key is stored.');
+    expect(h.events.filter((e) => e.type === 'turn.delta').map((e) => JSON.stringify(e)).join(' ')).not.toContain('G needs checking');
+  });
+
+  it('uses only the code answer when a formal choice check disagrees with the stored key', async () => {
+    const h = build();
+    await run(h, {
+      kind: 'feedback',
+      answer: '(i) first option',
+      key: { ...KEY, correct: ['ii'] },
+      choice: { picked: ['i'], correct: ['i'], source: 'code-verified answer', suppressExplanation: true },
+      verdict: { verdict: 'complete', checkedBy: 'simulation', detail: 'i reaches the goal.' },
+    });
+    const reply = rows(h).find((m) => m.decided_by === 'rule:tutor_feedback')!;
+    expect(reply.body).toContain('i is correct');
+    expect(reply.body).toContain('stored answer key disagrees with the code check');
+    expect(reply.body).not.toContain('ii is correct');
+    expect(reply.model).toBe('rule:formal_choice');
+    expect(h.events.filter((e) => e.type === 'turn.delta').map((e) => JSON.stringify(e)).join(' ')).not.toContain('ii is correct');
+  });
+
   it('a reveal gives the key’s answer and asks for one line on why; the line says only that it was shown', async () => {
     const h = build();
     await run(h, { kind: 'reveal' });

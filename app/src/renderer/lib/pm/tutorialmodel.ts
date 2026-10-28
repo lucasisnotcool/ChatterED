@@ -63,7 +63,7 @@ export function shownStatus(view: Pick<TutorialPartView, 'status'> | null, answe
 }
 
 function judgedBy(checkedBy: TutorialPartView['checkedBy']): string {
-  if (checkedBy === 'simulation') return 'Checked by simulation: code ran your answer against the problem, so this is not a judgement call.';
+  if (checkedBy === 'simulation') return 'Checked by code against the answer key or formal problem.';
   if (checkedBy === 'model') return 'Judged by Max against a worked answer. The official solution may phrase it differently.';
   return '';
 }

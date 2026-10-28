@@ -1437,6 +1437,7 @@ export function createMockBridge(): ChatterEdApi {
           hintLevel: record.hintLevel,
           attempts: record.attempts,
           checkedBy: record.checkedBy,
+          verifiedSolution: false,
           links: mockLinks(i),
           objectiveIds: taught.length > 0 ? [taught[i % taught.length]!.objectiveId] : [],
         });

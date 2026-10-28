@@ -166,6 +166,8 @@ export interface PartKey {
   confidence: 'high' | 'low';
   /** `model` until official solutions replace it. */
   from: 'model' | 'solutions';
+  /** Present only after this version has checked the answer against a linked source page. */
+  solutionEvidence?: { fileId: string; page: number; method: 'text' | 'image'; version: 1 };
 }
 
 /**
@@ -215,6 +217,10 @@ export interface TutorialPartView {
   attempts: number;
   /** Whether the verdict came from code (`simulation`) or from Max's judgement (`model`). */
   checkedBy: 'simulation' | 'model' | null;
+  /** The linked official answer for this part was verified against the uploaded source. */
+  verifiedSolution: boolean;
+  /** A linked answer source exists, but this part has no verified key yet. */
+  solutionNeedsReview?: boolean;
   links: PartLinks;
   objectiveIds: string[];
 }
@@ -233,7 +239,7 @@ export interface TutorialView {
   status: TutorialStatus;
   error: string | null;
   parts: TutorialPartView[];
-  /** Whether the official solutions are in (`from: 'solutions'` on every key). */
+  /** Whether every part has a source-verified official answer. */
   hasSolutions: boolean;
   /**
    * **What the lecture teaches that no part of the sheet exercises** (Lucas, 3 Oct 2026: practice
@@ -269,6 +275,8 @@ export interface TutorialIngestInput {
   fileId: string;
   /** Read it again even though a document exists (the learner's answers carry over by part id). */
   force?: boolean;
+  /** Recheck linked answer PDFs without rebuilding the learner's tutorial document. */
+  forceSolutions?: boolean;
 }
 
 /** `tutorial:check` — judge the part's current answer, as the saved document holds it. */

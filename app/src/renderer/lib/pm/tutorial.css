@@ -96,6 +96,8 @@
   min-height: 26px;
 }
 .nd-tut-head-left { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.nd-tut-source-key { color: var(--nd-good); font-size: 11px; white-space: nowrap; }
+.nd-tut-source-review { color: var(--nd-bad); font-size: 11px; white-space: nowrap; }
 .nd-tut-label {
   font-weight: 650;
   font-size: 12.5px;

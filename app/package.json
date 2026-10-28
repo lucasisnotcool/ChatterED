@@ -22,6 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && svelte-check --tsconfig tsconfig.json --threshold error",
     "lint": "eslint src scripts",
     "test": "vitest run",
+    "test:tutorial": "vitest run src/core/planning.test.ts src/main/tutorial src/room/actor.tutorial.test.ts src/room/prompts.tutor.test.ts src/renderer/lib/pm/tutorial.test.ts src/shared/doc/tutorialdoc.test.ts",
     "test:watch": "vitest",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "dist:mac": "npm run build && electron-builder --mac dmg",

@@ -15,7 +15,7 @@
  * as a Max verdict fills it (full credit, whatever help was used: Lucas, 3 Oct). Then Max voices
  * it in the part's span thread (`actor.tutorialTurn`, kind `feedback`), and a line under the part.
  */
-import { judgeFormal } from '../../core/planning.js';
+import { judgeFormal, solveCheck } from '../../core/planning.js';
 import { statusAfterCheck } from '../../core/tutor.js';
 import type { QuizVerdict3 } from '../../shared/doc/types.js';
 import { TUTORIAL_QUESTION_PREFIX } from '../../shared/doc/progress.js';
@@ -36,6 +36,9 @@ export interface Judgement {
   verdict: QuizVerdict3;
   checkedBy: 'simulation' | 'model';
   detail: string;
+  /** The option set that actually produced this verdict, when code can establish one. */
+  correct?: string[];
+  choiceBasis?: 'formal' | 'key';
 }
 
 /**
@@ -90,7 +93,8 @@ export async function judgePart(deps: TutorialDeps, notebookId: string, resolved
     try {
       const formal = judgeFormal(key.check, { text: answer.text, blanks: answer.blanks, picked: answer.picked });
       if (formal && (key.check.type !== 'plan' || formal.verdict === 'complete' || !deps.llm(notebookId))) {
-        return { verdict: formal.verdict, checkedBy: 'simulation', detail: formal.detail };
+        return { verdict: formal.verdict, checkedBy: 'simulation', detail: formal.detail,
+          ...(key.check.type === 'sequences' ? { correct: solveCheck(key.check).correct, choiceBasis: 'formal' as const } : {}) };
       }
       if (formal) simulation = formal.detail;
     } catch (err) {
@@ -100,7 +104,7 @@ export async function judgePart(deps: TutorialDeps, notebookId: string, resolved
   if (answer.kind === 'choice' && key.correct && key.correct.length > 0 && key.confidence === 'high') {
     // Partial credit needs a right tick, no wrong one, and a right one missing: on a one-answer
     // part that cannot happen, so `multi` is safe to assume here.
-    return judgeChoice(answer.picked, key.correct, true);
+    return { ...judgeChoice(answer.picked, key.correct, true), correct: key.correct, choiceBasis: 'key' };
   }
   const llm = deps.llm(notebookId);
   if (!llm) return judgeByOverlap(answerText(answer), [key.answer, ...Object.values(key.blanks ?? {}).flat()].join(' '));
@@ -222,6 +226,16 @@ export async function checkPart(deps: TutorialDeps, input: TutorialCheckInput): 
     answer: answerText(resolved.answer),
     key: resolved.part.key,
     verdict: judged,
+    ...(resolved.answer.kind === 'choice' && judged.correct?.length
+      ? { choice: {
+          picked: resolved.answer.picked,
+          correct: judged.correct,
+          source: judged.choiceBasis === 'formal' ? 'code-verified answer'
+            : resolved.part.key.solutionEvidence?.version === 1 ? 'uploaded answer sheet' : 'worked answer',
+          suppressExplanation: judged.choiceBasis === 'formal' &&
+            JSON.stringify([...judged.correct].sort()) !== JSON.stringify([...(resolved.part.key.correct ?? [])].sort()),
+        } }
+      : {}),
     ...partMaterial(deps, input.notebookId, resolved.part),
     objectiveId,
   });
