@@ -258,8 +258,8 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
     source.title = 'This question’s answer was checked against the uploaded tutorial answers.';
     left.append(source);
   } else if (input.solutionNeedsReview) {
-    const source = el('span', 'nd-tut-source-review', 'Answer PDF needs review');
-    source.title = 'The uploaded answer for this question could not be verified. Check is unavailable until it can be read.';
+    const source = el('span', 'nd-tut-source-review', 'Using worked answer');
+    source.title = 'The uploaded answer could not be matched to this question, so Max checks against the worked answer generated for it.';
     left.append(source);
   }
   if (chrome.hintLevel > 0) left.append(rungDots(chrome));
@@ -288,8 +288,7 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
     markBusy(self);
     context().onCheck(partId);
   });
-  check.disabled = !chrome.canCheck || input.solutionNeedsReview;
-  if (input.solutionNeedsReview) check.title = 'The uploaded answer for this question needs review before Check is available.';
+  check.disabled = !chrome.canCheck;
 
   // The confirm, where the controls were: "Show the answer? It won't count. [Show it] [Keep trying]".
   const confirm = el('span', 'nd-tut-confirm');

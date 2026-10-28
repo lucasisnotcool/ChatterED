@@ -147,7 +147,12 @@ part: an answer, the sub-steps, likely mistakes, prerequisites. It never reaches
   key is run through the same check, and the computation wins where they disagree.
 - Elsewhere a second, independent pass re-solves the part; where it disagrees, the key is marked
   low-confidence and Max judges cautiously and says the official answer may differ.
-- **Official solutions**, added as a `solutions` source, replace the key for their tutorial.
+- **Official solutions**, added as a `solutions` source, replace the model key only for parts whose
+  answer can be tied to a page of that file. A verified PDF key is evidence of what the file says,
+  not independent proof that its answer is true. Formal code checks still win if the file is wrong.
+  A missing or unreadable answer leaves the model key in place and is shown as needing review.
+  For non-formal parts, a wrong but readable official key can still cause a wrong grade; this is
+  tracked in #69 and needs an independent adjudication path before the app can claim otherwise.
 
 ## 6. Progress (answer **"Yes, full credit"**)
 

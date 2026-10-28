@@ -41,7 +41,7 @@ export interface TutorialTurnInput {
   revealed?: boolean;
   verdict?: { verdict: 'complete' | 'partial' | 'not_yet'; checkedBy: 'simulation' | 'model'; detail: string };
   /** For choice feedback, code owns every option-specific claim in Max's final message. */
-  choice?: { picked: string[]; correct: string[] };
+  choice?: { picked: string[]; correct: string[]; source?: 'uploaded answer sheet' | 'worked answer' | 'code-verified answer'; suppressExplanation?: boolean };
   notes: { blockId: string; heading: string | null; text: string }[];
   slides: { page: number; label: string; text: string }[];
   objectiveId: string | null;

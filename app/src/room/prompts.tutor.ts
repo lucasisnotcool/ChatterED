@@ -40,6 +40,8 @@ export interface TutorPromptInput {
   answer: string;
   key: PartKey;
   verdict?: { verdict: QuizVerdict3; checkedBy: 'simulation' | 'model'; detail: string };
+  /** Choice classifications computed from the same key as the verdict. */
+  choice?: { picked: readonly string[]; correct: readonly string[] };
   /** The part was released (Show answer): a reply may then talk about the answer itself. */
   revealed?: boolean;
   notes: readonly { blockId: string; heading: string | null; text: string }[];
@@ -84,6 +86,7 @@ export function checkedChoiceFeedback(input: {
   picked: readonly string[];
   correct: readonly string[];
   pages: readonly number[];
+  source?: 'uploaded answer sheet' | 'worked answer' | 'code-verified answer';
 }): string {
   const right = new Set(input.correct);
   const selectedRight = input.picked.filter((id) => right.has(id));
@@ -91,13 +94,36 @@ export function checkedChoiceFeedback(input: {
   const missing = input.correct.filter((id) => !input.picked.includes(id)).length;
   const opener = input.verdict === 'complete' ? 'Well done.' : input.verdict === 'partial' ? 'Partly there.' : 'Not yet.';
   const facts = [
-    selectedRight.length ? `${selectedRight.join(', ')} ${selectedRight.length === 1 ? 'matches' : 'match'} the answer key` : '',
-    selectedWrong.length ? `${selectedWrong.join(', ')} ${selectedWrong.length === 1 ? 'does' : 'do'} not` : '',
+    selectedRight.length ? `${selectedRight.join(', ')} ${selectedRight.length === 1 ? 'is correct' : 'are correct'}` : '',
+    selectedWrong.length ? `${selectedWrong.join(', ')} ${selectedWrong.length === 1 ? 'is' : 'are'} incorrect` : '',
     missing ? `${missing} correct ${missing === 1 ? 'option is' : 'options are'} still unticked` : '',
   ].filter(Boolean).join('; ');
   const pages = [...new Set(input.pages)].slice(0, 3);
   const reference = pages.length ? ` Review the relevant lecture material on ${pages.map((p) => `p. ${p}`).join(', ')}.` : '';
-  return `${opener}\nI checked your selections against the answer key: ${facts}.${reference}`;
+  return `${opener}\nI checked your selections against the ${input.source ?? 'worked answer'}: ${facts}.${reference}`;
+}
+
+/** Keep Max's concept explanation while dropping any sentence that grades a named option. */
+export function settleChoiceFeedback(input: {
+  draft: string;
+  verdict: 'complete' | 'partial' | 'not_yet';
+  picked: readonly string[];
+  correct: readonly string[];
+  pages: readonly number[];
+  source?: 'uploaded answer sheet' | 'worked answer' | 'code-verified answer';
+}): string {
+  const base = checkedChoiceFeedback(input);
+  const optionLabels = input.picked.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const namesPickedOption = optionLabels.length > 0 ? new RegExp(`\\b(?:${optionLabels.join('|')})\\b`, 'i') : null;
+  const gradesOption = /\b(?:correct|incorrect|wrong|right|needs? checking|matches?|does not|do not)\b/i;
+  const explanation = input.draft
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0)
+    .filter((sentence) => !/^(?:well done|partly there|not yet)\b/i.test(sentence))
+    .filter((sentence) => !(namesPickedOption?.test(sentence) && gradesOption.test(sentence)))
+    .join(' ');
+  return explanation ? `${base}\n${explanation}` : base;
 }
 
 /** The largest ceiling of a kind, whatever the rung: what the over-length log measures against. */
@@ -259,6 +285,15 @@ function kindBlock(input: TutorPromptInput): string[] {
         `The verdict is decided: **${v.verdict.replace('_', ' ')}**. Your first line is exactly **${opener}**`,
         `What the check found: ${v.detail.trim() || '(no detail given)'}`,
       ];
+      if (input.choice) {
+        const correct = new Set(input.choice.correct);
+        const right = input.choice.picked.filter((id) => correct.has(id));
+        const wrong = input.choice.picked.filter((id) => !correct.has(id));
+        lines.push(
+          `The app computed these option classifications from the same answer used for the verdict: ${right.length ? `${right.join(', ')} ${right.length === 1 ? 'is' : 'are'} correct` : 'no selected option is correct'}${wrong.length ? `; ${wrong.join(', ')} ${wrong.length === 1 ? 'is' : 'are'} incorrect` : ''}.`,
+          'These classifications are authoritative. Explain the underlying concept and why it matters, but do not re-grade, question, or contradict any named option. Do not introduce a claim about an unselected option.',
+        );
+      }
       if (v.checkedBy === 'simulation') {
         lines.push(
           'This was **verified by code**, not judged: the app ran their answer (simulated the plan, or',
