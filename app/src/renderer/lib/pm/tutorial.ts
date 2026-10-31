@@ -284,7 +284,7 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
   refresher.append(agentDot('ellie'), document.createTextNode('Refresher'));
   refresher.setAttribute('aria-label', 'Refresher (Ellie)');
 
-  const check = button('nd-tut-btn nd-tut-check', 'Check', chrome.checkTitle, (self) => {
+  const check = button('nd-tut-btn nd-tut-check', 'Check answer', chrome.checkTitle, (self) => {
     markBusy(self);
     context().onCheck(partId);
   });
@@ -320,7 +320,7 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
   // ── the Help menu ──
   const wrap = el('span', 'nd-tut-help-wrap');
   const menuId = `nd-tut-menu-${String(++menuSeq)}`;
-  const helpButton = button('nd-tut-btn nd-tut-help', '', 'Hints, a refresher, or the answer', () => {
+  const helpButton = button('nd-tut-btn nd-tut-help', '', chrome.canReveal ? 'Hints, a refresher, or the answer' : 'Hints or a refresher', () => {
     if (menu.hidden) openMenu();
     else closeMenu(true);
   });

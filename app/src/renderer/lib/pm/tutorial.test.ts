@@ -100,12 +100,17 @@ describe('the help ladder and the status pill', () => {
     expect(fresh.dots).toEqual([false, false, false]);
     expect(fresh.nextHint).toBe('Point');
     expect(fresh.canCheck).toBe(false);
-    expect(fresh.canReveal).toBe(true);
+    expect(fresh.canReveal).toBe(false);
 
-    const climbed = partChromeState(partView('P1a', { hintLevel: 2, status: 'incorrect', checkedBy: 'model' }), false);
+    const hinted = partChromeState(partView('P1a', { hintLevel: 3 }), false);
+    expect(hinted.canReveal).toBe(false);
+    expect(hinted.hintTitle).toMatch(/Try your answer/);
+
+    const climbed = partChromeState(partView('P1a', { hintLevel: 2, status: 'incorrect', attempts: 1, checkedBy: 'model' }), false);
     expect(climbed.dots).toEqual([true, true, false]);
     expect(climbed.nextHint).toBe('A worked step');
     expect(climbed.canCheck).toBe(true);
+    expect(climbed.canReveal).toBe(true);
     expect(climbed.look.label).toBe('✗ not yet');
 
     const top = partChromeState(partView('P1a', { hintLevel: 3, status: 'revealed' }), false);
@@ -229,7 +234,8 @@ describe('From the notes', () => {
 
 describe('the Help menu', () => {
   it('offers the next rung, a refresher, and the give-up set apart', () => {
-    const items = helpMenuItems(partChromeState(null, true));
+    expect(helpMenuItems(partChromeState(null, true)).map((i) => i.id)).toEqual(['hint', 'refresher']);
+    const items = helpMenuItems(partChromeState(partView('P1a', { attempts: 1, status: 'incorrect' }), false));
     expect(items.map((i) => i.id)).toEqual(['hint', 'refresher', 'reveal']);
     expect(items[0]).toMatchObject({ label: 'Hint', rung: 'Point', who: 'max', disabled: false });
     expect(items[0]!.detail).toMatch(/^1 of 3 from Max/);

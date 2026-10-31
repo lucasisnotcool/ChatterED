@@ -116,9 +116,9 @@ this a possible decision point"*). Each part's buttons:
   2. **Break it down:** the part as two to four sub-steps (subgoal labels).
   3. **A worked step:** one step done on an analogous case from the lecture, not this part.
 - **Refresher:** the prerequisite, from the lecture notes and slides, by Ellie.
-- **Check:** judged against the hidden key (§5); Max says what is right and what is missing,
+- **Check answer:** judged against the hidden key (§5); Max says what is right and what is missing,
   without giving the rest.
-- **Show answer:** a give-up. The key's answer, then Max asks for one line on why it works.
+- **Show answer:** offered after the learner has checked this part at least once. A give-up. The key's answer, then Max asks for one line on why it works.
   Fills nothing, as a release never has.
 
 Hints are not timer-gated. Each help gives the full explanation **in the chat** (the part's own
@@ -271,6 +271,13 @@ tutorial presentations retain their Help menu. Agent-written tutorial feedback u
 compact card treatment and existing Keep/Remove actions. These changes affect presentation
 and action placement only; the tutorial controller, hint ladder, agent routing, and saved
 document operations are unchanged.
+
+*Amended 31 Oct 2026 (Valerie):* The primary action reads **Check answer**. **Show answer**
+appears only after that part has been checked once; the same rule applies in the Help menu.
+This gives the learner a first attempt before the give-up action appears. The release's
+confirmation and grading consequence are unchanged. Sources may be dragged between Lecture
+notes, Tutorials and Tutorial answers; dropping changes the source role through the existing
+role action, while Finder drops still add new files.
 
 ## 13. Tutorial workbench cleanup (Valerie, 26 Oct 2026)
 

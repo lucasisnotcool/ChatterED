@@ -4,22 +4,17 @@
    *
    * Two things beyond a textarea, and both are rules made visible rather than hidden:
    *
-   *  1. **`@Ellie` / `@Max`.** Typing `@` offers the two of them; a recognised mention is drawn
-   *     as a coloured token, and the line under the box says what naming someone *does* — that
-   *     agent only, and no follow-up (`rule:mention`). The highlighting runs on
-   *     `shared/doc/mention.ts`, the same function the actor decides with, so the token cannot
-   *     say one thing and the room do another.
+   *  1. **`@Ellie` / `@Max`.** Typing `@` offers the two of them, and the line under the box says
+   *     what naming someone *does* — that agent only, and no follow-up (`rule:mention`).
    *  2. **Max's open question.** The placeholder becomes *Your answer…*, **Pass** appears, and
    *     the quiet line says that saying "I don't know" is a way out that works (§4.4). The
    *     learner is told before they are stuck, because a give-up that releases the answer and
    *     lowers the next question is a design decision they should be able to use on purpose.
    *
-   * The token layer is a mirror of the textarea's text under a transparent textarea — the way
-   * every editor with inline highlighting does it. The two share a font, a padding and a
-   * line-height, and the mirror is `aria-hidden`: the textarea is still the real control, so
-   * selection, undo, IME and a screen reader all behave exactly as they would in a plain box.
+   * The textarea is the only text layer, so selection, undo, IME and screen readers use the same
+   * characters the learner sees.
    */
-  import { AGENT_HUE, AGENT_NAME, mentionMatches, mentionPieces, mentionQuery, parseMention } from '../../lib/chatview.js';
+  import { AGENT_HUE, AGENT_NAME, mentionMatches, mentionQuery, parseMention } from '../../lib/chatview.js';
   import type { AgentAuthor } from '../../../shared/doc/types.js';
   import { noteDraft } from '../../lib/quiethelp.js';
 
@@ -60,7 +55,6 @@
   /** The `@` menu: open only while the caret is inside a half-typed mention. */
   let menuIndex = $state(0);
 
-  const pieces = $derived(mentionPieces(text));
   const query = $derived(mentionQuery(text, caret));
   const options = $derived(query ? mentionMatches(query.query) : []);
   const menuOpen = $derived(options.length > 0);
@@ -146,20 +140,6 @@
 <div class="composer">
   <p class="destination">{placeholder}</p>
   <div class="field">
-    <!-- The token mirror. Purely decorative: it repeats what the textarea holds, in the same
-         metrics, so the coloured `@Max` sits exactly under the characters it is about. -->
-    <div class="mirror" aria-hidden="true">
-      {#each pieces as piece, i (i)}
-        {#if piece.kind === 'mention'}
-          <span class="token" style="--hue: {AGENT_HUE[piece.agent]}">{piece.text}</span>
-        {:else}
-          <span>{piece.text}</span>
-        {/if}
-      {/each}
-      <!-- A trailing newline collapses in a block box; this keeps the mirror as tall as the box. -->
-      <span>&#8203;</span>
-    </div>
-
     <textarea
       bind:this={box}
       bind:value={text}
@@ -241,46 +221,21 @@
   .destination { margin: 0 0 5px; color: var(--text-2); font-size: 11px; }
   .field { position: relative; }
 
-  /* The two layers share every metric that affects where a character lands. */
-  .mirror, textarea {
+  textarea {
     font: inherit;
     font-size: 13px;
     line-height: 1.55;
     padding: 9px 42px 9px 11px;
     border: 1px solid transparent;
     border-radius: var(--radius);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .mirror {
-    position: absolute;
-    inset: 0;
-    color: transparent;
-    pointer-events: none;
-    overflow: hidden;
-  }
-  .token {
-    color: var(--hue);
-    background: color-mix(in srgb, var(--hue) 11%, transparent);
-    border-radius: 4px;
-    font-weight: 600;
   }
 
   textarea {
     position: relative;
     width: 100%;
     resize: none;
-    background: transparent;
-    border-color: var(--hairline);
-    /* Over the mirror, with the text itself visible: the token's tint shows through. */
-    background-color: transparent;
-  }
-  .field::before {
-    content: '';
-    position: absolute;
-    inset: 0;
     background: var(--pane);
-    border-radius: var(--radius);
+    border-color: var(--hairline);
   }
   textarea::placeholder { color: var(--muted); }
   textarea:focus { border-color: var(--indigo); outline: none; }
