@@ -94,12 +94,17 @@
     .filelist .remove-source svg { width: 16px; height: 16px; }
     .filelist .remove-source:hover, .filelist .remove-source:focus-visible { color: var(--color-danger); background: var(--color-danger-soft); }
     .filelist .empty { color: var(--color-muted); font-style: italic; }
-    .main { position: relative; overflow: hidden; display: flex; flex: 1; min-width: 0; min-height: 0; }
+    .main { overflow: hidden; display: flex; flex-direction: row; width: 100%; flex: 1; min-width: 0; min-height: 0; }
     .panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-    .pdfpanel { position: absolute; z-index: 8; inset: 0 0 0 auto; width: min(480px, calc(100% - 24px)); background: var(--color-paper-hi); border-left: 1px solid var(--color-rule); box-shadow: -12px 0 30px var(--color-shadow-soft); visibility: hidden; transform: translateX(100%); transition: transform 180ms ease, visibility 180ms; }
-    .pdfpanel.open { visibility: visible; transform: translateX(0); }
+    .pdfpanel { box-sizing: border-box; width: 0; flex: none; overflow: hidden; background: var(--color-paper-hi); transition: width 300ms ease; }
+    .pdfpanel.open { border-right: 1px solid var(--color-rule); }
+    .main.dragging .pdfpanel, .main.dragging .answerpanel { transition: none; }
+    .main.dragging .pdfarea iframe, .main.dragging .pdfarea canvas { pointer-events: none; }
+    .pdf-resizer { width: 8px; flex: 0 0 8px; cursor: col-resize; user-select: none; touch-action: none; background: var(--color-rule); }
+    .pdf-resizer:hover, .pdf-resizer:focus-visible, .main.dragging .pdf-resizer { background: var(--color-focus); }
+    .pdf-resizer[hidden] { display: none; }
     .pdf-close { margin-left: auto; border: 0; border-radius: 6px; background: transparent; font-size: 20px; }
-    .answerpanel { flex: 1; }
+    .answerpanel { flex: 1 1 auto; width: 100%; transition: width 300ms ease; }
     .chatpanel { width: var(--chat-width, 320px); flex: none; background: var(--color-paper-hi); }
     .divider { width: 7px; flex: none; background: var(--color-rule); cursor: col-resize; position: relative; touch-action: none; }
     .divider:hover, .divider.dragging, .divider:focus-visible { background: var(--color-focus); }
@@ -264,7 +269,7 @@
 <div class="app">
   <header class="top"><div class="brand">Chatter<i>ED</i></div><input id="workspaceTitleInput" class="top-title" aria-label="Workspace name" title="Click to rename workspace" maxlength="60" value="Tutorial workspace"><nav class="tabs" aria-label="Main view"><button id="tutorialTab" aria-selected="true">Tutorial</button><button id="summaryTab" aria-selected="false">Summary notes</button></nav><small>Local UI preview</small></header>
   <div class="shell"><nav class="nav-rail" aria-label="Main"><button id="homeNav" type="button" aria-label="Notebooks" title="Notebooks" aria-current="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 9 7.5-6 7.5 6v8H2.5z"/><path d="M8 17v-5h4v5"/></svg></button><button id="searchNav" type="button" aria-label="Search" title="Search all notebooks (⇧⌘F)" aria-current="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="7" cy="7" r="4.8"/><path d="M10.6 10.6 14 14" stroke-linecap="round"/></svg></button></nav><div class="shell-main">
-  <div class="toolbar"><button id="toggleSources" class="btn mini" aria-expanded="false" aria-controls="sources">☰ Sources</button><select id="tutorialPicker" class="tutorial-picker" aria-label="Choose tutorial" hidden></select><span class="spacer"></span><button id="togglePdf" class="btn mini" type="button" aria-expanded="false" aria-controls="pdfPanel">📄 View Source PDF</button><button id="toggleChat" class="btn mini" aria-expanded="false" aria-controls="chatPanel">💬 Chats</button></div>
+  <div class="toolbar"><button id="toggleSources" class="btn mini" aria-expanded="false" aria-controls="sources">☰ Sources</button><select id="tutorialPicker" class="tutorial-picker" aria-label="Choose tutorial" hidden></select><button id="togglePdf" class="btn mini" type="button" aria-expanded="false" aria-controls="pdfPanel">📄 View Source PDF</button><span class="spacer"></span><button id="toggleChat" class="btn mini" aria-expanded="false" aria-controls="chatPanel">💬 Chats</button></div>
   <div class="workspace" id="tutorialView">
     <aside class="sources" id="sources" hidden><h2>Sources</h2><p>Add as many files as you need in each category. Choose a tutorial PDF to view it here.</p>
       <div class="group"><div class="grouphead"><h3>Lecture notes</h3><button class="add-source" id="addLecture" type="button" aria-label="Add lecture notes" title="Add lecture notes">+</button><input id="lectureFiles" type="file" accept=".pdf,.doc,.docx,.md,.txt" multiple></div><ul class="filelist" id="lectureList"><li class="empty">No files yet</li></ul></div>
@@ -273,6 +278,7 @@
     </aside>
     <div class="divider" id="sourceDivider" role="separator" aria-label="Resize sources panel" aria-orientation="vertical" tabindex="0" hidden></div>
     <main class="main" id="main"><section class="panel pdfpanel" id="pdfPanel" aria-label="Original tutorial PDF"><div class="panelhead"><span class="title" id="pdfTitle">Original tutorial PDF</span><span class="sample-badge" id="pdfBadge"></span><button class="pdf-close" id="closePdf" type="button" aria-label="Close source PDF">×</button></div><div class="pdfarea" id="pdfArea"><div class="pdfempty"><strong>Open your tutorial PDF</strong><span>Use Sources → Tutorials → +.</span></div></div></section>
+      <div class="pdf-resizer" id="pdfResizer" role="separator" aria-label="Resize source PDF" aria-controls="pdfPanel" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0" hidden></div>
       <section class="panel answerpanel" id="answerPanel" aria-label="Combined tutorial sheet"><div class="panelhead"><span class="title" id="workingTitle">Combined tutorial sheet</span><span class="hint" id="saveStatus">Saved on this computer</span></div><div class="editorbg"><div class="page"><p class="combined-lead" id="combinedLead">In Electron, AI generates the question text and answer spaces; this browser preview uses text extracted from your PDF.</p><div id="questionList"></div><div class="add-row"><button class="btn mini" id="addQuestion">+ Add missing question</button><label for="questionNumber">Q</label><input id="questionNumber" aria-label="Question number to add" value="1" inputmode="numeric"></div><p class="detect-note" id="detectNote">Choose a tutorial PDF to find its questions. You can add any missed question yourself.</p></div></div></section></main>
     <div class="divider" id="chatDivider" role="separator" aria-label="Resize chat panel" aria-orientation="vertical" tabindex="0" hidden></div>
     <aside class="panel chatpanel" id="chatPanel" aria-label="Chats with Ellie and Max" hidden><div class="panelhead"><div class="chat-tabs" role="tablist" aria-label="Which conversation"><button data-agent="doc" role="tab" aria-selected="false" tabindex="-1" style="--tab-hue:var(--color-accent)">Doc chat</button><button data-agent="ellie" role="tab" aria-selected="true" tabindex="0" style="--tab-hue:var(--color-peer)"><span class="agent-dot" aria-hidden="true"></span>Ellie</button><button data-agent="max" role="tab" aria-selected="false" tabindex="-1" style="--tab-hue:var(--color-challenger)"><span class="agent-dot" aria-hidden="true"></span>Max</button></div><button class="chat-reset" id="resetChat" type="button" aria-label="New conversation" title="Clear preview chats and start again">↺</button><button class="chat-close" id="closeChat" type="button" aria-label="Collapse chats" title="Collapse chats">⟩</button></div><div class="chat-body" id="chatBody" role="tabpanel"></div><div class="chat-compose"><textarea id="chatDraft" rows="3" aria-label="Message" placeholder="Type a message…"></textarea><div class="chat-compose-foot"><span class="hint" id="chatDestination">To Ellie in Doc chat · Enter sends</span><button class="btn primary" id="sendChat" type="button" aria-label="Send message" title="Send message">➤</button></div></div></aside>
@@ -337,6 +343,9 @@
   function saveWorkspaceNames() { try { localStorage.setItem(workspaceMetaKey, JSON.stringify(workspaces.map(({ id, name }) => ({ id, name })))); } catch { notice('Workspace names could not be saved on this computer.'); } }
   function setPdfOpen(open) {
     $('pdfPanel').classList.toggle('open', open);
+    $('pdfPanel').style.width = open ? `${pdfPanelWidth}%` : '0%';
+    $('answerPanel').style.width = open ? `calc(${100 - pdfPanelWidth}% - 8px)` : '100%';
+    $('pdfResizer').hidden = !open;
     $('pdfPanel').inert = !open;
     $('pdfPanel').setAttribute('aria-hidden', String(!open));
     $('togglePdf').setAttribute('aria-expanded', String(open));
@@ -346,6 +355,22 @@
   $('togglePdf').onclick = () => setPdfOpen(!$('pdfPanel').classList.contains('open'));
   $('closePdf').onclick = () => { setPdfOpen(false); $('togglePdf').focus({ preventScroll: true }); };
   $('pdfPanel').onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); $('closePdf').click(); } };
+  let pdfPanelWidth = 50;
+  function resizePdf(x) {
+    const rect = $('main').getBoundingClientRect();
+    if (!rect.width) return;
+    pdfPanelWidth = Math.max(20, Math.min(80, ((x - rect.left) / rect.width) * 100));
+    $('pdfPanel').style.width = `${pdfPanelWidth}%`;
+    $('answerPanel').style.width = `calc(${100 - pdfPanelWidth}% - 8px)`;
+    $('pdfResizer').setAttribute('aria-valuenow', String(Math.round(pdfPanelWidth)));
+  }
+  const pdfResizer = $('pdfResizer');
+  pdfResizer.onpointerdown = event => { if (event.button !== 0) return; event.preventDefault(); $('main').classList.add('dragging'); pdfResizer.setPointerCapture(event.pointerId); resizePdf(event.clientX); };
+  pdfResizer.onpointermove = event => { if (pdfResizer.hasPointerCapture(event.pointerId)) resizePdf(event.clientX); };
+  pdfResizer.onpointerup = event => { if (pdfResizer.hasPointerCapture(event.pointerId)) pdfResizer.releasePointerCapture(event.pointerId); };
+  pdfResizer.onpointercancel = event => { if (pdfResizer.hasPointerCapture(event.pointerId)) pdfResizer.releasePointerCapture(event.pointerId); };
+  pdfResizer.onlostpointercapture = () => $('main').classList.remove('dragging');
+  pdfResizer.onkeydown = event => { if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return; event.preventDefault(); const rect = $('main').getBoundingClientRect(); resizePdf(rect.left + ((pdfPanelWidth + (event.key === 'ArrowRight' ? 2 : -2)) / 100) * rect.width); };
   setPdfOpen(false);
   function uniqueName(name, except = null) { return !workspaces.some(space => space !== except && space.name.toLocaleLowerCase() === name.toLocaleLowerCase()); }
   function key() { const base = selected ? `${selected.name}.${selected.size}.${selected.lastModified}` : 'unspecified'; return `chattered.preview.answers.${currentWorkspace.id === 'default' ? '' : `${currentWorkspace.id}.`}${base}`; }

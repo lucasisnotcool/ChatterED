@@ -31,9 +31,9 @@ Uploaded PDF pages are rendered from their files and are never recoloured. The p
 
 The Tutorial and Summary notes tabs sit at the centre of the global header and appear only while a workspace is open. The workspace name sits beside the brand as an inline editable field with a quiet hover border. Home and Search keep the brand and navigation rail, without workspace-specific tabs or title.
 
-The contextual toolbar groups Sources and the tutorial selector on the left. View Source PDF and Chats sit on the right. The source sections use labelled + icon buttons; each file still has its own removal control.
+The contextual toolbar groups Sources, the tutorial selector, and View Source PDF on the left. Chats sits on the right. The source sections use labelled + icon buttons; each file still has its own removal control.
 
-The combined sheet presents prompts and answer boxes in one column. The original PDF opens in a side drawer for reference while the sheet stays in place. The browser preview fills prompts from extracted PDF text and makes no AI call; Electron's sheet is AI generated.
+The combined sheet presents prompts and answer boxes in one column. The original PDF opens on the left and pushes the sheet to the right; a draggable divider adjusts their widths. The browser preview fills prompts from extracted PDF text and makes no AI call; Electron's sheet is AI generated.
 
 At narrow widths, Sources and Chats start collapsed and open as side overlays. At desktop widths, they start open beside the combined sheet. The sample actions show deterministic responses in Doc chat: Check answer, Hint and Show answer display Max; Refresher displays Ellie. Note actions display Ellie for Explain/Example and Max for Quiz me. Private tabs remain visible to model the live backend's privacy boundaries.
 
@@ -55,4 +55,4 @@ The localhost page does not call the Electron agent or notebook backend. Its sam
 
 ## Electron renderer boundary
 
-As of 31 Oct 2026, Electron shows only the generated combined sheet in the tutorial's center column. View Source PDF opens the original file through the existing bridge in a closable side drawer; opening and closing it keeps the sheet mounted and preserves its scroll position. Generated parts and answer slots remain the only ones with Check answer, Hint, Point, and Refresher actions. Agent inline edits retain Remove and Keep; real conversations stay in their existing Doc chat, Ellie, or Max channels. The chat panel can be closed visually while its component and unsent draft stay mounted. The standalone browser prototype follows the same single-sheet layout with sample content.
+As of 31 Oct 2026, Electron shows only the generated combined sheet in the tutorial's center column. View Source PDF opens the original file through the existing bridge in a left-side panel. It shares a flex row with the sheet and can be resized from 20% to 80%; opening and closing it keeps the sheet mounted and preserves its scroll position. Generated parts and answer slots remain the only ones with Check answer, Hint, Point, and Refresher actions. Agent inline edits retain Remove and Keep; real conversations stay in their existing Doc chat, Ellie, or Max channels. The chat panel can be closed visually while its component and unsent draft stay mounted. The standalone browser prototype follows the same single-sheet layout with sample content.

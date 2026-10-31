@@ -135,7 +135,10 @@
   $effect(() => { if (!tutorialMain) closeTutorialTools(); });
   let sourcePdfOpen = $state(false);
   let sourcePdfActivated = $state(false);
-  let sourcePdfTrigger: HTMLButtonElement;
+  let pdfPanelWidth = $state(50);
+  let isPdfDragging = $state(false);
+  let pdfRow = $state<HTMLDivElement | null>(null);
+  let sourcePdfTrigger = $state<HTMLButtonElement | null>(null);
   function closeSourcePdf(): void {
     sourcePdfOpen = false;
     sourcePdfTrigger?.focus({ preventScroll: true });
@@ -143,8 +146,29 @@
   $effect(() => {
     const fileId = mainFileId;
     void fileId;
-    untrack(() => { sourcePdfOpen = false; });
+    untrack(() => { sourcePdfOpen = false; sourcePdfActivated = false; });
   });
+  function resizePdf(clientX: number): void {
+    if (!pdfRow) return;
+    const rect = pdfRow.getBoundingClientRect();
+    if (rect.width > 0) pdfPanelWidth = Math.max(20, Math.min(80, ((clientX - rect.left) / rect.width) * 100));
+  }
+  function beginPdfResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    isPdfDragging = true;
+    if (event.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture(event.pointerId);
+    resizePdf(event.clientX);
+  }
+  function movePdfResize(event: PointerEvent): void {
+    if (isPdfDragging) resizePdf(event.clientX);
+  }
+  function endPdfResize(event: PointerEvent): void {
+    isPdfDragging = false;
+    if (event.currentTarget instanceof HTMLElement && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
   /** With the swap on, the notes are a window over the app while open, and hidden while not. */
   const notesFloating = $derived(tutorialMain && layout.notesWindowOpen);
   const notesHidden = $derived(tutorialMain && !layout.notesWindowOpen);
@@ -401,6 +425,17 @@
             <option value={v.fileId}>{store.notebook.view?.sources.find((s) => s.fileId === v.fileId)?.name ?? v.title ?? 'Tutorial'}</option>
           {/each}
         </select>
+        <button
+          bind:this={sourcePdfTrigger}
+          type="button"
+          class="source-pdf-trigger"
+          aria-expanded={sourcePdfOpen}
+          aria-controls="tutorial-source-pdf"
+          onclick={() => {
+            sourcePdfActivated = true;
+            sourcePdfOpen = !sourcePdfOpen;
+          }}
+        >📄 {sourcePdfOpen ? 'Hide Source PDF' : 'View Source PDF'}</button>
       {/if}
 
       <!-- The bar, in the doc header, where §6 puts it. The popover hangs off this wrapper. -->
@@ -417,17 +452,6 @@
 
       <!-- The swap (2026-10-04): only in a notebook with a tutorial. -->
       {#if tutorialMain}
-        <button
-          bind:this={sourcePdfTrigger}
-          type="button"
-          class="source-pdf-trigger"
-          aria-expanded={sourcePdfOpen}
-          aria-controls="tutorial-source-pdf"
-          onclick={() => {
-            sourcePdfActivated = true;
-            sourcePdfOpen = !sourcePdfOpen;
-          }}
-        >📄 {sourcePdfOpen ? 'Hide Source PDF' : 'View Source PDF'}</button>
         <details class="tutorial-tools" bind:this={tutorialTools} ontoggle={() => { if (!tutorialTools?.open) confirmingReread = false; }}>
           <summary aria-label="Tutorial tools" title="Tutorial tools">⋯</summary>
           <div class="tools-menu">
@@ -502,10 +526,36 @@
       <!-- The swap: the sheet is the middle column, the whole of it. -->
       <section class="tutmain" id="tutorial-column" aria-label="Tutorial">
         <div class="tutmain-pacing"><PacingStrip /></div>
-        <div class="tutorial-sheet"><TutorialPane main /></div>
-        {#if sourcePdfActivated && mainFileId}
-          <SourcePdfDrawer fileId={mainFileId} open={sourcePdfOpen} onclose={closeSourcePdf} />
-        {/if}
+        <div class="tutorial-content-row" class:dragging={isPdfDragging} bind:this={pdfRow}>
+          {#if mainFileId}
+            <SourcePdfDrawer fileId={mainFileId} open={sourcePdfOpen} activated={sourcePdfActivated} dragging={isPdfDragging} width={pdfPanelWidth} onclose={closeSourcePdf} />
+          {/if}
+          {#if sourcePdfOpen}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+            <div
+              class="pdf-resizer"
+              role="separator"
+              tabindex="0"
+              aria-orientation="vertical"
+              aria-label="Resize source PDF"
+              aria-controls="tutorial-source-pdf"
+              aria-valuemin="20"
+              aria-valuemax="80"
+              aria-valuenow={Math.round(pdfPanelWidth)}
+              onpointerdown={beginPdfResize}
+              onpointermove={movePdfResize}
+              onpointerup={endPdfResize}
+              onpointercancel={endPdfResize}
+              onlostpointercapture={() => { isPdfDragging = false; }}
+              onkeydown={(event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                pdfPanelWidth = Math.max(20, Math.min(80, pdfPanelWidth + (event.key === 'ArrowRight' ? 2 : -2)));
+              }}
+            ></div>
+          {/if}
+          <div class="tutorial-sheet" style:width={sourcePdfOpen ? `calc(${100 - pdfPanelWidth}% - 8px)` : '100%'}><TutorialPane main /></div>
+        </div>
       </section>
     {/if}
     </div>
@@ -584,9 +634,14 @@
   .notes-map-overlay :global(.map) { pointer-events: auto; }
 
   /* ── The swap (2026-10-04): the sheet in the middle, the notes hidden or in a window ── */
-  .tutmain { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .tutorial-sheet { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
+  .tutmain { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .tutorial-content-row { display: flex; flex-direction: row; width: 100%; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+  .tutorial-sheet { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; overflow: hidden; transition: width 300ms ease; }
+  .tutorial-content-row.dragging .tutorial-sheet { transition: none; }
   .tutorial-sheet > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
+  .pdf-resizer { width: 8px; flex: 0 0 8px; cursor: col-resize; user-select: none; touch-action: none; background: var(--hairline); }
+  .pdf-resizer:hover, .pdf-resizer:focus-visible, .tutorial-content-row.dragging .pdf-resizer { background: var(--indigo); }
+  @media (prefers-reduced-motion: reduce) { .tutorial-sheet { transition: none; } }
   /* The disclosure, once per install, above the sheet; it scrolls rather than crowd it out. */
   .tutmain-pacing { flex: 0 1 auto; max-height: 50%; overflow-y: auto; }
   .tutmain-pacing:empty { display: none; }

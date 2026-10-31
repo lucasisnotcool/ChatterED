@@ -305,7 +305,10 @@ its local draft sections, and its PDF/working divider are retired, superseding Â
 where they describe those controls. Existing saved tutorial documents and answer slots remain
 unchanged.
 
-**View Source PDF** in the workspace toolbar opens the original file in a closable side drawer.
-The drawer overlays the right edge of the sheet without remounting or scrolling it. Closing the
-drawer returns keyboard focus to its toolbar button; reopening it keeps the PDF viewer's place.
-The source PDF remains a reference, while actions and checking continue to use generated part IDs.
+**View Source PDF** in the workspace toolbar opens the original file on the left of the sheet.
+The two surfaces share one horizontal row; opening the panel pushes the still-mounted sheet to
+the right without changing its scroll position. The learner can drag their divider between 20%
+and 80% of the row. Closing the panel returns keyboard focus to its toolbar button; reopening it
+keeps the PDF viewer's place. The source PDF remains a reference, while actions and checking
+continue to use generated part IDs. This left-side push layout amends the earlier drawer
+placement in this section (31 Oct 2026).

@@ -2,7 +2,14 @@
   import { tick } from 'svelte';
   import TutorialOriginalPdf from './TutorialOriginalPdf.svelte';
 
-  let { fileId, open, onclose }: { fileId: string; open: boolean; onclose: () => void } = $props();
+  let { fileId, open, activated, dragging, width, onclose }: {
+    fileId: string;
+    open: boolean;
+    activated: boolean;
+    dragging: boolean;
+    width: number;
+    onclose: () => void;
+  } = $props();
   let closeButton: HTMLButtonElement;
 
   $effect(() => {
@@ -14,6 +21,8 @@
   id="tutorial-source-pdf"
   class="source-pdf-drawer"
   class:open
+  class:dragging
+  style:width={open ? `${width}%` : '0%'}
   aria-label="Source PDF"
   aria-hidden={!open}
   inert={!open}
@@ -28,26 +37,23 @@
     <strong>Source PDF</strong>
     <button bind:this={closeButton} type="button" aria-label="Close source PDF" title="Close source PDF (Esc)" onclick={onclose}>×</button>
   </header>
-  <TutorialOriginalPdf {fileId} />
+  {#if activated}<TutorialOriginalPdf {fileId} />{/if}
 </aside>
 
 <style>
   .source-pdf-drawer {
-    position: absolute;
-    z-index: 12;
-    inset: 0 0 0 auto;
-    width: min(480px, calc(100% - 24px));
+    flex: none;
+    box-sizing: border-box;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid var(--hairline);
+    overflow: hidden;
+    border-right: 0 solid var(--hairline);
     background: var(--pane);
-    box-shadow: -16px 0 36px rgb(20 20 40 / 16%);
-    visibility: hidden;
-    transform: translateX(100%);
-    transition: transform 180ms ease, visibility 180ms;
+    transition: width 300ms ease;
   }
-  .source-pdf-drawer.open { visibility: visible; transform: translateX(0); }
+  .source-pdf-drawer.open { border-right-width: 1px; }
+  .source-pdf-drawer.dragging { transition: none; }
   .source-pdf-head {
     flex: none;
     display: flex;
@@ -61,6 +67,8 @@
   .source-pdf-head button { border-radius: 6px; padding: 2px 8px; font-size: 20px; line-height: 1; }
   .source-pdf-head button:hover { background: var(--indigo-tint); color: var(--indigo); }
   .source-pdf-drawer > :global(.original-pdf) { flex: 1 1 auto; min-height: 0; }
+  .source-pdf-drawer.dragging > :global(.original-pdf),
+  .source-pdf-drawer.dragging :global(iframe) { pointer-events: none; }
   @media (prefers-reduced-motion: reduce) {
     .source-pdf-drawer { transition: none; }
   }
