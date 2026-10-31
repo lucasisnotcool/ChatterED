@@ -60,6 +60,12 @@
   const menuOpen = $derived(options.length > 0);
   const mention = $derived(parseMention(text));
 
+  let wasMenuOpen = false;
+  $effect(() => {
+    if (menuOpen && !wasMenuOpen) menuIndex = 0;
+    wasMenuOpen = menuOpen;
+  });
+
   $effect(() => {
     if (autofocus && box) box.focus();
   });
@@ -69,6 +75,7 @@
    * clock in the rail does not count towards offering Hint and Show me (`quiethelp.ts`).
    */
   const draftSource = `composer:${globalThis.crypto.randomUUID()}`;
+  const listboxId = `mention-options-${globalThis.crypto.randomUUID()}`;
   $effect(() => {
     noteDraft(draftSource, text.trim().length > 0);
     return () => noteDraft(draftSource, false);
@@ -77,7 +84,6 @@
   function sync(e: Event): void {
     const el = e.currentTarget as HTMLTextAreaElement;
     caret = el.selectionStart ?? el.value.length;
-    menuIndex = 0;
   }
 
   function choose(agent: AgentAuthor): void {
@@ -87,6 +93,7 @@
     const after = text.slice(caret);
     const inserted = `@${AGENT_NAME[agent]} `;
     text = `${before}${inserted}${after}`;
+    caret = -1;
     const at = q.from + inserted.length;
     queueMicrotask(() => {
       box?.focus();
@@ -109,9 +116,14 @@
     // the learner is writing a sentence that contains those letters.
     e.stopPropagation();
     if (menuOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
-        menuIndex = (menuIndex + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+        menuIndex = Math.min(menuIndex + 1, options.length - 1);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        menuIndex = Math.max(menuIndex - 1, 0);
         return;
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
@@ -146,11 +158,16 @@
       rows="3"
       placeholder="Type a message…"
       {disabled}
+      role="combobox"
       aria-label={placeholder}
+      aria-autocomplete="list"
+      aria-expanded={menuOpen}
+      aria-controls={menuOpen ? listboxId : undefined}
+      aria-activedescendant={menuOpen ? `${listboxId}-${menuIndex}` : undefined}
       onkeydown={onkeydown}
-      oninput={sync}
+      oninput={(e) => { sync(e); menuIndex = 0; }}
       onclick={sync}
-      onkeyup={sync}
+      onkeyup={(e) => { if (e.key !== 'Escape') sync(e); }}
       onblur={() => (caret = -1)}
     ></textarea>
     <button type="button" class="send" aria-label={busy ? 'Sending message' : 'Send message'} title="Send message" disabled={text.trim().length === 0 || busy || disabled} onclick={submit}>
@@ -158,15 +175,19 @@
     </button>
 
     {#if menuOpen}
-      <ul class="menu" role="listbox" aria-label="Who to ask">
+      <ul class="menu" id={listboxId} role="listbox" aria-label="Who to ask">
         {#each options as agent, i (agent)}
           <li>
             <button
               type="button"
               class="option"
               class:on={i === menuIndex}
+              id={`${listboxId}-${i}`}
+              style="--hue: {AGENT_HUE[agent]}"
               role="option"
               aria-selected={i === menuIndex}
+              onpointerenter={() => (menuIndex = i)}
+              onfocus={() => (menuIndex = i)}
               onmousedown={(e) => {
                 e.preventDefault();
                 choose(agent);
@@ -260,11 +281,12 @@
     align-items: baseline;
     gap: 8px;
     width: 100%;
-    padding: 5px 8px;
-    border-radius: 5px;
+    padding: 8px 12px;
+    border-radius: 6px;
     text-align: left;
+    background-color: transparent;
   }
-  .option.on, .option:hover { background: var(--ground); }
+  .option.on { background-color: color-mix(in srgb, var(--hue) 10%, transparent); }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   .who { font-size: 12.5px; font-weight: 600; }
   .what { font-size: 11px; color: var(--muted); }
