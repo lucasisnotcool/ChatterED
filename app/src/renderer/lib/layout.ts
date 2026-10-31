@@ -34,7 +34,6 @@ export const CHAT: PanelBounds = { min: 340, max: 760, initial: 396 };
  * doc column. Its floor is the narrowest a part's chrome (label, status, the four buttons) fits
  * on one line; the notes keep their own floor (`NOTES_SPLIT_MIN`) beside it.
  */
-export const TUTORIAL: PanelBounds = { min: 360, max: 980, initial: 480 };
 
 /** The notes' own floor while a tutorial is docked beside them. */
 export const NOTES_SPLIT_MIN = 340;

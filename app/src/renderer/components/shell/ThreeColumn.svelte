@@ -55,7 +55,6 @@
   import { taughtObjectives } from '../../lib/progressview.js';
   import {
     CHAT,
-    TUTORIAL,
     TUTORIAL_WINDOW_MIN,
     NOTES_ZOOM,
     floatFrame,
@@ -78,7 +77,7 @@
   import ProgressBar from './ProgressBar.svelte';
   import SourcesPanel from '../SourcesPanel.svelte';
   import TutorialPane from '../notes/TutorialPane.svelte';
-  import TutorialOriginalPdf from '../notes/TutorialOriginalPdf.svelte';
+  import SourcePdfDrawer from '../notes/SourcePdfDrawer.svelte';
 
   let { notebookId }: { notebookId: string } = $props();
 
@@ -134,7 +133,18 @@
     confirmingReread = false;
   }
   $effect(() => { if (!tutorialMain) closeTutorialTools(); });
-  let pdfQuestionNumbers = $state<number[]>([]);
+  let sourcePdfOpen = $state(false);
+  let sourcePdfActivated = $state(false);
+  let sourcePdfTrigger: HTMLButtonElement;
+  function closeSourcePdf(): void {
+    sourcePdfOpen = false;
+    sourcePdfTrigger?.focus({ preventScroll: true });
+  }
+  $effect(() => {
+    const fileId = mainFileId;
+    void fileId;
+    untrack(() => { sourcePdfOpen = false; });
+  });
   /** With the swap on, the notes are a window over the app while open, and hidden while not. */
   const notesFloating = $derived(tutorialMain && layout.notesWindowOpen);
   const notesHidden = $derived(tutorialMain && !layout.notesWindowOpen);
@@ -173,12 +183,6 @@
       layout.setNotesWindowOpen(false);
     }),
   );
-
-  let docWidth = $state(0);
-  // Side by side (PDF left, working right) unless the column is too narrow for both: the PDF
-  // keeps a 300 px floor and the working side the 380 px that `pdfWidth` leaves it.
-  const stackedTutorial = $derived(docWidth < 700);
-  const pdfWidth = $derived(Math.max(300, Math.min(layout.tutorialWidth, docWidth - 380)));
 
   /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
   const pages = $derived(
@@ -376,7 +380,7 @@
 
   <!-- Docked, the doc column holds two floors (the notes' and the tutorial's): the chat gives way
        first, as it does to the notes alone. -->
-  <main class="doc" bind:clientWidth={docWidth}>
+  <main class="doc">
     <header class="dochead">
       <button
         type="button"
@@ -413,10 +417,17 @@
 
       <!-- The swap (2026-10-04): only in a notebook with a tutorial. -->
       {#if tutorialMain}
-        <div class="mainview" role="group" aria-label="Tutorial view">
-          <button type="button" class="mv-opt" class:on={layout.tutorialView === 'pdf'} aria-pressed={layout.tutorialView === 'pdf'} onclick={() => layout.setTutorialView('pdf')}>PDF + working</button>
-          <button type="button" class="mv-opt" class:on={layout.tutorialView === 'combined'} aria-pressed={layout.tutorialView === 'combined'} onclick={() => layout.setTutorialView('combined')}>Combined sheet</button>
-        </div>
+        <button
+          bind:this={sourcePdfTrigger}
+          type="button"
+          class="source-pdf-trigger"
+          aria-expanded={sourcePdfOpen}
+          aria-controls="tutorial-source-pdf"
+          onclick={() => {
+            sourcePdfActivated = true;
+            sourcePdfOpen = !sourcePdfOpen;
+          }}
+        >📄 {sourcePdfOpen ? 'Hide Source PDF' : 'View Source PDF'}</button>
         <details class="tutorial-tools" bind:this={tutorialTools} ontoggle={() => { if (!tutorialTools?.open) confirmingReread = false; }}>
           <summary aria-label="Tutorial tools" title="Tutorial tools">⋯</summary>
           <div class="tools-menu">
@@ -491,15 +502,10 @@
       <!-- The swap: the sheet is the middle column, the whole of it. -->
       <section class="tutmain" id="tutorial-column" aria-label="Tutorial">
         <div class="tutmain-pacing"><PacingStrip /></div>
-        <div class="pdf-layout" class:stacked={stackedTutorial}>
-          {#if layout.tutorialView === 'pdf' && mainFileId}
-            <div class="pdf-side" id="tutorial-pdf" style:width={stackedTutorial ? '100%' : `${pdfWidth}px`}>
-              <TutorialOriginalPdf fileId={mainFileId} onquestions={(numbers) => pdfQuestionNumbers = numbers} />
-            </div>
-            {#if !stackedTutorial}<PaneSplitter size={pdfWidth} bounds={TUTORIAL} sign={1} label="Resize the original PDF" controls="tutorial-pdf" onsize={(width) => layout.setTutorialWidth(width)} />{/if}
-          {/if}
-          <div class="working-side"><TutorialPane main working={layout.tutorialView === 'pdf'} printedQuestions={pdfQuestionNumbers} /></div>
-        </div>
+        <div class="tutorial-sheet"><TutorialPane main /></div>
+        {#if sourcePdfActivated && mainFileId}
+          <SourcePdfDrawer fileId={mainFileId} open={sourcePdfOpen} onclose={closeSourcePdf} />
+        {/if}
       </section>
     {/if}
     </div>
@@ -578,15 +584,9 @@
   .notes-map-overlay :global(.map) { pointer-events: auto; }
 
   /* ── The swap (2026-10-04): the sheet in the middle, the notes hidden or in a window ── */
-  .tutmain { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .pdf-layout { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
-  .pdf-layout.stacked { flex-direction: column; }
-  .pdf-layout.stacked .pdf-side { flex: 0 0 42%; max-height: 42%; border-bottom: 1px solid var(--hairline); }
-  .pdf-layout.stacked .working-side { flex: 1 1 58%; }
-  .pdf-side { flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--hairline); }
-  .pdf-side > :global(.original-pdf) { flex: 1 1 auto; }
-  .working-side { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
-  .working-side > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
+  .tutmain { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .tutorial-sheet { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
+  .tutorial-sheet > :global(.tp-nd) { flex: 1 1 auto; min-height: 0; }
   /* The disclosure, once per install, above the sheet; it scrolls rather than crowd it out. */
   .tutmain-pacing { flex: 0 1 auto; max-height: 50%; overflow-y: auto; }
   .tutmain-pacing:empty { display: none; }
@@ -626,23 +626,8 @@
   .nw-close { flex: none; font-size: 16px; line-height: 1; padding: 2px 7px; border-radius: 6px; color: var(--text-2); cursor: pointer; }
   .nw-close:hover { background: var(--pane); color: var(--text); }
 
-  .mainview {
-    flex: none;
-    display: inline-flex;
-    padding: 2px;
-    border: 1px solid var(--hairline);
-    border-radius: 999px;
-    background: var(--pane);
-  }
-  .mv-opt {
-    padding: 3px 10px;
-    border-radius: 999px;
-    font-size: 11px;
-    color: var(--text-2);
-    white-space: nowrap;
-  }
-  .mv-opt:hover { color: var(--indigo); }
-  .mv-opt.on { background: var(--indigo-tint); color: var(--indigo); font-weight: 600; }
+  .source-pdf-trigger { flex: none; border: 1px solid var(--hairline); border-radius: 7px; padding: 5px 9px; font-size: 12px; white-space: nowrap; }
+  .source-pdf-trigger:hover, .source-pdf-trigger[aria-expanded="true"] { color: var(--indigo); border-color: var(--indigo); }
 
   /* Its width is the learner's, but it yields before the document does: `flex-shrink: 1` with a
      floor, so a narrow window takes it back to 300 px instead of squeezing the doc to nothing. */

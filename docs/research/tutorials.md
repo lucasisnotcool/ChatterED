@@ -296,3 +296,16 @@ threads. The existing ledger and analytics screen remain available through the c
 button in the persistent navigation rail. Study credit remains visible because it
 controls whether a participant can make another call. No model request, grading, source, or
 document persistence contract changes.
+
+## 14. Combined sheet and source PDF drawer (Valerie, 31 Oct 2026)
+
+The generated **Combined sheet** is the sole tutorial workspace. Its question text, diagrams,
+answer slots and part actions remain together in one scrolling column. The PDF + working view,
+its local draft sections, and its PDF/working divider are retired, superseding §§10, 11 and 13
+where they describe those controls. Existing saved tutorial documents and answer slots remain
+unchanged.
+
+**View Source PDF** in the workspace toolbar opens the original file in a closable side drawer.
+The drawer overlays the right edge of the sheet without remounting or scrolling it. Closing the
+drawer returns keyboard focus to its toolbar button; reopening it keeps the PDF viewer's place.
+The source PDF remains a reference, while actions and checking continue to use generated part IDs.
