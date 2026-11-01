@@ -1,5 +1,7 @@
 # Group user study: does tutorial mode smooth the start of a tutorial?
 
+**Superseded 1 Nov 2026 by `field-study.md`** (a week of real use, then interviews matched to the logs). Kept as the record of the lab design.
+
 **Status.** Proposal, 19 Oct 2026, drafted for Lucas and Valerie to confirm (#66). It narrows
 `group-project.md` §5 to **4 participants** and adds a qualitative RQ, keeping §5's task,
 conditions and measures M1–M7. If this is agreed, §5 should point here.

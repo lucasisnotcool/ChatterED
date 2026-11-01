@@ -88,6 +88,8 @@ the study.
 
 ## 5. The study
 
+**Superseded 1 Nov 2026 by `field-study.md`**: a week of real use, then interviews matched to the logs. The plan in §7 changes with it. Kept below as the record.
+
 - **Who:** students who have taken the algorithms course the sheet comes from (for example CS3230),
   not team members. **3 by Week 11, 6 by the report.**
 - **Task:** two comparable proof problems from one sheet, 20 minutes each.
