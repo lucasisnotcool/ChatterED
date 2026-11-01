@@ -46,9 +46,7 @@
   .wide { grid-column: 1 / -1; }
   h2 {
     margin: 0 0 4px;
-    font-size: 11px;
-    font-variant-caps: all-small-caps;
-    letter-spacing: 0.08em;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-2);
   }

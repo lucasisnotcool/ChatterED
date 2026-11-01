@@ -109,6 +109,8 @@ export interface ChromeContext {
   cursors: readonly AgentCursorView[];
   /** Status `applied` only — the edits that still wear their colour. */
   edits: readonly DocEditRecord[];
+  /** Kept edits whose chat response links remain beside their text. */
+  keptEdits?: readonly DocEditRecord[];
   /** Status `open` only. */
   suggestions: readonly Suggestion[];
   spanThreads: readonly SpanThreadView[];
@@ -124,6 +126,7 @@ export interface ChromeContext {
    */
   onInsertSlide?: (target: { page: number; rect: Rect | null }, afterBlockId: string | null) => void;
   onFocusThread: (threadId: string) => void;
+  onFocusEdit: (messageId: string | null, blockIds: string[]) => void;
   /**
    * The chip's hover preview reads the slide through this (`sourcepop.ts`). Optional: without it
    * the chip is what it was before, a click that opens the whole slide.
@@ -614,7 +617,7 @@ function readyChecks(doc: Node, ctx: ChromeContext): Decoration[] {
  */
 function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
   const byPos = new Map<number, DocEditRecord[]>();
-  for (const edit of ctx.edits) {
+  for (const edit of [...ctx.edits, ...(ctx.keptEdits ?? [])]) {
     // The edit's own block before the tutorial part it also names: a hint line Max writes into a
     // part names the part too, and its Remove · Keep belongs beside the line, not on the
     // part card's top edge (live run, 4 Oct 2026).
@@ -635,7 +638,14 @@ function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
         for (const edit of edits) {
           const name = AGENT_NAME[edit.author];
           const row = el('div', `nd-editctl-one nd-${edit.author}`);
-          row.append(el('span', 'nd-editctl-who', `${name} wrote this`));
+          row.append(button('nd-editctl-who nd-editctl-link', `${name} wrote this ↗`, `View ${name}'s response in Doc chat`, () =>
+            ctx.onFocusEdit(edit.messageId, edit.blockIds),
+          ));
+          if (edit.status === 'kept') {
+            row.classList.add('nd-editctl-kept');
+            holder.append(row);
+            continue;
+          }
           if (edit.why) {
             const why = el('span', 'nd-editctl-why', edit.why);
             why.title = edit.why;

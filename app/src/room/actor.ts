@@ -5610,7 +5610,7 @@ export class RoomActor {
         blockId: batch.focusBlockId,
         state: 'typing',
       });
-      this.#d.transport.emit({ type: 'doc.edit', roomId: this.#d.roomId, docId, batch });
+      this.#d.transport.emit({ type: 'doc.edit', roomId: this.#d.roomId, docId, batch, messageId: meta.messageId });
       this.#event(batch.author === 'max' ? 'challenger' : 'peer', 'doc.edit', {
         edit_id: batch.editId,
         cause: batch.cause,

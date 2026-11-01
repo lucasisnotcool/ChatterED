@@ -75,7 +75,7 @@ export function statusLook(status: TutorialPartStatus, checkedBy: TutorialPartVi
     case 'untried':
       return { label: 'untried', glyph: '', title: 'Nothing written yet.' };
     case 'working':
-      return { label: 'working', glyph: '✎', title: 'Written in, not checked yet. Press Check when you are ready.' };
+      return { label: 'working', glyph: '✎', title: 'Written in, not checked yet. Press Check answer when you are ready.' };
     case 'correct':
       return { label: '✓ correct', glyph: '✓', title: join('Correct. It counts in full towards your progress.') };
     case 'partial':
@@ -100,7 +100,7 @@ export interface PartChromeState {
   dots: boolean[];
   canCheck: boolean;
   checkTitle: string;
-  /** Show answer is offered until the answer has been shown. */
+  /** Show answer appears after at least one check, until the answer has been shown. */
   canReveal: boolean;
 }
 
@@ -115,12 +115,14 @@ export function partChromeState(view: TutorialPartView | null, answerEmpty: bool
     nextHint,
     hintTitle:
       nextHint === null
-        ? 'You have had all three hints. A refresher, or Show answer, is still there.'
+        ? view && view.attempts > 0
+          ? 'You have had all three hints. A refresher, or Show answer, is still there.'
+          : 'You have had all three hints. Try your answer, or ask for a refresher.'
         : `Hint ${String(hintLevel + 1)} of 3, from Max: ${RUNG_TITLES[hintLevel]!.toLowerCase()}`,
     dots: HINT_RUNGS.map((_, i) => i < hintLevel),
     canCheck: !answerEmpty,
     checkTitle: answerEmpty ? 'Write an answer first' : 'Max checks your answer and says what is right and what is missing',
-    canReveal: status !== 'revealed',
+    canReveal: (view?.attempts ?? 0) > 0 && status !== 'revealed',
   };
 }
 
@@ -357,62 +359,6 @@ export function sheetSourceLabels(allPagesCitation: string, max = 14): Map<strin
 export function fromNotesTitle(notes: readonly { label: string }[], pageCitations: readonly string[]): string {
   const items = [...notes.map((n) => n.label), ...pageCitations.filter(Boolean)];
   return items.length === 0 ? '' : `From the notes: ${items.join(' · ')}`;
-}
-
-// ── the Help menu ───────────────────────────────────────────────────────────────────────────
-
-/** The menu's one-line summary of each rung: shorter than the button's tooltip. */
-const RUNG_DETAILS: readonly string[] = ['where to look', 'the part in small steps', 'one step on a similar case'];
-
-export type HelpItemId = 'hint' | 'refresher' | 'reveal';
-
-export interface HelpItem {
-  id: HelpItemId;
-  /** The item's words: `Hint`, `Refresher`, `Show answer…`. */
-  label: string;
-  /** The rung it gives next (`Point`), for the hint only; null otherwise or when none is left. */
-  rung: string | null;
-  /** A second, quieter line: what the item does. */
-  detail: string;
-  /** Who answers it, for its agent dot. */
-  who: 'max' | 'ellie' | null;
-  disabled: boolean;
-  /** Drawn after a divider (the give-up, set apart from the help). */
-  apart: boolean;
-}
-
-/**
- * What a part's **Help ▾** menu offers, in order: the next hint rung (with the rungs taken), a
- * refresher, and, set apart, Show answer… while the answer has not been shown.
- */
-export function helpMenuItems(chrome: PartChromeState): HelpItem[] {
-  const items: HelpItem[] = [
-    {
-      id: 'hint',
-      label: chrome.nextHint === null ? 'No more hints' : 'Hint',
-      rung: chrome.nextHint,
-      detail:
-        chrome.nextHint === null
-          ? 'All three used. A refresher is still there.'
-          : `${String(chrome.hintLevel + 1)} of 3 from Max: ${RUNG_DETAILS[chrome.hintLevel]!}`,
-      who: 'max',
-      disabled: chrome.nextHint === null,
-      apart: false,
-    },
-    {
-      id: 'refresher',
-      label: 'Refresher',
-      rung: null,
-      detail: 'Ellie goes over what this part needs',
-      who: 'ellie',
-      disabled: false,
-      apart: false,
-    },
-  ];
-  if (chrome.canReveal) {
-    items.push({ id: 'reveal', label: 'Show answer…', rung: null, detail: 'Gives up this part. It won’t count.', who: null, disabled: false, apart: true });
-  }
-  return items;
 }
 
 // ── practice chips under each section of the main notes ─────────────────────────────────────

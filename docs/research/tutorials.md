@@ -116,9 +116,9 @@ this a possible decision point"*). Each part's buttons:
   2. **Break it down:** the part as two to four sub-steps (subgoal labels).
   3. **A worked step:** one step done on an analogous case from the lecture, not this part.
 - **Refresher:** the prerequisite, from the lecture notes and slides, by Ellie.
-- **Check:** judged against the hidden key (§5); Max says what is right and what is missing,
+- **Check answer:** judged against the hidden key (§5); Max says what is right and what is missing,
   without giving the rest.
-- **Show answer:** a give-up. The key's answer, then Max asks for one line on why it works.
+- **Show answer:** offered after the learner has checked this part at least once. A give-up. The key's answer, then Max asks for one line on why it works.
   Fills nothing, as a release never has.
 
 Hints are not timer-gated. Each help gives the full explanation **in the chat** (the part's own
@@ -272,6 +272,24 @@ compact card treatment and existing Keep/Remove actions. These changes affect pr
 and action placement only; the tutorial controller, hint ladder, agent routing, and saved
 document operations are unchanged.
 
+*Amended 31 Oct 2026 (Valerie):* The primary action reads **Check answer**. **Show answer**
+appears only after that part has been checked once; the same rule applies in the Help menu.
+This gives the learner a first attempt before the give-up action appears. The release's
+confirmation and grading consequence are unchanged. Sources may be dragged between Lecture
+notes, Tutorials and Tutorial answers; dropping changes the source role through the existing
+role action, while Finder drops still add new files.
+
+*Amended 1 Nov 2026 (Valerie):* Each part now keeps **Check answer**, **Hint**, and
+**Refresher** visible at every width and zoom level. The actions wrap within the part card.
+**Show answer** is also a visible button, but only after that part has been checked at least
+once. The Help menu is retired. The confirmation and grading consequence remain the same.
+
+*Amended 1 Nov 2026 (Valerie):* Page citations in Doc chat link to any ready lecture or
+tutorial source page in the notebook, including pages outside the progress objectives. A
+citation opens its source page and also finds the notes section when one is mapped. A kept
+Ellie or Max edit retains its link back to the originating chat response after Keep and
+on reopening the document.
+
 ## 13. Tutorial workbench cleanup (Valerie, 26 Oct 2026)
 
 The tutorial dropdown in the global action bar is the sole tutorial selector in the main view.
@@ -289,3 +307,19 @@ threads. The existing ledger and analytics screen remain available through the c
 button in the persistent navigation rail. Study credit remains visible because it
 controls whether a participant can make another call. No model request, grading, source, or
 document persistence contract changes.
+
+## 14. Combined sheet and source PDF drawer (Valerie, 31 Oct 2026)
+
+The generated **Combined sheet** is the sole tutorial workspace. Its question text, diagrams,
+answer slots and part actions remain together in one scrolling column. The PDF + working view,
+its local draft sections, and its PDF/working divider are retired, superseding §§10, 11 and 13
+where they describe those controls. Existing saved tutorial documents and answer slots remain
+unchanged.
+
+**View Source PDF** in the workspace toolbar opens the original file on the left of the sheet.
+The two surfaces share one horizontal row; opening the panel pushes the still-mounted sheet to
+the right without changing its scroll position. The learner can drag their divider between 20%
+and 80% of the row. Closing the panel returns keyboard focus to its toolbar button; reopening it
+keeps the PDF viewer's place. The source PDF remains a reference, while actions and checking
+continue to use generated part IDs. This left-side push layout amends the earlier drawer
+placement in this section (31 Oct 2026).

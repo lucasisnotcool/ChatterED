@@ -34,7 +34,6 @@ export const CHAT: PanelBounds = { min: 340, max: 760, initial: 396 };
  * doc column. Its floor is the narrowest a part's chrome (label, status, the four buttons) fits
  * on one line; the notes keep their own floor (`NOTES_SPLIT_MIN`) beside it.
  */
-export const TUTORIAL: PanelBounds = { min: 360, max: 980, initial: 480 };
 
 /** The notes' own floor while a tutorial is docked beside them. */
 export const NOTES_SPLIT_MIN = 340;
@@ -394,8 +393,16 @@ export const NOTES_WINDOW_BELOW = 92;
  * tutorial window, but with nothing remembered it starts below the doc header and the sheet's
  * header, so the *Main view* switch and the sheet's **Notes** button stay in sight above it.
  */
-export function notesFloatFrame(saved: FloatFrame | null, view: FloatView): FloatFrame {
-  if (saved) return floatFrame(saved, view);
+export function notesFloatFrame(saved: FloatFrame | null, view: FloatView, chatWidth = 0): FloatFrame {
+  if (saved) {
+    const frame = floatFrame(saved, view);
+    // A position saved with a different panel layout can cover the entire working sheet.
+    // When chat is present, put such a window over its right edge instead.
+    if (chatWidth >= 340 && frame.left + frame.width <= view.width - chatWidth + 64) {
+      return floatFrame({ ...frame, left: view.width - frame.width - 24 }, view);
+    }
+    return frame;
+  }
   const top = (view.top ?? 0) + NOTES_WINDOW_BELOW;
   const width = Math.min(560, view.width * 0.42);
   return floatFrame({ width, height: Math.min(720, view.height - top - 24), left: view.width - width - 24, top }, view);

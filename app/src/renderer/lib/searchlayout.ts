@@ -21,7 +21,7 @@ export const SEARCH_SLIDES: PanelBounds = { min: 240, max: 1600, initial: 440 };
 /** K: the notes. No width of its own, only the floor below which it is hidden. */
 export const SEARCH_NOTES_MIN = 320;
 /** L: the hit list. */
-export const SEARCH_HITS: PanelBounds = { min: 280, max: 640, initial: 360 };
+export const SEARCH_HITS: PanelBounds = { min: 280, max: 640, initial: 440 };
 /** A hidden column's strip. */
 export const STRIP = 28;
 

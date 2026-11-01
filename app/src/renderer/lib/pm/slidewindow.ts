@@ -192,8 +192,9 @@ interface Found {
 }
 
 /**
- * **Open a slide window beside `anchor`.** If the same reference (or the same slide set, on the
- * same slide) already has one open, that one comes to the front instead.
+ * **Open a slide window beside `anchor`.** If that page is already open from the same reference
+ * (or slide set), bring it to the front. A shared fallback anchor must not swallow a different
+ * page request from Doc chat.
  */
 export function openSlideWindow(options: SlideWindowOptions): void {
   const { anchor, pages, reader } = options;
@@ -201,7 +202,7 @@ export function openSlideWindow(options: SlideWindowOptions): void {
   const startIndex = Math.min(Math.max(0, options.index ?? 0), pages.length - 1);
   const startPage = pages[startIndex]!;
   const same = [...open].find(
-    (live) => live.anchor === anchor || (live.pages.join(',') === pages.join(',') && live.page() === startPage),
+    (live) => live.page() === startPage && (live.anchor === anchor || live.pages.join(',') === pages.join(',')),
   );
   if (same) {
     same.front();

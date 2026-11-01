@@ -136,6 +136,7 @@ export function tutorialDocView(repo: NotesRepo, record: NotesDocRecord): NotesD
     ingest: ingestView(record),
     frozen: record.frozen,
     edits: repo.edits(record.id, 'applied').map(({ roomId: _roomId, ...edit }) => ({ ...edit, status: 'applied' as const })),
+    keptEdits: repo.edits(record.id, 'kept').map(({ roomId: _roomId, ...edit }) => ({ ...edit, status: 'kept' as const })),
     suggestions: repo.suggestions(record.id, 'open'),
     overview: null,
   };

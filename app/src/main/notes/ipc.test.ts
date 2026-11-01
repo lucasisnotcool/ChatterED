@@ -65,6 +65,16 @@ beforeEach(() => {
   userData = mkdtempSync(join(tmpdir(), 'chattered-notes-ipc-'));
 });
 
+describe('notes:get', () => {
+  it('returns kept edit links alongside pending edit controls', async () => {
+    const fx = withDoc();
+    (fx.host.vault as unknown as { fileRow: (fileId: string) => { name: string } }).fileRow = () => ({ name: 'Lecture.pdf' });
+    const view = await wire(fx).call<NotesDocView>(IPC.notesGet, { fileId: 'f_deck' });
+    expect(view.edits.map((edit) => edit.editId)).toEqual(['e_applied']);
+    expect(view.keptEdits?.map((edit) => edit.editId)).toEqual(['e_kept']);
+  });
+});
+
 describe('notes:regenerate', () => {
   it('asks first, naming the learner’s own words and the agents’ additions', async () => {
     const fx = withDoc();

@@ -87,6 +87,41 @@
   // ── roles (`tutorials.md` §1) ──────────────────────────────────────────────────────────────
   const tut = store.tutorial;
 
+  /** Internal source drags change a role; Finder file drags still reach the shell's add zone. */
+  const SOURCE_DRAG_TYPE = 'application/x-chattered-source';
+  let draggingId = $state<string | null>(null);
+  let dropRole = $state<SourceRole | null>(null);
+
+  function startSourceDrag(source: NotebookSourceView, e: DragEvent): void {
+    if (!e.dataTransfer) return;
+    draggingId = source.fileId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(SOURCE_DRAG_TYPE, source.fileId);
+  }
+
+  function dragOverRole(e: DragEvent, role: SourceRole): void {
+    if (!draggingId || !e.dataTransfer?.types.includes(SOURCE_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    dropRole = role;
+  }
+
+  function leaveRole(e: DragEvent, role: SourceRole): void {
+    if (dropRole === role && !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) dropRole = null;
+  }
+
+  function dropOnRole(e: DragEvent, role: SourceRole): void {
+    if (!draggingId || !e.dataTransfer?.types.includes(SOURCE_DRAG_TYPE)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = e.dataTransfer.getData(SOURCE_DRAG_TYPE);
+    const source = sources.find((item) => item.fileId === id && id === draggingId);
+    draggingId = null;
+    dropRole = null;
+    if (source) void setRole(source, role);
+  }
+
   /** The row whose "Use as…" menu is open, and where: fixed, so the panel's scroll never clips it. */
   let menuFor = $state<string | null>(null);
   let menuAt = $state<{ left: number; top: number }>({ left: 0, top: 0 });
@@ -165,6 +200,15 @@
   </div>
 
     {#each SOURCE_ROLES as section (section)}
+    <div
+      class="source-section"
+      class:drop-target={dropRole === section}
+      role="group"
+      aria-label={section === 'lecture' ? 'Lecture notes' : section === 'tutorial' ? 'Tutorials' : 'Tutorial answers'}
+      ondragover={(e) => dragOverRole(e, section)}
+      ondragleave={(e) => leaveRole(e, section)}
+      ondrop={(e) => dropOnRole(e, section)}
+    >
     <div class="section-head">
       <span>{section === 'lecture' ? 'Lecture notes' : section === 'tutorial' ? 'Tutorials' : 'Tutorial answers'}</span>
       <button type="button" aria-label={`Add ${section === 'solutions' ? 'tutorial answers' : section === 'lecture' ? 'lecture notes' : 'tutorials'}`} title="Add files" disabled={nb.busy} onclick={() => void addForRole(section)}>+</button>
@@ -174,6 +218,10 @@
         {@const role = roleOf(source)}
         <li
           class="src"
+          draggable="true"
+          title={`Drag ${source.name} to another source section`}
+          ondragstart={(e) => startSourceDrag(source, e)}
+          ondragend={() => { draggingId = null; dropRole = null; }}
           class:off={!source.enabled && role !== 'solutions'}
           class:failed={source.status === 'failed'}
           class:hidden-role={role === 'solutions'}
@@ -262,6 +310,7 @@
         </li>
       {/each}
     </ul>
+    </div>
     {/each}
 
     {#if sources.length > 0}
@@ -303,6 +352,8 @@
   .section-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 9px; font-family: var(--font-display, Georgia, serif); font-size: 18px; }
   .section-head button { width: 24px; height: 24px; border-radius: 5px; font-family: var(--font); font-size: 19px; line-height: 1; }
   .section-head button:hover { background: var(--indigo-tint); color: var(--indigo); }
+  .source-section { border: 2px solid transparent; border-radius: 10px; margin: 0 4px; transition: border-color 120ms, background 120ms; }
+  .source-section.drop-target { border-color: var(--indigo); background: var(--indigo-tint); }
   .sub { margin-left: auto; font-size: 11.5px; color: var(--text-2); }
 
   .add {
@@ -360,6 +411,8 @@
     border-radius: 9px;
   }
   .src:hover { border-color: var(--text-2); }
+  .src[draggable='true'] { cursor: grab; }
+  .src[draggable='true']:active { cursor: grabbing; }
   .badge {
     width: 26px;
     height: 30px;

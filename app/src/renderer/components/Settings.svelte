@@ -557,13 +557,14 @@
 
 <style>
   .pane { flex: 1; overflow-y: auto; padding: 28px 32px 60px; min-width: 0; }
-  header { margin-bottom: 22px; }
+  header { max-width: 760px; margin: 0 auto 24px; }
   h1 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
   h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
-  section {
-    max-width: 68ch;
-    padding: 18px 20px;
-    margin-bottom: 16px;
+  .pane > :global(section) {
+    box-sizing: border-box;
+    max-width: 760px;
+    padding: 20px 24px;
+    margin: 0 auto 16px;
     background: var(--pane);
     border: 1px solid var(--hairline);
     border-radius: var(--radius);

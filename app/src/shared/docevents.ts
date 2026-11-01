@@ -43,7 +43,7 @@ export type DocRoomEvent =
       nodes?: unknown[];
     }
   /** An agent edit, ready to be typed in behind its cursor. The renderer applies it and saves. */
-  | { type: 'doc.edit'; roomId: string; docId: string; batch: AgentDocOpBatch }
+  | { type: 'doc.edit'; roomId: string; docId: string; batch: AgentDocOpBatch; messageId?: string | null }
   /** Where an agent's cursor is while it thinks about, or makes, an edit. */
   | {
       type: 'doc.cursor';

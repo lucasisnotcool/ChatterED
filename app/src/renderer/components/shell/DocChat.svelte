@@ -150,6 +150,8 @@
     void entries.length;
     void chat.stream?.text;
     void chat.thinking;
+    // A requested thread may be added just after Check returns. Let that jump win over the tail.
+    if (chat.focusRequest && chat.focusRequest.token !== focusedToken) return;
     const el = untrack(() => scroller);
     if (!el) return;
     queueMicrotask(() => {
@@ -164,12 +166,38 @@
    * stayed ringed until something else was focused would be claiming to be selected.
    */
   let flashed = $state<string | null>(null);
+  let focusedToken = 0;
   $effect(() => {
     const request = chat.focusRequest;
+    // Retry when the thread arrives after the focus request, including after opening the column.
+    void entries;
     const el = untrack(() => scroller);
     if (!request || !el) return;
-    const node = el.querySelector<HTMLElement>(`[data-thread="${CSS.escape(request.threadId)}"]`);
-    node?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (request.token === focusedToken) return;
+    const threadNode = el.querySelector<HTMLElement>(`[data-thread="${CSS.escape(request.threadId)}"]`);
+    let node = request.messageId
+      ? el.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(request.messageId)}"]`)
+      : threadNode;
+    // A folded span opens on focus; give its message one render before falling back to the card.
+    if (!node && request.messageId && threadNode) {
+      const handle = setTimeout(() => {
+        if (chat.focusRequest?.token !== request.token) return;
+        node = el.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(request.messageId!)}"]`) ?? threadNode;
+        node.scrollIntoView({ block: 'start', behavior: 'auto' });
+        node.classList.add('chat-focus-flash');
+        setTimeout(() => node?.classList.remove('chat-focus-flash'), 1600);
+        focusedToken = request.token;
+      }, 0);
+      return () => clearTimeout(handle);
+    }
+    if (!node) return;
+    const focusedNode = node;
+    focusedNode.scrollIntoView({ block: 'start', behavior: 'auto' });
+    if (request.messageId) {
+      focusedNode.classList.add('chat-focus-flash');
+      setTimeout(() => focusedNode.classList.remove('chat-focus-flash'), 1600);
+    }
+    focusedToken = request.token;
     untrack(() => {
       flashed = request.threadId;
     });
@@ -262,6 +290,7 @@
           thread={entry.thread}
           messages={messagesOf(entry.thread.threadId, chat.messages)}
           focused={flashed === entry.thread.threadId}
+          focusMessageId={chat.focusRequest?.threadId === entry.thread.threadId ? (chat.focusRequest.messageId ?? null) : null}
           thinking={heldAnchor === entry.thread.threadId ? chat.thinking : null}
           {pages}
           {onjump}
@@ -356,6 +385,7 @@
 </div>
 
 <style>
+  :global(.chat-focus-flash) { outline: 2px solid var(--indigo); outline-offset: 3px; }
   .chat { display: flex; flex-direction: column; min-height: 0; height: 100%; }
   .scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 10px 14px 4px; }
   .foot { flex: none; padding: 0 14px 10px; border-top: 1px solid var(--hairline); }

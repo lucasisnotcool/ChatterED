@@ -13,7 +13,6 @@ import {
   FILES,
   HOME_ZOOM,
   NOTES_ZOOM,
-  TUTORIAL,
   clamp,
   clampSplit,
   filesChosen,
@@ -34,12 +33,10 @@ const KEYS = {
   filesWidth: 'chattered.files.width',
   chatWidth: 'chattered.chat.width',
   chatOpen: 'chattered.chat.open',
-  tutorialView: 'chattered.tutorial.view',
   notesZoom: 'chattered.notes.zoom',
   tutorialZoom: 'chattered.tutorial.zoom',
   homeZoom: 'chattered.home.zoom',
   mapOpen: 'chattered.notesmap.open',
-  tutorialWidth: 'chattered.tutorial.width',
   tutorialSplit: 'chattered.tutorial.split',
   tutorialMain: 'chattered.tutorial.main',
   notesFrame: 'chattered.notes.frame',
@@ -72,9 +69,6 @@ export class LayoutStore {
   filesWidth = $state(readWidth(KEYS.filesWidth, FILES));
   chatWidth = $state(readWidth(KEYS.chatWidth, CHAT));
   chatOpen = $state(read(KEYS.chatOpen) !== 'false');
-  tutorialView = $state<'pdf' | 'combined'>(read(KEYS.tutorialView) === 'combined' ? 'combined' : 'pdf');
-  /** The tutorial column docked beside the notes (`tutorials.md` §2). */
-  tutorialWidth = $state(readWidth(KEYS.tutorialWidth, TUTORIAL));
   /** The tutorial's Split: the top view's share of the pane's body (`TUTORIAL_SPLIT`). */
   tutorialSplit = $state(readSplitRatio(read(KEYS.tutorialSplit)));
   notesZoom = $state(readZoom(read(KEYS.notesZoom), NOTES_ZOOM));
@@ -143,16 +137,6 @@ export class LayoutStore {
   setChatOpen(open: boolean): void {
     this.chatOpen = open;
     write(KEYS.chatOpen, String(open));
-  }
-
-  setTutorialView(view: 'pdf' | 'combined'): void {
-    this.tutorialView = view;
-    write(KEYS.tutorialView, view);
-  }
-
-  setTutorialWidth(width: number): void {
-    this.tutorialWidth = Math.round(clamp(width, TUTORIAL.min, TUTORIAL.max));
-    write(KEYS.tutorialWidth, String(this.tutorialWidth));
   }
 
   /** `height`: the body's, so neither view goes below `SPLIT_VIEW_MIN`. Stored to the permille. */

@@ -86,7 +86,7 @@ export class ChatStore {
 
   tab: ChatTab = $state('doc');
   /** The thread to bring into view; cleared by the component once it has scrolled. */
-  focusRequest: { threadId: string; token: number } | null = $state(null);
+  focusRequest: { threadId: string; messageId?: string; token: number } | null = $state(null);
   draft: DraftSpan | null = $state(null);
   /**
    * **The span thread the composer replies in** (2026-10-04), or null for the notebook chat.
@@ -353,6 +353,34 @@ export class ChatStore {
     // The thread just brought into view is the conversation now: the next words go to it.
     this.replyTo = threadId === this.docThreadId ? null : threadId;
     this.focusRequest = { threadId, token: (this.focusRequest?.token ?? 0) + 1 };
+  }
+
+  /** Find a tutorial part's span thread, including one created before this column loaded. */
+  async focusSpanBlock(blockId: string): Promise<boolean> {
+    let thread = this.threads.find((t) => t.kind === 'span' && t.blockId === blockId);
+    if (!thread) {
+      await this.#refreshThreads();
+      thread = this.threads.find((t) => t.kind === 'span' && t.blockId === blockId);
+    }
+    if (!thread) return false;
+    this.focusThread(thread.threadId);
+    return true;
+  }
+
+  /** Follow an agent edit to the exact chat turn that produced it. Older edits can use a span. */
+  async focusAgentResponse(messageId: string | null, blockIds: readonly string[]): Promise<boolean> {
+    if (messageId) {
+      if (!this.messages.some((m) => m.id === messageId) && this.roomId) await this.#loadRoom(this.roomId);
+      const message = this.messages.find((m) => m.id === messageId);
+      if (message) {
+        const threadId = message.anchorId ?? this.docThreadId;
+        this.focusThread(threadId);
+        this.focusRequest = { threadId, messageId, token: this.focusRequest?.token ?? 1 };
+        return true;
+      }
+    }
+    for (const blockId of blockIds) if (await this.focusSpanBlock(blockId)) return true;
+    return false;
   }
 
   /** A card's **Reply here**: the composer answers in that thread (and a half-asked draft goes). */

@@ -13,7 +13,7 @@
 <style>
   .notice {
     position: fixed;
-    top: 12px;
+    top: 64px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 40;
@@ -27,6 +27,7 @@
     padding: 9px 14px;
     font-size: 13px;
     max-width: 620px;
+    -webkit-app-region: no-drag;
   }
   .err { border-color: #d8d8e2; }
   button { font-size: 12px; color: var(--text-2); border-bottom: 1px solid var(--hairline); }

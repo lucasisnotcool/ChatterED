@@ -24,6 +24,7 @@
     messages,
     pages = [],
     focused = false,
+    focusMessageId = null,
     /** Drawn inside the card while the turn being waited for belongs to this thread. */
     thinking = null,
     onjump,
@@ -37,6 +38,7 @@
     messages: MessageView[];
     pages?: readonly number[];
     focused?: boolean;
+    focusMessageId?: string | null;
     thinking?: ThinkingView | null;
     onjump?: (blockId: string) => void;
     onpage?: (page: number) => void;
@@ -49,6 +51,9 @@
   } = $props();
 
   let open = $state(true);
+  $effect(() => {
+    if (focusMessageId && messages.some((message) => message.id === focusMessageId)) open = true;
+  });
   const quiz = $derived(thread.quiz);
 </script>
 

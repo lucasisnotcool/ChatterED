@@ -31,6 +31,7 @@ function context(comments: ChromeContext['comments']): ChromeContext {
     onRejectSuggestion: noop,
     onOpenSlide: noop,
     onFocusThread: noop,
+    onFocusEdit: noop,
     ...(comments ? { comments } : {}),
   };
 }
