@@ -4,6 +4,7 @@ import { EditorState, TextSelection } from 'prosemirror-state';
 import { blockPos, notesSchema } from '../../../shared/doc/schema.js';
 import {
   AGENT_NAME,
+  bumpChrome,
   chromeKey,
   chromePlugin,
   focusKey,
@@ -47,6 +48,33 @@ describe('provenanceLabel', () => {
 
   it('ignores a page number that is not a page', () => {
     expect(provenanceLabel([0, -3, 1.5, 4], null)).toBe('p. 4');
+  });
+});
+
+describe('edit control widgets', () => {
+  it('replaces the widget when Keep turns its actions into a chat link', () => {
+    const doc = notesSchema.node('doc', null, [
+      notesSchema.node('paragraph', { blockId: 'agent-line', pages: [], reason: null, objectiveIds: [] }, [notesSchema.text('Max feedback')]),
+    ]);
+    const noop = (): void => undefined;
+    const edit = {
+      editId: 'edit-one', blockIds: ['agent-line'], author: 'max', status: 'applied',
+      messageId: 'message-one', why: 'Check on Question 1',
+    } as ChromeContext['edits'][number];
+    const ctx: ChromeContext = {
+      frozen: false, cursors: [], edits: [edit], keptEdits: [], suggestions: [], spanThreads: [],
+      onRemoveEdit: noop, onKeepEdit: noop, onAcceptSuggestion: noop, onRejectSuggestion: noop,
+      onOpenSlide: noop, onFocusThread: noop, onFocusEdit: noop,
+    };
+    const key = (state: EditorState): string => String(chromeKey.getState(state)!.find()
+      .find((decoration) => String((decoration.spec as { key?: string }).key).startsWith('edits:'))!.spec.key);
+    let state = EditorState.create({ doc, plugins: [chromePlugin(() => ctx)] });
+    const before = key(state);
+    ctx.edits = [];
+    ctx.keptEdits = [{ ...edit, status: 'kept' }];
+    state = state.apply(bumpChrome(state.tr));
+    expect(key(state)).not.toBe(before);
+    expect(key(state)).toContain('edit-one:kept');
   });
 });
 

@@ -1279,28 +1279,32 @@ export class DocStore {
   /** **Remove** (§5): the edit comes out, and the learner's own words never come with it. */
   async removeAgentEdit(editId: string): Promise<void> {
     const edit = this.edits.find((e) => e.editId === editId);
+    // A previously rendered widget may dispatch after this edit was already resolved. Do not
+    // overwrite its saved record with an empty block list on a second press.
+    if (!edit) return;
     this.#stopAnimation(editId);
     const applied = this.#dispatchAgent((state) =>
-      removeEdit(state, { editId, blockIds: edit ? [...edit.blockIds] : [] }),
+      removeEdit(state, { editId, blockIds: [...edit.blockIds] }),
     );
     this.edits = this.edits.filter((e) => e.editId !== editId);
     this.#bump();
     if (applied) await this.#save();
-    await this.#reportEdit(editId, 'removed', edit ? [...edit.blockIds] : []);
+    await this.#reportEdit(editId, 'removed', [...edit.blockIds]);
   }
 
   /** **Keep** (§5): the colour goes, the text and its provenance stay. */
   async keepAgentEdit(editId: string): Promise<void> {
     const edit = this.edits.find((e) => e.editId === editId);
+    if (!edit) return;
     this.#stopAnimation(editId);
     const applied = this.#dispatchAgent((state) =>
-      keepEdit(state, { editId, blockIds: edit ? [...edit.blockIds] : [] }),
+      keepEdit(state, { editId, blockIds: [...edit.blockIds] }),
     );
     this.edits = this.edits.filter((e) => e.editId !== editId);
-    if (applied && edit) this.keptEdits = [...this.keptEdits, { ...edit, status: 'kept' }];
+    if (applied) this.keptEdits = [...this.keptEdits, { ...edit, status: 'kept' }];
     this.#bump();
     if (applied) await this.#save();
-    await this.#reportEdit(editId, 'kept', edit ? [...edit.blockIds] : []);
+    await this.#reportEdit(editId, 'kept', [...edit.blockIds]);
   }
 
   /** Accept · Reject on a suggestion (§5.4). Rejecting leaves the learner's text untouched. */

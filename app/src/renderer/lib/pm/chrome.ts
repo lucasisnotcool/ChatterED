@@ -631,7 +631,9 @@ function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
 
   const out: Decoration[] = [];
   for (const [pos, edits] of byPos) {
-    const key = `edits:${edits.map((e) => e.editId).join(',')}`;
+    // A kept edit remains here as a chat link. Its widget must get a new DOM node when the
+    // actions disappear; ProseMirror reuses a widget whose key is unchanged.
+    const key = `edits:${edits.map((e) => `${e.editId}:${e.status}`).join(',')}`;
     out.push(
       widget(pos + 1, key, -1, () => {
         const holder = el('div', 'nd-editctl');
