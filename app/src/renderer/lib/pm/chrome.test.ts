@@ -76,6 +76,32 @@ describe('edit control widgets', () => {
     expect(key(state)).not.toBe(before);
     expect(key(state)).toContain('edit-one:kept');
   });
+
+  it('keeps separate chat links for older kept edits whose block ids were lost', () => {
+    const at = Date.parse('2026-11-01T10:00:00.000Z');
+    const mark = (time: number) => notesSchema.marks.author!.create({ by: 'max', editId: null, at: time });
+    const para = (id: string, time: number) => notesSchema.node('paragraph',
+      { blockId: id, pages: [], reason: null, objectiveIds: [] }, [notesSchema.text('Same feedback', [mark(time)])]);
+    const doc = notesSchema.node('doc', null, [para('first', at + 10), para('second', at + 1010)]);
+    const edit = (id: string, time: number) => ({
+      editId: id, blockIds: [], author: 'max', status: 'kept', messageId: id,
+      createdAt: new Date(time).toISOString(),
+    }) as unknown as ChromeContext['edits'][number];
+    const noop = (): void => undefined;
+    const ctx: ChromeContext = {
+      frozen: false, cursors: [], edits: [], keptEdits: [edit('edit-one', at), edit('edit-two', at + 1000)],
+      suggestions: [], spanThreads: [], onRemoveEdit: noop, onKeepEdit: noop,
+      onAcceptSuggestion: noop, onRejectSuggestion: noop, onOpenSlide: noop,
+      onFocusThread: noop, onFocusEdit: noop,
+    };
+    const state = EditorState.create({ doc, plugins: [chromePlugin(() => ctx)] });
+    const links = chromeKey.getState(state)!.find().filter((decoration) =>
+      String((decoration.spec as { key?: string }).key).startsWith('edits:'));
+    expect(links.map((decoration) => [decoration.from, decoration.spec.key])).toEqual([
+      [blockPos(doc, 'first')!.pos + 1, 'edits:edit-one:kept'],
+      [blockPos(doc, 'second')!.pos + 1, 'edits:edit-two:kept'],
+    ]);
+  });
 });
 
 describe('qStatusLabel', () => {

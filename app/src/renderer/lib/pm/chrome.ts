@@ -622,7 +622,10 @@ function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
     // part names the part too, and its Remove · Keep belongs beside the line, not on the
     // part card's top edge (live run, 4 Oct 2026).
     const hits = edit.blockIds.map((id) => blockPos(doc, id)).filter((hit) => hit !== null);
-    const target = hits.find((hit) => hit.node.type.name !== 'tut_part') ?? hits[0];
+    // Older stale Keep buttons could resolve an edit after it had left the live list. Those
+    // records were saved with no block ids, while the kept text still has its author timestamp.
+    const target = hits.find((hit) => hit.node.type.name !== 'tut_part') ?? hits[0] ??
+      (edit.status === 'kept' ? keptTextTarget(doc, edit) : null);
     if (!target) continue;
     const at = byPos.get(target.pos) ?? [];
     at.push(edit);
@@ -671,6 +674,26 @@ function editControls(doc: Node, ctx: ChromeContext): Decoration[] {
     );
   }
   return out;
+}
+
+function keptTextTarget(doc: Node, edit: DocEditRecord): { pos: number; node: Node } | null {
+  const created = Date.parse(edit.createdAt);
+  if (!Number.isFinite(created)) return null;
+  let closest: { pos: number; node: Node; gap: number } | null = null;
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock || !blockAttrs(node).blockId) return true;
+    node.descendants((child) => {
+      if (!child.isText) return true;
+      for (const mark of child.marks) {
+        if (mark.type.name !== 'author' || mark.attrs.by !== edit.author || mark.attrs.editId !== null) continue;
+        const gap = Math.abs(Number(mark.attrs.at) - created);
+        if (gap <= 5000 && (!closest || gap < closest.gap)) closest = { pos, node, gap };
+      }
+      return false;
+    });
+    return false;
+  });
+  return closest;
 }
 
 function suggestionControls(doc: Node, ctx: ChromeContext): Decoration[] {
