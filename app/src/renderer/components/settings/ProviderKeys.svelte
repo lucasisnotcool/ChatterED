@@ -270,14 +270,6 @@
 </section>
 
 <style>
-  section {
-    max-width: 68ch;
-    padding: 18px 20px;
-    margin-bottom: 16px;
-    background: var(--pane);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-  }
   h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
   p { margin: 0 0 10px; font-size: 13px; line-height: 1.7; }
   .quiet { color: var(--text-2); font-size: 12px; }

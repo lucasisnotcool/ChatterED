@@ -267,6 +267,7 @@ export class DocStore {
   ingest = $state<NotesIngestView>({ ...EMPTY_INGEST });
   /** Status `applied` only: the edits still wearing their colour. */
   edits = $state<DocEditRecord[]>([]);
+  keptEdits = $state<DocEditRecord[]>([]);
   /** Status `open` only. */
   suggestions = $state<Suggestion[]>([]);
   cursors = $state<AgentCursorView[]>([]);
@@ -367,6 +368,7 @@ export class DocStore {
   // ── wiring set by `NotesPane` from `store.chat` (T5), so neither store imports the other ──
   askAboutSpan: ((input: { blockId: string; quote: string; docKey?: string }) => void) | null = null;
   focusThread: ((threadId: string) => void) | null = null;
+  focusEdit: ((messageId: string | null, blockIds: string[]) => void) | null = null;
   spanThreads: (() => readonly SpanThreadView[]) | null = null;
   /**
    * **Hint or Show me on Max's open question** (decision 7, 6 Oct 2026 afternoon): the rail's two
@@ -731,6 +733,7 @@ export class DocStore {
     this.version = 0;
     this.frozen = false;
     this.edits = [];
+    this.keptEdits = [];
     this.suggestions = [];
     this.cursors = [];
     this.overview = null;
@@ -781,6 +784,7 @@ export class DocStore {
     this.frozen = view.frozen;
     this.ingest = { ...view.ingest };
     this.edits = view.edits.map((edit) => ({ ...edit }));
+    this.keptEdits = (view.keptEdits ?? []).map((edit) => ({ ...edit }));
     this.suggestions = view.suggestions.map((s) => ({ ...s }));
     // A main process from before the overview (a dev build mid-reload) sends no field at all.
     this.overview = view.overview ? structuredClone(view.overview) : null;
@@ -965,6 +969,7 @@ export class DocStore {
       frozen: this.frozen,
       cursors: $state.snapshot(this.cursors) as AgentCursorView[],
       edits: $state.snapshot(this.edits) as DocEditRecord[],
+      keptEdits: $state.snapshot(this.keptEdits) as DocEditRecord[],
       suggestions: $state.snapshot(this.suggestions) as Suggestion[],
       spanThreads: this.spanThreads?.() ?? [],
       onRemoveEdit: (editId) => void this.removeAgentEdit(editId),
@@ -974,6 +979,7 @@ export class DocStore {
       onOpenSlide: (page, rect, anchor, afterBlockId) => this.openSlide(page, rect, anchor, afterBlockId ?? null),
       onInsertSlide: (target, afterBlockId) => void this.insertSlide(target.page, target.rect, afterBlockId),
       onFocusThread: (threadId) => this.focusThread?.(threadId),
+      onFocusEdit: (messageId, blockIds) => this.focusEdit?.(messageId, blockIds),
       // The overview (`notebooks.md` §3–§5): chips through the notebook, the toolbar, the
       // objectives' fills, and the recommended blocks.
       sources: this.#notebookParts(this.fileId),
@@ -1118,7 +1124,7 @@ export class DocStore {
       case 'doc.edit':
         if (e.docId !== this.docId) return;
         this.#settleBlockActions(e.batch);
-        void this.applyAgentEdit(e.batch);
+        void this.applyAgentEdit(e.batch, e.messageId ?? null);
         return;
       case 'doc.cursor': {
         if (e.docId !== this.docId) return;
@@ -1206,7 +1212,7 @@ export class DocStore {
    *   4. The doc scrolls to it **only if the learner is not typing**.
    *   5. Main is told what happened, and the document is saved.
    */
-  async applyAgentEdit(batch: AgentDocOpBatch): Promise<void> {
+  async applyAgentEdit(batch: AgentDocOpBatch, messageId: string | null = null): Promise<void> {
     const view = this.#view;
     const docId = this.docId;
     if (!view || !docId) return;
@@ -1250,7 +1256,7 @@ export class DocStore {
       blockIds: result.blockIds,
       why: batch.why,
       turnId: null,
-      messageId: null,
+      messageId,
       objectiveId: null,
       docVersion: this.version,
       // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a one-shot timestamp
@@ -1291,6 +1297,7 @@ export class DocStore {
       keepEdit(state, { editId, blockIds: edit ? [...edit.blockIds] : [] }),
     );
     this.edits = this.edits.filter((e) => e.editId !== editId);
+    if (applied && edit) this.keptEdits = [...this.keptEdits, { ...edit, status: 'kept' }];
     this.#bump();
     if (applied) await this.#save();
     await this.#reportEdit(editId, 'kept', edit ? [...edit.blockIds] : []);

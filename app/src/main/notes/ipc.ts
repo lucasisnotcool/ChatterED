@@ -9,9 +9,8 @@
  *  - **`notes:get` never starts an ingest.** Opening a file, drawing the shell, restoring a tab:
  *    all of them read. The ingest is started by `notes:ingest`, which the renderer calls once,
  *    after it has sent the page images.
- *  - **`NotesDocView` shows only what wears chrome**: `edits` is status `applied` (the ones that
- *    still have their colour and a Remove · Keep control) and `suggestions` is status `open`.
- *    Everything else is history and is read from the log, not from the view.
+ *  - **`NotesDocView` carries active edit controls and kept response links**: `edits` is
+ *    status `applied`, `keptEdits` is status `kept`, and `suggestions` is status `open`.
  */
 import type { IpcHandle, DocHost } from '../dochost.js';
 import { IPC, type NotesUpdateOverviewResult } from '../../shared/ipc.js';
@@ -59,6 +58,10 @@ function view(repo: NotesRepo, record: NotesDocRecord): NotesDocView {
     edits: repo.edits(record.id, 'applied').map(({ roomId: _roomId, ...edit }) => ({
       ...edit,
       status: 'applied' as DocEditStatus,
+    })),
+    keptEdits: repo.edits(record.id, 'kept').map(({ roomId: _roomId, ...edit }) => ({
+      ...edit,
+      status: 'kept' as DocEditStatus,
     })),
     suggestions: repo.suggestions(record.id, 'open'),
     overview: record.overview,

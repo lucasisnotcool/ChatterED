@@ -361,62 +361,6 @@ export function fromNotesTitle(notes: readonly { label: string }[], pageCitation
   return items.length === 0 ? '' : `From the notes: ${items.join(' · ')}`;
 }
 
-// ── the Help menu ───────────────────────────────────────────────────────────────────────────
-
-/** The menu's one-line summary of each rung: shorter than the button's tooltip. */
-const RUNG_DETAILS: readonly string[] = ['where to look', 'the part in small steps', 'one step on a similar case'];
-
-export type HelpItemId = 'hint' | 'refresher' | 'reveal';
-
-export interface HelpItem {
-  id: HelpItemId;
-  /** The item's words: `Hint`, `Refresher`, `Show answer…`. */
-  label: string;
-  /** The rung it gives next (`Point`), for the hint only; null otherwise or when none is left. */
-  rung: string | null;
-  /** A second, quieter line: what the item does. */
-  detail: string;
-  /** Who answers it, for its agent dot. */
-  who: 'max' | 'ellie' | null;
-  disabled: boolean;
-  /** Drawn after a divider (the give-up, set apart from the help). */
-  apart: boolean;
-}
-
-/**
- * What a part's **Help ▾** menu offers, in order: the next hint rung (with the rungs taken), a
- * refresher, and, after one check, Show answer… while the answer has not been shown.
- */
-export function helpMenuItems(chrome: PartChromeState): HelpItem[] {
-  const items: HelpItem[] = [
-    {
-      id: 'hint',
-      label: chrome.nextHint === null ? 'No more hints' : 'Hint',
-      rung: chrome.nextHint,
-      detail:
-        chrome.nextHint === null
-          ? 'All three used. A refresher is still there.'
-          : `${String(chrome.hintLevel + 1)} of 3 from Max: ${RUNG_DETAILS[chrome.hintLevel]!}`,
-      who: 'max',
-      disabled: chrome.nextHint === null,
-      apart: false,
-    },
-    {
-      id: 'refresher',
-      label: 'Refresher',
-      rung: null,
-      detail: 'Ellie goes over what this part needs',
-      who: 'ellie',
-      disabled: false,
-      apart: false,
-    },
-  ];
-  if (chrome.canReveal) {
-    items.push({ id: 'reveal', label: 'Show answer…', rung: null, detail: 'Gives up this part. It won’t count.', who: null, disabled: false, apart: true });
-  }
-  return items;
-}
-
 // ── practice chips under each section of the main notes ─────────────────────────────────────
 
 export interface PracticePart {

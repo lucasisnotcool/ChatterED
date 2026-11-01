@@ -643,6 +643,9 @@
 .nd-editctl-one.nd-max { border-right-style: solid; border-right-color: var(--nd-max); }
 
 .nd-editctl-who { display: block; font-weight: 600; }
+.nd-editctl-link { cursor: pointer; text-align: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.nd-editctl-link:hover { color: var(--indigo); }
+.nd-editctl-link:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
 .nd-editctl-one.nd-ellie .nd-editctl-who { color: var(--nd-ellie); }
 .nd-editctl-one.nd-max .nd-editctl-who { color: var(--nd-max); }
 .nd-editctl-why {

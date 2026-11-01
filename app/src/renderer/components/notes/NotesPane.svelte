@@ -73,6 +73,7 @@
 
   doc.askAboutSpan = (input) => { layout.setChatOpen(true); chat().openSpanThread?.(input); };
   doc.focusThread = (threadId) => { layout.setChatOpen(true); chat().focusThread?.(threadId); };
+  doc.focusEdit = (messageId, blockIds) => { layout.setChatOpen(true); void store.chat.focusAgentResponse(messageId, blockIds); };
   // Decision 7: the rail's Hint and Show me go through the chat store, as Pass does.
   doc.questionHelp = (kind, questionId) => {
     layout.setChatOpen(true);

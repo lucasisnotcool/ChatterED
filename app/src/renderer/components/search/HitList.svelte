@@ -67,7 +67,7 @@
     <input
       bind:this={inputEl}
       type="search"
-      placeholder={`Search slides, notes and tutorials in ${scopeName}`}
+      placeholder={`Search in ${scopeName}`}
       aria-label="Search slides, notes and tutorials"
       autocomplete="off"
       spellcheck="false"

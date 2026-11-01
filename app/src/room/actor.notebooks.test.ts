@@ -270,6 +270,9 @@ describe('blockAction: Explain and Example', () => {
       .map((e, i) => ({ e, i }))
       .filter(({ e }) => (e.type === 'message.appended' && e.message.id === ellie.id) || e.type === 'doc.edit');
     expect(order.map(({ e }) => e.type)).toEqual(['message.appended', 'doc.edit', 'message.appended']);
+    const edit = order[1]!.e;
+    if (edit.type !== 'doc.edit') throw new Error('Expected the document edit event');
+    expect(edit.messageId).toBe(ellie.id);
   });
 
   it('answers Example with one worked example, and its line is the example in brief', async () => {

@@ -279,6 +279,17 @@ confirmation and grading consequence are unchanged. Sources may be dragged betwe
 notes, Tutorials and Tutorial answers; dropping changes the source role through the existing
 role action, while Finder drops still add new files.
 
+*Amended 1 Nov 2026 (Valerie):* Each part now keeps **Check answer**, **Hint**, and
+**Refresher** visible at every width and zoom level. The actions wrap within the part card.
+**Show answer** is also a visible button, but only after that part has been checked at least
+once. The Help menu is retired. The confirmation and grading consequence remain the same.
+
+*Amended 1 Nov 2026 (Valerie):* Page citations in Doc chat link to any ready lecture or
+tutorial source page in the notebook, including pages outside the progress objectives. A
+citation opens its source page and also finds the notes section when one is mapped. A kept
+Ellie or Max edit retains its link back to the originating chat response after Keep and
+on reopening the document.
+
 ## 13. Tutorial workbench cleanup (Valerie, 26 Oct 2026)
 
 The tutorial dropdown in the global action bar is the sole tutorial selector in the main view.

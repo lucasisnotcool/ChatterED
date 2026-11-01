@@ -136,9 +136,11 @@
       {:else}
         <!-- Refetch holds the previous render at reduced opacity: no skeleton, no layout jump. -->
         <div class="grid" class:busy={store.costAnalyticsBusy}>
-          <Panel wide title="Everything in this range">
-            <TotalsPanel {analytics} />
-          </Panel>
+          <div class="summary-card">
+            <Panel title="Everything in this range">
+              <TotalsPanel {analytics} />
+            </Panel>
+          </div>
 
           {#if analytics.total.calls === 0}
             <p class="flat span">{FILTER_EMPTY_NOTE}</p>
@@ -237,7 +239,7 @@
     --series-1: var(--indigo);
     --series-2: #eb6834;
   }
-  .sheet { max-width: 1160px; }
+  .sheet { max-width: 1160px; margin: 0 auto; }
 
   header { margin-bottom: 20px; }
   h1 { margin: 0 0 3px; font-size: 16px; font-weight: 600; }
@@ -254,6 +256,7 @@
   }
   .busy { opacity: 0.55; }
   .span { grid-column: 1 / -1; }
+  .summary-card { grid-column: 1 / -1; width: min(100%, 880px); }
 
   .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px; }
   h3 {

@@ -53,6 +53,7 @@
   import { runViewerCommand } from '../../lib/viewer.js';
   import { store } from '../../lib/store.svelte.js';
   import { taughtObjectives } from '../../lib/progressview.js';
+  import { pagesOfSource } from '../../../shared/notebook.js';
   import {
     CHAT,
     TUTORIAL_WINDOW_MIN,
@@ -208,9 +209,11 @@
     }),
   );
 
-  /** The deck's pages, so a `p. N` in an agent's grounds is a button rather than a claim. */
+  /** Every available source page may be cited, even when no objective maps to it. */
   const pages = $derived(
-    [...new Set(taughtObjectives(store.progress.view).flatMap((o) => o.pages))].sort((a, b) => a - b),
+    store.notebook.view?.sources
+      .filter((source) => source.role !== 'solutions' && source.status === 'ready')
+      .flatMap(pagesOfSource) ?? [],
   );
 
   /**
@@ -244,7 +247,7 @@
    * notes are laid out again.
    */
   function openNotes(blockId: string | null = null): void {
-    if (!layout.notesWindowOpen) notesFrame = notesFloatFrame(layout.notesFrame, viewport());
+    if (!layout.notesWindowOpen) notesFrame = notesFloatFrame(layout.notesFrame, viewport(), layout.chatOpen ? layout.chatWidth : 0);
     layout.setNotesWindowOpen(true);
     void tick().then(() => {
       // The window takes the focus, so Escape closes it; a block is found once it is laid out.
@@ -266,7 +269,7 @@
   /** Each opening places the window where it was left, kept inside the app as it is now. */
   $effect(() => {
     if (!notesFloating) return;
-    untrack(() => (notesFrame = notesFloatFrame(layout.notesFrame, viewport())));
+    untrack(() => (notesFrame = notesFloatFrame(layout.notesFrame, viewport(), layout.chatOpen ? layout.chatWidth : 0)));
   });
 
   function onresize(): void {
@@ -328,11 +331,13 @@
     layout.setNotesWindowOpen(false);
   }
 
-  /** A `p. N` in a turn. The document is what the learner is reading, so it lands there. */
+  /** Open a cited source page, and its notes section when one is mapped to it. */
   function goToPage(page: number): void {
+    if (!pages.includes(page)) return;
     const objective = taughtObjectives(store.progress.view).find((o) => o.pages.includes(page));
     const blockId = objective?.blockIds[0];
     if (blockId) jump(blockId);
+    store.doc.openSlide(page);
   }
 
   async function start(objectiveId: string): Promise<void> {
@@ -345,7 +350,9 @@
     if (result.blockId) jump(result.blockId);
   }
 
-  const filesOpen = $derived(layout.filesOpen);
+  // A PDF and the source list both consume the side of the tutorial. Keep the list's
+  // preference intact so it returns when the learner closes the PDF.
+  const filesOpen = $derived(layout.filesOpen && !sourcePdfOpen);
 
   /** The document column, which the map of the notes reads the headings from. */
   let docbody = $state<HTMLElement | null>(null);
@@ -412,7 +419,12 @@
         aria-pressed={filesOpen}
         aria-controls="files-panel"
         title={filesOpen ? 'Hide the sources (⌃⌘S)' : 'Show the sources (⌃⌘S)'}
-        onclick={() => layout.toggleFiles()}
+        onclick={() => {
+          if (sourcePdfOpen) {
+            sourcePdfOpen = false;
+            layout.setFilesOpen(true);
+          } else layout.toggleFiles();
+        }}
       >☰ Sources</button>
 
       {#if tutorialMain}

@@ -20,7 +20,6 @@ import {
   blankFromCaret,
   blankSpots,
   fromNotesTitle,
-  helpMenuItems,
   nextHintLabel,
   notesChips,
   pageGroups,
@@ -229,25 +228,6 @@ describe('From the notes', () => {
       'From the notes: Classical planning in PDDL · Lecture-complex v4.0 p. 3–5',
     );
     expect(fromNotesTitle([], [])).toBe('');
-  });
-});
-
-describe('the Help menu', () => {
-  it('offers the next rung, a refresher, and the give-up set apart', () => {
-    expect(helpMenuItems(partChromeState(null, true)).map((i) => i.id)).toEqual(['hint', 'refresher']);
-    const items = helpMenuItems(partChromeState(partView('P1a', { attempts: 1, status: 'incorrect' }), false));
-    expect(items.map((i) => i.id)).toEqual(['hint', 'refresher', 'reveal']);
-    expect(items[0]).toMatchObject({ label: 'Hint', rung: 'Point', who: 'max', disabled: false });
-    expect(items[0]!.detail).toMatch(/^1 of 3 from Max/);
-    expect(items[1]).toMatchObject({ who: 'ellie', apart: false });
-    expect(items[2]).toMatchObject({ label: 'Show answer…', apart: true, who: null });
-  });
-
-  it('climbs the ladder, then says no more hints; no give-up once the answer is shown', () => {
-    expect(helpMenuItems(partChromeState(partView('P1a', { hintLevel: 2 }), false))[0]).toMatchObject({ rung: 'A worked step' });
-    const top = helpMenuItems(partChromeState(partView('P1a', { hintLevel: 3, status: 'revealed' }), false));
-    expect(top[0]).toMatchObject({ label: 'No more hints', rung: null, disabled: true });
-    expect(top.map((i) => i.id)).toEqual(['hint', 'refresher']);
   });
 });
 

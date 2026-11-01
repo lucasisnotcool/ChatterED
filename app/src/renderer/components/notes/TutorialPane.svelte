@@ -90,6 +90,7 @@
   const chat = (): ChatSurface => store.chat as unknown as ChatSurface;
   doc.askAboutSpan = (input) => { layout.setChatOpen(true); chat().openSpanThread?.(input); };
   doc.focusThread = (threadId) => { layout.setChatOpen(true); chat().focusThread?.(threadId); };
+  doc.focusEdit = (messageId, blockIds) => { layout.setChatOpen(true); void store.chat.focusAgentResponse(messageId, blockIds); };
   doc.spanThreads = () => chat().spanThreads ?? [];
 
   $effect(() => {

@@ -101,6 +101,7 @@ describe('chrome on a concept card', () => {
     onRejectSuggestion: noop,
     onOpenSlide: noop,
     onFocusThread: noop,
+    onFocusEdit: noop,
     blockActions: { i1a: { kind: 'explain', author: 'ellie', state: 'running', line: 'Ellie is writing…' } },
     onBlockAction: noop,
   };
@@ -154,6 +155,7 @@ describe('"Ready to check this?" (D2, 2026-10-06)', () => {
       onRejectSuggestion: () => undefined,
       onOpenSlide: () => undefined,
       onFocusThread: () => undefined,
+      onFocusEdit: () => undefined,
       ...extra,
     };
     const state = EditorState.create({ doc, plugins: [chromePlugin(() => context)] });

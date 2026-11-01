@@ -448,6 +448,8 @@ export interface NotesDocView {
   frozen: boolean;
   /** Status `applied` only: the edits that still wear their colour. */
   edits: DocEditRecord[];
+  /** Kept edits whose source response still has a link in the document. */
+  keptEdits?: DocEditRecord[];
   /** Status `open` only. */
   suggestions: Suggestion[];
   /** The overview's metadata (`notebooks.md` §3, §5.3, §6). Null on a pre-024 doc. */

@@ -24,35 +24,42 @@
   const sessionLine = $derived(usdWithLabel(analytics.session.estimatedUsd, analytics.mode));
 </script>
 
-<div class="totals">
-  <Stat
-    hero
-    label="Tokens in this range"
-    value={tokensLabel(totalTokens(total.tokens))}
-    sub={callsWord(total.calls)}
-  />
+<div class="overview">
+  <div class="totals">
+    <Stat
+      hero
+      label="Tokens in this range"
+      value={tokensLabel(totalTokens(total.tokens))}
+      sub={callsWord(total.calls)}
+    />
 
-  {#if money}
-    <Stat label={usdLabel(analytics.mode)} value={money} sub="rate-card arithmetic, not a bill" />
-  {/if}
+    {#if money}
+      <Stat label={usdLabel(analytics.mode)} value={money} sub="rate-card arithmetic, not a bill" />
+    {/if}
 
-  {#if reported}
-    <!-- Its own tile, deliberately: beside the estimate, never summed with it. -->
-    <Stat label={reported.label} value={reported.figure} sub={reported.over} />
-  {/if}
+    {#if reported}
+      <!-- Its own tile, deliberately: beside the estimate, never summed with it. -->
+      <Stat label={reported.label} value={reported.figure} sub={reported.over} />
+    {/if}
+  </div>
+
+  <div class="session-block">
+    <p class="session">
+      This session · {tokensLabel(totalTokens(analytics.session.tokens))} tokens ·
+      {callsWord(analytics.session.calls)}{sessionLine ? ` · ${sessionLine}` : ''}
+    </p>
+    <p class="quiet">{SESSION_NOTE}</p>
+  </div>
 </div>
 
-<hr class="hairline" />
-
-<p class="session">
-  This session · {tokensLabel(totalTokens(analytics.session.tokens))} tokens ·
-  {callsWord(analytics.session.calls)}{sessionLine ? ` · ${sessionLine}` : ''}
-</p>
-<p class="quiet">{SESSION_NOTE}</p>
-
 <style>
-  .totals { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
-  hr { margin-bottom: 12px; }
+  .overview { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr); gap: 24px; align-items: center; }
+  .totals { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-end; }
+  .session-block { border-left: 1px solid var(--hairline); padding-left: 24px; }
   .session { margin: 0; font-size: 13px; }
   .quiet { margin: 2px 0 0; font-size: 11.5px; color: var(--text-2); }
+  @media (max-width: 800px) {
+    .overview { grid-template-columns: 1fr; gap: 16px; }
+    .session-block { border-left: 0; border-top: 1px solid var(--hairline); padding: 12px 0 0; }
+  }
 </style>

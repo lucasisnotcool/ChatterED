@@ -439,6 +439,7 @@ describe('the tutorial as the main view (4 Oct 2026): per notebook, remembered, 
     expect(fresh.top + fresh.height).toBeLessThanOrEqual(950);
     const moved = { left: 300, top: 200, width: 600, height: 500 };
     expect(notesFloatFrame(moved, view)).toEqual(moved);
+    expect(notesFloatFrame(moved, view, 488).left).toBe(1500 - 600 - 24);
   });
 
   it('round-trips through storage, and reads anything else as nothing remembered', async () => {

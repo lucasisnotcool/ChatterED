@@ -587,7 +587,7 @@
   .folder {
     width: 100%;
     height: 100%;
-    min-height: 150px;
+    min-height: 112px;
     display: flex;
     align-items: flex-start;
     gap: 10px;
@@ -622,7 +622,7 @@
     display: grid;
     gap: 6px;
     text-align: left;
-    min-height: 150px;
+    min-height: 112px;
     align-content: start;
   }
   .card:hover { border-color: var(--indigo); }

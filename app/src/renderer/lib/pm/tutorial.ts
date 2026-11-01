@@ -8,9 +8,8 @@
  *
  *  - **Each part is a card** with one quiet header row: its label, its status in a word (untried ·
  *    working · ✓ correct · ½ partial · ✗ not yet · revealed, with who decided it on hover), three
- *    dots once a hint rung is taken, and on the right **Check** and one **Help ▾** menu: Hint
- *    (naming the rung it gives next), Refresher, and set apart, Show answer… (confirmed inline: it
- *    does not count). A wide card shows Hint and Refresher inline as well. Under the row, one line
+ *    dots once a hint rung is taken, and visible Check answer, Hint, Refresher, and (after one
+ *    check) Show answer controls. Under the row, one line
  *    of *From the notes:* links to the notes sections and the lecture pages the part draws on.
  *  - **The sheet's words wear sheet ink** (a printed face), the learner's answer slot a rail and a
  *    tint in the learner's colour, with a placeholder shaped to the answer while it is empty.
@@ -41,7 +40,6 @@ import {
   blankSpots,
   firstTextblock,
   fromNotesTitle,
-  helpMenuItems,
   hintDotsTitle,
   notesChips,
   pageGroups,
@@ -157,21 +155,14 @@ function widget(pos: number, key: string, side: number, build: (view: EditorView
       side,
       ignoreSelection: true,
       stopEvent: () => true,
-      destroy: (node) => {
-        cleanups.get(node as HTMLElement)?.();
-      },
     },
   );
 }
 
 // ── a part's header ─────────────────────────────────────────────────────────────────────────
 //
-// One quiet row (Lucas, 4 Oct 2026: "too many buttons when not popped"): the label, the status as
-// a word (quiet while untried), the hint dots once a hint is used, and on the right **Check** and
-// one **Help ▾** menu (Hint · its rung, Refresher, and set apart, Show answer…). A part card wider
-// than ~640 px (the popped-out window, a wide column) shows Hint and Refresher inline again: a
-// container query in `tutorial.css`, so nothing here measures. Under the row, *From the notes:* as
-// one line of plain links, cut with an ellipsis, the full list in its tooltip.
+// Every action stays visible at every card width. The controls wrap as the card narrows.
+// Under the row, *From the notes:* is one line of links with the full list in its tooltip.
 
 interface HeaderInput {
   partId: string;
@@ -184,34 +175,10 @@ interface HeaderInput {
   pages: { pages: number[]; label: string; full: string }[];
 }
 
-/** Cleanups for header DOM that holds a document listener (the open menu), run on destroy. */
-const cleanups = new WeakMap<HTMLElement, () => void>();
-
-/**
- * A menu open when its header was rebuilt (a record arrived while it was open) reopens in the new
- * header, as long as that is drawn straight after (the same part, within half a second).
- */
-let reopen: { partId: string; at: number } | null = null;
-
-let menuSeq = 0;
-
 function agentDot(who: 'max' | 'ellie'): HTMLElement {
   const dot = el('span', `nd-tool-dot nd-tool-dot-${who}`);
   dot.setAttribute('aria-hidden', 'true');
   return dot;
-}
-
-/** A small lightbulb, in the button's colour. */
-function bulbIcon(): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('class', 'nd-tut-help-icon');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS(ns, 'path');
-  path.setAttribute('d', 'M6 12.6h4M6.6 14.6h2.8M8 1.6a4.4 4.4 0 0 0-2.5 8c.4.3.6.8.6 1.3v.3h3.8v-.3c0-.5.2-1 .6-1.3A4.4 4.4 0 0 0 8 1.6z');
-  svg.append(path);
-  return svg;
 }
 
 function rungDots(chrome: PartChromeState, className = 'nd-tut-dots'): HTMLElement {
@@ -264,20 +231,20 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
   }
   if (chrome.hintLevel > 0) left.append(rungDots(chrome));
 
-  // ── right: [Hint] [Refresher] (wide only) · Check · Help ▾, or the reveal's confirm ──
+  // ── actions: always visible, wrapping at narrow widths ──
   const actions = el('div', 'nd-tut-actions');
   const controls = el('span', 'nd-tut-controls');
 
-  const hint = button('nd-tut-btn nd-tut-wide nd-tut-hint-btn', '', chrome.hintTitle, (self) => {
+  const hint = button('nd-tut-btn nd-tut-hint-btn', '', chrome.hintTitle, (self) => {
     markBusy(self);
     context().onHelp(partId, 'hint');
   });
-  hint.append(agentDot('max'), document.createTextNode(chrome.nextHint === null ? 'No more hints' : 'Hint'));
+  hint.append(agentDot('max'), document.createTextNode('Hint'));
   if (chrome.nextHint !== null) hint.append(el('span', 'nd-tut-rung', chrome.nextHint));
   hint.disabled = chrome.nextHint === null;
   hint.setAttribute('aria-label', chrome.nextHint === null ? 'No more hints' : `Hint: ${chrome.nextHint} (Max)`);
 
-  const refresher = button('nd-tut-btn nd-tut-wide', '', 'Ellie goes over what this part needs, from the lecture notes and slides', (self) => {
+  const refresher = button('nd-tut-btn', '', 'Ellie goes over what this part needs, from the lecture notes and slides', (self) => {
     markBusy(self);
     context().onHelp(partId, 'refresher');
   });
@@ -302,7 +269,7 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
   const no = button('nd-tut-btn nd-tut-reveal-no', 'Keep trying', 'Close this and keep working on it', () => {
     confirm.hidden = true;
     controls.hidden = false;
-    helpButton.focus({ preventScroll: true });
+    reveal?.focus({ preventScroll: true });
   });
   confirm.append(el('span', 'nd-tut-confirm-q', 'Show the answer? It won’t count.'), yes, no);
   confirm.addEventListener('keydown', (event) => {
@@ -317,165 +284,11 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
     yes.focus({ preventScroll: true });
   };
 
-  // ── the Help menu ──
-  const wrap = el('span', 'nd-tut-help-wrap');
-  const menuId = `nd-tut-menu-${String(++menuSeq)}`;
-  const helpButton = button('nd-tut-btn nd-tut-help', '', chrome.canReveal ? 'Hints, a refresher, or the answer' : 'Hints or a refresher', () => {
-    if (menu.hidden) openMenu();
-    else closeMenu(true);
-  });
-  helpButton.setAttribute('aria-haspopup', 'menu');
-  helpButton.setAttribute('aria-expanded', 'false');
-  helpButton.setAttribute('aria-controls', menuId);
-  helpButton.setAttribute('aria-label', 'Help');
-  const bulb = bulbIcon();
-  helpButton.append(bulb, el('span', 'nd-tut-help-word', 'Help'), el('span', 'nd-tut-help-more', 'More'), el('span', 'nd-tut-caret', '▾'));
-  helpButton.querySelector('.nd-tut-help-more')!.setAttribute('aria-hidden', 'true');
-
-  const menu = el('div', 'nd-tut-menu');
-  menu.id = menuId;
-  menu.hidden = true;
-  menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', `Help with ${input.label}`);
-  for (const item of helpMenuItems(chrome)) {
-    if (item.apart) {
-      const sep = el('div', 'nd-tut-menu-sep');
-      sep.setAttribute('role', 'separator');
-      menu.append(sep);
-    }
-    const entry = el('button', `nd-tut-menu-item nd-tut-menu-${item.id}`);
-    entry.type = 'button';
-    entry.tabIndex = -1;
-    entry.dataset.item = item.id;
-    entry.setAttribute('role', 'menuitem');
-    entry.disabled = item.disabled;
-    if (item.disabled) entry.setAttribute('aria-disabled', 'true');
-    const mark = item.who ? agentDot(item.who) : el('span', 'nd-tut-menu-mark');
-    const words = el('span', 'nd-tut-menu-words');
-    const top = el('span', 'nd-tut-menu-label', item.label);
-    if (item.rung) top.append(el('span', 'nd-tut-rung', item.rung));
-    words.append(top, el('span', 'nd-tut-menu-detail', item.detail));
-    entry.append(mark, words);
-    if (item.id === 'hint') entry.append(rungDots(chrome, 'nd-tut-dots nd-tut-menu-dots'));
-    entry.setAttribute('aria-label', item.rung ? `${item.label}: ${item.rung}. ${item.detail}` : `${item.label}. ${item.detail}`);
-    entry.addEventListener('mousedown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    entry.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (entry.disabled) return;
-      if (item.id === 'reveal') {
-        closeMenu(false);
-        askReveal();
-        return;
-      }
-      closeMenu(true);
-      markBusy(helpButton);
-      context().onHelp(partId, item.id);
-    });
-    menu.append(entry);
-  }
-
-  /** The items a key can reach: shown (the wide card hides the inline ones) and enabled. */
-  const reachable = (): HTMLButtonElement[] =>
-    [...menu.querySelectorAll<HTMLButtonElement>('.nd-tut-menu-item')].filter((b) => !b.disabled && b.getClientRects().length > 0);
-  const focusAt = (index: number): void => {
-    const items = reachable();
-    if (items.length === 0) return;
-    items[(index + items.length) % items.length]!.focus({ preventScroll: true });
-  };
-
-  let outside: ((event: Event) => void) | null = null;
-  const unlisten = (): void => {
-    if (outside) document.removeEventListener('pointerdown', outside, true);
-    outside = null;
-  };
-  function openMenu(at: 'first' | 'last' = 'first'): void {
-    if (helpButton.disabled) return;
-    menu.hidden = false;
-    menu.classList.remove('nd-up');
-    helpButton.setAttribute('aria-expanded', 'true');
-    head.classList.add('nd-tut-menu-on');
-    // Up, when the menu would run past the bottom of the pane that scrolls it and there is room above.
-    const box = menu.getBoundingClientRect();
-    const scroller = head.closest('.nd-scroll') ?? document.documentElement;
-    const bound = scroller.getBoundingClientRect();
-    const bottom = Math.min(bound.bottom, window.innerHeight);
-    if (box.bottom > bottom - 6 && box.top - box.height - helpButton.offsetHeight - 8 > Math.max(bound.top, 0)) menu.classList.add('nd-up');
-    focusAt(at === 'first' ? 0 : -1);
-    unlisten();
-    outside = (event: Event): void => {
-      if (!wrap.isConnected) return unlisten();
-      if (!wrap.contains(event.target as globalThis.Node)) closeMenu(false);
-    };
-    document.addEventListener('pointerdown', outside, true);
-    reopen = null;
-  }
-  function closeMenu(returnFocus: boolean): void {
-    unlisten();
-    if (menu.hidden) return;
-    menu.hidden = true;
-    helpButton.setAttribute('aria-expanded', 'false');
-    head.classList.remove('nd-tut-menu-on');
-    if (returnFocus) helpButton.focus({ preventScroll: true });
-  }
-
-  helpButton.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      openMenu(event.key === 'ArrowDown' ? 'first' : 'last');
-    } else if (event.key === 'Escape' && !menu.hidden) {
-      event.preventDefault();
-      closeMenu(true);
-    }
-  });
-  menu.addEventListener('keydown', (event) => {
-    const items = reachable();
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    switch (event.key) {
-      case 'ArrowDown':
-        focusAt(at + 1);
-        break;
-      case 'ArrowUp':
-        focusAt(at < 0 ? -1 : at - 1);
-        break;
-      case 'Home':
-        focusAt(0);
-        break;
-      case 'End':
-        focusAt(-1);
-        break;
-      case 'Escape':
-      case 'Tab':
-        closeMenu(true);
-        break;
-      default:
-        return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-  });
-
-  cleanups.set(head, () => {
-    if (!menu.hidden) reopen = { partId, at: Date.now() };
-    unlisten();
-  });
-  if (reopen?.partId === partId && Date.now() - reopen.at < 500) {
-    reopen = null;
-    requestAnimationFrame(() => {
-      if (head.isConnected) openMenu();
-    });
-  }
-
-  wrap.append(helpButton, menu);
-  const reveal = helpMenuItems(chrome).some((item) => item.id === 'reveal')
+  const reveal = chrome.canReveal
     ? button('nd-tut-btn nd-tut-reveal-direct', 'Show answer', 'Show the answer; this part will not count', askReveal)
     : null;
   controls.append(check, hint, refresher);
   if (reveal) controls.append(reveal);
-  controls.append(wrap);
   actions.append(controls, confirm);
   row.append(left, actions);
   head.append(row);

@@ -140,9 +140,11 @@
 }
 .nd-tut-dot.nd-on { border: 0; background: var(--nd-max, #b91c1c); }
 
-.nd-tut-actions { display: inline-flex; align-items: center; flex: none; max-width: 100%; margin-left: auto; }
-.nd-tut-controls { display: inline-flex; align-items: center; gap: 4px; }
+.nd-tut-actions { display: flex; align-items: center; flex: 1 1 320px; min-width: 0; max-width: 100%; }
+.nd-tut-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; width: 100%; }
 .nd-tut-controls[hidden] { display: none; }
+/* An already-mounted header from before the menu removal must not show its stale Help control. */
+.nd-tut-help-wrap { display: none !important; }
 .nd-tut-btn {
   display: inline-flex;
   align-items: center;
@@ -154,14 +156,16 @@
   color: var(--text-2);
   font-size: 11.5px;
   line-height: 1.6;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .nd-tut-btn:hover:not(:disabled) { border-color: #c7c7e8; color: var(--text); }
 .nd-tut-btn:disabled { cursor: default; }
 .nd-tut-btn:disabled:not(.nd-tut-check) { opacity: 0.45; }
 .nd-tut-btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
 .nd-tut-btn[hidden] { display: none; }
-.nd-tut-reveal-direct { display: none; }
 .nd-tut-rung { color: var(--nd-max, #b91c1c); font-weight: 550; }
 .nd-tut-rung::before { content: '·'; margin: 0 5px; color: var(--muted); font-weight: 400; }
 .nd-tut-busy { animation: nd-shimmer 1.4s ease-in-out infinite; }
@@ -170,64 +174,6 @@
 .nd-tut-check { border-color: var(--indigo); background: var(--indigo); color: #fff; font-weight: 550; }
 .nd-tut-check:hover:not(:disabled) { background: #443cd0; border-color: #443cd0; color: #fff; }
 .nd-tut-check:disabled { border-color: var(--hairline); background: transparent; color: var(--muted); font-weight: 400; }
-
-/* Help ▾: a quiet text button, given its outline when the part is hovered or being worked in. */
-.nd-tut-help-wrap { position: relative; display: inline-flex; }
-.nd-tut-help { border-color: transparent; background: transparent; color: var(--glyph, var(--text-2)); gap: 4px; padding: 2px 7px; }
-.nd-tut-help-icon { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
-.nd-tut-caret { font-size: 10px; line-height: 1; color: var(--muted); transform: translateY(-0.5px); }
-.nd-tut-help-more { display: none; }
-.nd-editor .ProseMirror section.nd-tut-part:hover .nd-tut-help,
-.nd-editor .ProseMirror section.nd-tut-part:focus-within .nd-tut-help,
-.nd-tut-help[aria-expanded='true'] { border-color: var(--hairline); background: var(--pane); color: var(--text-2); }
-.nd-tut-help[aria-expanded='true'] { border-color: #c7c7e8; color: var(--indigo); }
-
-/* The menu: drawn in the card, under the button (above it near the pane's bottom). */
-.nd-tut-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
-  width: max-content;
-  min-width: 232px;
-  max-width: 300px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--pane);
-  box-shadow: 0 8px 24px rgb(20 20 40 / 12%);
-}
-.nd-tut-menu[hidden] { display: none; }
-.nd-tut-menu.nd-up { top: auto; bottom: calc(100% + 4px); }
-.nd-tut-menu-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-}
-.nd-tut-menu-item:hover:not(:disabled),
-.nd-tut-menu-item:focus-visible,
-.nd-tut-menu-item:focus { background: var(--ground); outline: none; }
-.nd-tut-menu-item:disabled { opacity: 0.5; cursor: default; }
-.nd-tut-menu-item > .nd-tool-dot,
-.nd-tut-menu-mark { flex: none; margin-top: 5px; }
-.nd-tut-menu-mark { width: 8px; height: 8px; }
-.nd-tut-menu-words { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
-.nd-tut-menu-label { font-size: 12.5px; color: var(--text); white-space: nowrap; }
-.nd-tut-menu-detail { font-size: 11px; color: var(--text-2); opacity: 0.85; }
-.nd-tut-menu-dots { flex: none; margin-top: 5px; }
-.nd-tut-menu-reveal .nd-tut-menu-label { color: var(--text-2); }
-.nd-tut-menu-sep { height: 1px; margin: 3px 6px; background: var(--hairline); }
 
 /* Show the answer? It won't count. — in the controls' place. */
 .nd-tut-confirm {
@@ -244,9 +190,6 @@
 .nd-tut-confirm-q { color: var(--text-2); font-size: 11.5px; margin-right: 2px; }
 .nd-tut-reveal-yes { color: var(--nd-bad); border-color: var(--nd-bad-edge); }
 .nd-tut-reveal-yes:hover:not(:disabled) { border-color: var(--nd-bad); color: var(--nd-bad); }
-
-/* Hint and Refresher inline: only on a wide card (below). */
-.nd-tut-wide { display: none; }
 
 /* From the notes: one muted line of links, cut with an ellipsis; the full list is its tooltip. */
 .nd-tut-from {
@@ -267,18 +210,6 @@
 }
 .nd-tut-link:hover { color: var(--indigo); text-decoration: underline; text-underline-offset: 2px; }
 .nd-tut-link:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; color: var(--indigo); }
-
-/* A wide card (about 640 px or more: the popped-out window made wide, a wide column): Hint and Refresher come back inline, and
-   the menu keeps only the give-up, behind a quieter "More". */
-@container tutpart (min-width: 600px) {
-  .nd-tut-wide { display: inline-flex; }
-  .nd-tut-menu-hint,
-  .nd-tut-menu-refresher,
-  .nd-tut-menu-sep { display: none; }
-  .nd-tut-help-word,
-  .nd-tut-help-icon { display: none; }
-  .nd-tut-help-more { display: inline; }
-}
 
 /* ── the learner's answer slot ─────────────────────────────────────────── */
 
@@ -507,11 +438,7 @@
 .tp-nd.working .nd-editctl-one { border-right: 0; border-left: 2px solid; padding: 0 0 0 8px; }
 .tp-nd.working .nd-editctl-row { justify-content: flex-start; }
 
-/* The main tutorial offers the same four actions in one wrapping row. Show answer still opens
-   the existing confirmation; the Help menu remains available in smaller/docked presentations. */
-.tp-nd.main .nd-tut-wide,
-.tp-nd.main .nd-tut-reveal-direct { display: inline-flex; }
-.tp-nd.main .nd-tut-help-wrap { display: none; }
-.tp-nd.main .nd-tut-controls { flex-wrap: wrap; gap: 6px; }
+/* Keep all actions in a wrapping row at every sheet width and zoom level. */
+.tp-nd.main .nd-tut-controls { gap: 6px; }
 .tp-nd.main .nd-tut-btn { padding: 5px 10px; font-size: 12px; }
 .tp-nd.main .nd-tut-confirm { border-style: solid; background: var(--ground); }
