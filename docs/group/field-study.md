@@ -45,18 +45,26 @@ codebook (`docs/research/ai-use-transcripts/analysis/codebook.md`: `ICAP`, `A-MO
 unchanged, so the A1 counts are the baseline.
 
 - **RQ1 (N1, N2): engagement.** How do students engage with their own tutorial work when the AI waits
-  for their attempt? Every learner turn (answer box at Check, chat message, button press) coded
+  for their attempt, and does that hold across the week? Every learner turn (answer box at Check, chat message, button press) coded
   Passive / Active / Constructive / Interactive; where C and I turns appear, and where they don't.
-  A1: 0 of 31 turns C or I in five chats; 24 of 45 in the chat with a self-set protocol.
-- **RQ2 (N2, N3, N4): interaction type.** How do the AI's moves shape what students do next? Each AI
+  A1: 0 of 31 turns C or I in five chats; 24 of 45 in the chat with a self-set protocol. Over the
+  week: the C + I share in Days 1–2 against Days 6–7 (novelty fade).
+- **RQ2 (N2, N3, N4): interaction type.** How do the AI's moves shape what students do next, and does
+  that change over the week? Each AI
   turn coded Tell / Elicit / Assess (and the rarer Produce / Clarify), paired with the learner's next
   turn. A1: 0 of 31 AI turns elicited in five chats; 10 of 45 in the self-set-protocol chat; 7 of 7
-  answer requests there granted at once before the protocol.
+  answer requests there granted at once before the protocol. Over the week: whether the highest hint
+  used per part falls (help fading as they need less), and whether token attempts before Show answer
+  rise (gaming the gate).
 - **RQ3 (all four): accounts.** How do students make sense of their own engagement, and where does
   their account differ from what they did? The interview set beside the log (A1: 4 of 6 accounts
   did not match).
-- **Precondition check:** do they choose to use it (sessions, days active) and can they (pilot,
-  UMUX-Lite)?
+- **Context, not an RQ: coming back.** Days used, unprompted, and whether use clusters before a tutorial
+  is due. It says whether TutorED is worth opening when nobody asks, and frames everything above.
+
+**Usability is not part of this study (2 Nov, Lucas).** A week of use tells us about engagement and
+return, not about usability, and a two-item rating adds little to that. The Day 7 rating is dropped.
+Usability problems that come up in the interview are noted and fixed, not analysed.
 
 The export includes what participants type, as typed, so turns can be coded. Earlier wording (kept
 for the record): RQ1 uptake, RQ2 behaviour, RQ3 said against did.
@@ -81,18 +89,17 @@ themes are complete.
 |---|---|---|---|
 | Day 0 | Consent (audio separately), background form: programme, year, usual AI tool and how they use it. Install. Nothing on how to use it well | Participant, one researcher | 15 min |
 | Days 1–7 | Uses the app as they choose, on their own tutorials. No minimum, no reminders to use it. One message on Day 3 asking only about technical problems | Participant | their choice |
-| Day 7 | File ▸ Export Research Data…, and emails us the zip. UMUX-Lite, two items | Participant | 5 min |
+| Day 7 | File ▸ Export Research Data…, and emails us the zip | Participant | 5 min |
 | Days 8–9 | Build the log digest. Pick 3–4 moments: first attempt, highest hint, a Show answer, a retry or a stop | Researcher | 30 min |
 | Days 8–10 | Interview | Both | 30 min |
 
-**Round 1: usability pilot (done, before this study).** Valerie had two friends (NUS
+**Before this study: an informal usability pilot (done; not part of the study).** Valerie had two friends (NUS
 undergraduates, not on the team) work their own tutorial questions in the app, 26 Oct – 1 Nov, and
 noted what they ran into. No set tasks or scores, so it finds problems but measures nothing. It
 found two, both fixed: Max's feedback contradicted a verified answer key (#69, fixed in #70), and
 the separate PDF + working view kept the answer boxes apart from the question text and diagrams
-(replaced by the combined sheet, `e6b93cd`, `docs/research/tutorials.md` §14). The watched Day 0
-task considered on 2 Nov is dropped: usability is covered by this pilot, UMUX-Lite on Day 7 and the
-interview.
+(replaced by the combined sheet, `e6b93cd`, `docs/research/tutorials.md` §14). It informed the design;
+the study itself does not measure usability.
 
 **Interview, in this order.** Opinion comes first, before the participant sees any log, so their
 account is not primed by it.
@@ -112,8 +119,7 @@ account is not primed by it.
 
 | Goal | Observed in the log | Status today | Asked in the interview |
 |---|---|---|---|
-| Usability | Round 1 pilot (done). Day 7: UMUX-Lite (Lewis et al., 2013) | On the form, not logged | Where did you get stuck the first time? |
-| Uptake (precondition) | Sessions, days active, sheets added, parts touched | Recorded (`app.start`, `app.quit`, notebook and tutorial rows) | Why did you come back, or stop? What did you use instead? |
+| Coming back (context) | Sessions, days active, sheets added, parts touched | Recorded (`app.start`, `app.quit`, notebook and tutorial rows) | Why did you come back, or stop? What did you use instead? |
 | DG1 tries first | Share of help requests with an attempt in the slot; time to first attempt | **Not recorded yet** (gap 1, 2). Check count per part is recorded | Did the slot help you start, or feel like a demand? |
 | DG2 recovers | Highest rung per part, Show answer rate, retries after Not yet | Recorded (`tutorial.help`, `tutorial.check`, `tutorial_parts`) | When you pressed Show answer, what had happened just before? |
 | DG3 traces to the slide | Links opened from a part; lecture pages cited in replies | Citations recorded in messages; **link opens not recorded** (gap 3) | Did you check what it told you? What made you check? |
@@ -137,13 +143,15 @@ With no control group, a number is read against three baselines. None supports a
 **Expected findings, written before any data.** These are our expectations, not results; the rules
 under "What each result would change" say what follows if they fail.
 
-- Precondition: the pilot's two problems do not recur; most participants use it on two or more days
-  while they have a sheet due.
+- Coming back: most participants use it on two or more days, unprompted, mostly before a tutorial is
+  due. If few return after Day 2, cut the two-minute start-up first.
 - RQ1: the C + I share sits nearer the self-set-protocol chat (24 of 45) than the plain ones (0 of 31).
   If help is asked with an empty box, a hint should need a line of attempt first.
 - RQ2: Elicit and Assess moves are followed by C or I turns more often than Tell is; most "not yet"
   verdicts lead to a retry, not Show answer. If passive turns follow long replies, replies are too
   long for that task (DG4).
+- RQ1 over the week: the C + I share holds from Days 1–2 to Days 6–7. If it falls, the attempt-first
+  habit only lasts while the app is new: ask what changed, and make the attempt step lighter.
 - RQ3: some accounts still differ from the log, as 4 of 6 did in A1; the reasons are the point.
 
 These are hunches to check, not hypotheses to test.
@@ -177,8 +185,7 @@ answer verification: rebuild with the same keys after the logging is added
 - **Interviews.** Transcribed and de-identified to S1…S6. Thematic analysis (Braun & Clarke, 2006)
   starting from DG1–DG5 as codes and adding open codes. Lucas and Valerie code separately, compare, and
   keep disagreements visible. Report each theme with n of N and quotes.
-- **Usability.** Problems named in interviews listed with how many participants raised each, and
-  whether the pilot's fixes held. UMUX-Lite reported per person, not as a benchmark.
+- **Over the week.** Each measure split Days 1–2 against Days 6–7, per person. Descriptive only.
 - **Integration.** A joint display per participant: measure, their account, agree or disagree, and the
   explanation. A said-vs-did matrix across participants.
 
@@ -186,7 +193,7 @@ answer verification: rebuild with the same keys after the logging is added
 
 | If we see | We would change |
 |---|---|
-| Two or more name the same usability problem | Fix it first and check it again, and read low use of that feature in the logs as the interface, not the idea |
+| C + I share falls from Days 1–2 to Days 6–7 | The attempt-first habit lasts only while the app is new: make the attempt step lighter |
 | Few return after Day 2 | The core task is not worth opening: look at start-up cost (2 min read-in) before anything else |
 | Help is asked with empty slots | DG1 is not doing its work: revisit whether Hint should need a line of attempt first |
 | Show answer straight after rung 1 | The ladder is friction, not scaffolding: shorten it, or make rung 1 stronger |
@@ -241,8 +248,6 @@ recordings and raw transcripts are never committed.
 - Graesser, A. C., Person, N. K., & Magliano, J. P. (1995). Collaborative dialogue patterns in
   naturalistic one-to-one tutoring. *Applied Cognitive Psychology*, 9(6), 495–522.
 - Kapur, M. (2008). Productive failure. *Cognition and Instruction*, 26(3), 379–424.
-- Lewis, J. R., Utesch, B. S., & Maher, D. E. (2013). UMUX-LITE: When there's no time for the SUS.
-  *CHI '13*, 2099–2102.
 - Malterud, K., Siersma, V. D., & Guassora, A. D. (2016). Sample size in qualitative interview
   studies: guided by information power. *Qualitative Health Research*, 26(13), 1753–1760.
 - VanLehn, K. (2011). The relative effectiveness of human tutoring, intelligent tutoring systems, and
