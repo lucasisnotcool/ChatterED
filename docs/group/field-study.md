@@ -27,13 +27,31 @@ the claim: this study reports a pattern with explanations, not an effect.
 
 ## Research questions
 
-- **RQ1 Uptake.** Over a week of their own coursework, do students come back to tutorial mode, and
-  for what?
-- **RQ2 Behaviour.** How do they get into and through a part: is the attempt there when they ask for
-  help, how far do they climb the ladder, do they revise after feedback, do they follow the links to
-  the lecture?
-- **RQ3 Experience, said against did.** What do they say about it, what do they credit or blame, and
-  where does their account differ from their log?
+**Revised 2 Nov (Lucas), from the mid-project needs.** The RQs are derived from three of the six
+needs presented at mid-project (slide 5; `joint-analysis.md` §4), and each need's theory:
+
+| Need (mid-project) | Theory it applies | RQ |
+|---|---|---|
+| N1 The learner's own attempt reaches the tutor | Tutoring at the step (VanLehn, 2011) | RQ1 |
+| N2 Support in responding to productive failure | Productive failure (Kapur, 2008) | RQ2 |
+| N4 Help sized to the task and what the learner knows | Scaffolding (Wood, Bruner & Ross, 1976) | RQ3, read through ICAP (Chi & Wylie, 2014) |
+| N3 Structure without setting it up | (the hint ladder: the means, seen through RQ2) | none of its own |
+| N5 Grounded in the course; N6 Verifiable feedback | | **not studied**: about content correctness, not learner behaviour; would need planted errors in a set task |
+
+- **RQ1 (N1).** When students ask for help on their own tutorial, is their attempt there?
+- **RQ2 (N2).** After "not yet", do they repair their own answer, or hand it over?
+- **RQ3 (N4, ICAP).** Does the help keep them Constructive and Interactive? Every learner turn (answer
+  box at Check, chat message, button press) is coded Passive / Active / Constructive / Interactive with
+  the A1 codebook (`docs/research/ai-use-transcripts/analysis/codebook.md`), unchanged. A1 baseline:
+  0 of 31 turns C or I in five chats; 24 of 45 in the chat with a self-set protocol.
+- **For each, why:** the interview, set against the participant's log (said vs did; 4 of 6 A1 accounts
+  did not match).
+- **Precondition check:** do they choose to use it (sessions, days active) and can they (pilot,
+  UMUX-Lite)?
+
+The export includes what participants type, as typed, so turns can be coded. Earlier wording (kept
+for the record): RQ1 uptake, RQ2 behaviour, RQ3 said against did; uptake is now the precondition
+check, behaviour is split into RQ1 and RQ2, and said-vs-did is the integration step.
 
 ## Method
 
@@ -87,7 +105,7 @@ account is not primed by it.
 | Goal | Observed in the log | Status today | Asked in the interview |
 |---|---|---|---|
 | Usability | Round 1 pilot (done). Day 7: UMUX-Lite (Lewis et al., 2013) | On the form, not logged | Where did you get stuck the first time? |
-| RQ1 uptake | Sessions, days active, sheets added, parts touched | Recorded (`app.start`, `app.quit`, notebook and tutorial rows) | Why did you come back, or stop? What did you use instead? |
+| Uptake (precondition) | Sessions, days active, sheets added, parts touched | Recorded (`app.start`, `app.quit`, notebook and tutorial rows) | Why did you come back, or stop? What did you use instead? |
 | DG1 tries first | Share of help requests with an attempt in the slot; time to first attempt | **Not recorded yet** (gap 1, 2). Check count per part is recorded | Did the slot help you start, or feel like a demand? |
 | DG2 recovers | Highest rung per part, Show answer rate, retries after Not yet | Recorded (`tutorial.help`, `tutorial.check`, `tutorial_parts`) | When you pressed Show answer, what had happened just before? |
 | DG3 traces to the slide | Links opened from a part; lecture pages cited in replies | Citations recorded in messages; **link opens not recorded** (gap 3) | Did you check what it told you? What made you check? |
@@ -111,10 +129,14 @@ With no control group, a number is read against three baselines. None supports a
 **Expected findings, written before any data.** These are our expectations, not results; the rules
 under "What each result would change" say what follows if they fail.
 
-- Usability: the pilot's two problems do not recur.
-- RQ1: most participants use it on two or more days while they have a sheet due.
-- RQ2: most help requests carry an attempt, far above 0 of 31; lecture links are rarely opened.
-- RQ3: some accounts still differ from the log, as 4 of 6 did in A1.
+- Precondition: the pilot's two problems do not recur; most participants use it on two or more days
+  while they have a sheet due.
+- RQ1: most help requests carry an attempt, far above 0 of 31.
+- RQ2: most "not yet" verdicts lead to a retry, not Show answer (A1: 7 of 7 answer requests granted at
+  once, L-T6 before its protocol).
+- RQ3: the C + I share sits nearer the self-set-protocol chat (24 of 45) than the plain ones (0 of 31).
+  If not, and passive turns follow long replies, replies are too long for that task (DG4).
+- Said vs did: some accounts still differ from the log, as 4 of 6 did in A1.
 
 ### What must be added before the build goes out
 
@@ -200,9 +222,16 @@ recordings and raw transcripts are never committed.
 
 - Braun, V., & Clarke, V. (2006). Using thematic analysis in psychology. *Qualitative Research in
   Psychology*, 3(2), 77–101.
+- Chi, M. T. H., & Wylie, R. (2014). The ICAP framework: Linking cognitive engagement to active
+  learning outcomes. *Educational Psychologist*, 49(4), 219–243.
 - Fetters, M. D., Curry, L. A., & Creswell, J. W. (2013). Achieving integration in mixed methods
   designs: principles and practices. *Health Services Research*, 48(6pt2), 2134–2156.
+- Kapur, M. (2008). Productive failure. *Cognition and Instruction*, 26(3), 379–424.
 - Lewis, J. R., Utesch, B. S., & Maher, D. E. (2013). UMUX-LITE: When there's no time for the SUS.
   *CHI '13*, 2099–2102.
 - Malterud, K., Siersma, V. D., & Guassora, A. D. (2016). Sample size in qualitative interview
   studies: guided by information power. *Qualitative Health Research*, 26(13), 1753–1760.
+- VanLehn, K. (2011). The relative effectiveness of human tutoring, intelligent tutoring systems, and
+  other tutoring systems. *Educational Psychologist*, 46(4), 197–221.
+- Wood, D., Bruner, J. S., & Ross, G. (1976). The role of tutoring in problem solving. *Journal of
+  Child Psychology and Psychiatry*, 17(2), 89–100.
