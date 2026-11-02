@@ -27,31 +27,39 @@ the claim: this study reports a pattern with explanations, not an effect.
 
 ## Research questions
 
-**Revised 2 Nov (Lucas), from the mid-project needs.** The RQs are derived from three of the six
-needs presented at mid-project (slide 5; `joint-analysis.md` §4), and each need's theory:
+**Revised 2 Nov (Lucas), from the mid-project needs.** An observational study cannot test a
+hypothesis or show cause, so the RQs are exploratory. They are derived from four of the six needs
+presented at mid-project (slide 5; `joint-analysis.md` §4) and the theory each applies:
 
 | Need (mid-project) | Theory it applies | RQ |
 |---|---|---|
 | N1 The learner's own attempt reaches the tutor | Tutoring at the step (VanLehn, 2011) | RQ1 |
-| N2 Support in responding to productive failure | Productive failure (Kapur, 2008) | RQ2 |
-| N4 Help sized to the task and what the learner knows | Scaffolding (Wood, Bruner & Ross, 1976) | RQ3, read through ICAP (Chi & Wylie, 2014) |
-| N3 Structure without setting it up | (the hint ladder: the means, seen through RQ2) | none of its own |
-| N5 Grounded in the course; N6 Verifiable feedback | | **not studied**: about content correctness, not learner behaviour; would need planted errors in a set task |
+| N2 Support in responding to productive failure | Productive failure (Kapur, 2008) | RQ1, RQ2 |
+| N3 Structure without setting it up; N4 Help sized to the task and the learner | Scaffolding (Wood, Bruner & Ross, 1976) | RQ2 |
+| N5 Grounded in the course; N6 Verifiable feedback | | **not studied**: about content correctness, not engagement; would need planted errors in a set task |
 
-- **RQ1 (N1).** When students ask for help on their own tutorial, is their attempt there?
-- **RQ2 (N2).** After "not yet", do they repair their own answer, or hand it over?
-- **RQ3 (N4, ICAP).** Does the help keep them Constructive and Interactive? Every learner turn (answer
-  box at Check, chat message, button press) is coded Passive / Active / Constructive / Interactive with
-  the A1 codebook (`docs/research/ai-use-transcripts/analysis/codebook.md`), unchanged. A1 baseline:
-  0 of 31 turns C or I in five chats; 24 of 45 in the chat with a self-set protocol.
-- **For each, why:** the interview, set against the participant's log (said vs did; 4 of 6 A1 accounts
+All three theories predict that learning follows what the learner produces, and that the tutor's
+moves can raise or lower it. The learner's side is read with ICAP (Chi & Wylie, 2014); the AI's side
+with tutoring moves (Graesser, Person & Magliano, 1995; Chi et al., 2001). Both are codes in the A1
+codebook (`docs/research/ai-use-transcripts/analysis/codebook.md`: `ICAP`, `A-MOVE`), reused
+unchanged, so the A1 counts are the baseline.
+
+- **RQ1 (N1, N2): engagement.** How do students engage with their own tutorial work when the AI waits
+  for their attempt? Every learner turn (answer box at Check, chat message, button press) coded
+  Passive / Active / Constructive / Interactive; where C and I turns appear, and where they don't.
+  A1: 0 of 31 turns C or I in five chats; 24 of 45 in the chat with a self-set protocol.
+- **RQ2 (N2, N3, N4): interaction type.** How do the AI's moves shape what students do next? Each AI
+  turn coded Tell / Elicit / Assess (and the rarer Produce / Clarify), paired with the learner's next
+  turn. A1: 0 of 31 AI turns elicited in five chats; 10 of 45 in the self-set-protocol chat; 7 of 7
+  answer requests there granted at once before the protocol.
+- **RQ3 (all four): accounts.** How do students make sense of their own engagement, and where does
+  their account differ from what they did? The interview set beside the log (A1: 4 of 6 accounts
   did not match).
 - **Precondition check:** do they choose to use it (sessions, days active) and can they (pilot,
   UMUX-Lite)?
 
 The export includes what participants type, as typed, so turns can be coded. Earlier wording (kept
-for the record): RQ1 uptake, RQ2 behaviour, RQ3 said against did; uptake is now the precondition
-check, behaviour is split into RQ1 and RQ2, and said-vs-did is the integration step.
+for the record): RQ1 uptake, RQ2 behaviour, RQ3 said against did.
 
 ## Method
 
@@ -131,12 +139,14 @@ under "What each result would change" say what follows if they fail.
 
 - Precondition: the pilot's two problems do not recur; most participants use it on two or more days
   while they have a sheet due.
-- RQ1: most help requests carry an attempt, far above 0 of 31.
-- RQ2: most "not yet" verdicts lead to a retry, not Show answer (A1: 7 of 7 answer requests granted at
-  once, L-T6 before its protocol).
-- RQ3: the C + I share sits nearer the self-set-protocol chat (24 of 45) than the plain ones (0 of 31).
-  If not, and passive turns follow long replies, replies are too long for that task (DG4).
-- Said vs did: some accounts still differ from the log, as 4 of 6 did in A1.
+- RQ1: the C + I share sits nearer the self-set-protocol chat (24 of 45) than the plain ones (0 of 31).
+  If help is asked with an empty box, a hint should need a line of attempt first.
+- RQ2: Elicit and Assess moves are followed by C or I turns more often than Tell is; most "not yet"
+  verdicts lead to a retry, not Show answer. If passive turns follow long replies, replies are too
+  long for that task (DG4).
+- RQ3: some accounts still differ from the log, as 4 of 6 did in A1; the reasons are the point.
+
+These are hunches to check, not hypotheses to test.
 
 ### What must be added before the build goes out
 
@@ -222,10 +232,14 @@ recordings and raw transcripts are never committed.
 
 - Braun, V., & Clarke, V. (2006). Using thematic analysis in psychology. *Qualitative Research in
   Psychology*, 3(2), 77–101.
+- Chi, M. T. H., Siler, S. A., Jeong, H., Yamauchi, T., & Hausmann, R. G. (2001). Learning from
+  human tutoring. *Cognitive Science*, 25(4), 471–533.
 - Chi, M. T. H., & Wylie, R. (2014). The ICAP framework: Linking cognitive engagement to active
   learning outcomes. *Educational Psychologist*, 49(4), 219–243.
 - Fetters, M. D., Curry, L. A., & Creswell, J. W. (2013). Achieving integration in mixed methods
   designs: principles and practices. *Health Services Research*, 48(6pt2), 2134–2156.
+- Graesser, A. C., Person, N. K., & Magliano, J. P. (1995). Collaborative dialogue patterns in
+  naturalistic one-to-one tutoring. *Applied Cognitive Psychology*, 9(6), 495–522.
 - Kapur, M. (2008). Productive failure. *Cognition and Instruction*, 26(3), 379–424.
 - Lewis, J. R., Utesch, B. S., & Maher, D. E. (2013). UMUX-LITE: When there's no time for the SUS.
   *CHI '13*, 2099–2102.
