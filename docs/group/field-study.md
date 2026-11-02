@@ -98,6 +98,24 @@ account is not primed by it.
 **A1 baselines are context, not a comparison:** 0 of 31 student messages held an attempt (5 chats);
 4 of 6 accounts did not match the log.
 
+### Baselines and expected findings (added 2 Nov, for the final presentation)
+
+With no control group, a number is read against three baselines. None supports a causal claim.
+
+| Baseline | What it is | Read against |
+|---|---|---|
+| How students use AI today (A1, `joint-analysis.md`) | 0 of 31 messages held an attempt (5 chats); answer requests 5 → 2 once one learner set a rule (L-T6); 7 of 10 comprehension replies over 400 words for 0–7-word prompts (L-T2, L-T5); 4 of 6 accounts did not match the log | Attempt present on a help request; Show answer rate and highest rung; words per reply and steering; said vs did |
+| Their own account, Day 0 | The background form: usual AI tool and how they use it | Their log and interview |
+| Themselves over the week | Days 1–2 against Days 6–7, descriptive only | Whether use holds once the novelty fades (RQ1) |
+
+**Expected findings, written before any data.** These are our expectations, not results; the rules
+under "What each result would change" say what follows if they fail.
+
+- Usability: the pilot's two problems do not recur.
+- RQ1: most participants use it on two or more days while they have a sheet due.
+- RQ2: most help requests carry an attempt, far above 0 of 31; lecture links are rarely opened.
+- RQ3: some accounts still differ from the log, as 4 of 6 did in A1.
+
 ### What must be added before the build goes out
 
 Audited against `8198994`, 1 Nov. All of it is logging; none changes what the learner sees. Until
