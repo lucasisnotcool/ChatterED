@@ -53,11 +53,21 @@ themes are complete.
 
 | When | What | Who | Time |
 |---|---|---|---|
-| Day 0 | Consent (audio separately), background form: programme, year, usual AI tool and how they use it. Install. Nothing on how to use it well | Participant, one researcher | 15 min |
+| Day 0 | Consent (audio separately), background form: programme, year, usual AI tool and how they use it. Install. Nothing on how to use it well. Then the **first-use task** (below) | Participant, one researcher | 30 min |
 | Days 1–7 | Uses the app as they choose, on their own tutorials. No minimum, no reminders to use it. One message on Day 3 asking only about technical problems | Participant | their choice |
-| Day 7 | File ▸ Export Research Data…, and emails us the zip | Participant | 2 min |
+| Day 7 | File ▸ Export Research Data…, and emails us the zip. UMUX-Lite, two items | Participant | 5 min |
 | Days 8–9 | Build the log digest. Pick 3–4 moments: first attempt, highest hint, a Show answer, a retry or a stop | Researcher | 30 min |
 | Days 8–10 | Interview | Both | 30 min |
+
+**First-use task (Day 0, added 2 Nov).** The week of use shows usefulness (do they choose it, and
+why) but not usability (can a first-time user work it at all), so Day 0 keeps one observed task
+from the lab design. The participant reads in one of their own sheets with its lecture (start this
+first: 1–2.5 min), then works one part until they would hand it in or stop, thinking aloud, for at
+most 10 minutes. The researcher watches and does not teach; after a minute stuck they may step in,
+and each step-in is counted. Record, for the four core steps (write an attempt in the slot, take a
+Hint, open a lecture link, act on Check): done unaided, done with help, or not done. Then the
+Single Ease Question (1–7; Sauro & Dumas, 2009). Notes only, no recording unless audio consent was
+given. Watching the first task may change how they use the app afterwards; this is reported.
 
 **Interview, in this order.** Opinion comes first, before the participant sees any log, so their
 account is not primed by it.
@@ -77,6 +87,7 @@ account is not primed by it.
 
 | Goal | Observed in the log | Status today | Asked in the interview |
 |---|---|---|---|
+| Usability, first use | Day 0: each core step unaided, with help, or not done; step-ins; SEQ. Day 7: UMUX-Lite (Lewis et al., 2013) | Observed and on the form, not logged | Where did you get stuck the first time? |
 | RQ1 uptake | Sessions, days active, sheets added, parts touched | Recorded (`app.start`, `app.quit`, notebook and tutorial rows) | Why did you come back, or stop? What did you use instead? |
 | DG1 tries first | Share of help requests with an attempt in the slot; time to first attempt | **Not recorded yet** (gap 1, 2). Check count per part is recorded | Did the slot help you start, or feel like a demand? |
 | DG2 recovers | Highest rung per part, Show answer rate, retries after Not yet | Recorded (`tutorial.help`, `tutorial.check`, `tutorial_parts`) | When you pressed Show answer, what had happened just before? |
@@ -117,6 +128,8 @@ answer verification: rebuild with the same keys after the logging is added
 - **Interviews.** Transcribed and de-identified to S1…S6. Thematic analysis (Braun & Clarke, 2006)
   starting from DG1–DG5 as codes and adding open codes. Lucas and Valerie code separately, compare, and
   keep disagreements visible. Report each theme with n of N and quotes.
+- **Usability.** Day 0 problems listed with how many participants hit each, ranked by severity
+  (0–4). SEQ and UMUX-Lite reported per person, not as a benchmark.
 - **Integration.** A joint display per participant: measure, their account, agree or disagree, and the
   explanation. A said-vs-did matrix across participants.
 
@@ -124,6 +137,7 @@ answer verification: rebuild with the same keys after the logging is added
 
 | If we see | We would change |
 |---|---|
+| Two or more stuck at the same step on Day 0 | Fix that step first, and read low use of it in the logs as the interface, not the idea |
 | Few return after Day 2 | The core task is not worth opening: look at start-up cost (2 min read-in) before anything else |
 | Help is asked with empty slots | DG1 is not doing its work: revisit whether Hint should need a line of attempt first |
 | Show answer straight after rung 1 | The ladder is friction, not scaffolding: shorten it, or make rung 1 stronger |
@@ -139,7 +153,7 @@ that anyone learned more (no test), or anything beyond this group. Other limits:
 
 - **Recruitment.** Participants are from our networks, so they may be kinder in interviews. Ask for
   faults directly, and let the log check the account.
-- **Being observed.** They know the log is exported. Reported, not removed.
+- **Being observed.** They know the log is exported, and the Day 0 task is watched. Reported, not removed.
 - **Mixed content.** Each brings different sheets, so parts are not comparable across people.
 - **Correctness.** Check on a proof is the model's judgement. We make no accuracy claim (`group-project.md`
   §6). Where a solutions file or a formal checker exists, code holds the grade (`app/docs/TUTORIAL-ANSWER-TESTING.md`).
@@ -171,5 +185,9 @@ recordings and raw transcripts are never committed.
   Psychology*, 3(2), 77–101.
 - Fetters, M. D., Curry, L. A., & Creswell, J. W. (2013). Achieving integration in mixed methods
   designs: principles and practices. *Health Services Research*, 48(6pt2), 2134–2156.
+- Lewis, J. R., Utesch, B. S., & Maher, D. E. (2013). UMUX-LITE: When there's no time for the SUS.
+  *CHI '13*, 2099–2102.
 - Malterud, K., Siersma, V. D., & Guassora, A. D. (2016). Sample size in qualitative interview
   studies: guided by information power. *Qualitative Health Research*, 26(13), 1753–1760.
+- Sauro, J., & Dumas, J. S. (2009). Comparison of three one-question, post-task usability
+  questionnaires. *CHI '09*, 1599–1608.
