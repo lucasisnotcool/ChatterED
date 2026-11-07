@@ -38,24 +38,34 @@ presented at mid-project (slide 5; `joint-analysis.md` §4) and the theory each 
 | N3 Structure without setting it up; N4 Help sized to the task and the learner | Scaffolding (Wood, Bruner & Ross, 1976) | RQ2 |
 | N5 Grounded in the course; N6 Verifiable feedback | | **not studied**: about content correctness, not engagement; would need planted errors in a set task |
 
-All three theories predict that learning follows what the learner produces, and that the tutor's
-moves can raise or lower it. The learner's side is read with ICAP (Chi & Wylie, 2014); the AI's side
-with tutoring moves (Graesser, Person & Magliano, 1995; Chi et al., 2001). Both are codes in the A1
-codebook (`docs/research/ai-use-transcripts/analysis/codebook.md`: `ICAP`, `A-MOVE`), reused
-unchanged, so the A1 counts are the baseline.
+All three theories predict that learning follows what the learner produces. The learner's side is
+read with ICAP (Chi & Wylie, 2014), a code in the A1 codebook
+(`docs/research/ai-use-transcripts/analysis/codebook.md`), reused unchanged, so the A1 counts are the
+baseline. The help is read as the student's own help-seeking path (Aleven et al., 2003), not as the
+AI's move: see the note under RQ2.
 
 - **RQ1 (N1, N2): engagement.** How do students engage with their own tutorial work when the AI waits
-  for their attempt, and does that hold across the week? Every learner turn (answer box at Check, chat message, button press) coded
-  Passive / Active / Constructive / Interactive; where C and I turns appear, and where they don't.
-  A1: 0 of 31 turns C or I in five chats; 24 of 45 in the chat with a self-set protocol. Over the
-  week: the C + I share in Days 1–2 against Days 6–7 (novelty fade).
-- **RQ2 (N2, N3, N4): interaction type.** How do the AI's moves shape what students do next, and does
-  that change over the week? Each AI
-  turn coded Tell / Elicit / Assess (and the rarer Produce / Clarify), paired with the learner's next
-  turn. A1: 0 of 31 AI turns elicited in five chats; 10 of 45 in the self-set-protocol chat; 7 of 7
-  answer requests there granted at once before the protocol. Over the week: whether the highest hint
-  used per part falls (help fading as they need less), and whether token attempts before Show answer
-  rise (gaming the gate).
+  for their attempt, and does that hold over time? Every learner turn (answer box at Check, chat
+  message, button press) coded Passive / Active / Constructive / Interactive; where C and I turns
+  appear, and where they don't. A1: 0 of 31 turns C or I in five chats; 24 of 45 in the chat with a
+  self-set protocol. Over time: the C + I share in early use against late use (in a one-week study,
+  Days 1–2 against Days 6–7), to see whether it lasts once the app is no longer new.
+- **RQ2 (N2, N3, N4): help-seeking.** When students get stuck, which help do they reach for, and where
+  does the path end: a repair in their own words, or Show answer? Does that change over time? One
+  path per part, from the log: attempt → Check → "not yet" → hint 1 → hint 2 → revise and re-check,
+  or Show answer, or leave. Over time: whether the highest hint used per part falls (help fading as
+  they need less: scaffolding working), and whether token attempts just before Show answer rise
+  (gaming the gate; Baker et al., 2004). A1: 7 of 7 answer requests granted at once before the
+  learner's own protocol; answer requests then fell 5 → 2 (L-T6).
+
+  *Why not the AI's moves (changed 7 Nov, Lucas; the presented deck still has the earlier wording).*
+  The earlier RQ2 asked how the AI's moves (tell, elicit, assess) shape what students do next. In
+  TutorED the move is set by code from the student's action: Check gets an assessment, Hint gets an
+  elicitation, Show answer gets the answer. So in an observational study the move cannot be
+  separated from the student's own choice, and pairing it with the next turn measures that choice
+  twice. Its effect could only be seen by varying it on purpose, which is an experiment. The A1
+  `A-MOVE` code (tutoring moves; Graesser et al., 1995; Chi et al., 2001) is kept only to describe
+  free-chat replies, where the model chooses its own move.
 - **RQ3 (all four): accounts.** How do students make sense of their own engagement, and where does
   their account differ from what they did? The interview set beside the log (A1: 4 of 6 accounts
   did not match).
@@ -67,7 +77,8 @@ return, not about usability, and a two-item rating adds little to that. The Day 
 Usability problems that come up in the interview are noted and fixed, not analysed.
 
 The export includes what participants type, as typed, so turns can be coded. Earlier wording (kept
-for the record): RQ1 uptake, RQ2 behaviour, RQ3 said against did.
+for the record): RQ1 uptake, RQ2 behaviour, RQ3 said against did (1 Nov); then RQ2 as the AI's
+moves (2 Nov, presented at the final presentation).
 
 ## Method
 
@@ -138,7 +149,7 @@ With no control group, a number is read against three baselines. None supports a
 |---|---|---|
 | How students use AI today (A1, `joint-analysis.md`) | 0 of 31 messages held an attempt (5 chats); answer requests 5 → 2 once one learner set a rule (L-T6); 7 of 10 comprehension replies over 400 words for 0–7-word prompts (L-T2, L-T5); 4 of 6 accounts did not match the log | Attempt present on a help request; Show answer rate and highest rung; words per reply and steering; said vs did |
 | Their own account, Day 0 | The background form: usual AI tool and how they use it | Their log and interview |
-| Themselves over the week | Days 1–2 against Days 6–7, descriptive only | Whether use holds once the novelty fades (RQ1) |
+| Themselves over time | Early use against late use (Days 1–2 against Days 6–7), descriptive only | Whether engagement holds once the novelty fades (RQ1); whether help fades (RQ2) |
 
 **Expected findings, written before any data.** These are our expectations, not results; the rules
 under "What each result would change" say what follows if they fail.
@@ -147,11 +158,12 @@ under "What each result would change" say what follows if they fail.
   due. If few return after Day 2, cut the two-minute start-up first.
 - RQ1: the C + I share sits nearer the self-set-protocol chat (24 of 45) than the plain ones (0 of 31).
   If help is asked with an empty box, a hint should need a line of attempt first.
-- RQ2: Elicit and Assess moves are followed by C or I turns more often than Tell is; most "not yet"
-  verdicts lead to a retry, not Show answer. If passive turns follow long replies, replies are too
-  long for that task (DG4).
-- RQ1 over the week: the C + I share holds from Days 1–2 to Days 6–7. If it falls, the attempt-first
+- RQ1 over time: the C + I share holds from early use to late use. If it falls, the attempt-first
   habit only lasts while the app is new: ask what changed, and make the attempt step lighter.
+- RQ2: most paths that reach "not yet" end in a repair in the student's own words, not Show answer,
+  and the highest hint used per part falls over time. If Show answer follows straight after the first
+  hint, the ladder is friction; if token attempts before Show answer rise over time, the gate is being
+  worked around.
 - RQ3: some accounts still differ from the log, as 4 of 6 did in A1; the reasons are the point.
 
 These are hunches to check, not hypotheses to test.
@@ -185,7 +197,10 @@ answer verification: rebuild with the same keys after the logging is added
 - **Interviews.** Transcribed and de-identified to S1…S6. Thematic analysis (Braun & Clarke, 2006)
   starting from DG1–DG5 as codes and adding open codes. Lucas and Valerie code separately, compare, and
   keep disagreements visible. Report each theme with n of N and quotes.
-- **Over the week.** Each measure split Days 1–2 against Days 6–7, per person. Descriptive only.
+- **Over time.** Each measure split early use against late use (Days 1–2 against Days 6–7), per
+  person. Descriptive only.
+- **Help-seeking paths.** One path per part, as a sequence of the student's actions; tallied by where
+  it ends (repair, Show answer, left), per person.
 - **Integration.** A joint display per participant: measure, their account, agree or disagree, and the
   explanation. A said-vs-did matrix across participants.
 
@@ -193,10 +208,11 @@ answer verification: rebuild with the same keys after the logging is added
 
 | If we see | We would change |
 |---|---|
-| C + I share falls from Days 1–2 to Days 6–7 | The attempt-first habit lasts only while the app is new: make the attempt step lighter |
+| C + I share falls from early to late use | The attempt-first habit lasts only while the app is new: make the attempt step lighter |
 | Few return after Day 2 | The core task is not worth opening: look at start-up cost (2 min read-in) before anything else |
 | Help is asked with empty slots | DG1 is not doing its work: revisit whether Hint should need a line of attempt first |
 | Show answer straight after rung 1 | The ladder is friction, not scaffolding: shorten it, or make rung 1 stronger |
+| Token attempts before Show answer rise over time | The attempt gate is being worked around: ask for a substantive line before the reveal, or stop counting a check as an attempt |
 | Long replies, then no next action | DG4's sizing is wrong for that task type |
 | Links never opened, and they say they trust it | DG3 makes help checkable but not checked: bring the source into the reply |
 | "Felt like it nags" with high attempt-first | The number moved for the wrong reason: the behaviour is not one they would keep |
@@ -237,6 +253,10 @@ recordings and raw transcripts are never committed.
 
 ## References
 
+- Aleven, V., Stahl, E., Schworm, S., Fischer, F., & Wallace, R. (2003). Help seeking and help design
+  in interactive learning environments. *Review of Educational Research*, 73(3), 277–320.
+- Baker, R. S., Corbett, A. T., Koedinger, K. R., & Wagner, A. Z. (2004). Off-task behavior in the
+  cognitive tutor classroom: When students "game the system". *CHI '04*, 383–390.
 - Braun, V., & Clarke, V. (2006). Using thematic analysis in psychology. *Qualitative Research in
   Psychology*, 3(2), 77–101.
 - Chi, M. T. H., Siler, S. A., Jeong, H., Yamauchi, T., & Hausmann, R. G. (2001). Learning from
