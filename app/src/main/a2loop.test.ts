@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { a2Loop } from './ipc.js';
+import { a2Loop, pageTextOf } from './ipc.js';
 
 describe('a2Loop: which question loop this build runs', () => {
   it('runs Max’s follow-up by default, with every guard on', () => {
@@ -18,5 +18,17 @@ describe('a2Loop: which question loop this build runs', () => {
   it('CHATTERED_LEGACY_GUARDS_OFF=1 switches the 6 Oct checks off, and nothing else does', () => {
     expect(a2Loop({ CHATTERED_LEGACY_GUARDS_OFF: '1' }).legacyGuardsOff).toBe(true);
     expect(a2Loop({ CHATTERED_LEGACY_GUARDS_OFF: 'yes' }).legacyGuardsOff).toBe(false);
+  });
+});
+
+describe('pageTextOf: the deck by page, for the citation check', () => {
+  it('splits the extracted text on its page markers', () => {
+    const page = pageTextOf('=== SOURCE: deck.pdf ===\n\n[p. 1]\nTitle slide\n\n[p. 2]\nRepair strategies\nOptions\n')!;
+    expect(page(1)).toBe('Title slide');
+    expect(page(2)).toBe('Repair strategies\nOptions');
+    expect(page(3)).toBeNull();
+  });
+  it('is undefined for text with no page markers', () => {
+    expect(pageTextOf('pasted text with no pages')).toBeUndefined();
   });
 });

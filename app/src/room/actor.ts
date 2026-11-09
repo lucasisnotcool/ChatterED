@@ -85,6 +85,7 @@ import {
   modelAnswerAskBlock,
   twoAsksBlock,
   questionKeyBlock,
+  citationRedoBlock,
 } from './prompts.doc.js';
 import { coveredUnion, parseFeedbackReply, parseQuestionReply, verdictFromPoints, type ModelAnswer } from '../core/marking.js';
 import type {
@@ -224,6 +225,7 @@ import {
   type TutorKind,
 } from './prompts.tutor.js';
 import { answerLeaks, withoutLeaks } from '../core/answerguard.js';
+import { citationFaults, dropCitations } from '../core/citations.js';
 import { OPEN_QUESTION_DEFER_LINE, checkLeak, checkQuestionLeak } from './leakcheck.js';
 import { lessonAgain, lessonAgainBlock, type LessonAgain } from './lessonagain.js';
 import {
@@ -422,6 +424,13 @@ export interface RoomActorDeps {
    * withheld for the code-written line. Off (the default), the guard is lexical only, as before.
    */
   semanticGuard?: boolean;
+  /**
+   * **The deck's own text, by page** (`core/citations`). With it, every page Ellie cites, and every
+   * page in Max's feedback, is checked against that page's slide text: a reference whose page does
+   * not support its sentence is written again once (Ellie), or taken out with the sentence kept.
+   * Absent (no extracted text), nothing is checked.
+   */
+  pageText?: (page: number) => string | null;
   /**
    * **Slides or prose** (`notebooks.md` §3.2, amended 2026-10-02), read by main off the room's
    * material with the overview's own `sourceProfile`. Absent is slides, as every room was.
@@ -4486,7 +4495,53 @@ export class RoomActor {
       onDelta?.(text);
       return { ...result, text };
     }
+    /**
+     * **Ellie's pages are checked before she is shown** (`core/citations`): her reply is held, not
+     * streamed, so a page that does not say what she says can be fixed before the learner reads it.
+     */
+    if (agent.role === 'peer' && this.#d.pageText && decision.moveType !== 'peer_guess' && !isTutorRule(decision.decidedBy)) {
+      const result = await this.#d.llm.complete(request, undefined, signal);
+      const text = await this.#checkCitations(result.text, again, signal, 'ellie');
+      onDelta?.(text);
+      return { ...result, text };
+    }
     return this.#d.llm.complete(request, onDelta, signal);
+  }
+
+  /**
+   * **Every page a reply cites must say what its sentence says** (`core/citations`). A reference
+   * that fails is asked for again once, told which (Ellie's turns, `again`); what still fails is
+   * taken out, the sentence kept. With `key`, a rewrite that states the open question's key is not
+   * used: the first draft is kept with its references taken out instead. Logged as
+   * citation.checked, citation.redone and citation.dropped, by page, never the words.
+   */
+  async #checkCitations(
+    text: string,
+    again: ((extra: string) => LlmRequest) | null,
+    signal: AbortSignal | undefined,
+    who: 'ellie' | 'max',
+    key: readonly string[] = [],
+  ): Promise<string> {
+    const pageText = this.#d.pageText;
+    if (!pageText) return text;
+    const faults = citationFaults(text, pageText);
+    this.#turnLog.event('info', 'citation.checked', { who, faults: faults.length, pages: faults.map((f) => f.pages.join('-')) });
+    if (faults.length === 0) return text;
+    if (again !== null) {
+      const redo = await this.#d.llm.complete(again(citationRedoBlock(faults.map((f) => ({ ref: f.ref, sentence: f.sentence })))), undefined, signal);
+      const left = citationFaults(redo.text, pageText);
+      const leaks = key.length > 0 ? answerLeaks(redo.text, key) : [];
+      if (left.length === 0 && leaks.length === 0) {
+        this.#turnLog.event('info', 'citation.redone', { who, pages: faults.map((f) => f.pages.join('-')) });
+        return redo.text;
+      }
+      if (leaks.length === 0) {
+        this.#turnLog.event('warn', 'citation.dropped', { who, pages: left.map((f) => f.pages.join('-')), after_redo: true });
+        return dropCitations(redo.text, left);
+      }
+    }
+    this.#turnLog.event('warn', 'citation.dropped', { who, pages: faults.map((f) => f.pages.join('-')), after_redo: false });
+    return dropCitations(text, faults);
   }
 
   /**
@@ -4652,6 +4707,8 @@ export class RoomActor {
         }
       }
     }
+    // His pages too, taken out where they do not support the sentence (no rewrite: the marking stands).
+    draft = { ...draft, text: await this.#checkCitations(draft.text, null, signal, 'max') };
     this.#pendingMark = { covered: draft.covered };
     onDelta?.(draft.text);
     return { ...draft.result, text: draft.text };
@@ -4762,6 +4819,8 @@ export class RoomActor {
         result = { ...result, text: OPEN_QUESTION_HELD_LINE };
       }
     }
+    // Its pages, checked last; a rewrite that states the key is not taken (`#checkCitations`).
+    result = { ...result, text: await this.#checkCitations(result.text, again, signal, 'ellie', key) };
     onDelta?.(result.text);
     return result;
   }

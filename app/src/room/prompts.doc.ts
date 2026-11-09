@@ -705,6 +705,19 @@ export function twoAsksBlock(): string {
 }
 
 /**
+ * **A page that does not say it** (`core/citations`): the draft cited a page whose slide does not
+ * hold what the sentence says. Written again once; then code takes the reference out.
+ */
+export function citationRedoBlock(faults: readonly { ref: string; sentence: string }[]): string {
+  return [
+    'YOUR LAST DRAFT CITED A PAGE THAT DOES NOT SAY THAT',
+    ...faults.map((f) => `- "${f.sentence.replace(/\s+/g, ' ').trim()}" cites ${f.ref}, and that page's slide does not say this.`),
+    'Write the reply again. Cite a page only where that page itself says what your sentence says; if you',
+    'are not sure which page does, leave the page out of that sentence.',
+  ].join('\n');
+}
+
+/**
  * **A key for the question as it will be asked** (the question kept without a key, item 4's gap).
  * A question cut to its first ask, or a reply that came back as plain words, would go out with
  * no model answer: then Ellie's guard has nothing to check against and marking has no points.

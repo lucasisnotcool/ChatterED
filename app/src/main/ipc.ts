@@ -632,6 +632,7 @@ export class AppService {
       maxFollowsUp: a2Loop().maxFollowsUp,
       legacyGuardsOff: a2Loop().legacyGuardsOff,
       semanticGuard: a2Loop().semanticGuard,
+      pageText: pageTextOf(material.extracted_text ?? ''),
       newId,
       // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
       // all stamped with the turn id the LLM calls underneath them carry too.
@@ -1524,4 +1525,16 @@ export function a2Loop(env: NodeJS.ProcessEnv = process.env): { maxFollowsUp: bo
     legacyGuardsOff: env.CHATTERED_LEGACY_GUARDS_OFF === '1',
     semanticGuard: env.CHATTERED_SEMANTIC_GUARD !== '0',
   };
+}
+
+/**
+ * **The deck's text by page**, from the material's extracted text and its `[p. N]` markers, for
+ * the citation check (`RoomActorDeps.pageText`). Undefined when the text has no page markers.
+ */
+export function pageTextOf(extracted: string): ((page: number) => string | null) | undefined {
+  const parts = extracted.split(/^\[p\. (\d+)\]\s*$/m);
+  if (parts.length < 3) return undefined;
+  const pages = new Map<number, string>();
+  for (let i = 1; i + 1 < parts.length; i += 2) pages.set(Number(parts[i]), parts[i + 1]!.trim());
+  return (page) => pages.get(page) ?? null;
 }

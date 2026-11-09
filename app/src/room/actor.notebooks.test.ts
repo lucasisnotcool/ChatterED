@@ -633,6 +633,53 @@ describe('quiet on an open question, and Hint', () => {
   });
 });
 
+// ── Citations: every page she cites says what her sentence says ───────────────────────────────
+
+describe('the citation check', () => {
+  const SLIDES: Record<number, string> = {
+    3: 'Side channel: a private turn with one agent that never reaches the shared context the others read.',
+    9: 'Grading rubric for the final project and the submission deadline.',
+  };
+  const pageText = (p: number) => SLIDES[p] ?? null;
+  const WRONG = 'A side channel is a private turn with one agent that never reaches the shared context (p. 9).';
+  const RIGHT = 'A side channel is a private turn with one agent that never reaches the shared context (p. 3).';
+  const peer = (r: LlmRequest) => r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer');
+
+  it('asks her again when a page does not say what she says, and keeps the rewrite', async () => {
+    let drafts = 0;
+    const h = build({ pageText }, (r) => {
+      if (!peer(r)) return null;
+      drafts += 1;
+      return drafts === 1 ? WRONG : RIGHT;
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(drafts).toBe(2);
+    expect(h.llm.requests.filter(peer)[1]!.messages.at(-1)!.content).toContain('YOUR LAST DRAFT CITED A PAGE THAT DOES NOT SAY THAT');
+    expect(rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!.body.startsWith(RIGHT)).toBe(true);
+    expect(h.logged.some((l) => l.name === 'citation.redone')).toBe(true);
+  });
+
+  it('takes the page out, keeping the sentence, when the rewrite cites it wrongly too', async () => {
+    const h = build({ pageText }, (r) => (peer(r) ? WRONG : null));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const body = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!.body;
+    expect(body).toContain('A side channel is a private turn with one agent that never reaches the shared context.');
+    expect(body).not.toContain('(p. 9)');
+    expect(h.logged.find((l) => l.name === 'citation.dropped')!.fields).toMatchObject({ who: 'ellie', after_redo: true });
+  });
+
+  it('leaves a supported page alone, and checks nothing without the deck’s text', async () => {
+    const h = build({ pageText }, (r) => (peer(r) ? RIGHT : null));
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(h.llm.requests.filter(peer)).toHaveLength(1);
+    expect(h.logged.find((l) => l.name === 'citation.checked')!.fields).toMatchObject({ faults: 0 });
+
+    const off = build({}, (r) => (peer(r) ? WRONG : null));
+    await settle(off.clock, off.actor.sendMessage('what is the side channel?', DOC));
+    expect(off.logged.some((l) => l.name === 'citation.checked')).toBe(false);
+  });
+});
+
 // ── Decision 6 (6 Oct afternoon): Ellie explains but does not answer Max's open question ──────
 
 describe('Ellie and Max’s open question', () => {
