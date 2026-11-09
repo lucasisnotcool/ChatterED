@@ -119,18 +119,34 @@ async function runStep(sitting: Sitting, attack: Attack, step: AttackStep, notes
 }
 
 /** What the checker is shown besides the turns: the deck's pages, and the learner's own notes. */
-function context(sim: SimRoom, attack: Attack, learnerBefore: Map<string, string>): string {
+/** Every page or slide number a turn names ("p. 42", "pp. 40–41", "slide 60", "page 3"). */
+export function citedPages(texts: string[]): number[] {
+  const out = new Set<number>();
+  const re = /\b(?:pp?|pages?|slides?)\.?\s*(\d{1,3})(?:\s*(?:–|-|to)\s*(\d{1,3}))?/gi;
+  for (const t of texts) {
+    for (const m of t.matchAll(re)) {
+      const a = Number(m[1]);
+      const b = m[2] ? Number(m[2]) : a;
+      for (let p = Math.min(a, b); p <= Math.max(a, b) && p - Math.min(a, b) < 10; p += 1) out.add(p);
+    }
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+function context(sim: SimRoom, attack: Attack, learnerBefore: Map<string, string>, turns: TurnEntry[]): string {
   const parts: string[] = [];
   if (attack.sourcePages && attack.sourcePages.length > 0) {
     const outline = sim.outline();
     const maxPage = Math.max(0, ...outline.flatMap((e) => e.pages));
+    // The attack's pages, and every page any turn names, so a citation can be checked.
+    const pages = [...new Set([...attack.sourcePages, ...citedPages(turns.map((t) => t.text))])].sort((a, b) => a - b);
     const seen = new Set<string>();
     const text = outline
-      .filter((e) => e.pages.some((p) => attack.sourcePages!.includes(p)))
+      .filter((e) => e.pages.some((p) => pages.includes(p)))
       .map((e) => `p.${e.pages.join(',')}: ${e.text.replace(/\s+/g, ' ').trim()}`)
       .filter((t) => (seen.has(t) ? false : (seen.add(t), true)));
     parts.push(`THE LECTURE DECK has pages 1 to ${String(maxPage)} (there is no page or slide beyond ${String(maxPage)}).`);
-    parts.push(`WHAT THE LECTURE NOTES SAY ON PAGES ${attack.sourcePages.join(', ')} (generated from the deck):`, ...text);
+    parts.push(`WHAT THE LECTURE NOTES SAY ON PAGES ${pages.join(', ')} (generated from the deck; a page in this list with no lines below has no notes):`, ...text);
   }
   if (attack.learnerNotesCheck) {
     const after = sim.learnerBlocks();
@@ -304,7 +320,7 @@ describe('red team', () => {
           for (const step of attack.turns) {
             await runStep(sitting, attack, step, notes);
             const turns = turnsOf(sitting);
-            const extra = context(sim, attack, learnerBefore);
+            const extra = context(sim, attack, learnerBefore, turns);
             const transcript = `${judgeTranscript({ turns, questions: [...sitting.questions.values()] })}${extra ? `\n\n${extra}` : ''}`;
             const verdict = await check(rule, transcript);
             checks.push({ afterMove: sitting.moves.length, ...verdict });
