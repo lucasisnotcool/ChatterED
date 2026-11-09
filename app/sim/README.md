@@ -68,3 +68,44 @@ Each run writes `$SIM_OUT/<stamp>/<scenario>-<n>/`:
 - Silence rules (Ellie's cue on a quiet question) only fire if the simulated learner takes longer
   than the window to reply, which it rarely does.
 - Scenarios are written against one notebook's notes; a new notebook needs its own lines.
+
+## Free-form runs, judging transcripts, and red-team runs
+
+Three more entry points drive the same headless app with test inputs kept **outside this repo**:
+a folder named by `SIM_TESTS` holds the personas, the conversation plan, the judge prompts and
+the attack files, and every transcript is written back there. Deck text and transcripts never
+land here. The learner and the judge run on an OpenAI-compatible endpoint (`soclaas.ts`, which
+reads `SOCLAAS_BASE_URL` and `SOCLAAS_API_KEY`; run under `soclaas run --`); Ellie and Max run
+on the app's own backend as usual.
+
+| File | |
+|---|---|
+| `soclaas.ts` | the chat client: timeout, retries on 429/5xx, falls back along a model list, returns the model that answered |
+| `freelearner.ts` | the free-form learner: on each turn one move from the set it is allowed (ask, answer, Hint, Show me, typed give-up, dispute, note, Quiz me) and its words |
+| `director.ts` | narrows the learner's moves so that each sitting has an explanation, a question from Max, an attempt with feedback, and a give-up followed by the next question and an attempt on it |
+| `sitting.ts` | the moves as the renderer makes them, logged with their messages, doc edits and Max's stored question (hidden key included) |
+| `export.ts` | a sitting as a JSON and a Markdown transcript |
+| `runsupport.ts` | what the runners share: the test folder, a build's environment, the learner's view |
+| `conversations.sim.ts` | runs the plan's conversations |
+| `judge.ts`, `judge.sim.ts` | one criterion per call over the transcripts; or a blank labelling sheet (`SIM_MODE=sheet`) |
+| `redteam.sim.ts` | scripted attack turns, each attack N times, checked by a rule after every turn, stopping at the first FAIL |
+
+A build is a set of environment variables read when a room opens (`main/ipc.ts` `a2Loop`):
+`CHATTERED_MAX_ON_REQUEST=1` (Max asks only on Quiz me or `@Max`) and
+`CHATTERED_LEGACY_GUARDS_OFF=1` (Ellie's answer guard and the feedback rewrite off).
+
+```sh
+cd app
+# conversations (all, or SIM_CONVS=c01,c02)
+SIM_TESTS=<dir> soclaas run -- npx vitest run --config sim/vitest.config.mts sim/conversations.sim.ts
+# the judge, prompts <dir>/llm_judge/prompts/v1
+SIM_TESTS=<dir> JUDGE_VERSION=v1 soclaas run -- npx vitest run --config sim/vitest.config.mts sim/judge.sim.ts
+# a labelling sheet with no verdicts on it
+SIM_TESTS=<dir> SIM_MODE=sheet npx vitest run --config sim/vitest.config.mts sim/judge.sim.ts
+# the red team, three runs per attack
+SIM_TESTS=<dir> RT_LABEL=before soclaas run -- npx vitest run --config sim/vitest.config.mts sim/redteam.sim.ts
+```
+
+If the sandbox cannot open the live database with `sqlite3`, the harness copies the file instead
+(the app must not be running), and the plan or attack file names the notebook id. Each run's
+database copy is deleted when it ends unless `SIM_KEEP_DB=1`.

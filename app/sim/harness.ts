@@ -32,7 +32,7 @@ import { registerProgressIpc } from '../src/main/docroom/progress.js';
 import { openNotesDoc } from '../src/main/docroom/doc.js';
 import { fileSink, initLogger } from '../src/main/log.js';
 import { applyBatch } from '../src/shared/doc/ops.js';
-import { blockAttrs, docFromJson, docOutline, eachBlock, notesSchema } from '../src/shared/doc/schema.js';
+import { blockAttrs, docFromJson, docOutline, eachBlock, newBlockId, notesSchema } from '../src/shared/doc/schema.js';
 import type { AgentDocOpBatch, OutlineEntry, ThreadView } from '../src/shared/doc/types.js';
 import type { LLMClient, LlmRequest } from '../src/room/llm/types.js';
 import type { RoomEvent } from '../src/shared/types.js';
@@ -67,6 +67,7 @@ export interface RecordedCall {
 
 /** What the learner can see of one chat message. */
 export interface SimMessage {
+  id: string;
   seq: number;
   who: string;
   role: 'learner' | 'ellie' | 'max' | 'other';
@@ -84,6 +85,8 @@ export class SimRoom {
   readonly outDir: string;
   readonly calls: RecordedCall[] = [];
   readonly events: RoomEvent[] = [];
+  /** Every agent doc edit and what the renderer's path did with it (applied, or refused by the guard). */
+  readonly edits: { editId: string; author: string; cause: string; status: 'applied' | 'rejected_guard'; batch: AgentDocOpBatch; suggestion: unknown }[] = [];
   readonly #app: AppService;
   readonly #db: SqlDatabase;
   readonly #store: LocalStore;
@@ -110,7 +113,15 @@ export class SimRoom {
     const dbPath = join(opts.outDir, 'app.db');
     rmSync(dbPath, { force: true });
     // `.backup` reads a consistent snapshot of a WAL database the running app may be writing.
-    execFileSync('sqlite3', [opts.sourceDb, `.backup '${dbPath}'`]);
+    try {
+      execFileSync('sqlite3', [opts.sourceDb, `.backup '${dbPath}'`], { stdio: 'pipe' });
+    } catch {
+      // A sandbox that may read the file but not open it with SQLite (no -shm beside it): a plain
+      // copy, which is consistent while the app is not running (there is no -wal to miss).
+      rmSync(dbPath, { force: true });
+      if (existsSync(`${opts.sourceDb}-wal`)) throw new Error('the app database has a -wal file and could not be backed up; quit the app first');
+      cpSync(opts.sourceDb, dbPath);
+    }
     const sources = join(opts.sourceUserData, 'notebooks');
     if (existsSync(sources)) cpSync(sources, join(userData, 'notebooks'), { recursive: true });
 
@@ -241,6 +252,86 @@ export class SimRoom {
     return view.objectives;
   }
 
+  /** One block's text, or null when it is gone. */
+  blockText(blockId: string): string | null {
+    let found: string | null = null;
+    this.doc().node.descendants((node) => {
+      if (found === null && node.isBlock && blockAttrs(node).blockId === blockId) found = node.textContent;
+      return found === null;
+    });
+    return found;
+  }
+
+  /** The text of every block whose characters are all the learner's, by block id. */
+  learnerBlocks(): Map<string, string> {
+    const out = new Map<string, string>();
+    this.doc().node.descendants((node) => {
+      const id = node.isTextblock ? blockAttrs(node).blockId : null;
+      if (!id || node.textContent.trim().length === 0) return true;
+      let mine = true;
+      node.descendants((child) => {
+        if (child.isText && !child.marks.some((m) => m.type.name === 'author' && m.attrs.by === 'user')) mine = false;
+        return true;
+      });
+      if (mine) out.set(id, node.textContent);
+      return false;
+    });
+    return out;
+  }
+
+  /**
+   * **The learner types a paragraph into the notes**, as the editor would: a new block after
+   * `afterBlockId` (or, with `insideQBlock`, at the end of that Q block), every character marked
+   * `author{by:'user'}`, saved with `learnerTouched`. Returns the new block's id.
+   */
+  async typeParagraph(input: { afterBlockId?: string; insideQBlock?: string; text: string }): Promise<string> {
+    await this.#edits;
+    const { docId, version, node } = this.doc();
+    const blockId = newBlockId();
+    const mark = notesSchema.marks.author!.create({ by: 'user', editId: null, at: Date.now() });
+    const para = notesSchema.nodes.paragraph!.create({ blockId }, notesSchema.text(input.text, [mark]));
+    let insertAt: number | null = null;
+    const target = input.insideQBlock ?? input.afterBlockId;
+    node.descendants((child, pos) => {
+      if (insertAt !== null) return false;
+      if (blockAttrs(child).blockId === target) {
+        insertAt = input.insideQBlock ? pos + child.nodeSize - 1 : pos + child.nodeSize;
+        return false;
+      }
+      return true;
+    });
+    if (insertAt === null) throw new Error(`no block ${String(target)} to type after`);
+    const state = EditorState.create({ schema: notesSchema, doc: node });
+    const next = state.apply(state.tr.insert(insertAt, para));
+    const saved = await this.call<{ ok: boolean }>('notes:save', {
+      docId,
+      baseVersion: version,
+      doc: next.doc.toJSON(),
+      learnerTouched: true,
+    });
+    if (!saved.ok) throw new Error('notes:save refused the learner paragraph');
+    return blockId;
+  }
+
+  /** The room's stored flow state: Max's open (or last) question, with its hidden key. */
+  pendingQuiz(): (Record<string, unknown> & { quizMessageId: string }) | null {
+    const roomId = this.roomId();
+    if (!roomId) return null;
+    const raw = this.#store.settings.get(`flow_state:${roomId}`);
+    if (!raw) return null;
+    try {
+      return (JSON.parse(raw) as { pendingQuiz?: (Record<string, unknown> & { quizMessageId: string }) | null }).pendingQuiz ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Drop the database copy (hundreds of MB), once everything that reads it has run. */
+  dropDatabaseCopy(): void {
+    for (const f of ['app.db', 'app.db-wal', 'app.db-shm']) rmSync(join(this.outDir, f), { force: true });
+    rmSync(join(this.outDir, 'userData'), { recursive: true, force: true });
+  }
+
   // ── the chat ──────────────────────────────────────────────────────────────
 
   roomId(): string | null {
@@ -267,6 +358,7 @@ export class SimRoom {
         const role: SimMessage['role'] =
           p?.kind === 'student' ? 'learner' : key.startsWith('peer') ? 'ellie' : key.startsWith('challenger') ? 'max' : 'other';
         return {
+          id: m.id,
           seq: m.seq,
           who: p?.kind === 'student' ? 'Learner' : (p?.display_name ?? 'Agent'),
           role,
@@ -386,6 +478,14 @@ export class SimRoom {
     const { docId, version, node } = this.doc();
     const state = EditorState.create({ schema: notesSchema, doc: node });
     const result = applyBatch(state, batch, { frozen: false, docId, now: new Date().toISOString() });
+    this.edits.push({
+      editId: batch.editId,
+      author: batch.author,
+      cause: batch.cause,
+      status: !result.tr || result.status !== 'applied' ? 'rejected_guard' : 'applied',
+      batch,
+      suggestion: result.suggestion ?? null,
+    });
     if (!result.tr || result.status !== 'applied') {
       await this.call('notes:editResolved', {
         docId,
