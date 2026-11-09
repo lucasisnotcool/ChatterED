@@ -4454,6 +4454,19 @@ export class RoomActor {
     if (decision.decidedBy === 'rule:hint_requested') return this.#completeHintTurn(request, again, onDelta, signal);
     if (held === 'question') return this.#completeQuestionTurn(decision, request, again, onDelta, signal);
     if (held === 'feedback') return this.#completeFeedbackTurn(decision, request, again, onDelta, signal);
+    /**
+     * **Feedback on a blank is plain text, even when the model answers in the marking turn's JSON.**
+     * It is not a held turn (the blank is marked on its one term), but the conversation it reads
+     * holds the open question's structured marking turns, and the model sometimes copies their
+     * `{"text", "covered"}` shape; sent as it came, the learner saw the JSON and the verdict line
+     * code puts on an opener it cannot read. Held, unwrapped, then sent as one delta.
+     */
+    if (agent.role === 'challenger' && decision.moveType === 'quiz_feedback' && answersBlank(this.#pendingQuiz)) {
+      const result = await this.#d.llm.complete(request, undefined, signal);
+      const text = parseFeedbackReply(result.text, 0).text;
+      onDelta?.(text);
+      return { ...result, text };
+    }
     return this.#d.llm.complete(request, onDelta, signal);
   }
 
