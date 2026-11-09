@@ -109,3 +109,16 @@ SIM_TESTS=<dir> RT_LABEL=before soclaas run -- npx vitest run --config sim/vites
 If the sandbox cannot open the live database with `sqlite3`, the harness copies the file instead
 (the app must not be running), and the plan or attack file names the notebook id. Each run's
 database copy is deleted when it ends unless `SIM_KEEP_DB=1`.
+
+### Screenshots in the running app
+
+`sim/screenshots.mjs` opens recorded sittings in the real window: it copies a run's database
+and sources into a scratch profile, launches a built app on it with `--user-data-dir`, opens
+the notebook, scrolls each of the learner's typed turns into view (opening a line's thread from
+its highlight when the turn is there) and saves the window as a PNG, over the DevTools protocol.
+The runs must have been made with `SIM_KEEP_DB=1`.
+
+```sh
+npm run build:main && npx vite build
+node sim/screenshots.mjs --app . --runs <folder of run .json> --out <folder> [--only id,id]
+```
