@@ -19,6 +19,7 @@
  * | `RT_LABEL` | the run folder (`before`, `after-fix-1`, …) |
  * | `RT_ATTACKS` | comma-separated attack ids (default: all) |
  * | `RT_REPEATS` | runs per attack (default 3) |
+ * | `SIM_MODE=sheet` | write `<dir>/red_team/check-sheet.html` from the runs (`RT_LABELS` to pick folders) |
  * | `RT_OUT` | write somewhere else than `<dir>/red_team/runs/<label>/` |
  */
 import { homedir, tmpdir } from 'node:os';
@@ -27,7 +28,7 @@ import { join } from 'node:path';
 import { describe, it } from 'vitest';
 import { SimRoom } from './harness.js';
 import { Sitting } from './sitting.js';
-import { coverageOf, turnsOf, writeConversation, type ConversationRecord } from './export.js';
+import { coverageOf, turnsOf, writeConversation, type ConversationRecord, type TurnEntry } from './export.js';
 import { judgePrompt, judgeTranscript, JUDGE_MODELS, JUDGE_TEMPERATURE, parseVerdict, type JudgeVerdict } from './judge.js';
 import { chat } from './soclaas.js';
 import { agentModels, applyBuild, costOf, notebookIdFor } from './runsupport.js';
@@ -159,9 +160,105 @@ async function check(rule: string, transcript: string): Promise<Omit<TurnCheck, 
   return { ...parseVerdict(result.text), model: result.model, at: result.at, ms: result.ms, raw: result.text };
 }
 
+const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+interface RunRecord {
+  _?: string;
+  id: string;
+  attack: string;
+  target: string;
+  type: string;
+  label: string;
+  run: number;
+  outcome: string;
+  failure: string | null;
+  setupMoves: number;
+  checks: TurnCheck[];
+  startedAt: string;
+  turns: TurnEntry[];
+  questions?: { questionText: string | null; keyPoints: string[] }[];
+}
+
+/** The attack's part of a run: from the learner's first move after the set-up. */
+function attackTurns(rec: RunRecord): TurnEntry[] {
+  let learner = 0;
+  const start = rec.turns.findIndex((t) => t.speaker === 'learner' && (learner += 1) > rec.setupMoves);
+  return start < 0 ? [] : rec.turns.slice(start);
+}
+
+/** Every run under `runs/`, one card each: the attack, the replies, the checker's verdict, a box to confirm. */
+function checkSheet(runsDir: string, labels: string[], marker: string | null): { html: string; csv: string; runs: number } {
+  const records: RunRecord[] = [];
+  for (const label of labels) {
+    const dir = join(runsDir, label);
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) records.push(JSON.parse(readFileSync(join(dir, f), 'utf8')) as RunRecord);
+  }
+  const css = `
+  @page { size: A4; margin: 14mm 13mm; }
+  body { font: 9.4pt/1.4 "Helvetica Neue", Helvetica, Arial, sans-serif; color:#111; background:#fff; margin:0 auto; max-width:190mm; padding:6mm 16px; }
+  h1 { font-size: 15pt; margin: 0 0 2mm; } h2 { font-size: 12pt; border-bottom: 1.5px solid #111; margin: 6mm 0 2mm; }
+  .run { border: 1.5px solid #111; padding: 2mm 3mm; margin: 3mm 0; break-inside: avoid-page; }
+  .run.fail { border-width: 3px; }
+  .head { font-weight: 700; } .meta { color:#555; font-size: 8.4pt; }
+  .turn { margin: 1mm 0; padding: .8mm 2mm; border-left: 3px solid #bbb; white-space: pre-wrap; }
+  .turn.learner { border-left: 3px solid #111; background:#eee; }
+  .turn.key { border-left: 4px double #111; outline: 1px dashed #111; }
+  .verdict { margin-top: 2mm; padding: 1.5mm 2mm; border: 1px dashed #111; }
+  .box { display:inline-block; width:4mm; height:4mm; border:1.5px solid #111; vertical-align:middle; margin:0 1mm 0 3mm; }
+  .note { border-bottom: 1px solid #111; height: 7mm; }
+  `;
+  const out: string[] = [];
+  if (marker) out.push(`<!-- ${marker} -->`);
+  out.push('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Red-team Check Sheet</title>', `<style>${css}</style></head><body>`);
+  out.push('<h1>Red-team check sheet: confirm or overturn each verdict</h1>');
+  out.push(`<p>${String(records.length)} runs. Each card shows the attack's turns and the system's replies; replies the checker cited are outlined. Tick whether you agree with the checker's verdict, and record it in <code>confirm.csv</code>.</p>`);
+  let group = '';
+  for (const r of records) {
+    const g = `${r.label}: ${r.target}`;
+    if (g !== group) {
+      out.push(`<h2>${esc(g)}</h2>`);
+      group = g;
+    }
+    const failed = r.checks.find((c) => c.verdict === 'FAIL');
+    const cited = new Set((failed ?? r.checks.at(-1))?.evidence_turns ?? []);
+    out.push(`<div class="run${r.outcome === 'FAIL' ? ' fail' : ''}"><div class="head">${esc(r.attack)} · run ${String(r.run)} · ${esc(r.type)}</div><div class="meta">${esc(r.startedAt)}${r.failure ? ` · error: ${esc(r.failure)}` : ''}</div>`);
+    for (const q of r.questions ?? []) {
+      const key = q.keyPoints.length > 0 ? q.keyPoints.map((p) => esc(p)).join('; ') : '(no key points stored)';
+      out.push(`<div class="meta">Max's question: ${esc(q.questionText ?? '')}<br>Hidden key: ${key}</div>`);
+    }
+    for (const t of attackTurns(r)) {
+      const cls = `turn${t.speaker === 'learner' ? ' learner' : ''}${cited.has(t.n) ? ' key' : ''}`;
+      out.push(`<div class="${cls}"><b>${String(t.n)}. ${esc(t.speaker === 'learner' ? 'Attacker (as learner)' : t.speaker)}</b> <span class="meta">${esc(t.channel)}</span>\n${esc(t.text)}</div>`);
+    }
+    const checks = r.checks.map((c) => `after move ${String(c.afterMove)}: <b>${c.verdict}</b>. ${esc(c.reason)}`).join('<br>') || '(no check ran)';
+    out.push(`<div class="verdict">Checker: <b>${esc(r.outcome)}</b><br>${checks}</div>`);
+    out.push('<div>Your check: <span class="box"></span>agree <span class="box"></span>disagree, it should be <span class="box"></span>PASS <span class="box"></span>FAIL</div><div class="note"></div></div>');
+  }
+  out.push('</body></html>');
+  const csv = [...(marker ? [`# ${marker}`] : []), 'label,run_id,checker_outcome,lucas_outcome,note', ...records.map((r) => `${r.label},${r.id},${r.outcome},,`)].join('\n');
+  return { html: out.join('\n'), csv: `${csv}\n`, runs: records.length };
+}
+
 describe('red team', () => {
   if (!TESTS) {
     it.skip('needs SIM_TESTS', () => undefined);
+    return;
+  }
+  if (process.env.SIM_MODE === 'sheet') {
+    it('writes the check sheet', () => {
+      const runsDir = process.env.RT_RUNS ?? join(TESTS, 'red_team', 'runs');
+      const labels = (process.env.RT_LABELS ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      const all = labels.length > 0 ? labels : readdirSync(runsDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+      const plan = join(TESTS, 'llm_judge', 'plan.json');
+      const marker = existsSync(plan) ? ((JSON.parse(readFileSync(plan, 'utf8')) as { _?: string })._ ?? null) : null;
+      const sheet = checkSheet(runsDir, all, marker);
+      const dir = process.env.SHEET_OUT ?? join(TESTS, 'red_team');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'check-sheet.html'), sheet.html);
+      const csv = join(dir, 'confirm.csv');
+      if (!existsSync(csv)) writeFileSync(csv, sheet.csv);
+      console.log(`wrote ${join(dir, 'check-sheet.html')} (${String(sheet.runs)} runs)`);
+    });
     return;
   }
   const attackDir = join(TESTS, 'red_team', 'attacks');
