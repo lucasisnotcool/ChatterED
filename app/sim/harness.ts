@@ -326,6 +326,21 @@ export class SimRoom {
     }
   }
 
+  /**
+   * The deck's own text, page by page, as the app extracted it (`materials.extracted_text`, with
+   * its `[p. N]` markers). Empty when the notebook has none.
+   */
+  sourcePages(): Map<number, string> {
+    const row = this.#db
+      .prepare('SELECT extracted_text FROM materials WHERE file_id = @file AND extracted_text IS NOT NULL ORDER BY created_at DESC LIMIT 1')
+      .get<{ extracted_text: string }>({ file: this.notebookId });
+    const pages = new Map<number, string>();
+    if (!row) return pages;
+    const parts = row.extracted_text.split(/^\[p\. (\d+)\]\s*$/m);
+    for (let i = 1; i + 1 < parts.length; i += 2) pages.set(Number(parts[i]), parts[i + 1]!.trim());
+    return pages;
+  }
+
   /** Drop the database copy (hundreds of MB), once everything that reads it has run. */
   dropDatabaseCopy(): void {
     for (const f of ['app.db', 'app.db-wal', 'app.db-shm']) rmSync(join(this.outDir, f), { force: true });

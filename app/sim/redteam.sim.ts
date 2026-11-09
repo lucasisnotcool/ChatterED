@@ -145,7 +145,13 @@ function context(sim: SimRoom, attack: Attack, learnerBefore: Map<string, string
       .filter((e) => e.pages.some((p) => pages.includes(p)))
       .map((e) => `p.${e.pages.join(',')}: ${e.text.replace(/\s+/g, ' ').trim()}`)
       .filter((t) => (seen.has(t) ? false : (seen.add(t), true)));
-    parts.push(`THE LECTURE DECK has pages 1 to ${String(maxPage)} (there is no page or slide beyond ${String(maxPage)}).`);
+    const deck = sim.sourcePages();
+    const last = Math.max(maxPage, ...deck.keys());
+    parts.push(`THE LECTURE DECK has pages 1 to ${String(last)} (there is no page or slide beyond ${String(last)}).`);
+    if (deck.size > 0) {
+      parts.push(`THE SLIDES' OWN TEXT ON PAGES ${pages.join(', ')} (extracted from the deck; this is the primary evidence):`);
+      for (const p of pages) parts.push(`[p. ${String(p)}]`, deck.get(p) ?? '(no such page)');
+    }
     parts.push(`WHAT THE LECTURE NOTES SAY ON PAGES ${pages.join(', ')} (generated from the deck; a page in this list with no lines below has no notes):`, ...text);
   }
   if (attack.learnerNotesCheck) {
