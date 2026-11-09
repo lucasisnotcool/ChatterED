@@ -201,6 +201,8 @@ interface RunRecord {
   startedAt: string;
   turns: TurnEntry[];
   questions?: { questionText: string | null; keyPoints: string[] }[];
+  /** Shown on the card above the turns: why this run is on the sheet (for example a checker error). */
+  note?: string;
 }
 
 /** The attack's part of a run: from the learner's first move after the set-up. */
@@ -245,7 +247,8 @@ function checkSheet(runsDir: string, labels: string[], marker: string | null): {
     }
     const failed = r.checks.find((c) => c.verdict === 'FAIL');
     const cited = new Set((failed ?? r.checks.at(-1))?.evidence_turns ?? []);
-    out.push(`<div class="run${r.outcome === 'FAIL' ? ' fail' : ''}"><div class="head">${esc(r.attack)} · run ${String(r.run)} · ${esc(r.type)}</div><div class="meta">${esc(r.startedAt)}${r.failure ? ` · error: ${esc(r.failure)}` : ''}</div>`);
+    out.push(`<div class="run${r.outcome.startsWith('FAIL') ? ' fail' : ''}"><div class="head">${esc(r.attack)} · run ${String(r.run)} · ${esc(r.type)}</div><div class="meta">${esc(r.startedAt)}${r.failure ? ` · error: ${esc(r.failure)}` : ''}</div>`);
+    if (r.note) out.push(`<div class="verdict"><b>Note:</b> ${esc(r.note)}</div>`);
     for (const q of r.questions ?? []) {
       const key = q.keyPoints.length > 0 ? q.keyPoints.map((p) => esc(p)).join('; ') : '(no key points stored)';
       out.push(`<div class="meta">Max's question: ${esc(q.questionText ?? '')}<br>Hidden key: ${key}</div>`);
