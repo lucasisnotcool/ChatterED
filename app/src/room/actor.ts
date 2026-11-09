@@ -84,6 +84,7 @@ import {
   feedbackRedoBlock,
   modelAnswerAskBlock,
   twoAsksBlock,
+  questionKeyBlock,
 } from './prompts.doc.js';
 import { coveredUnion, parseFeedbackReply, parseQuestionReply, verdictFromPoints, type ModelAnswer } from '../core/marking.js';
 import type {
@@ -4571,7 +4572,16 @@ export class RoomActor {
         draft = await ask(again(twoAsksBlock()));
         if (asksTwoThings(draft.text)) {
           this.#turnLog.event('warn', 'question.two_asks', { draft: 2, cut: true });
-          draft = { ...draft, text: firstAsk(draft.text), model: null };
+          /**
+           * **A cut question gets a key of its own.** The draft's key was written for both halves,
+           * so it is dropped; without one, Ellie's guard and the marking would have nothing to go
+           * on for this question. One more structured call writes the key for the question exactly
+           * as it will be asked; its wording is kept, whatever the reply's `text` says.
+           */
+          const cut = firstAsk(draft.text);
+          const keyed = await ask(again(questionKeyBlock(cut)));
+          draft = { ...draft, text: cut, model: keyed.model };
+          this.#turnLog.event(keyed.model === null ? 'warn' : 'info', 'question.rekeyed', { points: keyed.model?.points.length ?? 0 });
         }
       }
     }

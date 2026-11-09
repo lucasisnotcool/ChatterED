@@ -705,6 +705,22 @@ export function twoAsksBlock(): string {
 }
 
 /**
+ * **A key for the question as it will be asked** (the question kept without a key, item 4's gap).
+ * A question cut to its first ask, or a reply that came back as plain words, would go out with
+ * no model answer: then Ellie's guard has nothing to check against and marking has no points.
+ * One more structured call writes the key for exactly this wording.
+ */
+export function questionKeyBlock(question: string): string {
+  return [
+    'YOUR QUESTION WILL BE ASKED EXACTLY AS WRITTEN HERE',
+    `"${question}"`,
+    'Reply with the same object as before: `text` is this question, unchanged, and the model answer',
+    'and its key points are for **this question only**, as it now reads, in the deck’s terms. Nothing',
+    'for any part that is no longer asked.',
+  ].join('\n');
+}
+
+/**
  * Items 1, 4 and 13: the feedback draft sent the learner to a page, ran over the cap, or ended on
  * two asks. Written again once; then code takes the pointer out, cuts to the cap and keeps one ask.
  */

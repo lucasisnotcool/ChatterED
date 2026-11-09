@@ -199,13 +199,36 @@ describe('Max’s question (items 3, 4, 5)', () => {
     expect(JSON.stringify(h.actor.pendingQuizView())).not.toContain('probability distribution over next states');
   });
 
-  it('keeps only the first ask when the regeneration still asks two, and drops the model answer', async () => {
-    const h = build((r) => (isQuestion(r) ? question(Q34) : null));
+  /** The key written for the first ask alone, when asked for it (`questionKeyBlock`). */
+  const FIRST_ASK_KEY = {
+    model_answer: "For a fixed $s$ and $a$, $T(s,a,\\cdot)$ is a probability distribution: the action leads somewhere, so the outcomes total 1.",
+    key_points: ['For a fixed state and action the outcomes cover every possibility, so their probabilities total 1'],
+  };
+  const isKeyAsk = (r: LlmRequest) => isQuestion(r) && last(r).includes('YOUR QUESTION WILL BE ASKED EXACTLY AS WRITTEN HERE');
+
+  it('keeps only the first ask when the regeneration still asks two, and writes a fresh key for it', async () => {
+    const h = build((r) => {
+      if (isKeyAsk(r)) return JSON.stringify({ text: 'a different wording the app must not use', ...FIRST_ASK_KEY });
+      return isQuestion(r) ? question(Q34) : null;
+    });
     await openQuestion(h);
     const asked = maxBodies(h).at(-1)!;
     expect(asked.endsWith('In your own words, why does the MDP need that sum to equal 1?')).toBe(true);
     expect(asked).not.toContain('testing the statement');
-    // Its points were written for both halves, so it is marked by the words, as before.
+    expect(asked).not.toContain('a different wording');
+    // The two-part key is dropped; the fresh one is for the first ask, asked with its exact wording.
+    const keyAsk = h.llm.requests.filter(isKeyAsk);
+    expect(keyAsk).toHaveLength(1);
+    expect(last(keyAsk[0]!)).toContain('why does the MDP need that sum to equal 1?');
+    const stored = h.actor.flowSnapshot().pendingQuiz!;
+    expect(stored.keyPoints).toEqual(FIRST_ASK_KEY.key_points);
+    expect(stored.modelAnswer).toBe(FIRST_ASK_KEY.model_answer);
+  });
+
+  it('marks by the words, as before, when no key can be had after a cut', async () => {
+    const h = build((r) => (isKeyAsk(r) ? 'not an object' : isQuestion(r) ? question(Q34) : null));
+    await openQuestion(h);
+    expect(h.llm.requests.filter(isKeyAsk)).toHaveLength(1);
     expect(h.actor.flowSnapshot().pendingQuiz!.keyPoints ?? null).toBeNull();
   });
 
@@ -213,6 +236,7 @@ describe('Max’s question (items 3, 4, 5)', () => {
     const h = build((r) => (isQuestion(r) ? 'Why must the outcomes of one action total 1?' : null));
     await openQuestion(h);
     expect(maxBodies(h).at(-1)).toBe('Why must the outcomes of one action total 1?');
+    expect(h.llm.requests.filter(isKeyAsk)).toHaveLength(0);
     expect(h.actor.flowSnapshot().pendingQuiz!.modelAnswer ?? null).toBeNull();
   });
 });
