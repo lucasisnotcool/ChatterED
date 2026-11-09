@@ -562,6 +562,11 @@ export interface Bootstrap {
   recentSessions: RecentSession[];
   /** True until the first-run flow has been completed once. */
   firstRun: boolean;
+  /**
+   * Max follows Ellie's answer with a question of his own (`main/ipc.ts` `a2Loop`). The renderer
+   * then offers no "Ready to check this?", which would duplicate it. Absent is false.
+   */
+  maxFollowsUp?: boolean;
 }
 
 export interface CreateSessionInput {

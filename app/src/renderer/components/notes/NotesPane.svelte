@@ -78,6 +78,8 @@
   doc.spanThreads = () => chat().spanThreads ?? [];
   doc.progressView = () => store.progress.view;
   // "Ready to check this?" (D2): nothing is offered while one of Max's questions waits in a thread.
+  // Max's follow-up is on (`Bootstrap.maxFollowsUp`): no readiness offer beside it.
+  doc.maxFollowsUp = () => store.boot?.maxFollowsUp === true;
   doc.openQuiz = () => {
     const open = chat().openQuiz;
     return open ? { objectiveId: open.quiz.objectiveId ?? null } : null;

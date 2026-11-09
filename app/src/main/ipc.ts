@@ -574,6 +574,7 @@ export class AppService {
       agents: rosterFor(pairing, resolved.models.agent),
       recentSessions: recent,
       firstRun: this.#d.store.settings.get('first_run_complete') !== '1',
+      maxFollowsUp: a2Loop().maxFollowsUp,
     };
   }
 
@@ -627,6 +628,9 @@ export class AppService {
       replySpeed: this.replySpeed(),
       // notebooks.md §3.2, amended 2026-10-02: a paper is "the paper" to the agents, not "the slide".
       sourceGenre: sourceProfile(material.extracted_text ?? '').genre,
+      // The A1 loop: Max asks one question back after Ellie answers (`a2Loop`).
+      maxFollowsUp: a2Loop().maxFollowsUp,
+      legacyGuardsOff: a2Loop().legacyGuardsOff,
       newId,
       // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
       // all stamped with the turn id the LLM calls underneath them carry too.
@@ -1499,4 +1503,21 @@ export class AppService {
       this.emit({ type: 'whisper.cleared', roomId: input.roomId, threadId: input.threadId });
     });
   }
+}
+
+/**
+ * **Which question loop this build runs** (branch `lucas/a2`). By default Max follows Ellie's
+ * answer with one question of his own (`RoomActorDeps.maxFollowsUp`), and the "Ready to check
+ * this?" offer is not shown, since it would be a second way into the same question.
+ *
+ *  - `CHATTERED_MAX_ON_REQUEST=1` restores the October behaviour: Max asks only on Quiz me or
+ *    `@Max`, and the offer is back.
+ *  - `CHATTERED_LEGACY_GUARDS_OFF=1` (test tooling) switches off Ellie's open-question guard and
+ *    the feedback rewrite (`RoomActorDeps.legacyGuardsOff`).
+ */
+export function a2Loop(env: NodeJS.ProcessEnv = process.env): { maxFollowsUp: boolean; legacyGuardsOff: boolean } {
+  return {
+    maxFollowsUp: env.CHATTERED_MAX_ON_REQUEST !== '1',
+    legacyGuardsOff: env.CHATTERED_LEGACY_GUARDS_OFF === '1',
+  };
 }

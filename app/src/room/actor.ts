@@ -395,6 +395,25 @@ export interface RoomActorDeps {
    */
   maxOnlyOnRequest?: boolean;
   /**
+   * **Max's follow-up after Ellie's answer, with everything else of `maxOnlyOnRequest` kept**
+   * (the collab-doc §4.2 loop on a notebook). Default `false`.
+   *
+   * On, `rule:max_followup` runs after Ellie answers a learner question (one open question per
+   * file, as ever), and Ellie is told Max asks next. The rest of the on-request rules are
+   * unchanged: no time-based hand-off, no model decision for the Tester, nobody fills the quiet
+   * on an open question (no cue, no guess; Hint and Show me are the learner's), and Ellie stays
+   * guarded against stating the open question's key. `maxOnlyOnRequest: false` is different: it is
+   * the whole #48 loop, silence cue and guess included, with Ellie's guard off.
+   */
+  maxFollowsUp?: boolean;
+  /**
+   * **Test tooling only: the checks added on 6 Oct afternoon switched off.** Ellie's open-question
+   * guard (`core/answerguard`) and the feedback rewrite (`core/quizturn.feedbackFaults`) do not
+   * run, which approximates the system as it was before them. Never set by the shipped app
+   * unless `CHATTERED_LEGACY_GUARDS_OFF=1` is in the environment.
+   */
+  legacyGuardsOff?: boolean;
+  /**
    * **Slides or prose** (`notebooks.md` §3.2, amended 2026-10-02), read by main off the room's
    * material with the overview's own `sourceProfile`. Absent is slides, as every room was.
    */
@@ -732,6 +751,10 @@ export class RoomActor {
   #testerMode: TesterMode = 'proactive';
   /** `RoomActorDeps.maxOnlyOnRequest`, resolved once: true unless a caller turned it off. */
   readonly #maxOnly: boolean;
+  /** `RoomActorDeps.maxFollowsUp`: the follow-up after Ellie's answer runs. */
+  readonly #maxFollowsUp: boolean;
+  /** `RoomActorDeps.legacyGuardsOff` (test tooling). */
+  readonly #guardsOff: boolean;
   /** Every REFERENCE card inserted this session, and whether it has been explained back. */
   /**
    * The REFERENCE cards of `pivot-spec.md` §B1. **Nothing pushes to this since #41** — the Teacher
@@ -1016,6 +1039,8 @@ export class RoomActor {
   constructor(deps: RoomActorDeps) {
     this.#d = deps;
     this.#maxOnly = deps.maxOnlyOnRequest !== false;
+    this.#maxFollowsUp = deps.maxFollowsUp === true;
+    this.#guardsOff = deps.legacyGuardsOff === true;
     this.#testerMode = this.#maxOnly ? 'reactive' : 'proactive';
     this.#log = deps.log ?? SILENT_LOG;
     this.#turnLog = this.#log;
@@ -3251,6 +3276,8 @@ export class RoomActor {
       backend: this.#d.llm.kind,
       // C8: which loop this room runs, on every turn, so a log line says why Max did not follow up.
       max_only_on_request: this.#maxOnly,
+      max_follows_up: this.#maxFollowsUp,
+      ...(this.#guardsOff ? { legacy_guards_off: true } : {}),
     });
 
     /**
@@ -3935,7 +3962,7 @@ export class RoomActor {
        * after Ellie's answer"*). Ellie's answer stands on its own; Max asks when the learner
        * presses Quiz me or writes `@Max`.
        */
-      !this.#maxOnly &&
+      (!this.#maxOnly || this.#maxFollowsUp) &&
       followupDue({
         decidedBy: decision.decidedBy,
         pendingQuiz: this.#pendingQuiz,
@@ -4568,7 +4595,7 @@ export class RoomActor {
       return { result, text: parsed.text, covered: parsed.covered };
     };
     let draft = await ask(first);
-    if (!feedbackUnmarked(draft.text) && !this.#closeTurn(decision)) {
+    if (!this.#guardsOff && !feedbackUnmarked(draft.text) && !this.#closeTurn(decision)) {
       // X3's `Chip:` line is the notes', not the chat's: it is neither counted nor cut, and
       // `#settleTurnText` takes it out after this (`core/chipnote.ts`).
       const faults = feedbackFaults(withoutChipLine(draft.text).body);
@@ -4680,7 +4707,7 @@ export class RoomActor {
    */
   #openQuestionGuarded(agent: AgentProfile, decision: TurnDecision | null): boolean {
     const quiz = this.#pendingQuiz;
-    if (!this.#maxOnly || agent.role !== 'peer' || quiz === null || !quizOpen(quiz)) return false;
+    if (this.#guardsOff || !this.#maxOnly || agent.role !== 'peer' || quiz === null || !quizOpen(quiz)) return false;
     if (decision === null) return true;
     return decision.moveType !== 'peer_guess' && !isTutorRule(decision.decidedBy);
   }
@@ -6271,7 +6298,7 @@ export class RoomActor {
     if (decision.moveType === 'answer_then_teach' && (decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention')) {
       const page = this.#turnAnchorId === null ? null : (this.#askContext.get(this.#turnAnchorId)?.page ?? null);
       // C8: under `maxOnlyOnRequest` nobody asks next, so she is not told that Max does.
-      blocks.push(ellieAnswersBlock({ page, maxFollows: !this.#maxOnly }));
+      blocks.push(ellieAnswersBlock({ page, maxFollows: !this.#maxOnly || this.#maxFollowsUp }));
       const mention = this.#mentionNote();
       if (mention) blocks.push(mention);
     }

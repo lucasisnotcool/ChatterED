@@ -180,6 +180,25 @@ describe('maxOnlyOnRequest, on by default', () => {
   });
 });
 
+describe('maxFollowsUp: the follow-up after Ellie, the on-request rules otherwise', () => {
+  it('chains Max’s question after her answer, and tells her he asks next', async () => {
+    const h = build({ maxFollowsUp: true });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(rules(h)).toEqual(['rule:ellie_answers', 'rule:max_followup']);
+    const ellie = h.llm.requests.find((r) => r.meta.scope === 'group')!.messages.at(-1)!.content;
+    expect(ellie).toContain('Max asks the next one');
+    const starts = h.logged.filter((l) => l.name === 'turn.start');
+    for (const s of starts) expect(s.fields).toMatchObject({ max_only_on_request: true, max_follows_up: true });
+  });
+
+  it('asks once while his question is open: a second question draws no second follow-up', async () => {
+    const h = build({ maxFollowsUp: true });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    await settle(h.clock, h.actor.sendMessage('and why is it private?', DOC));
+    expect(rules(h).filter((r) => r === 'rule:max_followup')).toHaveLength(1);
+  });
+});
+
 // ── §4: Explain and Example ──────────────────────────────────────────────
 
 describe('blockAction: Explain and Example', () => {

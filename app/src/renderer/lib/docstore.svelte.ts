@@ -386,6 +386,11 @@ export class DocStore {
    * thread, so no section offers a check until it closes. Null while nothing is open.
    */
   openQuiz: (() => { objectiveId: string | null } | null) | null = null;
+  /**
+   * `store.boot.maxFollowsUp`: Max asks after every answer of Ellie's, so no section offers
+   * "Ready to check this?" (it would be a second way into the same question).
+   */
+  maxFollowsUp: (() => boolean) | null = null;
 
   // ── "Ready to check this?" (D2, 2026-10-06; `readinessview.ts`). Plain: nothing renders these.
   #readiness = new ReadinessCounters();
@@ -1002,6 +1007,7 @@ export class DocStore {
     const view = this.#view;
     const objectives = taughtObjectives(this.progressView?.() ?? null);
     if (!view || this.#tutorial || objectives.length === 0) return [];
+    if (this.maxFollowsUp?.() === true) return [];
     return readyOffers({
       doc: view.state.doc,
       objectives,
