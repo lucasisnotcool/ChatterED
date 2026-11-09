@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_USAGE, type LLMClient, type LlmRequest } from './llm/types.js';
-import { LEAK_CHECK_AGENT_KEY, LEAK_CHECK_SCHEMA, checkLeak, leakCheckRequest, parseLeakCheck } from './leakcheck.js';
+import {
+  LEAK_CHECK_AGENT_KEY,
+  LEAK_CHECK_SCHEMA,
+  OPEN_QUESTION_DEFER_LINE,
+  QUESTION_CHECK_AGENT_KEY,
+  checkLeak,
+  checkQuestionLeak,
+  leakCheckRequest,
+  parseLeakCheck,
+  questionLeakRequest,
+} from './leakcheck.js';
 
 const INPUT = {
   model: 'test-model',
@@ -66,5 +76,34 @@ describe('checkLeak', () => {
       complete: () => Promise.reject(new Error('down')),
     };
     expect(await checkLeak(llm, INPUT)).toEqual({ stated: [], failed: true });
+  });
+});
+
+describe('the learner\'s question (neighbouring questions)', () => {
+  const Q = { model: 'm', learnerQuestion: 'does the group ever see a private turn?', question: INPUT.question, keyPoints: INPUT.keyPoints };
+
+  it('asks whether a direct answer to the learner\'s question would state a point', () => {
+    const r = questionLeakRequest(Q);
+    expect(r.meta.agentKey).toBe(QUESTION_CHECK_AGENT_KEY);
+    expect(r.jsonSchema).toBe(LEAK_CHECK_SCHEMA);
+    expect(r.messages[0]!.content).toContain(Q.learnerQuestion);
+    expect(r.messages[0]!.content).toContain('2. It never enters the shared context.');
+    expect(r.system[0]!.text).toMatch(/direct, correct answer/);
+  });
+
+  it('returns the named points, makes no call without a question or a key, and never throws', async () => {
+    const llm = fake(() => '{"stated":[2],"why":"x"}');
+    expect(await checkQuestionLeak(llm, Q)).toEqual({ stated: [2], failed: false });
+    expect(await checkQuestionLeak(llm, { ...Q, learnerQuestion: ' ' })).toEqual({ stated: [], failed: false });
+    expect(await checkQuestionLeak(llm, { ...Q, keyPoints: [] })).toEqual({ stated: [], failed: false });
+    expect(llm.requests).toHaveLength(1);
+    const down: LLMClient = { kind: 'scripted', complete: () => Promise.reject(new Error('down')) };
+    expect(await checkQuestionLeak(down, Q)).toEqual({ stated: [], failed: true });
+  });
+
+  it('defers in a line that names Max\'s question and Hint, and holds no key content', () => {
+    expect(OPEN_QUESTION_DEFER_LINE).toMatch(/Max/);
+    expect(OPEN_QUESTION_DEFER_LINE).toMatch(/Hint/);
+    for (const p of INPUT.keyPoints) expect(OPEN_QUESTION_DEFER_LINE).not.toContain(p);
   });
 });

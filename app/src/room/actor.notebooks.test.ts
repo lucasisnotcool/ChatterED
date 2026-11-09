@@ -32,7 +32,7 @@ import { API_PLAN } from './llm/models.js';
 import type { TurnLog } from './ports.js';
 import { wordCount } from './timer.js';
 import { segmentContext } from './reference.js';
-import { LEAK_CHECK_AGENT_KEY } from './leakcheck.js';
+import { LEAK_CHECK_AGENT_KEY, OPEN_QUESTION_DEFER_LINE, QUESTION_CHECK_AGENT_KEY } from './leakcheck.js';
 
 const DOC = 'doc';
 const SPAN = 'span_b0000000001';
@@ -764,6 +764,56 @@ describe('Ellie and Max’s open question', () => {
     expect(rows(h).find((m) => m.decided_by === 'rule:block_action')!.body.startsWith(CLEAN)).toBe(true);
     expect(h.doc.edits.filter((e) => e.batch.cause === 'block_action')).toHaveLength(0);
     expect(h.logged.some((l) => l.name === 'doc.block_note.withheld')).toBe(true);
+  });
+
+  const isQuestionCheck = (r: LlmRequest) => r.meta.agentKey === QUESTION_CHECK_AGENT_KEY;
+
+  it('defers a neighbouring question while Max’s question has had no attempt, and logs it', async () => {
+    const h = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isQuestionCheck(r)) return JSON.stringify({ stated: [1], why: 'answering it gives point 1 away' });
+      return r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? LEAKS : null;
+    });
+    await settle(h.clock, h.actor.sendMessage('so what happens to a private turn, does the group ever see it?', DOC));
+    const ellie = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!;
+    expect(ellie.body).toBe(OPEN_QUESTION_DEFER_LINE);
+    // The line is code-written: no draft of hers was asked for, and nothing went into the notes.
+    expect(ellieGroup(h)).toHaveLength(0);
+    expect(h.doc.edits.filter((e) => e.batch.author === 'ellie')).toHaveLength(0);
+    // The check was given the learner's words, the question and its key.
+    const check = h.llm.requests.find(isQuestionCheck)!;
+    expect(check.messages[0]!.content).toContain('does the group ever see it');
+    expect(check.messages[0]!.content).toContain(KEY[0]!);
+    expect(h.logged.find((l) => l.name === 'ellie.deferred')!.fields).toMatchObject({ question_id: 'q_open', points: 1 });
+  });
+
+  it('answers a question that gives nothing away, and answers normally once Max’s question has been tried', async () => {
+    const clean = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isQuestionCheck(r)) return JSON.stringify({ stated: [], why: 'a definition' });
+      return r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? CLEAN : null;
+    });
+    await settle(clean.clock, clean.actor.sendMessage('what does “agent” mean here?', DOC));
+    expect(rows(clean).find((m) => m.decided_by === 'rule:ellie_answers')!.body.startsWith(CLEAN)).toBe(true);
+
+    const tried = keyed();
+    tried.flowState!.pendingQuiz!.attempts = 1;
+    const after = build({ ...tried, semanticGuard: true }, (r) => {
+      if (isQuestionCheck(r)) return JSON.stringify({ stated: [1], why: 'x' });
+      return r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? CLEAN : null;
+    });
+    await settle(after.clock, after.actor.sendMessage('so does the group ever see it?', DOC));
+    expect(after.llm.requests.filter(isQuestionCheck)).toHaveLength(0);
+    expect(rows(after).find((m) => m.decided_by === 'rule:ellie_answers')!.body.startsWith(CLEAN)).toBe(true);
+  });
+
+  it('defers in a private thread too', async () => {
+    const h = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isQuestionCheck(r)) return JSON.stringify({ stated: [1], why: 'x' });
+      return r.meta.scope === 'whisper' ? LEAKS : null;
+    });
+    const ellie = h.actor.openPrivate('ellie');
+    await settle(h.clock, h.actor.sendPrivate(ellie.threadId, 'does the group ever see a private turn?'));
+    const reply = h.store.whispers.forThread(ellie.threadId).find((w) => w.sender === 'agent')!;
+    expect(reply.body).toBe(OPEN_QUESTION_DEFER_LINE);
   });
 
   it('guards her private replies too', async () => {

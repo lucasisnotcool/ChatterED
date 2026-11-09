@@ -99,3 +99,75 @@ export async function checkLeak(
     return { stated: [], failed: true };
   }
 }
+
+// ── The learner's question, before Ellie answers it ────────────────────────────────────────
+
+/**
+ * **Would a direct answer to the learner's question state the open question's key?** The same
+ * single-criterion pattern, asked of the question instead of a draft: a question to Ellie whose
+ * honest answer is one of Max's key points (a "neighbouring question") is deferred to Max's
+ * question rather than answered, while that question has had no attempt.
+ */
+export function questionLeakRequest(input: {
+  model: string;
+  learnerQuestion: string;
+  question: string;
+  keyPoints: readonly string[];
+  roomId?: string;
+  turnId?: string;
+}): LlmRequest {
+  const points = input.keyPoints.map((p, i) => `${String(i + 1)}. ${p.replace(/\s+/g, ' ').trim()}`).join('\n');
+  const system = [
+    'You check one thing in a study app. A tester has asked the learner a question, and its answer has',
+    'key points the learner must find themselves. The learner now asks the teacher something else.',
+    'Would a direct, correct answer to the learner\'s question state any of the key points in substance',
+    '(in any wording, as a reason, an example or a consequence)? A question about a definition or about',
+    'background the points build on does not, unless answering it gives a point away.',
+    '',
+    'Reply with JSON {"stated": [the numbers of the key points a direct answer would state], "why": one sentence}.',
+    'Use an empty list when it would state none.',
+  ].join('\n');
+  const user = [
+    `THE TESTER'S QUESTION:\n${input.question}`,
+    `ITS KEY POINTS:\n${points}`,
+    `THE LEARNER'S QUESTION TO THE TEACHER:\n"""\n${input.learnerQuestion}\n"""`,
+  ].join('\n\n');
+  return {
+    model: input.model,
+    max_tokens: 400,
+    temperature: 0,
+    system: [{ type: 'text', text: system }],
+    messages: [{ role: 'user', content: user }],
+    jsonSchema: LEAK_CHECK_SCHEMA as unknown as Record<string, unknown>,
+    meta: {
+      scope: 'reference',
+      agentKey: QUESTION_CHECK_AGENT_KEY,
+      ...(input.roomId ? { roomId: input.roomId } : {}),
+      ...(input.turnId ? { turnId: input.turnId } : {}),
+    },
+  };
+}
+
+export const QUESTION_CHECK_AGENT_KEY = 'guard.question_check';
+
+/** Run the question check. Never throws: a failed call is `{ stated: [], failed: true }`. */
+export async function checkQuestionLeak(
+  llm: LLMClient,
+  input: Parameters<typeof questionLeakRequest>[0],
+  signal?: AbortSignal,
+): Promise<{ stated: number[]; failed: boolean }> {
+  if (input.keyPoints.length === 0 || input.learnerQuestion.trim().length === 0) return { stated: [], failed: false };
+  try {
+    const result = await llm.complete(questionLeakRequest(input), undefined, signal);
+    return { stated: parseLeakCheck(result.text, input.keyPoints.length), failed: false };
+  } catch {
+    return { stated: [], failed: true };
+  }
+}
+
+/**
+ * **What Ellie says instead of answering a neighbouring question.** Code-written, so it holds no
+ * key content, and it names the two ways on: try Max's question, or ask him for a hint.
+ */
+export const OPEN_QUESTION_DEFER_LINE =
+  'That one is close to Max’s open question, so have a go at his first. If you’re stuck, Hint on his question is there.';

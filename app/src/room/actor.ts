@@ -109,7 +109,7 @@ import { agentByKey, agentByRole, latencyTargetMs, otherStandingAgent } from './
 import { buildGroupContext } from './context.group.js';
 import { buildWhisperContext } from './context.whisper.js';
 import { LEDGER_SCHEMA, applyLedgerRules, isAgreementOnly, type LedgerProposal, type StudentMessage } from './ledger.js';
-import type { LLMClient, LlmBackend, LlmRequest } from './llm/types.js';
+import { EMPTY_USAGE, type LLMClient, type LlmBackend, type LlmRequest } from './llm/types.js';
 import { API_PLAN, type ModelPlan } from './llm/models.js';
 import { Mailbox } from './mailbox.js';
 import {
@@ -224,7 +224,7 @@ import {
   type TutorKind,
 } from './prompts.tutor.js';
 import { answerLeaks, withoutLeaks } from '../core/answerguard.js';
-import { checkLeak } from './leakcheck.js';
+import { OPEN_QUESTION_DEFER_LINE, checkLeak, checkQuestionLeak } from './leakcheck.js';
 import { lessonAgain, lessonAgainBlock, type LessonAgain } from './lessonagain.js';
 import {
   TUTORIAL_REQUEST,
@@ -2101,6 +2101,7 @@ export class RoomActor {
             key,
             undefined,
             undefined,
+            body,
           )
         : await this.#d.llm.complete(request);
     const target = this.#floor(
@@ -4452,7 +4453,8 @@ export class RoomActor {
         next.meta.anchorId = request.meta.anchorId;
         return next;
       };
-      return this.#completeGuardedTurn(request, again, key, onDelta, signal);
+      const asked = decision.decidedBy === 'rule:ellie_answers' || decision.decidedBy === 'rule:mention' ? this.#learnerQuestionIn(this.#turnAnchorId) : null;
+      return this.#completeGuardedTurn(request, again, key, onDelta, signal, asked);
     }
     if (decision.moveType === 'peer_guess') {
       request.jsonSchema = ELLIE_CUE_SCHEMA;
@@ -4720,7 +4722,24 @@ export class RoomActor {
     key: readonly string[],
     onDelta: ((text: string) => void) | undefined,
     signal: AbortSignal | undefined,
+    /** The learner's question this turn answers, when it is one (a typed question to Ellie). */
+    asked: string | null = null,
   ): ReturnType<LLMClient['complete']> {
+    /**
+     * **A neighbouring question is deferred, not answered** (the first layer). While Max's question
+     * has had no attempt, a question to Ellie whose direct answer would state one of its key points
+     * gets one code-written line pointing back to his question; the draft check below is the
+     * second layer, for what the first lets through. After an attempt or a give-up she answers.
+     */
+    const deferred = asked !== null ? await this.#neighbouringPoints(asked, key, first, signal) : [];
+    if (deferred.length > 0) {
+      this.#turnLog.event('info', 'ellie.deferred', {
+        question_id: this.#pendingQuiz?.questionId ?? this.#pendingQuiz?.quizMessageId ?? null,
+        points: deferred.length,
+      });
+      onDelta?.(OPEN_QUESTION_DEFER_LINE);
+      return { text: OPEN_QUESTION_DEFER_LINE, model: 'code:defer', usage: EMPTY_USAGE, ttftMs: 0, backend: undefined };
+    }
     let result = await this.#d.llm.complete(first, undefined, signal);
     let leaks = answerLeaks(result.text, key);
     // The semantic half (`leakcheck.ts`), only when the lexical half found nothing.
@@ -4765,6 +4784,20 @@ export class RoomActor {
     if (answerLeaks(line, key).length > 0) return true;
     const request = { meta: { scope: 'reference' as const } } as LlmRequest;
     return (await this.#semanticLeaks(line, key, request, undefined)).length > 0;
+  }
+
+  /** The key points a direct answer to the learner's question would state, before any attempt. */
+  async #neighbouringPoints(asked: string, key: readonly string[], request: LlmRequest, signal: AbortSignal | undefined): Promise<number[]> {
+    if (this.#d.semanticGuard !== true || this.#guardsOff) return [];
+    if ((this.#pendingQuiz?.attempts ?? 0) > 0) return [];
+    const question = this.#pendingQuiz?.questionText?.trim() || questionText(this.#openQuestionText());
+    const checked = await checkQuestionLeak(
+      this.#d.llm,
+      { model: this.#models.orchestrator, learnerQuestion: asked, question, keyPoints: key, roomId: this.#d.roomId, ...(request.meta.turnId ? { turnId: request.meta.turnId } : {}) },
+      signal,
+    );
+    if (checked.failed) this.#turnLog.event('warn', 'ellie.defer_check_failed', {});
+    return checked.stated;
   }
 
   /** The key points a draft states in meaning (`leakcheck.ts`), when the semantic guard is on. */
@@ -5831,6 +5864,8 @@ export class RoomActor {
    * that must not become durable notes. And **every private turn**, which is §4.1's whole boundary.
    */
   async #maybeDocEdit(decision: TurnDecision, text: string, messageId: string, turnId: string, anchorId: string | null): Promise<void> {
+    // A deferral explains nothing, so nothing of it goes into the notes.
+    if (text.trim() === OPEN_QUESTION_DEFER_LINE) return;
     /** The notes, or the tutorial sheet when the thread is on one of its lines (`#portFor`). */
     const port = this.#portFor(anchorId);
     if (this.#retired || port.docId() === null || port.frozen()) return;
