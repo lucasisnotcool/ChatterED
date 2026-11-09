@@ -3,7 +3,7 @@
 //   node sim/screenshots.mjs --app <built app dir> --runs <folder of run .json> --out <folder> [--only id,id]
 //
 // For each run JSON (from conversations.sim.ts or redteam.sim.ts, run with SIM_KEEP_DB=1 so its
-// database copy is still there), this copies the run's database and sources into a scratch
+// database copy is still there), this copies the run's database (with its -wal) and sources into a scratch
 // profile, launches the built app on it (`--user-data-dir`), opens the run's notebook, and for
 // each of the learner's typed turns finds it on screen (the doc chat, or a line's thread opened
 // from its highlight), scrolls it to the top of the chat and saves a PNG of the window. It drives
@@ -104,6 +104,9 @@ for (const f of files) {
   }
   const profile = mkdtempSync(join(tmpdir(), 'chattered-shot-'));
   cpSync(join(raw, 'app.db'), join(profile, 'app.db'));
+  // The run's last turns can still be only in the -wal file beside the copy, so it travels with
+  // the database; SQLite replays it on open.
+  if (existsSync(join(raw, 'app.db-wal'))) cpSync(join(raw, 'app.db-wal'), join(profile, 'app.db-wal'));
   if (existsSync(join(raw, 'userData', 'notebooks'))) cpSync(join(raw, 'userData', 'notebooks'), join(profile, 'notebooks'), { recursive: true });
   const s = await session(profile);
   try {
