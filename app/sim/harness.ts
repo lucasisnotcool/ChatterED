@@ -86,7 +86,9 @@ export class SimRoom {
   readonly calls: RecordedCall[] = [];
   readonly events: RoomEvent[] = [];
   /** Every agent doc edit and what the renderer's path did with it (applied, or refused by the guard). */
-  readonly edits: { editId: string; author: string; cause: string; status: 'applied' | 'rejected_guard'; batch: AgentDocOpBatch; suggestion: unknown }[] = [];
+  readonly edits: { editId: string; author: string; cause: string; status: 'applied' | 'rejected_guard'; batch: AgentDocOpBatch; suggestion: unknown; eventIndex: number }[] = [];
+  /** Where each `doc.edit` came in the event stream, so a transcript can put it in its place. */
+  readonly #editEvent = new Map<string, number>();
   readonly #app: AppService;
   readonly #db: SqlDatabase;
   readonly #store: LocalStore;
@@ -260,6 +262,16 @@ export class SimRoom {
       return found === null;
     });
     return found;
+  }
+
+  /** Where each message first appeared in the event stream (`message.appended`), by id. */
+  messageEventIndex(): Map<string, number> {
+    const out = new Map<string, number>();
+    this.events.forEach((e, i) => {
+      const m = (e as { type: string; message?: { id?: string } }).type === 'message.appended' ? (e as { message?: { id?: string } }).message : undefined;
+      if (m?.id && !out.has(m.id)) out.set(m.id, i);
+    });
+    return out;
   }
 
   /** The text of every block whose characters are all the learner's, by block id. */
@@ -477,6 +489,7 @@ export class SimRoom {
     appendFileSync(join(this.outDir, 'events.jsonl'), `${JSON.stringify(event)}\n`);
     if (event.type === 'doc.edit') {
       const batch = (event as { batch: AgentDocOpBatch }).batch;
+      this.#editEvent.set(batch.editId, this.events.length - 1);
       this.#editsPending += 1;
       this.#edits = this.#edits
         .then(() => this.#applyEdit(batch))
@@ -500,6 +513,7 @@ export class SimRoom {
       status: !result.tr || result.status !== 'applied' ? 'rejected_guard' : 'applied',
       batch,
       suggestion: result.suggestion ?? null,
+      eventIndex: this.#editEvent.get(batch.editId) ?? this.events.length,
     });
     if (!result.tr || result.status !== 'applied') {
       await this.call('notes:editResolved', {

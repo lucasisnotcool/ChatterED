@@ -89,6 +89,7 @@ const BUTTON: Partial<Record<MoveLog['kind'], string>> = {
 export function turnsOf(sitting: Sitting): TurnEntry[] {
   const sim = sitting.sim;
   const messages = sim.messages();
+  const order = sim.messageEventIndex();
   const questionByMessage = new Map<string, QuestionRecord>([...sitting.questions.values()].map((q) => [q.quizMessageId, q]));
   const threadLines = new Map<string, string>();
   for (const m of sitting.moves) if (m.threadId && m.line) threadLines.set(m.threadId, m.line);
@@ -136,18 +137,30 @@ export function turnsOf(sitting: Sitting): TurnEntry[] {
     } else if (move.kind === 'answer_notes' && !move.refused) {
       push({ speaker: 'learner', channel: "notes (typed in Max's question block, then Submit)", kind: 'notes_edit', text: move.text, move: move.kind, questionId: move.questionId });
     }
-    for (const m of messages.filter((x) => x.seq > move.fromSeq && x.seq <= move.toSeq)) emitMessage(m, move);
+    // Messages and notes edits in the order the renderer received them, so a line written into the
+    // notes before a question is shown before it (and after it when it came after).
+    const items: { at: number; seq: number; emit: () => void }[] = [];
+    for (const m of messages.filter((x) => x.seq > move.fromSeq && x.seq <= move.toSeq)) {
+      items.push({ at: order.get(m.id) ?? Number.MAX_SAFE_INTEGER, seq: m.seq, emit: () => emitMessage(m, move) });
+    }
     for (const e of sim.edits.slice(move.fromEdit, move.toEdit)) {
       const text = editText(e.batch);
       if (!text) continue;
       const who = e.author === 'ellie' ? 'Ellie' : e.author === 'max' ? 'Max' : 'app';
-      push({
-        speaker: who,
-        channel: `notes (${e.cause}${e.status === 'rejected_guard' ? ', refused by the guard' : ''}${e.suggestion ? ', as a suggestion to accept or reject' : ''})`,
-        kind: 'notes_edit',
-        text,
+      items.push({
+        at: e.eventIndex,
+        seq: Number.MAX_SAFE_INTEGER,
+        emit: () =>
+          push({
+            speaker: who,
+            channel: `notes (${e.cause}${e.status === 'rejected_guard' ? ', refused by the guard' : ''}${e.suggestion ? ', as a suggestion to accept or reject' : ''})`,
+            kind: 'notes_edit',
+            text,
+          }),
       });
     }
+    items.sort((a, b) => a.at - b.at || a.seq - b.seq);
+    for (const item of items) item.emit();
   }
   for (const m of messages.filter((x) => !covered.has(x.seq))) emitMessage(m, null);
   return turns;
