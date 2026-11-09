@@ -631,6 +631,7 @@ export class AppService {
       // The A1 loop: Max asks one question back after Ellie answers (`a2Loop`).
       maxFollowsUp: a2Loop().maxFollowsUp,
       legacyGuardsOff: a2Loop().legacyGuardsOff,
+      semanticGuard: a2Loop().semanticGuard,
       newId,
       // The room's half of the log: turn.start / orchestrator.* / ledger.* / timer.* / turn.*,
       // all stamped with the turn id the LLM calls underneath them carry too.
@@ -1514,10 +1515,13 @@ export class AppService {
  *    `@Max`, and the offer is back.
  *  - `CHATTERED_LEGACY_GUARDS_OFF=1` (test tooling) switches off Ellie's open-question guard and
  *    the feedback rewrite (`RoomActorDeps.legacyGuardsOff`).
+ *  - Ellie's guard checks meaning as well as words (`RoomActorDeps.semanticGuard`);
+ *    `CHATTERED_SEMANTIC_GUARD=0` leaves it lexical only.
  */
-export function a2Loop(env: NodeJS.ProcessEnv = process.env): { maxFollowsUp: boolean; legacyGuardsOff: boolean } {
+export function a2Loop(env: NodeJS.ProcessEnv = process.env): { maxFollowsUp: boolean; legacyGuardsOff: boolean; semanticGuard: boolean } {
   return {
     maxFollowsUp: env.CHATTERED_MAX_ON_REQUEST !== '1',
     legacyGuardsOff: env.CHATTERED_LEGACY_GUARDS_OFF === '1',
+    semanticGuard: env.CHATTERED_SEMANTIC_GUARD !== '0',
   };
 }

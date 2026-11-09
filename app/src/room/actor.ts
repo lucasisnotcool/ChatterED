@@ -224,6 +224,7 @@ import {
   type TutorKind,
 } from './prompts.tutor.js';
 import { answerLeaks, withoutLeaks } from '../core/answerguard.js';
+import { checkLeak } from './leakcheck.js';
 import { lessonAgain, lessonAgainBlock, type LessonAgain } from './lessonagain.js';
 import {
   TUTORIAL_REQUEST,
@@ -414,6 +415,13 @@ export interface RoomActorDeps {
    * unless `CHATTERED_LEGACY_GUARDS_OFF=1` is in the environment.
    */
   legacyGuardsOff?: boolean;
+  /**
+   * **Ellie's open-question guard also checks meaning** (`leakcheck.ts`). On, a guarded draft that
+   * passes the lexical check is given to one structured call that names the key points it states
+   * in any wording; such a draft is written again once, and if it still states one it is
+   * withheld for the code-written line. Off (the default), the guard is lexical only, as before.
+   */
+  semanticGuard?: boolean;
   /**
    * **Slides or prose** (`notebooks.md` §3.2, amended 2026-10-02), read by main off the room's
    * material with the overview's own `sourceProfile`. Absent is slides, as every room was.
@@ -3903,6 +3911,8 @@ export class RoomActor {
      * next turn wait would be the artefact charging the conversation for its own ambitions. Every
      * failure inside is swallowed and logged there.
      */
+    /** Her line for the notes, in flight; Max's follow-up waits for it (below). */
+    let docLine: Promise<void> | null = null;
     /**
      * **A tutorial turn writes its one line into the tutorial, not the notes** (S5), and the turn
      * settles after it: the line is derived in code, so there is no model call to wait on.
@@ -3910,7 +3920,7 @@ export class RoomActor {
      * joint call with Valerie, `notebooks.md` §11.9, so the sheet's rule stands.)
      */
     if (opts.tutor) await this.#tutorDocLine(opts.tutor, decision, text, dispatchedMessageId, pending.id);
-    else void this.#maybeDocEdit(decision, text, dispatchedMessageId ?? '', pending.id, anchorId);
+    else docLine = this.#maybeDocEdit(decision, text, dispatchedMessageId ?? '', pending.id, anchorId);
     this.#lastAgentTurn = classifyAgentTurn(decision, this.#lastAgentTurn);
     /**
      * **How long the next silence has to be** (#47 §5): the reading time of what was just said,
@@ -3971,6 +3981,12 @@ export class RoomActor {
         threadKind: anchorId === null ? null : this.#threadKindOf(anchorId),
       })
     ) {
+      /**
+       * **Her line lands in the notes before Max asks.** It is part of her explanation; written
+       * after his question opened, it read as the answer arriving on an open question (and was
+       * planned without that question's key). The follow-up waits for it.
+       */
+      if (docLine !== null) await docLine;
       const target = this.#followupTarget(anchorId, pagesCited(text));
       this.#nextQuestionId = this.#d.newId('q');
       await this.#runAgentTurn('promote', { anchorId, followup: { objectiveId: target } });
@@ -4707,20 +4723,61 @@ export class RoomActor {
   ): ReturnType<LLMClient['complete']> {
     let result = await this.#d.llm.complete(first, undefined, signal);
     let leaks = answerLeaks(result.text, key);
-    if (leaks.length > 0) {
+    // The semantic half (`leakcheck.ts`), only when the lexical half found nothing.
+    let meant = leaks.length === 0 ? await this.#semanticLeaks(result.text, key, first, signal) : [];
+    if (leaks.length > 0 || meant.length > 0) {
       // Which points and how many, never the words.
-      this.#turnLog.event('warn', 'answer_guard.hit', { draft: 1, points: leaks.length });
-      result = await this.#d.llm.complete(again(openQuestionLeakBlock(leaks.map((l) => l.point))), undefined, signal);
+      this.#turnLog.event('warn', 'answer_guard.hit', { draft: 1, points: leaks.length, semantic: meant.length });
+      const points = leaks.length > 0 ? leaks.map((l) => l.point) : meant.map((n) => key[n - 1]!);
+      result = await this.#d.llm.complete(again(openQuestionLeakBlock(points)), undefined, signal);
       leaks = answerLeaks(result.text, key);
+      meant = leaks.length === 0 ? await this.#semanticLeaks(result.text, key, first, signal) : [];
       if (leaks.length > 0) {
         const kept = withoutLeaks(result.text, key);
         const text = wordCount(kept) >= HELD_MIN_WORDS ? `${kept}\n\n${OPEN_QUESTION_HELD_LINE}` : OPEN_QUESTION_HELD_LINE;
         this.#turnLog.event('warn', 'answer_guard.hit', { draft: 2, points: leaks.length, kept_words: wordCount(kept) });
         result = { ...result, text };
+      } else if (meant.length > 0) {
+        // No sentence to take out: the point is in the reply's meaning. The whole draft is withheld.
+        this.#turnLog.event('warn', 'answer_guard.hit', { draft: 2, semantic: meant.length, withheld: true });
+        result = { ...result, text: OPEN_QUESTION_HELD_LINE };
       }
     }
     onDelta?.(result.text);
     return result;
+  }
+
+  /** Does a doc line state the key of a question of Max's that is open now? Lexical, then semantic. */
+  async #lineGivesAway(batch: AgentDocOpBatch, decision: TurnDecision): Promise<boolean> {
+    if (!this.#openQuestionGuarded(agentByRole(this.#d.roster, 'peer'), decision)) return false;
+    const key = this.#openQuestionKey();
+    if (key.length === 0) return false;
+    const text: string[] = [];
+    const walk = (v: unknown, k = ''): void => {
+      if (typeof v === 'string') {
+        if (k === 'text' && v.trim()) text.push(v.trim());
+      } else if (Array.isArray(v)) v.forEach((x) => walk(x, k));
+      else if (v !== null && typeof v === 'object') for (const [kk, x] of Object.entries(v)) walk(x, kk);
+    };
+    walk(batch.ops);
+    const line = text.join(' ');
+    if (line.length === 0) return false;
+    if (answerLeaks(line, key).length > 0) return true;
+    const request = { meta: { scope: 'reference' as const } } as LlmRequest;
+    return (await this.#semanticLeaks(line, key, request, undefined)).length > 0;
+  }
+
+  /** The key points a draft states in meaning (`leakcheck.ts`), when the semantic guard is on. */
+  async #semanticLeaks(draft: string, key: readonly string[], request: LlmRequest, signal: AbortSignal | undefined): Promise<number[]> {
+    if (this.#d.semanticGuard !== true || this.#guardsOff) return [];
+    const question = this.#pendingQuiz?.questionText?.trim() || questionText(this.#openQuestionText());
+    const checked = await checkLeak(
+      this.#d.llm,
+      { model: this.#models.orchestrator, draft, question, keyPoints: key, roomId: this.#d.roomId, ...(request.meta.turnId ? { turnId: request.meta.turnId } : {}) },
+      signal,
+    );
+    if (checked.failed) this.#turnLog.event('warn', 'answer_guard.semantic_failed', {});
+    return checked.stated;
   }
 
   /**
@@ -5957,6 +6014,16 @@ export class RoomActor {
           if (landed !== null) this.#fileQuestion(landed, 'doc_line');
         }
         if (plan.batch === null) return;
+        /**
+         * **Checked again when it lands.** The line is planned after her answer, while Max's
+         * follow-up is being asked: a question that opened in the meantime was not open when the
+         * line was written, so its key was not given to the plan. A line that states it now is
+         * not written (the chat answer already went out before the question did).
+         */
+        if (await this.#lineGivesAway(plan.batch, decision)) {
+          this.#turnLog.event('warn', 'doc.block_note.withheld', { reason: 'open_question' });
+          return;
+        }
         const emitted = await this.#emitDocEdit(plan.batch, { objectiveId: null, messageId, turnId }, port);
         if (emitted) await this.#noteEditInChat(messageId, plan.batch, plan.noteKind, port);
       }

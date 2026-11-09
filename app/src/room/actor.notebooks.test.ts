@@ -32,6 +32,7 @@ import { API_PLAN } from './llm/models.js';
 import type { TurnLog } from './ports.js';
 import { wordCount } from './timer.js';
 import { segmentContext } from './reference.js';
+import { LEAK_CHECK_AGENT_KEY } from './leakcheck.js';
 
 const DOC = 'doc';
 const SPAN = 'span_b0000000001';
@@ -189,6 +190,27 @@ describe('maxFollowsUp: the follow-up after Ellie, the on-request rules otherwis
     expect(ellie).toContain('Max asks the next one');
     const starts = h.logged.filter((l) => l.name === 'turn.start');
     for (const s of starts) expect(s.fields).toMatchObject({ max_only_on_request: true, max_follows_up: true });
+  });
+
+  it('writes her line into the notes before Max asks', async () => {
+    const h = build({ maxFollowsUp: true }, (r) =>
+      r.meta.scope === 'docedit' ? JSON.stringify({ note_kind: 'point', line: 'A side channel is a private turn with one agent.', why: 'x' }) : null,
+    );
+    // Her line takes longer to plan than his question takes to start: the race of a live run.
+    const complete = h.llm.complete.bind(h.llm);
+    h.llm.complete = async (request, onDelta, signal) => {
+      if (request.meta.scope === 'docedit') await new Promise<void>((r) => h.clock.setTimeout(r, 30_000));
+      return complete(request, onDelta, signal);
+    };
+    h.actor.noteSpanThread({ threadId: SPAN, blockId: 'b_idea', quote: BULLET_TEXT });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', SPAN));
+    await h.clock.run(60_000);
+    const max = rows(h).find((m) => m.decided_by === 'rule:max_followup')!;
+    const order = h.events
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => (e.type === 'doc.edit' && (e as { batch: AgentDocOpBatch }).batch.author === 'ellie') || (e.type === 'message.appended' && e.message.id === max.id));
+    expect(order.length).toBeGreaterThanOrEqual(2);
+    expect(order[0]!.e.type).toBe('doc.edit');
   });
 
   it('asks once while his question is open: a second question draws no second follow-up', async () => {
@@ -677,6 +699,71 @@ describe('Ellie and Max’s open question', () => {
     const ellie = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!;
     expect(ellie.body).not.toContain('kept out of the shared context');
     expect(ellie.body.startsWith('That part is what Max’s open question asks you for')).toBe(true);
+  });
+
+  /** A paraphrase the lexical check cannot see: the key point in other words. */
+  const PARAPHRASE =
+    'Picture whispering to just one friend while the class talks: only that friend hears, and nothing of it ' +
+    'lands in what everyone else is reading. That is why the channel stays out of what the group shares.';
+  const isLeakCheck = (r: LlmRequest) => r.meta.agentKey === LEAK_CHECK_AGENT_KEY;
+
+  it('with the semantic guard, asks again when a paraphrase states the key, and keeps the clean draft', async () => {
+    let drafts = 0;
+    const h = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isLeakCheck(r)) return JSON.stringify({ stated: r.messages[0]!.content.includes(PARAPHRASE) ? [1] : [], why: 'x' });
+      if (r.meta.scope !== 'group' || !r.meta.agentKey?.startsWith('peer')) return null;
+      drafts += 1;
+      return drafts === 1 ? PARAPHRASE : CLEAN;
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    expect(drafts).toBe(2);
+    const checks = h.llm.requests.filter(isLeakCheck);
+    expect(checks).toHaveLength(2);
+    // The checker is given the question, the hidden key and the draft, and nothing else of the turn.
+    expect(checks[0]!.messages[0]!.content).toContain(QUESTION);
+    expect(checks[0]!.messages[0]!.content).toContain(KEY[0]!);
+    expect(checks[0]!.jsonSchema).toBeDefined();
+    expect(ellieGroup(h)[1]!.messages.at(-1)!.content).toContain(KEY[0]!);
+    const ellie = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!;
+    expect(ellie.body.startsWith(CLEAN)).toBe(true);
+    expect(h.logged.filter((l) => l.name === 'answer_guard.hit')[0]!.fields).toMatchObject({ semantic: 1 });
+  });
+
+  it('with the semantic guard, withholds a second draft that still states the key in other words', async () => {
+    const h = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isLeakCheck(r)) return JSON.stringify({ stated: [1], why: 'x' });
+      return r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? PARAPHRASE : null;
+    });
+    await settle(h.clock, h.actor.sendMessage('what is the side channel?', DOC));
+    const ellie = rows(h).find((m) => m.decided_by === 'rule:ellie_answers')!;
+    expect(ellie.body).not.toContain('whispering');
+    expect(ellie.body.startsWith('That part is what Max’s open question asks you for')).toBe(true);
+  });
+
+  it('lets the draft through when the check fails, and without the flag never calls it', async () => {
+    const failing = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isLeakCheck(r)) throw new Error('the check could not run');
+      return r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? PARAPHRASE : null;
+    });
+    await settle(failing.clock, failing.actor.sendMessage('what is the side channel?', DOC));
+    expect(rows(failing).find((m) => m.decided_by === 'rule:ellie_answers')!.body.startsWith(PARAPHRASE)).toBe(true);
+    expect(failing.logged.some((l) => l.name === 'answer_guard.semantic_failed')).toBe(true);
+
+    const off = build(keyed(), (r) => (r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? PARAPHRASE : null));
+    await settle(off.clock, off.actor.sendMessage('what is the side channel?', DOC));
+    expect(off.llm.requests.filter(isLeakCheck)).toHaveLength(0);
+  });
+
+  it('with the semantic guard, does not write a notes line that states the open question’s key', async () => {
+    const h = build({ ...keyed(), semanticGuard: true }, (r) => {
+      if (isLeakCheck(r)) return JSON.stringify({ stated: r.messages[0]!.content.includes('passing a note') ? [] : [1], why: 'x' });
+      return r.meta.scope === 'group' && r.meta.agentKey?.startsWith('peer') ? CLEAN : null;
+    });
+    await act(h);
+    // Her chat reply stands; the line for the notes is checked as it lands, and not written.
+    expect(rows(h).find((m) => m.decided_by === 'rule:block_action')!.body.startsWith(CLEAN)).toBe(true);
+    expect(h.doc.edits.filter((e) => e.batch.cause === 'block_action')).toHaveLength(0);
+    expect(h.logged.some((l) => l.name === 'doc.block_note.withheld')).toBe(true);
   });
 
   it('guards her private replies too', async () => {
