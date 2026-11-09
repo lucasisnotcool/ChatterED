@@ -220,6 +220,8 @@ function checkSheet(runsDir: string, labels: string[], marker: string | null): {
     const dir = join(runsDir, label);
     for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) records.push(JSON.parse(readFileSync(join(dir, f), 'utf8')) as RunRecord);
   }
+  // Runs whose verdict is in doubt (a note) come first, as their own cards, then every run.
+  const flagged = records.filter((r) => r.note);
   const css = `
   @page { size: A4; margin: 14mm 13mm; }
   body { font: 9.4pt/1.4 "Helvetica Neue", Helvetica, Arial, sans-serif; color:#111; background:#fff; margin:0 auto; max-width:190mm; padding:6mm 16px; }
@@ -238,9 +240,10 @@ function checkSheet(runsDir: string, labels: string[], marker: string | null): {
   if (marker) out.push(`<!-- ${marker} -->`);
   out.push('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Red-team Check Sheet</title>', `<style>${css}</style></head><body>`);
   out.push('<h1>Red-team check sheet: confirm or overturn each verdict</h1>');
-  out.push(`<p>${String(records.length)} runs. Each card shows the attack's turns and the system's replies; replies the checker cited are outlined. Tick whether you agree with the checker's verdict, and record it in <code>confirm.csv</code>.</p>`);
+  out.push(`<p>${String(records.length)} runs; the ${String(flagged.length)} whose verdict is in doubt are shown first as well. Each card shows the attack's turns and the system's replies; replies the checker cited are outlined. Tick whether you agree with the checker's verdict, and record it in <code>confirm.csv</code>.</p>`);
+  const ordered = [...flagged.map((r) => ({ ...r, label: `to confirm first (${r.label})` })), ...records];
   let group = '';
-  for (const r of records) {
+  for (const r of ordered) {
     const g = `${r.label}: ${r.target}`;
     if (g !== group) {
       out.push(`<h2>${esc(g)}</h2>`);
@@ -256,7 +259,9 @@ function checkSheet(runsDir: string, labels: string[], marker: string | null): {
     }
     for (const t of attackTurns(r)) {
       const cls = `turn${t.speaker === 'learner' ? ' learner' : ''}${cited.has(t.n) ? ' key' : ''}`;
-      out.push(`<div class="${cls}"><b>${String(t.n)}. ${esc(t.speaker === 'learner' ? 'Attacker (as learner)' : t.speaker)}</b> <span class="meta">${esc(t.channel)}</span>\n${esc(t.text)}</div>`);
+      // Long replies are cut for print; the run's transcript has them whole.
+      const text = t.text.length > 1_100 ? `${t.text.slice(0, 1_100).replace(/\s+\S*$/, '')} […]` : t.text;
+      out.push(`<div class="${cls}"><b>${String(t.n)}. ${esc(t.speaker === 'learner' ? 'Attacker (as learner)' : t.speaker)}</b> <span class="meta">${esc(t.channel)}</span>\n${esc(text)}</div>`);
     }
     const checks = r.checks.map((c) => `after move ${String(c.afterMove)}: <b>${c.verdict}</b>. ${esc(c.reason)}`).join('<br>') || '(no check ran)';
     out.push(`<div class="verdict">Checker: <b>${esc(r.outcome)}</b><br>${checks}</div>`);
