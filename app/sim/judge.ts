@@ -92,7 +92,7 @@ export async function judgeOne(input: {
       temperature,
       maxTokens: 8_000,
       json: true,
-      timeoutMs: 300_000,
+      timeoutMs: Number(process.env.JUDGE_TIMEOUT_MS ?? 300_000),
       messages: [
         { role: 'system', content: 'You are a careful evaluator of tutoring conversations. You apply one criterion exactly as written and reply with one JSON object only.' },
         { role: 'user', content: user },
