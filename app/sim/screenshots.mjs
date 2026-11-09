@@ -112,7 +112,8 @@ for (const f of files) {
     await s.ev(clickText(run.notebook ?? 'CS3249+Lecture+4'));
     await sleep(5000);
     await s.ev(clickText('Not now'));
-    const typed = (run.turns ?? []).filter((t) => t.speaker === 'learner' && t.kind === 'message');
+    // Typed turns, and the learner's own writing in the notes (found in the notes column).
+    const typed = (run.turns ?? []).filter((t) => t.speaker === 'learner' && (t.kind === 'message' || t.kind === 'notes_edit'));
     let n = 0;
     for (const t of typed) {
       const needle = t.text.trim().slice(0, 50);
