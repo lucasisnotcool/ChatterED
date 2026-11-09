@@ -17,7 +17,7 @@
  * show it as the learner's writing there. The transcript does.
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EditorState } from 'prosemirror-state';
@@ -121,7 +121,7 @@ export class SimRoom {
       // A sandbox that may read the file but not open it with SQLite (no -shm beside it): a plain
       // copy, which is consistent while the app is not running (there is no -wal to miss).
       rmSync(dbPath, { force: true });
-      if (existsSync(`${opts.sourceDb}-wal`)) throw new Error('the app database has a -wal file and could not be backed up; quit the app first');
+      if (existsSync(`${opts.sourceDb}-wal`) && statSync(`${opts.sourceDb}-wal`).size > 0) throw new Error('the app database has a -wal file and could not be backed up; quit the app first');
       cpSync(opts.sourceDb, dbPath);
     }
     const sources = join(opts.sourceUserData, 'notebooks');
