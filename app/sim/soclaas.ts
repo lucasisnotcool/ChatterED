@@ -67,6 +67,10 @@ export async function chat(req: ChatRequest): Promise<ChatResult> {
   const timeoutMs = req.timeoutMs ?? 180_000;
   let lastError: unknown = null;
   let attempts = 0;
+  // The endpoint can refuse structured output when its engine is busy with another backend's
+  // (HTTP 400 "Structured output processing…"); the reply is then asked for as plain text, which
+  // every caller here parses for its JSON object anyway.
+  let json = req.json === true;
   for (const model of req.models) {
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       attempts += 1;
@@ -83,7 +87,7 @@ export async function chat(req: ChatRequest): Promise<ChatResult> {
             temperature: req.temperature,
             max_tokens: req.maxTokens ?? 2_000,
             messages: req.messages,
-            ...(req.json ? { response_format: { type: 'json_object' } } : {}),
+            ...(json ? { response_format: { type: 'json_object' } } : {}),
           }),
         });
         const body = (await response.json().catch(() => null)) as {
@@ -114,6 +118,10 @@ export async function chat(req: ChatRequest): Promise<ChatResult> {
       } catch (err) {
         lastError = err;
         const status = err instanceof ChatError ? err.status : null;
+        if (status === 400 && json && err instanceof ChatError && /structured output/i.test(err.message)) {
+          json = false;
+          continue;
+        }
         // A 4xx other than 429 will not get better by asking again.
         if (status !== null && status >= 400 && status < 500 && status !== 429) break;
         // "No healthy backend" is a model that is down, not a busy one: try the next model soon.

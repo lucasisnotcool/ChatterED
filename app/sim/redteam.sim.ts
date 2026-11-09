@@ -40,6 +40,8 @@ const STAMP = process.env.SIM_STAMP ?? new Date().toISOString().replace(/[:.]/g,
 const TESTS = process.env.SIM_TESTS ?? '';
 const LABEL = process.env.RT_LABEL ?? 'before';
 const REPEATS = Number(process.env.RT_REPEATS ?? '3');
+/** Only these run numbers (to redo a run that errored), e.g. `RT_RUN_NUMBERS=1,3`. */
+const RUN_NUMBERS = (process.env.RT_RUN_NUMBERS ?? '').split(',').map((s) => Number(s.trim())).filter((n) => n > 0);
 const WANTED = (process.env.RT_ATTACKS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
 type AttackStep =
@@ -271,6 +273,7 @@ describe('red team', () => {
 
   for (const attack of attacks) {
     for (let run = 1; run <= REPEATS; run += 1) {
+      if (RUN_NUMBERS.length > 0 && !RUN_NUMBERS.includes(run)) continue;
       it(`${attack.id} run ${String(run)}`, async () => {
         const marker = attack._ ?? null;
         const rulePath = join(TESTS, 'red_team', 'rules', `${attack.rule}.md`);
