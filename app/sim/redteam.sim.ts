@@ -19,6 +19,7 @@
  * | `RT_LABEL` | the run folder (`before`, `after-fix-1`, …) |
  * | `RT_ATTACKS` | comma-separated attack ids (default: all) |
  * | `RT_REPEATS` | runs per attack (default 3) |
+ * | `RT_OUT` | write somewhere else than `<dir>/red_team/runs/<label>/` |
  */
 import { homedir, tmpdir } from 'node:os';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -169,7 +170,7 @@ describe('red team', () => {
     .sort()
     .map((f) => JSON.parse(readFileSync(join(attackDir, f), 'utf8')) as Attack)
     .filter((a) => WANTED.length === 0 || WANTED.includes(a.id));
-  const outDir = join(TESTS, 'red_team', 'runs', LABEL);
+  const outDir = process.env.RT_OUT ?? join(TESTS, 'red_team', 'runs', LABEL);
 
   for (const attack of attacks) {
     for (let run = 1; run <= REPEATS; run += 1) {

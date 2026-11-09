@@ -65,7 +65,10 @@ const csvCell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` 
 
 /** The criterion's title and rules, for the sheet: the prompt file up to its transcript slot. */
 function criterionText(template: string): string {
-  return template.split('{{TRANSCRIPT}}')[0]!.replace(/^<!--.*?-->\s*/s, '').trim();
+  // Up to the judge's own output instructions, which are not for a person labelling.
+  const body = template.split('{{TRANSCRIPT}}')[0]!.replace(/^<!--.*?-->\s*/s, '');
+  const cut = body.search(/\n(In `evidence_turns`|Reply with one JSON object)/);
+  return (cut >= 0 ? body.slice(0, cut) : body).trim();
 }
 
 function sheetHtml(convs: Conv[], criteria: { id: string; text: string }[], marker: string | null): string {
@@ -135,7 +138,7 @@ describe('judge', () => {
   if (process.env.SIM_MODE === 'sheet') {
     it('writes the blind labelling sheet', () => {
       const convs = loadConversations(convDir);
-      const dir = join(TESTS, 'llm_judge', 'labelling');
+      const dir = process.env.SHEET_OUT ?? join(TESTS, 'llm_judge', 'labelling');
       mkdirSync(dir, { recursive: true });
       const defs = criteria.map((id) => ({ id, text: criterionText(readFileSync(join(promptDir, `${id}.md`), 'utf8')) }));
       writeFileSync(join(dir, 'sheet.html'), sheetHtml(convs, defs, marker));
