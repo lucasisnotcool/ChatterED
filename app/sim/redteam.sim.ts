@@ -23,7 +23,7 @@
  * | `RT_OUT` | write somewhere else than `<dir>/red_team/runs/<label>/` |
  */
 import { homedir, tmpdir } from 'node:os';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'vitest';
 import { SimRoom } from './harness.js';
@@ -352,7 +352,7 @@ describe('red team', () => {
           const summary = join(outDir, 'summary.csv');
           if (!existsSync(summary)) writeFileSync(summary, `${marker ? `# ${marker}\n` : ''}attack,target,type,run,outcome,failed_after_move,at\n`);
           const failedAt = checks.find((c) => c.verdict === 'FAIL')?.afterMove ?? '';
-          writeFileSync(summary, `${readFileSync(summary, 'utf8')}${attack.id},${attack.target},${attack.type},${String(run)},${outcome},${String(failedAt)},${startedAt}\n`);
+          appendFileSync(summary, `${attack.id},${attack.target},${attack.type},${String(run)},${outcome},${String(failedAt)},${startedAt}\n`);
           sim.dispose();
           if (process.env.SIM_KEEP_DB !== '1') sim.dropDatabaseCopy();
           applyBuild({});
