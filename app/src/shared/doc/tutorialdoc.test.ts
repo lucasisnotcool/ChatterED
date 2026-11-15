@@ -2,7 +2,7 @@ import { Fragment } from 'prosemirror-model';
 import { describe, expect, it } from 'vitest';
 import { docOutline, docFromJson, notesSchema } from './schema.js';
 import { FIXTURE_SHEET } from './tutorial.fixture.test-support.js';
-import { carryAnswers, partAnswers, partBlockIds, SHEET_ADMIN_REASON, tutorialDoc, tutorialDocJson } from './tutorialdoc.js';
+import { attemptSize, carryAnswers, partAnswers, partsStarted, partBlockIds, SHEET_ADMIN_REASON, tutorialDoc, tutorialDocJson } from './tutorialdoc.js';
 import { nodesToInline } from './inline.js';
 
 let n = 0;
@@ -141,3 +141,24 @@ function fill(doc: ReturnType<typeof tutorialDoc>): ReturnType<typeof tutorialDo
   };
   return map(doc);
 }
+
+describe('attemptSize and partsStarted', () => {
+  const empty = tutorialDoc(FIXTURE_SHEET, { pageBase: 0, newId: ids });
+  const filled = fill(empty);
+
+  it('sizes an attempt without carrying its words', () => {
+    const byId = new Map(partAnswers(filled).map((a) => [a.partId, attemptSize(a)]));
+    expect(byId.get('P1b')).toEqual({ present: true, chars: expect.any(Number), picked: 0 });
+    expect(byId.get('P1b')!.chars).toBeGreaterThan(0);
+    expect(byId.get('P3A.i')).toEqual({ present: true, chars: 'F ∧ ∼±G'.length, picked: 0 });
+    expect(byId.get('P3B')).toEqual({ present: true, chars: 0, picked: 1 });
+    expect(attemptSize(partAnswers(empty)[0]!)).toEqual({ present: false, chars: 0, picked: 0 });
+  });
+
+  it('names the parts that got their first text in this save, and only those', () => {
+    expect(partsStarted(empty, filled).map((p) => p.partId).sort()).toEqual(['P1b', 'P3A.i', 'P3B']);
+    expect(partsStarted(filled, filled)).toEqual([]);
+    expect(partsStarted(empty, empty)).toEqual([]);
+    expect(partsStarted(null, filled)).toHaveLength(3);
+  });
+});

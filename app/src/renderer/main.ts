@@ -9,6 +9,9 @@ import { mount } from 'svelte';
 import { bridgeAvailable, prepareBridge } from './lib/bridge.js';
 import { installDropGuard } from './lib/dropguard.js';
 import { installCopyTex } from './lib/copytex.js';
+import { startActiveClock } from './lib/activeclock.js';
+import { logStudy } from './lib/studylog.js';
+import { trial } from './lib/trialstore.svelte.js';
 import { TRIAL_CONTACT_EMAIL } from '../shared/trial.js';
 
 /**
@@ -88,6 +91,8 @@ await prepareBridge(); // dev only: the mock, when there is no Electron
 const root = document.getElementById('app')!;
 if (bridgeAvailable()) {
   forwardErrors();
+  // Minutes in use, for the field study (`lib/activeclock.ts`): counted only once the notice is agreed.
+  void trial.whenOpen().then(() => startActiveClock((minutes) => logStudy({ event: 'app.active', minutes })));
   mount(App, { target: root });
 } else {
   fatalScreen(root);

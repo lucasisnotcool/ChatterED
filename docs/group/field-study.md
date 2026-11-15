@@ -131,9 +131,9 @@ account is not primed by it.
 | Goal | Observed in the log | Status today | Asked in the interview |
 |---|---|---|---|
 | Coming back (context) | Sessions, days active, sheets added, parts touched | Recorded (`app.start`, `app.quit`, notebook and tutorial rows) | Why did you come back, or stop? What did you use instead? |
-| DG1 tries first | Share of help requests with an attempt in the slot; time to first attempt | **Not recorded yet** (gap 1, 2). Check count per part is recorded | Did the slot help you start, or feel like a demand? |
+| DG1 tries first | Share of help requests with an attempt in the slot; time to first attempt | Recorded (`tutorial.help` `attempt_present`/`attempt_chars`, `tutorial.text_started`), from 15 Nov | Did the slot help you start, or feel like a demand? |
 | DG2 recovers | Highest rung per part, Show answer rate, retries after Not yet | Recorded (`tutorial.help`, `tutorial.check`, `tutorial_parts`) | When you pressed Show answer, what had happened just before? |
-| DG3 traces to the slide | Links opened from a part; lecture pages cited in replies | Citations recorded in messages; **link opens not recorded** (gap 3) | Did you check what it told you? What made you check? |
+| DG3 traces to the slide | Links opened from a part; lecture pages cited in replies | Citations recorded in messages; link opens recorded (`tutorial.link_open`), from 15 Nov | Did you check what it told you? What made you check? |
 | DG4 short | Words per reply; steering messages (joint codebook rule) | Recorded (`messages`), steering hand-coded | Was anything too long or too thin? |
 | DG5 own words | Parts correct in own words against revealed | Recorded (`quiz_outcomes`). **Pasted agent text still counts as the learner's** (`group-project.md` §9) | Did the bar mean anything to you? |
 | Said vs did | Each claim set against the log | Built in analysis | Part 4 of the interview |
@@ -172,6 +172,24 @@ These are hunches to check, not hypotheses to test.
 
 Audited against `8198994`, 1 Nov. All of it is logging; none changes what the learner sees. Until
 these are in, the measures marked above cannot be computed.
+
+**Done 15 Nov 2026** (branch `lucas/study-logging`, merged to main; the four copies rebuilt from it
+with the same keys). Every event carries ids and sizes only, never the learner's words:
+
+| Gap | Now logged as | Where |
+|---|---|---|
+| 1. Attempt on a help request | `tutorial.help` gains `attempt_present`, `attempt_chars`, `attempt_picked` (`tutorial.check` gains the last two) | `main/tutorial/help.ts`, `check.ts`; `attemptSize` in `shared/doc/tutorialdoc.ts` |
+| 2. First text in a slot | `tutorial.text_started` per part when a save fills a slot that was empty (again after it was emptied), with its size and `learner_touched` | `main/tutorial/textstart.ts`, from `notes:save` |
+| 3. Links opened | `tutorial.link_open` (`target`: `notes` or `page`) from a part's *From the notes:* line | `renderer/lib/pm/tutorial.ts` `onLinkOpened` |
+| 4. Which view | Since the 31 Oct revamp the sheet is the only tutorial view, so this is `tutorial.main_view` (`tutorial` or `notes`) and `tutorial.source_pdf` (`open` true/false, per tutorial) | `layoutstore.setTutorialMain`, `ThreeColumn.svelte` |
+| 5. PDF + working drafts | Nothing to add: the revamp removed the PDF + working view, so no writing is kept in `localStorage` any more. Every slot is in the database | |
+| 6. Active time | `app.active` (`minutes`): minutes with any key, click, scroll or pointer movement, reported every 5 min and when the window is hidden, only after consent | `renderer/lib/activeclock.ts` |
+
+Renderer events go through one closed channel, `app:logStudyEvent`, checked in main by
+`shared/studylog.ts`: an unknown event or field is dropped. Log size: the heaviest day of Lucas's
+own use was about 0.5 MB, so a heavy week stays well inside the 16 MB rotation.
+
+The original list, for the record:
 
 1. **Attempt present on a help request.** `tutorial.help` in `main/tutorial/help.ts` logs kind and
    level but not whether the slot had text. Add a boolean and a character count, never the text.

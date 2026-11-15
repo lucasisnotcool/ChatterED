@@ -52,6 +52,7 @@ import type {
 import type { StopTurnResult, TurnTraceView } from './types.js';
 import type { TrialApi } from './trial.js';
 import type { StudyApi } from './study.js';
+import type { StudyEvent } from './studylog.js';
 
 import type {
   AgentAuthor,
@@ -92,6 +93,8 @@ export const IPC = {
   retryTurn: 'room:retryTurn',
   /** renderer → main: a `window.onerror` or an unhandled rejection inside the webview. */
   logRendererError: 'app:logRendererError',
+  /** renderer → main: a field-study event (`shared/studylog.ts`), checked and written to `main.log`. */
+  logStudyEvent: 'app:logStudyEvent',
   /** Settings ▸ Open log folder / Copy diagnostics. */
   openLogFolder: 'app:openLogFolder',
   diagnostics: 'app:diagnostics',
@@ -295,6 +298,12 @@ export interface ChatterEdApi {
     source?: string;
     line?: number;
   }): Promise<void>;
+  /**
+   * A field-study event from the renderer (`shared/studylog.ts`): a link opened from a part, the
+   * main view switched, the Source PDF shown or hidden, minutes of use. Main checks it against
+   * `studyEvent` and drops anything else; ids and counts only, never text.
+   */
+  logStudyEvent(input: StudyEvent): Promise<void>;
   /** Settings ▸ **Open log folder**: reveals `~/Library/Logs/ChatterED` in Finder. */
   openLogFolder(): Promise<void>;
   /** Settings ▸ **Copy diagnostics**: version, build, backend, models and the last 50 log lines. */

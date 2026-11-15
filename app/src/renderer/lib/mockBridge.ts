@@ -1633,6 +1633,9 @@ export function createMockBridge(): ChatterEdApi {
     async logRendererError(): Promise<void> {
       /* The mock has no main process to forward to. */
     },
+    async logStudyEvent(): Promise<void> {
+      /* No main.log in the mock. */
+    },
     async openLogFolder(): Promise<void> {
       /* No Finder in the mock. */
     },

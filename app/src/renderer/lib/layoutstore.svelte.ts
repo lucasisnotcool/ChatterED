@@ -27,6 +27,7 @@ import {
   type PanelBounds,
   type TutorialMainMap,
 } from './layout.js';
+import { logStudy } from './studylog.js';
 
 const KEYS = {
   filesOpen: 'chattered.files.open',
@@ -147,7 +148,10 @@ export class LayoutStore {
 
   /** The swap, for one notebook: a tutorial's file id makes it the main view; null puts the notes back. */
   setTutorialMain(notebookId: string, fileId: string | null): void {
-    if ((this.tutorialMain[notebookId] ?? null) === fileId) return;
+    const before = this.tutorialMain[notebookId] ?? null;
+    if (before === fileId) return;
+    // Notes ⇄ tutorial as the main view, for the field-study log; a switch between tutorials is not one.
+    if ((before === null) !== (fileId === null)) logStudy({ event: 'tutorial.main_view', view: fileId === null ? 'notes' : 'tutorial' });
     const next = withTutorialMain(this.tutorialMain, notebookId, fileId);
     this.tutorialMain = next;
     // Back to the notes: their window has nothing left to float over.

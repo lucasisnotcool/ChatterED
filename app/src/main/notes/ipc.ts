@@ -27,6 +27,7 @@ import { notesRepo, type NotesDocRecord, type NotesRepo } from '../db/repos/note
 import { commentsRepo } from '../db/repos/comments.js';
 import { log } from '../log.js';
 import { docFromJson, learnerSpans } from '../../shared/doc/schema.js';
+import { logPartsStarted } from '../tutorial/textstart.js';
 import { ensureNotes, ingestInFlight, ingestView, mapObjectiveBlocks, placeholderSuperseded } from './ingest.js';
 import {
   ensureOverview,
@@ -322,8 +323,10 @@ export function registerNotesIpc(host: DocHost, handle: IpcHandle): void {
   handle<{ docId: string; baseVersion: number; doc: unknown; learnerTouched: boolean }>(
     IPC.notesSave,
     ({ docId, baseVersion, doc, learnerTouched }) => {
+      const prior = repo.byId(docId);
       const result = repo.save({ docId, baseVersion, doc, learnerTouched }, new Date().toISOString());
       if (!result.ok) return result;
+      if (prior) logPartsStarted(prior, doc, learnerTouched);
       /**
        * The objective→block cache is a cache of a pure function over the document, so a save
        * that moved blocks makes it stale. Re-derived here rather than on read, because a lesson

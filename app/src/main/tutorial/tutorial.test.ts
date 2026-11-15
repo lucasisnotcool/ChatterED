@@ -28,6 +28,8 @@ import { tutorialContentKey, type TutorialChange } from '../../shared/tutorial.j
 import { checkPart, judgeChoice } from './check.js';
 import { listViews, tutorialRecord, type TutorialDeps, type TutorialTurnInput, type TutorialTurnStart } from './context.js';
 import { helpPart } from './help.js';
+import { logPartsStarted } from './textstart.js';
+import { initLogger } from '../log.js';
 import { replyInPart, tutorialPartStates } from './reply.js';
 import { tutorialFocus, tutorialFocusText } from './focus.js';
 import { ingestTutorial, rewriteKeys, tutorialInFlight } from './ingest.js';
@@ -633,3 +635,42 @@ describe('the tutorial as the main view: what the agents are told (2026-10-04)',
   });
 });
 
+
+describe('the field-study log (docs/group/field-study.md, "What must be added")', () => {
+  /** Every line the logger writes during the test, parsed. */
+  function captureLog(): Record<string, unknown>[] {
+    const lines: Record<string, unknown>[] = [];
+    initLogger({ sink: { write: (l: string) => void lines.push(JSON.parse(l) as Record<string, unknown>) } });
+    return lines;
+  }
+  afterEach(() => void initLogger({ sink: { write: () => {} } }));
+
+  it('says whether a help request came with an attempt, by its size and never its words', async () => {
+    await ingested();
+    const lines = captureLog();
+    await helpPart(deps, { notebookId, fileId: tutorialId, partId: 'P2', kind: 'hint' });
+    answer('P2', (p) => slot(p, para('Fewer constraints.')));
+    await helpPart(deps, { notebookId, fileId: tutorialId, partId: 'P2', kind: 'hint' });
+    const help = lines.filter((l) => l.event === 'tutorial.help');
+    expect(help.map((l) => [l.attempt_present, l.attempt_chars])).toEqual([
+      [false, 0],
+      [true, 'Fewer constraints.'.length],
+    ]);
+    expect(JSON.stringify(lines)).not.toContain('Fewer constraints');
+  });
+
+  it('logs the first text in a slot once, with its part and size', async () => {
+    await ingested();
+    const lines = captureLog();
+    const empty = tutorialRecord(deps, notebookId, tutorialId)!;
+    answer('P2', (p) => slot(p, para('Fewer constraints.')));
+    const once = tutorialRecord(deps, notebookId, tutorialId)!;
+    logPartsStarted(empty, once.doc, true);
+    answer('P2', (p) => slot(p, para('Fewer constraints, so never harder.')));
+    logPartsStarted(once, tutorialRecord(deps, notebookId, tutorialId)!.doc, true);
+    const started = lines.filter((l) => l.event === 'tutorial.text_started');
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ file_id: tutorialId, part_id: 'P2', attempt_chars: 'Fewer constraints.'.length, learner_touched: true });
+    expect(JSON.stringify(lines)).not.toContain('Fewer');
+  });
+});

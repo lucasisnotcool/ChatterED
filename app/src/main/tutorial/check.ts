@@ -18,6 +18,7 @@
 import { judgeFormal, solveCheck } from '../../core/planning.js';
 import { statusAfterCheck } from '../../core/tutor.js';
 import type { QuizVerdict3 } from '../../shared/doc/types.js';
+import { attemptSize } from '../../shared/doc/tutorialdoc.js';
 import { TUTORIAL_QUESTION_PREFIX } from '../../shared/doc/progress.js';
 import { notebookContentKey } from '../../shared/notebook.js';
 import type { TutorialCheckInput, TutorialCheckResult } from '../../shared/tutorial.js';
@@ -199,6 +200,8 @@ export async function checkPart(deps: TutorialDeps, input: TutorialCheckInput): 
     verdict: judged.verdict,
     checked_by: judged.checkedBy,
     attempts: updated?.attempts ?? null,
+    attempt_chars: attemptSize(resolved.answer).chars,
+    attempt_picked: attemptSize(resolved.answer).picked,
     hint_level: resolved.part.hintLevel,
     key_confidence: resolved.part.key.confidence,
     key_from: resolved.part.key.from,

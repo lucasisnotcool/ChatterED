@@ -13,6 +13,7 @@
  * handed to the actor's tutorial turn (S5) in the part's span thread.
  */
 import { nextHintLevel } from '../../core/tutor.js';
+import { attemptSize } from '../../shared/doc/tutorialdoc.js';
 import { notebookContentKey } from '../../shared/notebook.js';
 import type { HintLevel, TutorialHelpInput, TutorialHelpResult } from '../../shared/tutorial.js';
 import { outcomesRepo } from '../db/repos/outcomes.js';
@@ -101,12 +102,17 @@ export async function helpPart(deps: TutorialDeps, input: TutorialHelpInput): Pr
       deps.onOutcome?.(input.notebookId);
     }
   }
+  // Whether the slot had an attempt when help was asked, by its size only (field study, item 1).
+  const attempt = attemptSize(resolved.answer);
   log().info('tutorial.help', {
     notebook_id: input.notebookId,
     file_id: input.fileId,
     part_id: input.partId,
     kind: input.kind,
     level,
+    attempt_present: attempt.present,
+    attempt_chars: attempt.chars,
+    attempt_picked: attempt.picked,
     linked_notes: resolved.part.links.notesBlockIds.length,
     linked_pages: resolved.part.links.pages.length,
   });

@@ -1153,6 +1153,14 @@ jq -c 'select(.turn=="turn_7")' ~/Library/Logs/ChatterED/main.log
 jq -c 'select(.event=="orchestrator.response") | {ms, parsed_ok, chosen_role, decided_by}' …
 ```
 
+### Field-study events — added 15 Nov 2026
+
+For `docs/group/field-study.md` ("What must be added"). Ids and sizes only, never learner text.
+`tutorial.help` and `tutorial.check` carry `attempt_chars` and `attempt_picked` (help also
+`attempt_present`); `tutorial.text_started` marks a slot's first text on save; the renderer sends
+`tutorial.link_open`, `tutorial.main_view`, `tutorial.source_pdf` and `app.active` (`minutes`) over
+`app:logStudyEvent`, which main checks against `shared/studylog.ts` and otherwise drops.
+
 ## The room_6a9609d5c6fb silence — fixed and verified live, 16 Sep 2026
 
 **What happened.** Build 78 (`523bd53`), installed app, live CLI backend, the real 58-page

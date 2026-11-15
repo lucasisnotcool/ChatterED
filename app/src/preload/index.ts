@@ -34,6 +34,7 @@ const api: ChatterEdApi = {
   wrapUp: (input) => ipcRenderer.invoke(IPC.wrapUp, input),
   retryTurn: (input) => ipcRenderer.invoke(IPC.retryTurn, input),
   logRendererError: (input) => ipcRenderer.invoke(IPC.logRendererError, input),
+  logStudyEvent: (input) => ipcRenderer.invoke(IPC.logStudyEvent, input),
   openLogFolder: () => ipcRenderer.invoke(IPC.openLogFolder),
   diagnostics: () => ipcRenderer.invoke(IPC.diagnostics),
   acceptTeachback: (input) => ipcRenderer.invoke(IPC.acceptTeachback, input),

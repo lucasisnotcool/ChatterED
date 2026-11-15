@@ -212,6 +212,39 @@ export function partAnswers(doc: Node): PartAnswer[] {
   return out;
 }
 
+/**
+ * **How much the learner has put in a slot**, for the field-study log: never the words, only
+ * their size. `chars` counts the written characters (a text slot's, or every blank's together),
+ * `picked` the ticked options of a choice part.
+ */
+export interface AttemptSize {
+  present: boolean;
+  chars: number;
+  picked: number;
+}
+
+export function attemptSize(answer: PartAnswer): AttemptSize {
+  const chars =
+    answer.kind === 'blanks'
+      ? Object.values(answer.blanks).reduce((sum, v) => sum + v.trim().length, 0)
+      : answer.kind === 'choice'
+        ? 0
+        : answer.text.trim().length;
+  return { present: !answer.empty, chars, picked: answer.kind === 'choice' ? answer.picked.length : 0 };
+}
+
+/**
+ * The parts that were empty in `before` (or not in it) and have something in `after`: the moment
+ * each slot got its first text (`docs/group/field-study.md`, "What must be added", item 2). A
+ * slot emptied and filled again counts again, as a fresh start.
+ */
+export function partsStarted(before: Node | null, after: Node): { partId: string; size: AttemptSize }[] {
+  const was = new Map((before ? partAnswers(before) : []).map((a) => [a.partId, a.empty]));
+  return partAnswers(after)
+    .filter((a) => !a.empty && (was.get(a.partId) ?? true))
+    .map((a) => ({ partId: a.partId, size: attemptSize(a) }));
+}
+
 export function partAnswerOf(part: Node, context = ''): PartAnswer {
   const blanks: Record<string, string> = {};
   let picked: string[] = [];

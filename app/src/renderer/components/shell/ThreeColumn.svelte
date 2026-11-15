@@ -69,6 +69,7 @@
   import '../notes/floatframe.css';
   import type { NotebookView } from '../../../shared/notebook.js';
   import { layout } from '../../lib/layoutstore.svelte.js';
+  import { logStudy } from '../../lib/studylog.js';
   import ChatColumn from './ChatColumn.svelte';
   import LessonPath from './LessonPath.svelte';
   import NotesMap from '../notes/NotesMap.svelte';
@@ -148,6 +149,19 @@
     const fileId = mainFileId;
     void fileId;
     untrack(() => { sourcePdfOpen = false; sourcePdfActivated = false; });
+  });
+  /**
+   * The Source PDF beside the sheet, shown or hidden, for the field-study log (`lib/studylog.ts`).
+   * A close is logged against the tutorial it was opened on, even when a switch of tutorial closed it.
+   */
+  let pdfLogged: { open: boolean; fileId: string | null } = { open: false, fileId: null };
+  $effect(() => {
+    const open = sourcePdfOpen;
+    const file = untrack(() => mainFileId);
+    if (open === pdfLogged.open) return;
+    const logged = open ? file : pdfLogged.fileId;
+    pdfLogged = { open, fileId: open ? file : null };
+    if (logged) logStudy({ event: 'tutorial.source_pdf', fileId: logged, open });
   });
   function resizePdf(clientX: number): void {
     if (!pdfRow) return;

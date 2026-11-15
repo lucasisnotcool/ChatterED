@@ -57,6 +57,7 @@
   import type { SpanThreadView } from '../../lib/pm/chrome.js';
   import { bumpTutorialChrome, type TutorialChromeContext } from '../../lib/pm/tutorial.js';
   import { store } from '../../lib/store.svelte.js';
+  import { logStudy } from '../../lib/studylog.js';
   import NotesEditor from './NotesEditor.svelte';
   import './notes.css';
   import './table.css';
@@ -168,6 +169,9 @@
     onOpenSlide: (page, _rect, anchor) => store.doc.openSlide(page, null, anchor),
     citation,
     notesHeading: (blockId) => store.doc.headingFor(blockId),
+    onLinkOpened: (partId, target) => {
+      if (fileId) logStudy({ event: 'tutorial.link_open', fileId, partId, target });
+    },
   });
 
   // ── header actions ─────────────────────────────────────────────────────────────────────────

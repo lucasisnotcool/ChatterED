@@ -18,6 +18,7 @@ import type {
   SettingsView,
 } from '../shared/types.js';
 import { IPC } from '../shared/ipc.js';
+import { studyEvent } from '../shared/studylog.js';
 import { rosterFor, PINNED_PAIRING } from '../room/agents.js';
 import { RoomActor } from '../room/actor.js';
 import { FLOW_PROFILE_SETTING, flowProfileFor, type FlowProfile } from '../room/flow.js';
@@ -1464,6 +1465,15 @@ export class AppService {
         });
       },
     );
+
+    /**
+     * **Field-study events from the renderer** (`shared/studylog.ts`). Only the events and fields
+     * `studyEvent` names get through; anything else is dropped without a line.
+     */
+    handle<unknown>(IPC.logStudyEvent, (input) => {
+      const line = studyEvent(input);
+      if (line) log().info(line.event, line.fields);
+    });
 
     /** Settings ▸ **Open log folder**. Reveals `~/Library/Logs/ChatterED` in Finder. */
     handle(IPC.openLogFolder, () => {

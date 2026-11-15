@@ -71,6 +71,8 @@ export interface TutorialChromeContext {
   onOpenSlide(page: number, rect: DOMRect, anchor: HTMLElement): void;
   citation(pages: readonly number[]): string;
   notesHeading(blockId: string): string | null;
+  /** A *From the notes:* link was opened from `partId` (the field-study log, `lib/studylog.ts`). */
+  onLinkOpened?(partId: string, target: 'notes' | 'page'): void;
 }
 
 export interface PracticeChipsContext {
@@ -299,9 +301,17 @@ function partHeader(input: HeaderInput, context: () => TutorialChromeContext): H
     from.title = fromNotesTitle(input.notes, input.pages.map((p) => p.full));
     from.append(el('span', 'nd-tut-from-name', 'From the notes:'), document.createTextNode(' '));
     const links: HTMLElement[] = [
-      ...input.notes.map((chip) => textLink(chip.label, `Open “${chip.label}” in the notes`, () => context().onOpenNotesBlock(chip.blockId))),
+      ...input.notes.map((chip) =>
+        textLink(chip.label, `Open “${chip.label}” in the notes`, () => {
+          context().onLinkOpened?.(input.partId, 'notes');
+          context().onOpenNotesBlock(chip.blockId);
+        }),
+      ),
       ...input.pages.map((group) =>
-        textLink(group.label, `Open ${group.full} beside the sheet`, (self) => context().onOpenSlide(group.pages[0]!, self.getBoundingClientRect(), self)),
+        textLink(group.label, `Open ${group.full} beside the sheet`, (self) => {
+          context().onLinkOpened?.(input.partId, 'page');
+          context().onOpenSlide(group.pages[0]!, self.getBoundingClientRect(), self);
+        }),
       ),
     ];
     links.forEach((link, index) => {

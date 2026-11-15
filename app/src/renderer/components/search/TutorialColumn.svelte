@@ -20,6 +20,7 @@
   import type { TutorialChromeContext } from '../../lib/pm/tutorial.js';
   import { store } from '../../lib/store.svelte.js';
   import NotesEditor from '../notes/NotesEditor.svelte';
+  import { logStudy } from '../../lib/studylog.js';
   import '../notes/notes.css';
   import '../notes/table.css';
 
@@ -79,6 +80,7 @@
     onOpenSlide: (page, _rect, anchor) => doc.openSlide(page, null, anchor),
     citation: (pages) => (pages.length === 0 ? '' : (doc.slides()?.citation(pages) ?? `p. ${pages.join(', ')}`)),
     notesHeading: () => null,
+    onLinkOpened: (partId, target) => logStudy({ event: 'tutorial.link_open', fileId, partId, target }),
   });
 
   let paneWidth = $state(0);
