@@ -168,6 +168,13 @@ export interface PartKey {
   from: 'model' | 'solutions';
   /** Present only after this version has checked the answer against a linked source page. */
   solutionEvidence?: { fileId: string; page: number; method: 'text' | 'image'; version: 1 };
+  /**
+   * **The official solutions were asked about this part and did not verify it** (2026-11-18).
+   * `marker` names the answer sheet as it was then; while it is the same, a part `done` (asked,
+   * answered, not verified) or failed twice is not asked about again, so opening the notebook does
+   * not pay for the same answer sheet each time.
+   */
+  solutionsTried?: { marker: string; done: boolean; fails: number };
 }
 
 /**
@@ -340,20 +347,31 @@ export interface TutorialChange {
 
 // ── Recognising a problem sheet ─────────────────────────────────────────────────────────────
 
-const SHEET_NAME = /\b(tut(orial)?s?|problem[ _-]?sets?|worksheets?|exercises?|homework|hw\d*|assignments?|labs?|psets?)\b/i;
-const SOLUTION_NAME = /\b(solutions?|answers?|answer[ _-]?key|sol(n|ns)?|suggested[ _-]?answers?)\b/i;
-const PART_HEADING = /^\s*(problem|question|exercise|task|q)\s*\d+\b/gim;
+const SHEET_NAME = /\b(tut(orial)?s?\d*|t\d{1,2}|problem[ -]?sets?|worksheets?|exercises?|homework|hw\d*|assignments?|labs?\d*|psets?\d*)\b/i;
+/** An exam or a past paper: a sheet of questions, when its text has numbered questions. */
+const EXAM_NAME = /\b(exams?|finals?|mid[ -]?terms?|quiz(zes)?|pyps?|past[ -]?(year|papers?)|practice|mocks?|tests?)\b/i;
+const SOLUTION_NAME = /\b(solutions?|solns?|sols?|answers?|ans|answer[ -]?keys?|marking[ -]?(scheme|guide)s?|suggested[ -]?answers?|worked[ -]?solutions?)\b/i;
+const PART_HEADING = /^\s*(?:(?:problem|question|exercise|task|q)\s*\d+\b|\d{1,3}\.\s*$)/gim;
 
 /**
  * **What role a newly read source most likely has**, from its file name and its text. A guess the
  * learner can change in one click (the sources panel's menu), so it errs towards `lecture`: a deck
  * mistaken for a tutorial would vanish from the overview, which is worse than the reverse.
+ *
+ * Revised 2026-11-18 (field-study red team): a solutions word in the name means solutions on its
+ * own (`T3_solutions.pdf`, `…-Solutions.pdf`, `Tutorial_5_Ans.pdf`), because an answer sheet filed
+ * as a lecture is read into the notes and the help, answers and all. Sheets include `tut03`, `T3`,
+ * and exams and past papers (`final`, `midterm`, `PYP`, `practice`) that number their questions;
+ * a question may be numbered `12.` on a line of its own.
  */
 export function guessSourceRole(name: string, text: string): SourceRole {
-  const bare = name.replace(/[+_]/g, ' ');
-  if (SOLUTION_NAME.test(bare) && SHEET_NAME.test(bare)) return 'solutions';
+  const bare = name.replace(/\.[a-z0-9]+$/i, '').replace(/[+_.]/g, ' ').replace(/([a-z])(\d)/gi, '$1 $2');
+  const joined = name.replace(/\.[a-z0-9]+$/i, '').replace(/[+_.]/g, ' ');
+  if (SOLUTION_NAME.test(bare) || SOLUTION_NAME.test(joined)) return 'solutions';
   const headings = text.match(PART_HEADING)?.length ?? 0;
-  if (SHEET_NAME.test(bare) && (headings >= 1 || text.length < 20_000)) return 'tutorial';
+  const sheet = SHEET_NAME.test(joined) || SHEET_NAME.test(bare);
+  if (sheet && (headings >= 1 || text.length < 20_000)) return 'tutorial';
+  if (EXAM_NAME.test(bare) && headings >= 2) return 'tutorial';
   if (headings >= 3 && text.length < 30_000) return 'tutorial';
   return 'lecture';
 }

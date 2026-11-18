@@ -186,8 +186,12 @@ export function validateTutorial(raw: unknown, ctx: TutorialValidationContext): 
   };
 
   const usedIds = new Set<string>();
-  /** Model id → the id it was given here, the first time it was seen. */
-  const idMap = new Map<string, string>();
+  /**
+   * Model id → the ids its blocks were given here, in order. Keys pair by occurrence: the second
+   * block the model called `P1` gets the second key it called `P1` (a sheet whose numbering
+   * restarts), never the first block's (field-study red team, 2026-11-18).
+   */
+  const idMap = new Map<string, string[]>();
 
   const part = (b: Record<string, unknown>): SheetPart | null => {
     const page = pageOf(b.page);
@@ -204,7 +208,7 @@ export function validateTutorial(raw: unknown, ctx: TutorialValidationContext): 
       repairs.partIdsRenamed += 1;
     }
     usedIds.add(id);
-    if (modelId && !idMap.has(modelId)) idMap.set(modelId, id);
+    if (modelId) idMap.set(modelId, [...(idMap.get(modelId) ?? []), id]);
 
     const answerRaw = rec(b.answer);
     let kind = isAnswerKind(answerRaw?.kind) ? answerRaw.kind : 'text';
@@ -284,10 +288,13 @@ export function validateTutorial(raw: unknown, ctx: TutorialValidationContext): 
 
   // ── keys and links ──
   const rawKeys = new Map<string, Record<string, unknown>>();
+  const seenKeys = new Map<string, number>();
   for (const k of Array.isArray(root.parts) ? root.parts : []) {
     const r = rec(k);
     const modelId = str(r?.partId);
-    const id = idMap.get(modelId) ?? modelId;
+    const nth = seenKeys.get(modelId) ?? 0;
+    seenKeys.set(modelId, nth + 1);
+    const id = idMap.get(modelId)?.[nth] ?? (idMap.has(modelId) ? null : modelId);
     if (r && id && !rawKeys.has(id)) rawKeys.set(id, r);
   }
   const order = new Map(ctx.notesBlockIds.map((id, i) => [id, i]));

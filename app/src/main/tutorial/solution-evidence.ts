@@ -30,9 +30,44 @@ function questionSection(text: string, question: number): string | null {
   const header = /(?:^|\n)\s*(?:question\s*(?:#|number|no\.)?\s*[:.]?\s*)(\d+)\b/gi;
   const matches = [...text.matchAll(header)];
   const at = matches.findIndex((m) => Number(m[1]) === question);
+  if (at >= 0) {
+    const start = matches[at]!.index!;
+    return text.slice(start, matches[at + 1]?.index ?? text.length);
+  }
+  return bareSection(text, question);
+}
+
+/**
+ * An answer sheet numbered "12." on a line of its own (the CS1010 practice solutions, 2026-11-18).
+ * Only numbers that run in order count as headers, so a "3." inside question 2's working is not
+ * taken for question 3.
+ */
+function bareSection(text: string, question: number): string | null {
+  const headers: { n: number; index: number }[] = [];
+  for (const m of text.matchAll(/(?:^|\n)[ \t]*(\d{1,3})\.[ \t]*(?=\n|$)/g)) {
+    const n = Number(m[1]);
+    const last = headers.at(-1);
+    if (!last || n === last.n + 1) headers.push({ n, index: m.index! });
+  }
+  const at = headers.findIndex((h) => h.n === question);
   if (at < 0) return null;
-  const start = matches[at]!.index!;
-  return text.slice(start, matches[at + 1]?.index ?? text.length);
+  return text.slice(headers[at]!.index, headers[at + 1]?.index ?? text.length);
+}
+
+/**
+ * An answer led by its option ids, the solutions' own first word: "A. Each division is integer
+ * division…", "A and D. A states when…". Only in a section that does not reprint the options (a
+ * reprint lists every option the same way), and only ids that are options of the question.
+ */
+function ledByOptions(section: string, valid: ReadonlySet<string>): string[] | null {
+  const lines = section.split('\n').slice(1);
+  const led = lines
+    .map((l) => /^\s*([A-Za-z](?:\s*(?:,|and|&)\s*[A-Za-z])*)\s*\.(?:\s+\S|\s*$)/.exec(l)?.[1])
+    .filter((v): v is string => v !== undefined);
+  if (led.length !== 1) return null;
+  const ids = led[0]!.split(/\s*(?:,|and|&)\s*/).map((id) => id.trim().toUpperCase());
+  if (ids.length === 0 || new Set(ids).size !== ids.length || ids.some((id) => !valid.has(id))) return null;
+  return ids;
 }
 
 function matchesChoiceWording(section: string, options: readonly TutorialOption[]): boolean {
@@ -66,7 +101,12 @@ export function choiceEvidenceFromText(
   const valid = new Set(options.map((o) => o.id.toUpperCase()));
   for (const page of pages) {
     const section = questionSection(page.text, number);
-    if (!section || !matchesChoiceWording(section, options)) continue;
+    if (!section) continue;
+    if (!matchesChoiceWording(section, options)) {
+      const led = ledByOptions(section, valid);
+      if (led) return { fileId: page.fileId, page: page.page, correct: led, method: 'text' };
+      continue;
+    }
     // pdf.js extracts the checkmark in the CS2102 answer PDF as a leading "3" (3A., 3D.).
     // Interpret that glyph artifact only for single-letter option lists, with every option present.
     const artifact = [...valid].every((id) => /^[A-Z]$/.test(id));

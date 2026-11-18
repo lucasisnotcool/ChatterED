@@ -136,7 +136,7 @@ export const TUTORIAL_SYSTEM = `You read a university tutorial (problem) sheet i
 
 COPY THE SHEET FAITHFULLY. Its words, in its order: headings, paragraphs, lists, display maths, code, figures. Do not summarise, reword, solve or add anything to the sheet's own text. Inline text uses only **bold**, *italic*, \`code\` and $inline TeX$. Mark housekeeping (team sign-up, deadlines, submission rules, marks) as admin: true.
 
-PARTS. Every thing the learner must answer is one block of type "part", never nested: a sub-part is its own part ("Problem 3 A) i." is part P3A.i). Give each a short stable id built from the sheet's numbering (P1a, P2, P3A.i, P3B) and a label as a learner would say it. Its prompt holds the sheet's words for that part only. Choose its answer kind:
+PARTS. An answer grid or bubble sheet, an empty "Answer:" box, a blank or scratch page and a reference appendix are not parts. Every thing the learner must answer is one block of type "part", never nested: a sub-part is its own part ("Problem 3 A) i." is part P3A.i). Give each a short stable id built from the sheet's numbering (P1a, P2, P3A.i, P3B) and a label as a learner would say it. Its prompt holds the sheet's words for that part only. Choose its answer kind:
 - code: a formal answer in a code block (PDDL, a program);
 - tree: a nested list (a search tree, a decomposition);
 - sequence: a numbered list (a plan, an ordering);
@@ -210,36 +210,39 @@ export function tutorialContext(input: { notesOutline: string; objectives: strin
   ].join('\n');
 }
 
-/** One window of a long sheet: its own pages, the page after, and the end of the page before. */
+/** One window of a long sheet: its own pages, the page after, and the whole page before. */
 export function tutorialWindowMessage(input: {
   sourceName: string;
   pageCount: number;
   from: number;
   to: number;
   ahead: number | null;
-  /** The end of page `from - 1`, or '' on the first window. */
-  previousTail: string;
+  /** The page before `from`, or '' on the first window. */
+  previousPage: string;
   sheetText: string;
   figures: string;
   imagePages: readonly number[];
+  /** Asked again: the first answer copied nothing from pages that have words on them. */
+  again?: boolean;
 }): string {
   const own = input.from === input.to ? `page ${input.from}` : `pages ${input.from}–${input.to}`;
   return [
     `TUTORIAL SHEET: ${input.sourceName} (${input.pageCount} pages). It is long, so it is read a few pages at a time and the parts are joined in page order. THIS CALL READS ${own.toUpperCase()} ONLY, numbered as on the sheet.`,
-    `- Copy every block and every part that STARTS on ${own}, in order, with its sheet page.`,
+    `- Copy every block and every part that STARTS on ${own}, in order. A block's page is the [sheet p. N] it is under, never the page number printed on the sheet.`,
     input.ahead !== null
       ? `- Page ${input.ahead} is shown only so you can finish a part that starts on page ${input.to} and runs onto it: copy that part whole. Copy nothing that starts on page ${input.ahead}; the next call reads it.`
-      : `- Page ${input.to} is the end of the sheet.`,
+      : `- Page ${input.to} is the end of what this call reads.`,
     input.from > 1
-      ? `- If page ${input.from} opens in the middle of a part begun on an earlier page (the end of page ${input.from - 1} is quoted below), skip that continuation: it is copied with its part. Do not repeat the sheet's title or running header.`
+      ? `- Page ${input.from - 1} is quoted below as context only: it was read already. If page ${input.from} opens in the middle of a part begun there, skip that continuation (it is copied with its part). If a part on your pages belongs to a question whose stem, code or data is on page ${input.from - 1}, use them to write its key, but do not copy them. Do not repeat the sheet's title or running header.`
       : '',
-    '- Give part ids from the sheet\'s own numbering (Q12, Q12a, P3B), as for a whole sheet, so they stay unique across the calls. Title: the sheet\'s own title if these pages show it, else the file name.',
+    '- Part ids exactly as for a whole sheet (P1a, P2, P3A.i, P3B), from the sheet\'s own numbering, so they stay the same across the calls. Title: the sheet\'s own title if these pages show it, else the file name.',
     '- Every part on these pages gets its key, as for a whole sheet.',
+    input.again ? '- Your first answer for these pages copied nothing, though they have words on them. Copy them now; if they truly hold nothing of the sheet, answer with empty lists again.' : '',
     input.imagePages.length > 0
       ? `Page images are attached for sheet pages ${input.imagePages.join(', ')}: read the maths, tables and figures from them.`
       : 'No page images are attached: read the text as it is.',
     '',
-    input.previousTail ? `END OF PAGE ${input.from - 1} (context only; already read):\n${input.previousTail}\n` : '',
+    input.previousPage ? `PAGE ${input.from - 1} (context only; already read):\n${input.previousPage}\n` : '',
     input.sheetText,
     '',
     'FIGURE CANDIDATES (sheet page: boxes found on the page, x0 y0 x1 y1):',

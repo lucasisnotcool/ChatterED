@@ -61,21 +61,31 @@ import {
 } from './prompt.js';
 import { tutorialRepo, type LandedPart } from './repo.js';
 import { keyFrom, validateTutorial, type TutorialRepairs } from './validate.js';
+import { promptInContext } from './part.js';
 import { choiceEvidenceFromText, quoteSupportsAnswer, type SolutionPage } from './solution-evidence.js';
 import type { RoleChange } from '../notebooks/service.js';
 import type { LLMClient } from '../../room/llm/types.js';
+import { createHash } from 'node:crypto';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { REFUSAL_MESSAGE } from '../../room/llm/anthropic.js';
+import { errorClass } from '../log.js';
+import { WindowCache } from './readcache.js';
 import {
   batches,
   mapLimit,
+  MAX_SHEET_PAGES,
   mergeWindowReads,
+  noticeText,
   planWindows,
   readWindows,
-  SheetTooLong,
   wholeAnswer,
   WINDOW_CONCURRENCY,
+  WindowDeclined,
   WindowTruncated,
   type MergeStats,
   type SheetWindow,
+  type WindowNotice,
 } from './windows.js';
 
 /**
@@ -104,6 +114,8 @@ export const MESSAGES = {
   notReady: 'This sheet has not finished reading yet.',
   noParts: "No questions were found on this sheet. If it is a tutorial, Retry; if not, use it as a lecture instead.",
   failed: (reason: string) => `Couldn't read this sheet (${reason}). Retry to try again.`,
+  /** A transport failure after its retries: the windows read so far are kept for the Retry. */
+  stopped: (why: string) => `Couldn't finish reading this sheet: ${why}. Retry in a minute; the pages already read are kept.`,
 } as const;
 
 /** Content keys with a read in flight. */
@@ -203,12 +215,9 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
     }
 
     let raw: unknown;
-    let images = 0;
-    let windows = 1;
-    let splits = 0;
-    let merge: MergeStats | null = null;
+    let read: SheetRead | null = null;
     if (llm) {
-      const read = await readSheet(deps, llm, {
+      read = await readSheet(deps, llm, {
         notebookId,
         docId,
         source,
@@ -225,17 +234,13 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
             .map((s) => `${s.name}: p. ${s.pageBase + 1}–${s.pageBase + s.pageCount}`)
             .join('\n'),
         },
-        contentSha: source.kind === 'pdf' ? (located?.contentSha ?? null) : null,
+        imageDir: await sheetImageDir(deps, source.kind, located),
       });
       raw = read.raw;
-      images = read.images;
-      windows = read.windows;
-      splits = read.splits;
-      merge = read.merge;
+      stats = { windows: read.windows, splits: read.splits };
     } else {
       raw = fixtureRaw(subject, outline.find((e) => e.kind !== 'heading')?.blockId ?? null, tree?.objectives[0]?.id ?? null);
     }
-    stats = { windows, splits };
 
     const checked = validateTutorial(raw, {
       pageCount: Math.max(1, source.pageCount),
@@ -245,29 +250,38 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
       isLecturePage,
       objectiveIds,
     });
-    if (!checked) throw new NoParts();
+    // No part, and pages that could not be read: say that, not that the sheet has no questions.
+    if (!checked) throw read && read.notices.length > 0 ? new SheetUnread(read.notices, source.pageCount) : new NoParts();
 
     let disagreed = 0;
     let unverified = 0;
     if (llm) {
-      const outcome = await confirmKeys(deps, llm, notebookId, checked.sheet.blocks, checked.parts);
+      const outcome = await confirmKeys(deps, llm, notebookId, checked.sheet, source.pageBase, checked.parts);
       disagreed = outcome.disagreed;
       unverified = outcome.unverified;
     }
 
-    land(deps, { notebookId, fileId, docId, pageBase: source.pageBase, firstRead, windows }, checked.sheet, checked.parts, llm ? deps.models().orchestrator : 'fixture');
-    logLanding(notebookId, fileId, docId, startedAt, checked.parts, checked.repairs, { disagreed, unverified, images, windows, splits, merge });
+    land(deps, { notebookId, fileId, docId, pageBase: source.pageBase, firstRead, windows: read?.windows ?? 1 }, checked.sheet, checked.parts, llm ? deps.models().orchestrator : 'fixture');
+    // Landed: the next read of this sheet is a fresh one.
+    read?.cache.clear();
+    logLanding(notebookId, fileId, docId, startedAt, checked.parts, checked.repairs, {
+      disagreed,
+      unverified,
+      images: read?.images ?? 0,
+      windows: read?.windows ?? 1,
+      splits: read?.splits ?? 0,
+      calls: read?.calls ?? 0,
+      resumed: read?.resumed ?? 0,
+      emptyRetries: read?.emptyRetries ?? 0,
+      notices: (read?.notices ?? []).map((n) => ({ from: n.from, to: n.to, reason: n.reason })),
+      merge: read?.merge ?? null,
+    });
 
     // Official solutions already in this notebook win over the key just written.
     if (solutionsFor(subject, fileId).length > 0) await rewriteKeys(deps, notebookId, fileId);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    const learnerFacing =
-      err instanceof NoParts
-        ? MESSAGES.noParts
-        : err instanceof SheetTooLong || (err instanceof Error && err.name === 'Yielded')
-          ? reason
-          : MESSAGES.failed(shortReason(reason));
+    const learnerFacing = readFailure(err);
     const record = repo.byId(docId);
     // A re-read that fails leaves the sheet the learner is working in as it was.
     const keep = !firstRead && record !== null && partAnswersOf(record.doc).length > 0;
@@ -278,10 +292,10 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
       doc_id: docId,
       ms: Date.now() - startedAt,
       cause: reason.slice(0, 300),
-      // Window counts only: the cause of a cut-off read is the pages, never their words.
-      windows: stats.windows,
-      splits: err instanceof SheetTooLong ? stats.splits : (err as { splits?: number })?.splits ?? stats.splits,
-      ...(err instanceof SheetTooLong ? { too_long: { from: err.from, to: err.to, reason: err.reason } } : {}),
+      class: errorClass(err),
+      // Window counts and pages only, never the sheet's words. The windows read are kept.
+      ...((err as { readProgress?: unknown })?.readProgress ? { read: (err as { readProgress: unknown }).readProgress } : { windows: stats.windows, splits: stats.splits }),
+      ...(err instanceof SheetUnread ? { notices: err.notices.map((n) => ({ from: n.from, to: n.to, reason: n.reason })) } : {}),
     });
     pushView(deps, notebookId, fileId);
   }
@@ -291,6 +305,38 @@ class NoParts extends Error {
   constructor() {
     super('the model found no part to answer');
     this.name = 'NoParts';
+  }
+}
+
+/** No part came through, and some pages could not be read: the notices are why. */
+class SheetUnread extends Error {
+  constructor(
+    readonly notices: readonly WindowNotice[],
+    pageCount: number,
+  ) {
+    super(`Couldn't read this sheet. ${notices.map((n) => noticeText(n, pageCount).replace(/^\*|\*$/g, '')).join(' ')}`);
+    this.name = 'SheetUnread';
+  }
+}
+
+/**
+ * Where the images this read sends are. A PDF's pages are the JPEGs the renderer stored under its
+ * bytes; an image source is itself the page, copied there as page 1 so the CLI is only ever given
+ * a directory the app wrote (`claude-cli.ts` `argsFor`). A text source has none.
+ */
+async function sheetImageDir(deps: TutorialDeps, kind: string, located: ReturnType<TutorialDeps['notebooks']['locate']>): Promise<string | null> {
+  if (!located?.contentSha) return null;
+  const dir = pageImageDir(deps.userDataDir, located.contentSha);
+  if (kind === 'pdf') return dir;
+  if (kind !== 'image') return null;
+  const ext = /\.png$/i.test(located.path) ? 'png' : /\.jpe?g$/i.test(located.path) ? 'jpg' : null;
+  if (!ext) return null;
+  try {
+    await mkdir(dir, { recursive: true });
+    await copyFile(located.path, join(dir, `p-1.${ext}`));
+    return dir;
+  } catch {
+    return null;
   }
 }
 
@@ -310,8 +356,14 @@ function partAnswersOf(json: unknown): PartAnswer[] {
 /**
  * **Read the sheet** (`windows.ts`): one call for a short sheet, exactly as before; a long one a
  * few pages at a time, each window with only its pages' text, images and figure boxes, joined in
- * page order. A cut-off answer is halved and read again, never taken for an empty sheet. The
- * record's `windowsDone`/`windowsTotal` move as windows land, and the view is pushed.
+ * page order. A cut-off answer is cut smaller and read again, never taken for an empty sheet.
+ *
+ * - Each window's answer is kept as it lands (`readcache.ts`): a read stopped by the network, the
+ *   credit or the app quitting resumes, and Retry pays only for the windows not yet read.
+ * - A transport failure (429, 529, 5xx, a dropped connection) is waited out and asked again,
+ *   `TRANSIENT_BACKOFF_MS`, before it stops the read.
+ * - A window that comes back empty though its pages have text is asked once more.
+ * - The record's `windowsDone`/`windowsTotal` move as windows land, and the view is pushed.
  */
 async function readSheet(
   deps: TutorialDeps,
@@ -322,34 +374,40 @@ async function readSheet(
     source: NonNullable<ReturnType<typeof tutorialSource>>;
     figures: ReadonlyMap<number, SheetRect[]>;
     context: { notesOutline: string; objectives: string; lecturePages: string };
-    contentSha: string | null;
+    /** The page images, by the source's bytes; null when there are none to send. */
+    imageDir: string | null;
   },
-): Promise<{ raw: unknown; images: number; windows: number; splits: number; merge: MergeStats | null }> {
+): Promise<SheetRead> {
   const { source, notebookId, docId } = at;
   const repo = notesRepo(deps.db);
-  const pageCount = Math.max(1, source.pageCount);
+  const filePages = Math.max(1, source.pageCount);
+  // A file longer than `MAX_SHEET_PAGES` is read to there, and the sheet says so at its end.
+  const pageCount = Math.min(filePages, MAX_SHEET_PAGES);
   const pages = pageTexts(deps, notebookId, source.pageBase, pageCount);
   const plan = planWindows(pages.map((t) => t.length));
+  const cache = new WindowCache(deps.userDataDir, [
+    String(TUTORIAL_PROMPT_VERSION),
+    tutorialContentKey(notebookId, source.fileId),
+    String(filePages),
+    ...pages,
+  ]);
+  const resumed = cache.size;
   let images = 0;
+  let calls = 0;
+  let emptyRetries = 0;
   const figuresOf = (from: number, to: number): string =>
     [...at.figures.entries()]
       .filter(([page, rects]) => rects.length > 0 && page >= from && page <= to)
       .map(([page, rects]) => `p. ${page}: ${rects.map((r) => [r.x0, r.y0, r.x1, r.y1].map((n) => n.toFixed(3)).join(' ')).join(' · ')}`)
       .join('\n');
   const imagesOf = async (from: number, to: number): Promise<StoredPageImage[]> => {
-    if (!at.contentSha) return [];
+    if (!at.imageDir) return [];
     const span = Array.from({ length: Math.max(0, Math.min(to, from + TUTORIAL_MAX_IMAGES - 1) - from + 1) }, (_, i) => from + i);
-    return pageImagesFor(pageImageDir(deps.userDataDir, at.contentSha), span);
+    return pageImagesFor(at.imageDir, span);
   };
 
-  const readOne = async (w: SheetWindow): Promise<Record<string, unknown>> => {
-    const startedAt = Date.now();
-    const whole = w.from === 1 && w.to >= pageCount && w.ahead === null;
-    const shown = await imagesOf(w.from, w.ahead ?? w.to);
-    if (shown.length > 0) {
-      if (images === 0) repo.setIngest(docId, { withImages: true }, nowOf(deps));
-      images += shown.length;
-    }
+  const ask = async (w: SheetWindow, shown: StoredPageImage[], again: boolean): Promise<unknown> => {
+    const whole = w.from === 1 && w.to >= filePages && w.ahead === null;
     // The whole sheet in one call is the request this read always made, byte for byte.
     const request = whole
       ? {
@@ -371,40 +429,70 @@ async function readSheet(
           ],
           content: tutorialWindowMessage({
             sourceName: source.name,
-            pageCount,
+            pageCount: filePages,
             from: w.from,
             to: w.to,
             ahead: w.ahead,
-            previousTail: w.from > 1 ? tail(pages[w.from - 2] ?? '', 600) : '',
+            // The whole page before: a part here may have its stem or its code there.
+            previousPage: w.from > 1 ? capText(pages[w.from - 2] ?? '', PREVIOUS_PAGE_CHARS) : '',
             sheetText: windowText(pages, w),
             figures: figuresOf(w.from, w.ahead ?? w.to),
             imagePages: shown.map((i) => i.page),
+            again,
           }),
         };
-    let raw: unknown;
-    try {
-      raw = await callJson(
-        deps,
-        llm,
-        {
-          model: deps.models().orchestrator,
-          max_tokens: TUTORIAL_MAX_TOKENS,
-          system: request.system,
-          messages: [{ role: 'user', content: request.content }],
-          jsonSchema: TUTORIAL_JSON_SCHEMA,
-          ...(shown.length > 0 ? { images: shown } : {}),
-          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
-        },
-        'tutorial',
-      );
-    } catch (err) {
-      if (err instanceof ReplyTruncated) throw new WindowTruncated('max_tokens');
-      // An answer that would not parse twice is most often one that was cut off on a backend
-      // that does not say so: read smaller rather than give up.
-      if (err instanceof SyntaxError) throw new WindowTruncated('malformed');
-      throw err;
+    for (let attempt = 0; ; attempt += 1) {
+      calls += 1;
+      try {
+        return await callJson(
+          deps,
+          llm,
+          {
+            model: deps.models().orchestrator,
+            max_tokens: TUTORIAL_MAX_TOKENS,
+            system: request.system,
+            messages: [{ role: 'user', content: request.content }],
+            jsonSchema: TUTORIAL_JSON_SCHEMA,
+            ...(shown.length > 0 ? { images: shown } : {}),
+            meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+          },
+          'tutorial',
+        );
+      } catch (err) {
+        if (err instanceof ReplyTruncated) throw new WindowTruncated('max_tokens');
+        if (refused(err)) throw new WindowDeclined();
+        // An answer that would not parse twice is most often one that was cut off on a backend
+        // that does not say so: read smaller rather than give up.
+        if (err instanceof SyntaxError) throw new WindowTruncated('malformed');
+        const waits = deps.backoffMs ?? TRANSIENT_BACKOFF_MS;
+        if (!transient(err) || attempt >= waits.length) throw err;
+        log().warn('tutorial.window.backoff', { doc_id: docId, from: w.from, to: w.to, attempt: attempt + 1, class: transientClass(err) });
+        await new Promise((r) => setTimeout(r, waits[attempt]));
+      }
     }
-    if (!wholeAnswer(raw)) throw new WindowTruncated('malformed');
+  };
+
+  const readOne = async (w: SheetWindow): Promise<Record<string, unknown>> => {
+    const kept = cache.get(w);
+    if (kept) return kept;
+    const startedAt = Date.now();
+    const shown = await imagesOf(w.from, w.ahead ?? w.to);
+    if (shown.length > 0) {
+      if (images === 0) repo.setIngest(docId, { withImages: true }, nowOf(deps));
+      images += shown.length;
+    }
+    const first = await ask(w, shown, false);
+    if (!wholeAnswer(first)) throw new WindowTruncated('malformed');
+    let raw: Record<string, unknown> = first;
+    // Nothing copied from pages that have words (or pictures) on them: asked once more.
+    const ownText = pages.slice(w.from - 1, w.to).join('').length;
+    if ((raw.blocks as unknown[]).length === 0 && (ownText >= EMPTY_WINDOW_CHARS || shown.length > 0)) {
+      emptyRetries += 1;
+      log().warn('tutorial.window.empty', { doc_id: docId, from: w.from, to: w.to, chars: ownText, images: shown.length });
+      const second = await ask(w, shown, true);
+      if (!wholeAnswer(second)) throw new WindowTruncated('malformed');
+      raw = second;
+    }
     log().info('tutorial.window', {
       doc_id: docId,
       from: w.from,
@@ -413,9 +501,12 @@ async function readSheet(
       depth: w.depth,
       blocks: (raw.blocks as unknown[]).length,
       parts: (raw.parts as unknown[]).length,
+      // Question numbers seen in the text, to compare with the parts read; a count, never words.
+      markers: questionMarkers(pages.slice(w.from - 1, w.to).join('\n')),
       images: shown.length,
       ms: Date.now() - startedAt,
     });
+    cache.put(w, raw);
     return raw;
   };
 
@@ -424,7 +515,7 @@ async function readSheet(
     pushView(deps, notebookId, source.fileId);
   }
   let total = plan.length;
-  let splitCount = 0;
+  const progress = { windows: plan.length, splits: 0, calls: 0, resumed, notices: 0 };
   try {
     const outcome = await readWindows(plan, readOne, {
       progress: (done, now) => {
@@ -433,17 +524,109 @@ async function readSheet(
         if (now > 1) pushView(deps, notebookId, source.fileId);
       },
       split: (w, reason) => {
-        splitCount += 1;
+        progress.splits += 1;
         log().warn('tutorial.window.split', { doc_id: docId, from: w.from, to: w.to, depth: w.depth, reason });
       },
     });
-    const merged = mergeWindowReads(outcome.reads);
-    return { raw: merged.raw, images, windows: total, splits: outcome.splits, merge: outcome.reads.length > 1 ? merged.stats : null };
+    const notices = [...outcome.notices];
+    if (filePages > pageCount) {
+      notices.push({ from: pageCount + 1, to: filePages, reason: 'beyond_limit' });
+      log().warn('tutorial.ingest.capped', { doc_id: docId, pages: filePages, read: pageCount });
+    }
+    const merged = mergeWindowReads(outcome.reads, notices, filePages);
+    return {
+      raw: merged.raw,
+      images,
+      windows: total,
+      splits: outcome.splits,
+      calls,
+      resumed,
+      emptyRetries,
+      notices,
+      merge: outcome.reads.length > 1 || notices.length > 0 ? merged.stats : null,
+      cache,
+    };
   } catch (err) {
-    // The failure event says how far the read got.
-    if (err && typeof err === 'object') Object.assign(err, { splits: splitCount });
+    // The failure event says how far the read got; the windows read are kept for the retry.
+    progress.windows = total;
+    progress.calls = calls;
+    if (err && typeof err === 'object') Object.assign(err, { readProgress: progress });
     throw err;
   }
+}
+
+interface SheetRead {
+  raw: Record<string, unknown>;
+  images: number;
+  windows: number;
+  splits: number;
+  calls: number;
+  resumed: number;
+  emptyRetries: number;
+  notices: WindowNotice[];
+  merge: MergeStats | null;
+  cache: WindowCache;
+}
+
+/** The whole page before a window, at most this much: a stem and its code fit. */
+const PREVIOUS_PAGE_CHARS = 3_000;
+/** A window whose pages hold at least this much text and come back with no block is asked again. */
+const EMPTY_WINDOW_CHARS = 200;
+/** The waits before asking again after a transport failure. Then the read stops, and keeps what it has. */
+export const TRANSIENT_BACKOFF_MS = [5_000, 20_000];
+
+/** Question numbers a page's text shows: `12.` on its own line, `Question 3`, `(b)`. */
+export function questionMarkers(text: string): number {
+  return (text.match(/^\s*(?:\d{1,3}\.\s*$|(?:question|problem|q)\s*\d+\b|\([a-h]\)\s)/gim) ?? []).length;
+}
+
+/** A safety classifier declined (`anthropic.ts`): nothing to retry, and nothing the learner can rephrase. */
+function refused(err: unknown): boolean {
+  return err instanceof Error && err.message === REFUSAL_MESSAGE;
+}
+
+/** What a transport failure was, for the log and the sentence: rate, overloaded, server, network. */
+function transientClass(err: unknown): 'rate' | 'overloaded' | 'server' | 'network' | null {
+  const e = err as { status?: unknown; name?: unknown; message?: unknown; code?: unknown } | null;
+  const status = typeof e?.status === 'number' ? e.status : null;
+  const message = typeof e?.message === 'string' ? e.message : '';
+  if (status === 429 || /\b429\b|rate.?limit/i.test(message)) return 'rate';
+  if (status === 529 || /\b529\b|overloaded/i.test(message)) return 'overloaded';
+  if ((status !== null && status >= 500) || e?.name === 'CliApiError' || /\b5\d\d\b|api error/i.test(message)) return 'server';
+  if (e?.name === 'APIConnectionError' || e?.name === 'APIConnectionTimeoutError' || /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network|fetch failed|terminated/i.test(message) || typeof e?.code === 'string') {
+    return 'network';
+  }
+  return null;
+}
+
+function transient(err: unknown): boolean {
+  if (err instanceof Error && (err.name === 'StudyCreditUsedUpError' || err.name === 'CliLimitError' || err.name === 'Yielded' || err.name === 'LlmAbortedError')) return false;
+  return transientClass(err) !== null;
+}
+
+/**
+ * **What the learner reads when a read stops** (red team, 2026-11-18): true, short, and never
+ * the SDK's JSON. A spent credit says what the credit message says; a transport failure says the
+ * pages read are kept; anything else names its first line.
+ */
+export function readFailure(err: unknown): string {
+  if (err instanceof NoParts) return MESSAGES.noParts;
+  if (err instanceof SheetUnread) return err.message;
+  if (err instanceof Error && (err.name === 'Yielded' || err.name === 'StudyCreditUsedUpError')) return err.message;
+  switch (transientClass(err)) {
+    case 'rate':
+      return MESSAGES.stopped('Claude is limiting how fast this key can ask');
+    case 'overloaded':
+      return MESSAGES.stopped('Claude is overloaded right now');
+    case 'server':
+      return MESSAGES.stopped('Claude had a server error');
+    case 'network':
+      return MESSAGES.stopped('the connection to Claude dropped');
+    default:
+      break;
+  }
+  const reason = err instanceof Error ? err.message : String(err);
+  return MESSAGES.failed(shortReason(reason));
 }
 
 /** Each page's text, trimmed: what the windows are planned and read from. */
@@ -462,11 +645,6 @@ export function windowText(pages: readonly string[], w: SheetWindow): string {
     out.push(k === w.ahead ? `[sheet p. ${k}: the next call's page, shown only to finish a part from p. ${w.to}]\n${body}` : `[sheet p. ${k}]\n${body}`);
   }
   return capText(out.join('\n\n'), SHEET_TEXT_CAP);
-}
-
-function tail(text: string, chars: number): string {
-  const t = text.trim();
-  return t.length <= chars ? t : `…${t.slice(t.length - chars + 1)}`;
 }
 
 /** The sheet's text, each page under `[sheet p. k]`, its own numbering. */
@@ -492,35 +670,45 @@ async function confirmKeys(
   deps: TutorialDeps,
   llm: LLMClient,
   notebookId: string,
-  blocks: readonly import('../../shared/tutorial.js').SheetBlock[],
+  sheet: import('../../shared/tutorial.js').TutorialSheet,
+  pageBase: number,
   parts: LandedPart[],
 ): Promise<{ disagreed: number; unverified: number }> {
   const sheetParts = new Map(
-    blocks.filter((b): b is import('../../shared/tutorial.js').SheetPart => b.type === 'part').map((p) => [p.id, p]),
+    sheet.blocks.filter((b): b is import('../../shared/tutorial.js').SheetPart => b.type === 'part').map((p) => [p.id, p]),
   );
+  // The part with the problem it belongs to above it, as Help and Check see it: "(b) p[0] = 'b';"
+  // is not solvable without the declarations its stem makes (red team, 2026-11-18).
+  const inDoc = new Map(partAnswersOf(tutorialDoc(sheet, { pageBase }).toJSON()).map((a) => [a.partId, a]));
   const open = parts.filter((p) => !p.key.check && p.key.answer.length > 0);
   if (open.length === 0) return { disagreed: 0, unverified: 0 };
   const describe = (id: string) => {
     const p = sheetParts.get(id)!;
+    const answer = inDoc.get(id);
     return {
       partId: id,
       label: p.label,
       kind: p.answer.kind,
-      prompt: promptText(p),
+      prompt: answer ? promptInContext(answer) : promptText(p),
       options: p.answer.kind === 'choice' ? p.answer.options.map((o) => `(${o.id}) ${o.text}`).join('\n') : '',
     };
   };
-  // In batches, so an exam's fifty parts stay inside each call's budget; a batch that fails
-  // leaves only its own keys unverified.
-  const verdicts = await mapLimit(batches(open, CONFIRM_BATCH_PARTS), WINDOW_CONCURRENCY, async (batch) => {
+  // In batches, so an exam's fifty parts stay inside each call's budget; a batch cut off is
+  // halved; a batch that fails leaves only its own keys unverified.
+  const confirm = async (batch: LandedPart[]): Promise<Map<string, boolean>> => {
     try {
       return await confirmBatch(deps, llm, notebookId, batch, describe);
     } catch (err) {
       if (err instanceof Error && err.name === 'Yielded') throw err;
+      if (err instanceof ReplyTruncated && batch.length > 1) {
+        const mid = Math.ceil(batch.length / 2);
+        return new Map([...(await confirm(batch.slice(0, mid))), ...(await confirm(batch.slice(mid)))]);
+      }
       log().warn('tutorial.confirm.failed', { notebook_id: notebookId, parts: batch.length, cause: (err as Error).message.slice(0, 200) });
       return new Map<string, boolean>();
     }
-  });
+  };
+  const verdicts = await mapLimit(batches(open, CONFIRM_BATCH_PARTS), WINDOW_CONCURRENCY, confirm);
   const agree = new Map(verdicts.flatMap((m) => [...m]));
   let disagreed = 0;
   let unverified = 0;
@@ -684,7 +872,18 @@ function logLanding(
   startedAt: number,
   parts: readonly LandedPart[],
   repairs: TutorialRepairs,
-  extra: { disagreed: number; unverified: number; images: number; windows: number; splits: number; merge: MergeStats | null },
+  extra: {
+    disagreed: number;
+    unverified: number;
+    images: number;
+    windows: number;
+    splits: number;
+    calls: number;
+    resumed: number;
+    emptyRetries: number;
+    notices: { from: number; to: number; reason: string }[];
+    merge: MergeStats | null;
+  },
 ): void {
   log().info('tutorial.ingest', {
     notebook_id: notebookId,
@@ -701,6 +900,10 @@ function logLanding(
     images: extra.images,
     windows: extra.windows,
     splits: extra.splits,
+    calls: extra.calls,
+    resumed: extra.resumed,
+    empty_retries: extra.emptyRetries,
+    ...(extra.notices.length > 0 ? { notices: extra.notices } : {}),
     ...(extra.merge ? { merged: extra.merge } : {}),
     repaired: repairs,
   });
@@ -800,10 +1003,21 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         })),
       );
       // Old keys have no evidence marker. Invalidate them before an asynchronous re-read, so a
-      // Check arriving meanwhile cannot use a legacy "high" confidence solution key.
+      // Check arriving meanwhile cannot use a legacy "high" confidence solution key. A key this
+      // version verified against a page is never taken back (red team, 2026-11-18: every
+      // notebook open used to downgrade them all, then pay to verify them again).
       for (const p of parts.parts(record.id)) {
-        if (p.key.from === 'solutions') parts.setKey(record.id, p.partId, { ...p.key, confidence: 'low', solutionEvidence: undefined }, now);
+        if (p.key.from === 'solutions' && p.key.solutionEvidence?.version !== 1) {
+          parts.setKey(record.id, p.partId, { ...p.key, confidence: 'low', solutionEvidence: undefined }, now);
+        }
       }
+      // Once per answer sheet: a part these solutions were already asked about, and did not
+      // verify, is not asked about again until the solutions (or this pass) change.
+      const marker = solutionsMarker(pages);
+      const settled = (partId: string): boolean => {
+        const tried = parts.part(record.id, partId)?.key.solutionsTried;
+        return tried?.marker === marker && (tried.done || tried.fails >= SOLUTIONS_MAX_FAILS);
+      };
       for (const answer of answers) {
         if (answer.kind !== 'choice') continue;
         const evidence = choiceEvidenceFromText(pages, answer.partId, answer.label, answer.options);
@@ -819,12 +1033,23 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         }, now);
         rewritten += 1;
       }
-      const unresolved = answers.filter((a) => !parts.part(record.id, a.partId)?.key.solutionEvidence);
+      const unverified = answers.filter((a) => !parts.part(record.id, a.partId)?.key.solutionEvidence);
+      const unresolved = unverified.filter((a) => !settled(a.partId));
       if (unresolved.length === 0) {
-        log().info('tutorial.solutions', { notebook_id: notebookId, file_id: tutorialFileId, doc_id: record.id, rewritten, parts: answers.length });
-        pushView(deps, notebookId, tutorialFileId);
+        log().info('tutorial.solutions', {
+          notebook_id: notebookId,
+          file_id: tutorialFileId,
+          doc_id: record.id,
+          rewritten,
+          parts: answers.length,
+          ...(unverified.length > 0 ? { settled: unverified.length } : {}),
+        });
+        if (rewritten > 0) pushView(deps, notebookId, tutorialFileId);
         return rewritten;
       }
+      /** The parts asked about whose answer came back, and those whose batch failed. */
+      const asked = new Set<string>();
+      const failedParts = new Set<string>();
       const text = pages.map((p) => `=== source ${p.fileId}, page ${p.page} ===\n${p.text}`).join('\n\n');
       const images = (await Promise.all(solutions.map(async (s) => {
         const located = deps.notebooks.locate(notebookId, s.pageBase + 1);
@@ -853,7 +1078,8 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
                       partId: a.partId,
                       label: a.label,
                       kind: a.kind,
-                      prompt: a.prompt,
+                      // With its stem, so "(b)" is matched to the right worked answer.
+                      prompt: promptInContext(a),
                       options: a.options.map((o) => `(${o.id}) ${o.text}`).join('\n'),
                       blanks: Object.keys(a.blanks),
                     })),
@@ -867,20 +1093,21 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
             },
             'tutorial.solutions',
           )) as { parts?: unknown[] };
+          for (const a of batch) asked.add(a.partId);
           return Array.isArray(raw.parts) ? raw.parts : [];
         } catch (err) {
-          if (err instanceof Error && err.name === 'Yielded') throw err;
+          if (err instanceof Error && (err.name === 'Yielded' || err.name === 'StudyCreditUsedUpError')) throw err;
           if (err instanceof ReplyTruncated && batch.length > 1) {
             const mid = Math.ceil(batch.length / 2);
             return [...(await readBatch(batch.slice(0, mid))), ...(await readBatch(batch.slice(mid)))];
           }
+          for (const a of batch) failedParts.add(a.partId);
           failedBatches += 1;
           log().warn('tutorial.solutions.batch_failed', { notebook_id: notebookId, parts: batch.length, cause: (err as Error).message.slice(0, 200) });
           return [];
         }
       };
       const raw = { parts: (await mapLimit(batches(unresolved, SOLUTIONS_BATCH_PARTS), WINDOW_CONCURRENCY, readBatch)).flat() };
-      batchesFailed = failedBatches;
       const byId = new Map(answers.map((a) => [a.partId, a]));
       const visualCandidates = new Map<string, { page: number; correct: string[] }>();
       for (const entry of Array.isArray(raw.parts) ? raw.parts : []) {
@@ -915,6 +1142,7 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
       if (visualCandidates.size > 0 && images.length > 0) {
         const candidates = unresolved.filter((a) => visualCandidates.has(a.partId));
         const reads = await mapLimit(batches(candidates, SOLUTIONS_BATCH_PARTS), WINDOW_CONCURRENCY, async (batch) => {
+          try {
           const got = (await callJson(deps, llm, {
             model: deps.models().orchestrator,
             max_tokens: 1_200,
@@ -927,6 +1155,13 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
             meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
           }, 'tutorial.solutions.visual')) as { parts?: unknown[] };
           return Array.isArray(got.parts) ? got.parts : [];
+          } catch (err) {
+            if (err instanceof Error && (err.name === 'Yielded' || err.name === 'StudyCreditUsedUpError')) throw err;
+            for (const a of batch) failedParts.add(a.partId);
+            failedBatches += 1;
+            log().warn('tutorial.solutions.batch_failed', { notebook_id: notebookId, parts: batch.length, visual: true, cause: (err as Error).message.slice(0, 200) });
+            return [];
+          }
         });
         const independent = { parts: reads.flat() };
         for (const entry of Array.isArray(independent.parts) ? independent.parts : []) {
@@ -946,6 +1181,16 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
             solutionEvidence: { fileId: source.fileId, page: candidate.page, method: 'image', version: 1 } }, now);
           rewritten += 1;
         }
+      }
+      batchesFailed = failedBatches;
+      // What these solutions could not verify is settled for them: asked once, or failed twice.
+      for (const a of unresolved) {
+        const current = parts.part(record.id, a.partId);
+        if (!current || current.key.solutionEvidence) continue;
+        const before = current.key.solutionsTried?.marker === marker ? current.key.solutionsTried : null;
+        const done = asked.has(a.partId) && !failedParts.has(a.partId);
+        const fails = (before?.fails ?? 0) + (done ? 0 : 1);
+        parts.setKey(record.id, a.partId, { ...current.key, solutionsTried: { marker, done, fails } }, now);
       }
     }
     log().info('tutorial.solutions', {
@@ -972,6 +1217,18 @@ function sheetPartOf(a: PartAnswer): import('../../shared/tutorial.js').SheetPar
         ? { kind: 'choice' as const, multi: true, options: a.options }
         : { kind: a.kind };
   return { type: 'part', id: a.partId, label: a.label, page: 1, prompt: [], answer };
+}
+
+/** How many failed tries settle a part for one answer sheet. */
+const SOLUTIONS_MAX_FAILS = 2;
+/** Moves when the solutions pass changes what it can verify, so every part is asked again once. */
+const SOLUTIONS_PASS_VERSION = 2;
+
+/** The answer sheet as this pass saw it: its pages' words, and the pass's version. */
+function solutionsMarker(pages: readonly SolutionPage[]): string {
+  const hash = createHash('sha256').update(String(SOLUTIONS_PASS_VERSION));
+  for (const p of pages) hash.update(`\u0000${p.fileId}\u0000${p.page}\u0000${p.text}`);
+  return hash.digest('hex').slice(0, 16);
 }
 
 /** Used by the help context: the label a lecture page's citation chip shows. */

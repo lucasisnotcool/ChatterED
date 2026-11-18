@@ -33,6 +33,8 @@ import { initLogger } from '../log.js';
 import { replyInPart, tutorialPartStates } from './reply.js';
 import { tutorialFocus, tutorialFocusText } from './focus.js';
 import { ingestTutorial, MESSAGES, rewriteKeys, TUTORIAL_MAX_TOKENS, tutorialInFlight } from './ingest.js';
+import { CREDIT_USED_UP_MESSAGE } from '../../shared/study.js';
+import { REFUSAL_MESSAGE } from '../../room/llm/anthropic.js';
 import { tutorialRepo } from './repo.js';
 import { tutorialGaps } from './view.js';
 
@@ -241,18 +243,20 @@ describe('reading a tutorial (scripted)', () => {
 });
 
 /**
- * **A live read, a long sheet** (field study, 2026-11-18). The sheet is made eight pages long by
- * a host that says so, and the client answers in the shapes the API path gives: an answer that
- * ran out of tokens comes back `truncated` with a fragment the old unwrapping took for a sheet.
+ * **A live read, a long sheet** (field study and its red team, 2026-11-18). The sheet is made
+ * eight pages long (or as long as a case needs) by a host that says so, and the client answers in
+ * the shapes the API path gives: an answer that ran out of tokens comes back `truncated` with a
+ * fragment the old unwrapping took for a sheet, a 529 is an error with `status`, and so on.
  */
 describe('reading a tutorial (live, long or cut off)', () => {
-  const PAGES = 8;
+  let PAGES = 8;
   let base = 0;
   let requests: LlmRequest[];
+  let pageText: (k: number) => string;
 
-  /** The host, with the tutorial eight pages of text long. */
+  /** The host, with the tutorial `PAGES` pages of text long. */
   function longSheet(): void {
-    const host = deps.notebooks;
+    const host = createNotebookHost(db, { absPath: (rel) => service.absPath(rel) });
     base = service.get(notebookId)!.sources[1]!.pageBase;
     const stretch = (subject: ReturnType<typeof host.subject>) =>
       subject && {
@@ -264,8 +268,7 @@ describe('reading a tutorial (live, long or cut off)', () => {
       get(target, key) {
         if (key === 'subject') return (id: string) => stretch(target.subject(id));
         if (key === 'textFor')
-          return (q: { notebookId: string; pageFrom: number; pageTo: number }) =>
-            q.pageFrom > base ? `Question ${q.pageFrom - base}. Write a function for case ${q.pageFrom - base}.` : target.textFor(q);
+          return (q: { notebookId: string; pageFrom: number; pageTo: number }) => (q.pageFrom > base ? pageText(q.pageFrom - base) : target.textFor(q));
         const v = Reflect.get(target, key) as unknown;
         return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
       },
@@ -280,55 +283,74 @@ describe('reading a tutorial (live, long or cut off)', () => {
     backend: 'anthropic' as const,
     ...extra,
   });
+  /** The logged failure: 18,000 output tokens, a 77-character fragment. */
+  const cutOff = () =>
+    reply('{"type":"heading","page":1,"text":"Expressions and function calls","level":2}', { truncated: true, usage: { ...EMPTY_USAGE, output_tokens: 18_000 } });
 
-  /** The answer for the pages a request owns, one part per page, plus a copy of its look-ahead page. */
-  function sheetFor(request: LlmRequest): string {
-    const content = request.messages[0]!.content;
-    const m = /THIS CALL READS PAGES? (\d+)(?:–(\d+))? ONLY/.exec(content);
-    const from = m ? Number(m[1]) : 1;
-    const to = m ? Number(m[2] ?? m[1]) : PAGES;
+  /** The pages a read request owns, or null for any other call. */
+  function pagesOf(request: LlmRequest): { from: number; to: number } | null {
+    if (request.max_tokens !== TUTORIAL_MAX_TOKENS) return null;
+    const m = /THIS CALL READS PAGES? (\d+)(?:–(\d+))? ONLY/.exec(request.messages[0]!.content);
+    return m ? { from: Number(m[1]), to: Number(m[2] ?? m[1]) } : { from: 1, to: PAGES };
+  }
+  const reads = () => requests.filter((r) => pagesOf(r) !== null).map((r) => `${pagesOf(r)!.from}-${pagesOf(r)!.to}`);
+
+  /** One part per owned page, plus a copy of the look-ahead page's, as a careless model gives. */
+  function sheetFor(request: LlmRequest, per: (k: number) => Record<string, unknown>[] = (k) => [partBlock(k)], careless = true): string {
+    const { from, to } = pagesOf(request)!;
+    const shown = /is shown only so you can finish/.test(request.messages[0]!.content);
     const pages = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-    const ahead = to < PAGES && m ? [to + 1] : [];
-    const blocks = [...pages, ...ahead].map((k) => ({
-      type: 'part', id: `Q${k}`, label: `Question ${k}`, page: k, prompt: [{ type: 'paragraph', page: k, text: `Write a function for case ${k}.` }], answer: { kind: 'code' },
-    }));
-    const parts = [...pages, ...ahead].map((k) => ({
-      partId: `Q${k}`, answer: `code ${k}`, blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], formalCheck: null, notesBlockIds: [], pages: [], objectiveIds: [],
-    }));
+    const ahead = careless && shown ? [to + 1] : [];
+    const blocks = [...pages, ...ahead].flatMap(per);
+    const parts = blocks.filter((b) => b.type === 'part').map((b) => keyFor(b.id as string));
     return JSON.stringify({ title: 'Finals Practice', blocks, parts });
+  }
+  const partBlock = (k: number, id = `P${k}`) => ({
+    type: 'part', id, label: `Question ${k}`, page: k, prompt: [{ type: 'paragraph', page: k, text: pageText(k) }], answer: { kind: 'code' },
+  });
+  const keyFor = (partId: string) => ({
+    partId, answer: `code for ${partId}`, blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], formalCheck: null, notesBlockIds: [], pages: [], objectiveIds: [],
+  });
+  /** A client: `read` answers a read call (default: the careless one-part-per-page model). */
+  function client(read: (request: LlmRequest, n: number) => ReturnType<typeof reply> | Promise<ReturnType<typeof reply>> = (r) => reply(sheetFor(r))): LLMClient {
+    let n = 0;
+    return {
+      kind: 'anthropic',
+      async complete(request) {
+        requests.push(request);
+        if (pagesOf(request)) return read(request, n++);
+        if (request.system[0]!.text.startsWith('You solve')) return reply(JSON.stringify({ answers: [] }));
+        return reply(JSON.stringify({ parts: [] }));
+      },
+    };
   }
 
   beforeEach(() => {
+    PAGES = 8;
     requests = [];
+    pageText = (k) => `Question ${k}. Write a function for case ${k}, and say what it returns for an empty array.`;
+    deps.backoffMs = [0, 0];
     longSheet();
   });
 
   it('reads a long sheet a few pages at a time, halving the window that ran out, into one sheet', async () => {
-    llm = {
-      kind: 'anthropic',
-      async complete(request) {
-        requests.push(request);
-        if (request.system[0]!.text.startsWith('You solve')) return reply(JSON.stringify({ answers: [] }));
-        const m = /THIS CALL READS PAGES? (\d+)(?:–(\d+))? ONLY/.exec(request.messages[0]!.content);
-        // Five pages do not fit; the halves do.
-        if (m && Number(m[2] ?? m[1]) - Number(m[1]) >= 4) {
-          return reply('{"type":"heading","page":1,"text":"Expressions and function calls"}', { truncated: true, usage: { ...EMPTY_USAGE, output_tokens: 18_000 } });
-        }
-        return reply(sheetFor(request));
-      },
-    };
+    llm = client((request) => {
+      const { from, to } = pagesOf(request)!;
+      // Five pages do not fit; the halves do.
+      return to - from >= 4 ? cutOff() : reply(sheetFor(request));
+    });
     await ingested();
     const [view] = listViews(deps, notebookId);
     expect(view!.status).toBe('ready');
-    expect(view!.parts.map((p) => p.partId)).toEqual(['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8']);
-    const reads = requests.filter((r) => r.jsonSchema && /THIS CALL READS/.test(r.messages[0]!.content));
-    expect(reads.map((r) => /READS (PAGES? [\d–]+)/.exec(r.messages[0]!.content)![1])).toEqual([
-      'PAGES 1–5', 'PAGES 6–8', 'PAGES 1–3', 'PAGES 4–5',
-    ]);
-    // Each window's context is the same cached system block; its own pages are in the message.
-    expect(reads[1]!.system[1]!.cache_control).toEqual({ type: 'ephemeral' });
-    expect(reads[1]!.messages[0]!.content).toContain('[sheet p. 6]');
-    expect(reads[1]!.messages[0]!.content).not.toContain('[sheet p. 5]');
+    expect(view!.parts.map((p) => p.partId)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']);
+    expect(reads()).toEqual(['1-5', '6-8', '1-3', '4-5']);
+    const windowed = requests.filter((r) => pagesOf(r));
+    // Each window's context is the same cached system block; its own pages are in the message,
+    // with the whole page before as context.
+    expect(windowed[1]!.system[1]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(windowed[1]!.messages[0]!.content).toContain('[sheet p. 6]');
+    expect(windowed[1]!.messages[0]!.content).not.toContain('[sheet p. 5]');
+    expect(windowed[1]!.messages[0]!.content).toContain(`PAGE 5 (context only; already read):\n${pageText(5)}`);
     // The progress moved while it read, and the record says three windows at the end.
     expect(pushed.some((c) => c.view?.status === 'pending' && c.view.progress && c.view.progress.total > 1)).toBe(true);
     const record = tutorialRecord(deps, notebookId, tutorialId)!;
@@ -336,43 +358,201 @@ describe('reading a tutorial (live, long or cut off)', () => {
     expect(view!.progress).toBeNull();
   });
 
-  it('says a single page ran out of tokens, and never that the sheet has no questions', async () => {
-    // The logged failure: 18,000 output tokens, a 77-character fragment, on every read.
-    llm = {
-      kind: 'anthropic',
-      async complete(request) {
-        requests.push(request);
-        return reply('{"type":"heading","page":1,"text":"Expressions and function calls"}', { truncated: true, usage: { ...EMPTY_USAGE, output_tokens: 18_000 } });
-      },
-    };
+  it('lands the rest of the sheet when one page never fits, and says so where that page was', async () => {
+    llm = client((request) => {
+      const { from, to } = pagesOf(request)!;
+      return from <= 3 && 3 <= to ? cutOff() : reply(sheetFor(request, undefined, false));
+    });
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('ready');
+    expect(view!.parts.map((p) => p.partId)).toEqual(['P1', 'P2', 'P4', 'P5', 'P6', 'P7', 'P8']);
+    // Page 3 cost three cut-off answers (1–5, 1–3, 3), no more.
+    expect(reads().filter((r) => { const [a, b] = r.split('-').map(Number); return a! <= 3 && 3 <= b!; })).toEqual(['1-5', '1-3', '3-3']);
+    const text = JSON.stringify(savedDoc().doc.toJSON());
+    expect(text).toContain('Max could not read page 3 of this sheet');
+    expect(text).not.toMatch(/split the PDF/i);
+  });
+
+  it('says what happened when no page fits, and never that the sheet has no questions', async () => {
+    PAGES = 2;
+    longSheet();
+    llm = client(() => cutOff());
     await ingested();
     const [view] = listViews(deps, notebookId);
     expect(view!.status).toBe('failed');
     expect(view!.error).not.toBe(MESSAGES.noParts);
-    expect(view!.error).toMatch(/^Couldn't read this sheet: page \d holds more than Max can write out in one go/);
-    // Halved down to one page, then it says so; the same window is never asked twice.
-    const asked = requests.map((r) => /READS (PAGES? [\d–]+)/.exec(r.messages[0]!.content)![1]!);
-    expect(asked.slice(0, 2)).toEqual(['PAGES 1–5', 'PAGES 6–8']);
-    expect(asked.some((a) => /^PAGE \d$/.test(a))).toBe(true);
-    expect(new Set(asked).size).toBe(asked.length);
+    expect(view!.error).toMatch(/^Couldn't read this sheet\. Max could not read page 1 of this sheet: it holds more than one answer can carry/);
+    expect(view!.error).not.toMatch(/split the PDF/i);
+    // The whole sheet, then each page: three answers, no repeat.
+    expect(reads()).toEqual(['1-2', '1-1', '2-2']);
+  });
+
+  it('keeps the windows read when the transport fails, says so plainly, and a Retry pays only for the rest', async () => {
+    const overloaded = Object.assign(new Error('529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'), { status: 529 });
+    llm = client((request) => {
+      if (pagesOf(request)!.from === 6) throw overloaded;
+      return reply(sheetFor(request));
+    });
+    await ingested();
+    let [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('failed');
+    expect(view!.error).toBe("Couldn't finish reading this sheet: Claude is overloaded right now. Retry in a minute; the pages already read are kept.");
+    // 1–5 once; 6–8 three times by the read's backoff, each asked twice by the call's own retry.
+    expect(reads().filter((r) => r === '1-5')).toHaveLength(1);
+    expect(reads().filter((r) => r === '6-8')).toHaveLength(6);
+
+    requests = [];
+    llm = client();
+    await ingested(true);
+    [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('ready');
+    expect(reads()).toEqual(['6-8']);
+    expect(view!.parts).toHaveLength(8);
+  });
+
+  it('resumes a read the app quit in the middle of', async () => {
+    llm = client((request) => {
+      // The quit: the second window never answers, and nothing after it runs.
+      if (pagesOf(request)!.from === 6) throw Object.assign(new Error('The Claude CLI exited 1: You have hit your limit'), { name: 'CliLimitError' });
+      return reply(sheetFor(request));
+    });
+    await ingested();
+    // On relaunch the row is `pending` with nothing running: the next open reads it again.
+    notesRepo(db).setIngest(tutorialRecord(deps, notebookId, tutorialId)!.id, { status: 'pending', error: null }, '2026-10-03T02:00:00.000Z');
+    requests = [];
+    llm = client();
+    await ingested();
+    expect(listViews(deps, notebookId)[0]!.status).toBe('ready');
+    expect(reads()).toEqual(['6-8']);
+    // Landed: a later Read again is a fresh read.
+    requests = [];
+    await ingested(true);
+    expect(reads()).toEqual(['1-5', '6-8']);
+  });
+
+  it('waits out a 429 and goes on', async () => {
+    llm = client((request, n) => {
+      if (n === 0) throw Object.assign(new Error('429 rate_limit_error'), { status: 429 });
+      return reply(sheetFor(request));
+    });
+    await ingested();
+    expect(listViews(deps, notebookId)[0]!.status).toBe('ready');
+    expect(reads().sort()).toEqual(['1-5', '1-5', '6-8']);
+  });
+
+  it('says the credit is used up as the credit says it, and does not ask again', async () => {
+    llm = client(() => {
+      throw Object.assign(new Error(CREDIT_USED_UP_MESSAGE), { name: 'StudyCreditUsedUpError' });
+    });
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.error).toBe(CREDIT_USED_UP_MESSAGE);
+    // Each window in flight asked once; none asked again.
+    expect(reads().sort()).toEqual(['1-5', '6-8']);
+  });
+
+  it('makes a page Claude declines a notice, without "ask a different way"', async () => {
+    llm = client((request) => {
+      if (pagesOf(request)!.from === 6) throw new Error(REFUSAL_MESSAGE);
+      return reply(sheetFor(request, undefined, false));
+    });
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('ready');
+    expect(view!.parts.map((p) => p.partId)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5']);
+    const text = JSON.stringify(savedDoc().doc.toJSON());
+    expect(text).toContain('Max could not read pages 6–8 of this sheet: Claude declined to work on them.');
+    expect(text).not.toContain('different way');
+    expect(reads()).toEqual(['1-5', '6-8']);
+  });
+
+  it('asks again, once, for a window that came back empty though its pages have words', async () => {
+    llm = client((request, n) => {
+      if (pagesOf(request)!.from === 6 && !/copied nothing/.test(request.messages[0]!.content)) {
+        return reply(JSON.stringify({ title: 'Finals Practice', blocks: [], parts: [] }));
+      }
+      void n;
+      return reply(sheetFor(request));
+    });
+    await ingested();
+    expect(reads()).toEqual(['1-5', '6-8', '6-8']);
+    expect(listViews(deps, notebookId)[0]!.parts).toHaveLength(8);
+  });
+
+  it('gives a part whose stem is on the page before that stem, to read and to re-solve', async () => {
+    pageText = (k) => (k === 5 ? 'Problem 5. long moo(long a[], long n) { while (i < n) { a[i] += a[i-1]; } }' : k === 6 ? '(b) What is a[2] after moo returns?' : `Question ${k}. Write a function.`);
+    llm = client((request) =>
+      reply(
+        sheetFor(request, (k) =>
+          k === 5
+            ? [{ type: 'heading', page: 5, level: 2, text: 'Problem 5' }, { type: 'code', page: 5, text: 'long moo(long a[], long n) { while (i < n) { a[i] += a[i-1]; } }' }, partBlock(5, 'P5a')]
+            : k === 6
+              ? [partBlock(6, 'P5b')]
+              : [partBlock(k)],
+        ),
+      ),
+    );
+    await ingested();
+    const second = requests.find((r) => pagesOf(r)?.from === 6)!;
+    expect(second.messages[0]!.content).toContain('long moo(long a[], long n)');
+    const resolve = requests.find((r) => r.system[0]!.text.startsWith('You solve') && r.messages[0]!.content.includes('PART P5b'))!;
+    const p5b = resolve.messages[0]!.content.split('PART P5b')[1]!;
+    expect(p5b).toContain('THE PROBLEM, as the sheet sets it out before this part');
+    expect(p5b).toContain('long moo(long a[], long n)');
+  });
+
+  it('reads a file past the page limit to the limit, and says so at the end of the sheet', async () => {
+    PAGES = 70;
+    longSheet();
+    llm = client();
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('ready');
+    expect(view!.parts).toHaveLength(60);
+    expect(Math.max(...reads().map((r) => Number(r.split('-')[1])))).toBe(60);
+    expect(JSON.stringify(savedDoc().doc.toJSON())).toContain('This file has 70 pages; Max read the first 60.');
+  });
+
+  it('carries a learner\'s answers through a re-read in windows of a sheet read before windows', async () => {
+    // Read once, as before this change (the scripted reader, P-style ids), and answered.
+    const short = deps.notebooks;
+    deps.notebooks = createNotebookHost(db, { absPath: (rel) => service.absPath(rel) });
+    llm = null;
+    await ingested();
+    answer('P2', (p) => slot(p, para('Fewer constraints, so never harder.')));
+    deps.notebooks = short;
+    llm = client();
+    await ingested(true);
+    const { doc } = savedDoc();
+    expect(partAnswers(doc).find((a) => a.partId === 'P2')!.text).toBe('Fewer constraints, so never harder.');
+  });
+
+  it('sends an image tutorial its image, not "no images attached"', async () => {
+    const png = join(tmp, 'Desktop', 'Question.png');
+    writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    await service.addSources(notebookId, [png]);
+    await service.whenIdle();
+    const image = service.get(notebookId)!.sources.find((s) => s.name === 'Question.png')!;
+    service.setRole({ notebookId, fileId: image.fileId, role: 'tutorial' });
+    deps.notebooks = createNotebookHost(db, { absPath: (rel) => service.absPath(rel) });
+    llm = client(() => reply(JSON.stringify({ title: 'Q', blocks: [partBlock(1)], parts: [keyFor('P1')] })));
+    ingestTutorial(deps, { notebookId, fileId: image.fileId });
+    await tutorialInFlight(tutorialContentKey(notebookId, image.fileId));
+    const read = requests.find((r) => pagesOf(r))!;
+    expect(read.images).toHaveLength(1);
+    expect(read.images![0]!.path.startsWith(join(tmp, 'userData', 'notes-pages'))).toBe(true);
+    expect(read.messages[0]!.content).toContain('Page images are attached for sheet pages 1');
   });
 
   it('reads a short sheet in the one call it always made', async () => {
-    const host = createNotebookHost(db, { absPath: (rel) => service.absPath(rel) });
-    deps.notebooks = host;
-    llm = {
-      kind: 'anthropic',
-      async complete(request) {
-        requests.push(request);
-        if (request.system[0]!.text.startsWith('You solve')) return reply(JSON.stringify({ answers: [] }));
-        return reply(sheetFor(request));
-      },
-    };
+    deps.notebooks = createNotebookHost(db, { absPath: (rel) => service.absPath(rel) });
+    llm = client();
     await ingested();
-    const reads = requests.filter((r) => r.max_tokens === TUTORIAL_MAX_TOKENS);
-    expect(reads).toHaveLength(1);
-    expect(reads[0]!.system).toHaveLength(1);
-    expect(reads[0]!.messages[0]!.content).toMatch(/^TUTORIAL SHEET: Tutorial 9\.md \(1 page\)\. Its pages are numbered 1\.\.1 below/);
+    const one = requests.filter((r) => r.max_tokens === TUTORIAL_MAX_TOKENS);
+    expect(one).toHaveLength(1);
+    expect(one[0]!.system).toHaveLength(1);
+    expect(one[0]!.messages[0]!.content).toMatch(/^TUTORIAL SHEET: Tutorial 9\.md \(1 page\)\. Its pages are numbered 1\.\.1 below/);
     expect(listViews(deps, notebookId)[0]!.status).toBe('ready');
   });
 });
@@ -655,6 +835,49 @@ describe('official solutions', () => {
     expect(solved).toBe(sizes[0]);
     // Every part but the choice (which needs a ticked answer, not a quote) got the official key.
     expect(rewritten).toBe(sizes[0]! - 1);
+  });
+
+  it('asks an answer sheet about a part once, keeps what it verified, and settles (no call on the next open)', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'Problem 2: relaxation ignores delete lists entirely, so it is never harder.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    let calls = 0;
+    const solving = (fail: boolean): LLMClient => ({ kind: 'anthropic', async complete(request) {
+      calls += 1;
+      if (fail) throw Object.assign(new Error('network: socket hang up'), { code: 'ECONNRESET' });
+      const ids = [...request.messages[0]!.content.matchAll(/^PART (\S+) \(/gm)].map((m) => m[1]!);
+      // Only P2 is answered on the sheet; the others come back with no quote, so stay unverified.
+      const keys = ids.map((partId) => partId === 'P2'
+        ? { partId, answer: 'Relaxation ignores delete lists', blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], sourcePage: 1, sourceQuote: 'relaxation ignores delete lists entirely' }
+        : { partId, answer: 'a guess', blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], sourcePage: 1, sourceQuote: '' });
+      return { text: JSON.stringify({ parts: keys }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } });
+    llm = solving(false);
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(1);
+    const first = calls;
+    expect(first).toBeGreaterThan(0);
+    const verified = () => listViews(deps, notebookId)[0]!.parts.filter((p) => p.verifiedSolution).map((p) => p.partId);
+    expect(verified()).toEqual(['P2']);
+    // The next opens: nothing to ask, so no call, and P2 stays verified.
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(0);
+    expect(await rewriteKeys(deps, notebookId, tutorialId)).toBe(0);
+    expect(calls).toBe(first);
+    expect(verified()).toEqual(['P2']);
+
+    // A changed answer sheet is asked again; a run that fails takes back nothing it verified.
+    const more = join(tmp, 'Desktop', 'Tutorial 9 Solutions (part 2).md');
+    writeFileSync(more, 'Problem 3: the answers to the third problem.');
+    await service.addSources(notebookId, [more]);
+    await service.whenIdle();
+    llm = solving(true);
+    const record = tutorialRecord(deps, notebookId, tutorialId)!;
+    const before = tutorialRepo(db).part(record.id, 'P2')!.key;
+    const asked = calls;
+    await rewriteKeys(deps, notebookId, tutorialId);
+    expect(calls).toBeGreaterThan(asked);
+    expect(tutorialRepo(db).part(record.id, 'P2')!.key).toEqual(before);
   });
 
   it('checks against the worked answer when a linked partial solutions file has no answer for this part', async () => {

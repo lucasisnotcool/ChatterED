@@ -14,6 +14,7 @@ import { locatePage, notebookContentKey, type NotebookSourceView } from '../../s
 import { tutorialContentKey, type TutorialChange, type TutorialView } from '../../shared/tutorial.js';
 import { notesRepo, type NotesDocRecord } from '../db/repos/notes.js';
 import { log } from '../log.js';
+import { REFUSAL_MESSAGE } from '../../room/llm/anthropic.js';
 import { WINDOW_ERROR_RETRIES, WINDOW_PREEMPT_RETRIES, WINDOW_REQUEUE_MS } from '../notes/ingest.js';
 import { tutorialRepo } from './repo.js';
 import { parsedDoc, tutorialView } from './view.js';
@@ -84,6 +85,8 @@ export interface TutorialDeps {
   now?(): string;
   /** Tests: the wait before a pre-empted call asks for the lane again. */
   requeueMs?: number;
+  /** Tests: the waits before a window asks again after a transport failure (`ingest.ts`). */
+  backoffMs?: readonly number[];
 }
 
 export function nowOf(deps: Pick<TutorialDeps, 'now'>): string {
@@ -191,7 +194,8 @@ export async function callJson(deps: TutorialDeps, llm: LLMClient, request: LlmR
         await new Promise((r) => setTimeout(r, deps.requeueMs ?? WINDOW_REQUEUE_MS));
         continue;
       }
-      if (error.name === 'LlmAbortedError') throw error;
+      // Nothing to gain from asking again: Stop, a spent credit, a refusal.
+      if (error.name === 'LlmAbortedError' || error.name === 'StudyCreditUsedUpError' || error.message === REFUSAL_MESSAGE) throw error;
       errors += 1;
       if (errors > WINDOW_ERROR_RETRIES) throw error;
       log().warn('tutorial.call.retry', { call: label, cause: error.message.slice(0, 200) });

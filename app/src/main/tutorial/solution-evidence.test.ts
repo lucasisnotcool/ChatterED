@@ -27,6 +27,32 @@ describe('official choice evidence', () => {
   });
 });
 
+describe('an answer sheet numbered "12." whose answers open with the option (CS1010 practice, 2026-11-18)', () => {
+  const abcde = [...'ABCDE', 'X'].map((id) => ({ id, text: `${id === 'X' ? 'None of the above' : `0.${id.charCodeAt(0)}`}` }));
+  const sheet = [
+    'Finals Practice SOLUTIONS', '', 'Loops', '', '1.', 'AY2018/19 Semester 1 Midterm, original Q3', '',
+    '  A. Each division is integer division and yields zero.', '', '', '2.', 'AY2020/21 Midterm, original Q1', '',
+    '  20503. x=5 and y=200; g(x+y)=20500, then f adds 3.', '', '3.', 'original Q5', '',
+    '  A and D. A states when the fee is charged; D the conditions under which it is free.', '', '4.', '',
+    '  The output is', '  3.', '  then 4.',
+  ].join('\n');
+
+  it('reads the option that leads the answer, for the right question', () => {
+    expect(choiceEvidenceFromText(page(sheet), 'P1', 'Question 1', abcde)?.correct).toEqual(['A']);
+    expect(choiceEvidenceFromText(page(sheet), 'P3', 'Question 3', abcde)?.correct).toEqual(['A', 'D']);
+  });
+
+  it('finds nothing for a question whose answer is not an option, or that is not there', () => {
+    expect(choiceEvidenceFromText(page(sheet), 'P2', 'Question 2', abcde)).toBeNull();
+    expect(choiceEvidenceFromText(page(sheet), 'P9', 'Question 9', abcde)).toBeNull();
+  });
+
+  it('does not take a reprint of the options for an answer', () => {
+    const reprint = ['1.', '  A. 0.65', '  B. 0.66', '  C. 0.67'].join('\n');
+    expect(choiceEvidenceFromText(page(reprint), 'P1', 'Question 1', abcde)).toBeNull();
+  });
+});
+
 describe('text evidence for non-choice answers', () => {
   it('requires the quote to support the answer itself', () => {
     expect(quoteSupportsAnswer('The query selects riders with no low ranking result.', 'Select riders with no low ranking result')).toBe(true);
