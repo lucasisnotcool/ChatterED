@@ -154,6 +154,16 @@ two weeks stays well inside it.
 >    and press **Open the tutorial**. Max reads the sheet (a minute or two), then every part has
 >    an answer slot: write your attempt there, and use Hint or Check beside it.
 > 6. At the end of the study, choose **File ▸ Export Research Data…** and email us the zip.
+> 7. **If something goes wrong**, press **⇧⌘D** (Shift-Command-D) in ChatterED, or choose
+>    **Help ▸ Copy Debug Info for the Team**. A short report appears and is already copied: paste
+>    it into your Telegram chat with us. It holds no API key, study code, names, file names or
+>    anything you wrote, and you can read all of it before you send it.
+
+**Reading a pasted report** (you): copy the participant's message, then `cd app && pbpaste | npm
+run -s debug:read` (add `--published <build>` to compare with the newest build). It checks the
+paste is whole (`sum:` line), summarises the install (its install id, build, where it runs from,
+admin and write access, disk, study credit, database, updater state, the last errors) and lists
+what to do, with the command to roll a build out to that install. Code: `src/main/debug/`.
 
 ## 7. End of the study
 
