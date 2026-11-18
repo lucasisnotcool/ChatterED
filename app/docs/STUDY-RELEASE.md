@@ -155,14 +155,15 @@ updater; after this one, updates arrive by themselves.
 
 > 1. If ChatterED is open, quit it (**ChatterED ▸ Quit**, or ⌘Q). It needs an Apple Silicon Mac
 >    (M1 or later) on macOS 13 or newer.
-> 2. Download `ChatterED-Study-….dmg` and open it. In its window, **double-click ChatterED**.
-> 3. macOS says it cannot verify the developer. Click **Done** (not Move to Trash). Open
->    **System Settings ▸ Privacy & Security**, scroll down, and click **Open Anyway** next to
->    "ChatterED was blocked". Confirm with your password. You do this once.
-> 4. ChatterED asks **"Install ChatterED into Applications?"**. Click **Install**. It replaces the
->    older copy, reopens from Applications and ejects the disk image. Your notes, progress and
->    study credit are kept. (If it says it could not install itself, follow the steps it shows:
->    drag ChatterED onto Applications, choose Replace, and open it from Applications.)
+> 2. Download `ChatterED-Study-….dmg` and open it. **Drag ChatterED onto Applications** and choose
+>    **Replace**. Your notes, progress and study credit are kept: they live outside the app.
+> 3. Open ChatterED from **Applications**. macOS says it cannot verify the developer. Click
+>    **Done** (not Move to Trash). Open **System Settings ▸ Privacy & Security**, scroll down, and
+>    click **Open Anyway** next to "ChatterED was blocked". Confirm with your password. You do
+>    this once.
+> 4. (If you double-clicked ChatterED inside the disk image instead, it asks **"Install ChatterED
+>    into Applications?"**. Click **Install**: it replaces the older copy, reopens from
+>    Applications and ejects the disk image. If it says it could not install itself, do step 2.)
 > 5. From now on ChatterED updates itself: it downloads a new build in the background and switches
 >    to it the next time you open it, or while your Mac is locked or idle. A small note says
 >    "Updated to build N". You do not need to do anything.
@@ -170,8 +171,8 @@ updater; after this one, updates arrive by themselves.
 >    always at the top right. (A shared DMG asks for your study code here: `S..-....-....-....`.)
 >    When it runs out, you can keep going with Claude Code or your own API key in Settings.
 > 7. Drop in this week's tutorial sheet, and the lecture slides it goes with if you have them,
->    and press **Open the tutorial**. Max reads the sheet (a minute or two), then every part has
->    an answer slot: write your attempt there, and use Hint or Check beside it.
+>    and press **Open the tutorial**. Max reads the sheet (about a minute per five pages; past
+>    papers and long sheets work too, up to 60 pages), then every part has an answer slot: write your attempt there, and use Hint or Check beside it.
 > 8. At the end of the study, choose **File ▸ Export Research Data…** and email us the zip.
 > 9. **If something goes wrong**, press **⇧⌘D** (Shift-Command-D) in ChatterED, or choose
 >    **Help ▸ Copy Debug Info for the Team**. A short report appears and is already copied: paste
