@@ -300,6 +300,8 @@ export interface DiagnoseContext {
    * the release tool has no per-install targeting. Read from `tools/release*.sh` by the CLI.
    */
   targetUsage?: string | null;
+  /** The release tool's per-install rollback (`… --rollback-to <N-1> --target <id> …`), or null. */
+  rollbackUsage?: string | null;
   /** The release tool's general publish usage line. */
   publishUsage?: string | null;
   /**
@@ -399,14 +401,14 @@ export function diagnose(r: ParsedReport, ctx: DiagnoseContext = {}): Finding[] 
 
   const boot = get(r, 'boot', 'failed');
   if (boot) {
-    const rb = ctx.targetUsage && id ? ctx.targetUsage.replace(/<(install-?id|id)>/gi, id) : null;
+    const rb = ctx.rollbackUsage && id ? ctx.rollbackUsage.replace(/<(install-?id|id)>/gi, id) : null;
     f.push({
       severity: 'act',
       title: 'ChatterED cannot start',
       detail: `boot failed: ${boot}`,
       action:
         'If this started after an update, roll this install back to the build before it; otherwise fix and push a new build. Nothing has been deleted.',
-      ...(rb ? { command: `${rb.replace(/--target/, '--rollback-to <N-1> --target')}` } : {}),
+      ...(rb ? { command: rb } : {}),
     });
   }
 

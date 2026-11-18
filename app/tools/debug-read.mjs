@@ -19,7 +19,7 @@
  * explicit `--manifest https://…`.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,42 +83,30 @@ async function publishedBuild(o) {
 }
 
 /**
- * The release tool's own usage lines, so the commands printed are the ones that exist today: a
- * line naming `--target` (per-install rollout, from the updater work) and one naming `--publish`.
+ * The release tool's commands, as they exist in this checkout. With the updater's flags
+ * (`--update`, `--publish-update`, `--target <install id>`, `--rollback-to N`) a rollout and a
+ * rollback can go to this one install; without them, only a general publish, or a targeted
+ * manifest written by hand with `tools/update-tool.mjs`.
  */
 function releaseUsage() {
-  const tools = join(appDir, 'tools');
-  const scripts = readdirSync(tools).filter((f) => /^release.*\.sh$/.test(f));
-  let target = null;
-  let publish = null;
-  for (const f of scripts) {
-    const lines = readFileSync(join(tools, f), 'utf8').split('\n');
-    const supportsTarget = lines.some((l) => /^\s*--target\)/.test(l) || /\s--target\)\s/.test(l));
-    for (const l of lines) {
-      if (!l.startsWith('#')) continue;
-      const m = /(tools\/release[\w-]*\.sh\s[^#]*?)(?:\s{2,}|$)/.exec(l.replace(/^#\s*/, ''));
-      if (!m) continue;
-      const cmd = m[1].trim();
-      const t = /\[?--target[\s=]+(?:<[^>]+>|[A-Z][A-Z_-]*)\]?/;
-      if (supportsTarget && !target && t.test(cmd)) target = cmd.replace(t, '--target <id>').replace(/\s+\[[^\]]*\]/g, '');
-      if (!publish && /--publish[\w-]*\s/.test(cmd)) publish = cmd;
+  const read = (f) => {
+    try {
+      return readFileSync(join(appDir, 'tools', f), 'utf8');
+    } catch {
+      return '';
     }
-  }
-  // While release.sh has no --target, the manifest tool's per-install entry is the way to one Mac.
-  let manifestTarget = null;
-  try {
-    const ut = readFileSync(join(tools, 'update-tool.mjs'), 'utf8');
-    if (/--target ID=ENTRY/.test(ut)) {
-      manifestTarget =
-        'cd app && node tools/update-tool.mjs manifest --app-id sg.nus.chattered --channel study --base <published-manifest.json> --out study-manifest-v1.json --target <id>=<entry.json>';
-    }
-  } catch {
-    /* no update tool in this checkout */
-  }
+  };
+  const release = read('release.sh');
+  const flag = (name) => new RegExp(`^\\s*${name}\\)`, 'm').test(release);
+  const updates = flag('--update') && flag('--publish-update');
+  const target = updates && flag('--target');
   return {
-    targetUsage: target ? `cd app && ${target}` : null,
-    publishUsage: publish ? `cd app && ${publish}` : null,
-    manifestTargetUsage: manifestTarget,
+    targetUsage: target ? 'cd app && tools/release.sh --update --publish-update --target <id>' : null,
+    rollbackUsage: target && flag('--rollback-to') ? 'cd app && tools/release.sh --rollback-to <N-1> --target <id> --publish-update' : null,
+    publishUsage: updates ? 'cd app && tools/release.sh --update --publish-update' : 'cd app && tools/release.sh --publish v<version>',
+    manifestTargetUsage: /--target ID=ENTRY/.test(read('update-tool.mjs'))
+      ? 'cd app && node tools/update-tool.mjs manifest --app-id sg.nus.chattered --channel study --base <published-manifest.json> --out study-manifest-v1.json --target <id>=<entry.json>'
+      : null,
   };
 }
 

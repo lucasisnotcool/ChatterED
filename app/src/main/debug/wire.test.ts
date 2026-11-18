@@ -168,7 +168,11 @@ describe('parseReport', () => {
 });
 
 describe('diagnose', () => {
-  const ctx = { targetUsage: 'tools/release.sh --channel study --target <id>', publishUsage: 'tools/release.sh --publish v<version>' };
+  const ctx = {
+    targetUsage: 'tools/release.sh --channel study --target <id>',
+    rollbackUsage: 'tools/release.sh --rollback-to <N-1> --target <id> --publish-update',
+    publishUsage: 'tools/release.sh --publish v<version>',
+  };
 
   it('a healthy install on the newest build has nothing to act on', () => {
     expect(diagnose(parseReport(fixture()), { ...ctx, publishedBuild: 57 })).toEqual([]);
@@ -259,7 +263,7 @@ describe('diagnose', () => {
 
   it('a boot failure, with the rollback for this install', () => {
     const f = diagnose(parseReport(fixture({ boot: 'Error: test fault: a migration failed' })), ctx).find((x) => x.title === 'ChatterED cannot start');
-    expect(f?.command).toBe(`tools/release.sh --channel study --rollback-to <N-1> --target ${ID}`);
+    expect(f?.command).toBe(`tools/release.sh --rollback-to <N-1> --target ${ID} --publish-update`);
   });
 
   it('orders what to act on first', () => {
