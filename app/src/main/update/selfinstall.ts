@@ -31,7 +31,7 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { plistValue, UPDATES_DIR } from './engine.js';
-import { buildNumber, dmgVolumes, installSource, isAppMain, oldCopies, type LocationKind } from './plan.js';
+import { buildNumber, dmgVolumes, installSource, isAppMain, oldCopies, RELAUNCH_SCRIPT, type LocationKind } from './plan.js';
 
 const execFileP = promisify(execFile);
 
@@ -206,10 +206,7 @@ export async function maybeSelfInstall(c: SelfInstallCtx): Promise<'quitting' | 
   if (own.ok) {
     c.log('info', 'selfinstall.installed', { from: replaces, to: c.build, via: own.via });
     // Reopen from Applications once this process has exited (positional args: no interpolation).
-    spawn('/bin/sh', ['-c', 'while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; /usr/bin/open "$2"', 'sh', String(process.pid), destination], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
+    spawn('/bin/bash', ['-c', RELAUNCH_SCRIPT, 'relaunch', String(process.pid), '', destination], { detached: true, stdio: 'ignore' }).unref();
     app.quit();
     return 'quitting';
   }

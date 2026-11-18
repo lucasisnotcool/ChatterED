@@ -26,7 +26,7 @@ import { appendLog, plistValue, UpdateEngine, type EngineConfig } from './update
 import { debugReport, startupFailed } from './update/failure.js';
 import { trustedKeys, verifyManifest } from './update/manifest.js';
 import { ensureInstallId } from './update/installid.js';
-import { buildNumber, bundleOfExecutable, classifyLocation, IDLE_RELAUNCH_SECONDS, MAX_CRASHED_LAUNCHES, realTargetOf, updaterMode } from './update/plan.js';
+import { buildNumber, bundleOfExecutable, classifyLocation, IDLE_RELAUNCH_SECONDS, MAX_CRASHED_LAUNCHES, realTargetOf, RELAUNCH_SCRIPT, updaterMode } from './update/plan.js';
 import { faultActive, isBusy, runtime, setRuntime, type UpdateRuntime } from './update/runtime.js';
 import { finishSelfInstall, maybeSelfInstall } from './update/selfinstall.js';
 
@@ -288,14 +288,10 @@ function runRepair(appPid: number): void {
       } catch {
         /* already gone */
       }
-      setTimeout(() => {
-        try {
-          process.kill(appPid, 'SIGKILL');
-        } catch {
-          /* gone */
-        }
-        done(0);
-      }, 8000);
+      // This process runs from the bundle being swapped: it must be gone before the helper reopens
+      // it (`open` would only activate it). The SIGKILL fallback lives in its own detached shell.
+      spawn('/bin/sh', ['-c', 'sleep 8; kill -9 "$1" 2>/dev/null', 'sh', String(appPid)], { detached: true, stdio: 'ignore' }).unref();
+      done(0);
       return;
     }
     if (Date.now() + 60_000 > until || !appAlive()) {
@@ -335,10 +331,7 @@ async function start(): Promise<void> {
     // Renaming the bundle this process runs from crashes it on the way out (E2E: EXC_BREAKPOINT
     // and a "quit unexpectedly" dialog), so the move and the reopen happen once it has exited.
     log('warn', 'update.hidden_bundle', { target_exists: existsSync(realTarget) });
-    spawn('/bin/sh', ['-c', 'while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; [ -e "$3" ] || mv -- "$2" "$3"; /usr/bin/open -- "$3"', 'sh', String(process.pid), bundle, realTarget], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
+    spawn('/bin/bash', ['-c', RELAUNCH_SCRIPT, 'relaunch', String(process.pid), bundle, realTarget], { detached: true, stdio: 'ignore' }).unref();
     process.exit(0);
   }
 

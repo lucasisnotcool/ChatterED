@@ -121,9 +121,9 @@ async function waitFor(what, pred, ms) {
 }
 const mark = () => events().length;
 
-function launch() {
+function launch(over = {}) {
   const exe = join(INST, 'Contents', 'MacOS', NAME);
-  const c = spawn(exe, [`--user-data-dir=${UD}`], { env, stdio: 'ignore', detached: true });
+  const c = spawn(exe, [`--user-data-dir=${UD}`], { env: { ...env, ...over }, stdio: 'ignore', detached: true });
   children.push(c);
   return c;
 }
@@ -211,6 +211,14 @@ async function main() {
     `#!/bin/bash\n# The helper's relaunch, inside the gate's sandbox (the real /usr/bin/open would use the real home).\nfor last; do :; done\nHOME='${HOME}' CFFIXED_USER_HOME='${HOME}' PATH=/usr/bin:/bin:/usr/sbin:/sbin CHATTERED_TEST_FIRST_CHECK_MS=2000 CHATTERED_HELPER_OPEN='${join(TOOLS, 'open.sh')}' CHATTERED_HELPER_LSREGISTER=/usr/bin/true nohup "$last/Contents/MacOS/${NAME}" --user-data-dir='${UD}' >/dev/null 2>&1 &\n`,
   );
   chmodSync(join(TOOLS, 'open.sh'), 0o755);
+  // The same, through the real /usr/bin/open (LaunchServices: it only activates a copy that is
+  // still running), with the sandbox's environment and profile passed by --env and --args.
+  const real = join(TOOLS, 'open-real.sh');
+  writeFileSync(
+    real,
+    `#!/bin/bash\n# The helper's relaunch through the real open, inside the gate's sandbox.\nflags=(); target=""\nwhile [ $# -gt 0 ]; do case "$1" in --) shift; target="$1"; shift ;; *) flags+=("$1"); shift ;; esac; done\nexec /usr/bin/open \${flags[@]+"\${flags[@]}"} --env HOME='${HOME}' --env CFFIXED_USER_HOME='${HOME}' --env PATH=/usr/bin:/bin:/usr/sbin:/sbin --env CHATTERED_TEST_FIRST_CHECK_MS=2000 --env CHATTERED_HELPER_OPEN='${real}' --env CHATTERED_HELPER_LSREGISTER=/usr/bin/true "$target" --args --user-data-dir='${UD}'\n`,
+  );
+  chmodSync(real, 0o755);
 
   // 1. The candidate.
   let candidate = join(APP_DIR, 'out', 'mac-arm64', `${NAME}.app`);
@@ -313,11 +321,15 @@ async function main() {
   say(`serving N+4 = ${B + 4} (the fix) while N+3 = ${B + 3} (fails its migration) is staged`);
   await killRunning();
   n = mark();
-  launch();
+  // From here the helper reopens through the real /usr/bin/open (E2E: a repaired fix was swapped in
+  // but never reopened, because the repair process, running from the same bundle, was still up).
+  launch({ CHATTERED_HELPER_OPEN: join(TOOLS, 'open-real.sh') });
   await waitFor(`${B + 3} to fail to start`, (e, i) => i >= n && e.event === 'boot.failed' && e.build === B + 3, 60000);
   await waitFor('repair mode to start', (e, i) => i >= n && e.event === 'update.repair_started', 30000);
   const repairedAt = Date.now();
-  await waitFor(`${B + 4} to start, with nobody touching the dialog`, (e, i) => i >= n && e.event === 'app.start' && e.build === B + 4, 240000);
+  await waitFor(`${B + 4} to start through the real open, with nobody touching the dialog`, (e, i) => i >= n && e.event === 'app.start' && e.build === B + 4, 240000);
+  await sleep(3000);
+  if (spawnSync('/usr/bin/pgrep', ['-f', `${INST}/Contents/MacOS/${NAME}`]).status !== 0) fail(`${B + 4} started but is not running`);
   if (plist(INST, 'CFBundleVersion') !== String(B + 4)) fail('the installed bundle is not N+4 after repair');
   say(`repaired: ${B + 3} → ${B + 4} in ${Math.round((Date.now() - repairedAt) / 1000)}s, the failure dialog left alone`);
 

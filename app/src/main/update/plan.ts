@@ -161,6 +161,26 @@ export function isAppMain(command: string, productName: string): boolean {
   return after === '' || after.startsWith(' -');
 }
 
+/**
+ * **Reopen an app after this process exits**, for the one-off install and the hidden-bundle
+ * self-heal: `bash -c RELAUNCH_SCRIPT relaunch <pid> <move-from or ''> <bundle>`, every value an
+ * argv word. Waits for `pid` to exit; moves `move-from` to `bundle` if `bundle` is missing; waits
+ * (up to 15 s) until nothing runs from `bundle` or `move-from`; opens it; and if no main process
+ * of it appears within 10 s, opens it again with `open -n` (E2E: `open` only activates a copy
+ * that is still running, then nothing is open once that copy exits).
+ */
+export const RELAUNCH_SCRIPT = `pid="$1"; from="$2"; bundle="$3"
+while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
+if [ -n "$from" ] && [ ! -e "$bundle" ]; then mv -- "$from" "$bundle"; fi
+running_in() { case "$(/bin/ps -axo command= 2>/dev/null)" in *"$1/Contents/MacOS/"*) return 0 ;; esac; return 1; }
+n=0
+while [ "$n" -lt 75 ] && { running_in "$bundle" || { [ -n "$from" ] && running_in "$from"; }; }; do sleep 0.2; n=$((n + 1)); done
+/usr/bin/open -- "$bundle"
+i=0
+while [ "$i" -lt 50 ]; do running_in "$bundle" && exit 0; sleep 0.2; i=$((i + 1)); done
+/usr/bin/open -n -- "$bundle"
+`;
+
 // ── the swap helper ─────────────────────────────────────────────────────────
 
 export interface SwapParams {
@@ -288,6 +308,7 @@ CODESIGN="\${CHATTERED_HELPER_CODESIGN:-/usr/bin/codesign}"
 PLUTIL="\${CHATTERED_HELPER_PLUTIL:-/usr/bin/plutil}"
 XATTR="\${CHATTERED_HELPER_XATTR:-/usr/bin/xattr}"
 OPEN="\${CHATTERED_HELPER_OPEN:-/usr/bin/open}"
+VERIFY_SECS="\${CHATTERED_HELPER_VERIFY_SECS:-10}"
 LSREGISTER="\${CHATTERED_HELPER_LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}"
 
 result() {
@@ -297,12 +318,29 @@ result() {
 # A time limit for every external tool: perl's alarm survives the exec, so a wedged codesign,
 # LaunchServices or open is killed instead of holding the lock (and the app) forever.
 tmo() { local s="$1"; shift; if [ -x /usr/bin/perl ]; then /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV' "$s" "$@"; else "$@"; fi; }
+# Anything still running from these bundles (the old app, a repair process): \`open\` would only
+# bring that forward, and then nothing is open once it exits (E2E: a repaired fix never reopened).
+running_in() { case "$(/bin/ps -axo command= 2>/dev/null)" in *"$1/Contents/MacOS/"*) return 0 ;; esac; return 1; }
+busy_bundles() { running_in "$TARGET" || running_in "$ASIDE" || running_in "$NEAR" || running_in "$INCOMING"; }
+main_up() {
+  local i=0
+  while [ "$i" -lt $((VERIFY_SECS * 5)) ]; do running_in "$TARGET" && return 0; sleep 0.2; i=$((i + 1)); done
+  return 1
+}
 reopen() {
   [ -e "$TARGET" ] || return 0
-  case "$RELAUNCH" in
-    front) tmo 30 "$OPEN" -- "$TARGET" >/dev/null 2>&1 ;;
-    background) tmo 30 "$OPEN" -g -- "$TARGET" >/dev/null 2>&1 ;;
-  esac
+  [ "$RELAUNCH" = no ] && return 0
+  local n=0 attempts=1 ok=0 bg=""
+  [ "$RELAUNCH" = background ] && bg="-g"
+  while [ "$n" -lt 75 ] && busy_bundles; do sleep 0.2; n=$((n + 1)); done
+  tmo 30 "$OPEN" $bg -- "$TARGET" >/dev/null 2>&1
+  if [ "$VERIFY_SECS" -gt 0 ]; then
+    if main_up; then ok=1; else attempts=2; tmo 30 "$OPEN" -n $bg -- "$TARGET" >/dev/null 2>&1; main_up && ok=1; fi
+  else
+    ok=1
+  fi
+  printf '{"ok":%s,"attempts":%s,"waited_ms":%s,"at":"%s"}\\n' "$( [ "$ok" = 1 ] && echo true || echo false )" "$attempts" "$((n * 200))" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$(dirname -- "$RESULT")/relaunch.json"
   return 0
 }
 # The lock goes first, so the reopened app never sees a helper still holding it.

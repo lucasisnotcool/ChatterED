@@ -252,7 +252,7 @@ exit 0
     { mode: 0o755 },
   );
   const open = join(tools, 'open');
-  writeFileSync(open, `#!/bin/bash\necho "$@" >> "${tools}/opened"\n`, { mode: 0o755 });
+  writeFileSync(open, `#!/bin/bash\nprintf '%s\\n' "$*" >> "${tools}/opened"\n`, { mode: 0o755 });
   return { root, apps, updates, tools, target: join(apps, 'ChatterED.app'), staged: join(updates, 'staged', 'ChatterED.app'), keep: join(updates, 'previous', 'ChatterED.app') };
 }
 
@@ -268,6 +268,7 @@ function run(s: ReturnType<typeof sandbox>, over: Partial<SwapParams>, env: Reco
       CHATTERED_HELPER_OPEN: join(s.tools, 'open'),
       CHATTERED_HELPER_XATTR: '/usr/bin/true',
       CHATTERED_HELPER_LSREGISTER: '/usr/bin/true',
+      CHATTERED_HELPER_VERIFY_SECS: '0',
       ...env,
     },
     encoding: 'utf8',
@@ -397,5 +398,37 @@ describe('the one-off install only quits the app itself', () => {
     expect(isAppMain('/Applications/ChatterED.app/Contents/MacOS/ChatterED --user-data-dir=/x', 'ChatterED')).toBe(true);
     expect(isAppMain('/Applications/ChatterED.app/Contents/Frameworks/ChatterED Helper (Renderer).app/Contents/MacOS/ChatterED Helper (Renderer)', 'ChatterED')).toBe(false);
     expect(isAppMain('/Applications/Safari.app/Contents/MacOS/Safari', 'ChatterED')).toBe(false);
+  });
+});
+
+describe.runIf(mac)('the reopen after a swap (E2E: open only activated a copy still running)', () => {
+  function relaunchOf(s: ReturnType<typeof sandbox>) {
+    return JSON.parse(readFileSync(join(s.updates, 'relaunch.json'), 'utf8')) as { ok: boolean; attempts: number; waited_ms: number };
+  }
+
+  it('waits until nothing runs from the bundle, opens it, and sees its main process come up', () => {
+    const s = sandbox();
+    fakeBundle(s.target, 500);
+    fakeBundle(s.staged, 501);
+    // The staged bundle has an executable; "open" starts it, as LaunchServices would.
+    mkdirSync(join(s.staged, 'Contents', 'MacOS'), { recursive: true });
+    writeFileSync(join(s.staged, 'Contents', 'MacOS', 'ChatterED'), '#!/bin/bash\nsleep 5\n', { mode: 0o755 });
+    writeFileSync(join(s.tools, 'open'), `#!/bin/bash\nfor last; do :; done\nprintf '%s\\n' "$*" >> "${s.tools}/opened"\nnohup "$last/Contents/MacOS/ChatterED" >/dev/null 2>&1 &\n`, { mode: 0o755 });
+    const { result } = run(s, {}, { CHATTERED_HELPER_VERIFY_SECS: '3' });
+    expect(result).toMatchObject({ status: 'ok' });
+    expect(relaunchOf(s)).toMatchObject({ ok: true, attempts: 1 });
+    spawnSync('/usr/bin/pkill', ['-f', `${s.target}/Contents/MacOS/ChatterED`]);
+  });
+
+  it('opens again with -n when no main process appears, and says so', () => {
+    const s = sandbox();
+    fakeBundle(s.target, 500);
+    fakeBundle(s.staged, 501);
+    const { result } = run(s, {}, { CHATTERED_HELPER_VERIFY_SECS: '1' });
+    expect(result).toMatchObject({ status: 'ok' });
+    expect(relaunchOf(s)).toMatchObject({ ok: false, attempts: 2 });
+    const opened = readFileSync(join(s.tools, 'opened'), 'utf8').trim().split('\n');
+    expect(opened).toHaveLength(2);
+    expect(opened[1]).toContain('-n');
   });
 });

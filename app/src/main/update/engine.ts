@@ -500,6 +500,18 @@ export class UpdateEngine {
       if (r) this.#recordResult(r);
     }
 
+    // 1b. How the helper's reopen went (`relaunch.json`): logged once, at the next launch.
+    const relaunched = join(this.dir, 'relaunch.json');
+    if (!helperAlive && existsSync(relaunched)) {
+      try {
+        const r = JSON.parse(readFileSync(relaunched, 'utf8')) as { ok?: boolean; attempts?: number; waited_ms?: number };
+        this.log(r.ok ? 'info' : 'warn', 'update.relaunch', { ok: r.ok === true, attempts: Number(r.attempts) || 0, waited_ms: Number(r.waited_ms) || 0 });
+      } catch {
+        /* junk */
+      }
+      rmSync(relaunched, { force: true });
+    }
+
     // 2. A swap the helper did not finish.
     if (!helperAlive && existsSync(paths.journal)) {
       let meta: { keepOld?: boolean; to?: number; target?: string } = {};
