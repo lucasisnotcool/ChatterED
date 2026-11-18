@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { choiceEvidenceFromText, quoteSupportsAnswer } from './solution-evidence.js';
+import { choiceEvidenceFromText, quoteOnPage, quoteSupportsAnswer } from './solution-evidence.js';
 
 const options = 'ABCDEFGH'.split('').map((id) => ({ id, text: `Relation ${id} attribute ${id.toLowerCase()}key` }));
 const page = (text: string) => [{ fileId: 'answers', page: 1, text }];
@@ -58,5 +58,15 @@ describe('text evidence for non-choice answers', () => {
     expect(quoteSupportsAnswer('The query selects riders with no low ranking result.', 'Select riders with no low ranking result')).toBe(true);
     expect(quoteSupportsAnswer('Question 4 asks for a SQL query.', 'Select riders with no low ranking result')).toBe(false);
     expect(quoteSupportsAnswer('The result is 42.', '42')).toBe(true);
+  });
+
+  it('matches a quote across line breaks, and answers made of short tokens', () => {
+    const pageText = 'At Line B:\n   i=8, j=0, k=14. The inner loop\n   runs 2, then 4, then 8 times. undefined beha\u00advior';
+    expect(quoteOnPage(pageText, 'At Line B: i=8, j=0, k=14. The inner loop runs 2')).toBe(true);
+    expect(quoteOnPage(pageText, 'undefined behavior')).toBe(true);
+    expect(quoteOnPage(pageText, 'i=9')).toBe(false);
+    expect(quoteSupportsAnswer('At Line B: i=8, j=0, k=14.', 'i = 8, j = 0, k = 14')).toBe(true);
+    expect(quoteSupportsAnswer('The output is 1 2 4 8 16 (spaces between values).', '1 2 4 8 16')).toBe(true);
+    expect(quoteSupportsAnswer('The output is 1 2 4 8 (spaces between values).', '1 2 4 8 16')).toBe(false);
   });
 });

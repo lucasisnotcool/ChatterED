@@ -15,14 +15,36 @@ export interface ChoiceEvidence {
   method: 'text';
 }
 
+/** Text as a quote is compared: soft hyphens gone, all whitespace one space, lower case. */
+function squash(text: string): string {
+  return text.replace(/\u00ad/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * The quote is on the page: the same words, whatever the line breaks and indentation between them
+ * (a PDF's text layer breaks a worked answer over lines the model quotes as one).
+ */
+export function quoteOnPage(pageText: string, quote: string): boolean {
+  const q = squash(quote);
+  return q.length >= 6 && squash(pageText).includes(q);
+}
+
 /** A source quote must carry some of the proposed answer, not merely repeat the question. */
 export function quoteSupportsAnswer(quote: string, answer: string): boolean {
   if (/^-?\d+(?:\.\d+)?$/.test(answer.trim())) return quote.includes(answer.trim());
-  const terms = (s: string) => [...new Set((s.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? [])
-    .filter((w) => !['the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'not'].includes(w)))];
+  const a = squash(answer);
+  if (a.length >= 3 && squash(quote).includes(a)) return true;
+  const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+  const terms = (s: string) => [...new Set(words(s)
+    .filter((w) => w.length >= 3 && !['the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'not'].includes(w)))];
   const wanted = terms(answer);
-  const found = new Set(terms(quote));
-  return wanted.length > 0 && wanted.filter((w) => found.has(w)).length >= Math.min(2, Math.ceil(wanted.length / 2));
+  const found = new Set(words(quote));
+  // An answer of short tokens only ("1 2 4 8 16", "i=8, j=0, k=14", "6 7"): every one is quoted.
+  if (wanted.length === 0) {
+    const all = words(answer);
+    return all.length > 0 && all.every((w) => found.has(w));
+  }
+  return wanted.filter((w) => found.has(w)).length >= Math.min(2, Math.ceil(wanted.length / 2));
 }
 
 /** Cut off the next numbered question so its ticks cannot contaminate this one's key. */

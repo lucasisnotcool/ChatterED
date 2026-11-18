@@ -136,7 +136,7 @@ export const TUTORIAL_SYSTEM = `You read a university tutorial (problem) sheet i
 
 COPY THE SHEET FAITHFULLY. Its words, in its order: headings, paragraphs, lists, display maths, code, figures. Do not summarise, reword, solve or add anything to the sheet's own text. Inline text uses only **bold**, *italic*, \`code\` and $inline TeX$. Mark housekeeping (team sign-up, deadlines, submission rules, marks) as admin: true.
 
-PARTS. An answer grid or bubble sheet, an empty "Answer:" box, a blank or scratch page and a reference appendix are not parts. Every thing the learner must answer is one block of type "part", never nested: a sub-part is its own part ("Problem 3 A) i." is part P3A.i). Give each a short stable id built from the sheet's numbering (P1a, P2, P3A.i, P3B) and a label as a learner would say it. Its prompt holds the sheet's words for that part only. Choose its answer kind:
+PARTS. An answer grid or bubble sheet, an empty "Answer:" box, a blank or scratch page and a reference appendix are not parts. Every thing the learner must answer is one block of type "part", never nested: a sub-part is its own part ("Problem 3 A) i." is part P3A.i), and so is each labelled item a question asks to answer separately, even when the labels are inside its code ("// (a)" … "// (d)" are parts P13a … P13d, each prompt holding the shared code and its own item). Give each a short stable id built from the sheet's numbering (P1a, P2, P3A.i, P3B) and a label as a learner would say it. Its prompt holds the sheet's words for that part only. Choose its answer kind:
 - code: a formal answer in a code block (PDDL, a program);
 - tree: a nested list (a search tree, a decomposition);
 - sequence: a numbered list (a plan, an ordering);

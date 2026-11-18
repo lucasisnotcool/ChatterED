@@ -5,12 +5,14 @@
  * The overview's pattern, for a sheet: fired, not awaited; one schema-bound call on the
  * orchestrator model over the sheet's page text, its page images (the JPEGs the renderer stored
  * through `notes:pageImages`, under the source's bytes), the geometry's figure boxes, the main
- * notes' outline and the objective tree; validated in code (`validate.ts`); formal parts solved by
+ * notes' outline and the objective tree. A long sheet (an exam paper) is read the same way a few
+ * pages at a time and joined in code (`windows.ts`, `readcache.ts`; 2026-11-18). Then it is
+ * validated in code (`validate.ts`); formal parts solved by
  * code; the other parts re-solved once, independently, and compared, which sets each key's
  * confidence. Then the document lands whole (`tutorialDoc`), the learner's answers carried over
  * by part id on a re-read (`carryAnswers`), the part records upserted, and `tutorial:changed`
  * pushed. **Official solutions**, when the notebook has them for this tutorial, then rewrite the
- * keys (`from: 'solutions'`).
+ * keys (`from: 'solutions'`), asking about each part once per answer sheet.
  *
  * The row: `notes_docs` with `content_sha = tutorialContentKey(notebook, file)` and
  * `file_id = file`, `pending` while it is read, `ready` or `failed` with a sentence the learner can
@@ -62,7 +64,7 @@ import {
 import { tutorialRepo, type LandedPart } from './repo.js';
 import { keyFrom, validateTutorial, type TutorialRepairs } from './validate.js';
 import { promptInContext } from './part.js';
-import { choiceEvidenceFromText, quoteSupportsAnswer, type SolutionPage } from './solution-evidence.js';
+import { choiceEvidenceFromText, quoteOnPage, quoteSupportsAnswer, type SolutionPage } from './solution-evidence.js';
 import type { RoleChange } from '../notebooks/service.js';
 import type { LLMClient } from '../../room/llm/types.js';
 import { createHash } from 'node:crypto';
@@ -1020,6 +1022,8 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
       };
       for (const answer of answers) {
         if (answer.kind !== 'choice') continue;
+        // Verified already: nothing to write again on the next open.
+        if (parts.part(record.id, answer.partId)?.key.solutionEvidence?.version === 1) continue;
         const evidence = choiceEvidenceFromText(pages, answer.partId, answer.label, answer.options);
         const current = parts.part(record.id, answer.partId);
         if (!evidence || !current) continue;
@@ -1118,7 +1122,7 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         if (current.key.solutionEvidence) continue;
         const page = Number(r.sourcePage);
         const quote = typeof r.sourceQuote === 'string' ? r.sourceQuote.trim() : '';
-        const sourcePage = pages.find((p) => p.page === page && p.text.includes(quote) && quote.length >= 6);
+        const sourcePage = pages.find((p) => p.page === page && quoteOnPage(p.text, quote));
         const fresh = keyFrom(sheetPartOf(answer), r);
         if (!fresh.answer) continue;
         // For choices, a quote merely containing the question is not evidence of which options
@@ -1222,7 +1226,7 @@ function sheetPartOf(a: PartAnswer): import('../../shared/tutorial.js').SheetPar
 /** How many failed tries settle a part for one answer sheet. */
 const SOLUTIONS_MAX_FAILS = 2;
 /** Moves when the solutions pass changes what it can verify, so every part is asked again once. */
-const SOLUTIONS_PASS_VERSION = 2;
+const SOLUTIONS_PASS_VERSION = 3;
 
 /** The answer sheet as this pass saw it: its pages' words, and the pass's version. */
 function solutionsMarker(pages: readonly SolutionPage[]): string {

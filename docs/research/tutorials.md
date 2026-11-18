@@ -102,6 +102,15 @@ notes again, as before the swap.
 - The sheet is read by one model call over the page text and page images, returning the blocks
   and parts as JSON, validated in code (the overview's pattern). A re-read keeps the learner's
   answers by part id (`carryAnswers`).
+- **A long sheet is read in page windows** (2026-11-18, after a participant's 35-page exam paper
+  ran out of output tokens and was reported as having no questions). Above 6 pages or 12,000
+  characters the read goes a few pages at a time, each window with only its own pages, the next
+  page to finish a part, and the page before as context. The windows are joined in code and must
+  not lose, invent or mis-key a part (`main/tutorial/windows.ts`). An answer cut off by the output
+  limit is never taken for an empty sheet. The window is cut smaller, and a page that still does
+  not fit becomes a sentence in the sheet. Finished windows are kept until the sheet lands, so a
+  failed or interrupted read resumes. Exams go through this same flow: there is no exam type
+  and no extra step. A file over 60 pages is read up to page 60, and the sheet says so.
 
 ## 4. Help (answer **"Max owns"**, kept as a decision point)
 

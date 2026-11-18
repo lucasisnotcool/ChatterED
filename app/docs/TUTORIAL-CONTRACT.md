@@ -63,6 +63,11 @@ ingest also gets `geometry.ts`'s figure boxes per page as candidates for `figure
 
 ### S3 · Ingest (B)
 
+(A sheet over 6 pages or 12k characters is read in page windows and joined in code before the
+validation below: `main/tutorial/windows.ts`, 2026-11-18. `TutorialView.progress` shows the
+windows read. Official solutions are asked about a part once per answer sheet:
+`PartKey.solutionsTried`.)
+
 One structured model call (the overview's client and JSON-schema pattern) over the tutorial's page
 text + page images + the **main notes' outline** (`docOutline` of the notebook doc: block ids,
 headings, pages) + the objective tree. Returns `{ sheet: TutorialSheet, parts: { partId, key:
