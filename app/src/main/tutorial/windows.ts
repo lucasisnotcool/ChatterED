@@ -115,25 +115,53 @@ export class WindowDeclined extends Error {
   }
 }
 
+/** Asked twice, the pages' answer was empty though they have words on them: a notice. */
+export class WindowEmpty extends Error {
+  constructor() {
+    super('nothing was copied from pages that have words on them');
+    this.name = 'WindowEmpty';
+  }
+}
+
 /** Pages the read could not cover, said in the sheet where they would have been. */
 export interface WindowNotice {
   from: number;
   to: number;
-  reason: 'too_long' | 'incomplete' | 'declined' | 'beyond_limit';
+  /** `not_read`: never asked, because the read's budget for cut-off answers was spent. */
+  reason: 'too_long' | 'incomplete' | 'declined' | 'empty' | 'not_read' | 'beyond_limit';
 }
 
-/** The sentence a notice puts in the sheet. Plain: the learner can do nothing about the cause. */
-export function noticeText(n: WindowNotice, pageCount: number): string {
-  const pages = n.from === n.to ? `page ${n.from}` : `pages ${n.from}–${n.to}`;
-  switch (n.reason) {
+/** "page 3", "pages 3 and 5", "pages 3, 5 and 9–10". */
+export function pageList(spans: readonly { from: number; to: number }[]): string {
+  const parts = spans.map((s) => (s.from === s.to ? `${s.from}` : `${s.from}–${s.to}`));
+  const one = spans.length === 1 && spans[0]!.from === spans[0]!.to;
+  const list = parts.length <= 1 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+  return `${one ? 'page' : 'pages'} ${list}`;
+}
+
+/**
+ * The sentence notices of one kind put in the sheet, however many pages they cover: one
+ * sentence, not one per page. Plain: the learner can do nothing about the cause.
+ */
+export function noticeText(n: WindowNotice | readonly WindowNotice[], pageCount: number): string {
+  const all = Array.isArray(n) ? (n as readonly WindowNotice[]) : [n as WindowNotice];
+  const reason = all[0]!.reason;
+  const pages = pageList(all);
+  const single = all.length === 1 && all[0]!.from === all[0]!.to;
+  const those = single ? 'that page' : 'those pages';
+  switch (reason) {
     case 'too_long':
-      return `*Max could not read ${pages} of this sheet: ${n.from === n.to ? 'it holds' : 'they hold'} more than one answer can carry. Work from the PDF for ${n.from === n.to ? 'that page' : 'those pages'}.*`;
+      return `*Max could not read ${pages} of this sheet: ${single ? 'it holds' : 'each holds'} more than one answer can carry. Work from the PDF for ${those}.*`;
     case 'declined':
-      return `*Max could not read ${pages} of this sheet: Claude declined to work on ${n.from === n.to ? 'it' : 'them'}. Work from the PDF for ${n.from === n.to ? 'that page' : 'those pages'}.*`;
+      return `*Max could not read ${pages} of this sheet: Claude declined to work on ${single ? 'it' : 'them'}. Work from the PDF for ${those}.*`;
     case 'incomplete':
-      return `*Max's reading of ${pages} came back incomplete, so ${n.from === n.to ? 'it is' : 'they are'} not here. Read the sheet again to try once more.*`;
+      return `*Max's reading of ${pages} came back incomplete, so ${single ? 'it is' : 'they are'} not here. Read the sheet again to try once more.*`;
+    case 'empty':
+      return `*Max found nothing to copy on ${pages}. If ${single ? 'it holds' : 'they hold'} questions, read the sheet again.*`;
+    case 'not_read':
+      return `*Max stopped before ${pages}: too many answers for this sheet ran out of room. Read the sheet again to try ${those}.*`;
     case 'beyond_limit':
-      return `*This file has ${pageCount} pages; Max read the first ${n.from - 1}. To work through ${pages}, add them as a sheet of their own.*`;
+      return `*This file has ${pageCount} pages; Max read the first ${all[0]!.from - 1}. To work through ${pages}, add them as a sheet of their own.*`;
   }
 }
 
@@ -147,6 +175,8 @@ export interface ReadOutcome {
   notices: WindowNotice[];
   /** Windows that were cut off and cut smaller. */
   splits: number;
+  /** Answers that came back cut off, in all. */
+  truncations: number;
 }
 
 /** Whether a parsed answer is a whole read: an object with its `blocks` and `parts` arrays. */
@@ -157,10 +187,14 @@ export function wholeAnswer(raw: unknown): raw is Record<string, unknown> {
 
 /**
  * **Read every window**, `concurrency` at a time. A window cut off is cut smaller while the
- * read's truncation budget lasts; a page that still does not fit, or that the model declines,
- * becomes a notice. Any other error stops new windows, lets the ones in flight finish (the caller
- * keeps them), and is thrown. `progress` is told the windows done (notices count) over the
- * windows there are now.
+ * read's budget of `MAX_TRUNCATIONS` cut-off answers lasts, and the read never asks in a way
+ * that could go past it: once it is spent, every window not yet asked is a `not_read` notice.
+ * A page that still does not fit, that the model declines, or that comes back empty twice
+ * becomes a notice. Any other error stops new windows, lets the ones in flight finish (the
+ * caller keeps them), and is thrown.
+ *
+ * `progress` is told the **pages** settled over the pages there are, so it never moves back
+ * when a window is cut smaller (a count of windows would: 2 of 3, then 2 of 4).
  */
 export async function readWindows(
   plan: readonly SheetWindow[],
@@ -171,47 +205,49 @@ export async function readWindows(
   const reads: WindowRead[] = [];
   const notices: WindowNotice[] = [];
   const queue = [...plan];
-  let total = plan.length;
+  const total = plan.reduce((n, w) => n + (w.to - w.from + 1), 0);
   let done = 0;
   let splits = 0;
   let truncations = 0;
   let failed: { err: unknown } | null = null;
 
-  const settle = (): void => {
-    done += 1;
+  const settle = (w: SheetWindow): void => {
+    done += w.to - w.from + 1;
     hooks.progress?.(done, total);
+  };
+  const notice = (w: SheetWindow, reason: WindowNotice['reason']): void => {
+    notices.push({ from: w.from, to: w.to, reason });
+    settle(w);
   };
   const one = async (w: SheetWindow): Promise<void> => {
     try {
       reads.push({ window: w, raw: await read(w) });
-      settle();
+      settle(w);
     } catch (err) {
-      if (err instanceof WindowDeclined) {
-        notices.push({ from: w.from, to: w.to, reason: 'declined' });
-        settle();
-        return;
-      }
+      if (err instanceof WindowDeclined) return notice(w, 'declined');
+      if (err instanceof WindowEmpty) return notice(w, 'empty');
       if (!(err instanceof WindowTruncated)) {
         failed ??= { err };
         return;
       }
       truncations += 1;
-      const parts = truncations <= MAX_TRUNCATIONS ? splitWindow(w) : null;
-      if (!parts) {
-        notices.push({ from: w.from, to: w.to, reason: err.reason === 'max_tokens' ? 'too_long' : 'incomplete' });
-        settle();
-        return;
-      }
+      const parts = truncations < MAX_TRUNCATIONS ? splitWindow(w) : null;
+      if (!parts) return notice(w, err.reason === 'max_tokens' ? 'too_long' : 'incomplete');
       splits += 1;
-      total += parts.length - 1;
       hooks.split?.(w, err.reason);
-      hooks.progress?.(done, total);
       queue.unshift(...parts);
     }
   };
   const running = new Set<Promise<void>>();
   const fill = (): void => {
-    while (failed === null && running.size < Math.max(1, concurrency) && queue.length > 0) {
+    while (failed === null && queue.length > 0 && running.size < Math.max(1, concurrency)) {
+      // The budget is spent: nothing more is asked.
+      if (truncations >= MAX_TRUNCATIONS) {
+        while (queue.length > 0) notice(queue.shift()!, 'not_read');
+        break;
+      }
+      // Each answer in flight could be one more cut off: never ask past the budget.
+      if (truncations + running.size >= MAX_TRUNCATIONS) break;
       const p: Promise<void> = one(queue.shift()!).finally(() => running.delete(p));
       running.add(p);
     }
@@ -224,7 +260,7 @@ export async function readWindows(
   if (failed !== null) throw (failed as { err: unknown }).err;
   reads.sort((a, b) => a.window.from - b.window.from);
   notices.sort((a, b) => a.from - b.from);
-  return { reads, notices, splits };
+  return { reads, notices, splits, truncations };
 }
 
 /** `fn` over `items`, at most `limit` at once, results in the items' order. */
@@ -284,11 +320,30 @@ export function similarity(a: string, b: string): number {
 
 /** Near-identical: the same part copied twice, not two parts that share a stem. */
 const SAME_PART = 0.9;
+
 /**
- * An answer-grid entry: what is left of its words once option letters, numbers and the words
- * "question" and "answer" are gone. A real question, however short, says more than this.
+ * The same part copied twice: near-identical words, and exactly the same short tokens (one- and
+ * two-letter names, numbers), which is where two parallel questions differ.
  */
-const GRID_CHARS = 12;
+/** Two parts the model named alike: the same id when both have one, else the same label. */
+function samePart(a: { id: string; label: string }, b: { id: string; label: string }): boolean {
+  if (a.id !== '' && b.id !== '') return a.id === b.id;
+  return a.label !== '' && a.label === b.label;
+}
+
+function sameCopy(a: string, b: string): boolean {
+  if (similarity(a, b) < SAME_PART) return false;
+  const short = (s: string) => s.split(' ').filter((t) => t.length <= 2 || /^\d/.test(t)).sort().join(' ');
+  return short(a) === short(b);
+}
+/**
+ * An answer-grid entry's words: option letters, brackets, blanks and numbering, nothing else
+ * ("A B C D E", "[A] [B] [C] [D]", "1. ____"). A real question, however short ("Compute 20 − 1.",
+ * "p = a + 1;"), has more. A page is an answer grid when at least `GRID_PAGE_ENTRIES` parts on it
+ * are such entries.
+ */
+const GRID_ENTRY = /^[\s\d.:()[\]|,_–—-]*(?:[A-EX][\s.:()[\]|,_–—-]*)+$|^[\s\d.:()]*_{2,}[\s_.]*$/;
+const GRID_PAGE_ENTRIES = 3;
 
 export interface MergeStats {
   /** Parts or blocks both sides of a boundary copied, kept once. */
@@ -317,6 +372,10 @@ interface Item {
   /** Copied from the window's look-ahead page. */
   ahead: boolean;
   dropped: boolean;
+  /** Its page, once placed on the window; null when the model gave none. */
+  page: number | null;
+  /** Its words as written, for telling an answer-grid entry from a short question. */
+  text: string;
 }
 
 /** Shift a block's page, and its prompt's, by `d`, then clamp it to `[lo, hi]`. */
@@ -374,6 +433,8 @@ export function mergeWindowReads(
         label: norm(str(b.label)),
         ahead: w.ahead !== null && b.page === w.ahead,
         dropped: false,
+        page: typeof b.page === 'number' ? b.page : null,
+        text: blockText(b).trim(),
       });
     }
   });
@@ -392,13 +453,19 @@ export function mergeWindowReads(
       stats.duplicatesDropped += 1;
       continue;
     }
-    // The same part or block copied by both windows of a boundary: the fuller copy stays.
+    // The same part or block copied by both windows of a boundary: the fuller copy stays. Only
+    // on the pages the two windows share, and only the same words, names and numbers: "the
+    // values of c and m" and "the values of i and j" are two parts (acceptance test, 2026-11-19).
+    const w = reads[item.window]!.window;
+    const pw = reads[item.window - 1]!.window;
+    const onBoundary = (e: Item) => (e.page === null || e.page >= pw.to) && (item.page === null || item.page <= w.from);
     const twin = previous.find(
       (e) =>
         e.isPart === item.isPart &&
-        (item.isPart ? (e.id !== '' && e.id === item.id) || (e.label !== '' && e.label === item.label) : item.words.length >= 12 && (e.ahead || beforeOwnParts)) &&
+        onBoundary(e) &&
+        (item.isPart ? samePart(e, item) : item.words.length >= 12 && (e.ahead || beforeOwnParts)) &&
         item.words.length > 0 &&
-        similarity(e.words, item.words) >= SAME_PART,
+        sameCopy(e.words, item.words),
     );
     if (twin) {
       const loser = twin.words.length >= item.words.length && !twin.ahead ? item : twin;
@@ -408,23 +475,29 @@ export function mergeWindowReads(
     }
     // A tail re-copied: what opens this window, its words inside the part the window before ended on.
     if (beforeOwnParts && item.words.length >= 12 && previous.some((e) => e.isPart && e.words.includes(item.words))) {
-      if (!item.isPart || previous.some((e) => e.isPart && ((e.id !== '' && e.id === item.id) || (e.label !== '' && e.label === item.label)))) {
+      if (!item.isPart || previous.some((e) => e.isPart && samePart(e, item))) {
         item.dropped = true;
         stats.tailsDropped += 1;
         continue;
       }
     }
   }
-  // An answer grid's entry: a short "part" whose id or label an earlier part has.
-  for (let n = 0; n < items.length; n += 1) {
-    const item = items[n]!;
-    if (!item.isPart || item.dropped) continue;
-    const residue = item.words.replace(/\b(?:[a-hx]|\d+|question|answer|q)\b/g, ' ').replace(/\s+/g, ' ').trim();
-    if (residue.length >= GRID_CHARS) continue;
-    const repeats = items.slice(0, n).some((e) => kept(e) && e.isPart && ((e.id !== '' && e.id === item.id) || (e.label !== '' && e.label === item.label)));
-    if (repeats) {
-      item.dropped = true;
-      stats.gridDropped += 1;
+  // An answer grid's entries: only on a long sheet, only on a page that is a grid (several entries
+  // of option letters or blanks and nothing else), only repeating a question an earlier page has.
+  if (reads.length > 1) {
+    const isEntry = (i: Item) => i.isPart && GRID_ENTRY.test(i.text);
+    const perPage = new Map<string, number>();
+    for (const i of items) if (isEntry(i)) perPage.set(`${i.window}:${i.page}`, (perPage.get(`${i.window}:${i.page}`) ?? 0) + 1);
+    for (let n = 0; n < items.length; n += 1) {
+      const item = items[n]!;
+      if (item.dropped || !isEntry(item) || (perPage.get(`${item.window}:${item.page}`) ?? 0) < GRID_PAGE_ENTRIES) continue;
+      const repeats = items
+        .slice(0, n)
+        .some((e) => kept(e) && e.isPart && e.page !== item.page && !isEntry(e) && ((e.id !== '' && e.id === item.id) || (e.label !== '' && e.label === item.label)));
+      if (repeats) {
+        item.dropped = true;
+        stats.gridDropped += 1;
+      }
     }
   }
 
@@ -432,11 +505,14 @@ export function mergeWindowReads(
   const used = new Set<string>();
   const blocks: unknown[] = [];
   const parts: unknown[] = [];
-  const noticesLeft = [...notices];
+  // One sentence per kind of notice, however many pages it covers, where its first pages were.
+  const groups = new Map<WindowNotice['reason'], WindowNotice[]>();
+  for (const n of [...notices].sort((a, b) => a.from - b.from)) groups.set(n.reason, [...(groups.get(n.reason) ?? []), n]);
+  const noticesLeft = [...groups.values()].sort((a, b) => a[0]!.from - b[0]!.from);
   const placeNotices = (beforePage: number): void => {
-    while (noticesLeft.length > 0 && noticesLeft[0]!.from <= beforePage) {
-      const n = noticesLeft.shift()!;
-      blocks.push({ type: 'paragraph', page: n.from, text: noticeText(n, pageCount), admin: true });
+    while (noticesLeft.length > 0 && noticesLeft[0]![0]!.from <= beforePage) {
+      const group = noticesLeft.shift()!;
+      blocks.push({ type: 'paragraph', page: group[0]!.from, text: noticeText(group, pageCount), admin: true });
     }
   };
   for (const item of items.filter(kept)) {

@@ -18,6 +18,7 @@ import {
   WINDOW_CHARS,
   WINDOW_PAGES,
   WindowDeclined,
+  WindowEmpty,
   WindowTruncated,
   type SheetWindow,
   type WindowRead,
@@ -84,7 +85,8 @@ describe('reading the windows', () => {
     expect(out.reads.map((r) => r.window.from)).toEqual(plan.map((w) => w.from));
     expect(out.splits).toBe(0);
     expect(out.notices).toEqual([]);
-    expect(seen.at(-1)).toEqual([plan.length, plan.length]);
+    // Progress is in pages, so it ends at the sheet's 35.
+    expect(seen.at(-1)).toEqual([35, 35]);
   });
 
   it('cuts a window that came back cut off smaller, and reads the pieces', async () => {
@@ -104,7 +106,7 @@ describe('reading the windows', () => {
     expect(asked).toEqual(['1-4', '1-2', '3-4', '5-6']);
     expect(out.reads.map((r) => `${r.window.from}-${r.window.to}`)).toEqual(['1-2', '3-4', '5-6']);
     expect(out.splits).toBe(1);
-    expect(last).toEqual([3, 3]);
+    expect(last).toEqual([6, 6]);
   });
 
   it('makes a page that never fits a notice, lands the rest, and pays at most three answers for it', async () => {
@@ -127,10 +129,36 @@ describe('reading the windows', () => {
       calls += 1;
       throw new WindowTruncated('max_tokens');
     }, {}, 1);
-    // 1–8, 1–4, 1–2 and 1 are cut; after that each window still cut off is a notice as it is.
-    expect(calls).toBe(7);
-    expect(out.notices.map((n) => `${n.from}-${n.to}`)).toEqual(['1-1', '2-2', '3-4', '5-8']);
+    // 1–8, 1–4, 1–2 and 1 are cut off: the budget is spent, and nothing more is asked.
+    expect(calls).toBe(MAX_TRUNCATIONS);
+    expect(out.notices.map((n) => `${n.from}-${n.to}:${n.reason}`)).toEqual(['1-1:too_long', '2-2:not_read', '3-4:not_read', '5-8:not_read']);
     expect(MAX_TRUNCATIONS).toBe(4);
+  });
+
+  it('never pays for more than four cut-off answers, even two at a time on a sheet that never fits', async () => {
+    let calls = 0;
+    let cut = 0;
+    const plan = planWindows(Array(12).fill(1_800));
+    const seen: number[] = [];
+    const out = await readWindows(plan, async () => {
+      calls += 1;
+      cut += 1;
+      throw new WindowTruncated('max_tokens');
+    }, { progress: (d) => seen.push(d) }, 2);
+    expect(cut).toBeLessThanOrEqual(4);
+    expect(calls).toBeLessThanOrEqual(plan.length + 4);
+    // Every page is in a notice, and progress never went back.
+    const covered = out.notices.flatMap((n) => Array.from({ length: n.to - n.from + 1 }, (_, i) => n.from + i)).sort((a, b) => a - b);
+    expect(covered).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+  });
+
+  it('makes a window empty twice a notice', async () => {
+    const out = await readWindows([{ from: 1, to: 2, ahead: 3, depth: 0 }, { from: 3, to: 4, ahead: null, depth: 0 }], async (w) => {
+      if (w.from === 3) throw new WindowEmpty();
+      return ok(w);
+    });
+    expect(out.notices).toEqual([{ from: 3, to: 4, reason: 'empty' }]);
   });
 
   it('makes a declined window a notice', async () => {
@@ -295,6 +323,57 @@ describe('joining the windows (the red team cases)', () => {
     expect(ids).toEqual(['P2', 'P3']);
     const texts = (raw.blocks as { type: string; text?: string }[]).filter((b) => b.type !== 'part').map((b) => b.text);
     expect(texts).toEqual(['Loops']);
+  });
+});
+
+describe('joining the windows (the acceptance test cases, 2026-11-19)', () => {
+  const part = (id: string, label: string, page: number, text: string) => ({ type: 'part', id, label, page, prompt: [{ type: 'paragraph', page, text }], answer: { kind: 'text' } });
+  const key = (id: string, answer: string) => ({ partId: id, answer });
+  const W = (from: number, to: number, ahead: number | null) => ({ from, to, ahead, depth: 0 });
+  const ids = (raw: Record<string, unknown>, pageCount: number) =>
+    validateTutorial(raw, { ...VALIDATION, pageCount })!.parts.map((p) => `${p.partId}=${p.key.answer}`);
+
+  it('M1: a single window keeps short sub-parts that share a label with an earlier part', () => {
+    const raw = { title: 'T', blocks: [part('P9a', '(a)', 1, 'Trace the loop and show i at each step of the six iterations.'), part('P9b', '(b)', 1, 'What is the content of array a when moo returns at the end?'),
+      { type: 'paragraph', page: 2, text: 'Question 13. Each statement is tested separately.' },
+      part('P13a', '(a)', 2, 'p = a + 1;'), part('P13b', '(b)', 2, "p[0] = 'b';"), part('P13c', '(c)', 2, 'Why?')],
+      parts: [key('P9a', '1 2 3'), key('P9b', '{7,8,9}'), key('P13a', 'Valid'), key('P13b', 'Compile error'), key('P13c', 'because')] };
+    expect(ids(mergeWindowReads([{ window: W(1, 2, null), raw }], [], 2).raw, 2)).toEqual(['P9a=1 2 3', 'P9b={7,8,9}', 'P13a=Valid', 'P13b=Compile error', 'P13c=because']);
+  });
+
+  it('M2: parallel sub-parts in adjacent windows that differ only in their names are two parts', () => {
+    const a = { title: 'T', blocks: [part('P10a', '(a)', 5, 'Write the values of c and m at Line M for each iteration of the loop in the answer sheet with n = 5.')], parts: [key('P10a', 'trace A')] };
+    const b = { title: 'T', blocks: [part('P11a', '(a)', 6, 'Write the values of i and j at Line M for each iteration of the loop in the answer sheet with n = 5.')], parts: [key('P11a', 'trace B')] };
+    expect(ids(mergeWindowReads([{ window: W(1, 5, 6), raw: a }, { window: W(6, 10, null), raw: b }], [], 10).raw, 10)).toEqual(['P10a=trace A', 'P11a=trace B']);
+  });
+
+  it('M2b: the same label and nearly the same words, but different names, on the shared page', () => {
+    const a = { title: 'T', blocks: [part('', '(a)', 5, 'Write the values of c and m at Line M for each iteration of the loop with n = 5.')], parts: [] };
+    const b = { title: 'T', blocks: [part('', '(a)', 6, 'Write the values of i and j at Line M for each iteration of the loop with n = 5.')], parts: [] };
+    expect((mergeWindowReads([{ window: W(1, 5, 6), raw: a }, { window: W(6, 10, null), raw: b }], [], 10).raw.blocks as unknown[]).length).toBe(2);
+  });
+
+  it('M3: numbering that restarts, across and within windows, keeps every short question and its key', () => {
+    const a = { title: 'T', blocks: [part('P1', 'Question 1', 1, 'Compute 3 + 4.'), part('P2', 'Question 2', 2, 'Compute 5 + 6.'), part('P1', 'Question 1', 4, 'Compute 20 - 1.')], parts: [key('P1', '7'), key('P2', '11'), key('P1', '19')] };
+    const b = { title: 'T', blocks: [part('P2', 'Question 2', 6, 'Compute 30 - 2.'), part('P3', 'Question 3', 7, 'Compute 40 - 3.')], parts: [key('P2', '28'), key('P3', '37')] };
+    expect(ids(mergeWindowReads([{ window: W(1, 5, 6), raw: a }, { window: W(6, 8, null), raw: b }], [], 8).raw, 8)).toEqual(['P1=7', 'P2=11', 'P1-2=19', 'P2-2=28', 'P3=37']);
+  });
+
+  it('M6: identical boilerplate questions with their own ids in adjacent windows are both kept', () => {
+    const stem = 'Write C for a compile error or UB for undefined behavior or non-termination. Write exactly what is printed, or C/UB as specified.';
+    const a = { title: 'T', blocks: [part('P5', 'Question', 5, stem)], parts: [key('P5', '1 2 4 8 16')] };
+    const b = { title: 'T', blocks: [part('P6', 'Question', 6, stem)], parts: [key('P6', 'ABCDFEG')] };
+    expect(ids(mergeWindowReads([{ window: W(1, 5, 6), raw: a }, { window: W(6, 10, null), raw: b }], [], 10).raw, 10)).toEqual(['P5=1 2 4 8 16', 'P6=ABCDFEG']);
+  });
+
+  it('says one sentence for many pages of one kind', () => {
+    const { raw } = mergeWindowReads(
+      [{ window: W(1, 2, 3), raw: { title: 'T', blocks: [part('P1', 'Q1', 1, 'one')], parts: [] } }],
+      [{ from: 3, to: 3, reason: 'too_long' }, { from: 5, to: 5, reason: 'too_long' }, { from: 9, to: 10, reason: 'too_long' }],
+      10,
+    );
+    const notes = (raw.blocks as { type: string; text?: string }[]).filter((b) => b.type === 'paragraph');
+    expect(notes.map((b) => b.text)).toEqual(['*Max could not read pages 3, 5 and 9–10 of this sheet: each holds more than one answer can carry. Work from the PDF for those pages.*']);
   });
 });
 

@@ -87,6 +87,8 @@ export interface TutorialDeps {
   requeueMs?: number;
   /** Tests: the waits before a window asks again after a transport failure (`ingest.ts`). */
   backoffMs?: readonly number[];
+  /** Tests: the wall clock on one CLI window call (`ingest.ts` `CLI_WINDOW_TIMEOUT_MS`). */
+  cliWindowTimeoutMs?: number;
 }
 
 export function nowOf(deps: Pick<TutorialDeps, 'now'>): string {
@@ -117,6 +119,13 @@ export function tutorialRecord(deps: Pick<TutorialDeps, 'db'>, notebookId: strin
   return notesRepo(deps.db).byContentSha(tutorialContentKey(notebookId, fileId));
 }
 
+/**
+ * Reads waiting out a transport failure before they ask again, by content key: the progress line
+ * says "waiting for a connection" meanwhile (acceptance test, 2026-11-19: a dropped network on the
+ * CLI showed nothing for sixteen minutes).
+ */
+export const waitingReads = new Set<string>();
+
 /** The view of one tutorial now, or null when the source is no longer a tutorial here. */
 export function viewOf(deps: TutorialDeps, notebookId: string, fileId: string): TutorialView | null {
   const subject = deps.notebooks.subject(notebookId);
@@ -131,6 +140,7 @@ export function viewOf(deps: TutorialDeps, notebookId: string, fileId: string): 
     objectives: deps.objectivesTree(notebookId)?.objectives ?? [],
     isLecturePage: lecturePageTest(subject),
     hasLinkedSolutions: subject?.sources.some((s) => s.role === 'solutions' && s.keyFor === fileId && s.status === 'ready') ?? false,
+    waiting: waitingReads.has(tutorialContentKey(notebookId, fileId)),
   });
 }
 
@@ -174,12 +184,21 @@ export class ReplyTruncated extends Error {
 }
 
 /** One schema-bound call with the overview's retry rules; the answer's JSON object, parsed. */
-export async function callJson(deps: TutorialDeps, llm: LLMClient, request: LlmRequest, label: string): Promise<unknown> {
+/** Errors no second ask can help: Stop, a spent credit, a refusal, a CLI signed out, missing or at its limit. */
+const FINAL_ERRORS = new Set(['LlmAbortedError', 'StudyCreditUsedUpError', 'ClaudeCliNotLoggedInError', 'ClaudeCliNotFoundError', 'CliLimitError']);
+
+export async function callJson(
+  deps: TutorialDeps,
+  llm: LLMClient,
+  request: LlmRequest,
+  label: string,
+  opts: { signal?: AbortSignal; retryErrors?: boolean } = {},
+): Promise<unknown> {
   let preempted = 0;
   let errors = 0;
   for (;;) {
     try {
-      const result = await llm.complete(request);
+      const result = await llm.complete(request, undefined, opts.signal);
       if (result.truncated) throw new ReplyTruncated(label);
       return JSON.parse(extractJsonObject(result.text)) as unknown;
     } catch (err) {
@@ -194,10 +213,10 @@ export async function callJson(deps: TutorialDeps, llm: LLMClient, request: LlmR
         await new Promise((r) => setTimeout(r, deps.requeueMs ?? WINDOW_REQUEUE_MS));
         continue;
       }
-      // Nothing to gain from asking again: Stop, a spent credit, a refusal.
-      if (error.name === 'LlmAbortedError' || error.name === 'StudyCreditUsedUpError' || error.message === REFUSAL_MESSAGE) throw error;
+      if (FINAL_ERRORS.has(error.name) || error.message === REFUSAL_MESSAGE) throw error;
       errors += 1;
-      if (errors > WINDOW_ERROR_RETRIES) throw error;
+      // A caller with its own retries (the windows' backoff) asks for none here.
+      if (opts.retryErrors === false || errors > WINDOW_ERROR_RETRIES) throw error;
       log().warn('tutorial.call.retry', { call: label, cause: error.message.slice(0, 200) });
     }
   }

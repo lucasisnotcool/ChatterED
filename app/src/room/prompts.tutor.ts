@@ -174,7 +174,8 @@ function groundingBlock(input: TutorPromptInput): string[] {
     '**Ground every point of your reply in these**, and cite the lecture as p. N with the page',
     `numbers above (${pagesCited(slides) || 'the pages of the document above'}), as you do in every reply; the chat links`,
     'them to the slide. Name a notes section by its heading in quotes. Do not cite the tutorial sheet’s',
-    'own pages as the source of an idea: the sheet asks, the lecture teaches.',
+    'own pages as the source of an idea: the sheet asks, the lecture teaches. Call the tutorial or exam sheet "the sheet"',
+    'or name its question ("Question 12"); a slide is a page of the lecture, never the sheet.',
   );
   return lines;
 }

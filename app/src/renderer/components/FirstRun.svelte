@@ -289,7 +289,8 @@
       </div>
       <p class="quiet">
         ChatterED keeps its own copy of each file on this Mac; nothing is uploaded anywhere. Max
-        reads the sheet first, which takes a minute or two.
+        reads the sheet first: about a minute for every five pages, so a long exam paper takes
+        several minutes.
       </p>
       <div class="acts">
         <button type="button" class="btn-primary" onclick={() => void startTutorial()} disabled={!tutorialPath || starting}>

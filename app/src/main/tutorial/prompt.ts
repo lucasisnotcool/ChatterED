@@ -235,7 +235,8 @@ export function tutorialWindowMessage(input: {
     input.from > 1
       ? `- Page ${input.from - 1} is quoted below as context only: it was read already. If page ${input.from} opens in the middle of a part begun there, skip that continuation (it is copied with its part). If a part on your pages belongs to a question whose stem, code or data is on page ${input.from - 1}, use them to write its key, but do not copy them. Do not repeat the sheet's title or running header.`
       : '',
-    '- Part ids exactly as for a whole sheet (P1a, P2, P3A.i, P3B), from the sheet\'s own numbering, so they stay the same across the calls. Title: the sheet\'s own title if these pages show it, else the file name.',
+    '- Part ids exactly as for a whole sheet (P1a, P2, P3A.i, P3B), from the sheet\'s own numbering, so they stay the same across the calls. Labels in one style for every part, with the sheet\'s own word for a question: "Question 12", "Question 12 (a)" (or "Problem 3 (b)" if the sheet says Problem). Title: the sheet\'s own title if these pages show it, else the file name.',
+    '- Copy each section heading printed on your pages as a level-2 heading where it is, so the sections read the same across the calls.',
     '- Every part on these pages gets its key, as for a whole sheet.',
     input.again ? '- Your first answer for these pages copied nothing, though they have words on them. Copy them now; if they truly hold nothing of the sheet, answer with empty lists again.' : '',
     input.imagePages.length > 0

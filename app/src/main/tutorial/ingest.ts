@@ -32,6 +32,7 @@ import {
   callJson,
   capText,
   ReplyTruncated,
+  waitingReads,
   lecturePageTest,
   notebookDoc,
   nowOf,
@@ -84,6 +85,7 @@ import {
   wholeAnswer,
   WINDOW_CONCURRENCY,
   WindowDeclined,
+  WindowEmpty,
   WindowTruncated,
   type MergeStats,
   type SheetWindow,
@@ -118,6 +120,11 @@ export const MESSAGES = {
   failed: (reason: string) => `Couldn't read this sheet (${reason}). Retry to try again.`,
   /** A transport failure after its retries: the windows read so far are kept for the Retry. */
   stopped: (why: string) => `Couldn't finish reading this sheet: ${why}. Retry in a minute; the pages already read are kept.`,
+  signedOut: 'Claude Code is signed out. Open Terminal and run claude to sign in, or pick another backend in Settings. The pages already read are kept.',
+  noCli: "Claude Code isn't installed on this Mac, or ChatterED can't find it. Install it, or pick another backend in Settings.",
+  limit: (resets: string | null) =>
+    `Your Claude usage limit is reached for now${resets ? ` (it resets ${resets})` : ''}. Retry after that; the pages already read are kept.`,
+  badRequest: "Claude couldn't accept this request (error 400). Retry; if it happens again, send the team a debug report with ⇧⌘D.",
 } as const;
 
 /** Content keys with a read in flight. */
@@ -253,7 +260,13 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
       objectiveIds,
     });
     // No part, and pages that could not be read: say that, not that the sheet has no questions.
-    if (!checked) throw read && read.notices.length > 0 ? new SheetUnread(read.notices, source.pageCount) : new NoParts();
+    if (!checked) {
+      // Nothing to land: the next Retry asks the model again rather than replaying this.
+      read?.cache.clear();
+      // Pages that came back empty twice, and nothing else: the model found no question.
+      const unread = (read?.notices ?? []).filter((n) => n.reason !== 'empty');
+      throw read && unread.length > 0 ? new SheetUnread(read.notices, source.pageCount) : new NoParts();
+    }
 
     // A re-read keeps what the official solutions verified, part by part (same id, same label),
     // so the same answer sheet is not paid for again.
@@ -346,7 +359,9 @@ class SheetUnread extends Error {
     readonly notices: readonly WindowNotice[],
     pageCount: number,
   ) {
-    super(`Couldn't read this sheet. ${notices.map((n) => noticeText(n, pageCount).replace(/^\*|\*$/g, '')).join(' ')}`);
+    const kinds = new Map<WindowNotice['reason'], WindowNotice[]>();
+    for (const n of notices) kinds.set(n.reason, [...(kinds.get(n.reason) ?? []), n]);
+    super(`Couldn't read this sheet. ${[...kinds.values()].map((group) => noticeText(group, pageCount).replace(/^\*|\*$/g, '')).join(' ')}`);
     this.name = 'SheetUnread';
   }
 }
@@ -373,7 +388,8 @@ async function sheetImageDir(deps: TutorialDeps, kind: string, located: ReturnTy
 }
 
 function shortReason(reason: string): string {
-  const one = reason.split('\n')[0]!.trim();
+  // Never the CLI's exit line or an SDK's JSON: what is left of the first line before either.
+  const one = reason.split('\n')[0]!.replace(/^The Claude CLI exited -?\d+:\s*/i, '').replace(/\s*\{.*$/, '').trim();
   return one.length > 120 ? `${one.slice(0, 119)}…` : one || 'unknown error';
 }
 
@@ -473,8 +489,13 @@ async function readSheet(
             again,
           }),
         };
+    // At most `1 + waits.length` asks of this window over the transport, each on the CLI capped at
+    // `CLI_WINDOW_TIMEOUT_MS`; a learner is told the read is waiting while it waits.
+    const waits = deps.backoffMs ?? TRANSIENT_BACKOFF_MS;
+    const key = tutorialContentKey(notebookId, source.fileId);
     for (let attempt = 0; ; attempt += 1) {
       calls += 1;
+      const timer = llm.kind === 'claude-cli' ? AbortSignal.timeout(deps.cliWindowTimeoutMs ?? CLI_WINDOW_TIMEOUT_MS) : undefined;
       try {
         return await callJson(
           deps,
@@ -489,17 +510,26 @@ async function readSheet(
             meta: { scope: 'notes', costScope: 'tutorial', fileId: notebookId },
           },
           'tutorial',
+          { retryErrors: false, ...(timer ? { signal: timer } : {}) },
         );
-      } catch (err) {
+      } catch (caught) {
+        // Our own wall clock on a CLI call that never answers (a dropped network): a timeout.
+        const err = timer?.aborted ? Object.assign(new Error('the Claude CLI did not answer in time'), { code: 'ETIMEDOUT' }) : caught;
         if (err instanceof ReplyTruncated) throw new WindowTruncated('max_tokens');
         if (refused(err)) throw new WindowDeclined();
-        // An answer that would not parse twice is most often one that was cut off on a backend
-        // that does not say so: read smaller rather than give up.
+        // An answer that would not parse is most often one that was cut off on a backend that
+        // does not say so: read smaller rather than give up.
         if (err instanceof SyntaxError) throw new WindowTruncated('malformed');
-        const waits = deps.backoffMs ?? TRANSIENT_BACKOFF_MS;
         if (!transient(err) || attempt >= waits.length) throw err;
         log().warn('tutorial.window.backoff', { doc_id: docId, from: w.from, to: w.to, attempt: attempt + 1, class: transientClass(err) });
-        await new Promise((r) => setTimeout(r, waits[attempt]));
+        waitingReads.add(key);
+        pushView(deps, notebookId, source.fileId);
+        try {
+          await new Promise((r) => setTimeout(r, waits[attempt]));
+        } finally {
+          waitingReads.delete(key);
+          pushView(deps, notebookId, source.fileId);
+        }
       }
     }
   };
@@ -516,13 +546,16 @@ async function readSheet(
     const first = await ask(w, shown, false);
     if (!wholeAnswer(first)) throw new WindowTruncated('malformed');
     let raw: Record<string, unknown> = first;
-    // Nothing copied from pages that have words (or pictures) on them: asked once more.
+    // Nothing copied from pages that have words on them (or that are pictures with no text layer,
+    // a scan): asked once more, and empty again is a notice. Blank pages may come back empty.
     const ownText = pages.slice(w.from - 1, w.to).join('').length;
-    if ((raw.blocks as unknown[]).length === 0 && (ownText >= EMPTY_WINDOW_CHARS || shown.length > 0)) {
+    const shouldHaveWords = ownText >= EMPTY_WINDOW_CHARS || (shown.length > 0 && ownText < SCANNED_CHARS);
+    if ((raw.blocks as unknown[]).length === 0 && shouldHaveWords) {
       emptyRetries += 1;
       log().warn('tutorial.window.empty', { doc_id: docId, from: w.from, to: w.to, chars: ownText, images: shown.length });
       const second = await ask(w, shown, true);
       if (!wholeAnswer(second)) throw new WindowTruncated('malformed');
+      if ((second.blocks as unknown[]).length === 0) throw new WindowEmpty();
       raw = second;
     }
     log().info('tutorial.window', {
@@ -538,7 +571,9 @@ async function readSheet(
       images: shown.length,
       ms: Date.now() - startedAt,
     });
-    cache.put(w, raw);
+    // Only an answer with something in it is kept for a resume: an empty one is asked again next
+    // time, never replayed (acceptance test, 2026-11-19: Retry after "no questions" made no call).
+    if ((raw.blocks as unknown[]).length > 0) cache.put(w, raw);
     return raw;
   };
 
@@ -604,8 +639,19 @@ interface SheetRead {
 const PREVIOUS_PAGE_CHARS = 3_000;
 /** A window whose pages hold at least this much text and come back with no block is asked again. */
 const EMPTY_WINDOW_CHARS = 200;
-/** The waits before asking again after a transport failure. Then the read stops, and keeps what it has. */
-export const TRANSIENT_BACKOFF_MS = [5_000, 20_000];
+/** Less text than this on pages with images: a scan, which must not come back empty either. */
+const SCANNED_CHARS = 20;
+/**
+ * The longest one CLI call reading a window may take before it is killed and counted as a
+ * transport failure. The slowest healthy window measured on the CLI took 104 s (CS1010, five
+ * pages); a dropped network left a child hanging about 187 s, twelve times over.
+ */
+export const CLI_WINDOW_TIMEOUT_MS = 180_000;
+/**
+ * The waits before asking a window again after a transport failure: one, so a window is asked
+ * at most twice over the transport. Then the read stops, and keeps what it has.
+ */
+export const TRANSIENT_BACKOFF_MS = [10_000];
 
 /** Question numbers a page's text shows: `12.` on its own line, `Question 3`, `(b)`. */
 export function questionMarkers(text: string): number {
@@ -633,7 +679,22 @@ function transientClass(err: unknown): 'rate' | 'overloaded' | 'server' | 'netwo
 
 function transient(err: unknown): boolean {
   if (err instanceof Error && (err.name === 'StudyCreditUsedUpError' || err.name === 'CliLimitError' || err.name === 'Yielded' || err.name === 'LlmAbortedError')) return false;
+  if (signedOut(err) || noCli(err)) return false;
   return transientClass(err) !== null;
+}
+
+/** Claude Code is not signed in: its own error, or a 401 / expired token it passed on. */
+function signedOut(err: unknown): boolean {
+  if (err instanceof Error && err.name === 'ClaudeCliNotLoggedInError') return true;
+  const message = err instanceof Error ? err.message : '';
+  return /Claude CLI/i.test(message) && /authentication_error|authentication_failed|oauth token has expired|not logged in|\b401\b/i.test(message);
+}
+
+/** The `claude` binary is not there to run. */
+function noCli(err: unknown): boolean {
+  if (err instanceof Error && err.name === 'ClaudeCliNotFoundError') return true;
+  const e = err as { code?: unknown; message?: unknown } | null;
+  return e?.code === 'ENOENT' && typeof e.message === 'string' && /spawn/i.test(e.message);
 }
 
 /**
@@ -644,7 +705,14 @@ function transient(err: unknown): boolean {
 export function readFailure(err: unknown): string {
   if (err instanceof NoParts) return MESSAGES.noParts;
   if (err instanceof SheetUnread) return err.message;
-  if (err instanceof Error && (err.name === 'Yielded' || err.name === 'StudyCreditUsedUpError')) return err.message;
+  const name = err instanceof Error ? err.name : '';
+  const message = err instanceof Error ? err.message : String(err);
+  if (name === 'Yielded' || name === 'StudyCreditUsedUpError') return message;
+  if (signedOut(err)) return MESSAGES.signedOut;
+  if (noCli(err)) return MESSAGES.noCli;
+  if (name === 'CliLimitError') return MESSAGES.limit(/resets\s+([^)\n·]+?)(?:\s*\(|\)|$)/i.exec(message)?.[1]?.trim() ?? null);
+  if ((err as { status?: unknown })?.status === 400) return MESSAGES.badRequest;
+  if (/ECONNREFUSED|connection refused/i.test(message)) return MESSAGES.stopped('the connection to Claude was refused');
   switch (transientClass(err)) {
     case 'rate':
       return MESSAGES.stopped('Claude is limiting how fast this key can ask');
@@ -657,8 +725,7 @@ export function readFailure(err: unknown): string {
     default:
       break;
   }
-  const reason = err instanceof Error ? err.message : String(err);
-  return MESSAGES.failed(shortReason(reason));
+  return MESSAGES.failed(shortReason(message));
 }
 
 /** Each page's text, trimmed: what the windows are planned and read from. */
@@ -1007,7 +1074,20 @@ export function onRoleChanged(deps: TutorialDeps, change: RoleChange): void {
  * answer, since any valid plan is right, not only the official one. Scripted: the existing keys
  * are marked as the official ones.
  */
-export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutorialFileId: string): Promise<number> {
+export function rewriteKeys(deps: TutorialDeps, notebookId: string, tutorialFileId: string): Promise<number> {
+  // One pass per sheet at a time: a second ask while one runs (a drop, a reopen, the end of a read)
+  // shares it rather than paying for the same answer sheet twice (acceptance test, 2026-11-19).
+  const key = tutorialContentKey(notebookId, tutorialFileId);
+  const running = solutionsInFlight.get(key);
+  if (running) return running;
+  const pass = rewriteKeysNow(deps, notebookId, tutorialFileId).finally(() => solutionsInFlight.delete(key));
+  solutionsInFlight.set(key, pass);
+  return pass;
+}
+
+const solutionsInFlight = new Map<string, Promise<number>>();
+
+async function rewriteKeysNow(deps: TutorialDeps, notebookId: string, tutorialFileId: string): Promise<number> {
   const subject = deps.notebooks.subject(notebookId);
   const record = tutorialRecord(deps, notebookId, tutorialFileId);
   const solutions = solutionsFor(subject, tutorialFileId);
@@ -1071,7 +1151,18 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         rewritten += 1;
       }
       const unverified = answers.filter((a) => !parts.part(record.id, a.partId)?.key.solutionEvidence);
-      const unresolved = unverified.filter((a) => !settled(a.partId));
+      const text = pages.map((p) => `=== source ${p.fileId}, page ${p.page} ===\n${p.text}`).join('\n\n');
+      const images = (await Promise.all(solutions.map(async (s) => {
+        const located = deps.notebooks.locate(notebookId, s.pageBase + 1);
+        return located?.contentSha
+          ? pageImagesFor(pageImageDir(deps.userDataDir, located.contentSha), Array.from({ length: Math.min(s.pageCount, TUTORIAL_MAX_IMAGES) }, (_, i) => i + 1))
+          : [];
+      }))).flat();
+      // A choice the text did not settle can only be verified from the answer sheet's page images.
+      // Until the renderer has sent them (a sheet just dropped in), such a part is not asked about
+      // and not marked tried: the pass runs again once the images are there.
+      const imagesReady = images.length > 0;
+      const unresolved = unverified.filter((a) => !settled(a.partId) && (imagesReady || a.kind !== 'choice'));
       if (unresolved.length === 0) {
         log().info('tutorial.solutions', {
           notebook_id: notebookId,
@@ -1087,13 +1178,6 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
       /** The parts asked about whose answer came back, and those whose batch failed. */
       const asked = new Set<string>();
       const failedParts = new Set<string>();
-      const text = pages.map((p) => `=== source ${p.fileId}, page ${p.page} ===\n${p.text}`).join('\n\n');
-      const images = (await Promise.all(solutions.map(async (s) => {
-        const located = deps.notebooks.locate(notebookId, s.pageBase + 1);
-        return located?.contentSha
-          ? pageImagesFor(pageImageDir(deps.userDataDir, located.contentSha), Array.from({ length: Math.min(s.pageCount, TUTORIAL_MAX_IMAGES) }, (_, i) => i + 1))
-          : [];
-      }))).flat();
       // In batches of parts, each with the whole solutions text: one call's budget holds about a
       // dozen keys, and an exam has fifty. A batch cut off is halved; one that fails leaves its
       // parts' keys as they were.

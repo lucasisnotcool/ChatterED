@@ -31,4 +31,19 @@ describe('the read cache', () => {
     cache.clear();
     expect(new WindowCache(dir, ['1', 'sheet']).get(w)).toBeNull();
   });
+
+  it('clears every kept read of a sheet, whatever its words were, and only that sheet\'s', () => {
+    new WindowCache(dir, ['1', 'sheet', 'old words']).put(w, { blocks: [{}], parts: [] });
+    new WindowCache(dir, ['1', 'other', 'words']).put(w, { blocks: [{}], parts: [] });
+    new WindowCache(dir, ['1', 'sheet', 'new words']).clear();
+    expect(new WindowCache(dir, ['1', 'sheet', 'old words']).get(w)).toBeNull();
+    expect(new WindowCache(dir, ['1', 'other', 'words']).get(w)).not.toBeNull();
+    expect(readdirSync(join(dir, 'tutorial-reads')).some((f) => f.endsWith('.tmp'))).toBe(false);
+  });
+
+  it('lets a week-old read go', () => {
+    new WindowCache(dir, ['1', 'sheet']).put(w, { blocks: [{}], parts: [] });
+    const later = Date.now() + 8 * 24 * 60 * 60 * 1000;
+    expect(new WindowCache(dir, ['1', 'sheet'], () => later).get(w)).toBeNull();
+  });
 });

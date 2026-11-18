@@ -89,6 +89,8 @@ export interface ViewInput {
   objectives: readonly LearningObjective[];
   isLecturePage(page: number): boolean;
   hasLinkedSolutions?: boolean;
+  /** The read is waiting out a transport failure before it asks again. */
+  waiting?: boolean;
 }
 
 export function tutorialView(input: ViewInput): TutorialView {
@@ -129,8 +131,8 @@ export function tutorialView(input: ViewInput): TutorialView {
     // A read with a sheet already behind it: the stored doc has parts while this one is pending.
     rereading: rereading(record),
     progress:
-      record && record.ingestStatus === 'pending' && record.windowsTotal > 1
-        ? { done: Math.min(record.windowsDone, record.windowsTotal), total: record.windowsTotal }
+      record && record.ingestStatus === 'pending' && (record.windowsTotal > 1 || input.waiting)
+        ? { done: Math.min(record.windowsDone, record.windowsTotal), total: record.windowsTotal, ...(input.waiting ? { waiting: true } : {}) }
         : null,
     gaps: doc ? tutorialGaps(input.objectives, parts, input.isLecturePage) : [],
   };

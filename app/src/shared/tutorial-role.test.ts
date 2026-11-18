@@ -29,6 +29,16 @@ describe('guessing what a source is', () => {
     ['CS3249+Lecture+4.pdf', LECTURE, 'lecture'],
     ['L05 Pointers.pdf', LECTURE, 'lecture'],
     ['Final review lecture.pdf', LECTURE, 'lecture'],
+    // The acceptance test's names (2026-11-19): a lecture's name wins over its title's words.
+    ['Lecture 5 - Answer Set Programming.pdf', LECTURE, 'lecture'],
+    ['L7 Solutions of ODEs.pdf', 'Separable equations\nIntegrating factor', 'lecture'],
+    ['Lecture 10 Final Review.pdf', '1.\nPointers recap\n2.\nRecursion recap\n3.\nWhat to expect\n', 'lecture'],
+    ['CS2103 L9 Unit Tests.pdf', '1.\nPointers recap\n2.\nRecursion recap\n3.\nWhat to expect\n', 'lecture'],
+    ['Week 4 Lab Answer Key.pdf', 'Lab 4', 'solutions'],
+    ['Quiz 2.pdf', '1.\nWhat is x?\n2.\nWhat is y?\n', 'tutorial'],
+    ['IMG_2041.png', '', 'lecture'],
+    ['Midterm 2025 with answers.pdf', '1.\nQ\n2.\nQ\n', 'tutorial'],
+    ['Tutorial 4 Questions and Answers.pdf', 'Question 1\n', 'tutorial'],
   ])('%s', (name, text, role) => {
     expect(guessSourceRole(name, text)).toBe(role);
   });

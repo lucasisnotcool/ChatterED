@@ -293,7 +293,18 @@ class ChoicesView implements NodeView {
       mark.textContent = optionMark(option.id);
       const text = document.createElement('span');
       text.className = 'nd-tut-choice-text';
-      renderInline(text, option.text);
+      const code = codeOption(option.text);
+      if (code !== null) {
+        // An option that is a code listing keeps its lines and its monospace (CS1010 Q3, Q4).
+        const pre = document.createElement('pre');
+        pre.className = 'nd-tut-choice-code';
+        const inner = document.createElement('code');
+        inner.textContent = code;
+        pre.append(inner);
+        text.append(pre);
+      } else {
+        renderInline(text, option.text);
+      }
       row.append(input, mark, text);
       row.addEventListener('mousedown', () => {
         this.#pressed = input.checked ? option.id : null;
@@ -363,4 +374,15 @@ export function tutorialNodeViews(): Record<string, NodeViewConstructor> {
     tut_blank: (node, view, getPos) => new BlankView(node, view, getPos),
     tut_choices: (node, view, getPos) => new ChoicesView(node, view, getPos),
   };
+}
+
+/**
+ * The code of an option that is a code listing, or null for an ordinary option: a fenced block
+ * (```c … ```), or text of several lines that reads as code (braces, semicolons, operators).
+ */
+export function codeOption(text: string): string | null {
+  const fenced = /^\s*```[\w+-]*\n([\s\S]*?)\n?```\s*$/.exec(text);
+  if (fenced) return fenced[1]!.replace(/\s+$/, '');
+  if (!text.includes('\n')) return null;
+  return /[{};]|==|&&|\|\||\breturn\b/.test(text) ? text.replace(/\s+$/, '') : null;
 }

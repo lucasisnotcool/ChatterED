@@ -330,8 +330,58 @@ describe('reading a tutorial (live, long or cut off)', () => {
     PAGES = 8;
     requests = [];
     pageText = (k) => `Question ${k}. Write a function for case ${k}, and say what it returns for an empty array.`;
-    deps.backoffMs = [0, 0];
+    deps.backoffMs = [0];
     longSheet();
+  });
+
+  it('asks the model again on Retry after "no questions", for a short sheet and a long one', async () => {
+    for (const pages of [1, 8]) {
+      PAGES = pages;
+      longSheet();
+      requests = [];
+      llm = client(() => reply(JSON.stringify({ title: 'T', blocks: [], parts: [] })));
+      await ingested(true);
+      expect(listViews(deps, notebookId)[0]!.error).toBe(MESSAGES.noParts);
+      const first = reads().length;
+      expect(first).toBeGreaterThan(0);
+      await ingested(true);
+      expect(reads().length).toBe(first * 2);
+    }
+  });
+
+  it('kills a CLI window call that never answers, asks it once more, and says it is waiting meanwhile', async () => {
+    deps.cliWindowTimeoutMs = 20;
+    let asked = 0;
+    llm = {
+      kind: 'claude-cli',
+      complete: (_request, _onDelta, signal) => {
+        asked += 1;
+        return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(Object.assign(new Error('The call was stopped.'), { name: 'LlmAbortedError' }))));
+      },
+    };
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.error).toBe("Couldn't finish reading this sheet: the connection to Claude dropped. Retry in a minute; the pages already read are kept.");
+    // Two windows in flight, each asked twice.
+    expect(asked).toBe(4);
+    expect(pushed.some((c) => c.view?.progress?.waiting === true)).toBe(true);
+    expect(view!.progress ?? null).toBeNull();
+  });
+
+  it.each([
+    ['signed out', Object.assign(new Error('Claude Code is installed but not logged in.'), { name: 'ClaudeCliNotLoggedInError' }), /^Claude Code is signed out\. Open Terminal and run claude/],
+    ['missing', Object.assign(new Error('The Claude CLI was not found.'), { name: 'ClaudeCliNotFoundError' }), /^Claude Code isn't installed on this Mac/],
+    ['at its limit', Object.assign(new Error("The Claude CLI exited 1: You've hit your session limit · resets 3:10am (Asia/Singapore)"), { name: 'CliLimitError' }), /^Your Claude usage limit is reached for now \(it resets 3:10am\)/],
+    ['a 400', Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error"}}'), { status: 400 }), /^Claude couldn't accept this request \(error 400\)/],
+  ])('says plainly when the backend is %s, and asks once', async (_what, error, sentence) => {
+    llm = client(() => {
+      throw error;
+    });
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.error).toMatch(sentence);
+    expect(view!.error).not.toMatch(/exited 1|\{"type"/);
+    expect(reads().sort()).toEqual(['1-5', '6-8']);
   });
 
   it('reads a long sheet a few pages at a time, halving the window that ran out, into one sheet', async () => {
@@ -355,7 +405,8 @@ describe('reading a tutorial (live, long or cut off)', () => {
     // The progress moved while it read, and the record says three windows at the end.
     expect(pushed.some((c) => c.view?.status === 'pending' && c.view.progress && c.view.progress.total > 1)).toBe(true);
     const record = tutorialRecord(deps, notebookId, tutorialId)!;
-    expect([record.windowsDone, record.windowsTotal]).toEqual([3, 3]);
+    // Progress counts pages, so it never moves back when a window is cut smaller.
+    expect([record.windowsDone, record.windowsTotal]).toEqual([8, 8]);
     expect(view!.progress).toBeNull();
   });
 
@@ -383,7 +434,7 @@ describe('reading a tutorial (live, long or cut off)', () => {
     const [view] = listViews(deps, notebookId);
     expect(view!.status).toBe('failed');
     expect(view!.error).not.toBe(MESSAGES.noParts);
-    expect(view!.error).toMatch(/^Couldn't read this sheet\. Max could not read page 1 of this sheet: it holds more than one answer can carry/);
+    expect(view!.error).toMatch(/^Couldn't read this sheet\. Max could not read pages 1 and 2 of this sheet: each holds more than one answer can carry/);
     expect(view!.error).not.toMatch(/split the PDF/i);
     // The whole sheet, then each page: three answers, no repeat.
     expect(reads()).toEqual(['1-2', '1-1', '2-2']);
@@ -399,9 +450,9 @@ describe('reading a tutorial (live, long or cut off)', () => {
     let [view] = listViews(deps, notebookId);
     expect(view!.status).toBe('failed');
     expect(view!.error).toBe("Couldn't finish reading this sheet: Claude is overloaded right now. Retry in a minute; the pages already read are kept.");
-    // 1–5 once; 6–8 three times by the read's backoff, each asked twice by the call's own retry.
+    // 1–5 once; 6–8 twice (one wait between), never more over a failing transport.
     expect(reads().filter((r) => r === '1-5')).toHaveLength(1);
-    expect(reads().filter((r) => r === '6-8')).toHaveLength(6);
+    expect(reads().filter((r) => r === '6-8')).toHaveLength(2);
 
     requests = [];
     llm = client();
@@ -834,8 +885,9 @@ describe('official solutions', () => {
     const solved = sizes.filter((n) => n <= 2).reduce((a, b) => a + b, 0);
     expect(sizes[0]).toBeGreaterThan(2);
     expect(solved).toBe(sizes[0]);
-    // Every part but the choice (which needs a ticked answer, not a quote) got the official key.
-    expect(rewritten).toBe(sizes[0]! - 1);
+    // Every part asked got the official key; the choice, which needs the answer sheet's page
+    // images (a text source has none), was not asked.
+    expect(rewritten).toBe(sizes[0]!);
   });
 
   it('asks an answer sheet about a part once, keeps what it verified, and settles (no call on the next open)', async () => {
@@ -911,6 +963,46 @@ describe('official solutions', () => {
     expect(tutorialRepo(db).part(record.id, 'P2')!.key).toEqual(official);
     expect(solutionsCalls).toHaveLength(1);
     expect([...solutionsCalls[0]!.messages[0]!.content.matchAll(/^PART (\S+) \(/gm)].map((m) => m[1])).toEqual(['P4']);
+  });
+
+  it('runs one solutions pass at a time per sheet', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'Problem 2: relaxation ignores delete lists entirely.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    let calls = 0;
+    llm = { kind: 'anthropic', async complete(request) {
+      calls += 1;
+      await new Promise((r) => setTimeout(r, 5));
+      return { text: JSON.stringify({ parts: [] }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    const [a, b] = await Promise.all([rewriteKeys(deps, notebookId, tutorialId), rewriteKeys(deps, notebookId, tutorialId)]);
+    expect(a).toBe(b);
+    const once = calls;
+    await rewriteKeys(deps, notebookId, tutorialId);
+    // The first pass asked; the shared one did not; a later one finds every part settled.
+    expect(once).toBeGreaterThan(0);
+    expect(calls).toBe(once);
+  });
+
+  it('leaves a choice it could only verify from the answer sheet\'s images until those images are there', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.pdf.md');
+    writeFileSync(path, 'Problem 3B is answered with a tick on the scanned page.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    const asked: string[] = [];
+    llm = { kind: 'anthropic', async complete(request) {
+      asked.push(...[...request.messages[0]!.content.matchAll(/^PART (\S+) \(/gm)].map((m) => m[1]!));
+      return { text: JSON.stringify({ parts: [] }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    await rewriteKeys(deps, notebookId, tutorialId);
+    // No page images (a text source has none): the choice P3B is neither asked about nor settled.
+    expect(asked).not.toContain('P3B');
+    const record = tutorialRecord(deps, notebookId, tutorialId)!;
+    expect(tutorialRepo(db).part(record.id, 'P3B')!.key.solutionsTried).toBeUndefined();
+    expect(tutorialRepo(db).part(record.id, 'P2')!.key.solutionsTried?.done).toBe(true);
   });
 
   it('checks against the worked answer when a linked partial solutions file has no answer for this part', async () => {

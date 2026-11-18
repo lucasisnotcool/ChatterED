@@ -250,10 +250,11 @@ export interface TutorialView {
   hasSolutions: boolean;
   /**
    * **How far a long sheet's read has got** (2026-11-18): a sheet of more than a few pages is
-   * read a few pages at a time (`main/tutorial/windows.ts`), and this is the windows read over
-   * the windows there are. Only while `pending` and only when there is more than one window.
+   * read a few pages at a time (`main/tutorial/windows.ts`), and this is the pages read over the
+   * pages there are (it never moves back). Only while `pending` and only when there is more than
+   * one window, or while the read waits for a connection (`waiting`).
    */
-  progress?: { done: number; total: number } | null;
+  progress?: { done: number; total: number; waiting?: boolean } | null;
   /** This read replaces a sheet already read (`Read again`), not a first read. */
   rereading?: boolean;
   /**
@@ -353,6 +354,7 @@ const SHEET_NAME = /\b(tut(orial)?s?\d*|t\d{1,2}|problem[ -]?sets?|worksheets?|e
 /** An exam or a past paper: a sheet of questions, when its text has numbered questions. */
 const EXAM_NAME = /\b(exams?|finals?|mid[ -]?terms?|quiz(zes)?|pyps?|past[ -]?(year|papers?)|practice|mocks?|tests?)\b/i;
 const SOLUTION_NAME = /\b(solutions?|solns?|sols?|answers?|ans|answer[ -]?keys?|marking[ -]?(scheme|guide)s?|suggested[ -]?answers?|worked[ -]?solutions?)\b/i;
+const LECTURE_NAME = /\b(lectures?|lect?|l\d{1,2}|slides?|lecture[ -]?notes)\b/i;
 const PART_HEADING = /^\s*(?:(?:problem|question|exercise|task|q)\s*\d+\b|\d{1,3}\.\s*$)/gim;
 
 /**
@@ -369,6 +371,11 @@ const PART_HEADING = /^\s*(?:(?:problem|question|exercise|task|q)\s*\d+\b|\d{1,3
 export function guessSourceRole(name: string, text: string): SourceRole {
   const bare = name.replace(/\.[a-z0-9]+$/i, '').replace(/[+_.]/g, ' ').replace(/([a-z])(\d)/gi, '$1 $2');
   const joined = name.replace(/\.[a-z0-9]+$/i, '').replace(/[+_.]/g, ' ');
+  // A lecture's name wins over the words in its title: "Lecture 5 - Answer Set Programming",
+  // "L7 Solutions of ODEs", "Lecture 10 Final Review", "CS2103 L9 Unit Tests" (2026-11-19).
+  if (LECTURE_NAME.test(joined) && !SHEET_NAME.test(joined)) return 'lecture';
+  // A sheet that carries its own answers is still the sheet.
+  if (/\b(questions? (and|&) answers?|with (answers?|solutions?))\b/i.test(joined)) return 'tutorial';
   if (SOLUTION_NAME.test(bare) || SOLUTION_NAME.test(joined)) return 'solutions';
   const headings = text.match(PART_HEADING)?.length ?? 0;
   const sheet = SHEET_NAME.test(joined) || SHEET_NAME.test(bare);
