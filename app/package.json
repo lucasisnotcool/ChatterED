@@ -28,6 +28,7 @@
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "release": "bash tools/release.sh",
     "study:keys": "npm run -s build:main && node tools/study-keys.mjs",
+    "debug:read": "node tools/debug-read.mjs",
     "update:tool": "node tools/update-tool.mjs",
     "install:local": "bash tools/install-local.sh install",
     "uninstall:local": "bash tools/install-local.sh uninstall-launchd",
