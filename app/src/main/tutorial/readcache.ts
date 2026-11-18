@@ -12,7 +12,7 @@
  * holds the sheet's own words and the hidden keys, and so never goes into a log or an export.
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SheetWindow } from './windows.js';
 
@@ -52,8 +52,12 @@ export class WindowCache {
   put(w: SheetWindow, raw: Raw): void {
     this.#entries[WindowCache.slot(w)] = raw;
     try {
-      mkdirSync(join(this.#file, '..'), { recursive: true });
-      writeFileSync(this.#file, JSON.stringify(this.#entries));
+      // The sheet's words and its hidden keys: this user's only (0700 directory, 0600 file).
+      const dir = join(this.#file, '..');
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      chmodSync(dir, 0o700);
+      writeFileSync(this.#file, JSON.stringify(this.#entries), { mode: 0o600 });
+      chmodSync(this.#file, 0o600);
     } catch {
       // A window that cannot be kept is paid for again on a retry; the read itself goes on.
     }

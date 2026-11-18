@@ -480,7 +480,7 @@ export class TutorialStore {
     this.#rereading.add(fileId);
     // Pending at once, so the column shows the reading state and not the old sheet.
     const view = this.viewOf(fileId);
-    if (view) this.#upsert({ ...view, status: 'pending', error: null });
+    if (view) this.#upsert({ ...view, status: 'pending', error: null, rereading: view.parts.length > 0 });
     await this.read(fileId, true);
   }
 

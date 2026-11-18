@@ -375,14 +375,17 @@ export const SOLUTIONS_JSON_SCHEMA: Record<string, unknown> = {
         properties: {
           ...KEY_PROPERTIES,
           sourcePage: { type: 'integer', description: 'The numbered page of the answer source containing this answer.' },
-          sourceQuote: { type: 'string', description: 'An exact short passage from that page supporting the answer.' },
+          sourceQuote: {
+            type: 'string',
+            description: "The solutions' own words that give this answer, copied exactly from that page: its values, code, printed lines or chosen options, not a heading or the explanation around it.",
+          },
         },
       },
     },
   },
 };
 
-export const SOLUTIONS_SYSTEM = `You are given a tutorial sheet's parts and its OFFICIAL SOLUTIONS. For each part answered by the solutions, write the hidden key: the answer, for blanks each accepted answer, for choice the correct option ids, two to four sub-steps, likely mistakes and prerequisites. Also give sourcePage and an exact sourceQuote from the labelled page that supports the answer. Never invent a quote or fill a part the solutions do not answer.`;
+export const SOLUTIONS_SYSTEM = `You are given a tutorial sheet's parts and its OFFICIAL SOLUTIONS. For each part answered by the solutions, write the hidden key: the answer, for blanks each accepted answer, for choice the correct option ids, two to four sub-steps, likely mistakes and prerequisites. Also give sourcePage and sourceQuote: copy exactly, from that labelled page, the passage that states the answer itself (the values, the code, the printed lines, the chosen options), not a heading or the reasoning around it; up to about 400 characters. Never invent a quote or fill a part the solutions do not answer.`;
 
 export function solutionsMessage(input: {
   parts: readonly { partId: string; label: string; kind: string; prompt: string; options: string; blanks: string[] }[];

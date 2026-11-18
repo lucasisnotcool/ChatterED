@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { openTestDb } from '../../test-support/db.js';
-import { totalTokens, type CostOutcome, type CostScope } from '../../shared/cost.js';
+import { COST_SCOPE_LABEL, isIngestScope, totalTokens, type CostOutcome, type CostScope } from '../../shared/cost.js';
 import { CostLedger } from './ledger.js';
 import { analytics, median } from './analytics.js';
 
@@ -219,6 +219,18 @@ describe('the recent-call panels', () => {
 });
 
 describe('the filter menu', () => {
+  it('names a notebook\'s tutorial reads and solutions by the notebook, as one-off reading', () => {
+    const { db, deps } = seed([
+      { scope: 'tutorial', fileId: 'nb_0123456789ab', at: '2026-09-18T13:00:00.000Z', input: 20_000, output: 7_000 },
+      { scope: 'solutions', fileId: 'nb_0123456789ab', at: '2026-09-18T13:10:00.000Z', input: 40_000, output: 5_000 },
+    ]);
+    db.prepare("INSERT INTO notebooks (id, name, created_at, updated_at) VALUES ('nb_0123456789ab', 'CS1010 finals', '2026-09-18T12:59:00.000Z', '2026-09-18T12:59:00.000Z')").run();
+    const a = analytics(deps, {});
+    expect(a.knownFiles.find((f) => f.fileId === 'nb_0123456789ab')?.title).toBe('CS1010 finals');
+    expect(isIngestScope('tutorial') && isIngestScope('solutions')).toBe(true);
+    expect([COST_SCOPE_LABEL.tutorial, COST_SCOPE_LABEL.solutions]).toEqual(['Tutorial reads', 'Official solutions']);
+  });
+
   it('lists every document the ledger knows, whatever the current filter is', () => {
     const a = analytics(seed().deps, { fileId: 'file_quiet' });
     expect(a.knownFiles.map((f) => f.fileId).sort()).toEqual(['file_deck', 'file_quiet']);

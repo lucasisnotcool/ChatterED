@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { choiceEvidenceFromText, quoteOnPage, quoteSupportsAnswer } from './solution-evidence.js';
+import { choiceEvidenceFromText, pagesForPart, quoteOnPage, quoteSupportsAnswer } from './solution-evidence.js';
 
 const options = 'ABCDEFGH'.split('').map((id) => ({ id, text: `Relation ${id} attribute ${id.toLowerCase()}key` }));
 const page = (text: string) => [{ fileId: 'answers', page: 1, text }];
@@ -53,6 +53,21 @@ describe('an answer sheet numbered "12." whose answers open with the option (CS1
   });
 });
 
+describe('which answer-sheet pages a part needs', () => {
+  const pages = ['1.\n A. one', '2.\n long answer that runs', ' on and on\n3.\n C.', '4.\n D. four'].map((text, i) => ({ fileId: 'answers', page: i + 1, text }));
+
+  it('names the pages its question opens on, and the page after', () => {
+    expect(pagesForPart(pages, 'P2', 'Problem 2')!.map((p) => p.page)).toEqual([2, 3]);
+    expect(pagesForPart(pages, 'P3b', 'Problem 3 (b)')!.map((p) => p.page)).toEqual([3, 4]);
+    expect(pagesForPart(pages, 'P4', 'Question 4')!.map((p) => p.page)).toEqual([4]);
+  });
+
+  it('is null when it cannot tell, so every page goes', () => {
+    expect(pagesForPart(pages, 'Ex', 'Exercise')).toBeNull();
+    expect(pagesForPart(pages, 'P9', 'Problem 9')).toBeNull();
+  });
+});
+
 describe('text evidence for non-choice answers', () => {
   it('requires the quote to support the answer itself', () => {
     expect(quoteSupportsAnswer('The query selects riders with no low ranking result.', 'Select riders with no low ranking result')).toBe(true);
@@ -68,5 +83,21 @@ describe('text evidence for non-choice answers', () => {
     expect(quoteSupportsAnswer('At Line B: i=8, j=0, k=14.', 'i = 8, j = 0, k = 14')).toBe(true);
     expect(quoteSupportsAnswer('The output is 1 2 4 8 16 (spaces between values).', '1 2 4 8 16')).toBe(true);
     expect(quoteSupportsAnswer('The output is 1 2 4 8 (spaces between values).', '1 2 4 8 16')).toBe(false);
+  });
+
+  it('matches code and tables whatever their spacing, and a trace only in its own order', () => {
+    const page = 'Base condition:\n    (m < 10 && n < 10) && (m == n || m == 0 || n == 0)\nThe seven lines are:\n6\n5\n4\n4\n4\n3\n2';
+    expect(quoteOnPage(page, '(m<10 && n<10) && (m==n || m==0 || n==0)')).toBe(true);
+    expect(quoteOnPage(page, '6 5 4 4 4 3 2')).toBe(true);
+    expect(quoteSupportsAnswer('6\n5\n4\n4\n4\n3\n2', 'The output is, one per line: 6, 5, 4, 4, 4, 3, 2.')).toBe(true);
+    expect(quoteSupportsAnswer('6\n5\n4\n4\n4\n3\n2', 'The output is, one per line: 6, 5, 4, 3, 4, 4, 2.')).toBe(false);
+    const q21 = 'Base condition:\n(m < 10 && n < 10) && (m == n || m == 0 || n == 0)\nRecursive return:\nreturn m >= 10 && n >= 10 && zero_equiv(m % 10, n % 10) &&\nzero_equiv(m / 10, n / 10);';
+    expect(quoteOnPage(q21, '(m < 10 && n < 10) && (m == n || m == 0 || n == 0)\nreturn m >= 10 && n >= 10 && zero_equiv(m % 10, n % 10) &&\n        zero_equiv(m / 10, n / 10);')).toBe(true);
+    expect(quoteOnPage(q21, 'return m >= 10 && n >= 10\n(m < 10 && n < 10)')).toBe(false);
+    expect(quoteSupportsAnswer('x[0] == -5 and x[1] == -5. Assigning b = &a changes only the local pointer parameter.', 'x[0] == -5 and x[1] == -5, i.e. x = {-5, -5}.')).toBe(true);
+    expect(quoteSupportsAnswer('x[0] == -5 and x[1] == -5.', 'x[0] == -5 and x[1] == 5, i.e. x = {-5, 5}.')).toBe(false);
+    const rows = '1; {9,8,7}\n0; {8,9,7}\n1; {8,9,7}\n2; {8,9,7}\n1; {8,7,9}';
+    expect(quoteSupportsAnswer(rows, 'Iteration 2: i=0, a={8,9,7}. Iteration 3: i=1, a={8,9,7}. Iteration 4: i=2, a={8,9,7}. Iteration 5: i=1, a={8,7,9}.')).toBe(true);
+    expect(quoteSupportsAnswer(rows, 'Iteration 2: i=0, a={9,8,7}. Iteration 3: i=1, a={7,9,8}. Iteration 4: i=2, a={7,8,9}. Iteration 5: i=1, a={9,7,8}.')).toBe(false);
   });
 });

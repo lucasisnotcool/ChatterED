@@ -620,8 +620,9 @@ function knownFiles(deps: AnalyticsDeps): { fileId: string; title: string }[] {
 /**
  * `file_id → a name a person recognises`.
  *
- * Three sources in order of how close they are to what the learner sees: the notes doc's own
- * title, the material's title, and the vault file's name. A file id that none of them knows
+ * Four sources in order of how close they are to what the learner sees: the notebook's name (for
+ * a notebook's own calls), the notes doc's own title, the material's title, and the vault file's
+ * name. A file id that none of them knows
  * keeps its id, which is ugly and honest — the alternative is inventing a name for a document
  * that has been deleted.
  */
@@ -633,6 +634,12 @@ function titleMap(deps: AnalyticsDeps): Map<string, string> {
       if (!out.has(row.file_id)) out.set(row.file_id, row.title);
     }
   };
+  try {
+    // A notebook's own calls (its tutorial reads, its solutions) are filed under its id: its name.
+    add(deps.db.prepare('SELECT id AS file_id, name AS title FROM notebooks').all());
+  } catch {
+    /* A database migrated below 024 has no notebooks. */
+  }
   try {
     add(deps.db.prepare('SELECT file_id, title FROM notes_docs WHERE file_id IS NOT NULL').all());
   } catch {

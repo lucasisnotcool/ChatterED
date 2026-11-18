@@ -232,10 +232,11 @@ describe('reading a tutorial (scripted)', () => {
   });
 
   it('keeps the learner\'s answers and records through a re-read', async () => {
-    await ingested();
+    // The first read says it is reading the sheet; a re-read says it is reading it again.
+    expect((await ingested()).rereading).toBe(false);
     answer('P2', (p) => slot(p, para('Fewer constraints, so never harder.')));
     await checkPart(deps, { notebookId, fileId: tutorialId, partId: 'P2' });
-    await ingested(true);
+    expect((await ingested(true)).rereading).toBe(true);
     const { doc } = savedDoc();
     expect(partAnswers(doc).find((a) => a.partId === 'P2')!.text).toBe('Fewer constraints, so never harder.');
     expect(listViews(deps, notebookId)[0]!.parts.find((p) => p.partId === 'P2')!.attempts).toBe(1);
@@ -878,6 +879,38 @@ describe('official solutions', () => {
     await rewriteKeys(deps, notebookId, tutorialId);
     expect(calls).toBeGreaterThan(asked);
     expect(tutorialRepo(db).part(record.id, 'P2')!.key).toEqual(before);
+  });
+
+  it('keeps the official keys through a re-read, and shows each batch only its answers\' pages', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'Problem 2: relaxation ignores delete lists entirely, so it is never harder.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    const solutionsCalls: LlmRequest[] = [];
+    llm = { kind: 'anthropic', async complete(request) {
+      if (request.max_tokens === TUTORIAL_MAX_TOKENS) {
+        // The re-read: the same Problem 2, and a new Problem 4.
+        const part = (id: string, label: string, text: string) => ({ type: 'part', id, label, page: 1, prompt: [{ type: 'paragraph', page: 1, text }], answer: { kind: 'text' } });
+        const key = (partId: string) => ({ partId, answer: 'model key', blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], formalCheck: null, notesBlockIds: [], pages: [], objectiveIds: [] });
+        return { text: JSON.stringify({ title: 'Tutorial 9', blocks: [part('P2', 'Problem 2', 'Why does ignoring delete lists give an admissible heuristic?'), part('P4', 'Problem 4', 'Name one relaxation.')], parts: [key('P2'), key('P4')] }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+      }
+      if (request.system[0]!.text.startsWith('You are given')) solutionsCalls.push(request);
+      const ids = [...request.messages[0]!.content.matchAll(/^PART (\S+) \(/gm)].map((m) => m[1]!);
+      const keys = ids.map((partId) => ({ partId, answer: 'Relaxation ignores delete lists', blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], sourcePage: 1, sourceQuote: partId === 'P2' ? 'relaxation ignores delete lists entirely' : '' }));
+      return { text: JSON.stringify(request.system[0]!.text.startsWith('You solve') ? { answers: [] } : { parts: keys }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    await rewriteKeys(deps, notebookId, tutorialId);
+    const record = tutorialRecord(deps, notebookId, tutorialId)!;
+    const official = tutorialRepo(db).part(record.id, 'P2')!.key;
+    expect(official.solutionEvidence?.version).toBe(1);
+
+    solutionsCalls.length = 0;
+    await ingested(true);
+    // P2 kept its official key; only the new P4 was asked about.
+    expect(tutorialRepo(db).part(record.id, 'P2')!.key).toEqual(official);
+    expect(solutionsCalls).toHaveLength(1);
+    expect([...solutionsCalls[0]!.messages[0]!.content.matchAll(/^PART (\S+) \(/gm)].map((m) => m[1])).toEqual(['P4']);
   });
 
   it('checks against the worked answer when a linked partial solutions file has no answer for this part', async () => {

@@ -254,6 +254,8 @@ export interface TutorialView {
    * the windows there are. Only while `pending` and only when there is more than one window.
    */
   progress?: { done: number; total: number } | null;
+  /** This read replaces a sheet already read (`Read again`), not a first read. */
+  rereading?: boolean;
   /**
    * **What the lecture teaches that no part of the sheet exercises** (Lucas, 3 Oct 2026: practice
    * is generated only on demand, but the gaps are advertised so the learner can decide). The

@@ -21,19 +21,36 @@ function squash(text: string): string {
 }
 
 /**
- * The quote is on the page: the same words, whatever the line breaks and indentation between them
- * (a PDF's text layer breaks a worked answer over lines the model quotes as one).
+ * The quote is on the page: the same characters, whatever the spacing, line breaks and
+ * indentation between them (a PDF's text layer breaks a worked answer over lines, and lays code
+ * and tables out with spaces the model does not copy). Six characters at least, spaces aside.
  */
 export function quoteOnPage(pageText: string, quote: string): boolean {
-  const q = squash(quote);
-  return q.length >= 6 && squash(pageText).includes(q);
+  const tight = (t: string) => squash(t).replace(/\s+/g, '');
+  const page = tight(pageText);
+  if (tight(quote).length < 6) return false;
+  // A quote the model stitched from lines of one passage, skipping a label between them
+  // ("Base condition:" … "Recursive return:"): every line of it on the page, in order.
+  const pieces = quote.split(/\n|…|\.\.\./).map(tight).filter((piece) => piece.length >= 3);
+  if (pieces.length === 0 || !pieces.some((piece) => piece.length >= 6)) return false;
+  let at = 0;
+  for (const piece of pieces) {
+    const found = page.indexOf(piece, at);
+    if (found < 0) return false;
+    at = found + piece.length;
+  }
+  return true;
 }
+
+/** Why a proposed key was not taken, for a debug log line (never the text). */
+export type QuoteMiss = 'no_quote' | 'quote_not_on_page' | 'quote_without_answer';
 
 /** A source quote must carry some of the proposed answer, not merely repeat the question. */
 export function quoteSupportsAnswer(quote: string, answer: string): boolean {
   if (/^-?\d+(?:\.\d+)?$/.test(answer.trim())) return quote.includes(answer.trim());
   const a = squash(answer);
   if (a.length >= 3 && squash(quote).includes(a)) return true;
+  if (numbersInOrder(quote, answer)) return true;
   const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
   const terms = (s: string) => [...new Set(words(s)
     .filter((w) => w.length >= 3 && !['the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'not'].includes(w)))];
@@ -45,6 +62,38 @@ export function quoteSupportsAnswer(quote: string, answer: string): boolean {
     return all.length > 0 && all.every((w) => found.has(w));
   }
   return wanted.filter((w) => found.has(w)).length >= Math.min(2, Math.ceil(wanted.length / 2));
+}
+
+/**
+ * A trace, a table or printed lines: the answer's numbers are the quote's, in the quote's order
+ * (three at least; all of up to eight, three in four of a longer trace, so labels such as
+ * "Iteration 2" may be extra). A trace in a different order does not pass.
+ */
+function numbersInOrder(quote: string, answer: string): boolean {
+  const nums = (s: string) => s.match(/-?\d+(?:\.\d+)?/g) ?? [];
+  const a = nums(answer);
+  const q = nums(quote);
+  if (a.length < 3 || q.length < 3) return false;
+  // An answer that restates what it quotes ("x[0] == -5 and x[1] == -5, i.e. x = {-5, -5}"): the
+  // quote's numbers in the answer's order, and no number of the answer's that the quote lacks.
+  const quoted = new Set(q);
+  if (a.every((n) => quoted.has(n))) {
+    let i = 0;
+    for (const n of a) if (n === q[i]) i += 1;
+    if (i === q.length) return true;
+  }
+  // Longest common subsequence, small inputs only.
+  const prev = new Array<number>(q.length + 1).fill(0);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diag = 0;
+    for (let j = 1; j <= q.length; j += 1) {
+      const up = prev[j]!;
+      prev[j] = a[i - 1] === q[j - 1] ? diag + 1 : Math.max(prev[j]!, prev[j - 1]!);
+      diag = up;
+    }
+  }
+  // A short answer must be quoted whole; a long trace may carry a few labels the quote does not.
+  return prev[q.length]! >= (a.length <= 8 ? a.length : Math.ceil(a.length * 0.75));
 }
 
 /** Cut off the next numbered question so its ticks cannot contaminate this one's key. */
@@ -83,11 +132,12 @@ function bareSection(text: string, question: number): string | null {
  */
 function ledByOptions(section: string, valid: ReadonlySet<string>): string[] | null {
   const lines = section.split('\n').slice(1);
+  // "A.", "A and D.", "B, C, and D.", "A, B, D, and E.", "C only."
   const led = lines
-    .map((l) => /^\s*([A-Za-z](?:\s*(?:,|and|&)\s*[A-Za-z])*)\s*\.(?:\s+\S|\s*$)/.exec(l)?.[1])
+    .map((l) => /^\s*([A-Za-z](?:\s*(?:,\s*and|,|and|&)\s*[A-Za-z])*)(?:\s+only)?\s*\.(?:\s+\S|\s*$)/i.exec(l)?.[1])
     .filter((v): v is string => v !== undefined);
   if (led.length !== 1) return null;
-  const ids = led[0]!.split(/\s*(?:,|and|&)\s*/).map((id) => id.trim().toUpperCase());
+  const ids = led[0]!.split(/\s*(?:,\s*and|,|and|&)\s*/i).map((id) => id.trim().toUpperCase());
   if (ids.length === 0 || new Set(ids).size !== ids.length || ids.some((id) => !valid.has(id))) return null;
   return ids;
 }
@@ -142,6 +192,9 @@ export function choiceEvidenceFromText(
     if (correct.length === 0) {
       const line = section.match(/(?:^|\n)\s*(?:correct\s+)?answers?\s*[:-]\s*([A-Za-z0-9,\s&]+)(?:\n|$)/i)?.[1] ?? '';
       correct = line.match(/[A-Za-z0-9]+/g)?.map((id) => id.toUpperCase()) ?? [];
+      // No ticks and no "Answer:" line: an answer led by its option, whose explanation repeats
+      // the options' words (CS1010 Q35, "A. moo writes beyond the allocated array…").
+      if (correct.length === 0) correct = ledByOptions(section, valid) ?? [];
     } else if (!allOptionsListed) {
       continue;
     }
@@ -149,4 +202,26 @@ export function choiceEvidenceFromText(
     return { fileId: page.fileId, page: page.page, correct, method: 'text' };
   }
   return null;
+}
+
+/**
+ * **The answer-sheet pages a part's answer is on**: the pages whose text opens the part's
+ * question number, and the page after each (an answer runs on). Null when the part has no
+ * question number or no page names it, and the caller then sends every page (2026-11-18: each
+ * solutions batch used to carry all thirteen page images).
+ */
+export function pagesForPart(pages: readonly SolutionPage[], partId: string, label: string): SolutionPage[] | null {
+  // A sub-part's answer is under its question's number: P9a, "Problem 9 (a)".
+  const fromLabel = label.match(/\b(?:question|problem|q)\s*#?\s*(\d+)/i)?.[1];
+  const fromId = partId.match(/^P(\d+)/i)?.[1];
+  const number = fromLabel ? Number(fromLabel) : fromId ? Number(fromId) : null;
+  if (number === null) return null;
+  const hit = new Set<SolutionPage>();
+  pages.forEach((page, i) => {
+    if (!questionSection(page.text, number)) return;
+    hit.add(page);
+    const next = pages[i + 1];
+    if (next && next.fileId === page.fileId) hit.add(next);
+  });
+  return hit.size > 0 ? [...hit] : null;
 }

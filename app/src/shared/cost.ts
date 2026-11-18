@@ -61,7 +61,11 @@ export type CostScope =
   | 'summary'
   // collab-doc (#48): the two-pass notes ingest, and the structured doc-edit call after a turn.
   | 'notes'
-  | 'docedit';
+  | 'docedit'
+  // A tutorial or exam sheet read into its document (2026-11-18), and its official solutions
+  // turned into keys: built once per sheet, like the notes, but not the notes.
+  | 'tutorial'
+  | 'solutions';
 
 export const COST_SCOPES: readonly CostScope[] = [
   'group',
@@ -74,6 +78,8 @@ export const COST_SCOPES: readonly CostScope[] = [
   'summary',
   'notes',
   'docedit',
+  'tutorial',
+  'solutions',
 ] as const;
 
 /** Human wording for a scope, so a counter and a drawer never label the same row differently. */
@@ -88,6 +94,8 @@ export const COST_SCOPE_LABEL: Record<CostScope, string> = {
   summary: 'Summaries',
   notes: 'Lecture notes',
   docedit: 'Doc edits',
+  tutorial: 'Tutorial reads',
+  solutions: 'Official solutions',
 };
 
 /**
@@ -102,7 +110,7 @@ export const COST_SCOPE_LABEL: Record<CostScope, string> = {
  * analytics SQL groups on it and the doc header counter prints it as its own line, and the two
  * cannot come to disagree about which side `objectives` falls on.
  */
-export const INGEST_SCOPES: readonly CostScope[] = ['notes', 'ingest', 'objectives'] as const;
+export const INGEST_SCOPES: readonly CostScope[] = ['notes', 'ingest', 'objectives', 'tutorial', 'solutions'] as const;
 
 export function isIngestScope(scope: CostScope): boolean {
   return (INGEST_SCOPES as readonly string[]).includes(scope);

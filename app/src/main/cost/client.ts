@@ -34,6 +34,7 @@
  *
  * The error is always re-thrown. Accounting never changes what the caller sees.
  */
+import { randomUUID } from 'node:crypto';
 import { type CostBackend, type CostOutcome, type CostScope, type CostTokens } from '../../shared/cost.js';
 import { LlmAbortedError, type LLMClient, type LlmRequest, type LlmResult, type LlmScope, type LlmUsage } from '../../room/llm/types.js';
 import { log, type Logger } from '../log.js';
@@ -50,14 +51,18 @@ export function costedClient(inner: LLMClient, sink: CostSink | null, logger: ()
     kind: inner.kind,
     async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
       const startedAt = Date.now();
+      // Billed per request: counted from the moment it is sent (see `recordInFlight`).
+      const inflight = inner.kind === 'anthropic' ? recordInFlight(request, inner.kind) : null;
+      if (inflight) write(() => sink.record(inflight));
+      const replaces = inflight ? { replaces: inflight.id } : {};
       let result: LlmResult;
       try {
         result = await inner.complete(request, onDelta, signal);
       } catch (err) {
-        write(() => sink.record(recordForFailure(request, err, inner.kind, Date.now() - startedAt)));
+        write(() => sink.record({ ...recordForFailure(request, err, inner.kind, Date.now() - startedAt), ...replaces }));
         throw err;
       }
-      write(() => sink.record(recordFor(request, result, inner.kind, Date.now() - startedAt)));
+      write(() => sink.record({ ...recordFor(request, result, inner.kind, Date.now() - startedAt), ...replaces }));
       return result;
 
       /** A failed accounting write must never cost the learner their turn. See the header. */
@@ -104,6 +109,42 @@ export function recordFor(request: LlmRequest, result: LlmResult, kind: CostBack
     reportedUsd: typeof result.costUsd === 'number' ? result.costUsd : null,
     durationMs,
     outcome: 'ok',
+  };
+}
+
+/** About this many characters of prompt make one input token (an estimate, for a call cut off). */
+export const CHARS_PER_TOKEN = 3.5;
+/** What one page image costs as input, about (a 1,100-pixel JPEG). */
+export const TOKENS_PER_IMAGE = 1_600;
+
+/**
+ * **A call counted before it answers** (field-study API test, 2026-11-18: quitting during a
+ * tutorial read left 41 requests billed and 39 recorded). A row is written as the request goes
+ * out, with its input estimated from the prompt's size and its images, outcome `error` and
+ * `source: 'inflight'`; the call's real row replaces it when it ends, either way. A row still
+ * in flight when the app quits stays, so the study credit counts what Anthropic will bill for the
+ * input it was sent. Only on the API: the CLI is not billed per request, and its killed calls
+ * already carry what they reported.
+ */
+export function recordInFlight(request: LlmRequest, kind: CostBackend): RecordInput & { id: string } {
+  const chars =
+    request.system.reduce((n, b) => n + b.text.length, 0) +
+    request.messages.reduce((n, m) => n + m.content.length, 0) +
+    (request.jsonSchema ? JSON.stringify(request.jsonSchema).length : 0);
+  return {
+    id: `use_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    scope: request.meta.costScope ?? costScopeFor(request.meta.scope),
+    model: request.model,
+    backend: kind,
+    tokens: { input: Math.ceil(chars / CHARS_PER_TOKEN) + (request.images?.length ?? 0) * TOKENS_PER_IMAGE, output: 0, cacheWrite: 0, cacheRead: 0 },
+    turnId: request.meta.turnId ?? null,
+    roomId: request.meta.roomId ?? null,
+    fileId: request.meta.fileId ?? null,
+    anchorId: request.meta.anchorId ?? null,
+    reportedUsd: null,
+    durationMs: null,
+    source: 'inflight',
+    outcome: 'error',
   };
 }
 

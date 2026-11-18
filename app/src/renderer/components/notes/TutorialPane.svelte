@@ -566,7 +566,7 @@
         </div>
       {:else if phase === 'reading'}
         <div class="nd-state">
-          <div class="nd-state-title">{view?.docId ? 'Reading the sheet again…' : 'Reading the sheet…'}</div>
+          <div class="nd-state-title">{view?.rereading ? 'Reading the sheet again…' : 'Reading the sheet…'}</div>
           <p class="nd-state-line">
             {#if reading && reading.total}
               page images sent · {reading.done} of {reading.total}

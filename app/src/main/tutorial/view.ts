@@ -26,6 +26,13 @@ export function bareName(name: string): string {
   return name.replace(/\.[^.]+$/, '').trim() || name;
 }
 
+/** A pending read with parts already stored: Read again, not a first read. */
+function rereading(record: NotesDocRecord | null): boolean {
+  if (record?.ingestStatus !== 'pending') return false;
+  const stored = parsedDoc(record);
+  return stored !== null && partAnswers(stored).length > 0;
+}
+
 /** The stored doc, parsed; null when there is none or it will not parse. */
 export function parsedDoc(record: NotesDocRecord | null): Node | null {
   if (!record || record.doc === null || record.doc === undefined) return null;
@@ -119,6 +126,8 @@ export function tutorialView(input: ViewInput): TutorialView {
     error: record?.error ?? null,
     parts,
     hasSolutions: keyed.length > 0 && keyed.every((r) => r.key.solutionEvidence?.version === 1),
+    // A read with a sheet already behind it: the stored doc has parts while this one is pending.
+    rereading: rereading(record),
     progress:
       record && record.ingestStatus === 'pending' && record.windowsTotal > 1
         ? { done: Math.min(record.windowsDone, record.windowsTotal), total: record.windowsTotal }

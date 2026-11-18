@@ -87,6 +87,8 @@ export interface RecordInput {
   id?: string;
   /** How the call ended. Omitted means `'ok'` — the only shape that existed before 021. */
   outcome?: CostOutcome;
+  /** The in-flight row this call's real row replaces (`client.ts` `recordInFlight`). */
+  replaces?: string;
 }
 
 export interface CostLedgerDeps {
@@ -166,6 +168,10 @@ export class CostLedger {
       source: input.source ?? 'live',
       outcome: input.outcome ?? 'ok',
     };
+    if (input.replaces) {
+      // Only ever an in-flight estimate: a real row is never replaced.
+      this.#d.db.prepare("DELETE FROM llm_usage WHERE id = @id AND source = 'inflight'").run({ id: input.replaces });
+    }
     insert(this.#d.db, 'llm_usage', row as unknown as Record<string, unknown>);
     return viewOf(row);
   }

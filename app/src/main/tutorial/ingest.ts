@@ -64,7 +64,7 @@ import {
 import { tutorialRepo, type LandedPart } from './repo.js';
 import { keyFrom, validateTutorial, type TutorialRepairs } from './validate.js';
 import { promptInContext } from './part.js';
-import { choiceEvidenceFromText, quoteOnPage, quoteSupportsAnswer, type SolutionPage } from './solution-evidence.js';
+import { choiceEvidenceFromText, pagesForPart, quoteOnPage, quoteSupportsAnswer, type QuoteMiss, type SolutionPage } from './solution-evidence.js';
 import type { RoleChange } from '../notebooks/service.js';
 import type { LLMClient } from '../../room/llm/types.js';
 import { createHash } from 'node:crypto';
@@ -255,6 +255,10 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
     // No part, and pages that could not be read: say that, not that the sheet has no questions.
     if (!checked) throw read && read.notices.length > 0 ? new SheetUnread(read.notices, source.pageCount) : new NoParts();
 
+    // A re-read keeps what the official solutions verified, part by part (same id, same label),
+    // so the same answer sheet is not paid for again.
+    const carriedKeys = firstRead ? 0 : carrySolutionKeys(deps, docId, checked);
+
     let disagreed = 0;
     let unverified = 0;
     if (llm) {
@@ -275,6 +279,7 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
       calls: read?.calls ?? 0,
       resumed: read?.resumed ?? 0,
       emptyRetries: read?.emptyRetries ?? 0,
+      carriedKeys,
       notices: (read?.notices ?? []).map((n) => ({ from: n.from, to: n.to, reason: n.reason })),
       merge: read?.merge ?? null,
     });
@@ -301,6 +306,31 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
     });
     pushView(deps, notebookId, fileId);
   }
+}
+
+/**
+ * The official keys of the sheet being replaced, onto the new reading's parts with the same id
+ * and the same label: a key verified against the answer sheet, and the record that the answer
+ * sheet was already asked about a part. Returns how many parts kept one.
+ */
+function carrySolutionKeys(deps: TutorialDeps, docId: string, checked: { sheet: import('../../shared/tutorial.js').TutorialSheet; parts: LandedPart[] }): number {
+  const before = new Map(tutorialRepo(deps.db).parts(docId).map((r) => [r.partId, r.key]));
+  const labels = new Map(partAnswersOf(notesRepo(deps.db).byId(docId)?.doc ?? null).map((a) => [a.partId, a.label]));
+  const now = new Map(
+    checked.sheet.blocks.filter((b): b is import('../../shared/tutorial.js').SheetPart => b.type === 'part').map((p) => [p.id, p.label]),
+  );
+  let carried = 0;
+  for (const part of checked.parts) {
+    const old = before.get(part.partId);
+    if (!old || labels.get(part.partId) !== now.get(part.partId)) continue;
+    if (old.solutionEvidence?.version === 1) {
+      part.key = { ...old, ...(part.key.check && !old.check ? { check: part.key.check } : {}) };
+      carried += 1;
+    } else if (old.solutionsTried) {
+      part.key = { ...part.key, solutionsTried: old.solutionsTried };
+    }
+  }
+  return carried;
 }
 
 class NoParts extends Error {
@@ -456,7 +486,7 @@ async function readSheet(
             messages: [{ role: 'user', content: request.content }],
             jsonSchema: TUTORIAL_JSON_SCHEMA,
             ...(shown.length > 0 ? { images: shown } : {}),
-            meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+            meta: { scope: 'notes', costScope: 'tutorial', fileId: notebookId },
           },
           'tutorial',
         );
@@ -682,7 +712,8 @@ async function confirmKeys(
   // The part with the problem it belongs to above it, as Help and Check see it: "(b) p[0] = 'b';"
   // is not solvable without the declarations its stem makes (red team, 2026-11-18).
   const inDoc = new Map(partAnswersOf(tutorialDoc(sheet, { pageBase }).toJSON()).map((a) => [a.partId, a]));
-  const open = parts.filter((p) => !p.key.check && p.key.answer.length > 0);
+  // An official key carried through a re-read is the solutions' answer: nothing to re-solve.
+  const open = parts.filter((p) => !p.key.check && p.key.answer.length > 0 && p.key.solutionEvidence?.version !== 1);
   if (open.length === 0) return { disagreed: 0, unverified: 0 };
   const describe = (id: string) => {
     const p = sheetParts.get(id)!;
@@ -743,7 +774,7 @@ async function confirmBatch(
       system: [{ type: 'text', text: RESOLVE_SYSTEM }],
       messages: [{ role: 'user', content: resolveMessage(open.map((p) => describe(p.partId))) }],
       jsonSchema: RESOLVE_JSON_SCHEMA,
-      meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+      meta: { scope: 'notes', costScope: 'tutorial', fileId: notebookId },
     },
     'tutorial.resolve',
   )) as { answers?: { partId?: unknown; answer?: unknown }[] };
@@ -769,7 +800,7 @@ async function confirmBatch(
             },
           ],
           jsonSchema: COMPARE_JSON_SCHEMA,
-          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+          meta: { scope: 'notes', costScope: 'tutorial', fileId: notebookId },
         },
         'tutorial.compare',
       )) as { parts?: { partId?: unknown; agree?: unknown }[] })
@@ -883,6 +914,7 @@ function logLanding(
     calls: number;
     resumed: number;
     emptyRetries: number;
+    carriedKeys: number;
     notices: { from: number; to: number; reason: string }[];
     merge: MergeStats | null;
   },
@@ -905,6 +937,7 @@ function logLanding(
     calls: extra.calls,
     resumed: extra.resumed,
     empty_retries: extra.emptyRetries,
+    carried_keys: extra.carriedKeys,
     ...(extra.notices.length > 0 ? { notices: extra.notices } : {}),
     ...(extra.merge ? { merged: extra.merge } : {}),
     repaired: repairs,
@@ -1065,7 +1098,20 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
       // dozen keys, and an exam has fifty. A batch cut off is halved; one that fails leaves its
       // parts' keys as they were.
       let failedBatches = 0;
+      // Each batch is shown only the page images its parts' answers are on, when those can be
+      // found by question number; a re-read used to pay for all thirteen pages on every batch.
+      const imagesFor = (batch: readonly PartAnswer[]): StoredPageImage[] => {
+        if (solutions.length !== 1) return images;
+        const wanted = new Set<number>();
+        for (const a of batch) {
+          const on = pagesForPart(pages, a.partId, a.label);
+          if (!on) return images;
+          for (const p of on) wanted.add(p.page);
+        }
+        return images.filter((i) => wanted.has(i.page));
+      };
       const readBatch = async (batch: PartAnswer[]): Promise<unknown[]> => {
+        const shown = imagesFor(batch);
         try {
           const raw = (await callJson(
             deps,
@@ -1092,8 +1138,8 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
                 },
               ],
               jsonSchema: SOLUTIONS_JSON_SCHEMA,
-              ...(images.length > 0 ? { images } : {}),
-              meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+              ...(shown.length > 0 ? { images: shown } : {}),
+              meta: { scope: 'notes', costScope: 'solutions', fileId: notebookId },
             },
             'tutorial.solutions',
           )) as { parts?: unknown[] };
@@ -1133,7 +1179,13 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
           }
           continue;
         }
-        if (!sourcePage || !quoteSupportsAnswer(quote, fresh.answer)) continue;
+        const miss: QuoteMiss | null = quote.length === 0 ? 'no_quote' : !sourcePage ? 'quote_not_on_page' : !quoteSupportsAnswer(quote, fresh.answer) ? 'quote_without_answer' : null;
+        if (miss) {
+          // Why an official answer was not taken, by part and reason; never the text.
+          log().debug('tutorial.solutions.unmatched', { doc_id: record.id, part_id: answer.partId, kind: answer.kind, reason: miss });
+          continue;
+        }
+        if (!sourcePage) continue;
         parts.setKey(
           record.id,
           answer.partId,
@@ -1154,9 +1206,9 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
             messages: [{ role: 'user', content: batch
               .map((a) => `PART ${a.partId} (${a.label})\n${a.prompt}\n${a.options.map((o) => `(${o.id}) ${o.text}`).join('\n')}`)
               .join('\n\n') }],
-            images,
+            images: imagesFor(batch),
             jsonSchema: VISUAL_CHOICES_JSON_SCHEMA,
-            meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+            meta: { scope: 'notes', costScope: 'solutions', fileId: notebookId },
           }, 'tutorial.solutions.visual')) as { parts?: unknown[] };
           return Array.isArray(got.parts) ? got.parts : [];
           } catch (err) {
@@ -1226,7 +1278,7 @@ function sheetPartOf(a: PartAnswer): import('../../shared/tutorial.js').SheetPar
 /** How many failed tries settle a part for one answer sheet. */
 const SOLUTIONS_MAX_FAILS = 2;
 /** Moves when the solutions pass changes what it can verify, so every part is asked again once. */
-const SOLUTIONS_PASS_VERSION = 3;
+const SOLUTIONS_PASS_VERSION = 4;
 
 /** The answer sheet as this pass saw it: its pages' words, and the pass's version. */
 function solutionsMarker(pages: readonly SolutionPage[]): string {
