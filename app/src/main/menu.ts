@@ -41,6 +41,8 @@ import { join } from 'node:path';
 import type { AppCommand } from '../shared/types.js';
 import { IPC } from '../shared/ipc.js';
 import { TRIAL_CONTACT_EMAIL } from '../shared/trial.js';
+import { DEBUG_ACCELERATOR, DEBUG_MENU_LABEL } from '../shared/debug.js';
+import { showDebugReport } from './debug/index.js';
 
 /** Help ▸ How ChatterED Works: the public releases repo's README, which is the user guide. */
 export const HELP_URL = 'https://github.com/lucasisnotcool/ChatterED-releases#readme';
@@ -85,6 +87,8 @@ export interface MenuDeps {
    * build, before `npm run notices`). Help ▸ Acknowledgements appears only when it is set.
    */
   noticesPath?: string | null;
+  /** Help ▸ Copy Debug Info for the Team (`main/debug/`). Injected so the template stays testable. */
+  onDebugReport?(): void;
 }
 
 export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] {
@@ -203,6 +207,9 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         // `shell.openExternal`.
         { label: 'How ChatterED Works', click: () => void shell.openExternal(HELP_URL) },
         { label: 'Report a Problem…', click: () => void shell.openExternal(REPORT_PROBLEM_MAILTO) },
+        // ⇧⌘D works without the menu too (`debug/index.ts` catches it before the page does); the
+        // item is here so it can be found, and so a participant can be told where it is.
+        { label: DEBUG_MENU_LABEL, accelerator: DEBUG_ACCELERATOR, click: () => deps.onDebugReport?.() },
         ...(deps.noticesPath
           ? ([
               { type: 'separator' },
@@ -252,6 +259,7 @@ export function installMenuFor(getWindow: () => BrowserWindow | null): void {
     getWindow,
     isPackaged: app.isPackaged,
     noticesPath: process.resourcesPath && (app.isPackaged || existsSync(notices)) ? notices : null,
+    onDebugReport: () => showDebugReport('menu'),
     getTextScale: () => scale,
     setTextScale: (value) => {
       scale = value;

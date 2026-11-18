@@ -26,6 +26,8 @@
   // The study build (src/shared/study.ts): the code, the credit left, and the sheet when it runs out.
   import StudyUsedUp from './components/study/StudyUsedUp.svelte';
   import { study } from './lib/studystore.svelte.js';
+  // ⇧⌘D, Copy Debug Info for the Team (src/main/debug/): outside the consent gate, on every screen.
+  import DebugReportPanel from './components/debug/DebugReportPanel.svelte';
   // "Updated to build N", once after an update (src/main/update/).
   import UpdateNote from './components/update/UpdateNote.svelte';
 
@@ -120,6 +122,7 @@
 <StudyUsedUp />
 <UpdateNote />
 {/if}
+<DebugReportPanel />
 
 <style>
   .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }

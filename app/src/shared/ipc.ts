@@ -52,6 +52,7 @@ import type {
 import type { StopTurnResult, TurnTraceView } from './types.js';
 import type { TrialApi } from './trial.js';
 import type { StudyApi } from './study.js';
+import type { DebugApi } from './debug.js';
 import type { StudyEvent } from './studylog.js';
 
 import type {
@@ -241,6 +242,8 @@ export interface ChatterEdApi {
   trial: TrialApi;
   /** The study build: unlock with a participant code, and the API credit left (`shared/study.ts`). */
   study: StudyApi;
+  /** Help ▸ Copy Debug Info for the Team (⇧⌘D): the panel's show, ack and copy (`shared/debug.ts`). */
+  debug: DebugApi;
   bootstrap(): Promise<Bootstrap>;
   /** Stored in <userData>/anthropic-api-key, mode 0600. Never written to SQLite (#15). */
   setApiKey(key: string): Promise<{ ok: boolean; error?: string }>;

@@ -22,6 +22,7 @@ import { defaultLogDir, errorClass, fileSink, initLogger, log, type LogLevel } f
 import { appEntryUrl, guardWindow, installAppGuards, isTrustedSender } from './security.js';
 import { CrashBudget, isCrash } from './crash.js';
 import { onIntervalActivity } from './clock.js';
+import { installDebugReport } from './debug/index.js';
 import { faultActive, runtime } from './update/runtime.js';
 import { startupFailed } from './update/failure.js';
 import { recordBuild, BUILD_HISTORY_SETTING } from './buildhistory.js';
@@ -378,6 +379,8 @@ function boot(): void {
   // the migration and its backup above, so the import runs on a database that has been saved.
   service.startNotebooks();
 
+  // ⇧⌘D, Copy Debug Info for the Team (`main/debug/`): its channels, and the key caught before the page.
+  installDebugReport({ getWindow: () => mainWindow, isTrustedSender: (event) => isTrustedSender(event, entry) });
   mainWindow = createWindow();
   // Reload and DevTools are in this menu only while `app.isPackaged` is false.
   installMenuFor(() => mainWindow);

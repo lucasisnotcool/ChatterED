@@ -1547,6 +1547,8 @@ export function createMockBridge(): ChatterEdApi {
   return {
     trial: createMockTrial(),
     study: createMockStudy(),
+    // The debug panel is driven by main's ⇧⌘D; the mock never shows it.
+    debug: { onShow: () => () => {}, shown: async () => {}, copy: async () => ({ ok: true, chars: 0 }) },
     async bootstrap(): Promise<Bootstrap> {
       return {
         appVersion: '0.1.0-mock', hasApiKey: false, mode: 'scripted',

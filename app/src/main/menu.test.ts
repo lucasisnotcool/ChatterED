@@ -352,13 +352,22 @@ describe('the Help menu', () => {
   it('opens the licence notices from the app bundle when they are there', () => {
     shellCalls.paths.length = 0;
     const { template, labels } = helpFor(NOTICES);
-    expect(labels).toEqual(['Settings…', 'How ChatterED Works', 'Report a Problem…', 'Acknowledgements']);
+    expect(labels).toEqual(['Settings…', 'How ChatterED Works', 'Report a Problem…', 'Copy Debug Info for the Team', 'Acknowledgements']);
     click(template, 'help', 'Acknowledgements');
     expect(shellCalls.paths).toEqual([NOTICES]);
   });
 
   it('has no Acknowledgements when there is no notices file (a dev build)', () => {
-    expect(helpFor(null).labels).toEqual(['Settings…', 'How ChatterED Works', 'Report a Problem…']);
+    expect(helpFor(null).labels).toEqual(['Settings…', 'How ChatterED Works', 'Report a Problem…', 'Copy Debug Info for the Team']);
+  });
+
+  it('offers Copy Debug Info for the Team on ⇧⌘D, and hands the click to main', () => {
+    let calls = 0;
+    const template = buildMenuTemplate({ getWindow: () => null, isPackaged: true, onDebugReport: () => (calls += 1) });
+    const item = submenu(template, 'help').find((i) => i.label === 'Copy Debug Info for the Team');
+    expect(item?.accelerator).toBe('CommandOrControl+Shift+D');
+    click(template, 'help', 'Copy Debug Info for the Team');
+    expect(calls).toBe(1);
   });
 
   it('hands the shell only https and the one mailto, never anything else', () => {
