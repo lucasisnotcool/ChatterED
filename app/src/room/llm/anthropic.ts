@@ -97,6 +97,7 @@ export class AnthropicClient implements LLMClient {
 
     const final = await stream.finalMessage();
     if ((final.stop_reason as string | null) === 'refusal') throw new Error(REFUSAL_MESSAGE);
+    const truncated = (final.stop_reason as string | null) === 'max_tokens';
     if (text.length === 0) {
       text = final.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -104,7 +105,9 @@ export class AnthropicClient implements LLMClient {
         .join('');
     }
     // Unconstrained, a model may fence or preface its JSON; the callers parse the object alone.
-    if (promptedSchema) text = extractJson(text) ?? text;
+    // Not a cut-off reply: the first balanced object inside truncated JSON is some inner block,
+    // which parses and reads as a whole (and empty) answer.
+    if (promptedSchema && !truncated) text = extractJson(text) ?? text;
 
     return {
       text,
@@ -112,6 +115,7 @@ export class AnthropicClient implements LLMClient {
       usage: normaliseUsage(final.usage),
       ttftMs: ttftMs < 0 ? Date.now() - startedAt : ttftMs,
       backend: 'anthropic',
+      ...(truncated ? { truncated: true as const } : {}),
     };
   }
 }

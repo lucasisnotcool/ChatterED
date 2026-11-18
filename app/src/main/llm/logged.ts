@@ -70,6 +70,7 @@ export function loggedClient(inner: LLMClient, logger: () => Logger): LLMClient 
           usage: result.usage,
           ...(result.queuedMs === undefined ? {} : { queued_ms: result.queuedMs }),
           ...(result.costUsd === undefined ? {} : { cost_usd: result.costUsd }),
+          ...(result.truncated ? { truncated: true } : {}),
         });
         // Its own line as well as a field, because "was this turn slow because another call
         // held the CLI" is a question asked by grepping for one event name.

@@ -129,6 +129,15 @@ export interface LlmResult {
    * able to tell them apart.
    */
   queuedMs?: number;
+  /**
+   * **The reply was cut off by the output limit** (`stop_reason: "max_tokens"` on the API, the
+   * same reason on the CLI's stream, `length` / `MAX_TOKENS` on the BYOK clients). Absent when it
+   * ended on its own or the backend did not say. Found in the field study, 2026-11-18: a 35-page
+   * exam read on the API ran out of tokens, the prompted-schema unwrapping found a small balanced
+   * object inside the cut-off JSON, and the learner was told the sheet had no questions. A caller
+   * that needs the whole answer checks this before believing the text.
+   */
+  truncated?: true;
 }
 
 /**

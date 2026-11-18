@@ -119,6 +119,10 @@ export function tutorialView(input: ViewInput): TutorialView {
     error: record?.error ?? null,
     parts,
     hasSolutions: keyed.length > 0 && keyed.every((r) => r.key.solutionEvidence?.version === 1),
+    progress:
+      record && record.ingestStatus === 'pending' && record.windowsTotal > 1
+        ? { done: Math.min(record.windowsDone, record.windowsTotal), total: record.windowsTotal }
+        : null,
     gaps: doc ? tutorialGaps(input.objectives, parts, input.isLecturePage) : [],
   };
 }

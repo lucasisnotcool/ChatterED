@@ -220,6 +220,42 @@ describe('requests to models that think by default', () => {
     expect(schemaRefused({ status: 400, message: "output_config.format.schema: For 'integer' type, properties maximum, minimum are not supported" })).toBe(true);
   });
 
+  /**
+   * The logged failure (field study, 2026-11-18): a 35-page exam read with the tutorial schema,
+   * which the API refuses as a grammar so it travels in the prompt. Output stopped at 16,000 +
+   * 2,000 headroom on `max_tokens`, and the unwrapping found a 77-character inner block in the
+   * cut-off JSON, which parsed as a whole answer with no parts.
+   */
+  it('flags a reply cut off on max_tokens, and does not unwrap an inner object from it', async () => {
+    const cut = '{"title":"Finals Practice","blocks":[{"type":"heading","page":1,"text":"Expressions and function calls"},{"type":"part","id":"Q1"';
+    const sdk = {
+      messages: {
+        stream(body: Record<string, unknown>) {
+          const prompted = !(body.output_config as { format?: unknown } | undefined)?.format;
+          return {
+            async *[Symbol.asyncIterator]() {
+              if (!prompted) throw Object.assign(new Error('400 The compiled grammar is too large'), { status: 400 });
+              yield { type: 'content_block_delta', delta: { type: 'text_delta', text: cut } };
+            },
+            async finalMessage() {
+              return { model: body.model, content: [], stop_reason: 'max_tokens', usage: { input_tokens: 15_000, output_tokens: 18_000 } };
+            },
+          };
+        },
+      },
+    };
+    const client = new AnthropicClient({ apiKey: 'x', client: sdk as never });
+    const result = await client.complete(request({ model: 'claude-sonnet-5-5', max_tokens: 16_000, jsonSchema: { type: 'object', title: 'cut' } }));
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBe(cut);
+    expect(result.usage.output_tokens).toBe(18_000);
+  });
+
+  it('does not flag a reply that ended on its own', async () => {
+    const { client } = fakeSdk('end_turn');
+    expect((await client.complete(request({ model: 'claude-sonnet-5-5' }))).truncated).toBeUndefined();
+  });
+
   it('turns a refusal into an error the learner can read', async () => {
     const { client } = fakeSdk('refusal');
     await expect(client.complete(request({ model: 'claude-sonnet-5-5' }))).rejects.toThrow(REFUSAL_MESSAGE);

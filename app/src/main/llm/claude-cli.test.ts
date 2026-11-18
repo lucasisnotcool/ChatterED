@@ -100,6 +100,16 @@ case "$MODE" in
       echo '{"type":"result","subtype":"success","is_error":false,"result":"{\"speak\":false}","usage":{}}'
     fi
     ;;
+  truncated)
+    # A structured answer cut off by the output limit: the stream says max_tokens, and the text
+    # is the head of an object. Counted, so the test can see no repair turn was spent on it.
+    COUNT_FILE="$FAKE_COUNT"
+    N=$(cat "$COUNT_FILE" 2>/dev/null || echo 0)
+    echo $((N + 1)) > "$COUNT_FILE"
+    echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"{\"title\":\"Finals\",\"blocks\":[{\"type\":\"heading\",\"page\":1}"}}}'
+    echo '{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"max_tokens"}}}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"","usage":{"input_tokens":3,"output_tokens":32000}}'
+    ;;
   emptyexit)
     # Exit 1 with nothing on stderr - the 2026-09-16 05:10:48 failure shape. Succeeds on the
     # second attempt, which is what the one retry is for.
@@ -370,6 +380,18 @@ describe('structured output', () => {
     expect(JSON.parse(result.text)).toEqual({ speak: false });
     expect(readFileSync(counter, 'utf8').trim()).toBe('2');
     expect(readFileSync(file, 'utf8')).toContain('was not valid JSON');
+  });
+
+  it('says a reply was cut off by the output limit, and spends no repair turn on it', async () => {
+    const counter = join(root, `count-${Math.random().toString(36).slice(2)}`);
+    const result = await client('truncated', { FAKE_COUNT: counter }).complete(request({ jsonSchema: schema }));
+    expect(result.truncated).toBe(true);
+    expect(readFileSync(counter, 'utf8').trim()).toBe('1');
+  });
+
+  it('does not say truncated about an answer that ended on its own', async () => {
+    const result = await client('schema').complete(request({ jsonSchema: schema }));
+    expect(result.truncated).toBeUndefined();
   });
 });
 

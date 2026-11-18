@@ -235,6 +235,8 @@ interface CliRun {
   errors: string[];
   /** The `error` tag on a synthetic assistant message (`rate_limit`, `server_error`, …). */
   errorTag: string | null;
+  /** The last `stop_reason` the stream or the result reported (`max_tokens` is a cut-off reply). */
+  stopReason: string | null;
 }
 
 
@@ -690,7 +692,9 @@ export class ClaudeCliClient implements LLMClient {
     // object in prose (or a CLI that declines the schema) must not take the room down. One
     // repair retry, then let the caller's own parse failure handle it — the orchestrator and
     // the ledger both already treat an unparseable answer as "stay quiet".
-    if (request.jsonSchema && !parsesAsJson(text)) {
+    // A reply cut off by the output limit is not repaired: asking again with it attached only
+    // makes a longer prompt for an answer that does not fit. The caller sees `truncated`.
+    if (request.jsonSchema && run.stopReason !== 'max_tokens' && !parsesAsJson(text)) {
       const repaired = await this.#runOnce(
         request,
         systemTextFor(request),
@@ -718,6 +722,7 @@ export class ClaudeCliClient implements LLMClient {
       ttftMs: run.ttftMs,
       backend: 'claude-cli',
       ...(run.costUsd === null ? {} : { costUsd: run.costUsd }),
+      ...(run.stopReason === 'max_tokens' ? { truncated: true as const } : {}),
     };
   }
 
@@ -828,6 +833,7 @@ export class ClaudeCliClient implements LLMClient {
         subtype: null,
         errors: [],
         errorTag: null,
+        stopReason: null,
       };
       let stderr = '';
       let buffer = '';
@@ -891,7 +897,8 @@ export class ClaudeCliClient implements LLMClient {
           return;
         }
         if (event.type === 'stream_event') {
-          const inner = event.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+          const inner = event.event as { type?: string; delta?: { type?: string; text?: string; stop_reason?: unknown } } | undefined;
+          if (inner?.type === 'message_delta' && typeof inner.delta?.stop_reason === 'string') acc.stopReason = inner.delta.stop_reason;
           if (inner?.type === 'content_block_delta' && inner.delta?.type === 'text_delta') {
             const delta = inner.delta.text ?? '';
             if (delta.length > 0) {
@@ -912,6 +919,7 @@ export class ClaudeCliClient implements LLMClient {
           acc.model = modelFromResult(event) ?? acc.model;
           if (acc.ttftMs < 0 && typeof event.ttft_ms === 'number') acc.ttftMs = event.ttft_ms;
           acc.errors = Array.isArray(event.errors) ? event.errors.filter((e): e is string => typeof e === 'string') : [];
+          if (typeof event.stop_reason === 'string') acc.stopReason = event.stop_reason;
         }
         if (event.type === 'assistant' && typeof event.error === 'string') acc.errorTag = event.error;
         if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') {

@@ -159,7 +159,8 @@ export class OpenAIClient implements LLMClient {
       );
     }
 
-    if (request.jsonSchema && !parsesAsJson(text)) text = extractJson(text) ?? text;
+    const truncated = finish === 'length';
+    if (request.jsonSchema && !truncated && !parsesAsJson(text)) text = extractJson(text) ?? text;
 
     return {
       text,
@@ -167,6 +168,7 @@ export class OpenAIClient implements LLMClient {
       usage: normaliseOpenAiUsage(usage),
       ttftMs: ttftMs < 0 ? Date.now() - startedAt : ttftMs,
       backend: this.kind,
+      ...(truncated ? { truncated: true as const } : {}),
     };
   }
 

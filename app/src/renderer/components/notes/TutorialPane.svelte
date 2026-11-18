@@ -570,6 +570,8 @@
           <p class="nd-state-line">
             {#if reading && reading.total}
               page images sent · {reading.done} of {reading.total}
+            {:else if view?.progress}
+              A long sheet is read a few pages at a time · {view.progress.done} of {view.progress.total} read. It opens here when every part has its slot.
             {:else}
               Each part gets an answer slot. It opens here as soon as it is written.
             {/if}
@@ -577,6 +579,8 @@
           <div class="nd-state-bar">
             {#if reading && reading.total}
               <div class="nd-state-fill" style:width={`${(reading.done / reading.total) * 100}%`}></div>
+            {:else if view?.progress}
+              <div class="nd-state-fill" style:width={`${(view.progress.done / view.progress.total) * 100}%`}></div>
             {:else}
               <div class="nd-state-sweep"></div>
             {/if}

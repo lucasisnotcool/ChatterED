@@ -242,6 +242,12 @@ export interface TutorialView {
   /** Whether every part has a source-verified official answer. */
   hasSolutions: boolean;
   /**
+   * **How far a long sheet's read has got** (2026-11-18): a sheet of more than a few pages is
+   * read a few pages at a time (`main/tutorial/windows.ts`), and this is the windows read over
+   * the windows there are. Only while `pending` and only when there is more than one window.
+   */
+  progress?: { done: number; total: number } | null;
+  /**
    * **What the lecture teaches that no part of the sheet exercises** (Lucas, 3 Oct 2026: practice
    * is generated only on demand, but the gaps are advertised so the learner can decide). The
    * notebook's objectives that are taught (cited to lecture pages, not assumed by the deck) and

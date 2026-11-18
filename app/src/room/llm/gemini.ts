@@ -133,7 +133,8 @@ export class GeminiClient implements LLMClient {
       }
     }
 
-    if (request.jsonSchema && !parsesAsJson(text)) text = extractJson(text) ?? text;
+    const truncated = finish === 'MAX_TOKENS';
+    if (request.jsonSchema && !truncated && !parsesAsJson(text)) text = extractJson(text) ?? text;
 
     return {
       text,
@@ -141,6 +142,7 @@ export class GeminiClient implements LLMClient {
       usage: normaliseGeminiUsage(usage),
       ttftMs: ttftMs < 0 ? Date.now() - startedAt : ttftMs,
       backend: 'gemini',
+      ...(truncated ? { truncated: true as const } : {}),
     };
   }
 

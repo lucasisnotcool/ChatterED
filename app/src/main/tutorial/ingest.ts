@@ -29,6 +29,7 @@ import { pageImageDir, pageImagesFor, type StoredPageImage } from '../notes/page
 import {
   callJson,
   capText,
+  ReplyTruncated,
   lecturePageTest,
   notebookDoc,
   nowOf,
@@ -54,19 +55,44 @@ import {
   TUTORIAL_JSON_SCHEMA,
   TUTORIAL_PROMPT_VERSION,
   TUTORIAL_SYSTEM,
+  tutorialContext,
   tutorialMessage,
+  tutorialWindowMessage,
 } from './prompt.js';
 import { tutorialRepo, type LandedPart } from './repo.js';
 import { keyFrom, validateTutorial, type TutorialRepairs } from './validate.js';
 import { choiceEvidenceFromText, quoteSupportsAnswer, type SolutionPage } from './solution-evidence.js';
 import type { RoleChange } from '../notebooks/service.js';
+import type { LLMClient } from '../../room/llm/types.js';
+import {
+  batches,
+  mapLimit,
+  mergeWindowReads,
+  planWindows,
+  readWindows,
+  SheetTooLong,
+  wholeAnswer,
+  WINDOW_CONCURRENCY,
+  WindowTruncated,
+  type MergeStats,
+  type SheetWindow,
+} from './windows.js';
 
-/** The ceiling on the read's answer: a faithful copy of a sheet plus a key per part. */
+/**
+ * The ceiling on one read's answer: a faithful copy of a sheet (or of one window of a long one,
+ * `windows.ts`) plus a key per part.
+ */
 export const TUTORIAL_MAX_TOKENS = 16_000;
 export const RESOLVE_MAX_TOKENS = 6_000;
 export const COMPARE_MAX_TOKENS = 1_500;
 export const SOLUTIONS_MAX_TOKENS = 8_000;
-/** The most page images the read is given. A sheet is a few pages; a long one shows its first. */
+/**
+ * Parts per re-solve and compare call, and per solutions call. A tutorial has a dozen or two; an
+ * exam has fifty, whose answers do not fit one call's budget (a key ran ~300 output tokens).
+ */
+export const CONFIRM_BATCH_PARTS = 12;
+export const SOLUTIONS_BATCH_PARTS = 12;
+/** The most page images one call is given: a short sheet's first pages, or one window's. */
 export const TUTORIAL_MAX_IMAGES = 12;
 /** The most of the sheet's text the read is given, in characters. */
 export const SHEET_TEXT_CAP = 120_000;
@@ -153,6 +179,7 @@ export function ingestTutorial(deps: TutorialDeps, input: TutorialIngestInput): 
 async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string, docId: string, firstRead: boolean): Promise<void> {
   const repo = notesRepo(deps.db);
   const startedAt = Date.now();
+  let stats = { windows: 0, splits: 0 };
   try {
     const subject = deps.notebooks.subject(notebookId);
     const source = tutorialSource(subject, fileId);
@@ -176,58 +203,39 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
     }
 
     let raw: unknown;
-    let images: StoredPageImage[] = [];
+    let images = 0;
+    let windows = 1;
+    let splits = 0;
+    let merge: MergeStats | null = null;
     if (llm) {
-      images =
-        source.kind === 'pdf' && located?.contentSha
-          ? await pageImagesFor(
-              pageImageDir(deps.userDataDir, located.contentSha),
-              Array.from({ length: Math.min(source.pageCount, TUTORIAL_MAX_IMAGES) }, (_, i) => i + 1),
-            )
-          : [];
-      if (images.length > 0) repo.setIngest(docId, { withImages: true }, nowOf(deps));
-      raw = await callJson(
-        deps,
-        llm,
-        {
-          model: deps.models().orchestrator,
-          max_tokens: TUTORIAL_MAX_TOKENS,
-          system: [{ type: 'text', text: TUTORIAL_SYSTEM }],
-          messages: [
-            {
-              role: 'user',
-              content: tutorialMessage({
-                sourceName: source.name,
-                pageCount: source.pageCount,
-                sheetText: sheetText(deps, notebookId, source.pageBase, source.pageCount),
-                figures: [...figures.entries()]
-                  .filter(([, rects]) => rects.length > 0)
-                  .map(([page, rects]) => `p. ${page}: ${rects.map((r) => [r.x0, r.y0, r.x1, r.y1].map((n) => n.toFixed(3)).join(' ')).join(' · ')}`)
-                  .join('\n'),
-                notesOutline: outline
-                  .filter((e) => e.text.trim().length > 0)
-                  .slice(0, OUTLINE_MAX_ENTRIES)
-                  .map((e) => `${e.blockId} | ${e.pages.length > 0 ? `p. ${pageRanges(e.pages)}` : '-'} | ${e.path.join(' > ') || '(top)'} | ${capText(e.text, 120)}`)
-                  .join('\n'),
-                objectives: (tree?.objectives ?? []).map((o) => `${o.id}: ${o.title}`).join('\n'),
-                lecturePages: subject.sources
-                  .filter((s) => s.role === 'lecture' && s.status === 'ready' && s.pageCount > 0)
-                  .map((s) => `${s.name}: p. ${s.pageBase + 1}–${s.pageBase + s.pageCount}`)
-                  .join('\n'),
-                // Images are labelled with the sheet's own page, as its blocks are.
-                imagePages: images.map((i) => i.page),
-              }),
-            },
-          ],
-          jsonSchema: TUTORIAL_JSON_SCHEMA,
-          ...(images.length > 0 ? { images } : {}),
-          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+      const read = await readSheet(deps, llm, {
+        notebookId,
+        docId,
+        source,
+        figures,
+        context: {
+          notesOutline: outline
+            .filter((e) => e.text.trim().length > 0)
+            .slice(0, OUTLINE_MAX_ENTRIES)
+            .map((e) => `${e.blockId} | ${e.pages.length > 0 ? `p. ${pageRanges(e.pages)}` : '-'} | ${e.path.join(' > ') || '(top)'} | ${capText(e.text, 120)}`)
+            .join('\n'),
+          objectives: (tree?.objectives ?? []).map((o) => `${o.id}: ${o.title}`).join('\n'),
+          lecturePages: subject.sources
+            .filter((s) => s.role === 'lecture' && s.status === 'ready' && s.pageCount > 0)
+            .map((s) => `${s.name}: p. ${s.pageBase + 1}–${s.pageBase + s.pageCount}`)
+            .join('\n'),
         },
-        'tutorial',
-      );
+        contentSha: source.kind === 'pdf' ? (located?.contentSha ?? null) : null,
+      });
+      raw = read.raw;
+      images = read.images;
+      windows = read.windows;
+      splits = read.splits;
+      merge = read.merge;
     } else {
       raw = fixtureRaw(subject, outline.find((e) => e.kind !== 'heading')?.blockId ?? null, tree?.objectives[0]?.id ?? null);
     }
+    stats = { windows, splits };
 
     const checked = validateTutorial(raw, {
       pageCount: Math.max(1, source.pageCount),
@@ -247,20 +255,34 @@ async function runIngest(deps: TutorialDeps, notebookId: string, fileId: string,
       unverified = outcome.unverified;
     }
 
-    land(deps, { notebookId, fileId, docId, pageBase: source.pageBase, firstRead }, checked.sheet, checked.parts, llm ? deps.models().orchestrator : 'fixture');
-    logLanding(notebookId, fileId, docId, startedAt, checked.parts, checked.repairs, { disagreed, unverified, images: images.length });
+    land(deps, { notebookId, fileId, docId, pageBase: source.pageBase, firstRead, windows }, checked.sheet, checked.parts, llm ? deps.models().orchestrator : 'fixture');
+    logLanding(notebookId, fileId, docId, startedAt, checked.parts, checked.repairs, { disagreed, unverified, images, windows, splits, merge });
 
     // Official solutions already in this notebook win over the key just written.
     if (solutionsFor(subject, fileId).length > 0) await rewriteKeys(deps, notebookId, fileId);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     const learnerFacing =
-      err instanceof NoParts ? MESSAGES.noParts : err instanceof Error && err.name === 'Yielded' ? reason : MESSAGES.failed(shortReason(reason));
+      err instanceof NoParts
+        ? MESSAGES.noParts
+        : err instanceof SheetTooLong || (err instanceof Error && err.name === 'Yielded')
+          ? reason
+          : MESSAGES.failed(shortReason(reason));
     const record = repo.byId(docId);
     // A re-read that fails leaves the sheet the learner is working in as it was.
     const keep = !firstRead && record !== null && partAnswersOf(record.doc).length > 0;
     repo.setIngest(docId, keep ? { status: 'ready', error: learnerFacing } : { status: 'failed', error: learnerFacing }, nowOf(deps));
-    log().error('tutorial.ingest.failed', { notebook_id: notebookId, file_id: fileId, doc_id: docId, ms: Date.now() - startedAt, cause: reason.slice(0, 300) });
+    log().error('tutorial.ingest.failed', {
+      notebook_id: notebookId,
+      file_id: fileId,
+      doc_id: docId,
+      ms: Date.now() - startedAt,
+      cause: reason.slice(0, 300),
+      // Window counts only: the cause of a cut-off read is the pages, never their words.
+      windows: stats.windows,
+      splits: err instanceof SheetTooLong ? stats.splits : (err as { splits?: number })?.splits ?? stats.splits,
+      ...(err instanceof SheetTooLong ? { too_long: { from: err.from, to: err.to, reason: err.reason } } : {}),
+    });
     pushView(deps, notebookId, fileId);
   }
 }
@@ -285,6 +307,168 @@ function partAnswersOf(json: unknown): PartAnswer[] {
   }
 }
 
+/**
+ * **Read the sheet** (`windows.ts`): one call for a short sheet, exactly as before; a long one a
+ * few pages at a time, each window with only its pages' text, images and figure boxes, joined in
+ * page order. A cut-off answer is halved and read again, never taken for an empty sheet. The
+ * record's `windowsDone`/`windowsTotal` move as windows land, and the view is pushed.
+ */
+async function readSheet(
+  deps: TutorialDeps,
+  llm: LLMClient,
+  at: {
+    notebookId: string;
+    docId: string;
+    source: NonNullable<ReturnType<typeof tutorialSource>>;
+    figures: ReadonlyMap<number, SheetRect[]>;
+    context: { notesOutline: string; objectives: string; lecturePages: string };
+    contentSha: string | null;
+  },
+): Promise<{ raw: unknown; images: number; windows: number; splits: number; merge: MergeStats | null }> {
+  const { source, notebookId, docId } = at;
+  const repo = notesRepo(deps.db);
+  const pageCount = Math.max(1, source.pageCount);
+  const pages = pageTexts(deps, notebookId, source.pageBase, pageCount);
+  const plan = planWindows(pages.map((t) => t.length));
+  let images = 0;
+  const figuresOf = (from: number, to: number): string =>
+    [...at.figures.entries()]
+      .filter(([page, rects]) => rects.length > 0 && page >= from && page <= to)
+      .map(([page, rects]) => `p. ${page}: ${rects.map((r) => [r.x0, r.y0, r.x1, r.y1].map((n) => n.toFixed(3)).join(' ')).join(' · ')}`)
+      .join('\n');
+  const imagesOf = async (from: number, to: number): Promise<StoredPageImage[]> => {
+    if (!at.contentSha) return [];
+    const span = Array.from({ length: Math.max(0, Math.min(to, from + TUTORIAL_MAX_IMAGES - 1) - from + 1) }, (_, i) => from + i);
+    return pageImagesFor(pageImageDir(deps.userDataDir, at.contentSha), span);
+  };
+
+  const readOne = async (w: SheetWindow): Promise<Record<string, unknown>> => {
+    const startedAt = Date.now();
+    const whole = w.from === 1 && w.to >= pageCount && w.ahead === null;
+    const shown = await imagesOf(w.from, w.ahead ?? w.to);
+    if (shown.length > 0) {
+      if (images === 0) repo.setIngest(docId, { withImages: true }, nowOf(deps));
+      images += shown.length;
+    }
+    // The whole sheet in one call is the request this read always made, byte for byte.
+    const request = whole
+      ? {
+          system: [{ type: 'text' as const, text: TUTORIAL_SYSTEM }],
+          content: tutorialMessage({
+            sourceName: source.name,
+            pageCount: source.pageCount,
+            sheetText: sheetText(deps, notebookId, source.pageBase, source.pageCount),
+            figures: figuresOf(1, pageCount),
+            ...at.context,
+            // Images are labelled with the sheet's own page, as its blocks are.
+            imagePages: shown.map((i) => i.page),
+          }),
+        }
+      : {
+          system: [
+            { type: 'text' as const, text: TUTORIAL_SYSTEM },
+            { type: 'text' as const, text: tutorialContext(at.context), cache_control: { type: 'ephemeral' as const } },
+          ],
+          content: tutorialWindowMessage({
+            sourceName: source.name,
+            pageCount,
+            from: w.from,
+            to: w.to,
+            ahead: w.ahead,
+            previousTail: w.from > 1 ? tail(pages[w.from - 2] ?? '', 600) : '',
+            sheetText: windowText(pages, w),
+            figures: figuresOf(w.from, w.ahead ?? w.to),
+            imagePages: shown.map((i) => i.page),
+          }),
+        };
+    let raw: unknown;
+    try {
+      raw = await callJson(
+        deps,
+        llm,
+        {
+          model: deps.models().orchestrator,
+          max_tokens: TUTORIAL_MAX_TOKENS,
+          system: request.system,
+          messages: [{ role: 'user', content: request.content }],
+          jsonSchema: TUTORIAL_JSON_SCHEMA,
+          ...(shown.length > 0 ? { images: shown } : {}),
+          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+        },
+        'tutorial',
+      );
+    } catch (err) {
+      if (err instanceof ReplyTruncated) throw new WindowTruncated('max_tokens');
+      // An answer that would not parse twice is most often one that was cut off on a backend
+      // that does not say so: read smaller rather than give up.
+      if (err instanceof SyntaxError) throw new WindowTruncated('malformed');
+      throw err;
+    }
+    if (!wholeAnswer(raw)) throw new WindowTruncated('malformed');
+    log().info('tutorial.window', {
+      doc_id: docId,
+      from: w.from,
+      to: w.to,
+      ahead: w.ahead,
+      depth: w.depth,
+      blocks: (raw.blocks as unknown[]).length,
+      parts: (raw.parts as unknown[]).length,
+      images: shown.length,
+      ms: Date.now() - startedAt,
+    });
+    return raw;
+  };
+
+  if (plan.length > 1) {
+    repo.setIngest(docId, { windowsDone: 0, windowsTotal: plan.length }, nowOf(deps));
+    pushView(deps, notebookId, source.fileId);
+  }
+  let total = plan.length;
+  let splitCount = 0;
+  try {
+    const outcome = await readWindows(plan, readOne, {
+      progress: (done, now) => {
+        total = now;
+        repo.setIngest(docId, { windowsDone: done, windowsTotal: now }, nowOf(deps));
+        if (now > 1) pushView(deps, notebookId, source.fileId);
+      },
+      split: (w, reason) => {
+        splitCount += 1;
+        log().warn('tutorial.window.split', { doc_id: docId, from: w.from, to: w.to, depth: w.depth, reason });
+      },
+    });
+    const merged = mergeWindowReads(outcome.reads);
+    return { raw: merged.raw, images, windows: total, splits: outcome.splits, merge: outcome.reads.length > 1 ? merged.stats : null };
+  } catch (err) {
+    // The failure event says how far the read got.
+    if (err && typeof err === 'object') Object.assign(err, { splits: splitCount });
+    throw err;
+  }
+}
+
+/** Each page's text, trimmed: what the windows are planned and read from. */
+function pageTexts(deps: Pick<TutorialDeps, 'notebooks'>, notebookId: string, pageBase: number, pageCount: number): string[] {
+  return Array.from({ length: pageCount }, (_, i) =>
+    deps.notebooks.textFor({ notebookId, pageFrom: pageBase + i + 1, pageTo: pageBase + i + 1 }).trim(),
+  );
+}
+
+/** A window's pages under `[sheet p. k]`, the look-ahead page marked as the next call's. */
+export function windowText(pages: readonly string[], w: SheetWindow): string {
+  const out: string[] = [];
+  const last = w.ahead ?? w.to;
+  for (let k = w.from; k <= last; k += 1) {
+    const body = pages[k - 1] || '(no text on this page: read it from its image)';
+    out.push(k === w.ahead ? `[sheet p. ${k}: the next call's page, shown only to finish a part from p. ${w.to}]\n${body}` : `[sheet p. ${k}]\n${body}`);
+  }
+  return capText(out.join('\n\n'), SHEET_TEXT_CAP);
+}
+
+function tail(text: string, chars: number): string {
+  const t = text.trim();
+  return t.length <= chars ? t : `…${t.slice(t.length - chars + 1)}`;
+}
+
 /** The sheet's text, each page under `[sheet p. k]`, its own numbering. */
 export function sheetText(deps: Pick<TutorialDeps, 'notebooks'>, notebookId: string, pageBase: number, pageCount: number): string {
   const out: string[] = [];
@@ -306,7 +490,7 @@ export function sheetText(deps: Pick<TutorialDeps, 'notebooks'>, notebookId: str
  */
 async function confirmKeys(
   deps: TutorialDeps,
-  llm: NonNullable<ReturnType<TutorialDeps['llm']>>,
+  llm: LLMClient,
   notebookId: string,
   blocks: readonly import('../../shared/tutorial.js').SheetBlock[],
   parts: LandedPart[],
@@ -326,69 +510,85 @@ async function confirmKeys(
       options: p.answer.kind === 'choice' ? p.answer.options.map((o) => `(${o.id}) ${o.text}`).join('\n') : '',
     };
   };
-  try {
-    const resolved = (await callJson(
-      deps,
-      llm,
-      {
-        model: deps.models().orchestrator,
-        max_tokens: RESOLVE_MAX_TOKENS,
-        system: [{ type: 'text', text: RESOLVE_SYSTEM }],
-        messages: [{ role: 'user', content: resolveMessage(open.map((p) => describe(p.partId))) }],
-        jsonSchema: RESOLVE_JSON_SCHEMA,
-        meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
-      },
-      'tutorial.resolve',
-    )) as { answers?: { partId?: unknown; answer?: unknown }[] };
-    const second = new Map<string, string>();
-    for (const a of Array.isArray(resolved.answers) ? resolved.answers : []) {
-      if (typeof a.partId === 'string' && typeof a.answer === 'string' && a.answer.trim()) second.set(a.partId, a.answer.trim());
+  // In batches, so an exam's fifty parts stay inside each call's budget; a batch that fails
+  // leaves only its own keys unverified.
+  const verdicts = await mapLimit(batches(open, CONFIRM_BATCH_PARTS), WINDOW_CONCURRENCY, async (batch) => {
+    try {
+      return await confirmBatch(deps, llm, notebookId, batch, describe);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'Yielded') throw err;
+      log().warn('tutorial.confirm.failed', { notebook_id: notebookId, parts: batch.length, cause: (err as Error).message.slice(0, 200) });
+      return new Map<string, boolean>();
     }
-    const pairs = open.filter((p) => second.has(p.partId));
-    const compared = pairs.length
-      ? ((await callJson(
-          deps,
-          llm,
-          {
-            model: deps.models().orchestrator,
-            max_tokens: COMPARE_MAX_TOKENS,
-            system: [{ type: 'text', text: COMPARE_SYSTEM }],
-            messages: [
-              {
-                role: 'user',
-                content: compareMessage(
-                  pairs.map((p) => ({ partId: p.partId, prompt: describe(p.partId).prompt, first: keyText(p.key), second: second.get(p.partId)! })),
-                ),
-              },
-            ],
-            jsonSchema: COMPARE_JSON_SCHEMA,
-            meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
-          },
-          'tutorial.compare',
-        )) as { parts?: { partId?: unknown; agree?: unknown }[] })
-      : { parts: [] };
-    const agree = new Map<string, boolean>();
-    for (const c of Array.isArray(compared.parts) ? compared.parts : []) {
-      if (typeof c.partId === 'string' && typeof c.agree === 'boolean') agree.set(c.partId, c.agree);
+  });
+  const agree = new Map(verdicts.flatMap((m) => [...m]));
+  let disagreed = 0;
+  let unverified = 0;
+  for (const p of open) {
+    const verdict = agree.get(p.partId);
+    if (verdict === true) p.key.confidence = 'high';
+    else {
+      p.key.confidence = 'low';
+      if (verdict === false) disagreed += 1;
+      else unverified += 1;
     }
-    let disagreed = 0;
-    let unverified = 0;
-    for (const p of open) {
-      const verdict = agree.get(p.partId);
-      if (verdict === true) p.key.confidence = 'high';
-      else {
-        p.key.confidence = 'low';
-        if (verdict === false) disagreed += 1;
-        else unverified += 1;
-      }
-    }
-    return { disagreed, unverified };
-  } catch (err) {
-    if (err instanceof Error && err.name === 'Yielded') throw err;
-    log().warn('tutorial.confirm.failed', { notebook_id: notebookId, cause: (err as Error).message.slice(0, 200) });
-    for (const p of open) p.key.confidence = 'low';
-    return { disagreed: 0, unverified: open.length };
   }
+  return { disagreed, unverified };
+}
+
+/** One batch of the second pass: re-solve without the key, then compare. Part id → agree. */
+async function confirmBatch(
+  deps: TutorialDeps,
+  llm: LLMClient,
+  notebookId: string,
+  open: readonly LandedPart[],
+  describe: (id: string) => { partId: string; label: string; kind: string; prompt: string; options: string },
+): Promise<Map<string, boolean>> {
+  const resolved = (await callJson(
+    deps,
+    llm,
+    {
+      model: deps.models().orchestrator,
+      max_tokens: RESOLVE_MAX_TOKENS,
+      system: [{ type: 'text', text: RESOLVE_SYSTEM }],
+      messages: [{ role: 'user', content: resolveMessage(open.map((p) => describe(p.partId))) }],
+      jsonSchema: RESOLVE_JSON_SCHEMA,
+      meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+    },
+    'tutorial.resolve',
+  )) as { answers?: { partId?: unknown; answer?: unknown }[] };
+  const second = new Map<string, string>();
+  for (const a of Array.isArray(resolved.answers) ? resolved.answers : []) {
+    if (typeof a.partId === 'string' && typeof a.answer === 'string' && a.answer.trim()) second.set(a.partId, a.answer.trim());
+  }
+  const pairs = open.filter((p) => second.has(p.partId));
+  const compared = pairs.length
+    ? ((await callJson(
+        deps,
+        llm,
+        {
+          model: deps.models().orchestrator,
+          max_tokens: COMPARE_MAX_TOKENS,
+          system: [{ type: 'text', text: COMPARE_SYSTEM }],
+          messages: [
+            {
+              role: 'user',
+              content: compareMessage(
+                pairs.map((p) => ({ partId: p.partId, prompt: describe(p.partId).prompt, first: keyText(p.key), second: second.get(p.partId)! })),
+              ),
+            },
+          ],
+          jsonSchema: COMPARE_JSON_SCHEMA,
+          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+        },
+        'tutorial.compare',
+      )) as { parts?: { partId?: unknown; agree?: unknown }[] })
+    : { parts: [] };
+  const agree = new Map<string, boolean>();
+  for (const c of Array.isArray(compared.parts) ? compared.parts : []) {
+    if (typeof c.partId === 'string' && typeof c.agree === 'boolean') agree.set(c.partId, c.agree);
+  }
+  return agree;
 }
 
 /** A key as an answer to compare: its answer, and its blanks or options. */
@@ -432,7 +632,7 @@ function promptText(p: import('../../shared/tutorial.js').SheetPart): string {
  */
 function land(
   deps: TutorialDeps,
-  at: { notebookId: string; fileId: string; docId: string; pageBase: number; firstRead: boolean },
+  at: { notebookId: string; fileId: string; docId: string; pageBase: number; firstRead: boolean; windows?: number },
   sheet: import('../../shared/tutorial.js').TutorialSheet,
   parts: readonly LandedPart[],
   model: string,
@@ -469,7 +669,8 @@ function land(
     }
   }
   if (!at.firstRead) repo.clearForRegenerate(at.docId);
-  repo.appendWindow({ docId: at.docId, doc: doc.toJSON(), ingest: { status: 'ready', windowsDone: 1, windowsTotal: 1, error: null, model } }, now);
+  const windows = Math.max(1, at.windows ?? 1);
+  repo.appendWindow({ docId: at.docId, doc: doc.toJSON(), ingest: { status: 'ready', windowsDone: windows, windowsTotal: windows, error: null, model } }, now);
   deps.db.prepare('UPDATE notes_docs SET title = @t, ingest_version = @v WHERE id = @id').run({ t: sheet.title, v: TUTORIAL_PROMPT_VERSION, id: at.docId });
   tutorialRepo(deps.db).landParts(at.docId, parts, now);
   log().info('tutorial.landed', { doc_id: at.docId, carried, orphaned });
@@ -483,7 +684,7 @@ function logLanding(
   startedAt: number,
   parts: readonly LandedPart[],
   repairs: TutorialRepairs,
-  extra: { disagreed: number; unverified: number; images: number },
+  extra: { disagreed: number; unverified: number; images: number; windows: number; splits: number; merge: MergeStats | null },
 ): void {
   log().info('tutorial.ingest', {
     notebook_id: notebookId,
@@ -498,6 +699,9 @@ function logLanding(
     linked_notes: parts.filter((p) => p.links.notesBlockIds.length > 0).length,
     linked_objectives: parts.filter((p) => p.objectiveIds.length > 0).length,
     images: extra.images,
+    windows: extra.windows,
+    splits: extra.splits,
+    ...(extra.merge ? { merged: extra.merge } : {}),
     repaired: repairs,
   });
 }
@@ -575,6 +779,7 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
   const now = nowOf(deps);
   const llm = deps.llm(notebookId);
   let rewritten = 0;
+  let batchesFailed = 0;
   try {
     if (!llm) {
       for (const p of parts.parts(record.id)) {
@@ -627,35 +832,55 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
           ? pageImagesFor(pageImageDir(deps.userDataDir, located.contentSha), Array.from({ length: Math.min(s.pageCount, TUTORIAL_MAX_IMAGES) }, (_, i) => i + 1))
           : [];
       }))).flat();
-      const raw = (await callJson(
-        deps,
-        llm,
-        {
-          model: deps.models().orchestrator,
-          max_tokens: SOLUTIONS_MAX_TOKENS,
-          system: [{ type: 'text', text: SOLUTIONS_SYSTEM }],
-          messages: [
+      // In batches of parts, each with the whole solutions text: one call's budget holds about a
+      // dozen keys, and an exam has fifty. A batch cut off is halved; one that fails leaves its
+      // parts' keys as they were.
+      let failedBatches = 0;
+      const readBatch = async (batch: PartAnswer[]): Promise<unknown[]> => {
+        try {
+          const raw = (await callJson(
+            deps,
+            llm,
             {
-              role: 'user',
-              content: solutionsMessage({
-                parts: unresolved.map((a) => ({
-                  partId: a.partId,
-                  label: a.label,
-                  kind: a.kind,
-                  prompt: a.prompt,
-                  options: a.options.map((o) => `(${o.id}) ${o.text}`).join('\n'),
-                  blanks: Object.keys(a.blanks),
-                })),
-                solutionsText: capText(text, SHEET_TEXT_CAP),
-              }),
+              model: deps.models().orchestrator,
+              max_tokens: SOLUTIONS_MAX_TOKENS,
+              system: [{ type: 'text', text: SOLUTIONS_SYSTEM }],
+              messages: [
+                {
+                  role: 'user',
+                  content: solutionsMessage({
+                    parts: batch.map((a) => ({
+                      partId: a.partId,
+                      label: a.label,
+                      kind: a.kind,
+                      prompt: a.prompt,
+                      options: a.options.map((o) => `(${o.id}) ${o.text}`).join('\n'),
+                      blanks: Object.keys(a.blanks),
+                    })),
+                    solutionsText: capText(text, SHEET_TEXT_CAP),
+                  }),
+                },
+              ],
+              jsonSchema: SOLUTIONS_JSON_SCHEMA,
+              ...(images.length > 0 ? { images } : {}),
+              meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
             },
-          ],
-          jsonSchema: SOLUTIONS_JSON_SCHEMA,
-          ...(images.length > 0 ? { images } : {}),
-          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
-        },
-        'tutorial.solutions',
-      )) as { parts?: unknown[] };
+            'tutorial.solutions',
+          )) as { parts?: unknown[] };
+          return Array.isArray(raw.parts) ? raw.parts : [];
+        } catch (err) {
+          if (err instanceof Error && err.name === 'Yielded') throw err;
+          if (err instanceof ReplyTruncated && batch.length > 1) {
+            const mid = Math.ceil(batch.length / 2);
+            return [...(await readBatch(batch.slice(0, mid))), ...(await readBatch(batch.slice(mid)))];
+          }
+          failedBatches += 1;
+          log().warn('tutorial.solutions.batch_failed', { notebook_id: notebookId, parts: batch.length, cause: (err as Error).message.slice(0, 200) });
+          return [];
+        }
+      };
+      const raw = { parts: (await mapLimit(batches(unresolved, SOLUTIONS_BATCH_PARTS), WINDOW_CONCURRENCY, readBatch)).flat() };
+      batchesFailed = failedBatches;
       const byId = new Map(answers.map((a) => [a.partId, a]));
       const visualCandidates = new Map<string, { page: number; correct: string[] }>();
       for (const entry of Array.isArray(raw.parts) ? raw.parts : []) {
@@ -688,18 +913,22 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         rewritten += 1;
       }
       if (visualCandidates.size > 0 && images.length > 0) {
-        const independent = (await callJson(deps, llm, {
-          model: deps.models().orchestrator,
-          max_tokens: 1_200,
-          system: [{ type: 'text', text: VISUAL_CHOICES_SYSTEM }],
-          messages: [{ role: 'user', content: unresolved
-            .filter((a) => visualCandidates.has(a.partId))
-            .map((a) => `PART ${a.partId} (${a.label})\n${a.prompt}\n${a.options.map((o) => `(${o.id}) ${o.text}`).join('\n')}`)
-            .join('\n\n') }],
-          images,
-          jsonSchema: VISUAL_CHOICES_JSON_SCHEMA,
-          meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
-        }, 'tutorial.solutions.visual')) as { parts?: unknown[] };
+        const candidates = unresolved.filter((a) => visualCandidates.has(a.partId));
+        const reads = await mapLimit(batches(candidates, SOLUTIONS_BATCH_PARTS), WINDOW_CONCURRENCY, async (batch) => {
+          const got = (await callJson(deps, llm, {
+            model: deps.models().orchestrator,
+            max_tokens: 1_200,
+            system: [{ type: 'text', text: VISUAL_CHOICES_SYSTEM }],
+            messages: [{ role: 'user', content: batch
+              .map((a) => `PART ${a.partId} (${a.label})\n${a.prompt}\n${a.options.map((o) => `(${o.id}) ${o.text}`).join('\n')}`)
+              .join('\n\n') }],
+            images,
+            jsonSchema: VISUAL_CHOICES_JSON_SCHEMA,
+            meta: { scope: 'notes', costScope: 'notes', fileId: notebookId },
+          }, 'tutorial.solutions.visual')) as { parts?: unknown[] };
+          return Array.isArray(got.parts) ? got.parts : [];
+        });
+        const independent = { parts: reads.flat() };
         for (const entry of Array.isArray(independent.parts) ? independent.parts : []) {
           const r = entry as Record<string, unknown>;
           const answer = typeof r.partId === 'string' ? byId.get(r.partId) : undefined;
@@ -719,7 +948,14 @@ export async function rewriteKeys(deps: TutorialDeps, notebookId: string, tutori
         }
       }
     }
-    log().info('tutorial.solutions', { notebook_id: notebookId, file_id: tutorialFileId, doc_id: record.id, rewritten, parts: answers.length });
+    log().info('tutorial.solutions', {
+      notebook_id: notebookId,
+      file_id: tutorialFileId,
+      doc_id: record.id,
+      rewritten,
+      parts: answers.length,
+      ...(batchesFailed > 0 ? { batches_failed: batchesFailed } : {}),
+    });
   } catch (err) {
     log().error('tutorial.solutions.failed', { notebook_id: notebookId, file_id: tutorialFileId, cause: (err as Error).message.slice(0, 200) });
   }

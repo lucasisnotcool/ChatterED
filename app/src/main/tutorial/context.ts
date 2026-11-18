@@ -157,6 +157,19 @@ export class Yielded extends Error {
   }
 }
 
+/**
+ * **The answer ran out of tokens** (`LlmResult.truncated`). Not retried as it is: the same request
+ * would be cut off again, and the parse of what came back is not the answer (field study,
+ * 2026-11-18: an inner block of a cut-off exam read parsed as a sheet with no parts). The caller
+ * asks for less (`windows.ts` halves a window; the key batches are halved) or says so.
+ */
+export class ReplyTruncated extends Error {
+  constructor(readonly call: string) {
+    super(`the ${call} answer was cut off by the output limit`);
+    this.name = 'ReplyTruncated';
+  }
+}
+
 /** One schema-bound call with the overview's retry rules; the answer's JSON object, parsed. */
 export async function callJson(deps: TutorialDeps, llm: LLMClient, request: LlmRequest, label: string): Promise<unknown> {
   let preempted = 0;
@@ -164,8 +177,13 @@ export async function callJson(deps: TutorialDeps, llm: LLMClient, request: LlmR
   for (;;) {
     try {
       const result = await llm.complete(request);
+      if (result.truncated) throw new ReplyTruncated(label);
       return JSON.parse(extractJsonObject(result.text)) as unknown;
     } catch (err) {
+      if (err instanceof ReplyTruncated) {
+        log().warn('tutorial.call.truncated', { call: label, max_tokens: request.max_tokens });
+        throw err;
+      }
       const error = err instanceof Error ? err : new Error(String(err));
       if (error.name === 'CliPreemptedError') {
         preempted += 1;

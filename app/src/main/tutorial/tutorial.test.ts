@@ -32,7 +32,7 @@ import { logPartsStarted } from './textstart.js';
 import { initLogger } from '../log.js';
 import { replyInPart, tutorialPartStates } from './reply.js';
 import { tutorialFocus, tutorialFocusText } from './focus.js';
-import { ingestTutorial, rewriteKeys, tutorialInFlight } from './ingest.js';
+import { ingestTutorial, MESSAGES, rewriteKeys, TUTORIAL_MAX_TOKENS, tutorialInFlight } from './ingest.js';
 import { tutorialRepo } from './repo.js';
 import { tutorialGaps } from './view.js';
 
@@ -237,6 +237,143 @@ describe('reading a tutorial (scripted)', () => {
     const { doc } = savedDoc();
     expect(partAnswers(doc).find((a) => a.partId === 'P2')!.text).toBe('Fewer constraints, so never harder.');
     expect(listViews(deps, notebookId)[0]!.parts.find((p) => p.partId === 'P2')!.attempts).toBe(1);
+  });
+});
+
+/**
+ * **A live read, a long sheet** (field study, 2026-11-18). The sheet is made eight pages long by
+ * a host that says so, and the client answers in the shapes the API path gives: an answer that
+ * ran out of tokens comes back `truncated` with a fragment the old unwrapping took for a sheet.
+ */
+describe('reading a tutorial (live, long or cut off)', () => {
+  const PAGES = 8;
+  let base = 0;
+  let requests: LlmRequest[];
+
+  /** The host, with the tutorial eight pages of text long. */
+  function longSheet(): void {
+    const host = deps.notebooks;
+    base = service.get(notebookId)!.sources[1]!.pageBase;
+    const stretch = (subject: ReturnType<typeof host.subject>) =>
+      subject && {
+        ...subject,
+        pageCount: subject.pageCount + PAGES - 1,
+        sources: subject.sources.map((x) => (x.fileId === tutorialId ? { ...x, pageCount: PAGES } : x)),
+      };
+    deps.notebooks = new Proxy(host, {
+      get(target, key) {
+        if (key === 'subject') return (id: string) => stretch(target.subject(id));
+        if (key === 'textFor')
+          return (q: { notebookId: string; pageFrom: number; pageTo: number }) =>
+            q.pageFrom > base ? `Question ${q.pageFrom - base}. Write a function for case ${q.pageFrom - base}.` : target.textFor(q);
+        const v = Reflect.get(target, key) as unknown;
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    });
+  }
+
+  const reply = (text: string, extra: Partial<Awaited<ReturnType<LLMClient['complete']>>> = {}) => ({
+    text,
+    model: 'claude-sonnet-5-5',
+    usage: EMPTY_USAGE,
+    ttftMs: 1,
+    backend: 'anthropic' as const,
+    ...extra,
+  });
+
+  /** The answer for the pages a request owns, one part per page, plus a copy of its look-ahead page. */
+  function sheetFor(request: LlmRequest): string {
+    const content = request.messages[0]!.content;
+    const m = /THIS CALL READS PAGES? (\d+)(?:–(\d+))? ONLY/.exec(content);
+    const from = m ? Number(m[1]) : 1;
+    const to = m ? Number(m[2] ?? m[1]) : PAGES;
+    const pages = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    const ahead = to < PAGES && m ? [to + 1] : [];
+    const blocks = [...pages, ...ahead].map((k) => ({
+      type: 'part', id: `Q${k}`, label: `Question ${k}`, page: k, prompt: [{ type: 'paragraph', page: k, text: `Write a function for case ${k}.` }], answer: { kind: 'code' },
+    }));
+    const parts = [...pages, ...ahead].map((k) => ({
+      partId: `Q${k}`, answer: `code ${k}`, blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [], formalCheck: null, notesBlockIds: [], pages: [], objectiveIds: [],
+    }));
+    return JSON.stringify({ title: 'Finals Practice', blocks, parts });
+  }
+
+  beforeEach(() => {
+    requests = [];
+    longSheet();
+  });
+
+  it('reads a long sheet a few pages at a time, halving the window that ran out, into one sheet', async () => {
+    llm = {
+      kind: 'anthropic',
+      async complete(request) {
+        requests.push(request);
+        if (request.system[0]!.text.startsWith('You solve')) return reply(JSON.stringify({ answers: [] }));
+        const m = /THIS CALL READS PAGES? (\d+)(?:–(\d+))? ONLY/.exec(request.messages[0]!.content);
+        // Five pages do not fit; the halves do.
+        if (m && Number(m[2] ?? m[1]) - Number(m[1]) >= 4) {
+          return reply('{"type":"heading","page":1,"text":"Expressions and function calls"}', { truncated: true, usage: { ...EMPTY_USAGE, output_tokens: 18_000 } });
+        }
+        return reply(sheetFor(request));
+      },
+    };
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('ready');
+    expect(view!.parts.map((p) => p.partId)).toEqual(['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8']);
+    const reads = requests.filter((r) => r.jsonSchema && /THIS CALL READS/.test(r.messages[0]!.content));
+    expect(reads.map((r) => /READS (PAGES? [\d–]+)/.exec(r.messages[0]!.content)![1])).toEqual([
+      'PAGES 1–5', 'PAGES 6–8', 'PAGES 1–3', 'PAGES 4–5',
+    ]);
+    // Each window's context is the same cached system block; its own pages are in the message.
+    expect(reads[1]!.system[1]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(reads[1]!.messages[0]!.content).toContain('[sheet p. 6]');
+    expect(reads[1]!.messages[0]!.content).not.toContain('[sheet p. 5]');
+    // The progress moved while it read, and the record says three windows at the end.
+    expect(pushed.some((c) => c.view?.status === 'pending' && c.view.progress && c.view.progress.total > 1)).toBe(true);
+    const record = tutorialRecord(deps, notebookId, tutorialId)!;
+    expect([record.windowsDone, record.windowsTotal]).toEqual([3, 3]);
+    expect(view!.progress).toBeNull();
+  });
+
+  it('says a single page ran out of tokens, and never that the sheet has no questions', async () => {
+    // The logged failure: 18,000 output tokens, a 77-character fragment, on every read.
+    llm = {
+      kind: 'anthropic',
+      async complete(request) {
+        requests.push(request);
+        return reply('{"type":"heading","page":1,"text":"Expressions and function calls"}', { truncated: true, usage: { ...EMPTY_USAGE, output_tokens: 18_000 } });
+      },
+    };
+    await ingested();
+    const [view] = listViews(deps, notebookId);
+    expect(view!.status).toBe('failed');
+    expect(view!.error).not.toBe(MESSAGES.noParts);
+    expect(view!.error).toMatch(/^Couldn't read this sheet: page \d holds more than Max can write out in one go/);
+    // Halved down to one page, then it says so; the same window is never asked twice.
+    const asked = requests.map((r) => /READS (PAGES? [\d–]+)/.exec(r.messages[0]!.content)![1]!);
+    expect(asked.slice(0, 2)).toEqual(['PAGES 1–5', 'PAGES 6–8']);
+    expect(asked.some((a) => /^PAGE \d$/.test(a))).toBe(true);
+    expect(new Set(asked).size).toBe(asked.length);
+  });
+
+  it('reads a short sheet in the one call it always made', async () => {
+    const host = createNotebookHost(db, { absPath: (rel) => service.absPath(rel) });
+    deps.notebooks = host;
+    llm = {
+      kind: 'anthropic',
+      async complete(request) {
+        requests.push(request);
+        if (request.system[0]!.text.startsWith('You solve')) return reply(JSON.stringify({ answers: [] }));
+        return reply(sheetFor(request));
+      },
+    };
+    await ingested();
+    const reads = requests.filter((r) => r.max_tokens === TUTORIAL_MAX_TOKENS);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]!.system).toHaveLength(1);
+    expect(reads[0]!.messages[0]!.content).toMatch(/^TUTORIAL SHEET: Tutorial 9\.md \(1 page\)\. Its pages are numbered 1\.\.1 below/);
+    expect(listViews(deps, notebookId)[0]!.status).toBe('ready');
   });
 });
 
@@ -492,6 +629,32 @@ describe('official solutions', () => {
     expect(turns.at(-1)?.choice).toEqual({
       picked: ['i'], correct: ['i'], source: 'worked answer', suppressExplanation: false,
     });
+  });
+
+  it('writes keys from the solutions in batches, halving a batch that ran out of tokens', async () => {
+    await ingested();
+    const path = join(tmp, 'Desktop', 'Tutorial 9 Solutions.md');
+    writeFileSync(path, 'Worked answers for every part: relaxation ignores delete lists entirely.');
+    await service.addSources(notebookId, [path]);
+    await service.whenIdle();
+    const sizes: number[] = [];
+    llm = { kind: 'anthropic', async complete(request) {
+      const ids = [...request.messages[0]!.content.matchAll(/^PART (\S+) \(/gm)].map((m) => m[1]!);
+      sizes.push(ids.length);
+      // More than two parts' keys do not fit.
+      if (ids.length > 2) return { text: '{"parts":[{"partId":"P1a"', model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const, truncated: true as const };
+      const keys = ids.map((partId) => ({
+        partId, answer: 'Relaxation ignores delete lists', blanks: [], correct: [], steps: [], mistakes: [], prerequisites: [],
+        sourcePage: 1, sourceQuote: 'relaxation ignores delete lists entirely',
+      }));
+      return { text: JSON.stringify({ parts: keys }), model: request.model, usage: EMPTY_USAGE, ttftMs: 1, backend: 'anthropic' as const };
+    } };
+    const rewritten = await rewriteKeys(deps, notebookId, tutorialId);
+    const solved = sizes.filter((n) => n <= 2).reduce((a, b) => a + b, 0);
+    expect(sizes[0]).toBeGreaterThan(2);
+    expect(solved).toBe(sizes[0]);
+    // Every part but the choice (which needs a ticked answer, not a quote) got the official key.
+    expect(rewritten).toBe(sizes[0]! - 1);
   });
 
   it('checks against the worked answer when a linked partial solutions file has no answer for this part', async () => {

@@ -190,6 +190,65 @@ export function tutorialMessage(input: {
   ].join('\n');
 }
 
+// ── a long sheet, read a few pages at a time (`windows.ts`) ────────────────────────────────
+
+/**
+ * What every window of one sheet is read against: the notes outline, the lecture pages and the
+ * objectives. The same for every window, so it goes in the system prompt behind a cache
+ * breakpoint and the windows after the first read it from the cache.
+ */
+export function tutorialContext(input: { notesOutline: string; objectives: string; lecturePages: string }): string {
+  return [
+    'THE LEARNER\'S NOTES OUTLINE (block id | pages | where | text). Link parts to these ids only:',
+    input.notesOutline || '(no notes yet: leave notesBlockIds empty)',
+    '',
+    'LECTURE PAGE RANGES (notebook pages). Link parts to these pages only:',
+    input.lecturePages || '(no lecture source: leave pages empty)',
+    '',
+    'OBJECTIVES (id: title). Link parts to these ids only:',
+    input.objectives || '(none yet: leave objectiveIds empty)',
+  ].join('\n');
+}
+
+/** One window of a long sheet: its own pages, the page after, and the end of the page before. */
+export function tutorialWindowMessage(input: {
+  sourceName: string;
+  pageCount: number;
+  from: number;
+  to: number;
+  ahead: number | null;
+  /** The end of page `from - 1`, or '' on the first window. */
+  previousTail: string;
+  sheetText: string;
+  figures: string;
+  imagePages: readonly number[];
+}): string {
+  const own = input.from === input.to ? `page ${input.from}` : `pages ${input.from}–${input.to}`;
+  return [
+    `TUTORIAL SHEET: ${input.sourceName} (${input.pageCount} pages). It is long, so it is read a few pages at a time and the parts are joined in page order. THIS CALL READS ${own.toUpperCase()} ONLY, numbered as on the sheet.`,
+    `- Copy every block and every part that STARTS on ${own}, in order, with its sheet page.`,
+    input.ahead !== null
+      ? `- Page ${input.ahead} is shown only so you can finish a part that starts on page ${input.to} and runs onto it: copy that part whole. Copy nothing that starts on page ${input.ahead}; the next call reads it.`
+      : `- Page ${input.to} is the end of the sheet.`,
+    input.from > 1
+      ? `- If page ${input.from} opens in the middle of a part begun on an earlier page (the end of page ${input.from - 1} is quoted below), skip that continuation: it is copied with its part. Do not repeat the sheet's title or running header.`
+      : '',
+    '- Give part ids from the sheet\'s own numbering (Q12, Q12a, P3B), as for a whole sheet, so they stay unique across the calls. Title: the sheet\'s own title if these pages show it, else the file name.',
+    '- Every part on these pages gets its key, as for a whole sheet.',
+    input.imagePages.length > 0
+      ? `Page images are attached for sheet pages ${input.imagePages.join(', ')}: read the maths, tables and figures from them.`
+      : 'No page images are attached: read the text as it is.',
+    '',
+    input.previousTail ? `END OF PAGE ${input.from - 1} (context only; already read):\n${input.previousTail}\n` : '',
+    input.sheetText,
+    '',
+    'FIGURE CANDIDATES (sheet page: boxes found on the page, x0 y0 x1 y1):',
+    input.figures || '(none found)',
+  ]
+    .filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== ''))
+    .join('\n');
+}
+
 // ── the independent re-solve and the comparison ─────────────────────────────────────────────
 
 export const RESOLVE_JSON_SCHEMA: Record<string, unknown> = {
