@@ -17,8 +17,8 @@
  *  6. `import('./index.js')`, in try/catch. A throw there, or `failBoot`, is **repair mode**.
  */
 import { app, clipboard, dialog, powerMonitor, shell, utilityProcess, type UtilityProcess } from 'electron';
-import { execFile } from 'node:child_process';
-import { accessSync, constants as fsConstants, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { accessSync, constants as fsConstants, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readBaked } from './update/baked.js';
@@ -26,7 +26,7 @@ import { appendLog, plistValue, UpdateEngine, type EngineConfig } from './update
 import { debugReport, startupFailed } from './update/failure.js';
 import { trustedKeys, verifyManifest } from './update/manifest.js';
 import { ensureInstallId } from './update/installid.js';
-import { buildNumber, bundleOfExecutable, classifyLocation, IDLE_RELAUNCH_SECONDS, MAX_CRASHED_LAUNCHES, updaterMode } from './update/plan.js';
+import { buildNumber, bundleOfExecutable, classifyLocation, IDLE_RELAUNCH_SECONDS, MAX_CRASHED_LAUNCHES, realTargetOf, updaterMode } from './update/plan.js';
 import { faultActive, isBusy, runtime, setRuntime, type UpdateRuntime } from './update/runtime.js';
 import { finishSelfInstall, maybeSelfInstall } from './update/selfinstall.js';
 
@@ -81,7 +81,7 @@ function baseRuntime(over: Partial<UpdateRuntime>): UpdateRuntime {
     fault,
     takeNote: () => null,
     rendererReady: () => undefined,
-    repair: async () => false,
+    repair: () => 'none',
     debugInfo: () => ({ build, sha: baked.sha, channel: baked.channel }),
     bootstrapReport: (error) =>
       [
@@ -114,10 +114,10 @@ function runSmoke(okFile: string): void {
         write(true, 'ready');
         app.exit(0);
       },
-      repair: async () => {
+      repair: () => {
         write(false, 'boot');
         app.exit(1);
-        return true;
+        return 'exiting';
       },
     }),
   );
@@ -199,10 +199,104 @@ function smokeUpdaterProblem(manifestFile: string | null): string | null {
   }
 }
 
+/** The engine's settings for this build: the same in the app, its worker and repair mode. */
+function engineConfig(bundlePath: string, installId: string | null, role: 'main' | 'worker', pid: number): EngineConfig {
+  const helperEnv: Record<string, string> = {};
+  if (baked.test) for (const [k, v] of Object.entries(process.env)) if (k.startsWith('CHATTERED_HELPER_') && v) helperEnv[k] = v;
+  return {
+    bundlePath,
+    appId: baked.appId,
+    productName: baked.productName,
+    swapTool: join(process.resourcesPath, 'chattered-swap'),
+    installId,
+    role,
+    userDataDir: userData,
+    currentBuild: build,
+    sha: baked.sha,
+    channel: baked.channel!,
+    keys: baked.keys,
+    manifestUrls: baked.manifestUrls,
+    allowHttp: baked.test,
+    osVersion: process.getSystemVersion(),
+    logFile,
+    logBase,
+    pid,
+    helperEnv,
+    ...(baked.test && process.env.CHATTERED_TEST_FIRST_CHECK_MS ? { firstCheckMs: Number(process.env.CHATTERED_TEST_FIRST_CHECK_MS) || undefined } : {}),
+  };
+}
+
+/**
+ * **Repair mode's search, in its own process** (`--chattered-repair=<app pid>`, started by the app
+ * whose boot failed). No window, no Dock icon, no lock, none of the app's code. Checks now; if a fix
+ * is staged, hands it to the helper (which waits for the app to exit), then ends the failed app:
+ * SIGTERM, then SIGKILL, since its startup-failure dialog may be up. Gives up after 20 minutes.
+ */
+function runRepair(appPid: number): void {
+  void app.whenReady().then(() => app.dock?.hide());
+  setTimeout(() => app.exit(0), 20 * 60_000).unref();
+  const mode = updaterMode({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    channel: baked.channel,
+    hasPublicKey: baked.keys.length > 0,
+    envSwitch: process.env.CHATTERED_UPDATES,
+    disabledByFile: existsSync(join(userData, 'updates-disabled')),
+  });
+  if (!mode.enabled || !bundle || !Number.isInteger(appPid) || appPid <= 1) {
+    app.exit(0);
+    return;
+  }
+  const engine = new UpdateEngine(engineConfig(bundle, ensureInstallId(userData), 'worker', appPid));
+  void (async () => {
+    const staged = await engine.check('repair');
+    if (staged && engine.spawnSwap({ mode: 'apply', relaunch: 'front' })) {
+      engine.log('info', 'update.repair_swap', { to: engine.readStaged()?.build ?? null });
+      try {
+        process.kill(appPid, 'SIGTERM');
+      } catch {
+        /* already gone */
+      }
+      setTimeout(() => {
+        try {
+          process.kill(appPid, 'SIGKILL');
+        } catch {
+          /* gone */
+        }
+        app.exit(0);
+      }, 8000);
+      return;
+    }
+    engine.log('info', 'update.repair_none', {});
+    app.exit(0);
+  })().catch(() => app.exit(0));
+}
+
 // ── 2-6. an ordinary launch ─────────────────────────────────────────────────
 
 async function start(): Promise<void> {
   const location = bundle ? classifyLocation(bundle, writable) : 'not_bundle';
+
+  // 1a. A copy running from a hidden half-swap bundle (`.ChatterED-replaced.app`: a helper was
+  // killed between its two renames). Put it back under the app's name first, then open that (D-5).
+  const realTarget = bundle ? realTargetOf(bundle, baked.productName) : null;
+  if (bundle && realTarget) {
+    let moved = false;
+    if (!existsSync(realTarget)) {
+      try {
+        renameSync(bundle, realTarget);
+        moved = true;
+      } catch {
+        moved = false;
+      }
+    }
+    log('warn', 'update.hidden_bundle', { restored: moved, target_exists: existsSync(realTarget) });
+    if (existsSync(realTarget)) {
+      execFile('/usr/bin/open', [realTarget], () => undefined);
+      app.quit();
+      return;
+    }
+  }
 
   // 1b. A copy inside userData (the kept N-1 or a staged build, opened from a stale Dock or Finder
   // reference) is never the app: open the installed one and quit (review #10).
@@ -247,29 +341,7 @@ async function start(): Promise<void> {
   let cfg: EngineConfig | null = null;
   const insideUserData = !!bundle && bundle.startsWith(`${userData}/`);
   if (mode.enabled && bundle && !insideUserData) {
-    const helperEnv: Record<string, string> = {};
-    if (baked.test) for (const [k, v] of Object.entries(process.env)) if (k.startsWith('CHATTERED_HELPER_') && v) helperEnv[k] = v;
-    cfg = {
-      bundlePath: bundle,
-      appId: baked.appId,
-      productName: baked.productName,
-      swapTool: join(process.resourcesPath, 'chattered-swap'),
-      installId,
-      role: 'main',
-      userDataDir: userData,
-      currentBuild: build,
-      sha: baked.sha,
-      channel: baked.channel!,
-      keys: baked.keys,
-      manifestUrls: baked.manifestUrls,
-      allowHttp: baked.test,
-      osVersion: process.getSystemVersion(),
-      logFile,
-      logBase,
-      pid: process.pid,
-      helperEnv,
-      ...(baked.test && process.env.CHATTERED_TEST_FIRST_CHECK_MS ? { firstCheckMs: Number(process.env.CHATTERED_TEST_FIRST_CHECK_MS) || undefined } : {}),
-    };
+    cfg = engineConfig(bundle, installId, 'main', process.pid);
     engine = new UpdateEngine(cfg);
   }
   log('info', 'update.launch', {
@@ -306,20 +378,30 @@ async function start(): Promise<void> {
         // Healthy once the renderer has stayed up a while, not at the first paint.
         healthyTimer = setTimeout(() => engine?.markHealthy(), 30_000);
       },
-      repair: async (cause) => {
+      repair: (cause) => {
         log('error', 'update.repair', { cause: cause.slice(0, 120) });
-        if (!engine) return false;
-        if (await engine.check('repair')) {
-          if (engine.spawnSwap({ mode: 'apply', relaunch: 'front' })) {
-            app.exit(0);
-            return true;
-          }
-        }
+        if (!engine) return 'none';
+        // A build that keeps failing goes back to N-1 now: no network needed.
         if (!engine.everHealthy() && engine.crashes() + 1 >= MAX_CRASHED_LAUNCHES && engine.rollback('repair')) {
           app.exit(0);
-          return true;
+          return 'exiting';
         }
-        return false;
+        // The search for a fix runs in its own process (`--chattered-repair`), so neither the
+        // startup-failure dialog (app-modal: it blocks this process) nor a quit can stop it. If it
+        // stages a fix, it hands it to the helper and ends this process (review D-1).
+        try {
+          const child = spawn(process.execPath, [`--chattered-repair=${process.pid}`, `--user-data-dir=${userData}`], {
+            detached: true,
+            stdio: 'ignore',
+            env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ELECTRON_RUN_AS_NODE')),
+          });
+          child.unref();
+          log('info', 'update.repair_started', { pid: child.pid ?? null });
+          return 'repairing';
+        } catch (err) {
+          log('error', 'update.failed', { stage: 'repair_spawn', cause: (err as Error).message });
+          return 'none';
+        }
       },
       debugInfo: () => ({
         enabled: mode.enabled,
@@ -342,7 +424,8 @@ async function start(): Promise<void> {
 
   // 5. The worker, the idle relaunch, the self-install's finish.
   void app.whenReady().then(() => {
-    if (bundle && app.isInApplicationsFolder()) {
+    // Wherever this copy runs from, as long as it can update itself (it was installed there).
+    if (bundle && location === 'ok') {
       void finishSelfInstall({ bundle, appId: baked.appId, productName: baked.productName, userData, home: homedir(), build, location, log }).catch(() => undefined);
     }
     if (!engine || !cfg) return;
@@ -478,7 +561,9 @@ function watchIdle(engine: UpdateEngine): void {
   powerMonitor.on('lock-screen', () => setTimeout(() => attempt('locked'), 5 * 60_000 + 1000).unref());
 }
 
+const repairFor = arg('--chattered-repair=');
 if (smokeOk) runSmoke(smokeOk);
+else if (repairFor) runRepair(Number(repairFor));
 else
   void start().catch((err: unknown) => {
     log('error', 'boot.bootstrap_failed', { cause: err instanceof Error ? err.message : String(err) });

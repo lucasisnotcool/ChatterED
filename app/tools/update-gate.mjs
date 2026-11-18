@@ -298,6 +298,29 @@ async function main() {
   await waitFor(`${B + 1} to refuse ${B + 2}`, (e, i) => i >= n && e.event === 'update.check' && e.result === 'known_bad', 60000);
   say(`rolled back: ${B + 2} → ${B + 1}; ${B + 2} marked bad and not fetched again`);
 
+  // 6. Repair mode (E2E D-1): N+3 fails its migration at every real launch; while its
+  // startup-failure dialog is up, the repair process must fetch N+4 and swap it in by itself.
+  const n3 = join(WORK, 'n3', `${NAME}.app`);
+  const n4 = join(WORK, 'n4', `${NAME}.app`);
+  restamp(candidate, n3, B + 3, { ChatterEDTestFault: 'fail-migration-live' });
+  restamp(candidate, n4, B + 4);
+  publish(n3, B + 3);
+  await killRunning();
+  n = mark();
+  launch();
+  await waitFor(`${B + 1} to stage ${B + 3}`, (e, i) => i >= n && e.event === 'update.staged' && e.to === B + 3, 240000);
+  publish(n4, B + 4);
+  say(`serving N+4 = ${B + 4} (the fix) while N+3 = ${B + 3} (fails its migration) is staged`);
+  await killRunning();
+  n = mark();
+  launch();
+  await waitFor(`${B + 3} to fail to start`, (e, i) => i >= n && e.event === 'boot.failed' && e.build === B + 3, 60000);
+  await waitFor('repair mode to start', (e, i) => i >= n && e.event === 'update.repair_started', 30000);
+  const repairedAt = Date.now();
+  await waitFor(`${B + 4} to start, with nobody touching the dialog`, (e, i) => i >= n && e.event === 'app.start' && e.build === B + 4, 240000);
+  if (plist(INST, 'CFBundleVersion') !== String(B + 4)) fail('the installed bundle is not N+4 after repair');
+  say(`repaired: ${B + 3} → ${B + 4} in ${Math.round((Date.now() - repairedAt) / 1000)}s, the failure dialog left alone`);
+
   await killRunning();
   cleanup();
   mkdirSync(PASS_DIR, { recursive: true, mode: 0o700 });

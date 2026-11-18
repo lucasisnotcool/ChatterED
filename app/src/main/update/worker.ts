@@ -30,7 +30,8 @@ async function run(reason: string): Promise<void> {
   const s = engine.readStaged();
   if (staged && s) port?.postMessage({ type: 'staged', build: s.build });
   port?.postMessage({ type: 'checked', staged });
-  schedule(jitter(CHECK_EVERY_MS, 30 * 60_000, Math.random()));
+  // Every ~4 h; sooner after a failed check or download (15 min, doubling, capped).
+  schedule(jitter(engine.nextCheckMs(CHECK_EVERY_MS), 5 * 60_000, Math.random()));
 }
 
 /** Once per worker: whether the Mac is managed, which can block ad-hoc builds (logged, never acted on). */

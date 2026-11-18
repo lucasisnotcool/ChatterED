@@ -101,6 +101,66 @@ export function probationStep(last: LaunchRecord | null, health: BuildHealth | n
   return { action: 'none', health: h };
 }
 
+/**
+ * The real bundle a hidden half-swap bundle stands in for: `/A/.ChatterED-replaced.app` and
+ * `/A/.ChatterED-incoming.app` → `/A/<productName>.app`; null for any other path (review D-5).
+ */
+export function realTargetOf(bundlePath: string, productName: string): string | null {
+  const slash = bundlePath.lastIndexOf('/');
+  const base = bundlePath.slice(slash + 1);
+  if (base !== '.ChatterED-replaced.app' && base !== '.ChatterED-incoming.app') return null;
+  return `${bundlePath.slice(0, slash)}/${productName}.app`;
+}
+
+// ── the one-off install ─────────────────────────────────────────────────────
+
+/** Mount points of attached disk images, from `hdiutil info` (tab, then the `/Volumes/…` path). */
+export function dmgVolumes(hdiutilInfo: string): string[] {
+  const out = new Set<string>();
+  for (const line of hdiutilInfo.split('\n')) {
+    const m = /\t(\/Volumes\/[^\t]+)$/.exec(line);
+    if (m?.[1]) out.add(m[1]);
+  }
+  return [...out];
+}
+
+/**
+ * Where the one-off install copies from, and which disk image to eject afterwards. From a mounted
+ * DMG: the running bundle, and its volume. Translocated (opened from the DMG after Open Anyway):
+ * the same build on a mounted ChatterED DMG if there is one (the real path, not the read-only
+ * translocation mount), and that volume; else the running bundle and nothing to eject.
+ */
+export function installSource(o: {
+  running: string;
+  location: LocationKind;
+  productName: string;
+  volumes: readonly string[];
+  /** The bundle is this app and this build (bundle id and CFBundleVersion). */
+  matches(app: string): boolean;
+}): { source: string; eject: string | null } {
+  if (o.location === 'dmg') {
+    const m = /^(\/Volumes\/[^/]+)\//.exec(o.running);
+    return { source: o.running, eject: m?.[1] ?? null };
+  }
+  if (o.location === 'translocated') {
+    for (const v of o.volumes) {
+      const app = `${v}/${o.productName}.app`;
+      if (o.matches(app)) return { source: app, eject: v };
+    }
+  }
+  return { source: o.running, eject: null };
+}
+
+/** `…/<name>.app/Contents/MacOS/<name>` (its main process), not one of its helpers or anything else. */
+export function isAppMain(command: string, productName: string): boolean {
+  const exe = `/${productName}.app/Contents/MacOS/${productName}`;
+  const line = command.trim();
+  const at = line.indexOf(exe);
+  if (at < 0) return false;
+  const after = line.slice(at + exe.length);
+  return after === '' || after.startsWith(' -');
+}
+
 // ── the swap helper ─────────────────────────────────────────────────────────
 
 export interface SwapParams {
@@ -162,6 +222,8 @@ export function swapArgs(p: SwapParams): string[] {
   // A copy running from the kept or staged bundle must never swap itself: the keep step would
   // delete what it just swapped in (review R7). The bootstrap hands such a copy over instead.
   if (p.target === p.keep || p.target === p.incoming || p.target.startsWith(`${p.updatesDir}/`)) throw new Error('target is inside the updates folder');
+  // The target is the app's own name, never a hidden half-swap bundle (review D-5).
+  if (p.target.slice(p.target.lastIndexOf('/') + 1).startsWith('.')) throw new Error('target is a hidden bundle');
   if (!Number.isInteger(p.pid) || p.pid <= 1) throw new Error('bad pid');
   if (!Number.isInteger(p.toBuild) || !Number.isInteger(p.fromBuild) || p.toBuild < 1) throw new Error('bad build');
   if (p.cdhash !== null && !/^[0-9a-f]{40,64}$/.test(p.cdhash)) throw new Error('bad cdhash');
@@ -276,6 +338,7 @@ fi
 echo "$$" > "$LOCK/pid"
 if [ "$TARGET" = "$KEEP" ] || [ "$TARGET" = "$INCOMING" ]; then result failed target_is_keep; finish 1; fi
 case "$TARGET" in "$(dirname -- "$RESULT")"/*) result failed target_is_keep; finish 1 ;; esac
+case "$(basename -- "$TARGET")" in .*) result failed target_hidden; finish 1 ;; esac
 
 ticks=0
 while kill -0 "$PID" 2>/dev/null; do

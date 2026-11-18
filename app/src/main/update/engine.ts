@@ -56,6 +56,7 @@ import {
   classifyLocation,
   parseSwapResult,
   probationStep,
+  realTargetOf,
   recoverJournal,
   SWAP_SCRIPT,
   swapArgs,
@@ -119,6 +120,10 @@ export interface UpdateState {
   lastCheckAt: string | null;
   /** The last time staging was skipped for space: shown in the debug report until a stage succeeds. */
   spaceShort: { needMb: number; freeMb: number; build: number; at: string } | null;
+  /** The highest manifest `seq` verified here: an older manifest is a replay and is refused. */
+  maxSeq: number;
+  /** Failed checks in a row (unreachable, download): sets the retry backoff (`worker.ts`). */
+  failStreak: number;
 }
 
 /**
@@ -143,6 +148,10 @@ export interface LaunchState {
   manualNoticeShown: number | null;
   /** The build a rollback was given up for (its helper failed): not tried again. */
   cannotRollback: number | null;
+  /** Every build that was healthy here once: a return to one of them (a rollback) is not on probation (D-7). */
+  knownGood: number[];
+  /** Builds whose payload failed verification or its smoke launch: never downloaded again (D-8). */
+  rejected: { build: number; cause: string }[];
 }
 
 /** Launches in a row that may exit before the app's code; the next one always opens it. */
@@ -243,7 +252,14 @@ export class UpdateEngine {
 
   /** Everything the debug report shows about updates, from files only (works when the app is broken). */
   status(): Record<string, unknown> {
+    // Timestamps without milliseconds: `…54.608Z` reads as a file name to the debug report's scrubber.
+    return JSON.parse(JSON.stringify(this.#status()).replace(/(\d{2}:\d{2}:\d{2})\.\d{1,3}Z/g, '$1Z')) as Record<string, unknown>;
+  }
+
+  #status(): Record<string, unknown> {
     const read = (name: string): unknown => this.#readJson<Record<string, unknown>>(name);
+    const lm = this.lastManifest();
+    const where = this.location();
     const staged = this.readStaged();
     const state = this.readState();
     const ls = this.readLaunch();
@@ -252,12 +268,18 @@ export class UpdateEngine {
       sha: this.cfg.sha,
       channel: this.cfg.channel,
       install_id: this.cfg.installId,
-      location: this.location(),
+      // `self_update`, not `location`: the report's own `app.location` says where the bundle is.
+      self_update: where === 'ok' ? 'yes' : `no: ${where}`,
+      last_manifest: lm ? { seq: lm.seq, build: lm.build, targeted: lm.targeted, pin: lm.pin, paused: lm.paused } : lm === null ? 'does not verify' : null,
       bundle: this.cfg.bundlePath.replace(/^\/Users\/[^/]+/, '~'),
       staged: staged ? { build: staged.build, at: staged.stagedAt, downgrade: staged.downgrade } : null,
       previous_build: existsSync(this.previousApp) ? buildNumber(plistValue(this.previousApp, 'CFBundleVersion')) : null,
       bad_builds: ls.badBuilds,
       cannot_apply: ls.cannotApply,
+      rejected: ls.rejected,
+      known_good: ls.knownGood,
+      fail_streak: state.failStreak,
+      max_seq: state.maxSeq,
       cannot_rollback: ls.cannotRollback,
       pending_swap: ls.pending,
       last_swap_result: ls.lastResult,
@@ -322,6 +344,8 @@ export class UpdateEngine {
       },
       lastCheckAt: typeof s.lastCheckAt === 'string' ? s.lastCheckAt : null,
       spaceShort: sp && int(sp.needMb) && int(sp.freeMb) && int(sp.build) ? sp : null,
+      maxSeq: int(s.maxSeq) && s.maxSeq > 0 ? s.maxSeq : 0,
+      failStreak: int(s.failStreak) && s.failStreak > 0 ? s.failStreak : 0,
     };
   }
 
@@ -348,6 +372,8 @@ export class UpdateEngine {
       exitStreak: int(s.exitStreak) && s.exitStreak > 0 ? s.exitStreak : 0,
       manualNoticeShown: int(s.manualNoticeShown) ? s.manualNoticeShown : null,
       cannotRollback: int(s.cannotRollback) ? s.cannotRollback : null,
+      knownGood: ints(s.knownGood).slice(-50),
+      rejected: Array.isArray(s.rejected) ? s.rejected.filter((r) => r && int(r.build)).map((r) => ({ build: r.build, cause: String(r.cause ?? '').slice(0, 60) })).slice(-50) : [],
     };
   }
 
@@ -476,7 +502,7 @@ export class UpdateEngine {
 
     // 2. A swap the helper did not finish.
     if (!helperAlive && existsSync(paths.journal)) {
-      let meta: { keepOld?: boolean; to?: number } = {};
+      let meta: { keepOld?: boolean; to?: number; target?: string } = {};
       try {
         meta = JSON.parse(readFileSync(`${paths.journal}.json`, 'utf8')) as typeof meta;
       } catch {
@@ -498,7 +524,8 @@ export class UpdateEngine {
             remove: (p) => rmSync(p, { recursive: true, force: true }),
             buildOf: (p) => buildNumber(plistValue(p, 'CFBundleVersion')),
           },
-          { target: this.cfg.bundlePath, keep: this.previousApp, keepOld: meta?.keepOld === true, aside: paths.aside, near: paths.near, toBuild: Number(meta?.to) || 0 },
+          // The journal's own target: never whatever path this copy happens to run from (D-5).
+          { target: journalTarget(meta?.target, this.cfg.bundlePath, this.cfg.productName), keep: this.previousApp, keepOld: meta?.keepOld === true, aside: paths.aside, near: paths.near, toBuild: Number(meta?.to) || 0 },
         );
       } catch (err) {
         done = `error:${shortCause(err)}`;
@@ -529,8 +556,9 @@ export class UpdateEngine {
     if (staged) {
       ls = this.readLaunch();
       const cannot = ls.cannotApply.some((c) => c.build === staged.build);
-      if (staged.build === current || (staged.build < current && !staged.downgrade) || ls.badBuilds.includes(staged.build) || cannot) {
-        this.discardStaged(staged.build === current ? 'already_running' : cannot ? 'cannot_apply' : 'stale');
+      const superseded = !cannot && !this.#stillAllowed(staged.build);
+      if (staged.build === current || (staged.build < current && !staged.downgrade) || ls.badBuilds.includes(staged.build) || cannot || superseded) {
+        this.discardStaged(staged.build === current ? 'already_running' : cannot ? 'cannot_apply' : superseded ? 'superseded' : 'stale');
       } else if (this.location() === 'ok') {
         if (this.spawnSwap({ mode: 'apply', relaunch: 'front' })) return { kind: 'exit', why: 'applying' };
       }
@@ -540,7 +568,8 @@ export class UpdateEngine {
     // unless a rollback to it already failed (it would fail again, at every launch).
     ls = this.readLaunch();
     const previousBuild = existsSync(this.previousApp) ? buildNumber(plistValue(this.previousApp, 'CFBundleVersion')) : null;
-    const step = probationStep(ls.launch, ls.health, current, previousBuild);
+    const health = ls.health && ls.health.build === current ? ls.health : { build: current, everHealthy: ls.knownGood.includes(current), crashes: 0 };
+    const step = probationStep(ls.launch, { ...health, everHealthy: health.everHealthy || ls.knownGood.includes(current) }, current, previousBuild);
     if (step.action === 'rollback' && this.location() === 'ok') {
       const failedBefore = ls.cannotRollback === current || (ls.lastResult?.mode === 'rollback' && ls.lastResult.status !== 'ok');
       if (failedBefore) {
@@ -565,7 +594,7 @@ export class UpdateEngine {
     const note = ls.lastLaunchedBuild !== null && current > ls.lastLaunchedBuild ? { from: ls.lastLaunchedBuild, to: current } : null;
     this.#patchLaunch((s) => {
       if (health) s.health = health;
-      else if (!s.health || s.health.build !== current) s.health = { build: current, everHealthy: false, crashes: 0 };
+      else if (!s.health || s.health.build !== current) s.health = { build: current, everHealthy: s.knownGood.includes(current), crashes: 0 };
       s.launch = { build: current, healthy: false, clean: false };
       s.lastLaunchedBuild = current;
       s.exitStreak = 0;
@@ -593,6 +622,7 @@ export class UpdateEngine {
         if (s.pending && s.pending.mode === r.mode) s.pending = null;
         return;
       }
+      if (r.mode === 'rollback') s.cannotRollback = this.cfg.currentBuild;
       // App Management will refuse again; two failures of one build will fail again (review #1).
       const tries = s.pending && s.pending.build === r.to && s.pending.mode === r.mode ? s.pending.attempts : 1;
       if (r.mode === 'apply' && (r.cause === 'app_management' || tries >= MAX_SWAP_ATTEMPTS) && !s.cannotApply.some((c) => c.build === r.to)) {
@@ -600,7 +630,60 @@ export class UpdateEngine {
         s.pending = null;
       }
     });
+    if (r.mode === 'rollback' && r.status !== 'ok') this.log('error', 'update.gave_up', { mode: 'rollback', build: this.cfg.currentBuild, why: 'rollback_failed' });
     if (r.mode === 'apply' && this.readLaunch().cannotApply.some((c) => c.build === r.to)) this.discardStaged('cannot_apply');
+    // The helper cleared its journal; its metadata goes too (E2E D-8).
+    const paths = swapPaths({ target: this.cfg.bundlePath, updatesDir: this.dir });
+    if (!existsSync(paths.journal)) rmSync(`${paths.journal}.json`, { force: true });
+  }
+
+  /**
+   * Is `build` still what the newest verified manifest says to install? A rollback, pin, block or
+   * pause published after the build was staged must win over it (review D-6). With no stored
+   * manifest (a layout before seq), yes.
+   */
+  #stillAllowed(build: number): boolean {
+    const m = this.lastManifest();
+    if (m === undefined) return true;
+    if (m === null) return false;
+    const d = decide({
+      manifest: m,
+      appId: this.cfg.appId,
+      channel: this.cfg.channel,
+      currentBuild: this.cfg.currentBuild,
+      osVersion: this.cfg.osVersion,
+      dbUserVersion: dbUserVersion(join(this.cfg.userDataDir, 'app.db')),
+      badBuilds: this.readLaunch().badBuilds,
+    });
+    return d.action === 'install' && m.build === build;
+  }
+
+  /** The newest verified manifest, re-verified from disk: undefined if none was stored, null if it no longer verifies. */
+  lastManifest(): UpdateManifest | null | undefined {
+    const file = join(this.dir, 'last-manifest.json');
+    if (!existsSync(file)) return undefined;
+    try {
+      const v = verifyManifest(readFileSync(file), readFileSync(`${file}.sig`), trustedKeys(this.cfg.keys, this.readState().rotation), {
+        allowHttp: this.cfg.allowHttp,
+        installId: this.cfg.installId,
+      });
+      return v.ok ? v.manifest : null;
+    } catch {
+      return null;
+    }
+  }
+
+  #storeManifest(bytes: Buffer, sig: Buffer, seq: number): void {
+    try {
+      const file = join(this.dir, 'last-manifest.json');
+      writeFileSync(`${file}.tmp`, bytes, { mode: 0o600 });
+      writeFileSync(`${file}.sig.tmp`, sig, { mode: 0o600 });
+      renameSync(`${file}.sig.tmp`, `${file}.sig`);
+      renameSync(`${file}.tmp`, file);
+      this.#patch((s) => (s.maxSeq = Math.max(s.maxSeq, seq)));
+    } catch (err) {
+      this.log('warn', 'update.failed', { stage: 'store_manifest', cause: shortCause(err) });
+    }
   }
 
   #sweepWork(): void {
@@ -661,6 +744,7 @@ export class UpdateEngine {
   /** DB open, the window's bridge up, and still alive a little later: this build works here. */
   markHealthy(): void {
     this.#patchLaunch((s) => {
+      if (!s.knownGood.includes(this.cfg.currentBuild)) s.knownGood.push(this.cfg.currentBuild);
       if (s.launch && s.launch.build === this.cfg.currentBuild) s.launch.healthy = true;
       if (s.health && s.health.build === this.cfg.currentBuild && !s.health.everHealthy) {
         s.health.everHealthy = true;
@@ -675,9 +759,10 @@ export class UpdateEngine {
     });
   }
 
+  /** This build was healthy here at least once: kept as N-1 when replaced, never on probation again. */
   everHealthy(): boolean {
-    const h = this.readLaunch().health;
-    return h !== null && h.build === this.cfg.currentBuild && h.everHealthy;
+    const ls = this.readLaunch();
+    return ls.knownGood.includes(this.cfg.currentBuild) || (ls.health !== null && ls.health.build === this.cfg.currentBuild && ls.health.everHealthy);
   }
 
   hasPrevious(): boolean {
@@ -758,7 +843,7 @@ export class UpdateEngine {
         updatesDir: this.dir,
       });
       const paths = swapPaths({ target: this.cfg.bundlePath, updatesDir: this.dir });
-      writeFileSync(`${paths.journal}.json`, JSON.stringify({ keepOld, mode: o.mode, from: this.cfg.currentBuild, to: toBuild }), { mode: 0o600 });
+      writeFileSync(`${paths.journal}.json`, JSON.stringify({ keepOld, mode: o.mode, from: this.cfg.currentBuild, to: toBuild, target: this.cfg.bundlePath }), { mode: 0o600 });
       const script = join(this.dir, 'swap-helper.sh');
       const tmpScript = `${script}.${process.pid}.tmp`;
       writeFileSync(tmpScript, SWAP_SCRIPT, { mode: 0o700 });
@@ -884,9 +969,20 @@ export class UpdateEngine {
     this.#patch((s) => (s.lastCheckAt = new Date(this.#now()).toISOString()));
     if ('error' in got) {
       this.log('info', 'update.check', { reason, result: 'unavailable', cause: got.error, build: this.cfg.currentBuild });
+      this.#outcome('retry');
       return false;
     }
+    this.#outcome('ok');
     const { manifest: m, signer } = got;
+    const maxSeq = this.readState().maxSeq;
+    if (m.seq < maxSeq) {
+      this.log('warn', 'update.check', { reason, build: this.cfg.currentBuild, offered: m.build, result: 'stale_seq', seq: m.seq, max_seq: maxSeq });
+      return false;
+    }
+    this.#storeManifest(got.bytes, got.sig, m.seq);
+    // A staged build this manifest no longer offers (a rollback, pin, block or pause) goes now.
+    const stagedNow = this.readStaged();
+    if (stagedNow && !this.#stillAllowed(stagedNow.build)) this.discardStaged('superseded');
     if (m.keys.add.length || m.keys.revoke.length) {
       this.#patch((s) => {
         s.rotation = { add: [...new Set([...s.rotation.add, ...m.keys.add])], revoke: [...new Set([...s.rotation.revoke, ...m.keys.revoke])] };
@@ -894,6 +990,12 @@ export class UpdateEngine {
       this.log('warn', 'update.keys_rotated', { added: m.keys.add.length, revoked: m.keys.revoke.length });
     }
     const ls = this.readLaunch();
+    const rejected = ls.rejected.find((r) => r.build === m.build);
+    if (rejected) {
+      this.log('info', 'update.check', { reason, build: this.cfg.currentBuild, offered: m.build, result: 'rejected', cause: rejected.cause });
+      this.#outcome('ok');
+      return false;
+    }
     const cannot = ls.cannotApply.find((c) => c.build === m.build);
     if (cannot) {
       this.log('info', 'update.check', { reason, build: this.cfg.currentBuild, offered: m.build, result: 'cannot_apply', cause: cannot.cause });
@@ -924,6 +1026,27 @@ export class UpdateEngine {
     }
     this.log('info', 'update.check', { ...base, result: 'available', downgrade: d.downgrade });
     return this.#stage(m, d.downgrade, { bytes: got.bytes, sig: got.sig });
+  }
+
+  /** A payload that failed its checks or its smoke launch is never fetched again (a newer build is). */
+  #reject(build: number, cause: string): void {
+    this.#patchLaunch((s) => {
+      if (!s.rejected.some((r) => r.build === build)) s.rejected.push({ build, cause: cause.slice(0, 60) });
+    });
+  }
+
+  #outcome(kind: 'ok' | 'retry'): void {
+    this.#patch((s) => (s.failStreak = kind === 'retry' ? s.failStreak + 1 : 0));
+  }
+
+  /**
+   * When to check next (`worker.ts`): every ~4 h normally; after a failed check or download,
+   * 15 min, then 30, 60, 120, capped at 4 h (review D-9).
+   */
+  nextCheckMs(base: number): number {
+    const f = this.readState().failStreak;
+    if (f <= 0) return base;
+    return Math.min(base, 15 * 60_000 * 2 ** Math.min(f - 1, 8));
   }
 
   /** Bytes free where the updates folder is. */
@@ -971,6 +1094,7 @@ export class UpdateEngine {
       }
       if (!downloaded) {
         this.log('warn', 'update.failed', { stage: 'download', to: m.build, cause });
+        this.#outcome('retry');
         return false;
       }
       this.log('info', 'update.downloaded', { to: m.build, bytes: m.size, ms: this.#now() - started });
@@ -983,6 +1107,7 @@ export class UpdateEngine {
       const problem = await this.#inspect(app, m);
       if (problem) {
         this.log('error', 'update.failed', { stage: 'verify', to: m.build, cause: problem });
+        this.#reject(m.build, `verify:${problem}`);
         return false;
       }
       // The staged build checks its own updater against the manifest that brought it (review #6).
@@ -993,6 +1118,7 @@ export class UpdateEngine {
       const smoke = await this.smoke(app, m.build, work, manifestFile);
       if (smoke !== 'ok') {
         this.log('error', 'update.failed', { stage: 'smoke', to: m.build, cause: smoke });
+        this.#reject(m.build, `smoke:${smoke}`);
         return false;
       }
       const stagedDir = join(this.dir, 'staged');
@@ -1107,6 +1233,13 @@ export class UpdateEngine {
 }
 
 // ── small helpers, exported for the tests ───────────────────────────────────
+
+/** The bundle a journal recovers: its recorded target if that is a real one, else the app's own name beside this copy. */
+export function journalTarget(recorded: unknown, running: string, productName: string): string {
+  const ok = (p: unknown): p is string => typeof p === 'string' && p.startsWith('/') && p.endsWith(`/${productName}.app`);
+  if (ok(recorded)) return recorded;
+  return realTargetOf(running, productName) ?? `${running.slice(0, running.lastIndexOf('/'))}/${productName}.app`;
+}
 
 export function shortCause(err: unknown): string {
   const m = err instanceof Error ? (err.name === 'TimeoutError' ? 'timeout' : err.message) : String(err);

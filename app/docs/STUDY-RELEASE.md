@@ -240,14 +240,26 @@ supported: the updater is macOS only, and so is the app.
   the build be tried again) and the manual route (the team sends the DMG). A property test fuzzes
   every update file (missing, corrupt, stale, contradictory, read-only) and checks the app opens
   within two launches.
-- **Health and rollback.** A launch is healthy 30 s after the window's bridge is up. A new build
-  that twice ends in neither a healthy mark nor a clean quit is rolled back to N-1 at the next
-  launch, and never reinstalled on that Mac. If the app cannot start (`failBoot`, or `index.js` will
-  not load), repair mode checks for a fix at once and swaps it in, or rolls back; the dialog offers
-  **Copy debug info**.
+- **Health and rollback.** A launch is healthy 30 s after the window's bridge is up; a build that
+  was healthy once is remembered as known-good, so it is kept as N-1 even after a rollback cycle.
+  A new build that twice ends in neither a healthy mark nor a clean quit is rolled back to N-1 at
+  the **third** launch (so a participant whose new build crashes opens the app three times before
+  it is back on N-1), and never reinstalled on that Mac.
+- **Repair mode.** If the app cannot start (`failBoot`, or `index.js` will not load), a build that
+  has already failed once is rolled back at once; otherwise a separate process
+  (`--chattered-repair`, no window) checks for a fix, stages it and swaps it in, closing the failed
+  app itself. The startup-failure dialog says this is happening and offers **Copy debug info**;
+  neither the dialog nor Quit stops the search.
 - **Never down, except by you.** A copy never installs an older build, unless a signed manifest
   says so (`pin`, `blocked`, or a per-install `targets` entry) and the old build knows the
   database's schema (`dbSchema`).
+- **The newest manifest wins.** Every publish signs in a higher `seq`; a copy refuses a manifest
+  with a lower `seq` than it has seen (a replay), and before swapping in a staged build it checks
+  that the newest manifest it verified still offers that build, so a rollback, pin, block or pause
+  published after staging is obeyed.
+- **Retries.** A failed check or download is retried after 15 minutes, then 30, 60 and so on, up to
+  the normal ~4 h. A build whose payload fails verification or its smoke launch is recorded and not
+  downloaded again (a newer build is).
 - **What is logged** (every line also carries `build` and `sha`): `update.launch`, `update.check`
   (`result`: `current`, `available`, `unavailable` with a `cause`, `known_bad`, `paused`,
   `os_too_old`, `location_dmg`/`_translocated`/`_unwritable`, …), `update.downloaded`,
@@ -319,7 +331,11 @@ tools/release.sh --update --publish-update --notes-text "Fixes the hint button"
   --publish-update`. A build cannot be blocked while an install is targeted at it; a target at a
   build blocked later is ignored by the app, which falls back to the channel default.
 - **Edit the manifest without a build**: `--untarget <id>[,<id>]`, `--block N[,N]`,
-  `--unblock N[,N]`, each with `--publish-update`. Every publish starts from the published
+  `--unblock N[,N]`, `--paused` / `--resume` (stop or restart installs everywhere), each with
+  `--publish-update`. **Key rotation**: `--key-add <new active.pub.pem>` and/or `--key-revoke <key
+  id>`, signed with the cold key (copy `cold.key.pem` from the offline drive, `--sign-key <it>`);
+  then commit the new public key to `build/update-keys/active.pub.pem` and sign later releases with
+  the new private key. Every publish starts from the published
   manifest; if it cannot be read the publish is refused, except the very first with `--no-base`.
 
 ### 8.4 Watch it (there is no heartbeat)
@@ -350,8 +366,10 @@ tools/release.sh --update --publish-update --notes-text "Fixes the hint button"
   in by hand), an MDM or antivirus policy, or a "Move to Trash" click on the first Gatekeeper prompt.
 - Survive the loss of both signing keys.
 - The one-off move to the new DMG: until a participant installs it, their copy has no updater.
-  `app.moveToApplicationsFolder` only targets `/Applications`, so that path was verified by its
-  decision logic and by hand, not by the gate (8.6).
+  The install copies the app (from the real DMG path when macOS translocated it) to a hidden
+  sibling in `/Applications`, swaps it with the old copy in one step and only then trashes the old
+  one; Electron's own mover, which trashes first, is only the fallback. It writes to the real
+  `/Applications`, so it is checked by hand (8.6) and by the E2E campaign, not by the gate.
 
 ### 8.6 Checking the one-off install by hand (before sending the DMG)
 

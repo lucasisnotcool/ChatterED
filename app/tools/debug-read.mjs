@@ -103,6 +103,8 @@ function releaseUsage() {
   return {
     targetUsage: target ? 'cd app && tools/release.sh --update --publish-update --target <id>' : null,
     rollbackUsage: target && flag('--rollback-to') ? 'cd app && tools/release.sh --rollback-to <N-1> --target <id> --publish-update' : null,
+    untargetUsage: flag('--untarget') ? 'cd app && tools/release.sh --untarget <id> --publish-update' : null,
+    unblockUsage: flag('--unblock') ? 'cd app && tools/release.sh --unblock <N> --publish-update' : null,
     publishUsage: updates ? 'cd app && tools/release.sh --update --publish-update' : 'cd app && tools/release.sh --publish v<version>',
     manifestTargetUsage: /--target ID=ENTRY/.test(read('update-tool.mjs'))
       ? 'cd app && node tools/update-tool.mjs manifest --app-id sg.nus.chattered --channel study --base <published-manifest.json> --out study-manifest-v1.json --target <id>=<entry.json>'

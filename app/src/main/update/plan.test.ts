@@ -17,6 +17,7 @@ import {
   swapArgs,
   swapPaths,
   updaterMode,
+  isAppMain,
   type SwapParams,
 } from './plan.js';
 
@@ -391,9 +392,7 @@ describe.runIf(mac)('SWAP_SCRIPT, run for real', () => {
 });
 
 describe('the one-off install only quits the app itself', () => {
-  it('recognises the app main process, not its helpers or anything else', async () => {
-    const { isAppMain } = await import('./selfinstall.js').catch(() => ({ isAppMain: null }));
-    if (!isAppMain) return; // electron is not loadable here
+  it('recognises the app main process, not its helpers or anything else', () => {
     expect(isAppMain('/Applications/ChatterED.app/Contents/MacOS/ChatterED', 'ChatterED')).toBe(true);
     expect(isAppMain('/Applications/ChatterED.app/Contents/MacOS/ChatterED --user-data-dir=/x', 'ChatterED')).toBe(true);
     expect(isAppMain('/Applications/ChatterED.app/Contents/Frameworks/ChatterED Helper (Renderer).app/Contents/MacOS/ChatterED Helper (Renderer)', 'ChatterED')).toBe(false);

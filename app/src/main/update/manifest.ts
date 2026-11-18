@@ -58,6 +58,12 @@ export interface UpdateManifest {
   /** True when this install's `targets` entry was applied. */
   targeted: boolean;
   schema: number;
+  /**
+   * Publish counter, signed in and raised by every publish (`update-tool manifest`). A client
+   * refuses a manifest older than the newest it has seen, so a replayed manifest cannot undo a
+   * rollback, pin or block (review D-6). 0 when absent (manifests before 2026-11-19).
+   */
+  seq: number;
   appId: string;
   arch: string;
   channel: string;
@@ -189,6 +195,7 @@ export function verifyManifest(
   if (!posInt(minClient)) return { ok: false, reason: 'bad_field:minClientSchema' };
   if (minClient > CLIENT_SCHEMA) return { ok: false, reason: 'client_too_old' };
   if (!posInt(p.schema) || p.schema < 1) return { ok: false, reason: 'bad_field:schema' };
+  if (p.seq !== undefined && !posInt(p.seq)) return { ok: false, reason: 'bad_field:seq' };
   for (const f of ['appId', 'arch', 'channel'] as const) {
     if (typeof p[f] !== 'string' || !(p[f] as string)) return { ok: false, reason: `bad_field:${f}` };
   }
@@ -222,6 +229,7 @@ export function verifyManifest(
     manifest: {
       targeted,
       schema: p.schema,
+      seq: posInt(p.seq) ? p.seq : 0,
       appId: p.appId as string,
       arch: p.arch as string,
       channel: p.channel as string,

@@ -27,30 +27,29 @@ export function debugReport(error: string, err?: unknown): string {
  */
 export async function startupFailed(message: string, logDir: string, err?: unknown): Promise<void> {
   const rt = runtime();
-  let exiting = false;
-  const repairing = rt
-    .repair(message)
-    .then((x) => {
-      exiting = x;
-    })
-    .catch(() => undefined);
+  // Synchronous: a rollback exits here; otherwise the search runs in its own process, which
+  // neither this dialog nor a quit can stop (review D-1).
+  const repair = rt.repair(message);
+  if (repair === 'exiting') return;
   if (rt.smoke) {
-    await repairing;
     app.exit(1);
     return;
   }
   const name = app.getName();
+  const searching =
+    repair === 'repairing'
+      ? `${name} is looking for a fix in the background. If there is one, it closes this message and reopens by itself, even if you click Quit.\n\n`
+      : '';
   const { response } = await dialog.showMessageBox({
     type: 'error',
     message: `${name} could not start`,
     detail:
-      `${message}\n\nNothing has been deleted. ${name} is checking for a fix and reopens by itself if it finds one.\n\n` +
-      `If it does not, click Copy debug info and paste it into a message to the research team.\n\nThe log is in:\n${logDir}`,
+      `${message}\n\nNothing has been deleted. ${searching}` +
+      `If it does not reopen, click Copy debug info and paste it into a message to the research team.\n\nThe log is in:\n${logDir}`,
     buttons: ['Quit', 'Copy debug info'],
     defaultId: 1,
     cancelId: 0,
   });
-  if (exiting) return;
   if (response === 1) {
     clipboard.writeText(debugReport(message, err));
     await dialog.showMessageBox({
@@ -60,5 +59,5 @@ export async function startupFailed(message: string, logDir: string, err?: unkno
       buttons: ['Quit'],
     });
   }
-  if (!exiting) app.exit(1);
+  app.exit(1);
 }

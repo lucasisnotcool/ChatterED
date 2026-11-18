@@ -191,6 +191,9 @@ describe('diagnose', () => {
   it('not admin, and the copy in Applications cannot be replaced', () => {
     expect(titles(fixture({ mac: { admin: 'no', 'apps-writable': 'yes (folder no)' } }))).toContain('Updates cannot be applied on this Mac');
     expect(titles(fixture({ mac: { admin: 'yes', 'apps-writable': 'no (folder yes)' } }))).toContain('/Applications/ChatterED.app is not writable');
+    // The wording since 2026-11-19 reads the same.
+    expect(titles(fixture({ mac: { admin: 'no', 'apps-writable': 'app in Applications writable; Applications folder read-only' } }))).toContain('Updates cannot be applied on this Mac');
+    expect(titles(fixture({ mac: { admin: 'yes', 'apps-writable': 'app in Applications read-only; Applications folder writable' } }))).toContain('/Applications/ChatterED.app is not writable');
   });
 
   it('a copy outside Applications', () => {
@@ -292,5 +295,21 @@ describe('npm run debug:read (tools/debug-read.mjs)', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the updater fields the reader fills in', () => {
+  it('puts the kept N-1 into the rollback command, and offers --untarget for a targeted install', () => {
+    const text = fixture({
+      boot: 'Error: migration 035 failed',
+      update: { 'previous-build': '512', 'last-manifest': '{"seq":7,"build":513,"targeted":true,"pin":false,"paused":false}' },
+    });
+    const fs = diagnose(parseReport(text), {
+      rollbackUsage: 'cd app && tools/release.sh --rollback-to <N-1> --target <id> --publish-update',
+      untargetUsage: 'cd app && tools/release.sh --untarget <id> --publish-update',
+    });
+    const cmds = fs.map((f) => (f as { command?: string }).command ?? '');
+    expect(cmds.some((c) => c.includes(`--rollback-to 512 --target ${ID}`))).toBe(true);
+    expect(cmds.some((c) => c.includes(`--untarget ${ID} --publish-update`))).toBe(true);
   });
 });

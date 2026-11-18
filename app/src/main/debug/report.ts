@@ -349,9 +349,10 @@ function macSection(env: DebugEnv): ReportSection {
     add(
       'apps-writable',
       () => {
-        const folder = `folder ${yn(writable(dirname(env.applicationsBundle)))}`;
-        if (!existsSync(env.applicationsBundle)) return `absent (${folder})`;
-        return `${yn(writable(env.applicationsBundle) && writable(join(env.applicationsBundle, 'Contents')))} (${folder})`;
+        const folder = `Applications folder ${writable(dirname(env.applicationsBundle)) ? 'writable' : 'read-only'}`;
+        if (!existsSync(env.applicationsBundle)) return `no app in Applications; ${folder}`;
+        const app = writable(env.applicationsBundle) && writable(join(env.applicationsBundle, 'Contents'));
+        return `app in Applications ${app ? 'writable' : 'read-only'}; ${folder}`;
       },
       90,
     );

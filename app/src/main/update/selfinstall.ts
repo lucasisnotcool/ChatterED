@@ -12,23 +12,26 @@
  *     checkbox to move other old copies to the Trash (never deleted outright).
  *  3. A running old copy is asked to quit: SIGTERM to the PID in `<userData>/SingletonLock`, which
  *     Electron handles as an ordinary quit. If it does not quit in 15 s, one dialog says how.
- *  4. `app.moveToApplicationsFolder` copies to /Applications (trashing the old copy there),
- *     strips quarantine, relaunches from there and detaches the DMG. A throw (App Management, a
- *     failed trash, a non-admin account) shows the manual steps.
- *  5. The relaunched copy finishes (`finishSelfInstall`): the chosen old copies go to the Trash, any
- *     ChatterED DMG still mounted is detached, quarantine is stripped, and `install.oneoff` is logged.
+ *  4. Our own install (`installOwn`): `ditto --noqtn` the bundle (from the real DMG path when
+ *     translocated) to a hidden sibling in /Applications, verify it, swap it with the old copy in
+ *     one step (`chattered-swap`), then trash the old one. Only if that fails,
+ *     `app.moveToApplicationsFolder`, which trashes the old copy before copying. A throw (App
+ *     Management, a non-admin account) shows the manual steps. Other old copies are named in the
+ *     dialog, never touched.
+ *  5. The relaunched copy finishes (`finishSelfInstall`): `install.oneoff` is logged first, then
+ *     quarantine is stripped and the disk image it came from is detached.
  *
  * Electron 44's mover targets /Applications only (checked in the framework binary), so this path is
  * verified by its decision functions in tests and by hand (app/docs/STUDY-RELEASE.md).
  */
 import { app, dialog, shell } from 'electron';
-import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readlinkSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { existsSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { plistValue, UPDATES_DIR } from './engine.js';
-import { buildNumber, oldCopies, type LocationKind } from './plan.js';
+import { buildNumber, dmgVolumes, installSource, isAppMain, oldCopies, type LocationKind } from './plan.js';
 
 const execFileP = promisify(execFile);
 
@@ -66,16 +69,7 @@ export function lockHolder(userData: string, productName: string): number | null
   }
 }
 
-/** `…/<name>.app/Contents/MacOS/<name>` and not one of its helpers. */
-export function isAppMain(command: string, productName: string): boolean {
-  const exe = `/${productName}.app/Contents/MacOS/${productName}`;
-  const line = command.trim();
-  const at = line.indexOf(exe);
-  if (at < 0) return false;
-  // The executable path ends there: at the end of the line, or before the first argument.
-  const after = line.slice(at + exe.length);
-  return after === '' || after.startsWith(' --') || after.startsWith(' -');
-}
+export { isAppMain };
 
 async function waitGone(pid: number, ms: number): Promise<boolean> {
   const until = Date.now() + ms;
@@ -139,26 +133,23 @@ export async function maybeSelfInstall(c: SelfInstallCtx): Promise<'quitting' | 
   const replaces = existsSync(destination) ? buildNumber(plistValue(destination, 'CFBundleVersion')) : null;
   const others = findOldCopies(c, destination);
   const running = lockHolder(c.userData, c.productName);
+  // Other old copies are only named, never touched: trashing one in Downloads needs folder access
+  // a fresh install does not have, and it is not worth a prompt (E2E D-4).
   const detail = [
     replaces !== null ? `This replaces the older copy in Applications.` : `This puts ${name} in your Applications folder.`,
     running ? `The ${name} that is open now will be closed first.` : '',
     'Your notes, progress and study credit are kept.',
+    others.length ? `\n\nThere is also an older copy at ${others.map((p) => p.split(c.home).join('~')).join(', ')}; you can move it to the Trash.` : '',
   ]
     .filter(Boolean)
     .join(' ');
-  const { response, checkboxChecked } = await dialog.showMessageBox({
+  const { response } = await dialog.showMessageBox({
     type: 'question',
     message: `Install ${name} into Applications?`,
     detail,
     buttons: ['Install', 'Not now'],
     defaultId: 0,
     cancelId: 1,
-    ...(others.length
-      ? {
-          checkboxLabel: `Also move the older ${others.length === 1 ? 'copy' : 'copies'} at ${others.map((p) => p.replace(c.home, '~')).join(', ')} to the Trash`,
-          checkboxChecked: true,
-        }
-      : {}),
   });
   if (response !== 0) {
     c.log('info', 'selfinstall.declined', {});
@@ -186,17 +177,43 @@ export async function maybeSelfInstall(c: SelfInstallCtx): Promise<'quitting' | 
     }
   }
 
+  // Where to copy from (the real DMG path when translocated) and which disk image to eject.
+  let volumes: string[] = [];
+  try {
+    volumes = dmgVolumes((await execFileP('/usr/bin/hdiutil', ['info'], { timeout: 15_000 })).stdout);
+  } catch {
+    volumes = [];
+  }
+  const { source, eject } = installSource({
+    running: c.bundle,
+    location: c.location,
+    productName: name,
+    volumes,
+    matches: (p) => existsSync(p) && plistValue(p, 'CFBundleIdentifier') === c.appId && buildNumber(plistValue(p, 'CFBundleVersion')) === c.build,
+  });
+
   const pendingDir = join(c.userData, UPDATES_DIR);
   try {
     mkdirSync(pendingDir, { recursive: true, mode: 0o700 });
-    writeFileSync(
-      join(pendingDir, PENDING),
-      JSON.stringify({ trash: checkboxChecked ? others : [], at: new Date().toISOString(), from: replaces, to: c.build, location: c.location }),
-      { mode: 0o600 },
-    );
+    writeFileSync(join(pendingDir, PENDING), JSON.stringify({ at: new Date().toISOString(), from: replaces, to: c.build, location: c.location, eject }), { mode: 0o600 });
   } catch {
-    /* the trash offer is lost; the install still works */
+    /* install.oneoff will not be logged; the install still works */
   }
+
+  // Our own install first: never a moment without the old copy, and nothing in the Trash until the
+  // new one is in place (Electron's mover trashes the old copy before it copies; E2E D-4).
+  const own = await installOwn(c, source, destination);
+  if (own.ok) {
+    c.log('info', 'selfinstall.installed', { from: replaces, to: c.build, via: own.via });
+    // Reopen from Applications once this process has exited (positional args: no interpolation).
+    spawn('/bin/sh', ['-c', 'while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; /usr/bin/open "$2"', 'sh', String(process.pid), destination], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+    app.quit();
+    return 'quitting';
+  }
+  c.log('warn', 'selfinstall.own_failed', { cause: own.cause });
 
   let cause = '';
   let moved = false;
@@ -224,11 +241,51 @@ export async function maybeSelfInstall(c: SelfInstallCtx): Promise<'quitting' | 
   return 'continue';
 }
 
-/** On the first launch from Applications after a self-install: trash, detach, strip, log. */
+/**
+ * Copy `source` to a hidden sibling in /Applications (`ditto --noqtn`: no quarantine), verify it,
+ * then swap it with the old copy in one step (`chattered-swap`, renamex_np) or rename it in if there
+ * is none; the old copy goes to the Trash only after. Any failure leaves the old copy as it was.
+ */
+async function installOwn(c: SelfInstallCtx, source: string, destination: string): Promise<{ ok: true; via: string } | { ok: false; cause: string }> {
+  const tmp = `/Applications/.${c.productName}-installing.app`;
+  try {
+    rmSync(tmp, { recursive: true, force: true });
+    await execFileP('/usr/bin/ditto', ['--noqtn', source, tmp], { timeout: 10 * 60_000 });
+    await execFileP('/usr/bin/codesign', ['--verify', '--deep', '--strict', tmp], { timeout: 5 * 60_000 });
+    if (buildNumber(plistValue(tmp, 'CFBundleVersion')) !== c.build) throw new Error('copy_build');
+    let via = 'rename';
+    if (existsSync(destination)) {
+      const tool = join(process.resourcesPath, 'chattered-swap');
+      if (!existsSync(tool)) throw new Error('no_swap_tool');
+      await execFileP(tool, [tmp, destination], { timeout: 60_000 });
+      via = 'swap';
+      // `tmp` now holds the old copy.
+      try {
+        await shell.trashItem(tmp);
+      } catch {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    } else {
+      renameSync(tmp, destination);
+    }
+    try {
+      execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', destination], { stdio: 'ignore', timeout: 30_000 });
+    } catch {
+      /* nothing to strip */
+    }
+    return { ok: true, via };
+  } catch (err) {
+    rmSync(tmp, { recursive: true, force: true });
+    const m = err instanceof Error ? err.message : String(err);
+    return { ok: false, cause: /not permitted|denied/i.test(m) ? 'app_management' : m.slice(0, 120) };
+  }
+}
+
+/** On the first launch from Applications after a self-install: log, strip, detach. */
 export async function finishSelfInstall(c: SelfInstallCtx): Promise<void> {
   const file = join(c.userData, UPDATES_DIR, PENDING);
   if (!existsSync(file)) return;
-  let p: { trash?: unknown; at?: string; from?: number | null; to?: number } = {};
+  let p: { at?: string; from?: number | null; to?: number; eject?: string | null } = {};
   try {
     p = JSON.parse(readFileSync(file, 'utf8')) as typeof p;
   } catch {
@@ -236,28 +293,18 @@ export async function finishSelfInstall(c: SelfInstallCtx): Promise<void> {
   }
   rmSync(file, { force: true });
   if (!p.at || Date.now() - Date.parse(p.at) > 24 * 3600_000) return;
-
-  let trashed = 0;
-  for (const path of Array.isArray(p.trash) ? p.trash : []) {
-    if (typeof path !== 'string' || path === c.bundle || !existsSync(path)) continue;
-    if (plistValue(path, 'CFBundleIdentifier') !== c.appId) continue;
-    try {
-      await shell.trashItem(path);
-      trashed += 1;
-    } catch {
-      /* left where it is */
-    }
-  }
+  // First, so it is logged however the rest goes (E2E D-4: it was missing when the old copy had quit).
+  c.log('info', 'install.oneoff', { from: typeof p.from === 'number' ? p.from : null, to: c.build });
   try {
     execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', c.bundle], { stdio: 'ignore', timeout: 30_000 });
   } catch {
     /* nothing to strip */
   }
-  // Any ChatterED disk image still mounted (the mover only ejects when it can tell it ran from one).
+  // The disk image it came from, and any other ChatterED one still mounted.
   let detached = 0;
   try {
-    const { stdout } = await execFileP('/usr/bin/hdiutil', ['info'], { timeout: 15_000 });
-    const vols = [...new Set(stdout.split('\n').map((l) => /\t(\/Volumes\/.+)$/.exec(l)?.[1]).filter((v): v is string => !!v))];
+    const vols = new Set(dmgVolumes((await execFileP('/usr/bin/hdiutil', ['info'], { timeout: 15_000 })).stdout));
+    if (typeof p.eject === 'string') vols.add(p.eject);
     for (const vol of vols) {
       const inside = join(vol, `${c.productName}.app`);
       if (existsSync(inside) && plistValue(inside, 'CFBundleIdentifier') === c.appId) {
@@ -272,5 +319,5 @@ export async function finishSelfInstall(c: SelfInstallCtx): Promise<void> {
   } catch {
     /* no hdiutil info */
   }
-  c.log('info', 'install.oneoff', { from: typeof p.from === 'number' ? p.from : null, to: c.build, trashed, detached });
+  c.log('info', 'selfinstall.finished', { detached });
 }

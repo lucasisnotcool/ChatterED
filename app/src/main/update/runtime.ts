@@ -29,10 +29,10 @@ export interface UpdateRuntime {
   /** DB open and the window's bridge up: called by index.ts after `renderer.ready`. */
   rendererReady(): void;
   /**
-   * The app could not start (`failBoot`): check for a fix now and swap it in, or roll back. Resolves
-   * true when the app is about to exit for a swap (the caller must not show its own dialog).
+   * The app could not start (`failBoot`): roll back now (`exiting`: the app is exiting), or start
+   * the search for a fix in its own process (`repairing`), or neither (`none`: updates are off).
    */
-  repair(cause: string): Promise<boolean>;
+  repair(cause: string): 'exiting' | 'repairing' | 'none';
   /** The `update` section of the debug report. */
   debugInfo(): Record<string, unknown>;
   /** A minimal report for when even the app's own debug report cannot load. */
@@ -48,7 +48,7 @@ const NONE: UpdateRuntime = {
   fault: null,
   takeNote: () => null,
   rendererReady: () => undefined,
-  repair: async () => false,
+  repair: () => 'none',
   debugInfo: () => ({ enabled: false, reason: 'no_bootstrap' }),
   bootstrapReport: (error) => `ChatterED (no bootstrap)\nerror: ${error}\n`,
 };

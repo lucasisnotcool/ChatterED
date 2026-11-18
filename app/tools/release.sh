@@ -30,6 +30,10 @@
 #   tools/release.sh --untarget <id>[,<id>] | --unblock N[,N] | --block N[,N] [--publish-update]
 #                                         no build: edit the published manifest only (a pin set with
 #                                         --rollback-to --target stays until --untarget).
+#   tools/release.sh --paused | --resume [--publish-update]   no build: stop or restart installs.
+#   tools/release.sh --key-add <pub.pem> | --key-revoke <key id> [--publish-update]   no build: rotate
+#                                         keys; signed with the cold key (--sign-key, default
+#                                         ~/.config/chattered-release/cold.key.pem from the offline drive).
 #   --no-base                             publish without a fetched published manifest (the very first
 #                                         publish, or when it cannot be read); otherwise refused.
 #   --variant test --keys-dir <dir> [--test-endpoint URL] [--fault NAME] [--serve-dir <dir>]
@@ -60,7 +64,7 @@ PRELOAD_SLOT=""
 CODES_FILE=""
 UPDATE=0; PUBLISH_UPDATE=0; BUILD=""; VARIANT=production; KEYS_DIR=""; SIGN_KEY=""; TEST_ENDPOINT=""
 FAULT=""; SERVE_DIR=""; TARGETS=""; BLOCK=""; ROLLBACK_TO=""; PROMOTE=""; NOTES_TEXT=""
-UNTARGET=""; UNBLOCK=""; NO_BASE=0
+UNTARGET=""; UNBLOCK=""; NO_BASE=0; PAUSED=0; RESUME=0; KEY_ADD=""; KEY_REVOKE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --publish) TAG="${2:?--publish needs a tag, e.g. v0.1.0}"; shift 2 ;;
@@ -85,7 +89,11 @@ while [ $# -gt 0 ]; do
     --untarget) UNTARGET="${2:?--untarget needs install ids}"; shift 2 ;;
     --unblock) UNBLOCK="${2:?--unblock needs build numbers}"; shift 2 ;;
     --no-base) NO_BASE=1; shift ;;
-    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
+    --paused) PAUSED=1; shift ;;
+    --resume) RESUME=1; shift ;;
+    --key-add) KEY_ADD="${2:?--key-add needs a public key file}"; shift 2 ;;
+    --key-revoke) KEY_REVOKE="${2:?--key-revoke needs a key id}"; shift 2 ;;
+    -h|--help) sed -n '2,53p' "$0"; exit 0 ;;
     *) echo "release.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -101,7 +109,13 @@ RELEASE_HOME="$HOME/.config/chattered-release"
 # A manifest edit with no build: --rollback-to, --promote, or --untarget/--unblock/--block alone.
 EDIT_ONLY=0
 if [ -n "$ROLLBACK_TO$PROMOTE" ]; then EDIT_ONLY=1
-elif [ "$UPDATE" = 0 ] && [ -z "$STUDY_BUNDLE$TAG" ] && [ -n "$UNTARGET$UNBLOCK$BLOCK" ]; then EDIT_ONLY=1; fi
+elif [ "$UPDATE" = 0 ] && [ -z "$STUDY_BUNDLE$TAG" ] && { [ -n "$UNTARGET$UNBLOCK$BLOCK$KEY_ADD$KEY_REVOKE" ] || [ "$PAUSED$RESUME" != 00 ]; }; then EDIT_ONLY=1; fi
+if [ -n "$KEY_ADD$KEY_REVOKE" ]; then
+  [ "$EDIT_ONLY" = 1 ] || die "--key-add / --key-revoke are a manifest edit on their own (no --update)."
+  [ -z "$KEY_ADD" ] || [ -f "$KEY_ADD" ] || die "No public key at $KEY_ADD."
+  SIGN_KEY="${SIGN_KEY:-$HOME/.config/chattered-release/cold.key.pem}"
+  [ -f "$SIGN_KEY" ] || die "Key rotation is signed with the cold key: copy cold.key.pem from the offline drive and pass --sign-key <it>."
+fi
 case "$VARIANT" in
   production)
     PRODUCT="ChatterED"; APP_ID="sg.nus.chattered"
@@ -282,6 +296,10 @@ if [ "$EDIT_ONLY" = 1 ]; then
   if [ -n "$UNTARGET" ]; then ARGS+=(--untarget "$UNTARGET"); fi
   if [ -n "$BLOCK" ]; then ARGS+=(--block "$BLOCK"); fi
   if [ -n "$UNBLOCK" ]; then ARGS+=(--unblock "$UNBLOCK"); fi
+  if [ "$PAUSED" = 1 ]; then ARGS+=(--paused); fi
+  if [ "$RESUME" = 1 ]; then ARGS+=(--resume); fi
+  if [ -n "$KEY_ADD" ]; then ARGS+=(--key-add "$KEY_ADD"); fi
+  if [ -n "$KEY_REVOKE" ]; then ARGS+=(--key-revoke "$KEY_REVOKE"); fi
   if [ -n "$NOTES_TEXT" ]; then ARGS+=(--notes "$NOTES_TEXT"); fi
   node tools/update-tool.mjs "${ARGS[@]}"
   sign_and_check "$UPD/$CHANNEL-manifest-v1.json"

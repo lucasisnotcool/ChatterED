@@ -10,7 +10,8 @@
 //       One build's entry (what a manifest says about a payload), as JSON on stdout.
 //   node tools/update-tool.mjs manifest --app-id ID --channel C --out FILE [--base FILE]
 //       [--default ENTRY] [--pin] [--target ID=ENTRY]... [--target-pin ID=ENTRY]... [--untarget ID[,ID]]...
-//       [--block N,N] [--unblock N,N] [--notes TEXT]
+//       [--block N,N] [--unblock N,N] [--paused | --resume] [--key-add PUB.pem]... [--key-revoke KEYID]...
+//       [--notes TEXT]
 //       Writes the manifest's exact bytes. --base is the manifest published now: its other fields
 //       and targets are kept. A new default must be newer than the base's, unless --pin.
 //   node tools/update-tool.mjs sign --key KEY.pem --in FILE [--out FILE.sig]
@@ -42,7 +43,7 @@ function opts(argv) {
       continue;
     }
     const k = a.slice(2);
-    const flags = new Set(['pin']);
+    const flags = new Set(['pin', 'paused', 'resume']);
     if (flags.has(k)) {
       o[k] = true;
       continue;
@@ -174,7 +175,18 @@ function manifest(o) {
   for (const [id, t] of Object.entries(m.targets ?? {})) {
     console.error(`update-tool: target ${id} → build ${t.build}${t.pin ? ' (pinned: stays until --untarget)' : ''}`);
   }
+  if (o.paused && o.resume) die('--paused or --resume, not both.');
+  if (o.paused) m.paused = true;
+  if (o.resume) delete m.paused;
+  // Key rotation: honoured by the app only when the manifest is signed with the cold key.
+  const keyAdd = list(o['key-add']).map((f) => readFileSync(resolve(f), 'utf8'));
+  const keyRevoke = list(o['key-revoke']).flatMap((v) => String(v).split(','));
+  for (const k of keyRevoke) if (!/^[0-9a-f]{16}$/.test(k)) die(`--key-revoke takes a 16-hex key id, not ${k}`);
+  if (keyAdd.length || keyRevoke.length) m.keys = { add: keyAdd, revoke: keyRevoke };
+  else delete m.keys;
   if (o.notes !== undefined) m.notes = String(o.notes).slice(0, 500);
+  // Signed in and raised by every publish: an app refuses a manifest older than the newest it has seen.
+  m.seq = (Number(base?.seq) || 0) + 1;
   if (!m.url || !m.sha256) die('the manifest has no default build: pass --default (or --base with one).');
   m.publishedAt = new Date().toISOString();
   writeFileSync(o.out, `${JSON.stringify(m, null, 2)}\n`);

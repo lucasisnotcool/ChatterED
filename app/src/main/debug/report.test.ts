@@ -179,7 +179,7 @@ describe('buildDebugReport', () => {
     expect(r.sections.app).toMatchObject({ version: '0.1.0', build: '0.1.0', location: 'other', packaged: 'yes', arch: 'arm64' });
     expect(r.sections.app!.bundle).toBe('~/Downloads/ChatterED.app');
     expect(r.sections.mac).toMatchObject({ macos: '26.1 (darwin 27.0.0)', model: 'Mac15,6', ram: '16 GB', admin: 'yes' });
-    expect(r.sections.mac!['apps-writable']).toBe('absent (folder yes)');
+    expect(r.sections.mac!['apps-writable']).toBe('no app in Applications; Applications folder writable');
     expect(r.sections.install!.id).toMatch(/^[0-9a-f]{20}$/);
     expect(r.sections.install!['first-run']).toMatch(/^2026-11-10 \(db \d{4}-\d\d-\d\d\)$/);
     expect(r.sections.install!.consent).toBe('v1 (this build v1)');

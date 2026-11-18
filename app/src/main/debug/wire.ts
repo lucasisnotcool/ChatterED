@@ -302,6 +302,8 @@ export interface DiagnoseContext {
   targetUsage?: string | null;
   /** The release tool's per-install rollback (`… --rollback-to <N-1> --target <id> …`), or null. */
   rollbackUsage?: string | null;
+  /** Ending a per-install target or pin (`… --untarget <id> …`), or null. */
+  untargetUsage?: string | null;
   /** The release tool's general publish usage line. */
   publishUsage?: string | null;
   /**
@@ -401,7 +403,12 @@ export function diagnose(r: ParsedReport, ctx: DiagnoseContext = {}): Finding[] 
 
   const boot = get(r, 'boot', 'failed');
   if (boot) {
-    const rb = ctx.rollbackUsage && id ? ctx.rollbackUsage.replace(/<(install-?id|id)>/gi, id) : null;
+    // The build to go back to: the report's kept N-1, when it has one.
+    const previous = (get(r, 'update', 'previous-build') ?? '').trim();
+    const rb =
+      ctx.rollbackUsage && id
+        ? ctx.rollbackUsage.replace(/<(install-?id|id)>/gi, id).replace(/<N-1>/g, /^\d+$/.test(previous) ? previous : '<N-1>')
+        : null;
     f.push({
       severity: 'act',
       title: 'ChatterED cannot start',
@@ -409,6 +416,18 @@ export function diagnose(r: ParsedReport, ctx: DiagnoseContext = {}): Finding[] 
       action:
         'If this started after an update, roll this install back to the build before it; otherwise fix and push a new build. Nothing has been deleted.',
       ...(rb ? { command: rb } : {}),
+    });
+  }
+
+  // A per-install target or pin is in force for this install: say how to end it.
+  const lm = get(r, 'update', 'last-manifest') ?? '';
+  if (/"?targeted"?\s*:\s*true/.test(lm) && id) {
+    f.push({
+      severity: 'info',
+      title: 'This install is on its own target',
+      detail: `last manifest: ${lm}`,
+      action: 'It gets this build, not the channel default, until you end the target. Pins never expire on their own.',
+      ...(ctx.untargetUsage ? { command: ctx.untargetUsage.replace(/<(install-?id|id)>/gi, id) } : {}),
     });
   }
 
@@ -438,11 +457,12 @@ export function diagnose(r: ParsedReport, ctx: DiagnoseContext = {}): Finding[] 
     });
   }
 
-  // `apps-writable: yes (folder no)`: the copy in /Applications, then /Applications itself.
+  // `apps-writable: app in Applications writable; Applications folder read-only` (or, from builds
+  // before 2026-11-19, `yes (folder no)`): the copy in /Applications, then /Applications itself.
   const admin = get(r, 'mac', 'admin');
   const writable = get(r, 'mac', 'apps-writable') ?? '';
-  const bundleW = /^yes\b/.test(writable);
-  const folderW = /folder yes/.test(writable);
+  const bundleW = /^yes\b/.test(writable) || /^app in Applications writable/.test(writable);
+  const folderW = /folder yes/.test(writable) || /Applications folder writable/.test(writable);
   const installed = location === 'applications';
   if (writable && admin === 'no' && installed && (!bundleW || !folderW)) {
     f.push({
@@ -452,7 +472,7 @@ export function diagnose(r: ParsedReport, ctx: DiagnoseContext = {}): Finding[] 
       action:
         'Ask them to drag ChatterED.app into the Applications folder inside their home folder (~/Applications) and open it from there, or have an administrator give their account write access to /Applications/ChatterED.app.',
     });
-  } else if (installed && /^no\b/.test(writable)) {
+  } else if (installed && (/^no\b/.test(writable) || /^app in Applications read-only/.test(writable))) {
     f.push({
       severity: 'warn',
       title: '/Applications/ChatterED.app is not writable',
