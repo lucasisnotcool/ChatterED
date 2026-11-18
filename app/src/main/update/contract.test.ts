@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 const HERE = __dirname;
 const sources = readdirSync(HERE)
-  .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+  .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.test-support.ts'))
   .map((f) => join(HERE, f));
 sources.push(join(HERE, '..', 'bootstrap.ts'));
 

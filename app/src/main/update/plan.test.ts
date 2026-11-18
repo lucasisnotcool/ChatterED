@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -309,7 +309,8 @@ describe.runIf(mac)('SWAP_SCRIPT, run for real', () => {
     const { result } = run(s, { swapTool: tool }, { FAIL_AFTER: '1' });
     expect(result).toMatchObject({ status: 'rolled_back', cause: 'verify_after' });
     expect(buildAt(s.target)).toBe(500);
-    expect(existsSync(join(s.tools, 'opened'))).toBe(false);
+    // The app exited for this swap: it is reopened, failure or not (review #1).
+    expect(readFileSync(join(s.tools, 'opened'), 'utf8')).toContain(s.target);
   });
 
   it('refuses an unsound staged build, a CDHash mismatch, and a build not newer than the installed one', () => {
@@ -353,16 +354,49 @@ describe.runIf(mac)('SWAP_SCRIPT, run for real', () => {
     expect(existsSync(s.keep)).toBe(false);
   });
 
-  it('does nothing while another helper holds the lock', () => {
+  it('does nothing while another helper holds the lock, and takes over a lock that is not a helper’s', () => {
     const s = sandbox();
     fakeBundle(s.target, 500);
     fakeBundle(s.staged, 501);
     const lock = swapPaths({ target: s.target, updatesDir: s.updates }).lock;
-    mkdirSync(lock);
+    const fake = join(s.tools, 'swap-helper.sh');
+    writeFileSync(fake, '#!/bin/bash\nsleep 20\n', { mode: 0o755 });
+    const other = spawn('/bin/bash', [fake], { stdio: 'ignore' });
+    try {
+      mkdirSync(lock);
+      writeFileSync(join(lock, 'pid'), String(other.pid));
+      const { code, result } = run(s, {});
+      expect(code).toBe(0);
+      expect(result).toBeNull();
+      expect(buildAt(s.target)).toBe(500);
+    } finally {
+      other.kill();
+    }
+    // A live PID that is not a helper (this test runner) holds nothing.
     writeFileSync(join(lock, 'pid'), String(process.pid));
-    const { code, result } = run(s, {});
-    expect(code).toBe(0);
-    expect(result).toBeNull();
-    expect(buildAt(s.target)).toBe(500);
+    expect(run(s, { relaunch: 'no' }).result).toMatchObject({ status: 'ok' });
+    expect(buildAt(s.target)).toBe(501);
+  });
+
+  it('reopens the app after any failure once it has exited, and not when told not to', () => {
+    const s = sandbox();
+    fakeBundle(s.target, 600);
+    fakeBundle(s.staged, 501);
+    expect(run(s, {}).result).toMatchObject({ status: 'failed', cause: 'not_newer' });
+    expect(readFileSync(join(s.tools, 'opened'), 'utf8')).toContain(s.target);
+    rmSync(join(s.tools, 'opened'));
+    expect(run(s, { relaunch: 'no' }).result).toMatchObject({ status: 'failed', cause: 'not_newer' });
+    expect(existsSync(join(s.tools, 'opened'))).toBe(false);
+  });
+});
+
+describe('the one-off install only quits the app itself', () => {
+  it('recognises the app main process, not its helpers or anything else', async () => {
+    const { isAppMain } = await import('./selfinstall.js').catch(() => ({ isAppMain: null }));
+    if (!isAppMain) return; // electron is not loadable here
+    expect(isAppMain('/Applications/ChatterED.app/Contents/MacOS/ChatterED', 'ChatterED')).toBe(true);
+    expect(isAppMain('/Applications/ChatterED.app/Contents/MacOS/ChatterED --user-data-dir=/x', 'ChatterED')).toBe(true);
+    expect(isAppMain('/Applications/ChatterED.app/Contents/Frameworks/ChatterED Helper (Renderer).app/Contents/MacOS/ChatterED Helper (Renderer)', 'ChatterED')).toBe(false);
+    expect(isAppMain('/Applications/Safari.app/Contents/MacOS/Safari', 'ChatterED')).toBe(false);
   });
 });

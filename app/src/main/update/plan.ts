@@ -159,6 +159,9 @@ export function swapArgs(p: SwapParams): string[] {
   for (const path of [p.updatesDir, ...(p.swapTool ? [p.swapTool] : [])]) {
     if (!isAbsolute(path) || /[\n\r\0]/.test(path)) throw new Error(`unsafe path: ${path}`);
   }
+  // A copy running from the kept or staged bundle must never swap itself: the keep step would
+  // delete what it just swapped in (review R7). The bootstrap hands such a copy over instead.
+  if (p.target === p.keep || p.target === p.incoming || p.target.startsWith(`${p.updatesDir}/`)) throw new Error('target is inside the updates folder');
   if (!Number.isInteger(p.pid) || p.pid <= 1) throw new Error('bad pid');
   if (!Number.isInteger(p.toBuild) || !Number.isInteger(p.fromBuild) || p.toBuild < 1) throw new Error('bad build');
   if (p.cdhash !== null && !/^[0-9a-f]{40,64}$/.test(p.cdhash)) throw new Error('bad cdhash');
@@ -199,8 +202,13 @@ export function swapArgs(p: SwapParams): string[] {
  *     never a moment without a ChatterED.app. Without the tool (or on a volume that cannot), two
  *     renames back to back, journaled. EPERM/EACCES is reported as `app_management`;
  *  6. check the target; on failure swap back;
- *  7. strip quarantine, keep the old bundle as N-1 (or delete it), clear the journal, relaunch
- *     only on the launch and idle paths.
+ *  7. strip quarantine, keep the old bundle as N-1 (or delete it), clear the journal, release the
+ *     lock, and reopen the app on the launch and idle paths.
+ *
+ * **Once the app has exited, the helper reopens it whatever happens** (unless `relaunch` is `no`):
+ * a failure on the launch path must never leave the participant with an app that vanished. Every
+ * tool call has a time limit, and a lock is honoured only if its holder really is a helper and is
+ * younger than ten minutes.
  *
  * An interrupted run leaves the journal, and the next launch finishes or reverts it
  * (`recoverJournal`). The tools can be pointed elsewhere by `CHATTERED_HELPER_*`, which only a
@@ -213,6 +221,7 @@ trap '' TERM HUP INT
 PID="$1"; TARGET="$2"; INCOMING="$3"; KEEP="$4"; KEEP_OLD="$5"; TO="$6"; FROM="$7"; MODE="$8"
 ALLOW_DOWN="$9"; RELAUNCH="\${10}"; CDHASH="\${11}"; RESULT="\${12}"; LOCK="\${13}"; WAIT_SECS="\${14}"
 NEAR="\${15}"; ASIDE="\${16}"; JOURNAL="\${17}"; SWAP="\${18}"
+WAITED=0
 CODESIGN="\${CHATTERED_HELPER_CODESIGN:-/usr/bin/codesign}"
 PLUTIL="\${CHATTERED_HELPER_PLUTIL:-/usr/bin/plutil}"
 XATTR="\${CHATTERED_HELPER_XATTR:-/usr/bin/xattr}"
@@ -223,25 +232,50 @@ result() {
   printf '{"mode":"%s","status":"%s","cause":"%s","from":%s,"to":%s,"via":"%s","at":"%s"}\\n' \\
     "$MODE" "$1" "$2" "$FROM" "$TO" "\${VIA:-none}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RESULT.tmp" && mv -f -- "$RESULT.tmp" "$RESULT"
 }
-finish() { rm -rf -- "$LOCK"; exit "$1"; }
-build_of() { "$PLUTIL" -extract CFBundleVersion raw -o - -- "$1/Contents/Info.plist" 2>/dev/null; }
-cdhash_of() { "$CODESIGN" -dv --verbose=4 -- "$1" 2>&1 | sed -n 's/^CDHash=//p' | head -n 1; }
+# A time limit for every external tool: perl's alarm survives the exec, so a wedged codesign,
+# LaunchServices or open is killed instead of holding the lock (and the app) forever.
+tmo() { local s="$1"; shift; if [ -x /usr/bin/perl ]; then /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV' "$s" "$@"; else "$@"; fi; }
+reopen() {
+  [ -e "$TARGET" ] || return 0
+  case "$RELAUNCH" in
+    front) tmo 30 "$OPEN" -- "$TARGET" >/dev/null 2>&1 ;;
+    background) tmo 30 "$OPEN" -g -- "$TARGET" >/dev/null 2>&1 ;;
+  esac
+  return 0
+}
+# The lock goes first, so the reopened app never sees a helper still holding it.
+finish() { rm -rf -- "$LOCK"; if [ "$WAITED" = 1 ]; then reopen; fi; exit "$1"; }
+build_of() { tmo 20 "$PLUTIL" -extract CFBundleVersion raw -o - -- "$1/Contents/Info.plist" 2>/dev/null; }
+cdhash_of() { tmo 120 "$CODESIGN" -dv --verbose=4 -- "$1" 2>&1 | sed -n 's/^CDHash=//p' | head -n 1; }
 sound() {
   [ "$(build_of "$1")" = "$TO" ] || return 1
-  "$CODESIGN" --verify --deep --strict -- "$1" >/dev/null 2>&1 || return 1
+  tmo 300 "$CODESIGN" --verify --deep --strict -- "$1" >/dev/null 2>&1 || return 1
   if [ "$CDHASH" != "-" ] && [ "$(cdhash_of "$1")" != "$CDHASH" ]; then return 1; fi
   return 0
 }
 denied() { case "$1" in *"not permitted"*|*"ermission denied"*) return 0 ;; esac; return 1; }
 device() { stat -f %d -- "$1" 2>/dev/null; }
+# A lock is another helper's only if that PID is alive, runs swap-helper.sh, and is recent.
+helper_alive() {
+  local pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
+  ps -p "$pid" -o command= 2>/dev/null | grep -q 'swap-helper[.]sh' || return 1
+  [ -z "$(find "$LOCK/pid" -mmin +10 2>/dev/null)" ] || return 1
+  return 0
+}
 
 if ! mkdir -- "$LOCK" 2>/dev/null; then
-  other="$(cat -- "$LOCK/pid" 2>/dev/null)"
-  if [ -n "$other" ] && kill -0 "$other" 2>/dev/null; then exit 0; fi
+  # Another helper really is on it: it reopens the app when it is done.
+  if helper_alive "$(cat -- "$LOCK/pid" 2>/dev/null)"; then exit 0; fi
   rm -rf -- "$LOCK"
-  mkdir -- "$LOCK" 2>/dev/null || exit 1
+  if ! mkdir -- "$LOCK" 2>/dev/null; then
+    while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done
+    WAITED=1; reopen; exit 1
+  fi
 fi
 echo "$$" > "$LOCK/pid"
+if [ "$TARGET" = "$KEEP" ] || [ "$TARGET" = "$INCOMING" ]; then result failed target_is_keep; finish 1; fi
+case "$TARGET" in "$(dirname -- "$RESULT")"/*) result failed target_is_keep; finish 1 ;; esac
 
 ticks=0
 while kill -0 "$PID" 2>/dev/null; do
@@ -249,6 +283,7 @@ while kill -0 "$PID" 2>/dev/null; do
   ticks=$((ticks + 1))
   if [ "$ticks" -ge $((WAIT_SECS * 5)) ]; then result failed app_still_running; finish 1; fi
 done
+WAITED=1
 
 [ -d "$INCOMING" ] || { result failed incoming_missing; finish 1; }
 sound "$INCOMING" || { result failed incoming_unsound; finish 1; }
@@ -262,7 +297,7 @@ fi
 SRC="$INCOMING"
 if [ "$(device "$(dirname -- "$INCOMING")")" != "$(device "$(dirname -- "$TARGET")")" ]; then
   rm -rf -- "$NEAR"
-  if ! out="$(/usr/bin/ditto -- "$INCOMING" "$NEAR" 2>&1)"; then
+  if ! out="$(tmo 900 /usr/bin/ditto -- "$INCOMING" "$NEAR" 2>&1)"; then
     rm -rf -- "$NEAR"
     if denied "$out"; then result failed app_management; else result failed stage_near; fi
     finish 1
@@ -274,7 +309,7 @@ fi
 OLD=""
 if [ -e "$TARGET" ] && [ "$SWAP" != "-" ] && [ -x "$SWAP" ]; then
   echo "swap $SRC" > "$JOURNAL"
-  out="$("$SWAP" "$SRC" "$TARGET" 2>&1)"; rc=$?
+  out="$(tmo 60 "$SWAP" "$SRC" "$TARGET" 2>&1)"; rc=$?
   if [ "$rc" = 0 ]; then
     VIA=swap; OLD="$SRC"
   elif [ "$rc" = 3 ]; then
@@ -304,7 +339,7 @@ fi
 
 if ! sound "$TARGET"; then
   if [ "$VIA" = swap ]; then
-    "$SWAP" "$OLD" "$TARGET" >/dev/null 2>&1
+    tmo 60 "$SWAP" "$OLD" "$TARGET" >/dev/null 2>&1
   else
     rm -rf -- "$TARGET"
     [ -n "$OLD" ] && mv -- "$OLD" "$TARGET"
@@ -312,8 +347,8 @@ if ! sound "$TARGET"; then
   rm -f -- "$JOURNAL"; result rolled_back verify_after; finish 1
 fi
 
-"$XATTR" -dr com.apple.quarantine "$TARGET" 2>/dev/null
-"$LSREGISTER" -f "$TARGET" >/dev/null 2>&1
+tmo 60 "$XATTR" -dr com.apple.quarantine "$TARGET" 2>/dev/null
+tmo 30 "$LSREGISTER" -f "$TARGET" >/dev/null 2>&1
 if [ -n "$OLD" ] && [ -e "$OLD" ]; then
   if [ "$KEEP_OLD" = 1 ]; then
     rm -rf -- "$KEEP"
@@ -326,10 +361,6 @@ fi
 rm -rf -- "$NEAR"
 rm -f -- "$JOURNAL"
 result ok ""
-case "$RELAUNCH" in
-  front) "$OPEN" -- "$TARGET" ;;
-  background) "$OPEN" -g -- "$TARGET" ;;
-esac
 finish 0
 `;
 

@@ -16,16 +16,18 @@
  *     finish of a self-install.
  *  6. `import('./index.js')`, in try/catch. A throw there, or `failBoot`, is **repair mode**.
  */
-import { app, powerMonitor, utilityProcess, type UtilityProcess } from 'electron';
-import { accessSync, constants as fsConstants, existsSync, writeFileSync } from 'node:fs';
+import { app, clipboard, dialog, powerMonitor, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { execFile } from 'node:child_process';
+import { accessSync, constants as fsConstants, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readBaked } from './update/baked.js';
 import { appendLog, plistValue, UpdateEngine, type EngineConfig } from './update/engine.js';
-import { startupFailed } from './update/failure.js';
+import { debugReport, startupFailed } from './update/failure.js';
+import { trustedKeys, verifyManifest } from './update/manifest.js';
 import { ensureInstallId } from './update/installid.js';
 import { buildNumber, bundleOfExecutable, classifyLocation, IDLE_RELAUNCH_SECONDS, MAX_CRASHED_LAUNCHES, updaterMode } from './update/plan.js';
-import { faultActive, runtime, setRuntime, type UpdateRuntime } from './update/runtime.js';
+import { faultActive, isBusy, runtime, setRuntime, type UpdateRuntime } from './update/runtime.js';
 import { finishSelfInstall, maybeSelfInstall } from './update/selfinstall.js';
 
 const baked = readBaked(join(__dirname, 'update'));
@@ -86,9 +88,9 @@ function baseRuntime(over: Partial<UpdateRuntime>): UpdateRuntime {
         `${baked.productName} startup report (bootstrap only)`,
         `build: ${build}  sha: ${baked.sha}  version: ${app.getVersion()}  variant: ${baked.variant}`,
         `macOS: ${process.getSystemVersion()}  arch: ${process.arch}`,
-        `bundle: ${(bundle ?? app.getPath('exe')).replace(homedir(), '~')}`,
-        `userData: ${userData.replace(homedir(), '~')}`,
-        `error: ${error.replace(homedir(), '~')}`,
+        `bundle: ${(bundle ?? app.getPath('exe')).split(homedir()).join('~')}`,
+        `userData: ${userData.split(homedir()).join('~')}`,
+        `error: ${error.split(homedir()).join('~')}`,
         `update: ${JSON.stringify(runtime().debugInfo())}`,
       ].join('\n') + '\n',
     ...over,
@@ -125,6 +127,15 @@ function runSmoke(okFile: string): void {
     write(false, 'timeout');
     app.exit(3);
   }, 120_000).unref();
+  // This build's own updater, against the manifest that brought it (review #6): its keys verify
+  // it, it is on that channel, it would look for updates, and it can swap. A build that boots but
+  // could never update itself again is refused here, before it is ever installed.
+  const problem = smokeUpdaterProblem(arg('--chattered-smoke-manifest='));
+  if (problem) {
+    write(false, `updater:${problem}`);
+    app.exit(1);
+    return;
+  }
   const db = arg('--chattered-smoke-db=');
   if (db && existsSync(db)) {
     try {
@@ -156,10 +167,54 @@ function runSmoke(okFile: string): void {
   });
 }
 
+function smokeUpdaterProblem(manifestFile: string | null): string | null {
+  if (!manifestFile) return null; // an older parent passes none
+  try {
+    const bytes = readFileSync(manifestFile);
+    const sig = readFileSync(`${manifestFile}.sig`);
+    let rotation = { add: [] as string[], revoke: [] as string[] };
+    try {
+      const r = JSON.parse(readFileSync(join(manifestFile, '..', 'rotation.json'), 'utf8')) as typeof rotation;
+      rotation = { add: Array.isArray(r.add) ? r.add : [], revoke: Array.isArray(r.revoke) ? r.revoke : [] };
+    } catch {
+      /* no rotation */
+    }
+    const v = verifyManifest(bytes, sig, trustedKeys(baked.keys, rotation), { allowHttp: baked.test });
+    if (!v.ok) return `manifest_${v.reason}`;
+    if (v.manifest.channel !== baked.channel) return 'channel';
+    if (v.manifest.appId !== baked.appId) return 'app_id';
+    const mode = updaterMode({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      channel: baked.channel,
+      hasPublicKey: baked.keys.length > 0,
+      envSwitch: undefined,
+      disabledByFile: false,
+    });
+    if (!mode.enabled) return `mode_${mode.reason}`;
+    if (!existsSync(join(process.resourcesPath, 'chattered-swap'))) return 'no_swap_tool';
+    return null;
+  } catch (err) {
+    return `check_${(err as Error).message.slice(0, 40)}`;
+  }
+}
+
 // ── 2-6. an ordinary launch ─────────────────────────────────────────────────
 
 async function start(): Promise<void> {
   const location = bundle ? classifyLocation(bundle, writable) : 'not_bundle';
+
+  // 1b. A copy inside userData (the kept N-1 or a staged build, opened from a stale Dock or Finder
+  // reference) is never the app: open the installed one and quit (review #10).
+  if (bundle && (bundle === userData || bundle.startsWith(`${userData}/`))) {
+    const installed = `/Applications/${baked.productName}.app`;
+    log('warn', 'update.handover', { from: 'userdata', installed: existsSync(installed) });
+    if (existsSync(installed)) {
+      execFile('/usr/bin/open', [installed], () => undefined);
+      app.quit();
+      return;
+    }
+  }
 
   // 2. The one-off install, before the lock an old running copy holds.
   if (bundle && process.platform === 'darwin' && !app.isInApplicationsFolder()) {
@@ -190,7 +245,8 @@ async function start(): Promise<void> {
   });
   let engine: UpdateEngine | null = null;
   let cfg: EngineConfig | null = null;
-  if (mode.enabled && bundle) {
+  const insideUserData = !!bundle && bundle.startsWith(`${userData}/`);
+  if (mode.enabled && bundle && !insideUserData) {
     const helperEnv: Record<string, string> = {};
     if (baked.test) for (const [k, v] of Object.entries(process.env)) if (k.startsWith('CHATTERED_HELPER_') && v) helperEnv[k] = v;
     cfg = {
@@ -291,6 +347,7 @@ async function start(): Promise<void> {
     }
     if (!engine || !cfg) return;
     const worker = startWorker(cfg, engine);
+    setTimeout(() => void manualInstallNotice(engine!), 5000).unref();
     watchIdle(engine);
     powerMonitor.on('resume', () => worker.post({ type: 'check', reason: 'resume' }));
   });
@@ -304,6 +361,38 @@ async function start(): Promise<void> {
     log('error', 'boot.import_failed', { cause: message.slice(0, 200) });
     await app.whenReady();
     await startupFailed(message, join(logFile, '..'), err);
+  }
+}
+
+/**
+ * **"ChatterED could not update itself"**, once per build (review #1): App Management refused the
+ * swap, or it failed twice. The build is not tried again until a newer one is published, so the
+ * participant needs to know what to do instead of watching nothing happen.
+ */
+async function manualInstallNotice(engine: UpdateEngine): Promise<void> {
+  const n = engine.manualInstallNotice();
+  if (!n) return;
+  engine.markManualInstallNoticeShown(n.build);
+  const name = baked.productName;
+  const blocked = n.cause === 'app_management';
+  log('warn', 'update.manual_notice', { build: n.build, cause: n.cause });
+  const buttons = blocked ? ['OK', 'Copy debug info', 'Open App Management'] : ['OK', 'Copy debug info'];
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    message: `${name} could not update itself`,
+    detail:
+      (blocked
+        ? `macOS stopped ${name} from replacing itself. You can allow it in System Settings ▸ Privacy & Security ▸ App Management, then quit and reopen ${name}; it will try again.\n\n`
+        : `The new version (build ${n.build}) did not install on this Mac.\n\n`) +
+      `Or ask the research team for the new version, then drag ${name} onto Applications and choose Replace. ` +
+      'Your notes, progress and study credit are kept.',
+    buttons,
+    defaultId: 0,
+  });
+  if (response === 1) clipboard.writeText(debugReport(`update to build ${n.build} failed: ${n.cause}`));
+  if (response === 2 && blocked) {
+    engine.forgetCannotApply(n.build);
+    void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles');
   }
 }
 
@@ -373,6 +462,11 @@ function watchIdle(engine: UpdateEngine): void {
   });
   const attempt = (why: 'idle' | 'locked') => {
     if (shuttingDown || !engine.readStaged()) return;
+    // Never in the middle of a model call, a request or a tutorial read: the next tick retries.
+    if (isBusy()) {
+      log('info', 'update.idle_deferred', { why, busy: true });
+      return;
+    }
     const idle = powerMonitor.getSystemIdleTime();
     if (idle < (why === 'locked' ? 300 : IDLE_RELAUNCH_SECONDS)) return;
     if (!engine.spawnSwap({ mode: 'apply', relaunch: 'background' })) return;

@@ -24,6 +24,7 @@
 import { app, dialog, shell } from 'electron';
 import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readlinkSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { plistValue, UPDATES_DIR } from './engine.js';
@@ -45,17 +46,35 @@ export interface SelfInstallCtx {
 const PENDING = 'selfinstall.json';
 const APP_MANAGEMENT_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles';
 
-/** The PID in Electron's `SingletonLock` symlink (`<host>-<pid>`), if it is another live process. */
-export function lockHolder(userData: string): number | null {
+/**
+ * The PID in Electron's `SingletonLock` symlink (`<host>-<pid>`), only if the lock is this Mac's
+ * and that PID really is this app's main process (review #9): a stale lock whose PID now belongs
+ * to the participant's browser must never be sent SIGTERM.
+ */
+export function lockHolder(userData: string, productName: string): number | null {
   try {
     const target = readlinkSync(join(userData, 'SingletonLock'));
-    const pid = Number(/-(\d+)$/.exec(target)?.[1]);
+    const m = /^(.*)-(\d+)$/.exec(target);
+    if (!m || m[1] !== hostname()) return null;
+    const pid = Number(m[2]);
     if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return null;
     process.kill(pid, 0);
-    return pid;
+    const command = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+    return isAppMain(command, productName) ? pid : null;
   } catch {
     return null;
   }
+}
+
+/** `…/<name>.app/Contents/MacOS/<name>` and not one of its helpers. */
+export function isAppMain(command: string, productName: string): boolean {
+  const exe = `/${productName}.app/Contents/MacOS/${productName}`;
+  const line = command.trim();
+  const at = line.indexOf(exe);
+  if (at < 0) return false;
+  // The executable path ends there: at the end of the line, or before the first argument.
+  const after = line.slice(at + exe.length);
+  return after === '' || after.startsWith(' --') || after.startsWith(' -');
 }
 
 async function waitGone(pid: number, ms: number): Promise<boolean> {
@@ -119,7 +138,7 @@ export async function maybeSelfInstall(c: SelfInstallCtx): Promise<'quitting' | 
 
   const replaces = existsSync(destination) ? buildNumber(plistValue(destination, 'CFBundleVersion')) : null;
   const others = findOldCopies(c, destination);
-  const running = lockHolder(c.userData);
+  const running = lockHolder(c.userData, c.productName);
   const detail = [
     replaces !== null ? `This replaces the older copy in Applications.` : `This puts ${name} in your Applications folder.`,
     running ? `The ${name} that is open now will be closed first.` : '',

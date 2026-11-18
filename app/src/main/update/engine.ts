@@ -63,6 +63,7 @@ import {
   type BuildHealth,
   type LaunchRecord,
   type LocationKind,
+  type SwapResult,
 } from './plan.js';
 
 const execFileP = promisify(execFile);
@@ -112,21 +113,44 @@ export interface EngineConfig {
   smokeTimeoutSeconds?: number;
 }
 
-/** `state.json`: written by checks (the worker) and by the launch's bookkeeping of applies. */
+/** `state.json`: what checks learn (written by the worker, and by repair mode under the same lock). */
 export interface UpdateState {
-  badBuilds: number[];
   rotation: { add: string[]; revoke: string[] };
   lastCheckAt: string | null;
-  /** Failed applies of the staged build: after two it is discarded and fetched again later. */
-  applyFailures: number;
+  /** The last time staging was skipped for space: shown in the debug report until a stage succeeds. */
+  spaceShort: { needMb: number; freeMb: number; build: number; at: string } | null;
 }
 
-/** `launch.json`: written by the main process only, so a check can never overwrite a healthy mark. */
+/**
+ * `launch.json`: the main process's bookkeeping, so a check can never overwrite a healthy mark,
+ * a bad build or a swap attempt (review #12). Every field is checked on read; junk reads as empty.
+ */
 export interface LaunchState {
   launch: LaunchRecord | null;
   health: BuildHealth | null;
   lastLaunchedBuild: number | null;
+  /** Builds that failed to start here and were rolled back from: never reinstalled. */
+  badBuilds: number[];
+  /** Builds the swap could not install here (App Management, or two failed tries): skipped until a newer one. */
+  cannotApply: { build: number; cause: string; at: string }[];
+  /** The swap being tried, counted before the helper is spawned, cleared by its `ok` result. */
+  pending: { build: number; mode: 'apply' | 'rollback'; attempts: number } | null;
+  /** What the last helper reported. */
+  lastResult: { mode: 'apply' | 'rollback'; status: string; cause: string; to: number } | null;
+  /** Launches in a row that exited before the app's code (a swap, a rollback, a running helper). */
+  exitStreak: number;
+  /** The build whose "could not update itself" dialog was shown. */
+  manualNoticeShown: number | null;
+  /** The build a rollback was given up for (its helper failed): not tried again. */
+  cannotRollback: number | null;
 }
+
+/** Launches in a row that may exit before the app's code; the next one always opens it. */
+export const MAX_EXIT_STREAK = 2;
+/** Tries of one swap (a build and a mode) before it is given up. */
+export const MAX_SWAP_ATTEMPTS = 2;
+/** A swap lock older than this is stale, whoever holds it. */
+export const LOCK_MAX_AGE_MS = 10 * 60_000;
 
 export interface Staged {
   build: number;
@@ -140,8 +164,16 @@ export type EarlyOutcome =
   | { kind: 'continue'; note: { from: number; to: number } | null }
   | { kind: 'exit'; why: 'swap_in_progress' | 'applying' | 'rolling_back' };
 
-function emptyState(): UpdateState {
-  return { badBuilds: [], rotation: { add: [], revoke: [] }, lastCheckAt: null, applyFailures: 0 };
+const int = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+const ints = (v: unknown): number[] => (Array.isArray(v) ? v.filter(int) : []);
+
+/** A small blocking sleep for the state lock (no event loop needed). */
+function pause(ms: number): void {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    /* no wait available: spin once */
+  }
 }
 
 /** Fields the engine may log: numbers, booleans and short strings. Never a path under home, a key or a code. */
@@ -224,20 +256,38 @@ export class UpdateEngine {
       bundle: this.cfg.bundlePath.replace(/^\/Users\/[^/]+/, '~'),
       staged: staged ? { build: staged.build, at: staged.stagedAt, downgrade: staged.downgrade } : null,
       previous_build: existsSync(this.previousApp) ? buildNumber(plistValue(this.previousApp, 'CFBundleVersion')) : null,
-      bad_builds: state.badBuilds,
+      bad_builds: ls.badBuilds,
+      cannot_apply: ls.cannotApply,
+      cannot_rollback: ls.cannotRollback,
+      pending_swap: ls.pending,
+      last_swap_result: ls.lastResult,
+      exit_streak: ls.exitStreak,
       last_check_at: state.lastCheckAt,
-      apply_failures: state.applyFailures,
       keys_rotated: { added: state.rotation.add.length, revoked: state.rotation.revoke.length },
       launch: ls.launch,
       health: ls.health,
       journal_pending: existsSync(join(this.dir, 'swap-journal')),
+      swap_lock: existsSync(join(this.dir, 'swap.lock')),
       free_mb: Math.round(this.freeBytes() / 1e6),
+      // Below this, updates stop (statfs does not count APFS purgeable space): say so plainly.
+      space_short: state.spaceShort,
+      work_dirs: (() => {
+        try {
+          return readdirSync(this.dir).filter((n) => n.startsWith('work-')).length;
+        } catch {
+          return 0;
+        }
+      })(),
       last_events: { main: read('status-main.json'), worker: read('status-worker.json') },
     };
   }
 
   #ensureDir(): void {
-    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    try {
+      mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    } catch {
+      /* a read-only home: every write below fails soft */
+    }
   }
 
   #readJson<T>(name: string): Partial<T> | null {
@@ -249,50 +299,100 @@ export class UpdateEngine {
     }
   }
 
-  #writeJson(name: string, value: unknown): void {
+  #writeJson(name: string, value: unknown): boolean {
     try {
       this.#ensureDir();
       const tmp = join(this.dir, `${name}.${process.pid}.tmp`);
       writeFileSync(tmp, JSON.stringify(value, null, 2), { mode: 0o600 });
       renameSync(tmp, join(this.dir, name));
+      return true;
     } catch (err) {
       this.log('warn', 'update.failed', { stage: 'state', cause: shortCause(err) });
+      return false;
     }
   }
 
   readState(): UpdateState {
     const s = this.#readJson<UpdateState>('state.json') ?? {};
-    const e = emptyState();
+    const sp = s.spaceShort as UpdateState['spaceShort'] | undefined;
     return {
-      badBuilds: Array.isArray(s.badBuilds) ? s.badBuilds.filter((n) => Number.isInteger(n)) : e.badBuilds,
       rotation: {
         add: Array.isArray(s.rotation?.add) ? s.rotation.add.filter((k) => typeof k === 'string') : [],
         revoke: Array.isArray(s.rotation?.revoke) ? s.rotation.revoke.filter((k) => typeof k === 'string') : [],
       },
       lastCheckAt: typeof s.lastCheckAt === 'string' ? s.lastCheckAt : null,
-      applyFailures: Number.isInteger(s.applyFailures) ? (s.applyFailures as number) : 0,
+      spaceShort: sp && int(sp.needMb) && int(sp.freeMb) && int(sp.build) ? sp : null,
     };
   }
 
   readLaunch(): LaunchState {
     const s = this.#readJson<LaunchState>('launch.json') ?? {};
+    // Bad builds written by an older build into state.json still count.
+    const legacy = ints((this.#readJson<{ badBuilds: unknown }>('state.json') ?? {}).badBuilds);
+    const l = s.launch;
+    const h = s.health;
+    const p = s.pending;
+    const r = s.lastResult;
     return {
-      launch: s.launch && Number.isInteger(s.launch.build) ? s.launch : null,
-      health: s.health && Number.isInteger(s.health.build) ? s.health : null,
-      lastLaunchedBuild: Number.isInteger(s.lastLaunchedBuild) ? (s.lastLaunchedBuild as number) : null,
+      launch: l && int(l.build) ? { build: l.build, healthy: l.healthy === true, clean: l.clean === true } : null,
+      health: h && int(h.build) ? { build: h.build, everHealthy: h.everHealthy === true, crashes: int(h.crashes) && h.crashes > 0 ? h.crashes : 0 } : null,
+      lastLaunchedBuild: int(s.lastLaunchedBuild) ? s.lastLaunchedBuild : null,
+      badBuilds: [...new Set([...ints(s.badBuilds), ...legacy])],
+      cannotApply: Array.isArray(s.cannotApply)
+        ? s.cannotApply.filter((c) => c && int(c.build)).map((c) => ({ build: c.build, cause: String(c.cause ?? '').slice(0, 40), at: String(c.at ?? '') }))
+        : [],
+      pending:
+        p && int(p.build) && (p.mode === 'apply' || p.mode === 'rollback') && int(p.attempts) && p.attempts >= 0 ? { build: p.build, mode: p.mode, attempts: p.attempts } : null,
+      lastResult:
+        r && (r.mode === 'apply' || r.mode === 'rollback') ? { mode: r.mode, status: String(r.status), cause: String(r.cause ?? '').slice(0, 40), to: int(r.to) ? r.to : 0 } : null,
+      exitStreak: int(s.exitStreak) && s.exitStreak > 0 ? s.exitStreak : 0,
+      manualNoticeShown: int(s.manualNoticeShown) ? s.manualNoticeShown : null,
+      cannotRollback: int(s.cannotRollback) ? s.cannotRollback : null,
     };
   }
 
-  #patch(fn: (s: UpdateState) => void): void {
-    const s = this.readState();
-    fn(s);
-    this.#writeJson('state.json', s);
+  /**
+   * Read-modify-write under a lock (`state.lock`, mkdir): the worker and main never lose each
+   * other's writes (review #12). A lock older than 10 s is stale. Returns whether the write landed.
+   */
+  #locked(name: string, fn: () => unknown): boolean {
+    const lock = join(this.dir, `${name}.lock`);
+    let held = false;
+    for (let i = 0; i < 100 && !held; i += 1) {
+      try {
+        mkdirSync(lock);
+        held = true;
+      } catch {
+        try {
+          if (Date.now() - statSync(lock).mtimeMs > 10_000) rmSync(lock, { recursive: true, force: true });
+        } catch {
+          /* gone */
+        }
+        pause(10);
+      }
+    }
+    try {
+      const value = fn();
+      return this.#writeJson(name, value);
+    } finally {
+      if (held) rmSync(lock, { recursive: true, force: true });
+    }
   }
 
-  #patchLaunch(fn: (s: LaunchState) => void): void {
-    const s = this.readLaunch();
-    fn(s);
-    this.#writeJson('launch.json', s);
+  #patch(fn: (s: UpdateState) => void): boolean {
+    return this.#locked('state.json', () => {
+      const s = this.readState();
+      fn(s);
+      return s;
+    });
+  }
+
+  #patchLaunch(fn: (s: LaunchState) => void): boolean {
+    return this.#locked('launch.json', () => {
+      const s = this.readLaunch();
+      fn(s);
+      return s;
+    });
   }
 
   location(): LocationKind {
@@ -355,22 +455,23 @@ export class UpdateEngine {
   #early(): EarlyOutcome {
     this.#ensureDir();
     const paths = swapPaths({ target: this.cfg.bundlePath, updatesDir: this.dir });
+    // A staging the worker did not finish (a quit, a crash): up to ~1 GB and a copy of the
+    // database each. No worker runs yet in this process, and the single-instance lock is held.
+    this.#sweepWork();
     const helperAlive = this.#lockHolderAlive(paths.lock);
+    const current = this.cfg.currentBuild;
 
     // 1. What the last helper did.
     if (!helperAlive && existsSync(paths.result)) {
-      const r = parseSwapResult(readFileSync(paths.result, 'utf8'));
-      rmSync(paths.result, { force: true });
-      if (r) {
-        const fields = { from: r.from, to: r.to, mode: r.mode, at: r.at };
-        if (r.status === 'ok') {
-          this.log('info', r.mode === 'rollback' ? 'update.rolled_back' : 'update.applied', fields);
-          this.#patch((s) => (s.applyFailures = 0));
-        } else {
-          this.log('warn', 'update.failed', { ...fields, stage: 'swap', cause: `${r.status}:${r.cause}` });
-          this.#patch((s) => (s.applyFailures += 1));
-        }
+      let text = '';
+      try {
+        text = readFileSync(paths.result, 'utf8');
+      } catch {
+        text = '';
       }
+      rmSync(paths.result, { force: true });
+      const r = parseSwapResult(text);
+      if (r) this.#recordResult(r);
     }
 
     // 2. A swap the helper did not finish.
@@ -381,61 +482,158 @@ export class UpdateEngine {
       } catch {
         /* without the metadata the old bundle is deleted, never kept as N-1 */
       }
-      const done = recoverJournal(
-        readFileSync(paths.journal, 'utf8'),
-        {
-          exists: existsSync,
-          rename: renameSync,
-          remove: (p) => rmSync(p, { recursive: true, force: true }),
-          buildOf: (p) => buildNumber(plistValue(p, 'CFBundleVersion')),
-        },
-        { target: this.cfg.bundlePath, keep: this.previousApp, keepOld: meta.keepOld === true, aside: paths.aside, near: paths.near, toBuild: Number(meta.to) || 0 },
-      );
+      let journal = '';
+      try {
+        journal = readFileSync(paths.journal, 'utf8');
+      } catch {
+        journal = '';
+      }
+      let done: string = 'none';
+      try {
+        done = recoverJournal(
+          journal,
+          {
+            exists: existsSync,
+            rename: renameSync,
+            remove: (p) => rmSync(p, { recursive: true, force: true }),
+            buildOf: (p) => buildNumber(plistValue(p, 'CFBundleVersion')),
+          },
+          { target: this.cfg.bundlePath, keep: this.previousApp, keepOld: meta?.keepOld === true, aside: paths.aside, near: paths.near, toBuild: Number(meta?.to) || 0 },
+        );
+      } catch (err) {
+        done = `error:${shortCause(err)}`;
+      }
       rmSync(paths.journal, { force: true });
       rmSync(`${paths.journal}.json`, { force: true });
-      this.log('warn', 'update.journal_recovered', { result: done, to: Number(meta.to) || 0 });
+      this.log('warn', 'update.journal_recovered', { result: done, to: Number(meta?.to) || 0 });
+    }
+
+    // 0. However the files read, the app opens after MAX_EXIT_STREAK launches that did not.
+    let ls = this.readLaunch();
+    if (ls.exitStreak >= MAX_EXIT_STREAK) {
+      this.log('warn', 'update.exit_streak', { streak: ls.exitStreak, build: current });
+      return this.#continue(ls, null);
     }
 
     // 3. A helper is still at work: it reopens the app when it is done.
     if (helperAlive) {
-      this.log('info', 'update.check', { result: 'swap_in_progress' });
-      return { kind: 'exit', why: 'swap_in_progress' };
+      if (this.#countExit()) {
+        this.log('info', 'update.check', { result: 'swap_in_progress' });
+        return { kind: 'exit', why: 'swap_in_progress' };
+      }
+      return this.#continue(this.readLaunch(), null);
     }
-
-    const state = this.readState();
-    const ls = this.readLaunch();
-    const current = this.cfg.currentBuild;
 
     // 4. A staged update: swap it in now, before the app's code loads.
     const staged = this.readStaged();
     if (staged) {
-      if (staged.build === current || (staged.build < current && !staged.downgrade) || state.badBuilds.includes(staged.build)) {
-        this.discardStaged(staged.build === current ? 'already_running' : 'stale');
-      } else if (state.applyFailures >= 2) {
-        this.discardStaged('apply_failed_twice');
-        this.#patch((s) => (s.applyFailures = 0));
+      ls = this.readLaunch();
+      const cannot = ls.cannotApply.some((c) => c.build === staged.build);
+      if (staged.build === current || (staged.build < current && !staged.downgrade) || ls.badBuilds.includes(staged.build) || cannot) {
+        this.discardStaged(staged.build === current ? 'already_running' : cannot ? 'cannot_apply' : 'stale');
       } else if (this.location() === 'ok') {
         if (this.spawnSwap({ mode: 'apply', relaunch: 'front' })) return { kind: 'exit', why: 'applying' };
       }
     }
 
-    // 5. Probation: a build that keeps failing to start goes back to the kept previous one.
+    // 5. Probation: a build that keeps failing to start goes back to the kept previous one,
+    // unless a rollback to it already failed (it would fail again, at every launch).
+    ls = this.readLaunch();
     const previousBuild = existsSync(this.previousApp) ? buildNumber(plistValue(this.previousApp, 'CFBundleVersion')) : null;
     const step = probationStep(ls.launch, ls.health, current, previousBuild);
     if (step.action === 'rollback' && this.location() === 'ok') {
-      this.log('error', 'update.crash_loop', { build: current, crashes: step.health.crashes, to: previousBuild });
-      this.#patchLaunch((s) => (s.health = step.health));
-      if (this.rollback('crash_loop')) return { kind: 'exit', why: 'rolling_back' };
+      const failedBefore = ls.cannotRollback === current || (ls.lastResult?.mode === 'rollback' && ls.lastResult.status !== 'ok');
+      if (failedBefore) {
+        if (ls.cannotRollback !== current) {
+          this.#patchLaunch((s) => (s.cannotRollback = current));
+          this.log('error', 'update.gave_up', { mode: 'rollback', build: current, why: 'last_rollback_failed' });
+        }
+      } else {
+        this.log('error', 'update.crash_loop', { build: current, crashes: step.health.crashes, to: previousBuild });
+        this.#patchLaunch((s) => (s.health = step.health));
+        if (this.rollback('crash_loop')) return { kind: 'exit', why: 'rolling_back' };
+      }
     }
 
     // 6. Count this launch; say "Updated to build N" once.
+    return this.#continue(this.readLaunch(), step.health);
+  }
+
+  /** The app opens: reset the exit streak, record the launch, and the note if this is a new build. */
+  #continue(ls: LaunchState, health: BuildHealth | null): EarlyOutcome {
+    const current = this.cfg.currentBuild;
     const note = ls.lastLaunchedBuild !== null && current > ls.lastLaunchedBuild ? { from: ls.lastLaunchedBuild, to: current } : null;
     this.#patchLaunch((s) => {
-      s.health = step.health;
+      if (health) s.health = health;
+      else if (!s.health || s.health.build !== current) s.health = { build: current, everHealthy: false, crashes: 0 };
       s.launch = { build: current, healthy: false, clean: false };
       s.lastLaunchedBuild = current;
+      s.exitStreak = 0;
     });
     return { kind: 'continue', note };
+  }
+
+  /**
+   * Count a launch that exits before the app's code, and say whether it may: only if the count
+   * landed on disk (a full or read-only disk must not turn into exiting forever).
+   */
+  #countExit(): boolean {
+    const before = this.readLaunch().exitStreak;
+    if (before >= MAX_EXIT_STREAK) return false;
+    return this.#patchLaunch((s) => (s.exitStreak = before + 1)) && this.readLaunch().exitStreak === before + 1;
+  }
+
+  #recordResult(r: SwapResult): void {
+    const fields = { from: r.from, to: r.to, mode: r.mode, at: r.at, via: r.via };
+    if (r.status === 'ok') this.log('info', r.mode === 'rollback' ? 'update.rolled_back' : 'update.applied', fields);
+    else this.log('warn', 'update.failed', { ...fields, stage: 'swap', cause: `${r.status}:${r.cause}` });
+    this.#patchLaunch((s) => {
+      s.lastResult = { mode: r.mode, status: r.status, cause: r.cause, to: r.to };
+      if (r.status === 'ok') {
+        if (s.pending && s.pending.mode === r.mode) s.pending = null;
+        return;
+      }
+      // App Management will refuse again; two failures of one build will fail again (review #1).
+      const tries = s.pending && s.pending.build === r.to && s.pending.mode === r.mode ? s.pending.attempts : 1;
+      if (r.mode === 'apply' && (r.cause === 'app_management' || tries >= MAX_SWAP_ATTEMPTS) && !s.cannotApply.some((c) => c.build === r.to)) {
+        s.cannotApply.push({ build: r.to, cause: r.cause || r.status, at: new Date(this.#now()).toISOString() });
+        s.pending = null;
+      }
+    });
+    if (r.mode === 'apply' && this.readLaunch().cannotApply.some((c) => c.build === r.to)) this.discardStaged('cannot_apply');
+  }
+
+  #sweepWork(): void {
+    try {
+      for (const name of readdirSync(this.dir)) {
+        if (!name.startsWith('work-')) continue;
+        rmSync(join(this.dir, name), { recursive: true, force: true });
+        this.log('info', 'update.swept', { what: 'work' });
+      }
+    } catch {
+      /* nothing to sweep */
+    }
+  }
+
+  /** The build the participant should be told about once: the swap could not install it here. */
+  manualInstallNotice(): { build: number; cause: string } | null {
+    const ls = this.readLaunch();
+    const last = ls.cannotApply[ls.cannotApply.length - 1];
+    if (!last || ls.manualNoticeShown === last.build) return null;
+    return { build: last.build, cause: last.cause };
+  }
+
+  markManualInstallNoticeShown(build: number): void {
+    this.#patchLaunch((s) => (s.manualNoticeShown = build));
+  }
+
+  /** After the participant allowed App Management: try that build again. */
+  forgetCannotApply(build: number): void {
+    this.#patchLaunch((s) => {
+      s.cannotApply = s.cannotApply.filter((c) => c.build !== build);
+      if (s.pending?.build === build) s.pending = null;
+    });
+    this.log('info', 'update.retry_allowed', { build });
   }
 
   /**
@@ -445,10 +643,10 @@ export class UpdateEngine {
   rollback(why: string): boolean {
     if (!existsSync(this.previousApp) || this.location() !== 'ok') return false;
     const bad = this.cfg.currentBuild;
-    this.#patch((s) => {
+    this.#patchLaunch((s) => {
       if (!s.badBuilds.includes(bad)) s.badBuilds.push(bad);
+      s.launch = null;
     });
-    this.#patchLaunch((s) => (s.launch = null));
     this.discardStaged('rollback');
     this.log('error', 'update.rollback', { why, bad });
     return this.spawnSwap({ mode: 'rollback', relaunch: 'front' });
@@ -488,15 +686,35 @@ export class UpdateEngine {
 
   // ── swap ──────────────────────────────────────────────────────────────────
 
+  /**
+   * A lock counts only if its PID is alive, is running `swap-helper.sh`, and the lock is younger
+   * than ten minutes (review #3). Anything else (a reused PID, a hung or killed helper, junk) is
+   * removed, so it can never keep the app closed.
+   */
   #lockHolderAlive(lock: string): boolean {
+    if (!existsSync(lock)) return false;
+    let alive = false;
     try {
-      const pid = Number(readFileSync(join(lock, 'pid'), 'utf8').trim());
-      if (!Number.isInteger(pid) || pid <= 1) return false;
-      process.kill(pid, 0);
-      return true;
+      const pidFile = join(lock, 'pid');
+      const pid = Number(readFileSync(pidFile, 'utf8').trim());
+      const fresh = Date.now() - statSync(pidFile).mtimeMs < LOCK_MAX_AGE_MS;
+      if (Number.isInteger(pid) && pid > 1 && fresh) {
+        process.kill(pid, 0);
+        const command = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
+        alive = command.includes('swap-helper.sh');
+      }
     } catch {
-      return false;
+      alive = false;
     }
+    if (!alive) {
+      try {
+        rmSync(lock, { recursive: true, force: true });
+        this.log('warn', 'update.stale_lock', {});
+      } catch {
+        /* read-only: it is ignored all the same */
+      }
+    }
+    return alive;
   }
 
   /**
@@ -511,13 +729,18 @@ export class UpdateEngine {
       if (!existsSync(incoming) || (o.mode === 'apply' && !staged)) return false;
       const toBuild = o.mode === 'apply' ? staged!.build : buildNumber(plistValue(incoming, 'CFBundleVersion'));
       if (toBuild < 1) return false;
+      if (!this.#reserve(toBuild, o.mode)) return false;
       // Keep the build being replaced as N-1 only if it was healthy here; else the old N-1 stays.
       const keepOld = o.mode === 'apply' && this.everHealthy();
       // The swap tool is copied out of the bundle it is about to swap away.
       let swapTool: string | null = null;
       if (this.cfg.swapTool && existsSync(this.cfg.swapTool)) {
+        // A new file, renamed into place: rewriting an executed binary in place can trip the
+        // kernel's signature cache (review #14).
         swapTool = join(this.dir, 'chattered-swap');
-        writeFileSync(swapTool, readFileSync(this.cfg.swapTool), { mode: 0o700 });
+        const tmpTool = `${swapTool}.${process.pid}.tmp`;
+        writeFileSync(tmpTool, readFileSync(this.cfg.swapTool), { mode: 0o700 });
+        renameSync(tmpTool, swapTool);
       }
       const args = swapArgs({
         swapTool,
@@ -537,7 +760,9 @@ export class UpdateEngine {
       const paths = swapPaths({ target: this.cfg.bundlePath, updatesDir: this.dir });
       writeFileSync(`${paths.journal}.json`, JSON.stringify({ keepOld, mode: o.mode, from: this.cfg.currentBuild, to: toBuild }), { mode: 0o600 });
       const script = join(this.dir, 'swap-helper.sh');
-      writeFileSync(script, SWAP_SCRIPT, { mode: 0o700 });
+      const tmpScript = `${script}.${process.pid}.tmp`;
+      writeFileSync(tmpScript, SWAP_SCRIPT, { mode: 0o700 });
+      renameSync(tmpScript, script);
       if (this.cfg.spawnHelper) this.cfg.spawnHelper(script, args);
       else {
         const child = spawn('/bin/bash', [script, ...args], {
@@ -558,6 +783,35 @@ export class UpdateEngine {
       this.log('error', 'update.failed', { stage: 'spawn', cause: (err as Error).message });
       return false;
     }
+  }
+
+  /**
+   * Count one try of this swap before the helper is spawned (review #2), and the exit it causes.
+   * After MAX_SWAP_ATTEMPTS tries with no `ok`, give it up: an apply's build is recorded as one
+   * this Mac cannot install, a rollback is not tried again. False when the count cannot be written.
+   */
+  #reserve(build: number, mode: 'apply' | 'rollback'): boolean {
+    const ls = this.readLaunch();
+    const tries = ls.pending && ls.pending.build === build && ls.pending.mode === mode ? ls.pending.attempts : 0;
+    if (tries >= MAX_SWAP_ATTEMPTS) {
+      this.log('error', 'update.gave_up', { mode, build, tries });
+      this.#patchLaunch((s) => {
+        s.pending = null;
+        if (mode === 'apply' && !s.cannotApply.some((c) => c.build === build)) {
+          s.cannotApply.push({ build, cause: s.lastResult?.to === build && s.lastResult.cause ? s.lastResult.cause : 'no_result', at: new Date(this.#now()).toISOString() });
+        }
+        if (mode === 'rollback') s.cannotRollback = this.cfg.currentBuild;
+      });
+      if (mode === 'apply') this.discardStaged('cannot_apply');
+      return false;
+    }
+    if (ls.exitStreak >= MAX_EXIT_STREAK) return false;
+    const wrote = this.#patchLaunch((s) => {
+      s.pending = { build, mode, attempts: tries + 1 };
+      s.exitStreak = ls.exitStreak + 1;
+    });
+    const back = this.readLaunch();
+    return wrote && back.pending?.attempts === tries + 1 && back.exitStreak === ls.exitStreak + 1;
   }
 
   // ── check, download, stage ────────────────────────────────────────────────
@@ -587,7 +841,7 @@ export class UpdateEngine {
   }
 
   /** The first manifest that verifies, from the URL list. */
-  async fetchManifest(): Promise<{ manifest: UpdateManifest; signer: TrustedKey } | { error: string }> {
+  async fetchManifest(): Promise<{ manifest: UpdateManifest; signer: TrustedKey; bytes: Buffer; sig: Buffer } | { error: string }> {
     const state = this.readState();
     const keys = trustedKeys(this.cfg.keys, state.rotation);
     let last = 'no_url';
@@ -598,7 +852,7 @@ export class UpdateEngine {
           this.#fetchCapped(`${url}.sig`, MAX_SIG_BYTES, 30_000),
         ]);
         const v = verifyManifest(bytes, sig, keys, { allowHttp: this.cfg.allowHttp, installId: this.cfg.installId });
-        if (v.ok) return { manifest: v.manifest, signer: v.signer };
+        if (v.ok) return { manifest: v.manifest, signer: v.signer, bytes, sig };
         last = v.reason;
       } catch (err) {
         last = shortCause(err);
@@ -639,7 +893,12 @@ export class UpdateEngine {
       });
       this.log('warn', 'update.keys_rotated', { added: m.keys.add.length, revoked: m.keys.revoke.length });
     }
-    const state = this.readState();
+    const ls = this.readLaunch();
+    const cannot = ls.cannotApply.find((c) => c.build === m.build);
+    if (cannot) {
+      this.log('info', 'update.check', { reason, build: this.cfg.currentBuild, offered: m.build, result: 'cannot_apply', cause: cannot.cause });
+      return false;
+    }
     const d = decide({
       manifest: m,
       appId: this.cfg.appId,
@@ -647,7 +906,7 @@ export class UpdateEngine {
       currentBuild: this.cfg.currentBuild,
       osVersion: this.cfg.osVersion,
       dbUserVersion: dbUserVersion(join(this.cfg.userDataDir, 'app.db')),
-      badBuilds: state.badBuilds,
+      badBuilds: ls.badBuilds,
     });
     const base = { reason, build: this.cfg.currentBuild, offered: m.build, signer: signer.role, targeted: m.targeted, free_mb: Math.round(this.freeBytes() / 1e6) };
     if (d.action === 'skip') {
@@ -664,7 +923,7 @@ export class UpdateEngine {
       return false;
     }
     this.log('info', 'update.check', { ...base, result: 'available', downgrade: d.downgrade });
-    return this.#stage(m, d.downgrade);
+    return this.#stage(m, d.downgrade, { bytes: got.bytes, sig: got.sig });
   }
 
   /** Bytes free where the updates folder is. */
@@ -677,13 +936,21 @@ export class UpdateEngine {
     }
   }
 
-  async #stage(m: UpdateManifest, downgrade: boolean): Promise<boolean> {
-    const dbBytes = fileSize(join(this.cfg.userDataDir, 'app.db'));
+  /** The free space staging `m` needs: the zip, its extraction, a database copy, and 2 GB to spare. */
+  spaceNeeded(size: number): number {
+    return size * 5 + fileSize(join(this.cfg.userDataDir, 'app.db')) * 2 + 2 * 1024 * 1024 * 1024;
+  }
+
+  async #stage(m: UpdateManifest, downgrade: boolean, signed: { bytes: Buffer; sig: Buffer }): Promise<boolean> {
     // The zip, its extraction (about 3x the zip) and a copy of the database for the smoke launch,
-    // with room left so the participant's own database is never the thing that runs out.
-    const need = m.size * 5 + dbBytes * 2 + 2 * 1024 * 1024 * 1024;
+    // with room left so the participant's own database is never the thing that runs out. A staged
+    // build that this one replaces is reclaimed first; N-1 is not.
+    const need = this.spaceNeeded(m.size);
+    if (this.freeBytes() < need && this.readStaged()) this.discardStaged('space');
     if (this.freeBytes() < need) {
-      this.log('warn', 'update.failed', { stage: 'space', to: m.build, need_mb: Math.round(need / 1e6), free_mb: Math.round(this.freeBytes() / 1e6) });
+      const short = { needMb: Math.round(need / 1e6), freeMb: Math.round(this.freeBytes() / 1e6), build: m.build, at: new Date(this.#now()).toISOString() };
+      this.#patch((s) => (s.spaceShort = short));
+      this.log('warn', 'update.failed', { stage: 'space', to: m.build, need_mb: short.needMb, free_mb: short.freeMb });
       return false;
     }
     const work = join(this.dir, `work-${randomBytes(6).toString('hex')}`);
@@ -718,7 +985,12 @@ export class UpdateEngine {
         this.log('error', 'update.failed', { stage: 'verify', to: m.build, cause: problem });
         return false;
       }
-      const smoke = await this.smoke(app, m.build, work);
+      // The staged build checks its own updater against the manifest that brought it (review #6).
+      const manifestFile = join(work, 'manifest.json');
+      writeFileSync(manifestFile, signed.bytes, { mode: 0o600 });
+      writeFileSync(`${manifestFile}.sig`, signed.sig, { mode: 0o600 });
+      writeFileSync(join(work, 'rotation.json'), JSON.stringify(this.readState().rotation), { mode: 0o600 });
+      const smoke = await this.smoke(app, m.build, work, manifestFile);
       if (smoke !== 'ok') {
         this.log('error', 'update.failed', { stage: 'smoke', to: m.build, cause: smoke });
         return false;
@@ -729,7 +1001,7 @@ export class UpdateEngine {
       renameSync(app, this.stagedApp);
       const meta: Staged = { build: m.build, version: m.version, cdhash: m.cdhash, downgrade, stagedAt: new Date(this.#now()).toISOString() };
       writeFileSync(join(stagedDir, 'staged.json'), JSON.stringify(meta), { mode: 0o600 });
-      this.#patch((s) => (s.applyFailures = 0));
+      this.#patch((s) => (s.spaceShort = null));
       this.log('info', 'update.staged', { from: this.cfg.currentBuild, to: m.build, downgrade, ms: this.#now() - started });
       return true;
     } catch (err) {
@@ -792,7 +1064,7 @@ export class UpdateEngine {
    * the native modules, copies the database with `VACUUM INTO`, runs migrations on the copy, loads
    * the renderer in a hidden window, and writes the file.
    */
-  async smoke(app: string, build: number, work: string): Promise<string> {
+  async smoke(app: string, build: number, work: string, manifestFile?: string): Promise<string> {
     const exe = join(app, 'Contents', 'MacOS', this.cfg.productName);
     if (!existsSync(exe)) return 'no_executable';
     const profile = join(work, 'smoke-profile');
@@ -803,6 +1075,7 @@ export class UpdateEngine {
       if (v !== undefined && k !== 'ELECTRON_RUN_AS_NODE' && !k.startsWith('CHATTERED_')) env[k] = v;
     }
     const args = [`--chattered-smoke=${okFile}`, `--user-data-dir=${profile}`];
+    if (manifestFile) args.push(`--chattered-smoke-manifest=${manifestFile}`);
     const db = join(this.cfg.userDataDir, 'app.db');
     if (existsSync(db)) args.push(`--chattered-smoke-db=${db}`);
     const timeout = (this.cfg.smokeTimeoutSeconds ?? 150) * 1000;

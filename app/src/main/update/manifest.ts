@@ -175,8 +175,13 @@ export function verifyManifest(
     if (t && typeof t === 'object' && !Array.isArray(t)) {
       const over: Record<string, unknown> = {};
       for (const f of TARGET_FIELDS) if (Object.hasOwn(t, f)) over[f] = (t as Record<string, unknown>)[f];
-      p = { ...p, ...over };
-      targeted = true;
+      // A target at a build the channel has since blocked is ignored, not fatal: the install falls
+      // back to the channel default instead of being stranded (review #7).
+      const blockedNow = Array.isArray(p.blocked) ? p.blocked : [];
+      if (!blockedNow.includes(over.build ?? p.build)) {
+        p = { ...p, ...over };
+        targeted = true;
+      }
     }
   }
   if (p.format !== MANIFEST_FORMAT) return { ok: false, reason: 'bad_field:format' };

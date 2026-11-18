@@ -224,10 +224,22 @@ supported: the updater is macOS only, and so is the app.
   profile on a `VACUUM INTO` copy of the database, the scripted backend and a hidden window, and
   must write an explicit ok file. Only then is it staged.
 - **The swap**, never at logout or shutdown: at the next launch (the app exits, swaps, reopens:
-  about 2 s), or when the Mac has been locked for 5 minutes or idle for 30. One atomic
+  about 2 s), or when the Mac has been locked for 5 minutes or idle for 30 and nothing is in flight
+  (no model call, no request such as a tutorial read). One atomic
   `renamex_np(RENAME_SWAP)` (`Resources/chattered-swap`), journaled, with the build and signature
   checked again right before and after; any failure swaps back. The build it replaces is kept as
-  N-1 if it was ever healthy here.
+  N-1 if it was ever healthy here. **Once the app has exited for a swap, the helper reopens it
+  whatever happens.**
+- **Nothing can keep the app closed.** Each swap (a build and apply or rollback) is tried at most
+  twice, counted before the helper starts; after two launches in a row that exit for a swap or a
+  running helper, the next one always opens the app; a swap lock counts only if its process really
+  is the helper and is under 10 minutes old; a rollback that failed is not tried again. A build the
+  swap could not install (App Management refused it, or two tries failed) is recorded on that Mac
+  and not downloaded again until a newer build is published, and the participant sees **one**
+  dialog: "ChatterED could not update itself", with the App Management setting (its button lets
+  the build be tried again) and the manual route (the team sends the DMG). A property test fuzzes
+  every update file (missing, corrupt, stale, contradictory, read-only) and checks the app opens
+  within two launches.
 - **Health and rollback.** A launch is healthy 30 s after the window's bridge is up. A new build
   that twice ends in neither a healthy mark nor a clean quit is rolled back to N-1 at the next
   launch, and never reinstalled on that Mac. If the app cannot start (`failBoot`, or `index.js` will
@@ -242,7 +254,12 @@ supported: the updater is macOS only, and so is the app.
   `update.staged`, `update.applying`, `update.applied`, `update.failed` (`stage` + `cause`),
   `update.crash_loop`, `update.rollback`, `update.rolled_back`, `update.repair`,
   `update.journal_recovered`, `update.discarded`, `update.healthy`, `update.idle_apply`,
+  `update.idle_deferred`, `update.gave_up`, `update.exit_streak`, `update.stale_lock`,
+  `update.swept`, `update.handover`, `update.manual_notice`, `update.retry_allowed`,
   `update.note_shown`, `update.env` (MDM and Gatekeeper status), `selfinstall.*`, `install.oneoff`.
+  A smoke launch that fails its own updater check reports `stage=smoke` with
+  `cause=updater:<why>` (its keys do not verify the manifest, wrong channel, updates off, no swap
+  tool).
   The research export's manifest has `app.build`, `app.sha` and `app.builds` (every build the
   install ran, with when it first launched), so a session's build is known after log rotation too.
 - **Kill switches** (they stop updates; none relaxes a check): `CHATTERED_UPDATES=off` in the
@@ -294,7 +311,16 @@ tools/release.sh --update --publish-update --notes-text "Fixes the hint button"
   `tools/release.sh --promote N --publish-update` makes build N the default for all.
 - **Take a build back**: `tools/release.sh --rollback-to N --publish-update` pins the channel to
   published build N (with `--target <id>` for one install). Or `--update --block 512` with a fix:
-  copies on 512 leave it even if the fix is numbered lower.
+  copies on 512 leave it even if the fix is numbered lower. A rollback only reaches Macs whose
+  database build N can read: if a migration shipped after N, `--rollback-to` warns and those Macs
+  skip it (`schema_too_new`); publish a fix as a new build instead.
+- **Pins do not expire.** A `--rollback-to N --target <id>` pin stays through every later publish
+  (each publish lists the targets still in force) until `tools/release.sh --untarget <id>
+  --publish-update`. A build cannot be blocked while an install is targeted at it; a target at a
+  build blocked later is ignored by the app, which falls back to the channel default.
+- **Edit the manifest without a build**: `--untarget <id>[,<id>]`, `--block N[,N]`,
+  `--unblock N[,N]`, each with `--publish-update`. Every publish starts from the published
+  manifest; if it cannot be read the publish is refused, except the very first with `--no-base`.
 
 ### 8.4 Watch it (there is no heartbeat)
 
@@ -305,8 +331,11 @@ tools/release.sh --update --publish-update --notes-text "Fixes the hint button"
 - **Use per participant**: each slot's workspace in the Anthropic Console shows when it was last
   used, so a participant who stopped (or is stuck on a build that cannot start) shows as flat.
 - **A pasted debug report** (⇧⌘D, §6) has an `update` section: build, channel, install id, where
-  it runs from, staged build, N-1, bad builds, last check and result, last failure, the swap
-  journal, free space, quarantine and the kill switches.
+  it runs from, staged build, N-1, bad builds, builds it could not install (`cannot_apply`), a
+  rollback given up, the swap being tried and its last result, the exit streak, the swap lock and
+  journal, the last check and result, the last failure, free space and the space it lacked
+  (`space_short`: updates stop below about 5x the zip plus 2 GB; macOS's purgeable space is not
+  counted), leftover work folders, quarantine and the kill switches.
 - **Each update changes the app's CDHash**, so macOS may ask again for folder access it had
   granted (the cost export writes to `~/Documents/ChatterED`). Tell participants before a release
   that it may ask once.

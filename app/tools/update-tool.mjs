@@ -9,7 +9,7 @@
 //   node tools/update-tool.mjs entry --app <X.app> --zip <zip> --url <url> --build N --commit SHA [--db-schema N]
 //       One build's entry (what a manifest says about a payload), as JSON on stdout.
 //   node tools/update-tool.mjs manifest --app-id ID --channel C --out FILE [--base FILE]
-//       [--default ENTRY] [--pin] [--target ID=ENTRY]... [--target-pin ID=ENTRY]... [--untarget ID]...
+//       [--default ENTRY] [--pin] [--target ID=ENTRY]... [--target-pin ID=ENTRY]... [--untarget ID[,ID]]...
 //       [--block N,N] [--unblock N,N] [--notes TEXT]
 //       Writes the manifest's exact bytes. --base is the manifest published now: its other fields
 //       and targets are kept. A new default must be newer than the base's, unless --pin.
@@ -161,12 +161,19 @@ function manifest(o) {
       m.targets[id] = { ...readEntry(file), pin: pinned };
     }
   }
-  for (const id of list(o.untarget)) delete m.targets[id];
+  for (const id of list(o.untarget).flatMap((v) => String(v).split(','))) delete m.targets[id];
   if (!Object.keys(m.targets).length) delete m.targets;
   const blocked = new Set([...(m.blocked ?? []), ...ints(o.block)]);
   for (const n of ints(o.unblock)) blocked.delete(n);
   if (blocked.has(m.build)) die(`the default build ${m.build} cannot also be blocked.`);
   m.blocked = [...blocked].sort((a, b) => a - b);
+  for (const [id, t] of Object.entries(m.targets ?? {})) {
+    if (blocked.has(Number(t.build))) die(`install ${id} is targeted at build ${t.build}, which is blocked: --untarget ${id} first.`);
+  }
+  // Pins never expire on their own: say which are still in force on every publish.
+  for (const [id, t] of Object.entries(m.targets ?? {})) {
+    console.error(`update-tool: target ${id} → build ${t.build}${t.pin ? ' (pinned: stays until --untarget)' : ''}`);
+  }
   if (o.notes !== undefined) m.notes = String(o.notes).slice(0, 500);
   if (!m.url || !m.sha256) die('the manifest has no default build: pass --default (or --base with one).');
   m.publishedAt = new Date().toISOString();

@@ -70,3 +70,27 @@ export function faultActive(name: 'crash-at-launch' | 'fail-migration' | 'hang-b
   if (f === name) return true;
   return f === `${name}-live` && !current.smoke;
 }
+
+// ── busy: work an idle relaunch must not cut short (review #5) ──────────────
+
+let inFlight = 0;
+
+/**
+ * Mark work that an idle or locked-screen relaunch must wait for: an LLM call, an IPC request
+ * (a tutorial read is one long request), a notebook being read. Returns the function that ends it;
+ * calling that twice is harmless.
+ */
+export function workStarted(): () => void {
+  inFlight += 1;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    inFlight = Math.max(0, inFlight - 1);
+  };
+}
+
+/** True while any marked work is in flight. */
+export function isBusy(): boolean {
+  return inFlight > 0;
+}

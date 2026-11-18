@@ -27,6 +27,11 @@
 #   tools/release.sh --rollback-to N [--target <id>] [--publish-update]   no build: pin the channel
 #                                         (or those installs) to published build N.
 #   tools/release.sh --promote N [--publish-update]   no build: make published build N the default.
+#   tools/release.sh --untarget <id>[,<id>] | --unblock N[,N] | --block N[,N] [--publish-update]
+#                                         no build: edit the published manifest only (a pin set with
+#                                         --rollback-to --target stays until --untarget).
+#   --no-base                             publish without a fetched published manifest (the very first
+#                                         publish, or when it cannot be read); otherwise refused.
 #   --variant test --keys-dir <dir> [--test-endpoint URL] [--fault NAME] [--serve-dir <dir>]
 #                                         the test variant: "ChatterED Test" (sg.nus.chattered.test,
 #                                         its own userData), channel `test`, a local http manifest,
@@ -55,6 +60,7 @@ PRELOAD_SLOT=""
 CODES_FILE=""
 UPDATE=0; PUBLISH_UPDATE=0; BUILD=""; VARIANT=production; KEYS_DIR=""; SIGN_KEY=""; TEST_ENDPOINT=""
 FAULT=""; SERVE_DIR=""; TARGETS=""; BLOCK=""; ROLLBACK_TO=""; PROMOTE=""; NOTES_TEXT=""
+UNTARGET=""; UNBLOCK=""; NO_BASE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --publish) TAG="${2:?--publish needs a tag, e.g. v0.1.0}"; shift 2 ;;
@@ -76,7 +82,10 @@ while [ $# -gt 0 ]; do
     --rollback-to) ROLLBACK_TO="${2:?--rollback-to needs a build number}"; shift 2 ;;
     --promote) PROMOTE="${2:?--promote needs a build number}"; shift 2 ;;
     --notes-text) NOTES_TEXT="${2?--notes-text needs text}"; shift 2 ;;
-    -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
+    --untarget) UNTARGET="${2:?--untarget needs install ids}"; shift 2 ;;
+    --unblock) UNBLOCK="${2:?--unblock needs build numbers}"; shift 2 ;;
+    --no-base) NO_BASE=1; shift ;;
+    -h|--help) sed -n '2,48p' "$0"; exit 0 ;;
     *) echo "release.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -89,12 +98,16 @@ VERSION="$(node -p "require('./package.json').version")"
 
 # ── variant, channel, build number (the update channel) ──────────────────────
 RELEASE_HOME="$HOME/.config/chattered-release"
+# A manifest edit with no build: --rollback-to, --promote, or --untarget/--unblock/--block alone.
+EDIT_ONLY=0
+if [ -n "$ROLLBACK_TO$PROMOTE" ]; then EDIT_ONLY=1
+elif [ "$UPDATE" = 0 ] && [ -z "$STUDY_BUNDLE$TAG" ] && [ -n "$UNTARGET$UNBLOCK$BLOCK" ]; then EDIT_ONLY=1; fi
 case "$VARIANT" in
   production)
     PRODUCT="ChatterED"; APP_ID="sg.nus.chattered"
     [ -z "$FAULT$TEST_ENDPOINT$SERVE_DIR" ] || die "--fault, --test-endpoint and --serve-dir are for --variant test only."
     CHANNEL=""
-    if [ "$UPDATE" = 1 ] || [ -n "$STUDY_BUNDLE" ] || [ -n "$ROLLBACK_TO$PROMOTE" ]; then CHANNEL="study"; fi
+    if [ "$UPDATE" = 1 ] || [ -n "$STUDY_BUNDLE" ] || [ "$EDIT_ONLY" = 1 ]; then CHANNEL="study"; fi
     KEYS_DIR="${KEYS_DIR:-$APP_DIR/build/update-keys}"
     SIGN_KEY="${SIGN_KEY:-$RELEASE_HOME/active.key.pem}"
     MANIFEST_URL="https://github.com/$RELEASES_REPO/releases/download/$CHANNEL-channel/$CHANNEL-manifest-v1.json"
@@ -117,7 +130,9 @@ APP_NAME="$PRODUCT"
 ASSET_SLUG="${PRODUCT// /-}"
 [ -z "$TARGETS" ] || [[ "$TARGETS" =~ ^[A-Za-z0-9_-]{6,64}(,[A-Za-z0-9_-]{6,64})*$ ]] || die "--target takes install ids (from a pasted debug report), comma-separated."
 [ -z "$BLOCK" ] || [[ "$BLOCK" =~ ^[0-9]+(,[0-9]+)*$ ]] || die "--block takes build numbers, comma-separated."
-[ "$PUBLISH_UPDATE" = 0 ] || [ "$UPDATE" = 1 ] || [ -n "$ROLLBACK_TO$PROMOTE" ] || die "--publish-update goes with --update, --rollback-to or --promote."
+[ -z "$UNBLOCK" ] || [[ "$UNBLOCK" =~ ^[0-9]+(,[0-9]+)*$ ]] || die "--unblock takes build numbers, comma-separated."
+[ -z "$UNTARGET" ] || [[ "$UNTARGET" =~ ^[A-Za-z0-9_-]{6,64}(,[A-Za-z0-9_-]{6,64})*$ ]] || die "--untarget takes install ids, comma-separated."
+[ "$PUBLISH_UPDATE" = 0 ] || [ "$UPDATE" = 1 ] || [ "$EDIT_ONLY" = 1 ] || die "--publish-update goes with --update, --rollback-to, --promote, --untarget, --unblock or --block."
 [ -z "$ROLLBACK_TO" ] || [ -z "$PROMOTE" ] || die "--rollback-to or --promote, not both."
 [ "$UPDATE" = 0 ] || [ -z "$STUDY_BUNDLE" ] || die "An update payload is an ordinary build: drop --study."
 if [ -n "$CHANNEL" ]; then
@@ -140,7 +155,7 @@ fetch_published() {
   case "$code" in
     200) ;;
     404) rm -f "$PUBLISHED" ;;   # nothing published on this channel yet
-    *) rm -f "$PUBLISHED"; [ -n "$BUILD$ROLLBACK_TO$PROMOTE" ] && [ -z "$ROLLBACK_TO$PROMOTE" ] || die "Could not read the published manifest ($MANIFEST_URL, HTTP $code); pass --build N." ;;
+    *) rm -f "$PUBLISHED"; [ -n "$BUILD" ] && [ "$EDIT_ONLY" = 0 ] || die "Could not read the published manifest ($MANIFEST_URL, HTTP $code); pass --build N (and --no-base to publish without it)." ;;
   esac
 }
 published_max() { if [ -f "$PUBLISHED" ]; then node tools/update-tool.mjs builds --in "$PUBLISHED"; else echo 0; fi; }
@@ -158,7 +173,7 @@ asset_url() {
 if [ -n "$CHANNEL" ]; then
   fetch_published
   PUB_MAX="$(published_max)"
-  if [ -z "$ROLLBACK_TO$PROMOTE" ]; then
+  if [ "$EDIT_ONLY" = 0 ]; then
     LED_MAX="$(ledger_max)"
     FLOOR=$(( PUB_MAX > LED_MAX ? PUB_MAX : LED_MAX ))
     BUILD="${BUILD:-$(( FLOOR + 1 ))}"
@@ -209,6 +224,8 @@ deliver() {
   [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || die "The study channel is published from main only (this is $(git rev-parse --abbrev-ref HEAD))."
   [ -z "$(git status --porcelain -- .)" ] || die "app/ has uncommitted or untracked changes; commit them before publishing."
   [ -f "$RELEASE_HOME/gate/pass-$GIT_SHA" ] || die "No release-gate pass for $GIT_SHA: run tools/update-gate.mjs first (STUDY-RELEASE.md §8)."
+  # Without the published manifest as its base, a publish would drop every block and target.
+  [ -f "$PUBLISHED" ] || [ "$NO_BASE" = 1 ] || die "No published manifest was read, so its blocks and targets would be lost. Pass --no-base only for the first publish."
   if [ "$#" -gt 0 ]; then
     gh release create "$CHANNEL-build-$BUILD" "$@" --repo "$RELEASES_REPO" --prerelease \
       --title "$PRODUCT build $BUILD ($CHANNEL channel)" --notes "Update payload for the $CHANNEL channel, build $BUILD ($GIT_SHA). Installed by the app itself; not for download by hand."
@@ -234,71 +251,43 @@ deliver() {
 }
 
 # ── manifest-only operations: no build ──────────────────────────────────────
-if [ -n "$ROLLBACK_TO$PROMOTE" ]; then
-  N="$ROLLBACK_TO$PROMOTE"
-  [ -f "$PUBLISHED" ] || die "Nothing is published on the $CHANNEL channel yet."
+if [ "$EDIT_ONLY" = 1 ]; then
+  [ -f "$PUBLISHED" ] || die "Nothing is published on the $CHANNEL channel yet (or it could not be read)."
   mkdir -p "$UPD"
-  ENTRY="$UPD/build-$N.json"
-  if [ "$VARIANT" = test ]; then cp "$(entry_url "$N")" "$ENTRY" || die "No build-$N.json in $SERVE_DIR."
-  else curl -fsSL -o "$ENTRY" "$(entry_url "$N")" || die "Build $N has no published entry ($(entry_url "$N"))."; fi
   ARGS=(manifest --app-id "$APP_ID" --channel "$CHANNEL" --out "$UPD/$CHANNEL-manifest-v1.json" --base "$PUBLISHED")
-  if [ -n "$TARGETS" ]; then
-    for id in ${TARGETS//,/ }; do
-      if [ -n "$ROLLBACK_TO" ]; then ARGS+=(--target-pin "$id=$ENTRY"); else ARGS+=(--target "$id=$ENTRY"); fi
-    done
-  else
-    ARGS+=(--default "$ENTRY"); if [ -n "$ROLLBACK_TO" ]; then ARGS+=(--pin); fi
+  N="$ROLLBACK_TO$PROMOTE"
+  if [ -n "$N" ]; then
+    ENTRY="$UPD/build-$N.json"
+    if [ "$VARIANT" = test ]; then cp "$(entry_url "$N")" "$ENTRY" || die "No build-$N.json in $SERVE_DIR."
+    else curl -fsSL -o "$ENTRY" "$(entry_url "$N")" || die "Build $N has no published entry ($(entry_url "$N"))."; fi
+    if [ -n "$ROLLBACK_TO" ]; then
+      # A copy whose database is newer than build N knows skips the rollback (schema_too_new).
+      OLD_SCHEMA="$(node -p 'require(process.argv[1]).dbSchema ?? 0' "$ENTRY")"
+      NOW_SCHEMA="$(node -p 'require(process.argv[1]).dbSchema ?? 0' "$PUBLISHED")"
+      if [ "$OLD_SCHEMA" -lt "$NOW_SCHEMA" ]; then
+        say "WARNING: build $N knows migrations up to $OLD_SCHEMA, the published build up to $NOW_SCHEMA."
+        say "         Every Mac that ran a build with a newer migration will skip this rollback (schema_too_new)."
+        say "         Publish a fix as a new build instead, or --block the bad build with that fix."
+      fi
+    fi
+    if [ -n "$TARGETS" ]; then
+      for id in ${TARGETS//,/ }; do
+        if [ -n "$ROLLBACK_TO" ]; then ARGS+=(--target-pin "$id=$ENTRY"); else ARGS+=(--target "$id=$ENTRY"); fi
+      done
+    else
+      ARGS+=(--default "$ENTRY"); if [ -n "$ROLLBACK_TO" ]; then ARGS+=(--pin); fi
+    fi
+    BUILD="$N"
   fi
+  if [ -n "$UNTARGET" ]; then ARGS+=(--untarget "$UNTARGET"); fi
   if [ -n "$BLOCK" ]; then ARGS+=(--block "$BLOCK"); fi
+  if [ -n "$UNBLOCK" ]; then ARGS+=(--unblock "$UNBLOCK"); fi
   if [ -n "$NOTES_TEXT" ]; then ARGS+=(--notes "$NOTES_TEXT"); fi
   node tools/update-tool.mjs "${ARGS[@]}"
-  BUILD="$N"
   sign_and_check "$UPD/$CHANNEL-manifest-v1.json"
   deliver "$UPD/$CHANNEL-manifest-v1.json"
   rm -rf "$UPD_KEEP"
   exit 0
-fi
-
-# ── the study bundle: in a study build, and in no other ─────────────────────
-# electron-builder copies study/keys.json into Resources/study whenever it exists, so an ordinary
-# build refuses to start with one lying there, and a study build removes its copy when it ends.
-STUDY_DEST="$APP_DIR/study/keys.json"
-# A preloaded copy's code (src/main/study/service.ts, `unlockPreloaded`), under the same rule.
-PRELOAD_DEST="$APP_DIR/study/preload.txt"
-[ -z "$PRELOAD_SLOT" ] || [ -n "$STUDY_BUNDLE" ] || die "--preload is for a study build: pass --study too."
-if [ -n "$STUDY_BUNDLE" ]; then
-  [ -z "$TAG" ] || die "A study build carries participants' sealed keys: it is never published. Drop --publish."
-  [ -f "$STUDY_BUNDLE" ] || die "No study bundle at $STUDY_BUNDLE."
-  node -e "const b=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if (b.format!=='chattered-study-keys'||!b.slots||!Object.keys(b.slots).length) process.exit(1)" "$STUDY_BUNDLE" \
-    || die "$STUDY_BUNDLE is not a study bundle (npm run study:keys makes one)."
-  STUDY_SLOTS="$(node -p "Object.keys(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).slots).length" "$STUDY_BUNDLE")"
-  PRELOAD_CODE=""
-  if [ -n "$PRELOAD_SLOT" ]; then
-    [[ "$PRELOAD_SLOT" =~ ^[0-9]{1,3}$ ]] || die "--preload takes a slot number, not $PRELOAD_SLOT."
-    PRELOAD_SLOT="$(printf '%02d' "$((10#$PRELOAD_SLOT))")"
-    CODES_FILE="${CODES_FILE:-$(dirname "$STUDY_BUNDLE")/codes.csv}"
-    [ -f "$CODES_FILE" ] || die "No codes file at $CODES_FILE (pass --codes)."
-    PRELOAD_CODE="$(awk -F, -v s="$PRELOAD_SLOT" '$1 == s { print $2 }' "$CODES_FILE" | tr -d '[:space:]')"
-    [ -n "$PRELOAD_CODE" ] || die "Slot $PRELOAD_SLOT is not in $CODES_FILE."
-  fi
-  cp "$STUDY_BUNDLE" "$STUDY_DEST"
-  trap 'rm -f "$STUDY_DEST" "$PRELOAD_DEST"' EXIT
-  if [ -n "$PRELOAD_CODE" ]; then
-    ( umask 022; printf '%s\n' "$PRELOAD_CODE" > "$PRELOAD_DEST" )
-    say "Study build: $STUDY_SLOTS participant slot(s) sealed in; slot $PRELOAD_SLOT preloaded."
-  else
-    say "Study build: $STUDY_SLOTS participant slot(s) sealed in."
-  fi
-elif [ -e "$STUDY_DEST" ] || [ -e "$PRELOAD_DEST" ]; then
-  die "$APP_DIR/study holds a key bundle or a preloaded code, and an ordinary build must not carry either. Remove it, or pass --study."
-fi
-
-if [ -n "$TAG" ]; then
-  command -v gh >/dev/null || die "gh is not installed."
-  [ -z "$(git status --porcelain -- .)" ] || die "app/ has uncommitted or untracked changes; commit them before publishing."
-  [ "${TAG#v}" = "$VERSION" ] || die "Tag $TAG does not match package.json version $VERSION."
-elif [ -n "$(git status --porcelain -- .)" ]; then
-  say "warning: app/ has uncommitted changes — this build is not a commit anyone can reproduce."
 fi
 
 # ── build ─────────────────────────────────────────────────────────────────────
@@ -456,6 +445,8 @@ if [ "$UPDATE" = 1 ]; then
     ARGS+=(--default "$ENTRY")
   fi
   if [ -n "$BLOCK" ]; then ARGS+=(--block "$BLOCK"); fi
+  if [ -n "$UNBLOCK" ]; then ARGS+=(--unblock "$UNBLOCK"); fi
+  if [ -n "$UNTARGET" ]; then ARGS+=(--untarget "$UNTARGET"); fi
   if [ -n "$NOTES_TEXT" ]; then ARGS+=(--notes "$NOTES_TEXT"); fi
   node tools/update-tool.mjs "${ARGS[@]}"
   sign_and_check "$UPD/$CHANNEL-manifest-v1.json"

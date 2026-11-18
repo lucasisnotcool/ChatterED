@@ -293,8 +293,8 @@ async function main() {
   await waitFor(`${B + 1} back`, (e, i) => i >= n && e.event === 'app.start' && e.build === B + 1, 60000);
   await waitFor('update.rolled_back', (e, i) => i >= n && e.event === 'update.rolled_back' && e.to === B + 1, 30000);
   if (plist(INST, 'CFBundleVersion') !== String(B + 1)) fail('the installed bundle is not N+1 after the rollback');
-  const state = JSON.parse(readFileSync(join(UPD, 'state.json'), 'utf8'));
-  if (!state.badBuilds.includes(B + 2)) fail('N+2 is not marked bad');
+  const state = JSON.parse(readFileSync(join(UPD, 'launch.json'), 'utf8'));
+  if (!(state.badBuilds ?? []).includes(B + 2)) fail('N+2 is not marked bad');
   await waitFor(`${B + 1} to refuse ${B + 2}`, (e, i) => i >= n && e.event === 'update.check' && e.result === 'known_bad', 60000);
   say(`rolled back: ${B + 2} → ${B + 1}; ${B + 2} marked bad and not fetched again`);
 

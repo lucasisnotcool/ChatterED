@@ -81,6 +81,7 @@ import { registerResearchIpc, trialGate } from './research/ipc.js';
 // The study build (`shared/study.ts`): a participant code unlocks a sealed key and a fixed credit.
 import { StudyService } from './study/service.js';
 import { persistStudyBundle, registerStudyIpc, resolveBundlePath } from './study/ipc.js';
+import { workStarted } from './update/runtime.js';
 import { STUDY_IPC } from '../shared/study.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
 // Notebooks (`docs/research/notebooks.md`, 2026-10-01): the service, its host and its channels.
@@ -427,7 +428,19 @@ export class AppService {
       ...(material ? { material } : {}),
     });
     // The study build's credit stops a call before it is made, not after (`main/study/service.ts`).
-    return this.#study.guard(client, resolved.kind);
+    const guarded = this.#study.guard(client, resolved.kind);
+    // An idle relaunch for an update waits while a call is in flight (`update/runtime.ts`).
+    return {
+      kind: guarded.kind,
+      complete: async (request, onDelta, signal) => {
+        const done = workStarted();
+        try {
+          return await guarded.complete(request, onDelta, signal);
+        } finally {
+          done();
+        }
+      },
+    };
   }
 
   get study(): StudyService {
@@ -1256,7 +1269,13 @@ export class AppService {
             throw new Error(`Refused: this request did not come from the ChatterED window (${from}).`);
           }
           gate.assert(channel); // nothing but the trial's own channels before consent
-          return await fn(payload);
+          // A request in flight (a tutorial read is one long one) holds off an idle relaunch.
+          const done = workStarted();
+          try {
+            return await fn(payload);
+          } finally {
+            done();
+          }
         } catch (err) {
           log().error('ipc.error', {
             channel,
