@@ -80,7 +80,7 @@ import { outcomesRepo } from './db/repos/outcomes.js';
 import { registerResearchIpc, trialGate } from './research/ipc.js';
 // The study build (`shared/study.ts`): a participant code unlocks a sealed key and a fixed credit.
 import { StudyService } from './study/service.js';
-import { registerStudyIpc, resolveBundlePath } from './study/ipc.js';
+import { persistStudyBundle, registerStudyIpc, resolveBundlePath } from './study/ipc.js';
 import { STUDY_IPC } from '../shared/study.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
 // Notebooks (`docs/research/notebooks.md`, 2026-10-01): the service, its host and its channels.
@@ -247,7 +247,10 @@ export class AppService {
       db: deps.db,
       settings: deps.store.settings,
       anthropicKey: this.#apiKey,
-      bundlePath: deps.studyBundlePath === undefined ? studyBundlePath() : deps.studyBundlePath,
+      ...(deps.studyBundlePath === undefined
+        ? persistStudyBundle(studyBundlePath(), deps.userDataDir)
+        : { bundlePath: deps.studyBundlePath }),
+      onBundleMissing: () => log().warn('study.bundle_missing', {}),
       onChanged: (status) => this.#d.getWindow()?.webContents.send(STUDY_IPC.changed, status),
     });
     this.#cost = new CostLedger({

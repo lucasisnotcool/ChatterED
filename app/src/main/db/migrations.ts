@@ -17,6 +17,13 @@ export interface MigrationOptions {
    * 014 incident below) never strands their notes. A throw aborts the upgrade before it starts.
    */
   beforeUpgrade?(from: number, to: number): void;
+  /**
+   * The database is newer than every migration this build has: a later build migrated it, and
+   * this one was rolled back or installed over it. It still runs (migrations are expand-only
+   * while the field study runs: add tables and columns, never rebuild or narrow one; see
+   * app/docs/STUDY-RELEASE.md), but the log says so.
+   */
+  onNewer?(current: number, known: number): void;
 }
 
 export function runMigrations(db: SqlDatabase, migrationsDir: string, opts: MigrationOptions = {}): number {
@@ -30,7 +37,9 @@ export function runMigrations(db: SqlDatabase, migrationsDir: string, opts: Migr
     if (!Number.isFinite(version)) throw new Error(`Migration ${file} must start with a 3-digit version`);
     return version;
   };
-  const target = files.reduce((max, f) => Math.max(max, versionOf(f)), current);
+  const known = files.reduce((max, f) => Math.max(max, versionOf(f)), 0);
+  if (current > known) opts.onNewer?.(current, known);
+  const target = Math.max(known, current);
   if (current > 0 && target > current) opts.beforeUpgrade?.(current, target);
 
   let applied = current;

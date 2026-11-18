@@ -5,7 +5,7 @@
  * timer's 1 s tick, the orchestrator, the ledger and the SQLite file. The renderer is a view
  * (architecture-mac.md §B.1, §C.1).
  */
-import { app, BrowserWindow, dialog, nativeImage, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, powerSaveBlocker, session, shell } from 'electron';
 import { basename, join } from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { release } from 'node:os';
@@ -22,6 +22,9 @@ import { defaultLogDir, errorClass, fileSink, initLogger, log, type LogLevel } f
 import { appEntryUrl, guardWindow, installAppGuards, isTrustedSender } from './security.js';
 import { CrashBudget, isCrash } from './crash.js';
 import { onIntervalActivity } from './clock.js';
+import { faultActive, runtime } from './update/runtime.js';
+import { startupFailed } from './update/failure.js';
+import { recordBuild, BUILD_HISTORY_SETTING } from './buildhistory.js';
 
 /** Release review P1-11. A constant so `renderer.ready` logs what the window was built with. */
 const RENDERER_SANDBOX = true;
@@ -71,6 +74,8 @@ function devIcon(): Electron.NativeImage | null {
 function createWindow(): BrowserWindow {
   const icon = devIcon();
   const win = new BrowserWindow({
+    // A smoke launch of a staged update (`bootstrap.ts`) loads everything but is never seen.
+    show: !runtime().smoke,
     width: 1320,
     height: 860,
     minWidth: 1040,
@@ -192,8 +197,11 @@ function watchRenderer(win: BrowserWindow): void {
       .executeJavaScript("typeof window.chattered === 'object' && window.chattered !== null", true)
       .then((bridge: unknown) => {
         const fields = { sandbox: RENDERER_SANDBOX, bridge: bridge === true };
-        if (bridge === true) log().info('renderer.ready', fields);
-        else log().error('renderer.no_bridge', fields);
+        if (bridge === true) {
+          log().info('renderer.ready', fields);
+          // The updater's healthy mark (and, in a smoke launch, the ok file and exit).
+          runtime().rendererReady();
+        } else log().error('renderer.no_bridge', fields);
       })
       .catch((err: unknown) => log().warn('renderer.probe_failed', { cause: (err as Error).message }));
   });
@@ -272,9 +280,14 @@ function bootLog(): void {
   initLogger({
     sink: fileSink(logDir()),
     level,
-    base: { v: app.getVersion(), packaged: app.isPackaged },
+    // Every line says which build wrote it, so an export can tell sessions on different builds apart.
+    base: { v: app.getVersion(), build: runtime().build, sha: runtime().sha, packaged: app.isPackaged },
   });
   log().info('app.start', {
+    build: runtime().build,
+    sha: runtime().sha,
+    channel: runtime().channel,
+    updates: runtime().disabledReason ?? 'on',
     electron: process.versions.electron,
     node: process.versions.node,
     platform: `${process.platform} ${release()}`,
@@ -298,21 +311,42 @@ export function logDir(): string {
 }
 
 function boot(): void {
+  // Test variant only (`update/baked.ts`): the E2E campaign's deliberately bad builds.
+  if (faultActive('hang-boot')) for (;;) {
+    /* hang, as a real deadlock would */
+  }
   const dir = dataDir();
   const db = openDatabase(join(dir, 'app.db'));
+  if (faultActive('fail-migration')) throw new Error('test fault: a migration failed');
   // An update's first launch copies the database before it touches the schema (release review
   // P1-4): a migration that fails on a real learner's rows must never strand their notes.
   runMigrations(db, join(__dirname, 'db/migrations'), {
     beforeUpgrade: (from, to) => {
-      const file = backupDatabase(db, dir, from);
+      let file: string;
+      try {
+        file = backupDatabase(db, dir, from);
+      } catch (err) {
+        // No backup (a full disk, usually): do not migrate. failBoot hands over to repair mode,
+        // which rolls this build back to the kept previous one rather than strand the notes.
+        log().error('db.backup_failed', { from, to, cause: (err as Error).message });
+        throw err;
+      }
       log().info('db.backup', { from, to, file: basename(file) });
     },
+    onNewer: (current, known) => log().warn('db.newer_than_build', { current, known, build: runtime().build }),
   });
   // Migration 032's columns and 034's table, if a build with a later migration but not these
   // reached this database first (the runner would then skip them for good). A no-op elsewhere.
   const added = ensureResearchExcludeColumns(db);
   if (added.length > 0) log().warn('db.research_exclude_columns_added', { tables: added });
   const store = createStore(db);
+  // Which builds this install has run, kept in the database so it outlives log rotation and goes
+  // into the research export's manifest (`app.builds`).
+  try {
+    recordBuild(store.settings, { build: runtime().build, sha: runtime().sha, at: new Date().toISOString() });
+  } catch (err) {
+    log().warn('app.build_history_failed', { cause: (err as Error).message, key: BUILD_HISTORY_SETTING });
+  }
 
   // Before any window exists, so its webContents is covered from the first event.
   const entry = appUrl();
@@ -334,6 +368,8 @@ function boot(): void {
     isTrustedSender: (event) => isTrustedSender(event, entry),
   });
   service.register();
+  // "Updated to build N", once, for the renderer's small note (`UpdateNote.svelte`).
+  ipcMain.handle(IPC.updateNote, (event) => (isTrustedSender(event, entry) ? runtime().takeNote() : null));
   // What this install spent before there was a ledger. Once per launch, idempotent, swallowed
   // on failure — see `AppService.backfillCost`.
   service.backfillCost();
@@ -367,7 +403,7 @@ function boot(): void {
   // Warm the Claude CLI detection cache in the background. The probe costs one real Haiku
   // round trip, so it must never sit on the critical path of a launch or a turn (issue #19);
   // it is cached in the settings table and re-used until the learner presses "Check again".
-  void service.detectCli().catch(() => undefined);
+  if (!runtime().smoke) void service.detectCli().catch(() => undefined);
 }
 
 /**
@@ -382,12 +418,9 @@ function failBoot(err: unknown): void {
   } catch {
     /* no log either; the dialog is all there is */
   }
-  dialog.showErrorBox(
-    'ChatterED could not start',
-    `${message}\n\nNothing has been deleted. The log, which says more, is in:\n${logDir()}\n\n` +
-      'Use it with Help ▸ Report a Problem on the next launch, or send it with a note of what happened.',
-  );
-  app.exit(1);
+  // Repair mode (`update/failure.ts`): check for a fix and swap it in, or roll back, while one
+  // dialog offers Copy debug info. It ends in app.exit; it never leaves a running app behind.
+  void startupFailed(message, logDir()).catch(() => app.exit(1));
 }
 
 /**

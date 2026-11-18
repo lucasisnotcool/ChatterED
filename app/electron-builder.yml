@@ -58,6 +58,10 @@ extraResources:
     to: LICENSE.electron.txt
   - from: node_modules/electron/dist/LICENSES.chromium.html
     to: LICENSES.chromium.html
+  # The update helper's atomic swap (renamex_np RENAME_SWAP), built from build/swap-bundle.c by
+  # scripts/build-swap.mjs during `npm run build` (src/main/update/plan.ts, SWAP_SCRIPT).
+  - from: build/bin/chattered-swap
+    to: chattered-swap
   # The search embedding model (EmbeddingGemma-300m q4, ~200 MB), bundled so search works
   # offline from first launch; never downloaded at runtime. scripts/fetch-model.mjs puts it in
   # models/ (gitignored) during `npm run build`, checking every file's sha256. Its NOTICE and

@@ -1636,6 +1636,9 @@ export function createMockBridge(): ChatterEdApi {
     async logStudyEvent(): Promise<void> {
       /* No main.log in the mock. */
     },
+    async updateNote(): Promise<{ from: number; to: number } | null> {
+      return null;
+    },
     async openLogFolder(): Promise<void> {
       /* No Finder in the mock. */
     },

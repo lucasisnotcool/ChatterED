@@ -11,7 +11,7 @@
  * `app.db` with the backup, relaunch.
  */
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { SqlDatabase } from './driver.js';
 
 export const BACKUP_DIR_NAME = 'backups';
@@ -36,16 +36,21 @@ export function backupDatabase(
   const path = join(dir, backupFileName(fromVersion, opts.now ?? new Date()));
   // SQLite string literal: the only character to escape is the quote itself.
   db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
-  pruneBackups(dir, opts.keep ?? BACKUPS_KEPT);
+  pruneBackups(dir, opts.keep ?? BACKUPS_KEPT, basename(path));
   return path;
 }
 
-/** Deletes all but the newest `keep` backups. The time is in the name, so the name order is it. */
-export function pruneBackups(dir: string, keep: number): string[] {
+/**
+ * Deletes all but the newest `keep` backups. The time is in the name, so the name order is it,
+ * except for `justWritten`, which is always kept: with a clock that was ahead and then corrected,
+ * the backup just taken would otherwise sort oldest and be deleted at once.
+ */
+export function pruneBackups(dir: string, keep: number, justWritten?: string): string[] {
   const ours = readdirSync(dir)
-    .filter((f) => f.startsWith(PREFIX) && f.endsWith('.db'))
+    .filter((f) => f.startsWith(PREFIX) && f.endsWith('.db') && f !== justWritten)
     .sort((a, b) => stamp(a).localeCompare(stamp(b)));
-  const drop = ours.slice(0, Math.max(0, ours.length - keep));
+  const room = Math.max(0, keep - (justWritten ? 1 : 0));
+  const drop = ours.slice(0, Math.max(0, ours.length - room));
   for (const f of drop) rmSync(join(dir, f), { force: true });
   return drop;
 }

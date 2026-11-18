@@ -69,6 +69,8 @@ const KEY_SHAPED = /sk-ant-[A-Za-z0-9_-]{8,}/g;
 const OPENAI_KEY_SHAPED = /\bsk-(?!ant-\[redacted\])[A-Za-z0-9_-]{16,}/g;
 const GOOGLE_KEY_SHAPED = /\bAIza[0-9A-Za-z_-]{20,}/g;
 const BEARER = /\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+/** A study code (`S07-K3QX-9MZT-4HRA`): it opens a participant's key, so it is never written either. */
+const STUDY_CODE = /\bS\d{2,3}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}\b/g;
 const KEY_PARAM = /\b(x-goog-api-key|x-api-key|api[_-]?key|key)(["']?\s*[:=]\s*["']?)(?!\[redacted\])[A-Za-z0-9._~+/-]{12,}/gi;
 
 /** Exported for the one other place free text from a child process is put into an error. */
@@ -78,7 +80,8 @@ export function scrub(value: string): string {
     .replace(OPENAI_KEY_SHAPED, 'sk-[redacted]')
     .replace(GOOGLE_KEY_SHAPED, 'AIza[redacted]')
     .replace(BEARER, '$1 [redacted]')
-    .replace(KEY_PARAM, '$1$2[redacted]');
+    .replace(KEY_PARAM, '$1$2[redacted]')
+    .replace(STUDY_CODE, 'S..-[redacted]');
   return clean.length > MAX_VALUE ? `${clean.slice(0, MAX_VALUE)}…` : clean;
 }
 

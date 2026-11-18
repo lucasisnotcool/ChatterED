@@ -27,6 +27,8 @@ import {
 } from '../../shared/trial.js';
 import { acceptConsent, consentGate, readTrialStatus } from './consent.js';
 import { exportSummary, stageResearchExport, zipDirectory, type ManifestStudy } from './export.js';
+import { readBuildHistory } from '../buildhistory.js';
+import { runtime } from '../update/runtime.js';
 
 export interface ResearchIpcDeps {
   db: SqlDatabase;
@@ -130,6 +132,7 @@ export function registerResearchIpc(deps: ResearchIpcDeps): void {
         consentVersion: status.consentedVersion,
         consentedAt: status.consentedAt,
         appVersion: deps.appVersion,
+        appBuild: { build: runtime().build, sha: runtime().sha, builds: readBuildHistory(deps.settings) },
         platform: { os: process.platform, arch: process.arch, osVersion: macVersion() },
         backend: deps.backendInfo(),
         study: deps.studyInfo?.() ?? null,

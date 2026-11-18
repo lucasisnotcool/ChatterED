@@ -6,3 +6,5 @@ out/
 # The study build's sealed key bundle (app/study/README.md). Never committed.
 study/*
 !study/README.md
+# The atomic swap tool, compiled from build/swap-bundle.c by scripts/build-swap.mjs.
+build/bin/

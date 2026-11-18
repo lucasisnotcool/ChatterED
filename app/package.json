@@ -6,7 +6,7 @@
   "description": "ChatterED — AI-written lecture notes you study with two AI partners, Ellie and Max.",
   "author": "The ChatterED authors",
   "license": "UNLICENSED",
-  "main": "dist/main/index.js",
+  "main": "dist/main/bootstrap.js",
   "type": "commonjs",
   "engines": {
     "node": ">=22.12"
@@ -15,7 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "clean": "node scripts/clean.mjs",
     "build": "npm run clean && npm run models && npm run build:main && npm run build:renderer && npm run notices",
-    "build:main": "tsc -p tsconfig.main.json && node scripts/copy-assets.mjs && node scripts/bundle-preload.mjs",
+    "build:main": "tsc -p tsconfig.main.json && node scripts/copy-assets.mjs && node scripts/bundle-preload.mjs && node scripts/build-swap.mjs",
     "build:renderer": "vite build --sourcemap hidden",
     "notices": "node scripts/third-party-notices.mjs",
     "models": "node scripts/fetch-model.mjs",
@@ -28,6 +28,7 @@
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "release": "bash tools/release.sh",
     "study:keys": "npm run -s build:main && node tools/study-keys.mjs",
+    "update:tool": "node tools/update-tool.mjs",
     "install:local": "bash tools/install-local.sh install",
     "uninstall:local": "bash tools/install-local.sh uninstall-launchd",
     "postinstall": "electron-builder install-app-deps"

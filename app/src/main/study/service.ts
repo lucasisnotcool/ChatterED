@@ -54,8 +54,12 @@ export interface StudyServiceDeps {
   db: SqlDatabase;
   settings: SettingsRepo;
   anthropicKey: ApiKeyStore;
-  /** Where this build's bundle is, or null for an ordinary build. */
+  /** Where the bundle is (the userData copy, else the shipped one), or null for an ordinary build. */
   bundlePath: string | null;
+  /** A preloaded copy's code; by default `preload.txt` beside the bundle. Never copied to userData. */
+  preloadPath?: string | null;
+  /** Logged once when a slot is unlocked but no bundle can be found (`study.bundle_missing`). */
+  onBundleMissing?: () => void;
   now?: () => string;
   /** Pushed whenever the status may have changed. */
   onChanged?: (status: StudyStatus) => void;
@@ -72,6 +76,7 @@ export class StudyService {
   readonly #d: StudyServiceDeps;
   readonly #now: () => string;
   #bundle: StudyBundle | null | undefined;
+  #missingLogged = false;
 
   constructor(deps: StudyServiceDeps) {
     this.#d = deps;
@@ -174,7 +179,8 @@ export class StudyService {
    * is nothing to do.
    */
   unlockPreloaded(): UnlockOutcome | null {
-    const path = this.#d.bundlePath ? join(dirname(this.#d.bundlePath), PRELOAD_FILE) : null;
+    const path =
+      this.#d.preloadPath !== undefined ? this.#d.preloadPath : this.#d.bundlePath ? join(dirname(this.#d.bundlePath), PRELOAD_FILE) : null;
     if (!path || !existsSync(path) || !this.bundle() || this.#d.settings.get(STUDY_SETTINGS.slot)) return null;
     return this.unlock(readFileSync(path, 'utf8').trim());
   }
@@ -202,7 +208,17 @@ export class StudyService {
    * stopped by the study's budget.
    */
   guard(inner: LLMClient, backendKind: string): LLMClient {
-    if (backendKind !== 'anthropic' || !this.bundle()) return inner;
+    if (backendKind !== 'anthropic') return inner;
+    // Guarded whenever a slot was ever unlocked here, bundle or no bundle: the study key stays in
+    // the key file, so a missing bundle must never mean uncapped spending (security review, 2026-11-18).
+    const slot = this.#d.settings.get(STUDY_SETTINGS.slot);
+    if (!this.bundle()) {
+      if (!slot) return inner;
+      if (!this.#missingLogged) {
+        this.#missingLogged = true;
+        this.#d.onBundleMissing?.();
+      }
+    }
     return {
       kind: inner.kind,
       complete: async (request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> => {

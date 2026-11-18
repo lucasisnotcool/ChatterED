@@ -26,6 +26,8 @@
   // The study build (src/shared/study.ts): the code, the credit left, and the sheet when it runs out.
   import StudyUsedUp from './components/study/StudyUsedUp.svelte';
   import { study } from './lib/studystore.svelte.js';
+  // "Updated to build N", once after an update (src/main/update/).
+  import UpdateNote from './components/update/UpdateNote.svelte';
 
   // The study status is read before the main store, so first run knows to ask for a code.
   void trial.whenOpen().then(async () => {
@@ -116,6 +118,7 @@
 {/if}
 <ResearchTrialLayer />
 <StudyUsedUp />
+<UpdateNote />
 {/if}
 
 <style>

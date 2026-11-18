@@ -95,6 +95,8 @@ export const IPC = {
   logRendererError: 'app:logRendererError',
   /** renderer → main: a field-study event (`shared/studylog.ts`), checked and written to `main.log`. */
   logStudyEvent: 'app:logStudyEvent',
+  /** renderer → main, once at start: "Updated to build N" if this is a new build's first launch (`main/update/`). */
+  updateNote: 'app:updateNote',
   /** Settings ▸ Open log folder / Copy diagnostics. */
   openLogFolder: 'app:openLogFolder',
   diagnostics: 'app:diagnostics',
@@ -304,6 +306,8 @@ export interface ChatterEdApi {
    * `studyEvent` and drops anything else; ids and counts only, never text.
    */
   logStudyEvent(input: StudyEvent): Promise<void>;
+  /** `{ from, to }` once after an update, else null. */
+  updateNote(): Promise<{ from: number; to: number } | null>;
   /** Settings ▸ **Open log folder**: reveals `~/Library/Logs/ChatterED` in Finder. */
   openLogFolder(): Promise<void>;
   /** Settings ▸ **Copy diagnostics**: version, build, backend, models and the last 50 log lines. */

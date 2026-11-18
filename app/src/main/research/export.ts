@@ -74,7 +74,11 @@ export interface ResearchManifest {
   participantId: string;
   consent: { version: number | null; consentedAt: string | null; currentVersion: number };
   exportedAt: string;
-  app: { version: string; schemaVersion: number };
+  /**
+   * `build`/`sha`: the build that made this export. `builds`: every build this install has run and
+   * when each first launched (`main/buildhistory.ts`), so a session's build can be told from its time.
+   */
+  app: { version: string; schemaVersion: number; build?: number; sha?: string; builds?: { build: number; sha: string; firstLaunchAt: string }[] };
   platform: { os: string; arch: string; osVersion: string };
   backend: { kind: string; models: Record<string, string> };
   anonymisation: {
@@ -123,6 +127,7 @@ export interface ResearchExportDeps {
   consentVersion: number | null;
   consentedAt: string | null;
   appVersion: string;
+  appBuild?: { build: number; sha: string; builds: { build: number; sha: string; firstLaunchAt: string }[] };
   platform: { os: string; arch: string; osVersion: string };
   backend: { kind: string; models: Record<string, string> };
   study?: ManifestStudy | null;
@@ -239,7 +244,11 @@ export async function stageResearchExport(deps: ResearchExportDeps): Promise<Sta
     participantId: deps.participantId,
     consent: { version: deps.consentVersion, consentedAt: deps.consentedAt, currentVersion: CONSENT_VERSION },
     exportedAt: deps.now.toISOString(),
-    app: { version: deps.appVersion, schemaVersion: schema },
+    app: {
+      version: deps.appVersion,
+      schemaVersion: schema,
+      ...(deps.appBuild ? { build: deps.appBuild.build, sha: deps.appBuild.sha, builds: deps.appBuild.builds } : {}),
+    },
     platform: deps.platform,
     backend: { kind: deps.backend.kind, models: { ...deps.backend.models } },
     anonymisation: {
