@@ -543,8 +543,21 @@ async function readSheet(
       if (images === 0) repo.setIngest(docId, { withImages: true }, nowOf(deps));
       images += shown.length;
     }
-    const first = await ask(w, shown, false);
-    if (!wholeAnswer(first)) throw new WindowTruncated('malformed');
+    // A reply that is not a whole answer, and was not cut off (3 characters back, on a resume),
+    // is asked once more before the window is cut smaller or given up as a notice.
+    const askWhole = async (again: boolean): Promise<Record<string, unknown>> => {
+      const got = await ask(w, shown, again);
+      if (!wholeAnswer(got)) throw new WindowTruncated('malformed');
+      return got;
+    };
+    let first: Record<string, unknown>;
+    try {
+      first = await askWhole(false);
+    } catch (err) {
+      if (!(err instanceof WindowTruncated) || err.reason !== 'malformed') throw err;
+      log().warn('tutorial.window.malformed', { doc_id: docId, from: w.from, to: w.to, depth: w.depth });
+      first = await askWhole(false);
+    }
     let raw: Record<string, unknown> = first;
     // Nothing copied from pages that have words on them (or that are pictures with no text layer,
     // a scan): asked once more, and empty again is a notice. Blank pages may come back empty.
@@ -553,8 +566,7 @@ async function readSheet(
     if ((raw.blocks as unknown[]).length === 0 && shouldHaveWords) {
       emptyRetries += 1;
       log().warn('tutorial.window.empty', { doc_id: docId, from: w.from, to: w.to, chars: ownText, images: shown.length });
-      const second = await ask(w, shown, true);
-      if (!wholeAnswer(second)) throw new WindowTruncated('malformed');
+      const second = await askWhole(true);
       if ((second.blocks as unknown[]).length === 0) throw new WindowEmpty();
       raw = second;
     }
@@ -578,7 +590,8 @@ async function readSheet(
   };
 
   if (plan.length > 1) {
-    repo.setIngest(docId, { windowsDone: 0, windowsTotal: plan.length }, nowOf(deps));
+    // Progress is in pages from its first frame ("0 of 11 pages read"), as `readWindows` counts it.
+    repo.setIngest(docId, { windowsDone: 0, windowsTotal: pageCount }, nowOf(deps));
     pushView(deps, notebookId, source.fileId);
   }
   let total = plan.length;
@@ -594,6 +607,8 @@ async function readSheet(
         progress.splits += 1;
         log().warn('tutorial.window.split', { doc_id: docId, from: w.from, to: w.to, depth: w.depth, reason });
       },
+      // Every page given up on is in the log: its kind and its pages, never its words.
+      notice: (n) => log().warn('tutorial.window.notice', { doc_id: docId, from: n.from, to: n.to, reason: n.reason }),
     });
     const notices = [...outcome.notices];
     if (filePages > pageCount) {

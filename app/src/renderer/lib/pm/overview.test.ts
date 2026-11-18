@@ -101,7 +101,7 @@ describe('the note slot', () => {
 
   it('is not drawn on a tutorial sheet\'s own words, but is on a hint line that cites the lecture', () => {
     const para = (reason: string) => notesSchema.nodes.paragraph!.create({ blockId: 'b_x', pages: [60], reason, objectiveIds: [] }, notesSchema.text('x'));
-    for (const reason of ['sheet', 'sheet_admin', 'sheet_part', 'answer_slot']) expect(showsChip(para(reason))).toBe(false);
+    for (const reason of ['sheet', 'sheet_admin', 'sheet_part', 'answer_slot', 'earlier_answers']) expect(showsChip(para(reason))).toBe(false);
     expect(showsChip(para('tutor_hint'))).toBe(true);
   });
 });

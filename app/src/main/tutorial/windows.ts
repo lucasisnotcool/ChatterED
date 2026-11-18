@@ -199,7 +199,11 @@ export function wholeAnswer(raw: unknown): raw is Record<string, unknown> {
 export async function readWindows(
   plan: readonly SheetWindow[],
   read: (w: SheetWindow) => Promise<Record<string, unknown>>,
-  hooks: { progress?(done: number, total: number): void; split?(w: SheetWindow, reason: WindowTruncated['reason']): void } = {},
+  hooks: {
+    progress?(done: number, total: number): void;
+    split?(w: SheetWindow, reason: WindowTruncated['reason']): void;
+    notice?(n: WindowNotice): void;
+  } = {},
   concurrency = WINDOW_CONCURRENCY,
 ): Promise<ReadOutcome> {
   const reads: WindowRead[] = [];
@@ -216,7 +220,9 @@ export async function readWindows(
     hooks.progress?.(done, total);
   };
   const notice = (w: SheetWindow, reason: WindowNotice['reason']): void => {
-    notices.push({ from: w.from, to: w.to, reason });
+    const n = { from: w.from, to: w.to, reason };
+    notices.push(n);
+    hooks.notice?.(n);
     settle(w);
   };
   const one = async (w: SheetWindow): Promise<void> => {
@@ -512,7 +518,8 @@ export function mergeWindowReads(
   const placeNotices = (beforePage: number): void => {
     while (noticesLeft.length > 0 && noticesLeft[0]![0]!.from <= beforePage) {
       const group = noticesLeft.shift()!;
-      blocks.push({ type: 'paragraph', page: group[0]!.from, text: noticeText(group, pageCount), admin: true });
+      // Never `admin`: housekeeping is folded under "Course admin", and a notice must be seen.
+      blocks.push({ type: 'paragraph', page: group[0]!.from, text: noticeText(group, pageCount) });
     }
   };
   for (const item of items.filter(kept)) {

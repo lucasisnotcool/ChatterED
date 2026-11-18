@@ -74,9 +74,10 @@ export function hasToolbar(node: Node): boolean {
 /**
  * A tutorial sheet's own blocks cite the sheet they are in: the page is where the learner already
  * is, and a chip naming the file on every part card was noise sitting on the card's edge (Lucas,
- * 4 Oct 2026). A hint line keeps its chip: it cites the lecture.
+ * 4 Oct 2026). A hint line keeps its chip: it cites the lecture. The "Earlier answers" heading a
+ * re-read adds is the app's own, and its reason is never shown as "added: earlier_answers".
  */
-const SHEET_REASONS = new Set(['sheet', 'sheet_admin', 'sheet_part', 'answer_slot']);
+const SHEET_REASONS = new Set(['sheet', 'sheet_admin', 'sheet_part', 'answer_slot', 'earlier_answers']);
 
 /** Does this block get a provenance chip? Every block with an id, except the overview's scaffolding and a sheet's own words. */
 export function showsChip(node: Node): boolean {

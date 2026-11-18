@@ -45,24 +45,57 @@ export interface CostSink {
   record(input: RecordInput): unknown;
 }
 
-export function costedClient(inner: LLMClient, sink: CostSink | null, logger: () => Logger = log): LLMClient {
+/** Tests: how often an answer being written updates its in-flight row, and the clock. */
+export interface CostedClientOptions {
+  tickMs?: number;
+  now?: () => number;
+}
+
+/** How often an in-flight row is brought up to date while its answer is being written. */
+export const INFLIGHT_TICK_MS = 3_000;
+
+export function costedClient(inner: LLMClient, sink: CostSink | null, logger: () => Logger = log, opts: CostedClientOptions = {}): LLMClient {
   if (sink === null) return inner;
+  const now = opts.now ?? Date.now;
   return {
     kind: inner.kind,
     async complete(request: LlmRequest, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<LlmResult> {
-      const startedAt = Date.now();
-      // Billed per request: counted from the moment it is sent (see `recordInFlight`).
-      const inflight = inner.kind === 'anthropic' ? recordInFlight(request, inner.kind) : null;
-      if (inflight) write(() => sink.record(inflight));
-      const replaces = inflight ? { replaces: inflight.id } : {};
+      const startedAt = now();
+      // Billed per request: counted from the moment it is sent (see `recordInFlight`), and its
+      // output estimated as it is written, so a quit mid-answer is not counted as free.
+      let inflight = inner.kind === 'anthropic' ? recordInFlight(request, inner.kind) : null;
+      if (inflight) write(() => sink.record(inflight!));
+      let firstTokenAt = 0;
+      let streamed = 0;
+      let ticker: ReturnType<typeof setInterval> | null = null;
+      const tick = (): void => {
+        if (!inflight || firstTokenAt === 0) return;
+        const next = recordInFlight(request, inner.kind, { writingMs: now() - firstTokenAt, streamedChars: streamed });
+        const previous = inflight.id;
+        inflight = next;
+        write(() => sink.record({ ...next, replaces: previous }));
+      };
+      const watch = inflight
+        ? (text: string): void => {
+            streamed += text.length;
+            if (firstTokenAt === 0) {
+              firstTokenAt = now();
+              ticker = setInterval(tick, opts.tickMs ?? INFLIGHT_TICK_MS);
+              ticker.unref?.();
+            }
+            onDelta?.(text);
+          }
+        : onDelta;
       let result: LlmResult;
       try {
-        result = await inner.complete(request, onDelta, signal);
+        result = await inner.complete(request, watch, signal);
       } catch (err) {
-        write(() => sink.record({ ...recordForFailure(request, err, inner.kind, Date.now() - startedAt), ...replaces }));
+        if (ticker) clearInterval(ticker);
+        write(() => sink.record({ ...recordForFailure(request, err, inner.kind, now() - startedAt), ...(inflight ? { replaces: inflight.id } : {}) }));
         throw err;
       }
-      write(() => sink.record({ ...recordFor(request, result, inner.kind, Date.now() - startedAt), ...replaces }));
+      if (ticker) clearInterval(ticker);
+      write(() => sink.record({ ...recordFor(request, result, inner.kind, now() - startedAt), ...(inflight ? { replaces: inflight.id } : {}) }));
       return result;
 
       /** A failed accounting write must never cost the learner their turn. See the header. */
@@ -112,21 +145,42 @@ export function recordFor(request: LlmRequest, result: LlmResult, kind: CostBack
   };
 }
 
-/** About this many characters of prompt make one input token (an estimate, for a call cut off). */
-export const CHARS_PER_TOKEN = 3.5;
-/** What one page image costs as input, about (a 1,100-pixel JPEG). */
+/**
+ * About this many characters of prompt make one input token, for a call cut off: on the low side,
+ * so the estimate errs high. JSON, code and schemas run nearer 3 characters a token than prose's
+ * 4, and the API's live test (2026-11-19) measured 17,944 tokens where 3.5 estimated 13,669.
+ */
+export const CHARS_PER_TOKEN = 2.6;
+/** What one page image costs as input at most: the API scales an image to about 1,600 tokens. */
 export const TOKENS_PER_IMAGE = 1_600;
+/** How fast an answer is written, generously, for one cut off after it began (Sonnet runs 50–80). */
+export const OUTPUT_TOKENS_PER_SECOND = 100;
+/** The thinking headroom a schema call may spend on top of `max_tokens` (`anthropic.ts`). */
+const OUTPUT_HEADROOM = 2_000;
 
 /**
  * **A call counted before it answers** (field-study API test, 2026-11-18: quitting during a
  * tutorial read left 41 requests billed and 39 recorded). A row is written as the request goes
  * out, with its input estimated from the prompt's size and its images, outcome `error` and
- * `source: 'inflight'`; the call's real row replaces it when it ends, either way. A row still
+ * `source: 'inflight'`; once the answer begins, the row is brought up to date every few seconds
+ * with an output estimate (`writing`); the call's real row replaces it when it ends, either way. A row still
  * in flight when the app quits stays, so the study credit counts what Anthropic will bill for the
  * input it was sent. Only on the API: the CLI is not billed per request, and its killed calls
  * already carry what they reported.
  */
-export function recordInFlight(request: LlmRequest, kind: CostBackend): RecordInput & { id: string } {
+export function recordInFlight(
+  request: LlmRequest,
+  kind: CostBackend,
+  writing: { writingMs: number; streamedChars: number } | null = null,
+): RecordInput & { id: string } {
+  // Once the answer has begun: the time it has been writing at a generous rate, or what has been
+  // streamed, whichever is more, never more than the call may write.
+  const output = writing
+    ? Math.min(
+        request.max_tokens + OUTPUT_HEADROOM,
+        Math.max(Math.ceil((writing.writingMs / 1000) * OUTPUT_TOKENS_PER_SECOND), Math.ceil(writing.streamedChars / CHARS_PER_TOKEN)),
+      )
+    : 0;
   const chars =
     request.system.reduce((n, b) => n + b.text.length, 0) +
     request.messages.reduce((n, m) => n + m.content.length, 0) +
@@ -136,7 +190,7 @@ export function recordInFlight(request: LlmRequest, kind: CostBackend): RecordIn
     scope: request.meta.costScope ?? costScopeFor(request.meta.scope),
     model: request.model,
     backend: kind,
-    tokens: { input: Math.ceil(chars / CHARS_PER_TOKEN) + (request.images?.length ?? 0) * TOKENS_PER_IMAGE, output: 0, cacheWrite: 0, cacheRead: 0 },
+    tokens: { input: Math.ceil(chars / CHARS_PER_TOKEN) + (request.images?.length ?? 0) * TOKENS_PER_IMAGE, output, cacheWrite: 0, cacheRead: 0 },
     turnId: request.meta.turnId ?? null,
     roomId: request.meta.roomId ?? null,
     fileId: request.meta.fileId ?? null,

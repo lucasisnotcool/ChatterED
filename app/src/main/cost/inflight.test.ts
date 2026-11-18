@@ -44,8 +44,8 @@ describe('a call to the API, counted as it is sent', () => {
       },
     };
     await costedClient(inner, ledger).complete(request);
-    // 35,000 characters at 3.5 a token, and one image.
-    expect(during).toEqual([{ source: 'inflight', outcome: 'error', input_tokens: 10_000 + 1_600, output_tokens: 0, estimated_cost_usd: expect.any(Number) }]);
+    // 35,000 characters at 2.6 a token (on the high side), and one image.
+    expect(during).toEqual([{ source: 'inflight', outcome: 'error', input_tokens: Math.ceil(35_000 / 2.6) + 1_600, output_tokens: 0, estimated_cost_usd: expect.any(Number) }]);
     expect(during[0]!.estimated_cost_usd).toBeGreaterThan(0);
     expect(rows().map((r) => [r.source, r.outcome, r.input_tokens, r.output_tokens])).toEqual([['live', 'ok', 12_000, 7_000]]);
   });
@@ -57,7 +57,28 @@ describe('a call to the API, counted as it is sent', () => {
     await Promise.resolve();
     // The process ends here; what the next launch reads:
     expect(rows()).toHaveLength(1);
-    expect(rows()[0]).toMatchObject({ source: 'inflight', input_tokens: 11_600 });
+    expect(rows()[0]).toMatchObject({ source: 'inflight', input_tokens: Math.ceil(35_000 / 2.6) + 1_600 });
+  });
+
+  it('counts the output of an answer cut off while it was being written, capped at what the call may write', async () => {
+    const { ledger, rows } = setup();
+    let clock = 0;
+    const writing: LLMClient = {
+      kind: 'anthropic',
+      complete: (_request, onDelta) => new Promise(() => {
+        clock = 1_000;
+        onDelta?.('{"title":"Finals"');
+        clock = 31_000;
+      }),
+    };
+    void costedClient(writing, ledger, undefined, { tickMs: 5, now: () => clock }).complete(request);
+    await new Promise((r) => setTimeout(r, 30));
+    // The quit: one in-flight row, its output 30 s of writing at 100 tokens a second.
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toMatchObject({ source: 'inflight', output_tokens: 3_000 });
+    clock = 10_000_000;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rows()[0]!.output_tokens).toBe(16_000 + 2_000);
   });
 
   it('replaces the estimate with the failure row when the call fails', async () => {

@@ -334,6 +334,43 @@ describe('reading a tutorial (live, long or cut off)', () => {
     longSheet();
   });
 
+  it('asks a window once more when its reply is not a whole answer, then makes it a logged notice, outside "Course admin"', async () => {
+    const lines: Record<string, unknown>[] = [];
+    initLogger({ sink: { write: (l: string) => void lines.push(JSON.parse(l) as Record<string, unknown>) } });
+    try {
+      PAGES = 2;
+      longSheet();
+      // Page 1's window answers "{}"-ish nonsense every time; page 2 answers once badly, then well.
+      let page2 = 0;
+      llm = client((request) => {
+        const { from, to } = pagesOf(request)!;
+        if (to - from >= 1 || from === 1) return reply('{"a":1}');
+        page2 += 1;
+        return page2 === 1 ? reply('{"a":1}') : reply(sheetFor(request, undefined, false));
+      });
+      await ingested();
+      const [view] = listViews(deps, notebookId);
+      expect(view!.parts.map((p) => p.partId)).toEqual(['P2']);
+      // 1–2 asked twice, then cut into pages; page 1 asked twice, page 2 twice.
+      expect([...reads()].sort()).toEqual(['1-1', '1-1', '1-2', '1-2', '2-2', '2-2']);
+      const notice = lines.find((l) => l.event === 'tutorial.window.notice');
+      expect(notice).toMatchObject({ from: 1, to: 1, reason: 'incomplete' });
+      // The notice is a sheet paragraph, not housekeeping folded away.
+      const para = (savedDoc().doc.toJSON().content as { attrs?: { reason?: string }; content?: { text?: string }[] }[])
+        .find((n) => (n.content ?? []).some((c) => (c.text ?? '').includes('came back incomplete')));
+      expect(para?.attrs?.reason).toBe('sheet');
+    } finally {
+      initLogger({ sink: { write: () => {} } });
+    }
+  });
+
+  it('shows progress in pages from the first frame', async () => {
+    llm = client();
+    await ingested();
+    const first = pushed.find((c) => c.view?.progress);
+    expect(first!.view!.progress).toMatchObject({ done: 0, total: 8 });
+  });
+
   it('asks the model again on Retry after "no questions", for a short sheet and a long one', async () => {
     for (const pages of [1, 8]) {
       PAGES = pages;

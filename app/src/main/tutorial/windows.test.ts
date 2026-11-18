@@ -300,7 +300,8 @@ describe('joining the windows (the red team cases)', () => {
     const blocks = raw.blocks as { type: string; text?: string; admin?: boolean }[];
     expect(blocks.map((b) => b.type)).toEqual(['part', 'part', 'paragraph']);
     expect(blocks[2]!.text).toMatch(/^\*Max could not read page 13 of this sheet/);
-    expect(blocks[2]!.admin).toBe(true);
+    // Not housekeeping: a notice is never folded under "Course admin".
+    expect(blocks[2]!.admin).toBeUndefined();
   });
 
   it('drops an answer grid that repeats the questions, and keeps every question', () => {
