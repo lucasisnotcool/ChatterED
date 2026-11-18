@@ -120,9 +120,10 @@
 {/if}
 <ResearchTrialLayer />
 <StudyUsedUp />
-<UpdateNote />
 {/if}
 <DebugReportPanel />
+<!-- Outside the consent gate too: a fresh profile's first screen is the notice. -->
+<UpdateNote />
 
 <style>
   .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }

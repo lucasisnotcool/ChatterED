@@ -8,12 +8,13 @@ import { app, clipboard, dialog } from 'electron';
 import { runtime } from './runtime.js';
 
 /** The full debug report if the debug module loads and runs; else the bootstrap's own. */
-export function debugReport(error: string): string {
+export function debugReport(error: string, err?: unknown): string {
   try {
     // A plain require, inside try: a broken debug module must not break this dialog.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const m = require('../debug/index.js') as { buildDebugReport?: () => string };
-    if (typeof m.buildDebugReport === 'function') return `${m.buildDebugReport()}\n\nstartup error: ${error}\n`;
+    const m = require('../debug/index.js') as { buildDebugReport?: (o?: { bootError?: unknown }) => string };
+    // The boot error goes inside the checksummed body (`[boot] failed: …`), never after it.
+    if (typeof m.buildDebugReport === 'function') return m.buildDebugReport({ bootError: err ?? new Error(error) });
   } catch {
     /* fall through */
   }
@@ -24,7 +25,7 @@ export function debugReport(error: string): string {
  * Repair first (it may exit the app to swap), the dialog meanwhile. Never resolves into a
  * running app: it ends in `app.exit`.
  */
-export async function startupFailed(message: string, logDir: string): Promise<void> {
+export async function startupFailed(message: string, logDir: string, err?: unknown): Promise<void> {
   const rt = runtime();
   let exiting = false;
   const repairing = rt
@@ -51,7 +52,7 @@ export async function startupFailed(message: string, logDir: string): Promise<vo
   });
   if (exiting) return;
   if (response === 1) {
-    clipboard.writeText(debugReport(message));
+    clipboard.writeText(debugReport(message, err));
     await dialog.showMessageBox({
       type: 'info',
       message: 'Debug info copied',

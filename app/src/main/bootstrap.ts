@@ -59,6 +59,13 @@ const logFile = join((() => {
   }
 })(), 'main.log');
 const logBase = { v: app.getVersion(), build, sha: baked.sha, packaged: app.isPackaged };
+/**
+ * Test variant only: a fault from Info.plist (`ChatterEDTestFault`) beats the compiled one, so the
+ * gate and the E2E campaign can make a bad N+1 by re-stamping a copy instead of rebuilding.
+ */
+const FAULTS = ['crash-at-launch', 'crash-at-launch-live', 'fail-migration', 'fail-migration-live', 'hang-boot', 'hang-boot-live', 'never-healthy-live'];
+const plistFault = baked.test && bundle ? plistValue(bundle, 'ChatterEDTestFault') : null;
+const fault = baked.test ? ((plistFault && FAULTS.includes(plistFault) ? plistFault : baked.fault) as UpdateRuntime['fault']) : null;
 const log = (level: 'info' | 'warn' | 'error', event: string, fields: Record<string, unknown> = {}) =>
   appendLog(logFile, logBase, level, event, fields);
 
@@ -69,7 +76,7 @@ function baseRuntime(over: Partial<UpdateRuntime>): UpdateRuntime {
     channel: baked.channel,
     disabledReason: null,
     smoke: false,
-    fault: baked.fault,
+    fault,
     takeNote: () => null,
     rendererReady: () => undefined,
     repair: async () => false,
@@ -112,7 +119,8 @@ function runSmoke(okFile: string): void {
       },
     }),
   );
-  if (faultActive('crash-at-launch')) process.crash();
+  // A simulated crash: exit before anything is marked, without the crash reporter's dialog.
+  if (faultActive('crash-at-launch')) process.exit(70);
   setTimeout(() => {
     write(false, 'timeout');
     app.exit(3);
@@ -204,6 +212,7 @@ async function start(): Promise<void> {
       logBase,
       pid: process.pid,
       helperEnv,
+      ...(baked.test && process.env.CHATTERED_TEST_FIRST_CHECK_MS ? { firstCheckMs: Number(process.env.CHATTERED_TEST_FIRST_CHECK_MS) || undefined } : {}),
     };
     engine = new UpdateEngine(cfg);
   }
@@ -233,6 +242,7 @@ async function start(): Promise<void> {
       takeNote: () => {
         const n = note;
         note = null;
+        if (n) log('info', 'update.note_shown', { from: n.from, to: n.to });
         return n;
       },
       rendererReady: () => {
@@ -269,8 +279,9 @@ async function start(): Promise<void> {
 
   if (faultActive('crash-at-launch')) {
     log('error', 'update.fault', { fault: 'crash-at-launch' });
-    process.crash();
+    process.exit(70);
   }
+  if (fault) log('warn', 'update.fault_armed', { fault });
   app.on('will-quit', () => engine?.markCleanExit());
 
   // 5. The worker, the idle relaunch, the self-install's finish.
@@ -292,7 +303,7 @@ async function start(): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     log('error', 'boot.import_failed', { cause: message.slice(0, 200) });
     await app.whenReady();
-    await startupFailed(message, join(logFile, '..'));
+    await startupFailed(message, join(logFile, '..'), err);
   }
 }
 
@@ -321,6 +332,10 @@ function quarantined(path: string): boolean | null {
 /** The utilityProcess, restarted up to three times; in-process checks if it cannot start at all. */
 function startWorker(cfg: EngineConfig, engine: UpdateEngine): { post(m: unknown): void } {
   let child: UtilityProcess | null = null;
+  let quitting = false;
+  app.on('will-quit', () => {
+    quitting = true;
+  });
   let restarts = 0;
   const spawnIt = (): void => {
     try {
@@ -328,6 +343,7 @@ function startWorker(cfg: EngineConfig, engine: UpdateEngine): { post(m: unknown
       child.postMessage({ type: 'config', config: cfg });
       child.on('exit', (code) => {
         child = null;
+        if (quitting) return;
         log('warn', 'update.worker_exit', { code, restarts });
         if (restarts < 3) {
           restarts += 1;

@@ -49,7 +49,7 @@ port?.on('message', (e) => {
   if (msg.type === 'config' && msg.config && !engine) {
     engine = new UpdateEngine({ ...msg.config, role: 'worker' });
     logEnvironment(engine);
-    schedule(jitter(FIRST_CHECK_MS, FIRST_CHECK_MS / 2, Math.random()));
+    schedule(msg.config.firstCheckMs ?? jitter(FIRST_CHECK_MS, FIRST_CHECK_MS / 2, Math.random()));
   } else if (msg.type === 'check') {
     void run(typeof msg.reason === 'string' ? msg.reason.slice(0, 20) : 'asked');
   }

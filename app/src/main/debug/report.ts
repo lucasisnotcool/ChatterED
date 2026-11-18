@@ -16,8 +16,7 @@
  * the slot, and this report names the slot.
  */
 import { execFileSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { accessSync, constants as fsConstants, existsSync, mkdirSync, readdirSync, readFileSync, statfsSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, statfsSync, statSync } from 'node:fs';
 import { homedir, release, totalmem, userInfo } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { app } from 'electron';
@@ -359,27 +358,9 @@ function macSection(env: DebugEnv): ReportSection {
   });
 }
 
-/** `<userData>/install-id`: 20 hex characters, made once with O_EXCL (the updater's bootstrap makes the same file). */
-export const INSTALL_ID_FILE = 'install-id';
-const INSTALL_ID_SHAPE = /^[A-Za-z0-9_-]{6,64}$/;
-
-export function ensureInstallId(userDataDir: string): { id: string | null; note: string | null } {
-  if (!userDataDir) return { id: null, note: 'no userData' };
-  const path = join(userDataDir, INSTALL_ID_FILE);
-  const read = () => tryOr(() => readFileSync(path, 'utf8').trim(), '');
-  const existing = read();
-  if (INSTALL_ID_SHAPE.test(existing)) return { id: existing, note: null };
-  try {
-    mkdirSync(userDataDir, { recursive: true });
-    writeFileSync(path, `${randomBytes(10).toString('hex')}\n`, { flag: 'wx', mode: 0o600 });
-  } catch (err) {
-    const again = read();
-    if (INSTALL_ID_SHAPE.test(again)) return { id: again, note: null };
-    return { id: null, note: (err as NodeJS.ErrnoException).code ?? 'unwritable' };
-  }
-  const made = read();
-  return INSTALL_ID_SHAPE.test(made) ? { id: made, note: null } : { id: null, note: 'unreadable' };
-}
+/** `<userData>/install-id`: one implementation, the updater's (the bootstrap reads it without app imports). */
+export { INSTALL_ID_FILE, ensureInstallIdDetailed as ensureInstallId } from '../update/installid.js';
+import { ensureInstallIdDetailed as ensureInstallId } from '../update/installid.js';
 
 interface DbHandle {
   db: MiniDb | null;

@@ -74,20 +74,29 @@ codes keep working. Then delete `slots.csv`: the keys are in the Console and in 
 
 ## 4. Build
 
+A study build is on the **study update channel** (§8): it carries the compiled update keys and a
+build number, and updates itself from then on. So the keys must exist first (§8.1, once), and the
+build number is allocated for you (last published + 1). Give all the DMGs of one round the same
+number with `--build`, so every participant starts on the same build:
+
 ```sh
 cd app
-tools/release.sh --study ~/.config/chattered-study/keys.json
+tools/release.sh --study ~/.config/chattered-study/keys.json            # allocates N, prints it
 ```
 
 **Preloaded copies, one per participant** (each build wipes `out/`, so move each DMG away):
 
 ```sh
 cd app
+N=<the build number the first run printed, or one above the published one>
 for s in 1 2 3 4; do
-  tools/release.sh --study ~/.config/chattered-study/keys.json --preload "$s" &&
+  tools/release.sh --study ~/.config/chattered-study/keys.json --preload "$s" --build "$N" &&
     mv out/ChatterED-Study-*-S0"$s"-arm64.dmg ~/.config/chattered-study/
 done
 ```
+
+A study DMG does not need `--update`: `--study` already puts it on the study channel. `--update`
+makes the *payload* that updates it, which is an ordinary build with no keys in it (§8.3).
 
 `--preload` reads that slot's code from `codes.csv` beside the bundle (or `--codes <file>`), ships
 it as `Resources/study/preload.txt`, and checks that the copy inside the DMG is that slot's code.
@@ -141,20 +150,30 @@ two weeks stays well inside it.
 
 ## 6. Participant install guide (paste this into the message with the link)
 
-> 1. Download `ChatterED-Study-….dmg`, open it, and drag **ChatterED** onto **Applications**.
->    It needs an Apple Silicon Mac (M1 or later) on macOS 13 or newer.
-> 2. Open ChatterED from Applications. macOS says it cannot verify the developer. Click **Done**
->    (not Move to Trash).
-> 3. Open **System Settings ▸ Privacy & Security**, scroll down, and click **Open Anyway** next to
+For the new DMG (build with the updater, 2026-11-19). It replaces the copy they have, which has no
+updater; after this one, updates arrive by themselves.
+
+> 1. If ChatterED is open, quit it (**ChatterED ▸ Quit**, or ⌘Q). It needs an Apple Silicon Mac
+>    (M1 or later) on macOS 13 or newer.
+> 2. Download `ChatterED-Study-….dmg` and open it. In its window, **double-click ChatterED**.
+> 3. macOS says it cannot verify the developer. Click **Done** (not Move to Trash). Open
+>    **System Settings ▸ Privacy & Security**, scroll down, and click **Open Anyway** next to
 >    "ChatterED was blocked". Confirm with your password. You do this once.
-> 4. Read and agree to the trial notice. Your copy already has its credit: the amount left is
+> 4. ChatterED asks **"Install ChatterED into Applications?"**. Click **Install**. It replaces the
+>    older copy, reopens from Applications and ejects the disk image. Your notes, progress and
+>    study credit are kept. (If it says it could not install itself, follow the steps it shows:
+>    drag ChatterED onto Applications, choose Replace, and open it from Applications.)
+> 5. From now on ChatterED updates itself: it downloads a new build in the background and switches
+>    to it the next time you open it, or while your Mac is locked or idle. A small note says
+>    "Updated to build N". You do not need to do anything.
+> 6. Read and agree to the trial notice. Your copy already has its credit: the amount left is
 >    always at the top right. (A shared DMG asks for your study code here: `S..-....-....-....`.)
 >    When it runs out, you can keep going with Claude Code or your own API key in Settings.
-> 5. Drop in this week's tutorial sheet, and the lecture slides it goes with if you have them,
+> 7. Drop in this week's tutorial sheet, and the lecture slides it goes with if you have them,
 >    and press **Open the tutorial**. Max reads the sheet (a minute or two), then every part has
 >    an answer slot: write your attempt there, and use Hint or Check beside it.
-> 6. At the end of the study, choose **File ▸ Export Research Data…** and email us the zip.
-> 7. **If something goes wrong**, press **⇧⌘D** (Shift-Command-D) in ChatterED, or choose
+> 8. At the end of the study, choose **File ▸ Export Research Data…** and email us the zip.
+> 9. **If something goes wrong**, press **⇧⌘D** (Shift-Command-D) in ChatterED, or choose
 >    **Help ▸ Copy Debug Info for the Team**. A short report appears and is already copied: paste
 >    it into your Telegram chat with us. It holds no API key, study code, names, file names or
 >    anything you wrote, and you can read all of it before you send it.
@@ -173,10 +192,150 @@ what to do, with the command to roll a build out to that install. Code: `src/mai
    you sent still works.
 3. Delete `codes.csv` and the preloaded DMGs.
 
+## 8. Updates (the study channel)
+
+Code: `src/main/bootstrap.ts` and `src/main/update/` (each file's header says what it decides);
+tools: `tools/release.sh`, `tools/update-tool.mjs`, `tools/update-gate.mjs`. Windows is not
+supported: the updater is macOS only, and so is the app.
+
+### 8.1 How it works
+
+- **Stage 0.** `package.json` `main` is `dist/main/bootstrap.js`, which imports only Electron,
+  Node and `src/main/update/` (a contract test holds it to that). It runs before any of the app's
+  own code, so a later build that breaks the database, a migration, the renderer or a native
+  module cannot stop the updater. Leave `bootstrap.ts` and `update/` alone during the study.
+- **The channel.** A signed manifest at a fixed URL:
+  `https://github.com/lucasisnotcool/ChatterED-releases/releases/download/study-channel/study-manifest-v1.json`
+  (and `….json.sig`). The `study-channel` release is a pre-release whose two assets are replaced on
+  each publish, so GitHub's "latest" pointer, which skips pre-releases, plays no part. Each build's
+  zip and `build-N.json` live on their own release, `study-build-N`.
+- **Integrity.** The `.sig` is an ECDSA P-256 signature over the manifest's exact bytes, checked
+  before they are parsed, with one of the two public keys compiled into the app (`active`, and
+  the offline `cold` backup). The manifest names the zip's size and sha256 and the main executable's
+  CDHash; the app checks all three, and the bundle id, the build number and `codesign --verify
+  --deep --strict`, before it runs anything. No setting or environment variable can change the
+  keys, the URL or the checks in a release build. The payload is an ordinary build with no
+  `Resources/study/`; the app never modifies or re-signs it (a study build copies its sealed
+  `keys.json` into `<userData>/study/` on first launch and reads it from there).
+- **Staging, while the app runs** (a utilityProcess, so a hung window does not stop it): check 30 s
+  after launch, every ~4 h after (with jitter) and on wake; download into
+  `<userData>/updates.noindex/` (Spotlight skips it) only with ~5x the zip free plus 2 GB; extract
+  with `ditto` into a fresh 0700 folder; then a **smoke launch**: the staged build runs with its own
+  profile on a `VACUUM INTO` copy of the database, the scripted backend and a hidden window, and
+  must write an explicit ok file. Only then is it staged.
+- **The swap**, never at logout or shutdown: at the next launch (the app exits, swaps, reopens:
+  about 2 s), or when the Mac has been locked for 5 minutes or idle for 30. One atomic
+  `renamex_np(RENAME_SWAP)` (`Resources/chattered-swap`), journaled, with the build and signature
+  checked again right before and after; any failure swaps back. The build it replaces is kept as
+  N-1 if it was ever healthy here.
+- **Health and rollback.** A launch is healthy 30 s after the window's bridge is up. A new build
+  that twice ends in neither a healthy mark nor a clean quit is rolled back to N-1 at the next
+  launch, and never reinstalled on that Mac. If the app cannot start (`failBoot`, or `index.js` will
+  not load), repair mode checks for a fix at once and swaps it in, or rolls back; the dialog offers
+  **Copy debug info**.
+- **Never down, except by you.** A copy never installs an older build, unless a signed manifest
+  says so (`pin`, `blocked`, or a per-install `targets` entry) and the old build knows the
+  database's schema (`dbSchema`).
+- **What is logged** (every line also carries `build` and `sha`): `update.launch`, `update.check`
+  (`result`: `current`, `available`, `unavailable` with a `cause`, `known_bad`, `paused`,
+  `os_too_old`, `location_dmg`/`_translocated`/`_unwritable`, …), `update.downloaded`,
+  `update.staged`, `update.applying`, `update.applied`, `update.failed` (`stage` + `cause`),
+  `update.crash_loop`, `update.rollback`, `update.rolled_back`, `update.repair`,
+  `update.journal_recovered`, `update.discarded`, `update.healthy`, `update.idle_apply`,
+  `update.note_shown`, `update.env` (MDM and Gatekeeper status), `selfinstall.*`, `install.oneoff`.
+  The research export's manifest has `app.build`, `app.sha` and `app.builds` (every build the
+  install ran, with when it first launched), so a session's build is known after log rotation too.
+- **Kill switches** (they stop updates; none relaxes a check): `CHATTERED_UPDATES=off` in the
+  environment, or a file named `updates-disabled` in `~/Library/Application Support/ChatterED/`;
+  from your side, a manifest with `"paused": true`.
+
+### 8.2 The keys (you, once)
+
+```sh
+cd app
+node tools/update-tool.mjs keygen                 # → ~/.config/chattered-release/ (0700; keys 0600)
+mkdir -p build/update-keys
+cp ~/.config/chattered-release/{active,cold}.pub.pem build/update-keys/
+git add build/update-keys/active.pub.pem build/update-keys/cold.pub.pem   # public; commit them
+```
+
+Then copy **both** private keys to the Passport drive, and delete `cold.key.pem` from the Mac: it is
+only for replacing a lost or leaked active key (a manifest the cold key signs may carry
+`keys.add` / `keys.revoke`). Never put a private key on gram-server, in GitHub secrets or under
+`~/data`. Losing both keys means one more manual DMG for everyone.
+
+### 8.3 Publish an update
+
+Migrations stay **expand-only** while the study runs (add tables and columns; never rebuild a
+table, narrow a CHECK or write enum values old code switches on), so a rolled-back build still
+reads the database. Ship only fixes mid-study, and note for each build whether it changes what a
+participant sees.
+
+```sh
+cd app                                   # on main, clean, pulled
+node tools/update-gate.mjs               # the release gate (~10 min): see below
+tools/release.sh --update                # dry run: builds, zips, signs, verifies; uploads nothing
+tools/release.sh --update --publish-update --notes-text "Fixes the hint button"
+```
+
+- **The gate** builds the test variant of this commit and, in a temp folder (`--work` to choose), installs it as a study
+  copy, serves N+1 and a failing N+2 from a local server, and checks that N stages, swaps to N+1
+  (keeping N-1, the study bundle and the note) and that N+2 is rolled back and marked bad. It
+  writes `~/.config/chattered-release/gate/pass-<sha>`; `--publish-update` refuses without it, off
+  `main`, or on a dirty tree. It proves this commit's code, not the production binary's bytes.
+- **Publishing** allocates the build (published + 1, never reused: `~/.config/chattered-release/
+  builds-study.txt`), refuses one not above the published build, checks the zip has no
+  `Contents/Resources/study/`, no `$HOME` path and nothing shaped like a study code, extracts it with
+  `ditto` and re-verifies it, uploads the zip and `build-N.json` to `study-build-N`, then the
+  manifest and its `.sig` to `study-channel`, and finally downloads all of it back from GitHub and
+  verifies it as a participant's Mac would.
+- **One participant first** (a canary): `--update --target <install id>` (comma-separated ids; the
+  install id is in their pasted debug report). Everyone else stays on the default. Then
+  `tools/release.sh --promote N --publish-update` makes build N the default for all.
+- **Take a build back**: `tools/release.sh --rollback-to N --publish-update` pins the channel to
+  published build N (with `--target <id>` for one install). Or `--update --block 512` with a fix:
+  copies on 512 leave it even if the fix is numbered lower.
+
+### 8.4 Watch it (there is no heartbeat)
+
+- **Downloads per build**: `gh api repos/lucasisnotcool/ChatterED-releases/releases --jq '.[] |
+  select(.tag_name | startswith("study-build-")) | {tag: .tag_name, downloads: [.assets[] |
+  {name, download_count}]}'`. A build's zip count rises as Macs stage it (smoke-test failures and
+  retries count too, and anyone can download, so it is a rough sign, not a census).
+- **Use per participant**: each slot's workspace in the Anthropic Console shows when it was last
+  used, so a participant who stopped (or is stuck on a build that cannot start) shows as flat.
+- **A pasted debug report** (⇧⌘D, §6) has an `update` section: build, channel, install id, where
+  it runs from, staged build, N-1, bad builds, last check and result, last failure, the swap
+  journal, free space, quarantine and the kill switches.
+- **Each update changes the app's CDHash**, so macOS may ask again for folder access it had
+  granted (the cost export writes to `~/Documents/ChatterED`). Tell participants before a release
+  that it may ask once.
+
+### 8.5 What it cannot do
+
+- Reach a Mac that never opens ChatterED, stays offline, or had the app or its data deleted.
+- Undo what a bad build did before it was rolled back (spent credit, data a bug changed without
+  failing). Database backups exist (`backups/`), but restoring one is by hand and loses later work.
+- Get past macOS itself: App Management may refuse to let an ad-hoc app replace its own bundle on
+  some Macs (logged as `update.failed` `app_management`; the participant then drags the new DMG
+  in by hand), an MDM or antivirus policy, or a "Move to Trash" click on the first Gatekeeper prompt.
+- Survive the loss of both signing keys.
+- The one-off move to the new DMG: until a participant installs it, their copy has no updater.
+  `app.moveToApplicationsFolder` only targets `/Applications`, so that path was verified by its
+  decision logic and by hand, not by the gate (8.6).
+
+### 8.6 Checking the one-off install by hand (before sending the DMG)
+
+On a spare macOS account (it writes to `/Applications`): install the *old* study DMG the usual way
+and run it once; then download the new DMG through a browser (so it is quarantined), open it,
+double-click ChatterED, Open Anyway, **Install**. Check: `/Applications/ChatterED.app` has the new
+`CFBundleVersion` (`plutil -extract CFBundleVersion raw /Applications/ChatterED.app/Contents/Info.plist`),
+the disk image is gone from Finder, `xattr /Applications/ChatterED.app` shows no
+`com.apple.quarantine`, the notes and credit are still there, and `main.log` has `install.oneoff`.
+Repeat with the old copy left **running** (it must be closed for you, not hand over silently).
+
 ## Not built
 
-- **No update check.** A fix during the study means sending a new DMG; the bundle and codes carry
-  over (rebuild with the same `keys.json`), and participants keep their data.
 - **No signing.** An Apple Developer ID and notarisation would remove step 3 of the install guide
   (decision #17 kept the app unsigned).
 - **No refusal fallback.** A Sonnet 5.5 safety refusal shows "Claude declined to answer this one"

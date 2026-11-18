@@ -106,6 +106,8 @@ export interface EngineConfig {
   /** Tests only: called instead of spawning the detached helper. */
   spawnHelper?: (script: string, args: string[]) => void;
   now?: () => number;
+  /** Test variant only: the first check's delay (default 30 s ± 15 s). */
+  firstCheckMs?: number;
   /** Seconds the smoke launch may take. */
   smokeTimeoutSeconds?: number;
 }

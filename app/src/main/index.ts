@@ -423,7 +423,7 @@ function failBoot(err: unknown): void {
   }
   // Repair mode (`update/failure.ts`): check for a fix and swap it in, or roll back, while one
   // dialog offers Copy debug info. It ends in app.exit; it never leaves a running app behind.
-  void startupFailed(message, logDir()).catch(() => app.exit(1));
+  void startupFailed(message, logDir(), err).catch(() => app.exit(1));
 }
 
 /**
