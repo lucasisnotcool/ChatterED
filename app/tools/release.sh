@@ -224,6 +224,11 @@ sign_and_check() {
 # and the manifest's .sig right after it: a client that reads a mismatched pair just tries later.
 deliver() {
   local manifest="$1"; shift
+  # Every client refuses a manifest whose seq is not above the newest it has seen (stale_seq).
+  if [ -f "$PUBLISHED" ]; then
+    node -e 'const [a,b]=process.argv.slice(1).map(f=>Number(require(f).seq)||0); if(!(a>b)){console.error(`seq ${a} is not above the published ${b}`);process.exit(1)}' "$manifest" "$PUBLISHED" \
+      || die "The new manifest's seq is not above the published one: every install would refuse it."
+  fi
   if [ "$VARIANT" = test ]; then
     if [ -z "$SERVE_DIR" ]; then say "Dry run: nothing served (pass --serve-dir)."; return 0; fi
     mkdir -p "$SERVE_DIR"

@@ -4,7 +4,7 @@
  * meanwhile, shows one native dialog with **Copy debug info**: the app's own debug report
  * (`src/main/debug/`, loaded only here and only if it loads), or the bootstrap's minimal one.
  */
-import { app, clipboard, dialog } from 'electron';
+import { app, BrowserWindow, clipboard, dialog } from 'electron';
 import { runtime } from './runtime.js';
 
 /** The full debug report if the debug module loads and runs; else the bootstrap's own. */
@@ -40,7 +40,11 @@ export async function startupFailed(message: string, logDir: string, err?: unkno
     repair === 'repairing'
       ? `${name} is looking for a fix in the background. If there is one, it closes this message and reopens by itself, even if you click Quit.\n\n`
       : '';
-  const { response } = await dialog.showMessageBox({
+  // A sheet on a small window of its own, not an app-modal alert: an app-modal alert stops the main
+  // loop, so neither the repair process's SIGTERM nor a logout could quit the app (E2E item 4).
+  const host = sheetHost(name);
+  const ask = (o: Electron.MessageBoxOptions) => (host ? dialog.showMessageBox(host, o) : dialog.showMessageBox(o));
+  const { response } = await ask({
     type: 'error',
     message: `${name} could not start`,
     detail:
@@ -52,7 +56,7 @@ export async function startupFailed(message: string, logDir: string, err?: unkno
   });
   if (response === 1) {
     clipboard.writeText(debugReport(message, err));
-    await dialog.showMessageBox({
+    await ask({
       type: 'info',
       message: 'Debug info copied',
       detail: 'Paste it into an email or chat message to the research team. It has no notes, no study code and no API key in it.',
@@ -60,4 +64,25 @@ export async function startupFailed(message: string, logDir: string, err?: unkno
     });
   }
   app.exit(1);
+}
+
+/** A small plain window to carry the failure message as a sheet; null if one cannot be made. */
+function sheetHost(name: string): BrowserWindow | null {
+  try {
+    const w = new BrowserWindow({
+      width: 480,
+      height: 260,
+      title: name,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      backgroundColor: '#F7F7FA',
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    });
+    w.on('close', () => app.exit(1));
+    return w;
+  } catch {
+    return null;
+  }
 }

@@ -248,13 +248,17 @@ supported: the updater is macOS only, and so is the app.
   it is back on N-1), and never reinstalled on that Mac.
 - **Repair mode.** If the app cannot start (`failBoot`, or `index.js` will not load), a build that
   has already failed once is rolled back at once; otherwise a separate process
-  (`--chattered-repair`, no window) checks for a fix, stages it and swaps it in, closing the failed
-  app itself. The startup-failure dialog says this is happening and offers **Copy debug info**;
+  (`--chattered-repair`, no window) checks for a fix at once and then every minute for up to 20
+  minutes, stages it and swaps it in, closing the failed app itself (the app's own worker stands
+  aside meanwhile, so only one of them downloads). The startup-failure message, a sheet on a small
+  window so the app can still be quit, says this is happening and offers **Copy debug info**;
   neither the dialog nor Quit stops the search.
 - **Never down, except by you.** A copy never installs an older build, unless a signed manifest
   says so (`pin`, `blocked`, or a per-install `targets` entry) and the old build knows the
   database's schema (`dbSchema`).
-- **The newest manifest wins.** Every publish signs in a higher `seq`; a copy refuses a manifest
+- **The newest manifest wins.** Every publish signs in a higher `seq` (at least the publish time in
+  seconds, so a publish from a stale base still lands above everything before it; `release.sh`
+  refuses one that would not); a copy refuses a manifest
   with a lower `seq` than it has seen (a replay), and before swapping in a staged build it checks
   that the newest manifest it verified still offers that build, so a rollback, pin, block or pause
   published after staging is obeyed.

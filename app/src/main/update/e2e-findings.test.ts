@@ -41,7 +41,8 @@ describe('D-6: a manifest seq', () => {
   const keys: TrustedKey[] = [{ id: keyId(pem)!, role: 'active', pem }];
   it('is signed in and read (0 when absent)', () => {
     const base = { format: 'chattered-update', schema: 1, appId: APP_ID, arch: 'arm64', channel: 'study', build: 5, version: '0', url: 'https://x/y.zip', size: 1, sha256: 'a'.repeat(64) };
-    for (const [over, seq] of [[{}, 0], [{ seq: 9 }, 9]] as const) {
+    const now = Math.floor(Date.now() / 1000); // what update-tool writes: the clock in seconds
+    for (const [over, seq] of [[{}, 0], [{ seq: 9 }, 9], [{ seq: now }, now], [{ seq: now + 1 }, now + 1]] as const) {
       const b = Buffer.from(JSON.stringify({ ...base, ...over }));
       const r = verifyManifest(b, sign('sha256', b, sk), keys);
       expect(r.ok && r.manifest.seq).toBe(seq);
@@ -178,3 +179,31 @@ describe('B3: installing from a translocated launch (after Open Anyway)', () => 
   });
 });
 
+
+describe.runIf(mac)('E2E re-run item 2: one stager at a time', () => {
+  it('stands aside while a live repair process or another stager is at work, and keeps their work folders', async () => {
+    const { spawn } = await import('node:child_process');
+    const other = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+    try {
+      const w = world();
+      publish(w, makeApp(tmp(), 501));
+      const dir = join(w.userData, UPDATES_DIR);
+      mkdirSync(join(dir, 'work-abc'), { recursive: true });
+      writeFileSync(join(dir, 'repair.pid'), String(other.pid));
+      new UpdateEngine(w.cfg).early();
+      expect(existsSync(join(dir, 'work-abc'))).toBe(true);
+      expect(await w.engine.check('t')).toBe(false);
+      expect(events(w).filter((e) => e.event === 'update.check').pop()).toMatchObject({ result: 'busy_repair' });
+      writeFileSync(join(dir, 'repair.pid'), '999999'); // a repair that is gone
+      mkdirSync(join(dir, 'stage.lock'));
+      writeFileSync(join(dir, 'stage.lock', 'pid'), String(other.pid));
+      expect(await w.engine.check('t2')).toBe(false);
+      expect(events(w).filter((e) => e.event === 'update.check').pop()).toMatchObject({ result: 'busy_staging' });
+      writeFileSync(join(dir, 'stage.lock', 'pid'), '999999'); // a stager that died
+      expect(await w.engine.check('t3')).toBe(true);
+      expect(existsSync(join(dir, 'stage.lock'))).toBe(false);
+    } finally {
+      other.kill();
+    }
+  }, 60_000);
+});

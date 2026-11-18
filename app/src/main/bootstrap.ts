@@ -16,9 +16,9 @@
  *     finish of a self-install.
  *  6. `import('./index.js')`, in try/catch. A throw there, or `failBoot`, is **repair mode**.
  */
-import { app, clipboard, dialog, powerMonitor, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, powerMonitor, shell, utilityProcess, type UtilityProcess } from 'electron';
 import { execFile, spawn } from 'node:child_process';
-import { accessSync, constants as fsConstants, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readBaked } from './update/baked.js';
@@ -234,7 +234,7 @@ function engineConfig(bundlePath: string, installId: string | null, role: 'main'
  */
 function runRepair(appPid: number): void {
   void app.whenReady().then(() => app.dock?.hide());
-  setTimeout(() => app.exit(0), 20 * 60_000).unref();
+  setTimeout(() => app.exit(0), 21 * 60_000).unref();
   const mode = updaterMode({
     platform: process.platform,
     packaged: app.isPackaged,
@@ -248,8 +248,39 @@ function runRepair(appPid: number): void {
     return;
   }
   const engine = new UpdateEngine(engineConfig(bundle, ensureInstallId(userData), 'worker', appPid));
-  void (async () => {
+  // The app's worker stands aside while this file names a live repair (`engine.check`).
+  const pidFile = join(engine.dir, 'repair.pid');
+  try {
+    writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
+  } catch {
+    /* the worker may check at the same time; the staging lock still keeps them apart */
+  }
+  const done = (code: number) => {
+    try {
+      rmSync(pidFile, { force: true });
+    } catch {
+      /* gone */
+    }
+    app.exit(code);
+  };
+  const appAlive = () => {
+    try {
+      process.kill(appPid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const until = Date.now() + 20 * 60_000;
+  // Check now, then every ~60 s while the failed app's dialog is up, so a fix published meanwhile
+  // still arrives (E2E item 3). If the participant quit, a staged fix waits for the next launch.
+  const attempt = async (): Promise<void> => {
     const staged = await engine.check('repair');
+    if (staged && !appAlive()) {
+      engine.log('info', 'update.repair_staged', { to: engine.readStaged()?.build ?? null });
+      done(0);
+      return;
+    }
     if (staged && engine.spawnSwap({ mode: 'apply', relaunch: 'front' })) {
       engine.log('info', 'update.repair_swap', { to: engine.readStaged()?.build ?? null });
       try {
@@ -263,39 +294,52 @@ function runRepair(appPid: number): void {
         } catch {
           /* gone */
         }
-        app.exit(0);
+        done(0);
       }, 8000);
       return;
     }
-    engine.log('info', 'update.repair_none', {});
-    app.exit(0);
-  })().catch(() => app.exit(0));
+    if (Date.now() + 60_000 > until || !appAlive()) {
+      engine.log('info', 'update.repair_none', { app_alive: appAlive() });
+      done(0);
+      return;
+    }
+    setTimeout(() => void attempt().catch(() => done(0)), 60_000);
+  };
+  void attempt().catch(() => done(0));
+}
+
+/** A repair process is at work (its pid file names a live process). */
+function repairRunning(): boolean {
+  try {
+    const pid = Number(readFileSync(join(userData, 'updates.noindex', 'repair.pid'), 'utf8').trim());
+    if (!Number.isInteger(pid) || pid <= 1) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ── 2-6. an ordinary launch ─────────────────────────────────────────────────
 
 async function start(): Promise<void> {
+  // A modal dialog (the startup failure, the update notice) must never keep the app from quitting
+  // when the system, the repair process or a helper asks it to (E2E item 4).
+  for (const sig of ['SIGTERM', 'SIGHUP'] as const) process.on(sig, () => app.exit(0));
   const location = bundle ? classifyLocation(bundle, writable) : 'not_bundle';
 
   // 1a. A copy running from a hidden half-swap bundle (`.ChatterED-replaced.app`: a helper was
   // killed between its two renames). Put it back under the app's name first, then open that (D-5).
   const realTarget = bundle ? realTargetOf(bundle, baked.productName) : null;
   if (bundle && realTarget) {
-    let moved = false;
-    if (!existsSync(realTarget)) {
-      try {
-        renameSync(bundle, realTarget);
-        moved = true;
-      } catch {
-        moved = false;
-      }
-    }
-    log('warn', 'update.hidden_bundle', { restored: moved, target_exists: existsSync(realTarget) });
-    if (existsSync(realTarget)) {
-      execFile('/usr/bin/open', [realTarget], () => undefined);
-      app.quit();
-      return;
-    }
+    // Renaming the bundle this process runs from crashes it on the way out (E2E: EXC_BREAKPOINT
+    // and a "quit unexpectedly" dialog), so the move and the reopen happen once it has exited.
+    log('warn', 'update.hidden_bundle', { target_exists: existsSync(realTarget) });
+    spawn('/bin/sh', ['-c', 'while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; [ -e "$3" ] || mv -- "$2" "$3"; /usr/bin/open -- "$3"', 'sh', String(process.pid), bundle, realTarget], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+    process.exit(0);
   }
 
   // 1b. A copy inside userData (the kept N-1 or a staged build, opened from a stale Dock or Finder
@@ -323,6 +367,8 @@ async function start(): Promise<void> {
 
   // 3. One ChatterED at a time.
   if (!app.requestSingleInstanceLock()) {
+    // The running copy comes forward instead (or, if its boot failed, its dialog is still up).
+    log('info', 'app.second_instance', { repairing: repairRunning() });
     app.quit();
     return;
   }
@@ -460,8 +506,10 @@ async function manualInstallNotice(engine: UpdateEngine): Promise<void> {
   const blocked = n.cause === 'app_management';
   log('warn', 'update.manual_notice', { build: n.build, cause: n.cause });
   const buttons = blocked ? ['OK', 'Copy debug info', 'Open App Management'] : ['OK', 'Copy debug info'];
-  const { response } = await dialog.showMessageBox({
-    type: 'warning',
+  // A sheet on the app's window, so the main loop keeps running (a quit still quits).
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.isVisible());
+  const options = {
+    type: 'warning' as const,
     message: `${name} could not update itself`,
     detail:
       (blocked
@@ -471,7 +519,8 @@ async function manualInstallNotice(engine: UpdateEngine): Promise<void> {
       'Your notes, progress and study credit are kept.',
     buttons,
     defaultId: 0,
-  });
+  };
+  const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
   if (response === 1) clipboard.writeText(debugReport(`update to build ${n.build} failed: ${n.cause}`));
   if (response === 2 && blocked) {
     engine.forgetCannotApply(n.build);

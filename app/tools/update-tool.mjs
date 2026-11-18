@@ -186,7 +186,9 @@ function manifest(o) {
   else delete m.keys;
   if (o.notes !== undefined) m.notes = String(o.notes).slice(0, 500);
   // Signed in and raised by every publish: an app refuses a manifest older than the newest it has seen.
-  m.seq = (Number(base?.seq) || 0) + 1;
+  // At least the clock in seconds, so a publish from a stale base (a CDN lag, a misused --no-base)
+  // still lands above anything already published and cannot strand every install on stale_seq.
+  m.seq = Math.max((Number(base?.seq) || 0) + 1, Math.floor(Date.now() / 1000));
   if (!m.url || !m.sha256) die('the manifest has no default build: pass --default (or --base with one).');
   m.publishedAt = new Date().toISOString();
   writeFileSync(o.out, `${JSON.stringify(m, null, 2)}\n`);

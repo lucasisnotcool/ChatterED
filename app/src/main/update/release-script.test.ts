@@ -30,3 +30,40 @@ describe('release.sh study guards', () => {
     expect(at).toBeLessThan(buildAt);
   });
 });
+
+describe('the manifest seq can never strand installs (E2E item 1)', () => {
+  it('release.sh refuses a manifest whose seq is not above the published one, before uploading', () => {
+    const deliver = script.indexOf('deliver() {');
+    const check = script.indexOf("is not above the published one: every install would refuse it");
+    const upload = script.indexOf('gh release upload');
+    expect(deliver).toBeGreaterThan(0);
+    expect(check).toBeGreaterThan(deliver);
+    expect(check).toBeLessThan(upload);
+  });
+
+  it('update-tool sets seq to at least the clock, and above the base', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, writeFileSync: write, readFileSync: read } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(join(tmpdir(), 'chattered-seq-'));
+    const tool = join(__dirname, '..', '..', '..', 'tools', 'update-tool.mjs');
+    const entry = join(dir, 'e.json');
+    write(entry, JSON.stringify({ build: 5, url: 'https://x/y.zip', size: 1, sha256: 'a'.repeat(64) }));
+    const make = (base: object | null) => {
+      const out = join(dir, `m${Math.random()}.json`);
+      const args = [tool, 'manifest', '--app-id', 'sg.nus.chattered', '--channel', 'study', '--out', out, '--default', entry, '--pin'];
+      if (base) {
+        const b = join(dir, `b${Math.random()}.json`);
+        write(b, JSON.stringify(base));
+        args.push('--base', b);
+      }
+      execFileSync(process.execPath, args, { stdio: 'ignore' });
+      return (JSON.parse(read(out, 'utf8')) as { seq: number }).seq;
+    };
+    const now = Math.floor(Date.now() / 1000);
+    const baseFields = { format: 'chattered-update', schema: 1, build: 9, url: 'https://x/a.zip', size: 1, sha256: 'b'.repeat(64) };
+    expect(make(null)).toBeGreaterThanOrEqual(now);
+    expect(make({ ...baseFields, seq: 3 })).toBeGreaterThanOrEqual(now); // a stale, low base
+    expect(make({ ...baseFields, seq: now + 1000 })).toBe(now + 1001); // a base already ahead
+  });
+});

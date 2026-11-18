@@ -687,6 +687,8 @@ export class UpdateEngine {
   }
 
   #sweepWork(): void {
+    // Not while a repair process or another stager is using its work folder.
+    if (this.#pidAlive(join(this.dir, 'repair.pid'), 25 * 60_000) || this.#pidAlive(join(this.dir, 'stage.lock', 'pid'), 30 * 60_000)) return;
     try {
       for (const name of readdirSync(this.dir)) {
         if (!name.startsWith('work-')) continue;
@@ -965,6 +967,13 @@ export class UpdateEngine {
 
   async #check(reason: string): Promise<boolean> {
     this.#ensureDir();
+    // One stager at a time across processes: the app's worker stands aside for a repair process,
+    // a swap in progress, or anyone else staging (E2E item 2: both once staged the same fix).
+    const other = this.#otherAtWork();
+    if (other) {
+      this.log('info', 'update.check', { reason, build: this.cfg.currentBuild, result: `busy_${other}` });
+      return false;
+    }
     const got = await this.fetchManifest();
     this.#patch((s) => (s.lastCheckAt = new Date(this.#now()).toISOString()));
     if ('error' in got) {
@@ -1064,7 +1073,56 @@ export class UpdateEngine {
     return size * 5 + fileSize(join(this.cfg.userDataDir, 'app.db')) * 2 + 2 * 1024 * 1024 * 1024;
   }
 
+  /** A live process whose pid is in `file` (not this one), recorded less than `maxAgeMs` ago. */
+  #pidAlive(file: string, maxAgeMs: number): boolean {
+    try {
+      const pid = Number(readFileSync(file, 'utf8').trim());
+      if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return false;
+      if (Date.now() - statSync(file).mtimeMs > maxAgeMs) return false;
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #otherAtWork(): 'swap' | 'repair' | 'staging' | null {
+    const paths = swapPaths({ target: this.cfg.bundlePath, updatesDir: this.dir });
+    if (this.#lockHolderAlive(paths.lock)) return 'swap';
+    if (this.#pidAlive(join(this.dir, 'repair.pid'), 25 * 60_000)) return 'repair';
+    if (this.#pidAlive(join(this.dir, 'stage.lock', 'pid'), 30 * 60_000)) return 'staging';
+    return null;
+  }
+
+  /** Take the staging lock (a directory with our pid); a dead or old holder's lock is taken over. */
+  #takeStageLock(): boolean {
+    const lock = join(this.dir, 'stage.lock');
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        mkdirSync(lock);
+        writeFileSync(join(lock, 'pid'), String(process.pid));
+        return true;
+      } catch {
+        if (this.#pidAlive(join(lock, 'pid'), 30 * 60_000)) return false;
+        rmSync(lock, { recursive: true, force: true });
+      }
+    }
+    return false;
+  }
+
   async #stage(m: UpdateManifest, downgrade: boolean, signed: { bytes: Buffer; sig: Buffer }): Promise<boolean> {
+    if (!this.#takeStageLock()) {
+      this.log('info', 'update.check', { build: this.cfg.currentBuild, offered: m.build, result: 'busy_staging' });
+      return false;
+    }
+    try {
+      return await this.#stageLocked(m, downgrade, signed);
+    } finally {
+      rmSync(join(this.dir, 'stage.lock'), { recursive: true, force: true });
+    }
+  }
+
+  async #stageLocked(m: UpdateManifest, downgrade: boolean, signed: { bytes: Buffer; sig: Buffer }): Promise<boolean> {
     // The zip, its extraction (about 3x the zip) and a copy of the database for the smoke launch,
     // with room left so the participant's own database is never the thing that runs out. A staged
     // build that this one replaces is reclaimed first; N-1 is not.

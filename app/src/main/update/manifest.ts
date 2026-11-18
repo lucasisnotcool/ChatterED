@@ -195,7 +195,10 @@ export function verifyManifest(
   if (!posInt(minClient)) return { ok: false, reason: 'bad_field:minClientSchema' };
   if (minClient > CLIENT_SCHEMA) return { ok: false, reason: 'client_too_old' };
   if (!posInt(p.schema) || p.schema < 1) return { ok: false, reason: 'bad_field:schema' };
-  if (p.seq !== undefined && !posInt(p.seq)) return { ok: false, reason: 'bad_field:seq' };
+  // seq is at least the publish time in seconds (`update-tool`), so it is checked against a far
+  // larger bound than the other integers.
+  const seqOk = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+  if (p.seq !== undefined && !seqOk(p.seq)) return { ok: false, reason: 'bad_field:seq' };
   for (const f of ['appId', 'arch', 'channel'] as const) {
     if (typeof p[f] !== 'string' || !(p[f] as string)) return { ok: false, reason: `bad_field:${f}` };
   }
@@ -229,7 +232,7 @@ export function verifyManifest(
     manifest: {
       targeted,
       schema: p.schema,
-      seq: posInt(p.seq) ? p.seq : 0,
+      seq: seqOk(p.seq) ? p.seq : 0,
       appId: p.appId as string,
       arch: p.arch as string,
       channel: p.channel as string,
