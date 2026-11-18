@@ -308,6 +308,48 @@ if [ "$EDIT_ONLY" = 1 ]; then
   exit 0
 fi
 
+# ── the study bundle: in a study build, and in no other ─────────────────────
+# electron-builder copies study/keys.json into Resources/study whenever it exists, so an ordinary
+# build refuses to start with one lying there, and a study build removes its copy when it ends.
+STUDY_DEST="$APP_DIR/study/keys.json"
+# A preloaded copy's code (src/main/study/service.ts, `unlockPreloaded`), under the same rule.
+PRELOAD_DEST="$APP_DIR/study/preload.txt"
+[ -z "$PRELOAD_SLOT" ] || [ -n "$STUDY_BUNDLE" ] || die "--preload is for a study build: pass --study too."
+if [ -n "$STUDY_BUNDLE" ]; then
+  [ -z "$TAG" ] || die "A study build carries participants' sealed keys: it is never published. Drop --publish."
+  [ -f "$STUDY_BUNDLE" ] || die "No study bundle at $STUDY_BUNDLE."
+  node -e "const b=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if (b.format!=='chattered-study-keys'||!b.slots||!Object.keys(b.slots).length) process.exit(1)" "$STUDY_BUNDLE" \
+    || die "$STUDY_BUNDLE is not a study bundle (npm run study:keys makes one)."
+  STUDY_SLOTS="$(node -p "Object.keys(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).slots).length" "$STUDY_BUNDLE")"
+  PRELOAD_CODE=""
+  if [ -n "$PRELOAD_SLOT" ]; then
+    [[ "$PRELOAD_SLOT" =~ ^[0-9]{1,3}$ ]] || die "--preload takes a slot number, not $PRELOAD_SLOT."
+    PRELOAD_SLOT="$(printf '%02d' "$((10#$PRELOAD_SLOT))")"
+    CODES_FILE="${CODES_FILE:-$(dirname "$STUDY_BUNDLE")/codes.csv}"
+    [ -f "$CODES_FILE" ] || die "No codes file at $CODES_FILE (pass --codes)."
+    PRELOAD_CODE="$(awk -F, -v s="$PRELOAD_SLOT" '$1 == s { print $2 }' "$CODES_FILE" | tr -d '[:space:]')"
+    [ -n "$PRELOAD_CODE" ] || die "Slot $PRELOAD_SLOT is not in $CODES_FILE."
+  fi
+  cp "$STUDY_BUNDLE" "$STUDY_DEST"
+  trap 'rm -f "$STUDY_DEST" "$PRELOAD_DEST"' EXIT
+  if [ -n "$PRELOAD_CODE" ]; then
+    ( umask 022; printf '%s\n' "$PRELOAD_CODE" > "$PRELOAD_DEST" )
+    say "Study build: $STUDY_SLOTS participant slot(s) sealed in; slot $PRELOAD_SLOT preloaded."
+  else
+    say "Study build: $STUDY_SLOTS participant slot(s) sealed in."
+  fi
+elif [ -e "$STUDY_DEST" ] || [ -e "$PRELOAD_DEST" ]; then
+  die "$APP_DIR/study holds a key bundle or a preloaded code, and an ordinary build must not carry either. Remove it, or pass --study."
+fi
+
+if [ -n "$TAG" ]; then
+  command -v gh >/dev/null || die "gh is not installed."
+  [ -z "$(git status --porcelain -- .)" ] || die "app/ has uncommitted or untracked changes; commit them before publishing."
+  [ "${TAG#v}" = "$VERSION" ] || die "Tag $TAG does not match package.json version $VERSION."
+elif [ -n "$(git status --porcelain -- .)" ]; then
+  say "warning: app/ has uncommitted changes — this build is not a commit anyone can reproduce."
+fi
+
 # ── build ─────────────────────────────────────────────────────────────────────
 say "Building $APP_NAME $VERSION build $BUILD ($GIT_SHA, channel ${CHANNEL:-none}, variant $VARIANT)…"
 rm -rf out
