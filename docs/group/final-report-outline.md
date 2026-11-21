@@ -130,7 +130,11 @@ limits plainly; qualitative analysis; honesty about dropping the before-and-afte
 
 ## 5. What the report must contain
 
-**Rubric (Canvas post, 23 Sep).** Final report, 10%, 4,000–7,000 words:
+**Sources.** The Canvas post of 23 Sep, and the two assignment briefs, "Final Project: Report" and
+"Final Project: CUI System" (read 21 Nov; local copies in `Academia/group project/`). The weights
+are the same in both. The briefs add the rules in §5.1 and §5.2.
+
+**Rubric.** Final report, 10%, 4,000–7,000 words:
 
 | Component | Weight | Must show |
 |---|---|---|
@@ -157,9 +161,73 @@ solution is distinctive. The report's system section should supply the evidence 
   surveillance, anthropomorphism, companionship and human agency. The ethics section should use
   that vocabulary.
 
-**Not stated anywhere we could find.** Whether references and appendices count towards the word
-limit (assume they do not buy extra room); the template; the submission channel; the video's length
-and whether it is required (the feedback refers to "the video you submit").
+### 5.1 What the report brief adds
+
+- **File:** `GroupX_Final_Report.pdf`, one member submits. The title page carries the word count
+  and all members' names.
+- **Word count is main text only.** The title page, references, appendices, and text inside tables
+  and figures do not count. "A longer report does not earn more marks."
+- **Appendices** hold the study materials (tasks, questionnaires, interview questions) and longer
+  material such as transcripts. Ours must be de-identified excerpts, never raw transcripts.
+- **User research** (at least 6 target users; mid-project research counts): say what we did, how we
+  analysed it and what we found, **with quotes or examples**. L- interview points are paraphrase and
+  are never quoted, so quotes come from N- transcripts and the L-T chat logs.
+- **User study** means "testing the system you built", with at least 6 participants. The same
+  person may be in both the research and the study.
+- **Ethics** must use the Responsible AI lectures, "such as the seven principles and the
+  responsible-CUI checklist", and **base the lessons on what the study found** (§8.4).
+- **A fifth part, with no weight stated: project contributions.** The division of responsibilities
+  and each member's specific contributions.
+- **Honest results are safe.** "Report what you found, including results that did not go as you
+  hoped. Such results do not cost marks… do not claim more than your data can show."
+- **The report must describe the system we submit**: they read one and try the other side by side.
+
+### 5.2 What the system brief adds
+
+- **File:** `GroupX_CUI_System.zip` with source, prompts and configuration. No API keys.
+- **README.md** must give the core task, install and run steps, the models, APIs and services
+  used, and where the main components are. **If they cannot run it, the system gets no credit.**
+- **Innovation is marked from the README and from the code**: the README explains what is new, and
+  those places in the code carry a comment that starts with `INNOVATION` and names the challenge.
+  There are none in the code today.
+- **They run the core task themselves**, with their own inputs. We supply test data.
+- **A paid API key means we must provide a hosted version** that runs the submitted code, linked in
+  the README. Special hardware or accounts: explain how they can try it, or say it is not possible
+  and they arrange a short online session.
+- **Video: optional**, up to 10 minutes, **unedited**, in the ZIP or linked from the README.
+
+### 5.3 Where the instructions disagree, or changed
+
+| Topic | One source says | Another says | What we do |
+|---|---|---|---|
+| Video | Presentation feedback: "the video you submit" | System brief: optional, up to 10 min, not edited | Make one: installing is the hard part for a grader. One take, one function at a time (F10) |
+| Running the system | System brief: paid key needs a hosted version | Ours is a macOS desktop app that calls a paid model | **Biggest risk to the system's 10%.** Decide today (§9) |
+| Study participants | Report brief: at least 6 in the user study | We have 4 in the field phase and 2 in an informal pilot | Report both phases as the study and say plainly what the pilot was. The brief says unhoped-for results cost nothing and over-claiming does |
+| Ethics | Canvas post: risks, design responses, lessons for future CUI design | Report brief: use the seven principles and the checklist; lessons from the study's findings | Follow the brief (§8.4) |
+| Word count | Canvas post: 4,000–7,000 words | Report brief: main text only; tables, figures, references and appendices excluded | Put evidence in tables, argument in prose |
+| Report sections | Canvas post: four parts | Report brief: four parts plus contributions | Add the section |
+| Deadline | Old schedule: report and code by 13 Nov, and "outcome" 23 Nov | Both briefs: Mon 23 Nov, 23:59 | 23 Nov |
+| Final presentation participants | Canvas post: at least 3 | Course page (26 Oct): struck out | Past; no effect on the report |
+| Team size | Lecture 3: teams of 4–5 | We are two, known to the prof since 25 Sep | State it in the contributions section |
+
+The group number for the file names is not in the repo.
+
+### 5.4 The user-study workshop (Week 10), applied to us
+
+- **RQ shape.** Ours are "one system" and "how and why" questions. The workshop asks for the
+  sentence we want to write at the end, and for two or three dependent variables per question, each
+  with an instrument (§6.2).
+- **One system, no baseline: compare against an anchor**, and "say achieved, rated, reported; not
+  improved or better than". Our anchors are the A1 counts and each participant's own account of how
+  they study today.
+- **Explanatory order**: numbers first, then interview. That is our log-then-interview design.
+- **"Freeze the system; note the version."** We did not freeze it: a new build went out on 19 Nov.
+  Report it, and split use by build number.
+- **Exclude people who saw the demo, classmates, and close friends if you can.** Ours come from our
+  own networks. State it as a limit.
+- **"The builder does not run the session."** Field use was unsupervised, which meets the spirit.
+  Say who ran each interview.
+- **"How many? Eight to twelve."** We are below it. Show every data point per person.
 
 ## 6. The study as it now runs
 
@@ -253,7 +321,8 @@ what the pilot students said, so the report can cite it.
 
 ## 7. Overall outline
 
-About 6,300 words, weighted towards the 4% component.
+About 6,300 words of main text, weighted towards the 4% component. Text inside tables and figures
+does not count, so evidence goes in tables and the prose carries the argument.
 
 | # | Section | Words | Rubric component | Can write now? |
 |---|---|---|---|---|
@@ -266,7 +335,9 @@ About 6,300 words, weighted towards the 4% component.
 | 6 | Results | 1,400 | User study | Shell and tables now; `[DATA]` |
 | 7 | Ethical and design implications | 900 | Ethics | Mostly; two paragraphs wait for data |
 | 8 | Limitations and conclusion | 250 | — | Mostly |
-| | References; appendices (codebook, interview guide, log events, consent text) | | | Yes |
+| 9 | Project contributions among team members | 150 | Required, no weight stated | Yes: from `docs/provenance.md` and git history |
+| | Title page with word count and both names | — | Required | Yes |
+| | References; appendices (codebook, interview guide, background form, log events, consent text, de-identified excerpts) | not counted | Required for study materials | Yes |
 
 ## 8. Per-component outlines
 
@@ -412,6 +483,30 @@ the plain ones; most "not yet" paths end in a repair; some accounts still differ
    - Make giving up an ordinary move.
    - Buttons can be conversational turns.
 
+**The course's frame, which the brief asks for.** Week 11 gave seven principles (fairness,
+transparency, accountability, privacy, safety, agency, well-being) and said: "No setting maximises
+all seven. Choose, and say what you chose." Week 12 gave an eight-question checklist for the final
+project. Organise the section as: the tension we chose, then the checklist, then lessons from the
+study.
+
+*The tension we chose.* **Agency against well-being.** Attempt-first and a reveal that "won't
+count" favour the student's learning over their freedom to take the answer now. A student on the
+losing side notices that each question takes longer. Say which side we favoured and what it costs.
+
+| Checklist question (Week 12) | Our answer | Principle | Status |
+|---|---|---|---|
+| 1 Disclosure: does every user know it is AI? | The consent screen and the agents' labels say so; the pill says whether code or Max judged an answer | Transparency | Ready |
+| 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | Ready; users' reaction `[DATA]` |
+| 3 Who gains: whom does it serve worst? Did you test with them? | Students without an Apple Silicon Mac cannot use it; weaker students may meet more "not yet"; courses with no answer key get model-judged grades. We did not test with these groups | Fairness | Ready, as a stated gap |
+| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | Ready; contradiction count `[DATA]` |
+| 5 Vulnerable moments: what happens on a distress message? | Nothing specific is designed for it. Exam stress is the likely case | Well-being, safety | **Our weakest answer. Test by hand, then say what we would add** |
+| 6 Exit: how does it end well? Can the user end it? | Show answer ends a part without penalty beyond progress; Max asks for one line on why it works. The student can leave at any point | Agency | Ready |
+| 7 Data: what do you keep, infer, and have consent for? | Argument 3 below | Privacy, accountability | Ready |
+| 8 Measure: which effect on the person, beyond satisfaction? | Productive engagement, from logs (§6.2). We dropped the satisfaction rating on purpose | Well-being | Ready |
+
+The class activity asked for the weakest of the eight, one sentence on what we would change and one
+on how we would measure it. Question 5 is ours.
+
 **Justification.**
 
 | Argument | Evidence or source | Status |
@@ -440,10 +535,27 @@ that the ladder draws on; her check of her five participants' joint coding.
 **When exports arrive.** Classify sheets by type; build paths; code turns; pick cued moments;
 interview; code replies for the fidelity check; fill the tables.
 
-**To confirm with the TAs.** Whether references and appendices count; where to submit; the video's
-length.
+**The system submission (§5.2), also due 23 Nov.**
 
-**Open decisions.** The product name (#63); interview length; who writes which section.
+- **How a grader runs it.** The brief asks for a hosted version when a paid key is needed, and ours
+  is a macOS desktop app. Options, in the order we would try them: (a) write to the teaching team
+  now, say it is an Apple Silicon Mac app, and ask which they prefer; (b) a grader build with its
+  own capped key, linked from the README, as the study copies work; (c) the online session the
+  brief offers; (d) scripted mode, which needs no key but cannot run a grader's own sheet.
+- **README.md at the top of the ZIP**: core task, install and run, models and services, where the
+  main code is, what is new.
+- **`INNOVATION` comments** at the places the README names. Candidates: code picks the hint rung;
+  the grading order (formal check, key in code, then model); lecture links filtered by code; long
+  sheets read in windows; the answer withheld from hint prompts; the anonymising export.
+- **Test data**: a tutorial sheet and its lecture that we may share with graders.
+- **No keys in the ZIP.** Check prompts and configuration are included.
+- **Video**, one unedited take of up to 10 minutes: install, then one function at a time.
+
+**To ask the teaching team.** How they want to run a Mac-only app that needs a paid model; our
+group number.
+
+**Open decisions.** The product name (#63); interview length; who writes which section; whether to
+make the video.
 
 ## 10. References to carry
 
