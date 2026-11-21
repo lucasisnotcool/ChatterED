@@ -1,0 +1,478 @@
+# Final group report: outline and framing
+
+**Status.** Working sketch, 21 Nov 2026, for Lucas and Valerie. The report is due Mon 23 Nov, 23:59
+(4,000–7,000 words). Study data is not back, so this covers what can be written now and leaves
+marked gaps (`[DATA]`) for the rest. Valerie has not reviewed it.
+
+**Decisions this sketch assumes (Lucas, 21 Nov).**
+
+- The field phase is **1–2 days of unsupervised use** per participant, then a log-anchored interview.
+- **Tutorial sheets and past-year exam papers both count** as study material. This reverses the
+  18 Nov line in issue #72 that left exam-paper use out of the analysis.
+- The report counts **6 target users: 2 in an informal pilot and 4 in the field phase.** The pilot was
+  very informal and is described as such; its data is never pooled with the field data.
+
+---
+
+## 0. At a glance
+
+- **The spine of the report, in one sentence.** Students do attempt their tutorial problems, but the
+  attempt never reaches the AI, so the AI answers the question instead of the student; ChatterED
+  makes the attempt the input to every request for help, and the study looks at what students then
+  do, in real exam revision.
+- **The marks at risk are in the user study (4%).** The teaching team accepted the problem, the
+  system and the demo. What they asked for is clearer research questions, a named outcome, and
+  measures that line up with it.
+- **One gap explains most of the criticism:** no research question named an outcome with a direction
+  (what counts as good). §6 proposes RQs with explicit dependent variables.
+- **The shorter study and the sharper RQs are the same change.** The vague part of the RQs was the
+  "over the week" clause. Dropping it removes the claim a 1–2 day window cannot support (§6.3).
+- **The pilot criticism and the informal pilot solve each other:** report the evaluation as two
+  phases, where phase 2 checks whether the phase 1 problems come back.
+- **The deck and the repo have drifted apart** (RQ2 wording, participant count, need numbering, the
+  product name). §2.2 lists what to make consistent before writing.
+
+## 1. Inputs, organised
+
+| What | Where |
+|---|---|
+| Final deck as delivered (23 pages) | `docs/group/final-presentation/ChatterED_Final_v2.pdf` |
+| Teaching team's feedback on it | `docs/group/final-presentation/feedback.md` |
+| Earlier deck (v1) and Lucas's study slides | `docs/group/final-presentation/ChatterED_Final.pptx`, `UserStudy_Lucas.pptx` |
+| Rubric and compiled requirements | `Academia/group project/` |
+| Evidence record (both A1 datasets) | `docs/group/joint-analysis.md` |
+| Locked scope, DG1–DG5, features | `docs/group/group-project.md` |
+| Study design (a week, as presented) | `docs/group/field-study.md` |
+| Earlier lab-comparison design | `docs/group/user-study.md` |
+| Tutorial workspace design and its revisions | `docs/research/tutorials.md` (§10–§14) |
+| Mid-term brief: literature, existing systems, architecture | `docs/group/midterm-deck-brief.md` |
+
+## 2. The delivered deck against the earlier proposals
+
+### 2.1 What changed
+
+| Topic | Earlier proposals | Delivered deck (v2) | For the report |
+|---|---|---|---|
+| Study design | Lab, within subjects against the usual AI chat, transfer question, M1–M7 (`group-project.md` §5) | One group, a week of own tutorials, log then interview; no comparison, no test | Field design, now 1–2 days (§6) |
+| RQs | v1: come back, work through a question, said vs did | RQ1 engagement, RQ2 "how the AI's moves shape what students do next", RQ3 accounts | Revise again (§6.2). `field-study.md` already replaced RQ2 on 7 Nov |
+| Coding | Deductive DG codes plus open codes | ICAP for the student, tell / elicit / assess for the AI; no inductive coding shown | Both, stated (§6.4) |
+| Participants | 6 | "4 NUS undergraduates" beside "six is enough" | 2 pilot + 4 field |
+| Interview | 30 min | 10 min | Decide; 20 min proposed |
+| Usability rating (UMUX-LITE) | In v1 | Dropped | Stays dropped |
+| Baselines, expected findings, "what each result would change" | In v1 and `field-study.md` | Absent | Bring back: it is the pre-data content we can write now |
+| Ethics | One slide in v1 | One line | Full section (§8.4) |
+| Pilot | Two problems (`field-study.md`) | Three problems (adds "too much to scan") | Valerie to record the third; see §2.2 |
+| Design iterations | Five-row table | Max fix, three sheet versions, UX table | Keep the delivered three |
+
+### 2.2 Make these consistent before writing
+
+| Item | The conflict | Use |
+|---|---|---|
+| Product name | ChatterED on the title, TutorED in the footers; issue #63 is open | Pick one. ChatterED is the app, the repo and the deck title |
+| Needs | N1–N6 on the deck; JN1–JN7 in `joint-analysis.md` §4 | JN ids, with JN4 marked cut |
+| "0 of 31" | Shown next to "6 chats" | It covers five chats, L-T1…L-T5. The sixth (L-T6) is the 24 of 45 case |
+| "7 of 10" | Stated as general | Comprehension sessions L-T2 and L-T5 only |
+| "4 of 6" | Read as interviews | Six chat sharers' form answers against their own logs |
+| Wrong verdicts | 12 of 21, with 11 and 10 in older files | 12 of 21 (`joint-analysis.md` §6) |
+| Pilot task | "Midterm practice paper" on the deck; "their own tutorial questions" in `field-study.md` | Valerie to confirm; it was her pilot |
+| Design goals | Deck says "unchanged since mid-project" but rewords DG2 and DG3 | `group-project.md` §2 wording |
+| Deck references | Five listed but not cited; Chi & Wylie and Graesser cited but not listed | Rebuild the list from §10 |
+| Three-tries cap | On a v1 slide | Exists only in the notebook quiz, not in tutorial Check. Do not claim it |
+
+## 3. The feedback, analysed
+
+**What they accepted (keep, and keep the same wording).** The 0 of 31 finding as the purpose;
+guiding students back to the lecture; the three versions of the sheet; making Max follow the answer
+key; the demo's wrong answer, hint and fix; recruiting students during exam preparation; stating
+limits plainly; qualitative analysis; honesty about dropping the before-and-after test.
+
+**What they asked for.**
+
+| # | Feedback | What it means | Where the report answers it |
+|---|---|---|---|
+| F1 | RQs not clear; "what students do next" is vague and has no good or bad | Each RQ needs a dependent variable and a direction | §6.2; report §5 |
+| F2 | Say what learning outcome you look for; align the measures | Name the outcome, admit it is a process outcome, map every measure to it | §6.2; report §5 |
+| F3 | Explain how analysing the AI's responses helps | The AI-side coding needs a job | §6.4: a fidelity check, not an RQ |
+| F4 | Add inductive coding beside ICAP | Show both passes | §6.4 |
+| F5 | Recruit STEM participants; the description leaves STEM out | Describe participants by programme and year | Participant table; `[DATA]` |
+| F6 | More detail on where the design approaches came from | A visible chain: evidence → need → goal → feature → source | §8.2 provenance table |
+| F7 | Pilot fixes were not retested; check whether the three problems still appear | Close the loop in the field data | §6.5 |
+| F8 | No hint in the demo; show a student getting a step, not the answer | One worked hint exchange | §8.2, figure |
+| F9 | Reduce complexity (said at mid-term too) | The reader must see one task and a few controls | §8.2; video |
+| F10 | Explain each function for longer in the video | One function at a time | Video script, outside the report |
+| F11 | Larger fonts, less dense slides | Applies to report figures | Crop screenshots to one part |
+
+## 4. Key insights
+
+1. **Name the outcome as productive engagement, not learning.** We dropped the test, and they
+   praised the honesty. The outcome is whether students produce and revise their own answer (ICAP
+   Constructive and Interactive; Chi & Wylie, 2014), which theory ties to learning and which was
+   absent in the baseline chats. Say once, plainly, that it is a process measure.
+2. **Study the choices the interface leaves free.** Check needs text in the slot, so an attempt at
+   Check is built in. Hint, Refresher and the part's chat do not need one, and Show answer is
+   always a choice after the first check. Those free choices are the dependent variables.
+3. **The AI-side analysis is a check that the help was what the design says.** What a student does
+   after a hint can only be read if the hint was a hint. That same check answers F7 (does Max still
+   contradict the key) and F8 (did the hint give a step).
+4. **Two phases make one evaluation.** An informal pilot found problems, the team fixed them, and
+   the field phase checks whether they recur. That is stronger than either phase described alone,
+   and it is honest about the pilot.
+5. **The origin story is the group's contribution.** Two A1 studies named one cost from two ends;
+   pooled, they show why it arises (the attempt is invisible). The help ladder is where the two A1
+   designs meet: Nudge's "least explicit move" and ChatterED's code-side rules.
+6. **Complexity was raised twice.** The report and video should show one sheet, one part, four
+   controls. Everything else is named once as out of scope.
+7. **"Why would a student choose this?"** was the recurring question at the mid-term Q&A (our
+   recollection; no written mid-term feedback was issued). The field phase is the answer's shape:
+   students used it, or did not, for their own exam revision with nobody watching.
+8. **Disclose the change from a week.** The feedback praised a week-long study that "states its
+   limits clearly". The markers saw that plan, so the report states the change and its reasons.
+
+## 5. What the report must contain
+
+**Rubric (Canvas post, 23 Sep).** Final report, 10%, 4,000–7,000 words:
+
+| Component | Weight | Must show |
+|---|---|---|
+| Introduction and related work | 2% | The problem, the target users, the gap the system addresses |
+| System design and implementation | 2% | User research with at least 6 target users, design rationale, conversation design, architecture, key technical decisions |
+| User study and results | 4% | Study design, at least 6 participants, measures, analysis, findings backed by evidence (quotes, logs, task metrics) |
+| Ethical and design implications | 2% | Risks to users (privacy, over-reliance, inappropriate responses), how the design addresses them, lessons for future CUI design |
+
+The system is marked separately (10%): the core task works end to end, the system makes clear what
+it can do, takes turns, handles errors, ambiguous and off-topic input, the README matches, and the
+solution is distinctive. The report's system section should supply the evidence for each.
+
+**From the prof and TAs, earlier.**
+
+- 14 Sep lecture and the Lecture 6 slide: 3 user-research participants by mid-term, 6 by the final;
+  none on the team.
+- Consultation 1 (16 Sep): keep it interactive, not an answer dispenser; ground the design in what
+  users do now and their workarounds; survey existing products.
+- Lecture 5: use the course readings as evidence for design decisions.
+- 1 Oct consultation: merging the two A1 designs into one CUI is itself a substantial challenge.
+- 26 Oct lecture, as noted in class: the presentation need only cover the study design, but data
+  should still be collected for the final report.
+- Weeks 9–11 covered evaluating CUIs through user studies, and responsible AI: ethics, bias,
+  surveillance, anthropomorphism, companionship and human agency. The ethics section should use
+  that vocabulary.
+
+**Not stated anywhere we could find.** Whether references and appendices count towards the word
+limit (assume they do not buy extra room); the template; the submission channel; the video's length
+and whether it is required (the feedback refers to "the video you submit").
+
+## 6. The study as it now runs
+
+### 6.1 Content: 1–2 days
+
+| | Presented (2 Nov) | Run |
+|---|---|---|
+| Window | 7 days | 1–2 days of the participant's own revision |
+| Material | Their tutorials that week | Their own tutorial sheets and past-year exam papers |
+| Setting | Unsupervised | Unsupervised |
+| Participants | 4 (6 targeted) | 4 field (S01–S04), plus the 2 pilot students as phase 1 |
+| Day 0 | Consent, install, background form, no coaching | Same |
+| After use | Export on Day 7; interview Days 8–10 | Export at the end of use; interview within 1–2 days of it |
+| Interview | 10 min on the deck, 30 in the design | 20 min proposed: opinion (5), own account (3), 2–3 cued moments from the log (9), said against did (3) |
+| Over-time measures | Days 1–2 against Days 6–7 | Dropped |
+| "Coming back" | Context measure over a week | Reduced to sessions within the window |
+
+Consequences to handle:
+
+- **Sheet type.** The app does not tag exam papers. Classify each sheet by hand as tutorial or
+  past paper, and report the two side by side. Past papers often have no lecture attached, so DG3
+  measures (links opened) apply mainly to tutorials.
+- **Build.** Logs carry the build number since 19 Nov. One participant hit the long-paper import
+  failure before the fix; report use by build.
+- **Thin data.** If a participant barely used it, report that as a result with their own reason,
+  and treat the others as cases. With 4 people every result is per person, never pooled.
+
+### 6.2 Research questions, with dependent variables
+
+**Outcome.** Productive engagement with one's own problem work: the student produces an answer and
+revises it after feedback. This is a process outcome, chosen because ICAP predicts more learning
+from constructive and interactive modes (Chi & Wylie, 2014) and because it is what the baseline
+lacked. We do not measure learning gain.
+
+| RQ | Question | Dependent variables (source) | What counts as good | Reference point |
+|---|---|---|---|---|
+| **RQ1 Attempt** | When help is attached to an answer slot, do students put their own work in front of it before asking? | Share of help requests (Hint, Refresher, part chat) with text in the slot (`tutorial.help` `attempt_present`, `attempt_chars`); share of learner turns coded Constructive or Interactive | Higher | 0 of 31 turns in five plain chats (L-T1…L-T5); 24 of 45 in the chat where the learner set their own rule (L-T6) |
+| **RQ2 Recovery** | After Max says "not yet", how do students reach the end of the part? | End state per part: **repaired** (later correct, not revealed), **revealed** (Show answer), **left**. Also the highest hint rung first, and token attempts before a reveal | Repaired is productive. A reveal after real work is acceptable (DG2). A token attempt then reveal, or leaving, is not | L-T6: 7 of 7 answer requests granted at once; requests fell 5 → 2 after the learner's rule |
+| **RQ3 Accounts** | How do students explain those choices, and where does their account differ from their log? | Said-against-did matrix per participant; inductive themes | Not directional: the reasons are the finding | 4 of 6 sharers' accounts did not match their log |
+
+Changes from the deck, to state in the report: "over the week" is removed from RQ1 and RQ2; RQ2 no
+longer asks about "the AI's moves", because code sets the move from the button the student presses,
+so the move and the student's choice are the same event (`field-study.md`, 7 Nov).
+
+### 6.3 Framing the shorter window
+
+State the change in a short "Changes from the presented design" table, give the reasons in one
+sentence, then make these points. Each is true as it stands; none claims the short window is better
+for a question it cannot answer.
+
+| Argument | Why it holds | Limit to state beside it |
+|---|---|---|
+| **The window matches the question.** The revised RQs are about what happens inside a problem-solving episode, not about habit | The unit of analysis is the part and its help path. A day of revision yields many | Habit, return and novelty wearing off are not studied |
+| **It is the moment the problem occurs.** Exam revision is when students rework tutorials and past papers alone, under pressure, and reach for AI | A1: students do the work where the AI cannot see it. The teaching team called exam-period recruitment realistic | Revision differs from first-time tutorial work; some content is already familiar |
+| **Recall is fresher.** The interview comes within a day or two of the logged moments | Cued-recall interviews depend on the participant remembering the moment | Fewer moments to choose from |
+| **It asks less of students during finals.** | A week-long commitment in the exam period is a real cost to participants | — |
+| **Depth per person, not breadth.** Each interview is anchored in that person's own log | Information power (Malterud et al., 2016): narrow aim, specific sample, dense dialogue | Themes cannot be shown complete with 4 |
+| **It is the second loop of an iterative evaluation.** Phase 1 found problems; phase 2 checks the fixes in real use | Answers F7 directly | Phase 1 was informal: no set tasks, no recording |
+
+Reasons for the change, for the one sentence: Mac-only installs cut the recruit pool, a long exam
+paper failed to import until 19 Nov, and the exam period left days, not a week.
+
+**Do not claim:** that engagement holds over time, that students come back unprompted, that anyone
+learned more, or that the app caused any behaviour.
+
+### 6.4 Analysis
+
+- **Learner turns, deductive.** ICAP mode per turn, with the A1 codebook unchanged, so A1 counts
+  stay comparable.
+- **Paths.** One path per part from the log; tallied by end state, per person and per sheet type.
+- **Inductive (F4).** Open coding of interview transcripts and of the turn sequences around cued
+  moments, following Braun & Clarke (2006). Lucas and Valerie code separately, then compare;
+  disagreements are kept visible. Themes are reported with n of N and a quote.
+- **AI replies: a fidelity check (F3).** Every hint reply is coded as pointer, sub-goals, analogous
+  step, or **leak** (states the part's answer). Every Check reply is read against the grading basis
+  in the log (`checked_by`, `key_from`, `key_confidence`). Reply length is set against each rung's
+  word cap. Free-chat replies, where the model does choose its move, keep the A1 move codes.
+- **Integration.** A joint display per participant: measure, account, agree or disagree,
+  explanation.
+
+### 6.5 Do the three pilot problems still appear? (F7)
+
+| Pilot problem | Fix | Check in the field data |
+|---|---|---|
+| Max contradicted the answer key | One grading basis drives the verdict and the feedback (#69, #70) | Read every Check reply against its grading basis; count contradictions. Automated tests cover the fix, but nothing in the log flags a contradiction, so this is a manual read |
+| Working apart from the question | Combined sheet (`tutorials.md` §14) | `tutorial.source_pdf` opens and `tutorial.main_view` switches; an interview probe on moving between question and answer |
+| Too much to scan | Sources collapsed, duplicate tabs and usage figures removed | Interview probe; time to first text in a slot in the first session; inductive codes on clutter |
+
+The third problem is on the deck but not in the repo's record. Valerie to add two or three lines on
+what the pilot students said, so the report can cite it.
+
+## 7. Overall outline
+
+About 6,300 words, weighted towards the 4% component.
+
+| # | Section | Words | Rubric component | Can write now? |
+|---|---|---|---|---|
+| — | Abstract | 150 | — | Shell now; results line later |
+| 1 | Introduction: problem, users, contribution | 450 | Intro and related work | Yes |
+| 2 | Related work and the gap | 650 | Intro and related work | Yes |
+| 3 | User research and design rationale | 700 | System design | Yes |
+| 4 | The system: conversation design, architecture, decisions, iterations | 900 | System design | Yes |
+| 5 | User study: design, participants, measures, analysis | 900 | User study | Yes, except participant table |
+| 6 | Results | 1,400 | User study | Shell and tables now; `[DATA]` |
+| 7 | Ethical and design implications | 900 | Ethics | Mostly; two paragraphs wait for data |
+| 8 | Limitations and conclusion | 250 | — | Mostly |
+| | References; appendices (codebook, interview guide, log events, consent text) | | | Yes |
+
+## 8. Per-component outlines
+
+### 8.1 Introduction and related work (2%)
+
+**Key arguments, in order.**
+
+1. Tutorials are where lecture material has to be used alone, and that is when students open an AI
+   chat.
+2. They do try first, on paper or in their heads. The attempt never enters the chat.
+3. So the AI answers the question as worded: long replies to short prompts, pitched to nobody.
+4. The student then spends effort steering the AI instead of reasoning. Two A1 studies found this
+   from two ends, as misdirected persistence and as a scaffolding-calibration burden. Pooled, they
+   are cause and effect.
+5. Target users: undergraduates in problem-based courses, mostly STEM, who use AI for coursework.
+6. The gap. Intelligent tutoring systems work at the step and see the student's work, but only on
+   authored content. General AI chat takes any content but sees only the question. Study modes in
+   current products change how the AI talks and still leave the attempt to the student's choice.
+7. Contribution: a tutorial workspace on the student's own sheet where the attempt travels with
+   every help request and code decides how much help is given; a joint analysis of two user-research
+   datasets; and a two-phase field evaluation.
+8. Why a conversational interface: tutoring is a dialogue of small moves (Graesser et al., 1995).
+   Each control is a move the student would otherwise type ("is this right?", "I'm stuck", "I give
+   up"), and each press appears as a turn in the part's thread.
+
+**Justification.**
+
+| Argument | Evidence or source | Status |
+|---|---|---|
+| 2 | 0 of 31 learner turns held an attempt (L-T1…L-T5); interviewees try first (N-P5, L-P1, N-P4); work done off the log (L-T1, L-T6). `joint-analysis.md` §3.2 | Ready |
+| 3 | 7 of 10 replies over 400 words to prompts of 0–7 words (L-T2, L-T5); misfit runs both ways (§3.1); N-P5 quote | Ready |
+| 4 | `joint-analysis.md` bottom line; κ = 0.93 with its caveat (AI coders) | Ready; Valerie's check of her participants' coding still pending |
+| 5 | 8 interviewees: CS, Mech Eng, Data Science & Economics, Mathematics, Global Studies; Years 3–4. Seven of eight are STEM | Ready |
+| 6 | VanLehn (2011); Koedinger & Aleven on the assistance dilemma; Aleven et al. (2003); Baker et al. (2004); Bastani et al. (2025); Chen et al. (2025). Systems: ChatGPT Study Mode, Gemini Guided Learning, Khanmigo, NotebookLM (`midterm-deck-brief.md`, slide 7) | Check each product's current behaviour before asserting; complete the Koedinger & Aleven citation |
+| 8 | Graesser et al. (1995); Wood, Bruner & Ross (1976); course readings: Xu et al. (2026), Song et al. (2025), Houde et al. (2025) | Ready |
+| Mid-term question "why would students use it?" | Answered by the gap (6) and by phase 2 being voluntary use | Framing |
+
+### 8.2 System design and implementation (2%)
+
+**Key arguments, in order.**
+
+1. **User research.** Eight interviews and six consented AI study chats (152 turns), coded as one
+   dataset. Five findings, seven needs.
+2. **From needs to goals to features**, as one table (below). This is the answer to F6.
+3. **Where the two A1 designs meet.** Both already had the model propose and code decide. The help
+   ladder joins Nudge's rule of the least explicit move to ChatterED's release-and-lower rule.
+4. **One task, four controls.** Working a sheet: write in the slot, Check answer, Hint, Show answer;
+   plus a Refresher and a link to the lecture. Walk through one part.
+5. **A hint gives a step, not the answer** (F8): one worked exchange as a figure.
+6. **Conversation design.** How the system says what it can do, takes turns, and fails.
+7. **Architecture and key decisions.** Model proposes, code decides, in five places.
+8. **Iterations.** Three versions of the sheet; the Max fix; the calmer workspace. What was cut.
+9. **What is in the app but not claimed** (F9).
+
+**Provenance table for argument 2.**
+
+| Goal and feature | Need and evidence | Literature | Earlier design | Gap to close |
+|---|---|---|---|---|
+| DG1 tries first: the answer slot | JN2; 0 of 31; N-P5, L-P1 | Chi & Wylie (2014); Rowland (2014); VanLehn (2011) | ChatterED A1 question block | — |
+| DG2 gives up, system recovers: the ladder and Show answer | JN6, JN1; hand-built protocols of N-P4, N-P5, L-T6; N-P1 "it doesn't build the ladder for you" | Wood, Bruner & Ross (1976); Kapur (2008); point → teach → bottom-out hints from the tutoring-systems literature | Nudge's least explicit move; ChatterED A1 release-and-lower | Full citations for the hint-sequence sources. Nudge's A1 is not in the repo: Valerie to add it or supply the passage |
+| DG3 traces to the lecture: links on each part | JN5, JN3; 12 of 21 wrong verdicts (L-T6); N-P4 checks when sources are linked | Lee & See (2004) | ChatterED A1 block provenance | — |
+| DG4 short: one line on the sheet, detail in the chat | JN1; 7 of 10 over 400 words | Grice (1975); Xu et al. (2026) | ChatterED A1 | — |
+| DG5 own words count: a reveal fills nothing | JN7 (lower confidence: mostly L- data) | Nearest is Bastani et al. (2025) | ChatterED A1 progress rule | Say plainly that this is a design stance with thin literature |
+| Show answer only after a first check | Pilot and team testing (31 Oct) | None | — | Present as an iteration, and as an open question (it invites a token attempt) |
+| Check: one grading basis | Pilot (#69); JN3 | Houde et al. (2025); CS3249 Lecture 6 | — | — |
+
+**Justification for the rest.**
+
+| Argument | Evidence or source | Status |
+|---|---|---|
+| 4 | Workspace on main: slot, Check answer, Hint (next rung named), Refresher, Show answer after a check, status pill, source chip, lecture links | Ready; new screenshots needed, cropped to one part |
+| 5 | Code picks the rung (`app/src/core/tutor.ts`); rung prompts cap words and forbid the answer; the key's answer is withheld from the prompt until a reveal (`app/src/room/prompts.tutor.ts`). A real reply exists in `midterm-shots/03b`, but on an empty slot and the old layout | **Capture a new exchange on the current build with an attempt in the slot**, or better, quote a real one from a participant's export `[DATA]`. Label a team-made capture as a walkthrough, not data |
+| 5, limit | Leak prevention on hints is the prompt plus withholding the answer; there is no code-side leak check | State it; the fidelity check in §6.4 measures it |
+| 6 | Tooltips name the next rung; a press shows as "Hint, please: Q1"; one turn at a time ("Max is still answering"); empty slot disables Check; failed model reply keeps the verdict and asks to retry; a disputed verdict gets "the official solution may differ" | Ready. **Off-topic and ambiguous input have no tutorial-specific rule: test by hand and report what happens** |
+| 7 | (i) code picks the hint rung; (ii) grading order: formal check, then a high-confidence key compared in code, then the model; (iii) the line under a part is written by code; (iv) lecture links: the model proposes, code keeps only ids and pages that exist; (v) progress is a pure function. Electron, Svelte, ProseMirror, local SQLite; pure core that imports nothing; 3,912 tests | Ready |
+| 7, cost | An 8-part sheet reads in about 56 s for about $0.12; long papers in 5-page windows up to 60 pages | Ready |
+| 8 | `tutorials.md` §10–§14; commits `e6b93cd`, #70 | Ready |
+| 9 | Cut: PDF + working view, Help menu, docked tutorial, token counts. Moved: progress bar and lesson path to Summary notes. Still visible, not claimed: Summary notes, Ellie, Quiz me, Search | Ready. Recommend no code change before submission; simplify in the telling |
+
+### 8.3 User study and results (4%)
+
+**Key arguments, in order.**
+
+1. **Aim and outcome.** Exploratory; the outcome is productive engagement (§6.2).
+2. **Three RQs with dependent variables and a direction.**
+3. **Design: two phases.** Phase 1, an informal formative pilot (2 students). Phase 2, 1–2 days of
+   unsupervised use in exam revision, then a log-anchored interview (4 students). Explanatory
+   sequential: the log comes first and decides what the interview asks (Fetters et al., 2013).
+4. **Changes from the presented design**, as a table, with reasons (§6.3).
+5. **Participants**, by programme, year and usual AI tool. None on the team.
+6. **Measures**, one row per design goal: what the log records, what the interview asks.
+7. **Analysis**: deductive ICAP, paths, inductive themes, the AI-reply fidelity check, joint display.
+8. **Results**, in this order: use at a glance; RQ1; RQ2; RQ3; fidelity and the three pilot problems;
+   what we would change.
+9. **Limits.**
+
+**Justification.**
+
+| Argument | Evidence or source | Status |
+|---|---|---|
+| 1–2 | §6.2; Chi & Wylie (2014); Kapur (2008); Aleven et al. (2003); Baker et al. (2004) | Ready |
+| 3, phase 1 | Two NUS undergraduates, not on the team, worked their own material in the app, 26 Oct–1 Nov; no set tasks, no scores, notes only. Found three problems | Valerie to confirm the task and write up the third problem |
+| 3, phase 2 | `field-study.md` procedure, shortened | Ready |
+| 4 | §6.1, §6.3 | Ready |
+| 5 | Programme and year of S01–S04 | `[DATA]`. If any is not STEM, say so (F5) |
+| 6 | `field-study.md` measures table; log events added 15 Nov (`tutorial.help`, `tutorial.check`, `tutorial.text_started`, `tutorial.link_open`, `tutorial.source_pdf`, `app.active`) | Ready |
+| 7 | §6.4; Braun & Clarke (2006); Malterud et al. (2016) | Ready |
+| 8 | Tables to build now, empty: per-participant use (sessions, sheets by type, parts touched, active minutes); RQ1 shares; RQ2 end states; said-against-did matrix; pilot-problem recurrence (§6.5) | `[DATA]` |
+| 8, "what we would change" | The table in `field-study.md`, "What each result would change", was written before any data. Use the rows the results trigger | Ready as a frame |
+| 9 | No comparison and no test, so no causal or learning claim; four participants from our networks; they know the log is exported; mixed content across people; revision, not first-time work; Mac only; a proof check is the model's judgement | Ready |
+
+**Expectations to record before the data arrives** (from `field-study.md`, trimmed to what a short
+window can show): the share of help requests with an attempt sits nearer the self-set-rule chat than
+the plain ones; most "not yet" paths end in a repair; some accounts still differ from the log.
+
+### 8.4 Ethical and design implications (2%)
+
+**Key arguments, in order.**
+
+1. **Over-reliance.** The risk is the one the project starts from. The design answers with attempt
+   first, help in steps, and a reveal that fills no progress. What remains: the reveal gate can be
+   worked around with a token attempt, and pasted text counts as the student's own.
+2. **Wrong or inappropriate responses.** A tutor that judges work can judge it wrongly: 12 of 21 in
+   our baseline. The design fixes the grading basis in code, shows where a grade came from, hedges
+   on a low-confidence key and lets the student dispute it. What remains: a wrong answer key still
+   misgrades, and a proof is judged by the model. The interface can show the source of a judgement;
+   it cannot make the judgement right.
+3. **Privacy and surveillance.** A study app that logs study behaviour is a monitoring tool. The
+   design: data stays on the laptop; the study log holds counts and ids, never text; the participant
+   exports and sends the file by hand; the export strips ids, emails and lecture text. What remains:
+   typed answers are in the export, verbatim, as the consent notice says; everything sent for help
+   goes to the model provider.
+4. **Agency and anthropomorphism.** Max is a named character who says "not yet". The design keeps
+   the student in charge: giving up is always available after one check, costs nothing but progress,
+   and Max explains rather than scolds. Attempt-first is friction on purpose, and the report should
+   own that it is a paternalistic choice, justified by what students told us they want.
+5. **Access.** Mac only, and model calls cost money. Two recruits could not take part.
+6. **Lessons for CUI design.**
+   - Put the user's work in the context, not only their question, and do it by structure.
+   - Where a decision has stakes for the user, let the model propose and code decide.
+   - Show where a judgement came from.
+   - Measure from logs: what people say about their AI use is not what they do.
+   - Make giving up an ordinary move.
+   - Buttons can be conversational turns.
+
+**Justification.**
+
+| Argument | Evidence or source | Status |
+|---|---|---|
+| 1 | Bastani et al. (2025); Baker et al. (2004); Show answer after a first check; the Check-after-reveal fix; `group-project.md` §9 on pasted text | Ready; whether the gate was gamed is `[DATA]` |
+| 2 | `joint-analysis.md` §3.3; grading order in `check.ts`; pill and chip wording; issue #69 open (the filter is lexical) | Ready; contradiction count is `[DATA]` |
+| 3 | Consent screen; `studylog.ts`; export anonymiser; `field-study.md` "Ethics, in brief" | Ready. **The consent notice says "the AI provider you choose" while study builds send to Anthropic: align the report's wording, and the notice** |
+| 4 | Week 11 lecture topics; Lee & See (2004); "felt like it nags" probe in the interview | Framing ready; participants' words `[DATA]` |
+| 5 | Recruitment record; cost figures | Ready |
+| 6 | 4 of 6 accounts differed from the log; the five model-proposes-code-decides instances | Ready; sharpen with results |
+
+## 9. Before 23 Nov
+
+**Write now (no data needed).** Sections 1–5 and 7, the results tables as shells, the changes
+table, the provenance table, the limits.
+
+**Small checks to run.**
+
+- Capture one hint exchange on the current build with an attempt in the slot.
+- Type an off-topic message and an ambiguous one into a part's chat; record what Max does.
+- Confirm each existing product's current study mode before describing it.
+
+**From Valerie.** The third pilot problem in writing; the pilot task; the passage of the Nudge A1
+that the ladder draws on; her check of her five participants' joint coding.
+
+**When exports arrive.** Classify sheets by type; build paths; code turns; pick cued moments;
+interview; code replies for the fidelity check; fill the tables.
+
+**To confirm with the TAs.** Whether references and appendices count; where to submit; the video's
+length.
+
+**Open decisions.** The product name (#63); interview length; who writes which section.
+
+## 10. References to carry
+
+Complete in the repo unless marked.
+
+- Aleven, Stahl, Schworm, Fischer & Wallace (2003). Help seeking and help design in interactive
+  learning environments. *Review of Educational Research* 73(3).
+- Baker, Corbett, Koedinger & Wagner (2004). Off-task behavior in the cognitive tutor classroom.
+  *CHI '04*.
+- Bastani et al. (2025). Generative AI without guardrails can harm learning. *PNAS* 122(26).
+- Braun & Clarke (2006). Using thematic analysis in psychology. *Qualitative Research in
+  Psychology* 3(2).
+- Chen, Ruan, Ju, Yap & Wang (2025). *PACM HCI* 9(7), CSCW451.
+- Chi & Wylie (2014). The ICAP framework. *Educational Psychologist* 49(4).
+- Fetters, Curry & Creswell (2013). Achieving integration in mixed methods designs. *Health
+  Services Research* 48(6pt2).
+- Graesser, Person & Magliano (1995). Collaborative dialogue patterns in naturalistic one-to-one
+  tutoring. *Applied Cognitive Psychology* 9(6).
+- Houde et al. (2025). Controlling AI agent participation in group conversations. *IUI '25*.
+- Kapur (2008). Productive failure. *Cognition and Instruction* 26(3).
+- Lee & See (2004). Trust in automation. *Human Factors* 46(1).
+- Malterud, Siersma & Guassora (2016). Sample size in qualitative interview studies. *Qualitative
+  Health Research* 26(13).
+- Rowland (2014). The effect of testing versus restudy on retention. *Psychological Bulletin* 140(6).
+- Song, Tan, Zhu, Feng & Lee (2025). *PACM HCI* 9(7), CSCW452.
+- VanLehn (2011). The relative effectiveness of human tutoring, intelligent tutoring systems, and
+  other tutoring systems. *Educational Psychologist* 46(4).
+- Wood, Bruner & Ross (1976). The role of tutoring in problem solving. *Journal of Child Psychology
+  and Psychiatry* 17(2).
+- Xu, Zhang, Tang & Lee (2026). Who you explain to matters. *CHI '26*.
+- **To complete before citing:** Koedinger & Aleven on the assistance dilemma; the source for
+  point → teach → bottom-out hint sequences; Grice (1975); Kim et al. (2025), CHI '25.
