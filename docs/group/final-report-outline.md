@@ -495,7 +495,7 @@ losing side notices that each question takes longer. Say which side we favoured 
 
 | Checklist question (Week 12) | Our answer | Principle | Status |
 |---|---|---|---|
-| 1 Disclosure: does every user know it is AI? | The consent screen and the agents' labels say so; the pill says whether code or Max judged an answer | Transparency | Ready |
+| 1 Disclosure: does every user know it is AI? | The consent screen speaks of "the AI's replies" and the AI provider; the pill says whether code or Max judged an answer. Nothing in the workspace itself labels Max and Ellie as AI | Transparency | Ready; a small gap to state |
 | 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | Ready; users' reaction `[DATA]` |
 | 3 Who gains: whom does it serve worst? Did you test with them? | Students without an Apple Silicon Mac cannot use it; weaker students may meet more "not yet"; courses with no answer key get model-judged grades. We did not test with these groups | Fairness | Ready, as a stated gap |
 | 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | Ready; contradiction count `[DATA]` |
