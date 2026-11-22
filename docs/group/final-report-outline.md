@@ -702,12 +702,22 @@ interview; code replies for the fidelity check; fill the tables.
 - **No keys in the ZIP.** Check prompts and configuration are included.
 - **Video**, one unedited take of up to 10 minutes: install, then one function at a time.
 
+**Done on 23 Nov (issue #73).** The freeze was lifted for two things, and tutoring behaviour is
+unchanged. (1) Ten `INNOVATION` comments, named in the graders' README
+(`docs/group/submission/README.md`). (2) A grading copy, built with `release.sh --grader`: grader
+wording on the first-launch notice, a four-card tour, and a one-click sample tutorial that we wrote
+in the form of a course sheet (`docs/group/submission/sample/`). The ZIP is built by
+`tools/make-group-submission-zip.sh` from tracked files only: `app/`, the README, the sample, and
+the video. It holds no study data and no key; the grading DMG is a link in the README. **The report
+has to say** that the tour, the sample and the comments were added after the study, because the
+graders mark the version in the ZIP. Group number: 5.
+
 **To ask the teaching team.** How they want to run a Mac-only app that needs a paid model; our
 group number.
 
 **Open decisions.** The product name (#63); interview length; who writes which section; whether to
-make the video; **whether `INNOVATION` comments are allowed under the app freeze** (they change no
-behaviour, the system brief marks innovation from them, and none exist yet); which items of the
+make the video (both settled: a silent, unedited walk-through of the grading copy is filmed);
+~~whether `INNOVATION` comments are allowed under the app freeze~~ (settled, above); which items of the
 informal feedback go into the report.
 
 ## 10. References to carry
