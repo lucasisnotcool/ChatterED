@@ -4,6 +4,7 @@
    * "Experimental trial" label or Settings), the export's progress, and what came of it.
    */
   import { NOTICE_TITLE, TRIAL_CONTACT_EMAIL } from '../../shared/trial.js';
+  import { GRADER_NOTICE_TITLE } from '../../shared/grader.js';
   import { trial } from '../lib/trialstore.svelte.js';
   import ResearchTrialNotice from './ResearchTrialNotice.svelte';
 
@@ -24,8 +25,8 @@
 {#if trial.noticeOpen}
   <div class="scrim">
     <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="trial-notice-title">
-      <h2 id="trial-notice-title">{NOTICE_TITLE}</h2>
-      {#if trial.status?.participantId}
+      <h2 id="trial-notice-title">{trial.status?.grader ? GRADER_NOTICE_TITLE : NOTICE_TITLE}</h2>
+      {#if trial.status?.participantId && !trial.status.grader}
         <p class="meta">
           Your participant ID is <strong>{trial.status.participantId}</strong>{#if trial.status.consentedAt}
             · you agreed on {new Date(trial.status.consentedAt).toLocaleDateString()}{/if}.

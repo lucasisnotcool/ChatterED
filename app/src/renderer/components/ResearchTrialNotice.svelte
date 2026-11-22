@@ -1,14 +1,21 @@
 <script lang="ts">
   /**
    * The trial notice's body, drawn from `shared/trial.ts` — the one place the wording lives. Used
-   * by the consent screen and by the notice the "Experimental trial" label re-opens.
+   * by the consent screen and by the notice the "Experimental trial" label re-opens. A grader copy
+   * (`shared/grader.ts`) shows its own wording in both places instead.
    */
   import { NOTICE_INTRO, NOTICE_SECTIONS } from '../../shared/trial.js';
+  import { GRADER_NOTICE_INTRO, GRADER_NOTICE_SECTIONS } from '../../shared/grader.js';
+  import { trial } from '../lib/trialstore.svelte.js';
+
+  const grader = $derived(trial.status?.grader === true);
+  const intro = $derived(grader ? GRADER_NOTICE_INTRO : NOTICE_INTRO);
+  const sections = $derived(grader ? GRADER_NOTICE_SECTIONS : NOTICE_SECTIONS);
 </script>
 
 <div class="notice">
-  <p class="intro">{NOTICE_INTRO}</p>
-  {#each NOTICE_SECTIONS as section (section.heading)}
+  <p class="intro">{intro}</p>
+  {#each sections as section (section.heading)}
     <h3>{section.heading}</h3>
     {#each section.paragraphs ?? [] as para, i (i)}
       <p>{para}</p>

@@ -3,6 +3,10 @@
    * **The consent gate.** Full window, before anything else — first run included. Nothing behind
    * it is rendered, and the main process refuses every other channel until it is agreed to
    * (`src/main/research/consent.ts`). A new `CONSENT_VERSION` brings it back.
+   *
+   * **A grader copy** (`shared/grader.ts`, `trial.status.grader`) shows the grader wording and
+   * needs one click. The mechanism is the same: the click records consent, so nothing behind the
+   * gate can tell the difference.
    */
   import {
     CONSENT_AGREE,
@@ -10,11 +14,13 @@
     CONSENT_QUIT,
     NOTICE_TITLE,
   } from '../../shared/trial.js';
+  import { GRADER_CONTINUE, GRADER_KICKER, GRADER_NOTICE_TITLE } from '../../shared/grader.js';
   import { trial } from '../lib/trialstore.svelte.js';
   import ResearchTrialNotice from './ResearchTrialNotice.svelte';
 
   let agreed = $state(false);
   const renewed = $derived(trial.status?.consentedVersion != null);
+  const grader = $derived(trial.status?.grader === true);
 </script>
 
 <div class="gate">
@@ -29,6 +35,20 @@
         <div class="acts">
           <button type="button" class="btn" onclick={() => void trial.quit()}>{CONSENT_QUIT}</button>
           <button type="button" class="btn-primary" onclick={() => void trial.load()}>Try again</button>
+        </div>
+      </div>
+    </div>
+  {:else if grader}
+    <div class="scroll">
+      <div class="card" role="dialog" aria-modal="true" aria-labelledby="trial-title">
+        <p class="kicker">{GRADER_KICKER}</p>
+        <h1 id="trial-title">{GRADER_NOTICE_TITLE}</h1>
+        <ResearchTrialNotice />
+        <div class="acts">
+          <button type="button" class="btn" onclick={() => void trial.quit()}>{CONSENT_QUIT}</button>
+          <button type="button" class="btn-primary" disabled={trial.accepting} onclick={() => void trial.accept()}>
+            {GRADER_CONTINUE}
+          </button>
         </div>
       </div>
     </div>

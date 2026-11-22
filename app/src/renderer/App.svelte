@@ -30,6 +30,8 @@
   import DebugReportPanel from './components/debug/DebugReportPanel.svelte';
   // "Updated to build N", once after an update (src/main/update/).
   import UpdateNote from './components/update/UpdateNote.svelte';
+  // Help ▸ Show the Grader Tour, in a grader copy only (src/shared/grader.ts).
+  import GraderTourLayer from './components/grader/GraderTourLayer.svelte';
 
   // The study status is read before the main store, so first run knows to ask for a code.
   void trial.whenOpen().then(async () => {
@@ -120,6 +122,7 @@
 {/if}
 <ResearchTrialLayer />
 <StudyUsedUp />
+<GraderTourLayer />
 {/if}
 <DebugReportPanel />
 <!-- Outside the consent gate too: a fresh profile's first screen is the notice. -->

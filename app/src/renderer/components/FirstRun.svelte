@@ -10,6 +10,10 @@
    * so the first thing they do is attempt part 1 (`store.startFromTutorial`). Skipping it goes to
    * the Notebooks home as before. A preloaded study copy has nothing to unlock and opens on card 3
    * itself, so a participant goes from the consent notice straight to adding their sheet.
+   *
+   * **A grader copy** (`shared/grader.ts`) opens on a short tour instead (card 0, `GraderTour`),
+   * then carries on as above; and card 3 offers the bundled sample sheet above the drop slots,
+   * through the same `startTutorial` a dropped sheet takes. Every other build never sees card 0.
    */
   import { bridge } from '../lib/bridge.js';
   import { store } from '../lib/store.svelte.js';
@@ -18,10 +22,16 @@
   import { usd } from '../../shared/study.js';
   import StudyUnlock from './study/StudyUnlock.svelte';
   import { createFileDrop, filesToPaths, noPathNotice } from '../lib/dropguard.js';
+  import { trial } from '../lib/trialstore.svelte.js';
+  import { GRADER_SAMPLE_MISSING } from '../../shared/grader.js';
+  import GraderTour from './grader/GraderTour.svelte';
+
+  /** A grader copy: told on `trial:status`, which is settled before first run mounts (`App.svelte`). */
+  const grader = $derived(trial.status?.grader === true);
 
   // A preloaded copy is unlocked in main before the window opens, and `study.load()` runs before
   // first run mounts, so this reads the settled status.
-  let card = $state(study.status.available && study.status.unlocked ? 3 : 1);
+  let card = $state(trial.status?.grader === true ? 0 : study.status.available && study.status.unlocked ? 3 : 1);
   let key = $state('');
   let saving = $state(false);
   let keyError = $state<string | null>(null);
@@ -109,6 +119,29 @@
     if (!ok) starting = false;
   }
 
+  // ── A grader copy's sample: put in the tutorial slot, then opened exactly as a dropped sheet is ──
+  let sampleBusy = $state(false);
+  let sampleError = $state<string | null>(null);
+
+  async function trySample(): Promise<void> {
+    if (starting || sampleBusy) return;
+    sampleBusy = true;
+    sampleError = null;
+    try {
+      const out = await bridge().study.graderSample();
+      if (!out.ok) {
+        sampleError = out.error;
+        return;
+      }
+      setSlot('tutorial', out.path);
+      await startTutorial();
+    } catch {
+      sampleError = GRADER_SAMPLE_MISSING;
+    } finally {
+      sampleBusy = false;
+    }
+  }
+
   async function saveKey(): Promise<void> {
     if (!key.trim()) return;
     saving = true;
@@ -128,13 +161,15 @@
 
 <div class="screen">
   <section class="card">
-    {#if !preloaded}
+    {#if !preloaded && card !== 0}
       <span class="steps" aria-label="Step {card} of 3">
         {#each [1, 2, 3] as n (n)}<span class="pip" class:on={n === card}></span>{/each}
       </span>
     {/if}
 
-    {#if card === 1}
+    {#if card === 0}
+      <GraderTour ondone={() => toCard(2)} />
+    {:else if card === 1}
       <h1>What this is</h1>
       <p>
         Add your lecture slides and notes to a <strong>notebook</strong>, and ChatterED writes a short
@@ -262,6 +297,17 @@
         </p>
       {/if}
 
+      {#if grader}
+        <div class="sample">
+          <button type="button" class="btn-primary" disabled={starting || sampleBusy} onclick={() => void trySample()}>
+            {sampleBusy || starting ? 'Opening…' : 'Try the sample tutorial'}
+          </button>
+          <span class="quiet">Four questions on graph search, written by the team.</span>
+        </div>
+        {#if sampleError}<p class="err">{sampleError}</p>{/if}
+        <p class="quiet">Or add your own sheet:</p>
+      {/if}
+
       <div class="slots">
         {#each [{ slot: 'tutorial', label: 'Tutorial sheet', hint: 'PDF, Word or an image', path: tutorialPath, drop: tutorialDrop }, { slot: 'lecture', label: 'Lecture slides (optional)', hint: 'the deck this tutorial is on', path: lecturePath, drop: lectureDrop }] as s (s.slot)}
           <button
@@ -356,4 +402,6 @@
   .slot-label { font-size: 13px; font-weight: 600; }
   .slot-file { font-size: 13px; }
   .slot-hint { font-size: 12px; }
+  .sample { display: flex; align-items: center; gap: 14px; margin: 16px 0 12px; }
+  .sample .quiet { font-size: 12px; }
 </style>

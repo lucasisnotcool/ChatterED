@@ -1,11 +1,17 @@
 <script lang="ts">
   /**
    * The always-visible "Experimental trial" label in the title bar. Opens the notice. Quiet on
-   * purpose: it is a standing reminder, not an alert.
+   * purpose: it is a standing reminder, not an alert. A grader copy (`shared/grader.ts`) says so.
    */
+  import { GRADER_BADGE } from '../../shared/grader.js';
   import { trial } from '../lib/trialstore.svelte.js';
 </script>
 
+{#if trial.status?.grader}
+  <button type="button" class="badge no-drag" title="What this copy sends, and where" onclick={() => (trial.noticeOpen = true)}>
+    {GRADER_BADGE}
+  </button>
+{:else}
 <button
   type="button"
   class="badge no-drag"
@@ -14,6 +20,7 @@
 >
   Experimental trial
 </button>
+{/if}
 
 <style>
   .badge {
