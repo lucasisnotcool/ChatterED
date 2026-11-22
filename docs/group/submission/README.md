@@ -93,8 +93,12 @@ OpenAI, Google Gemini, or any OpenAI-compatible endpoint, including a local Olla
 scripted demo that cannot read a new sheet. We do not include a key, as the brief asks.
 
 ```sh
-npm run typecheck && npm run lint && npm test    # about 3,900 tests
+npm run typecheck && npm run lint && npm test
 ```
+
+From this ZIP, 3,912 of the 3,936 tests pass. The other 24, in five files that test PDF reading
+for the notes workspace, read a slide deck that we keep outside `app/` in our repository and did
+not include here. No test of the tutorial workspace depends on it.
 
 `app/README.md` and `app/docs/` are the developers' notes. Parts of them describe an earlier
 version of the product (lecture notes written by the agents), which is still in the code and which
