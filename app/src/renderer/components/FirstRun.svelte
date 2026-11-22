@@ -291,9 +291,15 @@
       {#if preloaded}
         <p class="quiet">
           Two study partners work beside you: <strong>Ellie</strong> explains from the lecture, and
-          <strong>Max</strong> gives hints, checks your answers, and quizzes you. Their API credit is
-          paid by the study ({usd(study.status.budgetUsd)}); what is left is always shown at the top
-          right.
+          <strong>Max</strong> gives hints, checks your answers, and quizzes you.
+          {#if grader}
+            Their API credit is already set up ({usd(study.status.budgetUsd)}); what is left is always
+            shown at the top right.
+          {:else}
+            Their API credit is
+            paid by the study ({usd(study.status.budgetUsd)}); what is left is always shown at the top
+            right.
+          {/if}
         </p>
       {/if}
 
@@ -334,9 +340,15 @@
         {/each}
       </div>
       <p class="quiet">
-        ChatterED keeps its own copy of each file on this Mac; nothing is uploaded anywhere. Max
-        reads the sheet first: about a minute for every five pages, so a long exam paper takes
-        several minutes.
+        {#if grader}
+          ChatterED keeps its own copy of each file on this Mac. Max reads the sheet first, through
+          Anthropic's API: about twenty seconds for the sample, and about a minute for every five
+          pages of your own.
+        {:else}
+          ChatterED keeps its own copy of each file on this Mac; nothing is uploaded anywhere. Max
+          reads the sheet first: about a minute for every five pages, so a long exam paper takes
+          several minutes.
+        {/if}
       </p>
       <div class="acts">
         <button type="button" class="btn-primary" onclick={() => void startTutorial()} disabled={!tutorialPath || starting}>
