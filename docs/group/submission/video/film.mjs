@@ -94,16 +94,33 @@ const status = () => ev(`[...document.querySelectorAll(".nd-tut-part")].map(p=>(
 
 export { ev, send, W, log, press, pressPart, typeSlot, typeThread, reply, agentCount, status, click, key, partJs };
 
+// Frames are captured at a fixed rate (Page.captureScreenshot), not when the page reports a
+// change. A change-driven recorder (Page.startScreencast) can miss the last frame of a quick
+// transition and go on showing the screen before it; the first take lost a whole tour card so.
+const FRAME_MS = 170;
+let loop = null;
 export async function startRecording() {
   await send('Page.enable');
   recording = true;
-  await send('Page.startScreencast', { format: 'jpeg', quality: 92, everyNthFrame: 1 });
+  loop = (async () => {
+    while (recording) {
+      const t = Date.now();
+      const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: 88 });
+      if (r.result?.data) {
+        const n = String(frames.length).padStart(6, '0');
+        fs.writeFileSync(`${outDir}/frames/f${n}.jpg`, Buffer.from(r.result.data, 'base64'));
+        frames.push({ file: `frames/f${n}.jpg`, t: t / 1000 });
+      }
+      const left = FRAME_MS - (Date.now() - t);
+      if (left > 0) await W(left);
+    }
+  })();
   log('recording');
 }
 export async function stopRecording() {
   await W(2500);
-  await send('Page.stopScreencast');
   recording = false;
+  await loop;
   // Join the frames at their real durations.
   const lines = ['ffconcat version 1.0'];
   for (let i = 0; i < frames.length; i++) {
