@@ -1,25 +1,32 @@
 # Final group report: outline and framing
 
-**Status.** Working sketch, 21 Nov 2026, for Lucas and Valerie. The report is due Mon 23 Nov, 23:59
-(4,000–7,000 words). Study data is not back, so this covers what can be written now and leaves
-marked gaps (`[DATA]`) for the rest. Valerie has not reviewed it.
+**Status.** Working sketch for Lucas and Valerie, first written 21 Nov 2026 and **brought up to
+date on 22 Nov** with the first study exports. The report is due Mon 23 Nov, 23:59 (4,000–7,000
+words of main text). Valerie has not reviewed it.
 
-**Update, 22 Nov: the first exports are in, and they change §6.** Results are kept in
-`field-results.md`. Both exports so far are from study copy 04: one first-use sitting of 16 minutes
-on a tutorial sheet, and one earlier session in which the exam paper would not import and nothing
-was attempted. Neither is "1–2 days of revision". Until the other exports say otherwise, write the
-field phase as a first-use field trial, report cases and counts beside a timeline (not rates), and
-put the weight on the interviews and on the fidelity check of the AI's replies. The framing in §6.3
-holds only for a participant who did use the app over a day or two. The app is frozen from 22 Nov:
-faults found in the data go into the report as limitations, and are not fixed.
+**What changed on 22 Nov, and where.**
+
+- **The first exports are in, and they are thin.** Both come from study copy 04: one first-use
+  sitting of 16 minutes on a tutorial sheet, and one earlier session in which the exam paper would
+  not import and nothing was attempted. The record is `field-results.md`. Neither is "1–2 days of
+  revision", so §6.1, §6.3, §8.3 and §9 now carry both the plan and what was observed.
+- **The app is frozen** (Lucas, 22 Nov). Faults found in the data go into the report as limitations
+  and are not fixed. §9 marks the one submission task this touches (`INNOVATION` comments).
+- **Informal feedback from participants**, relayed by Valerie, is kept in a local-only notes file
+  with a table mapping each item to the sections here. None of it is in this file: Lucas and
+  Valerie choose what goes into the report.
+- Places still waiting for data are marked `[DATA]`. Places the first export already fills are
+  marked **S04**.
 
 **Decisions this sketch assumes (Lucas, 21 Nov).**
 
-- The field phase is **1–2 days of unsupervised use** per participant, then a log-anchored interview.
+- The field phase was planned as **1–2 days of unsupervised use** per participant, then a
+  log-anchored interview. *As observed so far it is a single short sitting (see above).*
 - **Tutorial sheets and past-year exam papers both count** as study material. This reverses the
   18 Nov line in issue #72 that left exam-paper use out of the analysis.
 - The report counts **6 target users: 2 in an informal pilot and 4 in the field phase.** The pilot was
-  very informal and is described as such; its data is never pooled with the field data.
+  very informal and is described as such; its data is never pooled with the field data. *Open: the
+  two copy-04 exports may be two different people (`field-results.md` §5).*
 
 ---
 
@@ -28,14 +35,17 @@ faults found in the data go into the report as limitations, and are not fixed.
 - **The spine of the report, in one sentence.** Students do attempt their tutorial problems, but the
   attempt never reaches the AI, so the AI answers the question instead of the student; ChatterED
   makes the attempt the input to every request for help, and the study looks at what students then
-  do, in real exam revision.
+  do when they use it on their own.
 - **The marks at risk are in the user study (4%).** The teaching team accepted the problem, the
   system and the demo. What they asked for is clearer research questions, a named outcome, and
   measures that line up with it.
 - **One gap explains most of the criticism:** no research question named an outcome with a direction
   (what counts as good). §6 proposes RQs with explicit dependent variables.
 - **The shorter study and the sharper RQs are the same change.** The vague part of the RQs was the
-  "over the week" clause. Dropping it removes the claim a 1–2 day window cannot support (§6.3).
+  "over the week" clause. Dropping it removes the claim a short window cannot support (§6.3).
+- **The first data says: write a first-use field trial, not days of revision.** One 16-minute
+  sitting gives cases and a timeline, not rates. The weight moves to the interviews and to the
+  check of the AI's replies, which came out clean in 7 of 7 and exposed three faults (§6.6).
 - **The pilot criticism and the informal pilot solve each other:** report the evaluation as two
   phases, where phase 2 checks whether the phase 1 problems come back.
 - **The deck and the repo have drifted apart** (RQ2 wording, participant count, need numbering, the
@@ -55,6 +65,9 @@ faults found in the data go into the report as limitations, and are not fixed.
 | Earlier lab-comparison design | `docs/group/user-study.md` |
 | Tutorial workspace design and its revisions | `docs/research/tutorials.md` (§10–§14) |
 | Mid-term brief: literature, existing systems, architecture | `docs/group/midterm-deck-brief.md` |
+| The two assignment briefs (report, system) | `Academia/group project/` (local only) |
+| Study results as exports come in | `docs/group/field-results.md`; measured with `tools/field-metrics.py` |
+| Informal participant feedback, with a triage table | `docs/group/field-feedback.local.md` (local only, never committed) |
 
 ## 2. The delivered deck against the earlier proposals
 
@@ -240,7 +253,12 @@ The group number for the file names is not in the repo.
 
 ## 6. The study as it now runs
 
-### 6.1 Content: 1–2 days
+### 6.1 Content: planned as 1–2 days
+
+**Observed so far (22 Nov).** S04: one launch, 16 minutes, one tutorial sheet from an old module,
+3 of 14 parts touched, no lecture or solutions added. Copy 04 on 18 Nov: 17 active minutes, the
+exam paper failed to import three times, nothing typed. The "Run" column below is the plan the
+participants were given, not what these two exports show.
 
 | | Presented (2 Nov) | Run |
 |---|---|---|
@@ -259,10 +277,14 @@ Consequences to handle:
 - **Sheet type.** The app does not tag exam papers. Classify each sheet by hand as tutorial or
   past paper, and report the two side by side. Past papers often have no lecture attached, so DG3
   measures (links opened) apply mainly to tutorials.
-- **Build.** Logs carry the build number since 19 Nov. One participant hit the long-paper import
-  failure before the fix; report use by build.
-- **Thin data.** If a participant barely used it, report that as a result with their own reason,
-  and treat the others as cases. With 4 people every result is per person, never pooled.
+- **Build.** One participant hit the long-paper import failure before the 19 Nov fix; report use by
+  build. S04's export records version 0.1.0 and no build number, so the build has to come from
+  which copy Valerie sent and when.
+- **Thin data. This has happened.** Report it as a result, with the participant's own reason from
+  the interview, and treat each person as a case. Every result is per person, never pooled, and
+  counts are given as counts ("2 of 4"), not percentages.
+- **Was it revision?** S04's sheet is from a module taken earlier. Ask before describing any
+  session as exam revision.
 
 ### 6.2 Research questions, with dependent variables
 
@@ -277,11 +299,24 @@ lacked. We do not measure learning gain.
 | **RQ2 Recovery** | After Max says "not yet", how do students reach the end of the part? | End state per part: **repaired** (later correct, not revealed), **revealed** (Show answer), **left**. Also the highest hint rung first, and token attempts before a reveal | Repaired is productive. A reveal after real work is acceptable (DG2). A token attempt then reveal, or leaving, is not | L-T6: 7 of 7 answer requests granted at once; requests fell 5 → 2 after the learner's rule |
 | **RQ3 Accounts** | How do students explain those choices, and where does their account differ from their log? | Said-against-did matrix per participant; inductive themes | Not directional: the reasons are the finding | 4 of 6 sharers' accounts did not match their log |
 
+**What the first export adds to these definitions (S04).**
+
+- RQ1's denominator is Hint and Refresher presses. A typed reply in a part's thread and a Check are
+  not help requests, though one of the two logs lists them alike.
+- A typed reply in a part's thread is learner work. S04's one real repair was made there, and the
+  slot kept its first wording.
+- RQ2 needs a fourth end state: **worked on, not checked**. S04's most-worked part was never
+  checked, so it has no verdict at all.
+- First values, as counts: RQ1 2 of 4; RQ2 one "not yet", left.
+
 Changes from the deck, to state in the report: "over the week" is removed from RQ1 and RQ2; RQ2 no
 longer asks about "the AI's moves", because code sets the move from the button the student presses,
 so the move and the student's choice are the same event (`field-study.md`, 7 Nov).
 
 ### 6.3 Framing the shorter window
+
+**Use this table only for a participant who did use the app across a day or more.** For a single
+short sitting, the honest frame is the one below the table.
 
 State the change in a short "Changes from the presented design" table, give the reasons in one
 sentence, then make these points. Each is true as it stands; none claims the short window is better
@@ -298,6 +333,19 @@ for a question it cannot answer.
 
 Reasons for the change, for the one sentence: Mac-only installs cut the recruit pool, a long exam
 paper failed to import until 19 Nov, and the exam period left days, not a week.
+
+**If use stays at single sittings: a first-use field trial.** Say that participants were asked to
+use the app in their own revision for a day or two, and that the use recorded was shorter. Then:
+
+| What a first-use sitting can show | What it cannot |
+|---|---|
+| Whether a new user, alone, finds the core task and the four controls | Anything about revision habits or return |
+| What they do at the first hint and the first "not yet", move by move | Rates: there are too few events |
+| Whether the AI's replies follow the design on a real sheet (fidelity) | Whether the design changes behaviour over a session |
+| Where the product explains itself badly (first impressions are the data) | Learning |
+
+This also answers the mid-term question ("why would students use it?") honestly: on this evidence
+we do not know that they would, and the interviews should ask.
 
 **Do not claim:** that engagement holds over time, that students come back unprompted, that anyone
 learned more, or that the app caused any behaviour.
@@ -328,6 +376,24 @@ learned more, or that the app caused any behaviour.
 The third problem is on the deck but not in the repo's record. Valerie to add two or three lines on
 what the pilot students said, so the report can cite it.
 
+**S04 against the three problems.** (1) One check, no contradiction: the verdict and the feedback
+agreed, and the reply said the key was disputed. (2) The source PDF was opened once, for 6 seconds,
+and the view was never switched. (3) S04 began typing about 1 min 45 s after the sheet was ready. One
+sitting cannot show a problem is gone; it shows none of the three reappearing in the log.
+
+### 6.6 First results (S04), in brief
+
+Full record: `field-results.md`.
+
+| | Finding | Use in the report |
+|---|---|---|
+| Loop worked once | On the first part: attempt, hint, a correct new step typed in reply | The worked example for the system section and for RQ1 (§8.2 argument 5) |
+| Loop did not hold | Next hint level left after 9 seconds; then help asked on two empty slots; a 28-character answer checked, "not yet", left | RQ1 and RQ2 as a timeline. Reads as trying each button, so ask in the interview |
+| AI followed the design | 7 replies, none gave the answer; 73 to 173 words; the check said what it rested on | Fidelity check (F3); set against 7 of 10 replies over 400 words in the baseline |
+| Fault 1 | Hints say what "the lecture" does not cover, with no lecture added. With nothing linked, the first hint level can only send the student back to the question's wording | Limitation; DG3 depends on the student adding a lecture |
+| Fault 2 | Asked how she differs from Max, Ellie described a "group" and a "tester in the group": the earlier design | F9 complexity, and the persona question in §8.4 |
+| Fault 3 | No solutions added, so the check ran against a key the model wrote and had marked as disputed | Ethics argument 2; transparency |
+
 ## 7. Overall outline
 
 About 6,300 words of main text, weighted towards the 4% component. Text inside tables and figures
@@ -341,7 +407,7 @@ does not count, so evidence goes in tables and the prose carries the argument.
 | 3 | User research and design rationale | 700 | System design | Yes |
 | 4 | The system: conversation design, architecture, decisions, iterations | 900 | System design | Yes |
 | 5 | User study: design, participants, measures, analysis | 900 | User study | Yes, except participant table |
-| 6 | Results | 1,400 | User study | Shell and tables now; `[DATA]` |
+| 6 | Results | 1,400, fewer if use stays thin | User study | **S04** can be written now from `field-results.md`; the rest `[DATA]` |
 | 7 | Ethical and design implications | 900 | Ethics | Mostly; two paragraphs wait for data |
 | 8 | Limitations and conclusion | 250 | — | Mostly |
 | 9 | Project contributions among team members | 150 | Required, no weight stated | Yes: from `docs/provenance.md` and git history |
@@ -418,13 +484,13 @@ does not count, so evidence goes in tables and the prose carries the argument.
 | Argument | Evidence or source | Status |
 |---|---|---|
 | 4 | Workspace on main: slot, Check answer, Hint (next rung named), Refresher, Show answer after a check, status pill, source chip, lecture links | Ready; new screenshots needed, cropped to one part |
-| 5 | Code picks the rung (`app/src/core/tutor.ts`); rung prompts cap words and forbid the answer; the key's answer is withheld from the prompt until a reveal (`app/src/room/prompts.tutor.ts`). A real reply exists in `midterm-shots/03b`, but on an empty slot and the old layout | **Capture a new exchange on the current build with an attempt in the slot**, or better, quote a real one from a participant's export `[DATA]`. Label a team-made capture as a walkthrough, not data |
+| 5 | Code picks the rung (`app/src/core/tutor.ts`); rung prompts cap words and forbid the answer; the key's answer is withheld from the prompt until a reveal (`app/src/room/prompts.tutor.ts`). A real reply exists in `midterm-shots/03b`, but on an empty slot and the old layout | **Done, S04:** two real replies on one part, with the participant's attempt, are quoted in `field-results.md` §2.5. Use them as the figure, labelled as field data |
 | 5, limit | Leak prevention on hints is the prompt plus withholding the answer; there is no code-side leak check | State it; the fidelity check in §6.4 measures it |
-| 6 | Tooltips name the next rung; a press shows as "Hint, please: Q1"; one turn at a time ("Max is still answering"); empty slot disables Check; failed model reply keeps the verdict and asks to retry; a disputed verdict gets "the official solution may differ" | Ready. **Off-topic and ambiguous input have no tutorial-specific rule: test by hand and report what happens** |
+| 6 | Tooltips name the next rung; a press shows as "Hint, please: Q1"; one turn at a time ("Max is still answering"); empty slot disables Check; failed model reply keeps the verdict and asks to retry; a disputed verdict gets "the official solution may differ" | Ready. **Off-topic and ambiguous input have no tutorial-specific rule: test by hand and report what happens.** S04 adds two things the system says badly: hints mention a lecture that was never added, and the private chat explains the agents in terms of the old group design |
 | 7 | (i) code picks the hint rung; (ii) grading order: formal check, then a high-confidence key compared in code, then the model; (iii) the line under a part is written by code; (iv) lecture links: the model proposes, code keeps only ids and pages that exist; (v) progress is a pure function. Electron, Svelte, ProseMirror, local SQLite; pure core that imports nothing; 3,912 tests | Ready |
 | 7, cost | An 8-part sheet reads in about 56 s for about $0.12; long papers in 5-page windows up to 60 pages | Ready |
 | 8 | `tutorials.md` §10–§14; commits `e6b93cd`, #70 | Ready |
-| 9 | Cut: PDF + working view, Help menu, docked tutorial, token counts. Moved: progress bar and lesson path to Summary notes. Still visible, not claimed: Summary notes, Ellie, Quiz me, Search | Ready. Recommend no code change before submission; simplify in the telling |
+| 9 | Cut: PDF + working view, Help menu, docked tutorial, token counts. Moved: progress bar and lesson path to Summary notes. Still visible, not claimed: Summary notes, Ellie, Quiz me, Search | Ready. The app is frozen, so simplify in the telling. S04 asked the app what the second agent is for and got a confusing answer (`field-results.md` §2.6): cite it as the cost of carrying two agents |
 
 ### 8.3 User study and results (4%)
 
@@ -432,8 +498,9 @@ does not count, so evidence goes in tables and the prose carries the argument.
 
 1. **Aim and outcome.** Exploratory; the outcome is productive engagement (§6.2).
 2. **Three RQs with dependent variables and a direction.**
-3. **Design: two phases.** Phase 1, an informal formative pilot (2 students). Phase 2, 1–2 days of
-   unsupervised use in exam revision, then a log-anchored interview (4 students). Explanatory
+3. **Design: two phases.** Phase 1, an informal formative pilot (2 students). Phase 2, unsupervised
+   use on the participant's own material, planned as 1–2 days and described as it ran, then a
+   log-anchored interview (4 students). Explanatory
    sequential: the log comes first and decides what the interview asks (Fetters et al., 2013).
 4. **Changes from the presented design**, as a table, with reasons (§6.3).
 5. **Participants**, by programme, year and usual AI tool. None on the team.
@@ -454,13 +521,16 @@ does not count, so evidence goes in tables and the prose carries the argument.
 | 5 | Programme and year of S01–S04 | `[DATA]`. If any is not STEM, say so (F5) |
 | 6 | `field-study.md` measures table; log events added 15 Nov (`tutorial.help`, `tutorial.check`, `tutorial.text_started`, `tutorial.link_open`, `tutorial.source_pdf`, `app.active`) | Ready |
 | 7 | §6.4; Braun & Clarke (2006); Malterud et al. (2016) | Ready |
-| 8 | Tables to build now, empty: per-participant use (sessions, sheets by type, parts touched, active minutes); RQ1 shares; RQ2 end states; said-against-did matrix; pilot-problem recurrence (§6.5) | `[DATA]` |
+| 8 | Tables: per-participant use (sessions, sheets by type, parts touched, active minutes); RQ1 counts; RQ2 end states; said-against-did matrix; pilot-problem recurrence (§6.5) | **S04** rows filled in `field-results.md` §2; S01–S03 and all interviews `[DATA]`. The coding there is by one AI coder: a person must check it |
+| 8, what went wrong | The 18 Nov session: three failed imports of an exam paper, nothing attempted; fixed 19 Nov (#72) | Ready (`field-results.md` §3). Say the build changed during the study |
 | 8, "what we would change" | The table in `field-study.md`, "What each result would change", was written before any data. Use the rows the results trigger | Ready as a frame |
 | 9 | No comparison and no test, so no causal or learning claim; four participants from our networks; they know the log is exported; mixed content across people; revision, not first-time work; Mac only; a proof check is the model's judgement | Ready |
 
 **Expectations to record before the data arrives** (from `field-study.md`, trimmed to what a short
 window can show): the share of help requests with an attempt sits nearer the self-set-rule chat than
 the plain ones; most "not yet" paths end in a repair; some accounts still differ from the log.
+These were written on 21 Nov, before any export. S04's sitting does not meet the second (its one
+"not yet" was left) and is too small to speak to the first. Report the expectations and the miss.
 
 ### 8.4 Ethical and design implications (2%)
 
@@ -505,9 +575,9 @@ losing side notices that each question takes longer. Say which side we favoured 
 | Checklist question (Week 12) | Our answer | Principle | Status |
 |---|---|---|---|
 | 1 Disclosure: does every user know it is AI? | The consent screen speaks of "the AI's replies" and the AI provider; the pill says whether code or Max judged an answer. Nothing in the workspace itself labels Max and Ellie as AI | Transparency | Ready; a small gap to state |
-| 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | Ready; users' reaction `[DATA]` |
+| 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | **S04:** asked the app how the two differ; the answer described the old group design. More reaction `[DATA]` |
 | 3 Who gains: whom does it serve worst? Did you test with them? | Students without an Apple Silicon Mac cannot use it; weaker students may meet more "not yet"; courses with no answer key get model-judged grades. We did not test with these groups | Fairness | Ready, as a stated gap |
-| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | Ready; contradiction count `[DATA]` |
+| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | **S04:** one check, "not yet", right by our reading. Full count `[DATA]` |
 | 5 Vulnerable moments: what happens on a distress message? | Nothing specific is designed for it. Exam stress is the likely case | Well-being, safety | **Our weakest answer. Test by hand, then say what we would add** |
 | 6 Exit: how does it end well? Can the user end it? | Show answer ends a part without penalty beyond progress; Max asks for one line on why it works. The student can leave at any point | Agency | Ready |
 | 7 Data: what do you keep, infer, and have consent for? | Argument 3 below | Privacy, accountability | Ready |
@@ -520,8 +590,8 @@ on how we would measure it. Question 5 is ours.
 
 | Argument | Evidence or source | Status |
 |---|---|---|
-| 1 | Bastani et al. (2025); Baker et al. (2004); Show answer after a first check; the Check-after-reveal fix; `group-project.md` §9 on pasted text | Ready; whether the gate was gamed is `[DATA]` |
-| 2 | `joint-analysis.md` §3.3; grading order in `check.ts`; pill and chip wording; issue #69 open (the filter is lexical) | Ready; contradiction count is `[DATA]` |
+| 1 | Bastani et al. (2025); Baker et al. (2004); Show answer after a first check; the Check-after-reveal fix; `group-project.md` §9 on pasted text | Ready. **S04:** one token attempt (28 characters restating the question) was checked, but no reveal followed. More `[DATA]` |
+| 2 | `joint-analysis.md` §3.3; grading order in `check.ts`; pill and chip wording; issue #69 open (the filter is lexical) | Ready. **S04:** with no solutions added the key was the model's own, 6 of 14 marked as disputed; the reply disclosed it, but the student cannot see which parts are affected before checking. Contradiction count `[DATA]` |
 | 3 | Consent screen; `studylog.ts`; export anonymiser; `field-study.md` "Ethics, in brief" | Ready. **The consent notice says "the AI provider you choose" while study builds send to Anthropic: align the report's wording, and the notice** |
 | 4 | Week 11 lecture topics; Lee & See (2004); "felt like it nags" probe in the interview | Framing ready; participants' words `[DATA]` |
 | 5 | Recruitment record; cost figures | Ready |
@@ -529,16 +599,17 @@ on how we would measure it. Question 5 is ours.
 
 ## 9. Before 23 Nov
 
-**Write now (no data needed).** Sections 1–5 and 7, the results tables as shells, the changes
-table, the provenance table, the limits.
+**Write now.** Sections 1–5 and 7, the changes table, the provenance table, the limits, and the S04
+part of the results from `field-results.md`.
 
 **Small checks to run.**
 
-- Capture one hint exchange on the current build with an attempt in the slot.
+- ~~Capture one hint exchange with an attempt in the slot.~~ Done: S04's export has one.
 - Type an off-topic message and an ambiguous one into a part's chat; record what Max does.
 - Confirm each existing product's current study mode before describing it.
 
-**From Valerie.** The third pilot problem in writing; the pilot task; the passage of the Nudge A1
+**From Valerie.** Whether the two copy-04 exports are one person or two; S04's programme and year;
+which build each participant ran; a human check of the S04 coding. The third pilot problem in writing; the pilot task; the passage of the Nudge A1
 that the ladder draws on; her check of her five participants' joint coding.
 
 **Exports in so far (22 Nov):** copy 04, twice (`field-results.md`). It gives the hint example the
@@ -569,7 +640,9 @@ interview; code replies for the fidelity check; fill the tables.
 group number.
 
 **Open decisions.** The product name (#63); interview length; who writes which section; whether to
-make the video.
+make the video; **whether `INNOVATION` comments are allowed under the app freeze** (they change no
+behaviour, the system brief marks innovation from them, and none exist yet); which items of the
+informal feedback go into the report.
 
 ## 10. References to carry
 
