@@ -775,6 +775,11 @@ export function sheetText(deps: Pick<TutorialDeps, 'notebooks'>, notebookId: str
   return out.join('\n\n');
 }
 
+// INNOVATION (marking a student's own homework when there is no answer sheet): the key the model
+// wrote while reading the sheet is not trusted on its word. Every part that code could not verify
+// is solved a second time without the key, the two answers are compared, and a disagreement, or a
+// pass that could not run, marks the key `low`. Max then says in his reply that the official
+// solution may differ.
 /**
  * **The second, independent pass** (`tutorials.md` §5): every part code did not verify is solved
  * again without the key, then each pair is compared; a disagreement marks the key `low`. When the
@@ -1082,6 +1087,9 @@ export function onRoleChanged(deps: TutorialDeps, change: RoleChange): void {
   ));
 }
 
+// INNOVATION (official solutions outrank the model): when the student adds the tutor's solutions,
+// every part they answer gets its key rewritten from them and marked `high`, whatever the model
+// had written before.
 /**
  * **The official solutions rewrite the key** (`tutorials.md` §5): one call over the parts and
  * the solutions' text (read here and nowhere else), and every part it answers gets a key

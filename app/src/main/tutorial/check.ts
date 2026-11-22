@@ -78,6 +78,11 @@ export function judgeByOverlap(answer: string, key: string): Judgement {
   return { verdict, checkedBy: 'model', detail: `The answer shares ${Math.round(share * 100)}% of the key's terms.` };
 }
 
+// INNOVATION (a verdict the model cannot be talked out of): the verdict is fixed here, before any
+// reply is written. Code decides wherever the answer can be computed: a plan is simulated, and a
+// choice part with a confident key is compared. Otherwise one small model call judges against the
+// hidden key and returns only the verdict and what is right or missing. The chat turn that follows
+// (`checkPart` below) voices the stored verdict; it does not set it.
 export async function judgePart(deps: TutorialDeps, notebookId: string, resolved: ResolvedPart): Promise<Judgement> {
   const { answer, part } = resolved;
   const key = part.key;

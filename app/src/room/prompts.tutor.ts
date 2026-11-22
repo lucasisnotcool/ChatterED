@@ -180,6 +180,10 @@ function groundingBlock(input: TutorPromptInput): string[] {
   return lines;
 }
 
+// INNOVATION (a hint that cannot leak what it was never given): on Check, Hint, Refresher and a
+// typed reply, the prompt carries the key's steps, likely mistakes and prerequisites, with a guard
+// against stating the answer, but never the model answer itself. The answer text enters a prompt
+// in one place only, `answerBlock` below, after the student presses Show answer.
 /** The guard, and the parts of the key a non-release turn may use. */
 function keyBlock(input: TutorPromptInput): string[] {
   const { key } = input;

@@ -25,6 +25,10 @@ export type PartStatus = 'untried' | 'working' | 'correct' | 'partial' | 'incorr
 /** The top rung. */
 export const TOP_HINT_LEVEL = 3;
 
+// INNOVATION (an LLM tutor that cannot over-help): how much help comes next is decided here, in
+// pure code, and not by the model. Each press of Hint moves exactly one level (point, break it
+// down, a worked step) and there is no fourth. The model is only asked to word the level it is
+// given (`main/tutorial/help.ts`, `room/prompts.tutor.ts`).
 /** The rung the next **Hint** gives, or `top` when the learner has had all three. */
 export function nextHintLevel(current: HintLevel): { level: 1 | 2 | 3 } | { top: true } {
   switch (current) {
@@ -85,6 +89,9 @@ export function statusAfterEdit(prev: PartStatus, empty: boolean): PartStatus {
   return prev === 'untried' ? 'working' : prev;
 }
 
+// INNOVATION (progress that cannot be earned by asking): only the student's own checked answer
+// fills the bar. A hint never discounts it, and a part whose answer was shown fills nothing and
+// stays `revealed` even if the answer is typed in afterwards (`statusAfterCheck` above).
 /**
  * How much a part fills its objectives: correct 1, partial ½, anything else nothing. A revealed
  * part fills nothing; hints never discount (full credit, Lucas 3 Oct 2026).

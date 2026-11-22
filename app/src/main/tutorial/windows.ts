@@ -26,6 +26,10 @@
  * Pure but for the reader it is given: no model, clock or storage here.
  */
 
+// INNOVATION (reading a sheet too long for one model answer): a long tutorial or exam paper is
+// read a few pages at a time and joined in page order. The join never invents or drops a part,
+// and a window whose answer was cut off is halved and read again instead of being reported as an
+// empty sheet (the rules are in the header above; found in the field study, 18 Nov 2026).
 /** A sheet shorter than both of these is read in one call, exactly as before windows existed. */
 export const SINGLE_CALL_PAGES = 6;
 export const SINGLE_CALL_CHARS = 12_000;

@@ -101,6 +101,10 @@ export function iou(a: SheetRect, b: SheetRect): number {
  * Validate the sheet half of the model's answer. `null` when there is no part at all: a sheet
  * with nothing to answer is not a tutorial the learner can work through.
  */
+// INNOVATION (nothing the model says reaches the page unchecked): the model's reading of the
+// sheet, its answer key and its links to the lecture all pass through this function. A page, an
+// option, a blank or a notes link that does not exist is dropped or repaired here, and a formal
+// check the code can solve replaces the model's own answer.
 export function validateTutorial(raw: unknown, ctx: TutorialValidationContext): ValidatedTutorial | null {
   const repairs: TutorialRepairs = {
     pagesFixed: 0,

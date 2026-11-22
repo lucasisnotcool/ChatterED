@@ -24,6 +24,11 @@ import { tutorialQuestionId } from './check.js';
 import { answerText, dropThread, partMaterial, partThread, promptInContext, resolvePart, threadObjective } from './part.js';
 import { tutorialRepo } from './repo.js';
 
+// INNOVATION (the student's attempt comes first by structure, not by prompt): every help request
+// is built here from the part's own answer slot, so whatever the student has written travels with
+// the request (`answer:` below) and the reply can respond to it. The student never has to paste
+// their work into a chat. The hint level comes from `core/tutor` `nextHintLevel`, never from the
+// model.
 export async function helpPart(deps: TutorialDeps, input: TutorialHelpInput): Promise<TutorialHelpResult> {
   const resolved = resolvePart(deps, input);
   if (!resolved) return { accepted: false, reason: 'no_doc', level: null, threadId: null };

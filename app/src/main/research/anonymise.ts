@@ -184,6 +184,10 @@ export interface AnonymiseReport {
   tablesWalked: number;
 }
 
+// INNOVATION (study data a participant can safely hand over): the research export works on a
+// copy of the database, never the live one. Source text and secret settings are removed, the home
+// path and user name are replaced, and the result is searched for leaks (`findLeaks` below)
+// before anything is zipped.
 /**
  * Scrub the copy in place. `db` must be the **snapshot**, opened on its own — never the live
  * database. Foreign keys are switched off for the walk: a scrubbed id is still the same id on
