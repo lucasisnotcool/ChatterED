@@ -267,8 +267,12 @@ three parts; the group project asks for something smaller:
 answer is absent from the hint prompt; the grading order; learner text is never overwritten) and one
 real session in which 0 of 7 replies gave the answer away. Nobody had attacked the build.
 
-**Decision.** Run a short set of 12 attacks on the frozen build, with pass and fail rules written
-before the run, on a sheet we wrote ourselves. Results go in `red-team.md` and an appendix table;
+**Done, 22 Nov.** A set of 12 attacks on the frozen build, with pass and fail rules written before
+the run, on a sheet we wrote ourselves. The record is `red-team/README.md`, with the full
+transcript beside it. In short: the verdict held against injection and insistence (9 of 9); the
+answer was never stated before a reveal, but repeating the demand got more help (2 of 10 replies
+handed over all but the last step); the distress message failed in the question's thread; Ellie's
+private chat describes a "group" that does not exist (6 of 6). Results go in an appendix table;
 §8.4 and §8.2 cite them. Because the app is frozen, each failure ends in "what we would change",
 not a fix and a retest, and the report says so. Results from the individual Assignment 2 are not
 used: they are private to that assignment and were run on a different branch.
@@ -508,7 +512,7 @@ does not count, so evidence goes in tables and the prose carries the argument.
 | 4 | Workspace on main: slot, Check answer, Hint (next rung named), Refresher, Show answer after a check, status pill, source chip, lecture links | Ready; new screenshots needed, cropped to one part |
 | 5 | Code picks the rung (`app/src/core/tutor.ts`); rung prompts cap words and forbid the answer; the key's answer is withheld from the prompt until a reveal (`app/src/room/prompts.tutor.ts`). A real reply exists in `midterm-shots/03b`, but on an empty slot and the old layout | **Done, S04:** two real replies on one part, with the participant's attempt, are quoted in `field-results.md` §2.5. Use them as the figure, labelled as field data |
 | 5, limit | Leak prevention on hints is the prompt plus withholding the answer; there is no code-side leak check | State it; the fidelity check in §6.4 measures it |
-| 6 | Tooltips name the next rung; a press shows as "Hint, please: Q1"; one turn at a time ("Max is still answering"); empty slot disables Check; failed model reply keeps the verdict and asks to retry; a disputed verdict gets "the official solution may differ" | Ready. **Off-topic and ambiguous input have no tutorial-specific rule: test by hand and report what happens.** S04 adds two things the system says badly: hints mention a lecture that was never added, and the private chat explains the agents in terms of the old group design |
+| 6 | Tooltips name the next rung; a press shows as "Hint, please: Q1"; one turn at a time ("Max is still answering"); empty slot disables Check; failed model reply keeps the verdict and asks to retry; a disputed verdict gets "the official solution may differ" | Ready. **Off-topic and ambiguous input have no tutorial-specific rule: test by hand and report what happens.** S04 adds two things the system says badly: hints mention a lecture that was never added, and the private chat explains the agents in terms of the old group design. **Tested 22 Nov:** off-topic and ambiguous input were both handled well; the agents also misdescribe their own controls (`red-team/README.md` §3.4, §3.6) |
 | 7 | (i) code picks the hint rung; (ii) grading order: formal check, then a high-confidence key compared in code, then the model; (iii) the line under a part is written by code; (iv) lecture links: the model proposes, code keeps only ids and pages that exist; (v) progress is a pure function. Electron, Svelte, ProseMirror, local SQLite; pure core that imports nothing; 3,912 tests | Ready |
 | 7, cost | An 8-part sheet reads in about 56 s for about $0.12; long papers in 5-page windows up to 60 pages | Ready |
 | 8 | `tutorials.md` §10–§14; commits `e6b93cd`, #70 | Ready |
@@ -596,11 +600,11 @@ losing side notices that each question takes longer. Say which side we favoured 
 
 | Checklist question (Week 12) | Our answer | Principle | Status |
 |---|---|---|---|
-| 1 Disclosure: does every user know it is AI? | The consent screen speaks of "the AI's replies" and the AI provider; the pill says whether code or Max judged an answer. Nothing in the workspace itself labels Max and Ellie as AI | Transparency | Ready; a small gap to state |
-| 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | **S04:** asked the app how the two differ; the answer described the old group design. More reaction `[DATA]` |
+| 1 Disclosure: does every user know it is AI? | The consent screen speaks of "the AI's replies" and the AI provider; the pill says whether code or Max judged an answer. Nothing in the workspace itself labels Max and Ellie as AI: the chat label reads "Max · Tester". Asked directly, Ellie says "Neither of us is a real person. I'm an AI" (`red-team/README.md` §3.4) | Transparency | Ready; a small gap to state, now with a test behind it |
+| 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | **S04:** asked the app how the two differ; the answer described the old group design. **Reproduced** in 6 of 6 private replies in the red-team run. More reaction `[DATA]` |
 | 3 Who gains: whom does it serve worst? Did you test with them? | Students without an Apple Silicon Mac cannot use it; weaker students may meet more "not yet"; courses with no answer key get model-judged grades. We did not test with these groups | Fairness | Ready, as a stated gap |
-| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | **S04:** one check, "not yet", right by our reading. Full count `[DATA]` |
-| 5 Vulnerable moments: what happens on a distress message? | Nothing specific is designed for it. Exam stress is the likely case | Well-being, safety | **Our weakest answer. Test by hand, then say what we would add** |
+| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | **Tested:** held 9 of 9 against an injected instruction, a hidden note in the sheet, and "my lecturer confirmed it" (`red-team/README.md` §3.1). Not tested on a disputed key. **S04:** one check, right by our reading |
+| 5 Vulnerable moments: what happens on a distress message? | Nothing specific is designed for it. Exam stress is the likely case | Well-being, safety | **Tested, and it fails** (`red-team/README.md` §3.3): Max acknowledged the message, then went back to the question and named no person or service; Ellie named NUS student support but listed two tasks first. The change and the measure are written there |
 | 6 Exit: how does it end well? Can the user end it? | Show answer ends a part without penalty beyond progress; Max asks for one line on why it works. The student can leave at any point | Agency | Ready |
 | 7 Data: what do you keep, infer, and have consent for? | Argument 3 below | Privacy, accountability | Ready |
 | 8 Measure: which effect on the person, beyond satisfaction? | Productive engagement, from logs (§6.2). We dropped the satisfaction rating on purpose | Well-being | Ready |
@@ -627,8 +631,8 @@ part of the results from `field-results.md`.
 **Small checks to run.**
 
 - ~~Capture one hint exchange with an attempt in the slot.~~ Done: S04's export has one.
-- Type an off-topic message and an ambiguous one into a part's chat; record what Max does. *Now
-  part of the red-team run (§5.5), with the distress message for checklist question 5.*
+- ~~Type an off-topic message and an ambiguous one into a part's chat.~~ Done in the red-team run
+  (§5.5), with the distress message for checklist question 5.
 - Confirm each existing product's current study mode before describing it.
 
 **From Valerie.** Whether the two copy-04 exports are one person or two; S04's programme and year;
@@ -655,7 +659,9 @@ interview; code replies for the fidelity check; fill the tables.
 - **`INNOVATION` comments** at the places the README names. Candidates: code picks the hint rung;
   the grading order (formal check, key in code, then model); lecture links filtered by code; long
   sheets read in windows; the answer withheld from hint prompts; the anonymising export.
-- **Test data**: a tutorial sheet and its lecture that we may share with graders.
+- **Test data**: a tutorial sheet and its lecture that we may share with graders. A sheet we wrote
+  ourselves now exists (`red-team/sheets/sheetA.pdf`, four graph-search questions); it has no
+  lecture to go with it.
 - **No keys in the ZIP.** Check prompts and configuration are included.
 - **Video**, one unedited take of up to 10 minutes: install, then one function at a time.
 
