@@ -396,7 +396,7 @@ cd app && tools/release.sh --study ~/.config/chattered-study/keys.json --preload
 
 This gives `out/ChatterED-Grader-<version>-S<NN>-arm64.dmg`. `--grader` is refused without
 `--study … --preload N`, and with `--update`. The script stages `app/study/grader.txt` beside
-`preload.txt`, checks that it and `Contents/Resources/samples/graph-search-tutorial.pdf` are inside
+`preload.txt`, checks that it and `Contents/Resources/samples/graph-traversal-tutorial.pdf` are inside
 the mounted DMG, and removes its working copy afterwards. An ordinary build refuses to start while
 `app/study/grader.txt` exists, and refuses a DMG that carries one.
 
@@ -410,8 +410,8 @@ is in `src/shared/grader.ts`):
 - First run opens on a four-card tour (Back, Next, Skip tour), then "Start with a tutorial", which
   has **Try the sample tutorial** above the drop slots. The sample is
   `docs/group/red-team/sheets/sheetA.pdf` (four graph-search questions), shipped as
-  `app/samples/graph-search-tutorial.pdf`; main copies it to
-  `<userData>/grader/Graph search tutorial.pdf` and the renderer opens it through the same
+  `app/samples/graph-traversal-tutorial.pdf`; main copies it to
+  `<userData>/grader/Graph traversal tutorial.pdf` and the renderer opens it through the same
   `startFromTutorial` as a dropped sheet.
 - Help ▸ **Show the Grader Tour** shows the tour again.
 
@@ -422,7 +422,7 @@ Everything else is a preloaded study copy: the slot's credit and cap, logging, a
 
 **Check on a fresh profile before sending** (the launch line in section 5, step 1): the gate shows the grader
 wording; Continue leads to the tour, not to "Start with a tutorial"; Skip tour and Back work; Try
-the sample tutorial opens a notebook called "Graph search tutorial" with four parts; dropping your
+the sample tutorial opens a notebook called "Graph traversal tutorial" with nine parts (six questions, three of them in two parts); dropping your
 own sheet still works; Help ▸ Show the Grader Tour opens the tour; `main.log` has `grader.copy`,
 `study.unlock {preloaded:true}`, `trial.consent {grader:true}` and `grader.sample {ok:true}`.
 

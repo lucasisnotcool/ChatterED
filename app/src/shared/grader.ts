@@ -95,7 +95,7 @@ export const GRADER_TOUR: readonly TourCard[] = [
   },
   {
     title: 'What to try',
-    paragraphs: ['Next, open the sample tutorial (four questions on graph search). Then:'],
+    paragraphs: ['Next, open the sample tutorial (six questions on graph traversal). Then:'],
     bullets: [
       'type a wrong answer, then press Check answer;',
       'press Hint twice, then Refresher;',
@@ -122,10 +122,10 @@ export function tourStep(current: number, move: TourMove, count: number = GRADER
 // ── The sample tutorial ────────────────────────────────────────────────────────────────────
 
 /** In `Contents/Resources/samples/` (and `app/samples/` in dev): `electron-builder.yml`. */
-export const GRADER_SAMPLE_FILE = 'graph-search-tutorial.pdf';
+export const GRADER_SAMPLE_FILE = 'graph-traversal-tutorial.pdf';
 
 /** The name of the copy the app hands to the tutorial flow; the notebook is named after it. */
-export const GRADER_SAMPLE_COPY_NAME = 'Graph search tutorial.pdf';
+export const GRADER_SAMPLE_COPY_NAME = 'Graph traversal tutorial.pdf';
 
 /** What `study:graderSample` answers: a readable copy of the sample, or why there is none. */
 export type GraderSampleResult = { ok: true; path: string } | { ok: false; error: string };

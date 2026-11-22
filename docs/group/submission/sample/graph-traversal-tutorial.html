@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tutorial 08: Graph Traversal</title>
+<style>
+  @page { size: A4; margin: 2.4cm 2.6cm 2.2cm; }
+  body { font-family: "STIX Two Text", "Times New Roman", Times, serif; font-size: 11.5pt; line-height: 1.38; color: #000; }
+  .head { text-align: center; margin-bottom: 1.3em; }
+  .head .course { font-size: 13pt; }
+  .head .tut { font-size: 15pt; font-weight: 700; margin-top: 1.1em; }
+  .head .topic { font-size: 15pt; font-weight: 700; }
+  .head .week { font-size: 12pt; margin-top: .15em; }
+  .head .mod { font-size: 10pt; margin-top: 1.1em; }
+  h2 { font-size: 13.5pt; margin: 1.25em 0 .45em; }
+  h2 .n { display: inline-block; width: 1.5em; }
+  h3 { font-size: 11.5pt; margin: 1.05em 0 .3em; }
+  p { margin: 0 0 .65em; text-align: justify; }
+  .q { margin: 0 0 .7em; }
+  .q b.no { font-weight: 700; }
+  ol.parts { list-style: none; margin: .25em 0 .7em 1.6em; padding: 0; }
+  ol.parts li { margin: 0 0 .3em; text-indent: -1.6em; padding-left: 1.6em; }
+  figure { margin: .7em auto .5em; text-align: center; break-inside: avoid; }
+  figcaption { font-size: 10.5pt; margin-top: .3em; }
+  table.adj { border-collapse: collapse; margin: .4em auto .8em; font-size: 11pt; }
+  table.adj td, table.adj th { border: .6pt solid #000; padding: .12em .8em; text-align: left; }
+  table.adj th { font-weight: 700; }
+  .opts { margin: .2em 0 .7em 1.6em; }
+  .opts span { display: inline-block; min-width: 9.5em; }
+  .foot { margin-top: 1.6em; border-top: .5pt solid #000; padding-top: .35em; font-size: 9.5pt; }
+  i.v { font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="course">Data Structures and Algorithms</div>
+  <div class="tut">Tutorial 08</div>
+  <div class="topic">Graph Traversal</div>
+  <div class="week">For Week 10</div>
+  <div class="mod">Document is last modified on: November 23, 2026</div>
+</div>
+
+<h2><span class="n">1</span> Introduction and Objective</h2>
+<p>In the last two lectures we stored a graph in an adjacency list or an adjacency matrix. In this
+tutorial we use that structure to visit every vertex of a graph, with the two standard traversals:
+Breadth-First Search (BFS) and Depth-First Search (DFS). The aim is to be able to run both by hand,
+to say what each one costs, and to recognise a problem that one of them solves.</p>
+<p>Attempt every question before the tutorial. Q1 to Q3 are routine and will only be checked
+quickly; most of the hour goes to Q4 to Q6. Unless a question says otherwise, a traversal that has
+a choice of neighbours takes them in alphabetical order.</p>
+
+<h2><span class="n">2</span> Tutorial 08 Questions</h2>
+
+<figure>
+  <svg width="430" height="150" viewBox="0 0 430 150" xmlns="http://www.w3.org/2000/svg" font-family="STIX Two Text, Times New Roman, serif" font-size="15">
+    <g stroke="#000" stroke-width="1.3">
+      <line x1="40" y1="75" x2="150" y2="25"/><line x1="40" y1="75" x2="150" y2="125"/>
+      <line x1="150" y1="25" x2="270" y2="25"/><line x1="270" y1="25" x2="390" y2="25"/>
+      <line x1="150" y1="25" x2="270" y2="125"/><line x1="390" y1="25" x2="390" y2="125"/>
+      <line x1="150" y1="125" x2="270" y2="125"/><line x1="270" y1="125" x2="390" y2="125"/>
+    </g>
+    <g fill="#fff" stroke="#000" stroke-width="1.3">
+      <circle cx="40" cy="75" r="15"/><circle cx="150" cy="25" r="15"/><circle cx="150" cy="125" r="15"/>
+      <circle cx="270" cy="25" r="15"/><circle cx="270" cy="125" r="15"/><circle cx="390" cy="25" r="15"/><circle cx="390" cy="125" r="15"/>
+    </g>
+    <g text-anchor="middle" font-style="italic">
+      <text x="40" y="80">A</text><text x="150" y="30">C</text><text x="150" y="130">E</text>
+      <text x="270" y="30">B</text><text x="270" y="130">F</text><text x="390" y="30">D</text><text x="390" y="130">G</text>
+    </g>
+  </svg>
+  <figcaption>Figure 1: The undirected, unweighted graph <i class="v">G</i> used in Q1 and Q2.</figcaption>
+</figure>
+
+<p>For reference, <i class="v">G</i> is stored as this adjacency list, with each list in alphabetical order:</p>
+<table class="adj">
+  <tr><th>Vertex</th><th>Neighbours</th><th>Vertex</th><th>Neighbours</th></tr>
+  <tr><td>A</td><td>C, E</td><td>E</td><td>A, F</td></tr>
+  <tr><td>B</td><td>C, D</td><td>F</td><td>C, E, G</td></tr>
+  <tr><td>C</td><td>A, B, F</td><td>G</td><td>D, F</td></tr>
+  <tr><td>D</td><td>B, G</td><td></td><td></td></tr>
+</table>
+
+<h3>Standard Stuff</h3>
+
+<div class="q"><b class="no">Q1).</b> Run BFS on <i class="v">G</i> from source vertex A.</div>
+<ol class="parts">
+  <li>(a) List the vertices in the order in which BFS visits them.</li>
+  <li>(b) For every vertex, give its distance from A, counted in edges.</li>
+</ol>
+
+<div class="q"><b class="no">Q2).</b> Now run the recursive DFS on <i class="v">G</i> from source vertex A.</div>
+<ol class="parts">
+  <li>(a) List the vertices in the order in which DFS first visits them.</li>
+  <li>(b) <i class="v">G</i> has 8 edges. Which of them are <b>not</b> edges of the DFS spanning tree that this run produces?</li>
+</ol>
+
+<div class="q"><b class="no">Q3).</b> (From a past quiz.) Which data structure does an iterative DFS use to hold the vertices it still has to explore?</div>
+<div class="opts"><span>(A) a queue</span><span>(B) a stack</span><span>(C) a min-heap</span><span>(D) a hash table</span></div>
+
+<h3>Why It Works, and What It Costs</h3>
+
+<div class="q"><b class="no">Q4).</b> Explain why, on an unweighted graph, the first time BFS reaches a vertex <i class="v">v</i>, the path it has found from the source to <i class="v">v</i> uses the fewest possible edges.</div>
+
+<div class="q"><b class="no">Q5).</b> State the worst-case running time of DFS on a graph with <i class="v">V</i> vertices and <i class="v">E</i> edges that is stored as an adjacency list, and say in one or two sentences why.</div>
+
+<h3>Graph Modelling Exercise</h3>
+
+<div class="q"><b class="no">Q6).</b> A campus has <i class="v">n</i> buildings and <i class="v">m</i> covered walkways. Each walkway joins two buildings and can be walked in both directions. It is raining, and Mei wants to get from the library to the canteen by walking through as few walkways as possible.</div>
+<ol class="parts">
+  <li>(a) Model this as a graph problem. What are the vertices and the edges, and is the graph directed or weighted?</li>
+  <li>(b) Which algorithm from this tutorial solves it, and what is its running time in terms of <i class="v">n</i> and <i class="v">m</i>?</li>
+</ol>
+
+<div class="foot">A sample tutorial written by the ChatterED team for trying the app. It is not taken from any course.</div>
+
+</body>
+</html>

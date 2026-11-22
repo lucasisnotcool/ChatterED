@@ -39,7 +39,7 @@ export function createMockStudy(): StudyApi {
       return { ok: true, status: { ...status } };
     },
     async graderSample() {
-      return grader ? { ok: true, path: '/mock/Graph search tutorial.pdf' } : { ok: false, error: GRADER_SAMPLE_MISSING };
+      return grader ? { ok: true, path: '/mock/Graph traversal tutorial.pdf' } : { ok: false, error: GRADER_SAMPLE_MISSING };
     },
     onChanged(listener) {
       listeners.add(listener);

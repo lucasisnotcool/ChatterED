@@ -25,19 +25,21 @@ difference: an API credit is already set up inside it.
 **Download:** GRADER_DMG_LINK
 
 **You need:** a Mac with Apple silicon (M1 or later), macOS 13 or later, and an internet
-connection. If you have no such Mac, see "If you cannot run it" below.
+connection.
 
 **Steps.**
 
-1. Download `ChatterED-Grader.dmg` and open it.
+1. Download `ChatterED-Grader-0.1.0-S01-arm64.dmg` (326 MB) and open it.
 2. Double-click **ChatterED** in the window that appears.
 3. macOS will say that Apple could not verify the app, because we have no paid Apple developer
    certificate. Click **Done**. Then open **System Settings ▸ Privacy & Security**, scroll to the
    line about ChatterED, click **Open Anyway**, and confirm.
-4. The app offers to install itself into Applications. Click **Install**.
-5. Read the short notice and continue. A tour of four cards explains the workspace.
-6. On the last card, click **Try the sample tutorial**. The app reads a one-page sheet of four
-   questions on graph search, which we wrote ourselves. This takes about half a minute.
+4. The app asks "Install ChatterED into Applications?". Click **Install**. It reopens from there.
+5. Read the short notice and click **Continue**. A tour of four cards explains the workspace. You
+   can open it again from **Help ▸ Show the Grader Tour**.
+6. After the tour, click **Try the sample tutorial**. The app reads a two-page tutorial of six
+   questions on graph traversal, which we wrote ourselves in the style of a course tutorial. This
+   takes under a minute.
 
 If you prefer Terminal to step 3, run this once before opening the download:
 
@@ -48,20 +50,19 @@ xattr -d com.apple.quarantine ~/Downloads/ChatterED-Grader*.dmg
 **Your own material.** The same card has a place to drop any tutorial sheet as a PDF, and
 optionally its lecture slides. You can also add files later from the notebook. A sheet of four
 pages takes about a minute to read. The sample sheet is also in this ZIP, at
-`test-data/graph-search-tutorial.pdf`.
+`test-data/graph-traversal-tutorial.pdf`.
 
 **What the copy does with your data.** What you type and the material you open are sent to
 Anthropic's API to get the AI's replies. Everything else stays on your Mac. The app keeps a usage
 log on your Mac, as it did for our study participants; nothing is sent to us.
 
-**The credit** is capped inside the app. A full pass through the sample costs well under one US
-dollar. If the app ever says the credit is used up, please tell us and we will top it up.
+**The credit** is capped inside the app at 50 US dollars, and the amount left is shown at the top
+right. A full pass through the sample costs well under one dollar.
 
-### If you cannot run it
+**A video** of this copy in use, from first launch, in one unedited take: VIDEO_LINK
 
-- **A video** of the app in use, unedited: VIDEO_LINK
-- **An online session.** The brief offers a short session where a system cannot be run on your
-  side. We are glad to do one at any time: CONTACT_EMAIL
+If anything here does not work on your Mac, please write to CONTACT_EMAIL and we will sort it out
+at once, or show it to you in a short online session.
 
 ## 2. What to try
 
@@ -159,6 +160,9 @@ To list them: `grep -rn "INNOVATION" app/src`.
 - A distress message typed into a part's thread is acknowledged and then steered back to the
   question. Nothing is designed for that case yet.
 - Asking for the answer again and again gets more help each time, though never the answer itself.
+- The first notebook shows a note headed "How this is paced" and a chat hint about "Quiz me".
+  Both belong to the notes workspace, the earlier half of the product, and do not describe the
+  tutorial page.
 - Apple silicon Macs only, and the app is not signed.
 
 ## 7. What is in this ZIP
@@ -167,7 +171,8 @@ To list them: `grep -rn "INNOVATION" app/src`.
 |---|---|
 | `README.md` | This file |
 | `app/` | All source code, prompts, configuration and tests |
-| `test-data/graph-search-tutorial.pdf` | The sample tutorial sheet, written by us |
+| `test-data/graph-traversal-tutorial.pdf` | The sample tutorial sheet, written by us |
+| `ChatterED-demo.mp4` | The video, if it is not given as a link in Section 1 |
 
 There are no API keys in the ZIP. It holds no study data: quotes and counts from the study are in
 the report.

@@ -82,10 +82,10 @@ extraResources:
       - keys.json
       - preload.txt
       - grader.txt
-  # A grader copy's sample tutorial (src/shared/grader.ts), a one-page sheet the team wrote. It ships
+  # A grader copy's sample tutorial (src/shared/grader.ts), a two-page sheet the team wrote. It ships
   # in every build because it is small and static, but only a grader copy ever offers it.
-  - from: samples/graph-search-tutorial.pdf
-    to: samples/graph-search-tutorial.pdf
+  - from: samples/graph-traversal-tutorial.pdf
+    to: samples/graph-traversal-tutorial.pdf
 asar: true
 # pdf.js is loaded with a real dynamic `import()` of a file:// URL (src/main/vault/pdf.ts).
 # Node's ESM loader does not read out of an asar archive, so this one package stays unpacked.

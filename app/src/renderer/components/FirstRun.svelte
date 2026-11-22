@@ -308,7 +308,7 @@
           <button type="button" class="btn-primary" disabled={starting || sampleBusy} onclick={() => void trySample()}>
             {sampleBusy || starting ? 'Opening…' : 'Try the sample tutorial'}
           </button>
-          <span class="quiet">Four questions on graph search, written by the team.</span>
+          <span class="quiet">Six questions on graph traversal, written by the team in the style of a course tutorial.</span>
         </div>
         {#if sampleError}<p class="err">{sampleError}</p>{/if}
         <p class="quiet">Or add your own sheet:</p>
