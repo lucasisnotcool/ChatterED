@@ -251,6 +251,28 @@ The group number for the file names is not in the repo.
   Say who ran each interview.
 - **"How many? Eight to twelve."** We are below it. Show every data point per person.
 
+### 5.5 Red teaming: not required by name, rewarded in three places
+
+Checked on 22 Nov against both briefs, the rubric, the schedule, the presentation feedback and the
+course slides. No group document asks for red teaming. Assignment 2 (individual) did, as one of
+three parts; the group project asks for something smaller:
+
+| Where | What it says | What a small test run gives us |
+|---|---|---|
+| System rubric, conversation design (3%) | "handles errors, ambiguous input, and off-topic requests gracefully" | Evidence for the claim, or an honest account of where it fails |
+| Report brief, ethics (2%) | Weigh risks with the seven principles and the checklist | Answers to checklist question 4 (will it disagree when the user is wrong?) and question 5 (what happens on a distress message?) that rest on a test, not on intent |
+| Lecture 8 | "What Are We Testing For? How about your group project?", and the in-class exercise "Red-Team Your Project Bot": name one thing the bot must never do; try a direct ask, a role-play and a multi-turn build-up; write the pass or fail rule first | The form to follow. For us the "never" is: give away a part's answer before the student has checked an attempt |
+
+**What already exists is not a red team.** The shared repo has design guards with unit tests (the
+answer is absent from the hint prompt; the grading order; learner text is never overwritten) and one
+real session in which 0 of 7 replies gave the answer away. Nobody had attacked the build.
+
+**Decision.** Run a short set of 12 attacks on the frozen build, with pass and fail rules written
+before the run, on a sheet we wrote ourselves. Results go in `red-team.md` and an appendix table;
+§8.4 and §8.2 cite them. Because the app is frozen, each failure ends in "what we would change",
+not a fix and a retest, and the report says so. Results from the individual Assignment 2 are not
+used: they are private to that assignment and were run on a different branch.
+
 ## 6. The study as it now runs
 
 ### 6.1 Content: planned as 1–2 days
@@ -605,7 +627,8 @@ part of the results from `field-results.md`.
 **Small checks to run.**
 
 - ~~Capture one hint exchange with an attempt in the slot.~~ Done: S04's export has one.
-- Type an off-topic message and an ambiguous one into a part's chat; record what Max does.
+- Type an off-topic message and an ambiguous one into a part's chat; record what Max does. *Now
+  part of the red-team run (§5.5), with the distress message for checklist question 5.*
 - Confirm each existing product's current study mode before describing it.
 
 **From Valerie.** Whether the two copy-04 exports are one person or two; S04's programme and year;
