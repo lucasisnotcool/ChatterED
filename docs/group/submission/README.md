@@ -39,7 +39,7 @@ connection.
    can open it again from **Help ▸ Show the Grader Tour**.
 6. After the tour, click **Try the sample tutorial**. The app reads a two-page tutorial of six
    questions on graph traversal, which we wrote ourselves in the style of a course tutorial. This
-   takes under a minute.
+   takes about half a minute.
 
 If you prefer Terminal to step 3, run this once before opening the download:
 

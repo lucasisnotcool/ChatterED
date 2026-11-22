@@ -342,7 +342,7 @@
       <p class="quiet">
         {#if grader}
           ChatterED keeps its own copy of each file on this Mac. Max reads the sheet first, through
-          Anthropic's API: about twenty seconds for the sample, and about a minute for every five
+          Anthropic's API: about half a minute for the sample, and about a minute for every five
           pages of your own.
         {:else}
           ChatterED keeps its own copy of each file on this Mac; nothing is uploaded anywhere. Max
