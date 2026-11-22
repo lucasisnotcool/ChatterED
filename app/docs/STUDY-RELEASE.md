@@ -386,6 +386,50 @@ the disk image is gone from Finder, `xattr /Applications/ChatterED.app` shows no
 `com.apple.quarantine`, the notes and credit are still there, and `main.log` has `install.oneoff`.
 Repeat with the old copy left **running** (it must be closed for you, not hand over silently).
 
+## 9. A grader copy for the teaching team (`--grader`)
+
+A preloaded study copy, made for the prof and the TAs to grade with:
+
+```sh
+cd app && tools/release.sh --study ~/.config/chattered-study/keys.json --preload N --grader
+```
+
+This gives `out/ChatterED-Grader-<version>-S<NN>-arm64.dmg`. `--grader` is refused without
+`--study … --preload N`, and with `--update`. The script stages `app/study/grader.txt` beside
+`preload.txt`, checks that it and `Contents/Resources/samples/graph-search-tutorial.pdf` are inside
+the mounted DMG, and removes its working copy afterwards. An ordinary build refuses to start while
+`app/study/grader.txt` exists, and refuses a DMG that carries one.
+
+**What differs from a study copy** (all of it gated on that marker, read once by
+`src/main/study/grader.ts` and told to the renderer on `trial:status` as `grader: true`; the wording
+is in `src/shared/grader.ts`):
+
+- The consent gate shows grader wording and one **Continue** button instead of the participant
+  notice and its checkbox. Consent is still recorded the same way (a participant id is minted), so
+  nothing behind the gate changes. The title bar says "Grading copy".
+- First run opens on a four-card tour (Back, Next, Skip tour), then "Start with a tutorial", which
+  has **Try the sample tutorial** above the drop slots. The sample is
+  `docs/group/red-team/sheets/sheetA.pdf` (four graph-search questions), shipped as
+  `app/samples/graph-search-tutorial.pdf`; main copies it to
+  `<userData>/grader/Graph search tutorial.pdf` and the renderer opens it through the same
+  `startFromTutorial` as a dropped sheet.
+- Help ▸ **Show the Grader Tour** shows the tour again.
+
+Everything else is a preloaded study copy: the slot's credit and cap, logging, and the export.
+
+**Trying it in dev:** `CHATTERED_GRADER=1 npm run dev` (honoured only unpackaged), or put any
+`app/study/grader.txt` beside a dev bundle. The renderer's mock bridge takes `?grader=1`.
+
+**Check on a fresh profile before sending** (the launch line in section 5, step 1): the gate shows the grader
+wording; Continue leads to the tour, not to "Start with a tutorial"; Skip tour and Back work; Try
+the sample tutorial opens a notebook called "Graph search tutorial" with four parts; dropping your
+own sheet still works; Help ▸ Show the Grader Tour opens the tour; `main.log` has `grader.copy`,
+`study.unlock {preloaded:true}`, `trial.consent {grader:true}` and `grader.sample {ok:true}`.
+
+**Known limits.** The marker lives in the app bundle, so an update to an ordinary study-channel
+build drops it: the Help item goes, and nothing else changes once first run is done. An export
+from a grader copy still carries the participant notice as `consent-notice.txt`.
+
 ## Not built
 
 - **No signing.** An Apple Developer ID and notarisation would remove step 3 of the install guide
