@@ -249,6 +249,14 @@ that anyone learned more (no test), or anything beyond this group. Other limits:
   §6). Where a solutions file or a formal checker exists, code holds the grade (`app/docs/TUTORIAL-ANSWER-TESTING.md`).
 - **End of term.** Week 13 is 9–13 Nov. Tutorial sheets stop soon, so the week must start by about
   5–9 Nov, or participants will be working past sheets for exams, a different task.
+  **Revised 21–22 Nov (Lucas):** the study did run into the exam period, and exam-paper use
+  **counts**. A past paper is the same task as a tutorial sheet: worked problems, each with an
+  answer, done alone. It is longer and harder, and that is all. This reverses the 18 Nov line in
+  #72 that left exam practice out of the analysis. What differs is recorded, not excluded: label
+  every sheet as tutorial or past paper by hand (the app does not tag them) and report the two
+  side by side; note for each sheet whether a lecture and a solutions file were added, because
+  without a lecture there are no links to open and without solutions the answer key is the
+  model's own; and note that long papers failed to import before the 19 Nov fix.
 
 ## Ethics, in brief
 
