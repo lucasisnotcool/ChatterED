@@ -4,6 +4,15 @@
 (4,000–7,000 words). Study data is not back, so this covers what can be written now and leaves
 marked gaps (`[DATA]`) for the rest. Valerie has not reviewed it.
 
+**Update, 22 Nov: the first exports are in, and they change §6.** Results are kept in
+`field-results.md`. Both exports so far are from study copy 04: one first-use sitting of 16 minutes
+on a tutorial sheet, and one earlier session in which the exam paper would not import and nothing
+was attempted. Neither is "1–2 days of revision". Until the other exports say otherwise, write the
+field phase as a first-use field trial, report cases and counts beside a timeline (not rates), and
+put the weight on the interviews and on the fidelity check of the AI's replies. The framing in §6.3
+holds only for a participant who did use the app over a day or two. The app is frozen from 22 Nov:
+faults found in the data go into the report as limitations, and are not fixed.
+
 **Decisions this sketch assumes (Lucas, 21 Nov).**
 
 - The field phase is **1–2 days of unsupervised use** per participant, then a log-anchored interview.
@@ -531,6 +540,11 @@ table, the provenance table, the limits.
 
 **From Valerie.** The third pilot problem in writing; the pilot task; the passage of the Nudge A1
 that the ladder draws on; her check of her five participants' joint coding.
+
+**Exports in so far (22 Nov):** copy 04, twice (`field-results.md`). It gives the hint example the
+teaching team asked for (§2.5 there), a fidelity check on 7 replies, and three faults to own: hints
+that mention a lecture nobody added, a private chat that describes the old group design, and a
+check against a key the model wrote. Run `tools/field-metrics.py` on each new export.
 
 **When exports arrive.** Classify sheets by type; build paths; code turns; pick cued moments;
 interview; code replies for the fidelity check; fill the tables.
