@@ -24,6 +24,7 @@ import {
   researchMailto,
   type ExportOutcome,
   type ExportProgress,
+  type TrialStatus,
 } from '../../shared/trial.js';
 import { acceptConsent, consentGate, readTrialStatus } from './consent.js';
 import { exportSummary, stageResearchExport, zipDirectory, type ManifestStudy } from './export.js';
@@ -43,6 +44,11 @@ export interface ResearchIpcDeps {
   getWindow(): BrowserWindow | null;
   /** The same `handle` wrapper the rest of `AppService.register()` uses. */
   handle: <T>(channel: string, fn: (payload: T) => unknown) => void;
+  /**
+   * A grader copy (`study/grader.ts`). Told to the renderer on `trial:status`, the one channel
+   * open before consent, so the gate itself can show the grader wording. Absent: not one.
+   */
+  grader?: boolean;
 }
 
 /** The gate `AppService.register()`'s `handle` wrapper consults. */
@@ -73,7 +79,10 @@ export function registerResearchIpc(deps: ResearchIpcDeps): void {
   let lastExport: { path: string; fileName: string; participantId: string } | null = null;
   let running = false;
 
-  deps.handle(TRIAL_IPC.status, () => readTrialStatus(deps.settings));
+  // Only a grader copy's status carries the flag; every other build's is exactly as before.
+  const withGrader = (status: TrialStatus): TrialStatus => (deps.grader === true ? { ...status, grader: true } : status);
+
+  deps.handle(TRIAL_IPC.status, () => withGrader(readTrialStatus(deps.settings)));
 
   deps.handle<{ version: number }>(TRIAL_IPC.accept, (input) => {
     const status = acceptConsent(deps.settings, {
@@ -81,8 +90,8 @@ export function registerResearchIpc(deps: ResearchIpcDeps): void {
       now: new Date().toISOString(),
       uuid: randomUUID,
     });
-    log().info('trial.consent', { version: status.consentedVersion });
-    return status;
+    log().info('trial.consent', deps.grader === true ? { version: status.consentedVersion, grader: true } : { version: status.consentedVersion });
+    return withGrader(status);
   });
 
   deps.handle(TRIAL_IPC.quit, () => {

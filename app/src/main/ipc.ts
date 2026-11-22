@@ -81,6 +81,7 @@ import { registerResearchIpc, trialGate } from './research/ipc.js';
 // The study build (`shared/study.ts`): a participant code unlocks a sealed key and a fixed credit.
 import { StudyService } from './study/service.js';
 import { persistStudyBundle, registerStudyIpc, resolveBundlePath } from './study/ipc.js';
+import { isGraderCopy, sampleSourcePath, stageSample } from './study/grader.js';
 import { workStarted } from './update/runtime.js';
 import { STUDY_IPC } from '../shared/study.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
@@ -126,6 +127,11 @@ export interface IpcDeps {
    * dev). Null: no bundle, as the unit tests want.
    */
   studyBundlePath?: string | null;
+  /**
+   * A grader copy (`study/grader.ts`). Absent: read from the marker beside the shipped bundle when
+   * the bundle is resolved here too, else false (the unit tests, which pass `studyBundlePath`).
+   */
+  grader?: boolean;
 }
 
 /**
@@ -156,6 +162,24 @@ function studyBundlePath(): string | null {
   }
 }
 
+/** A grader copy: `grader.txt` beside the shipped bundle, or `CHATTERED_GRADER=1` in dev. False on any doubt. */
+function graderCopyFlag(): boolean {
+  try {
+    return isGraderCopy({ packaged: app.isPackaged === true, shippedBundlePath: studyBundlePath(), env: process.env.CHATTERED_GRADER });
+  } catch {
+    return false;
+  }
+}
+
+/** Where a grader copy's sample tutorial ships, or null wherever Electron cannot say. */
+function graderSampleSource(): string | null {
+  try {
+    return sampleSourcePath({ packaged: app.isPackaged === true, resourcesPath: process.resourcesPath ?? '', appPath: app.getAppPath() });
+  } catch {
+    return null;
+  }
+}
+
 function searchModelDir(): string {
   try {
     return resolveModelDir({ packaged: app.isPackaged === true, resourcesPath: process.resourcesPath ?? '', appPath: app.getAppPath() });
@@ -180,6 +204,8 @@ export class AppService {
   readonly #cost: CostLedger;
   /** The study build's unlock, credit and guard. Inert on a build without a key bundle. */
   readonly #study: StudyService;
+  /** A grader copy (`shared/grader.ts`): read once, here, and never changed while running. */
+  readonly #grader: boolean;
   /** Running app-level totals since launch, so `cost.updated` needs no second query per call. */
   #sessionTokens: CostTokens = emptyTokens();
   #sessionCalls = 0;
@@ -188,6 +214,8 @@ export class AppService {
 
   constructor(deps: IpcDeps) {
     this.#d = deps;
+    this.#grader = deps.grader ?? (deps.studyBundlePath === undefined ? graderCopyFlag() : false);
+    if (this.#grader) log().info('grader.copy', {});
     this.#providers = new ProviderService({ userDataDir: deps.userDataDir, settings: deps.store.settings });
     // The Anthropic key is the provider service's `anthropic` store — the same file as ever.
     this.#apiKey = this.#providers.store('anthropic');
@@ -266,6 +294,11 @@ export class AppService {
 
   get cost(): CostLedger {
     return this.#cost;
+  }
+
+  /** A grader copy: Help ▸ Show the Grader Tour is in the menu only then (`menu.ts`). */
+  get graderCopy(): boolean {
+    return this.#grader;
   }
 
   /**
@@ -1418,7 +1451,17 @@ export class AppService {
       return result;
     });
     // The study build: the participant code and the credit left — `src/main/study/`.
-    registerStudyIpc({ service: this.#study, handle, onUnlocked: () => this.rebindActor() });
+    registerStudyIpc({
+      service: this.#study,
+      handle,
+      onUnlocked: () => this.rebindActor(),
+      ...(this.#grader
+        ? {
+            // No source (Electron could not say) reads as missing: the button says so, the slots still work.
+            graderSample: () => stageSample({ source: graderSampleSource() ?? '', userDataDir: this.#d.userDataDir }),
+          }
+        : {}),
+    });
     const preloaded = this.#study.unlockPreloaded();
     if (preloaded) log().info('study.unlock', preloaded.ok ? { ok: true, slot: preloaded.status.slot, preloaded: true } : { ok: false, preloaded: true });
     // Per-message cost and the Usage page (#42 items B and D) — `src/main/cost/ipc.ts`.
@@ -1442,6 +1485,7 @@ export class AppService {
       },
       getWindow: this.#d.getWindow,
       handle,
+      ...(this.#grader ? { grader: true } : {}),
     });
 
     /**

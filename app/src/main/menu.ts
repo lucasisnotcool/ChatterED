@@ -47,6 +47,9 @@ import { showDebugReport } from './debug/index.js';
 /** Help ▸ How ChatterED Works: the public releases repo's README, which is the user guide. */
 export const HELP_URL = 'https://github.com/lucasisnotcool/ChatterED-releases#readme';
 
+/** Help ▸ in a grader copy only: the first-run tour again (`shared/grader.ts`). */
+export const GRADER_TOUR_MENU_LABEL = 'Show the Grader Tour';
+
 /** Help ▸ Report a Problem…: a new email to the research team, with the subject filled in. */
 export const REPORT_PROBLEM_MAILTO = `mailto:${TRIAL_CONTACT_EMAIL}?subject=${encodeURIComponent('ChatterED problem report')}`;
 
@@ -89,6 +92,8 @@ export interface MenuDeps {
   noticesPath?: string | null;
   /** Help ▸ Copy Debug Info for the Team (`main/debug/`). Injected so the template stays testable. */
   onDebugReport?(): void;
+  /** A grader copy (`shared/grader.ts`): Help ▸ Show the Grader Tour. Absent or false: no item. */
+  graderTour?: boolean;
 }
 
 export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] {
@@ -210,6 +215,9 @@ export function buildMenuTemplate(deps: MenuDeps): MenuItemConstructorOptions[] 
         // ⇧⌘D works without the menu too (`debug/index.ts` catches it before the page does); the
         // item is here so it can be found, and so a participant can be told where it is.
         { label: DEBUG_MENU_LABEL, accelerator: DEBUG_ACCELERATOR, click: () => deps.onDebugReport?.() },
+        ...(deps.graderTour === true
+          ? ([{ label: GRADER_TOUR_MENU_LABEL, click: send('grader.tour') }] satisfies MenuItemConstructorOptions[])
+          : []),
         ...(deps.noticesPath
           ? ([
               { type: 'separator' },
@@ -252,12 +260,13 @@ function storeTextScale(value: number): void {
 }
 
 /** `app` is only touched here so `buildMenuTemplate` stays testable under plain Node. */
-export function installMenuFor(getWindow: () => BrowserWindow | null): void {
+export function installMenuFor(getWindow: () => BrowserWindow | null, opts: { graderTour?: boolean } = {}): void {
   let scale = loadTextScale();
   const notices = join(process.resourcesPath ?? '', 'THIRD_PARTY_NOTICES.txt');
   installApplicationMenu({
     getWindow,
     isPackaged: app.isPackaged,
+    ...(opts.graderTour === true ? { graderTour: true } : {}),
     noticesPath: process.resourcesPath && (app.isPackaged || existsSync(notices)) ? notices : null,
     onDebugReport: () => showDebugReport('menu'),
     getTextScale: () => scale,

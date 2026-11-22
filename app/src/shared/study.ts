@@ -14,14 +14,17 @@
  * holds against ordinary use, not against someone who deletes the app's data or reads the key
  * file. Revoking the key in the Console is the backstop.
  *
- * Shared by main, preload and renderer, so it imports nothing.
+ * Shared by main, preload and renderer, so it imports nothing but other shared types.
  */
+import type { GraderSampleResult } from './grader.js';
 
 export const STUDY_IPC = {
   status: 'study:status',
   unlock: 'study:unlock',
   /** main → renderer: the status changed (a call was counted, the credit ran out, a key changed). */
   changed: 'study:changed',
+  /** A grader copy's sample tutorial, copied somewhere readable (`shared/grader.ts`). */
+  graderSample: 'study:graderSample',
 } as const;
 
 /** The settings rows a study install keeps. None of them is a key; the key is the key file. */
@@ -85,6 +88,8 @@ export interface StudyApi {
   status(): Promise<StudyStatus>;
   unlock(input: { code: string }): Promise<UnlockOutcome>;
   onChanged(listener: (status: StudyStatus) => void): () => void;
+  /** A grader copy: a path to the bundled sample tutorial. Any other build: `{ ok: false }`. */
+  graderSample(): Promise<GraderSampleResult>;
 }
 
 /** The share of the budget at which the bar turns amber and the title bar starts to say so. */

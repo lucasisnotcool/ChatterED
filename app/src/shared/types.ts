@@ -372,7 +372,9 @@ export type AppCommand =
   /** View ▸ Show or Hide Slides / Notes / Results (⌘J ⌘K ⌘L) — the search page's columns. */
   | 'search.toggleSlides'
   | 'search.toggleNotes'
-  | 'search.toggleHits';
+  | 'search.toggleHits'
+  /** Help ▸ Show the Grader Tour, in a grader copy only (`shared/grader.ts`). Handled by `GraderTourLayer`. */
+  | 'grader.tour';
 
 export interface RecentSession {
   roomId: string;

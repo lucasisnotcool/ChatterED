@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import { log } from '../log.js';
 import { STUDY_IPC, type UnlockOutcome } from '../../shared/study.js';
+import { GRADER_SAMPLE_MISSING, type GraderSampleResult } from '../../shared/grader.js';
 import { PRELOAD_FILE, type StudyService } from './service.js';
 
 /**
@@ -52,6 +53,8 @@ export interface StudyIpcDeps {
   handle: <T>(channel: string, fn: (payload: T) => unknown) => void;
   /** After a successful unlock: the open room's next turn must run on the study key. */
   onUnlocked(): void;
+  /** A grader copy's sample (`grader.ts` `stageSample`). Absent in every other build. */
+  graderSample?: () => GraderSampleResult;
 }
 
 export function registerStudyIpc(deps: StudyIpcDeps): void {
@@ -63,5 +66,12 @@ export function registerStudyIpc(deps: StudyIpcDeps): void {
     log().info('study.unlock', outcome.ok ? { ok: true, slot: outcome.status.slot } : { ok: false });
     if (outcome.ok) deps.onUnlocked();
     return outcome;
+  });
+
+  deps.handle(STUDY_IPC.graderSample, (): GraderSampleResult => {
+    if (!deps.graderSample) return { ok: false, error: GRADER_SAMPLE_MISSING };
+    const out = deps.graderSample();
+    log().info('grader.sample', { ok: out.ok });
+    return out;
   });
 }

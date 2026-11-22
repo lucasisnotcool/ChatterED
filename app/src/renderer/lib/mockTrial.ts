@@ -21,6 +21,8 @@ export function createMockTrial(): TrialApi {
     participantId: parityPreview ? 'P-0000beef' : null,
     consentedAt: parityPreview ? '2026-10-26T00:00:00.000Z' : null,
     contactEmail: TRIAL_CONTACT_EMAIL,
+    // `?grader=1`: a grader copy's gate and first run (`shared/grader.ts`).
+    ...(globalThis.location && new URLSearchParams(globalThis.location.search).get('grader') === '1' ? { grader: true as const } : {}),
   };
   const listeners = new Set<(p: ExportProgress) => void>();
   const push = (p: ExportProgress) => listeners.forEach((l) => l(p));

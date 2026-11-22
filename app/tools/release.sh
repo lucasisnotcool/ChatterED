@@ -13,6 +13,10 @@
 #                                         (from codes.csv beside the bundle, or --codes <file>) ships
 #                                         too and is entered on first launch, so there is nothing to
 #                                         type → out/ChatterED-Study-<v>-S03-arm64.dmg.
+#   tools/release.sh --study <keys.json> --preload 3 --grader   the same copy for the CS3249 teaching
+#                                         team: grader wording on the consent screen, a short tour and
+#                                         a one-click sample tutorial (src/shared/grader.ts)
+#                                         → out/ChatterED-Grader-<v>-S03-arm64.dmg.
 #
 # The update channel (app/docs/STUDY-RELEASE.md §8). Study and update builds are on the `study`
 # channel: they get a build number (last published + 1, or --build N) as CFBundleVersion, the
@@ -62,6 +66,7 @@ NOTES_FILE=""
 STUDY_BUNDLE=""
 PRELOAD_SLOT=""
 CODES_FILE=""
+GRADER=0
 UPDATE=0; PUBLISH_UPDATE=0; BUILD=""; VARIANT=production; KEYS_DIR=""; SIGN_KEY=""; TEST_ENDPOINT=""
 FAULT=""; SERVE_DIR=""; TARGETS=""; BLOCK=""; ROLLBACK_TO=""; PROMOTE=""; NOTES_TEXT=""
 UNTARGET=""; UNBLOCK=""; NO_BASE=0; PAUSED=0; RESUME=0; KEY_ADD=""; KEY_REVOKE=""
@@ -72,6 +77,7 @@ while [ $# -gt 0 ]; do
     --study) STUDY_BUNDLE="${2:?--study needs the keys.json from npm run study:keys}"; shift 2 ;;
     --preload) PRELOAD_SLOT="${2:?--preload needs a slot number}"; shift 2 ;;
     --codes) CODES_FILE="${2:?--codes needs the codes.csv from npm run study:keys}"; shift 2 ;;
+    --grader) GRADER=1; shift ;;
     --update) UPDATE=1; shift ;;
     --publish-update) PUBLISH_UPDATE=1; shift ;;
     --build) BUILD="${2:?--build needs a number}"; shift 2 ;;
@@ -93,13 +99,20 @@ while [ $# -gt 0 ]; do
     --resume) RESUME=1; shift ;;
     --key-add) KEY_ADD="${2:?--key-add needs a public key file}"; shift 2 ;;
     --key-revoke) KEY_REVOKE="${2:?--key-revoke needs a key id}"; shift 2 ;;
-    -h|--help) sed -n '2,53p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,57p' "$0"; exit 0 ;;
     *) echo "release.sh: unknown argument $1" >&2; exit 2 ;;
   esac
 done
 
 say() { printf '\033[1m[release]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[release] %s\033[0m\n' "$*" >&2; exit 1; }
+
+# A grader copy (src/main/study/grader.ts) is one preloaded study DMG, and nothing else.
+if [ "$GRADER" = 1 ] && { [ -z "$STUDY_BUNDLE" ] || [ -z "$PRELOAD_SLOT" ]; }; then
+  die "--grader makes a preloaded study copy: pass --study <keys.json> --preload N too."
+fi
+[ "$GRADER" = 0 ] || [ "$UPDATE" = 0 ] || die "--grader is a DMG for the teaching team, never an update: drop --update."
+[ "$GRADER" = 0 ] || [ -s "$APP_DIR/samples/graph-search-tutorial.pdf" ] || die "A grader copy needs its sample: app/samples/graph-search-tutorial.pdf is missing."
 
 VERSION="$(node -p "require('./package.json').version")"
 [ "$(uname -m)" = "arm64" ] || die "Build on Apple Silicon: the DMG is arm64-only."
@@ -319,6 +332,8 @@ fi
 STUDY_DEST="$APP_DIR/study/keys.json"
 # A preloaded copy's code (src/main/study/service.ts, `unlockPreloaded`), under the same rule.
 PRELOAD_DEST="$APP_DIR/study/preload.txt"
+# A grader copy's marker (src/main/study/grader.ts), under the same rule: only with --study --preload.
+GRADER_DEST="$APP_DIR/study/grader.txt"
 [ -z "$PRELOAD_SLOT" ] || [ -n "$STUDY_BUNDLE" ] || die "--preload is for a study build: pass --study too."
 if [ -n "$STUDY_BUNDLE" ]; then
   [ -z "$TAG" ] || die "A study build carries participants' sealed keys: it is never published. Drop --publish."
@@ -336,15 +351,22 @@ if [ -n "$STUDY_BUNDLE" ]; then
     [ -n "$PRELOAD_CODE" ] || die "Slot $PRELOAD_SLOT is not in $CODES_FILE."
   fi
   cp "$STUDY_BUNDLE" "$STUDY_DEST"
-  trap 'rm -f "$STUDY_DEST" "$PRELOAD_DEST"' EXIT
+  trap 'rm -f "$STUDY_DEST" "$PRELOAD_DEST" "$GRADER_DEST"' EXIT
+  rm -f "$GRADER_DEST"
   if [ -n "$PRELOAD_CODE" ]; then
     ( umask 022; printf '%s\n' "$PRELOAD_CODE" > "$PRELOAD_DEST" )
     say "Study build: $STUDY_SLOTS participant slot(s) sealed in; slot $PRELOAD_SLOT preloaded."
   else
     say "Study build: $STUDY_SLOTS participant slot(s) sealed in."
   fi
+  if [ "$GRADER" = 1 ]; then
+    ( umask 022; printf 'grader\n' > "$GRADER_DEST" )
+    say "Grader copy: grader wording, the tour and the sample tutorial are on."
+  fi
 elif [ -e "$STUDY_DEST" ] || [ -e "$PRELOAD_DEST" ]; then
   die "$APP_DIR/study holds a key bundle or a preloaded code, and an ordinary build must not carry either. Remove it, or pass --study."
+elif [ -e "$GRADER_DEST" ]; then
+  die "$APP_DIR/study holds a grader marker (grader.txt), and an ordinary build must not carry it. Remove it, or pass --study <keys.json> --preload N --grader."
 fi
 
 if [ -n "$TAG" ]; then
@@ -382,8 +404,10 @@ DMG="$APP_DIR/out/$APP_NAME-$VERSION-arm64.dmg"
 [ -f "$DMG" ] || die "electron-builder produced no $DMG."
 BUILT_APP="$APP_DIR/out/mac-arm64/$APP_NAME.app"
 if [ -n "$STUDY_BUNDLE" ]; then
-  rm -f "$STUDY_DEST" "$PRELOAD_DEST"
-  STUDY_DMG="$APP_DIR/out/$APP_NAME-Study-$VERSION${PRELOAD_SLOT:+-S$PRELOAD_SLOT}-arm64.dmg"
+  rm -f "$STUDY_DEST" "$PRELOAD_DEST" "$GRADER_DEST"
+  STUDY_KIND="Study"
+  [ "$GRADER" = 0 ] || STUDY_KIND="Grader"
+  STUDY_DMG="$APP_DIR/out/$APP_NAME-$STUDY_KIND-$VERSION${PRELOAD_SLOT:+-S$PRELOAD_SLOT}-arm64.dmg"
   mv "$DMG" "$STUDY_DMG"
   DMG="$STUDY_DMG"
 fi
@@ -413,7 +437,7 @@ node -e '
 
 # ── verify what a user actually gets: the app inside the DMG ────────────────
 MNT="$(mktemp -d "${TMPDIR:-/tmp}/chattered-dmg.XXXXXX")"
-cleanup() { hdiutil detach -quiet "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; [ -z "$STUDY_BUNDLE" ] || rm -f "$STUDY_DEST" "$PRELOAD_DEST"; }
+cleanup() { hdiutil detach -quiet "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; [ -z "$STUDY_BUNDLE" ] || rm -f "$STUDY_DEST" "$PRELOAD_DEST" "$GRADER_DEST"; }
 trap cleanup EXIT
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$DMG"
 DMG_APP="$MNT/$APP_NAME.app"
@@ -453,6 +477,14 @@ if [ -n "$PRELOAD_SLOT" ]; then
 elif [ -e "$SHIPPED_PRELOAD" ]; then
   die "This build carries a preloaded code it was not asked for ($SHIPPED_PRELOAD)."
 fi
+SHIPPED_GRADER="$DMG_APP/Contents/Resources/study/grader.txt"
+if [ "$GRADER" = 1 ]; then
+  [ -f "$SHIPPED_GRADER" ] || die "The grader marker is missing from the DMG ($SHIPPED_GRADER)."
+  [ -s "$DMG_APP/Contents/Resources/samples/graph-search-tutorial.pdf" ] || die "The sample tutorial is missing from the DMG (Contents/Resources/samples)."
+  say "Grader copy: marker and sample tutorial in Contents/Resources."
+elif [ -e "$SHIPPED_GRADER" ]; then
+  die "This build carries a grader marker it was not asked for ($SHIPPED_GRADER)."
+fi
 
 MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$DMG_APP/Contents/Info.plist")"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DMG_APP/Contents/Info.plist")" = "$BUILD" ] || die "CFBundleVersion in the DMG is not $BUILD."
@@ -479,7 +511,7 @@ printf '    local app (not the DMG copy): %s\n' "$BUILT_APP"
 
 # ── the update payload (only with --update) ─────────────────────────────────
 if [ "$UPDATE" = 1 ]; then
-  [ ! -e "$APP_DIR/study/keys.json" ] && [ ! -e "$APP_DIR/study/preload.txt" ] || die "app/study holds a key bundle or a code: an update must never carry either."
+  [ ! -e "$APP_DIR/study/keys.json" ] && [ ! -e "$APP_DIR/study/preload.txt" ] && [ ! -e "$APP_DIR/study/grader.txt" ] || die "app/study holds a key bundle, a code or a grader marker: an update must never carry any."
   [ ! -e "$BUILT_APP/Contents/Resources/study" ] || die "$BUILT_APP carries Contents/Resources/study: never in an update."
   mkdir -p "$UPD"
   ZIP_NAME="$ASSET_SLUG-$BUILD-arm64.zip"

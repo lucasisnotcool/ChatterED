@@ -67,3 +67,23 @@ describe('the manifest seq can never strand installs (E2E item 1)', () => {
     expect(make({ ...baseFields, seq: now + 1000 })).toBe(now + 1001); // a base already ahead
   });
 });
+
+describe('release.sh grader copy guards (src/main/study/grader.ts)', () => {
+  it.each([
+    ['refuses --grader without --study --preload', '--grader makes a preloaded study copy'],
+    ['refuses --grader with --update', '--grader is a DMG for the teaching team, never an update'],
+    ['sets where the grader marker goes', 'GRADER_DEST="$APP_DIR/study/grader.txt"'],
+    ['refuses a leftover grader marker in an ordinary build', 'an ordinary build must not carry it'],
+  ])('%s, before the build', (_what, needle) => {
+    const at = script.indexOf(needle);
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThan(buildAt);
+  });
+
+  it('checks the marker and the sample inside the DMG, and refuses a marker nobody asked for', () => {
+    const mounted = script.indexOf('hdiutil attach');
+    for (const needle of ['The grader marker is missing from the DMG', 'The sample tutorial is missing from the DMG', 'a grader marker it was not asked for']) {
+      expect(script.indexOf(needle)).toBeGreaterThan(mounted);
+    }
+  });
+});

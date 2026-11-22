@@ -416,3 +416,18 @@ describe('what the menu is allowed to say', () => {
     for (const command of sent) expect(allowed.has(command)).toBe(true);
   });
 });
+
+describe('the grader copy (shared/grader.ts)', () => {
+  it('adds Help ▸ Show the Grader Tour only when asked, and sends the renderer its command', () => {
+    const sent: string[] = [];
+    const win = { webContents: { send: (_channel: string, command: string) => sent.push(command) } };
+    const grader = buildMenuTemplate({ getWindow: () => win as never, isPackaged: true, graderTour: true });
+    expect(items(grader, 'help')).toContain('Show the Grader Tour');
+    click(grader, 'help', 'Show the Grader Tour');
+    expect(sent).toEqual(['grader.tour']);
+    for (const graderTour of [undefined, false]) {
+      const plain = buildMenuTemplate({ getWindow: () => null, isPackaged: true, ...(graderTour === undefined ? {} : { graderTour }) });
+      expect(items(plain, 'help')).not.toContain('Show the Grader Tour');
+    }
+  });
+});

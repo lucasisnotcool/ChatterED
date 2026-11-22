@@ -8,6 +8,7 @@ import { STUDY_IPC, type StudyApi, type StudyStatus } from '../shared/study.js';
 export const studyApi: StudyApi = {
   status: () => ipcRenderer.invoke(STUDY_IPC.status),
   unlock: (input) => ipcRenderer.invoke(STUDY_IPC.unlock, input),
+  graderSample: () => ipcRenderer.invoke(STUDY_IPC.graderSample),
   onChanged: (listener) => {
     const handler = (_event: unknown, payload: StudyStatus) => listener(payload);
     ipcRenderer.on(STUDY_IPC.changed, handler);

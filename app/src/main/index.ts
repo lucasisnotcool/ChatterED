@@ -383,7 +383,7 @@ function boot(): void {
   installDebugReport({ getWindow: () => mainWindow, isTrustedSender: (event) => isTrustedSender(event, entry) });
   mainWindow = createWindow();
   // Reload and DevTools are in this menu only while `app.isPackaged` is false.
-  installMenuFor(() => mainWindow);
+  installMenuFor(() => mainWindow, { graderTour: service.graderCopy });
 
   // App Nap off only while a room's ticks are armed — a napping process does not tick — and
   // back on when none are, so an app left open all day is not kept awake (release review P2-4).

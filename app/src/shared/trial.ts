@@ -141,6 +141,11 @@ export interface TrialStatus {
   /** ISO timestamp of the agreement to `consentedVersion`. */
   consentedAt: string | null;
   contactEmail: string;
+  /**
+   * A grader copy (`release.sh --grader`, `shared/grader.ts`): the gate shows the grader wording
+   * and first run adds the tour and the sample. Only ever present as `true`; absent everywhere else.
+   */
+  grader?: true;
 }
 
 /** A stored version string read defensively: missing or garbled is "never agreed". */
