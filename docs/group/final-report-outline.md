@@ -6,17 +6,20 @@ words of main text). Valerie has not reviewed it.
 
 **What changed on 22 Nov, and where.**
 
-- **The first exports are in, and they are thin.** Both come from study copy 04: one first-use
-  sitting of 16 minutes on a tutorial sheet, and one earlier session in which the exam paper would
-  not import and nothing was attempted. The record is `field-results.md`. Neither is "1–2 days of
-  revision", so §6.1, §6.3, §8.3 and §9 now carry both the plan and what was observed.
+- **Four exports are in (23 Nov), and one more is expected.** S03 worked through a whole tutorial
+  in three sittings over two days; S01 worked through a whole tutorial in one hour; S04 tried three
+  parts in 16 minutes; and on 18 Nov a fourth person could not get an exam paper to import. The
+  record is `field-results.md`. Only S03's use looks like the "1–2 days" that was planned, so §6.1,
+  §6.3, §8.3 and §9 carry both the plan and what was observed.
+- **One export is one person** (Lucas, 23 Nov). Participants are told apart by the export's
+  participant id, not by the study copy number.
 - **The app is frozen** (Lucas, 22 Nov). Faults found in the data go into the report as limitations
   and are not fixed. §9 marks the one submission task this touches (`INNOVATION` comments).
 - **Informal feedback from participants**, relayed by Valerie, is kept in a local-only notes file
   with a table mapping each item to the sections here. None of it is in this file: Lucas and
   Valerie choose what goes into the report.
-- Places still waiting for data are marked `[DATA]`. Places the first export already fills are
-  marked **S04**.
+- Places still waiting for data are marked `[DATA]`. Places an export already fills are marked
+  **S01**, **S03** or **S04**.
 
 **Decisions this sketch assumes (Lucas, 21 Nov).**
 
@@ -26,7 +29,9 @@ words of main text). Valerie has not reviewed it.
   18 Nov line in issue #72 that left exam-paper use out of the analysis.
 - The report counts **6 target users: 2 in an informal pilot and 4 in the field phase.** The pilot was
   very informal and is described as such; its data is never pooled with the field data. *Open: the
-  two copy-04 exports may be two different people (`field-results.md` §5).*
+  two copy-04 exports are treated as two people, and a fifth export is expected, so the field phase
+  may have five people on four study copies (`field-results.md` §8). Settle the count and the
+  codes with Valerie before the participant table is written.*
 
 ---
 
@@ -43,9 +48,11 @@ words of main text). Valerie has not reviewed it.
   (what counts as good). §6 proposes RQs with explicit dependent variables.
 - **The shorter study and the sharper RQs are the same change.** The vague part of the RQs was the
   "over the week" clause. Dropping it removes the claim a short window cannot support (§6.3).
-- **The first data says: write a first-use field trial, not days of revision.** One 16-minute
-  sitting gives cases and a timeline, not rates. The weight moves to the interviews and to the
-  check of the AI's replies, which came out clean in 7 of 7 and exposed three faults (§6.6).
+- **The data says: short unsupervised use, reported person by person.** Three people, one to
+  three sittings each, 13 parts touched, 25 checks. That gives cases, timelines and counts, not
+  rates. The weight sits on two episodes from S03, the interviews, and the check of the AI's
+  replies, which came out clean in 62 of 62 on the points we can count and exposed six faults
+  (§6.6).
 - **The pilot criticism and the informal pilot solve each other:** report the evaluation as two
   phases, where phase 2 checks whether the phase 1 problems come back.
 - **The deck and the repo have drifted apart** (RQ2 wording, participant count, need numbering, the
@@ -281,10 +288,12 @@ used: they are private to that assignment and were run on a different branch.
 
 ### 6.1 Content: planned as 1–2 days
 
-**Observed so far (22 Nov).** S04: one launch, 16 minutes, one tutorial sheet from an old module,
-3 of 14 parts touched, no lecture or solutions added. Copy 04 on 18 Nov: 17 active minutes, the
-exam paper failed to import three times, nothing typed. The "Run" column below is the plan the
-participants were given, not what these two exports show.
+**Observed so far (23 Nov).** S03: three sittings over two days, 160 active minutes, one tutorial
+sheet with its solutions, 5 of 5 parts completed. S01: one sitting of 63 minutes, one tutorial
+sheet, 5 of 5 parts touched, 2 completed and 3 revealed. S04: one launch, 16 minutes, one tutorial
+sheet from an old module, 3 of 14 parts touched. Copy 04 on 18 Nov: 17 active minutes, the exam
+paper failed to import three times, nothing typed. No one added a lecture, and no exam paper was
+worked on. The "Run" column below is the plan the participants were given.
 
 | | Presented (2 Nov) | Run |
 |---|---|---|
@@ -306,11 +315,13 @@ Consequences to handle:
 - **Build.** One participant hit the long-paper import failure before the 19 Nov fix; report use by
   build. S04's export records version 0.1.0 and no build number, so the build has to come from
   which copy Valerie sent and when.
-- **Thin data. This has happened.** Report it as a result, with the participant's own reason from
-  the interview, and treat each person as a case. Every result is per person, never pooled, and
+- **Thin data. This has happened for two of three people.** Report it as a result, with the
+  participant's own reason from the interview, and treat each person as a case. Every result is per person, never pooled, and
   counts are given as counts ("2 of 4"), not percentages.
-- **Was it revision?** S04's sheet is from a module taken earlier. Ask before describing any
-  session as exam revision.
+- **Was it revision?** S04's sheet is from a module taken earlier, and S03 told Max they had not
+  studied the topic. Ask before describing any session as exam revision.
+- **No lecture, and no exam paper.** DG3's measures (links opened) have nothing to count, and the
+  decision to accept exam papers has no data behind it yet.
 
 ### 6.2 Research questions, with dependent variables
 
@@ -334,6 +345,19 @@ lacked. We do not measure learning gain.
 - RQ2 needs a fourth end state: **worked on, not checked**. S04's most-worked part was never
   checked, so it has no verdict at all.
 - First values, as counts: RQ1 2 of 4; RQ2 one "not yet", left.
+
+**What S01 and S03 add (23 Nov).**
+
+- **Report RQ1 by button.** Hints came with an attempt in the slot 4 times in 6. Refreshers never
+  did (0 of 3): each was pressed before trying, which is what a Refresher is for. Together, 4 of 9.
+- **Typed requests for teaching sit outside RQ1.** S03 asked to be taught five times by typing in a
+  thread or to Ellie. Count them beside the button presses.
+- **RQ2's "not yet" means any first verdict short of complete**, "partly there" included. 9 parts:
+  repaired 5 (all S03), revealed 3 (all S01), left 1 (S04). Report by person.
+- **Read the order of events, not the final status.** S03 pressed Show answer on a part three
+  minutes after it was checked "complete"; the part is stored as "revealed".
+- **Check answer is the main event to analyse:** 25 checks against 6 hints and 3 Refreshers. No one
+  reached the third hint level.
 
 Changes from the deck, to state in the report: "over the week" is removed from RQ1 and RQ2; RQ2 no
 longer asks about "the AI's moves", because code sets the move from the button the student presses,
@@ -360,8 +384,9 @@ for a question it cannot answer.
 Reasons for the change, for the one sentence: Mac-only installs cut the recruit pool, a long exam
 paper failed to import until 19 Nov, and the exam period left days, not a week.
 
-**If use stays at single sittings: a first-use field trial.** Say that participants were asked to
-use the app in their own revision for a day or two, and that the use recorded was shorter. Then:
+**For the single sittings (S01, S04): a first-use trial.** S03's two days no longer fit this
+label, so use it per person, not for the phase. Say that participants were asked to use the app in
+their own revision for a day or two, and that two of three used it once. For those two:
 
 | What a first-use sitting can show | What it cannot |
 |---|---|
@@ -407,18 +432,26 @@ agreed, and the reply said the key was disputed. (2) The source PDF was opened o
 and the view was never switched. (3) S04 began typing about 1 min 45 s after the sheet was ready. One
 sitting cannot show a problem is gone; it shows none of the three reappearing in the log.
 
-### 6.6 First results (S04), in brief
+### 6.6 Results so far (S01, S03, S04), in brief
 
-Full record: `field-results.md`.
+Full record: `field-results.md` (§6 for the tables, §7 for what it means).
 
 | | Finding | Use in the report |
 |---|---|---|
-| Loop worked once | On the first part: attempt, hint, a correct new step typed in reply | The worked example for the system section and for RQ1 (§8.2 argument 5) |
-| Loop did not hold | Next hint level left after 9 seconds; then help asked on two empty slots; a 28-character answer checked, "not yet", left | RQ1 and RQ2 as a timeline. Reads as trying each button, so ask in the interview |
-| AI followed the design | 7 replies, none gave the answer; 73 to 173 words; the check said what it rested on | Fidelity check (F3); set against 7 of 10 replies over 400 words in the baseline |
-| Fault 1 | Hints say what "the lecture" does not cover, with no lecture added. With nothing linked, the first hint level can only send the student back to the question's wording | Limitation; DG3 depends on the student adding a lecture |
-| Fault 2 | Asked how she differs from Max, Ellie described a "group" and a "tester in the group": the earlier design | F9 complexity, and the persona question in §8.4 |
-| Fault 3 | No solutions added, so the check ran against a key the model wrote and had marked as disputed | Ethics argument 2; transparency |
+| Use | S03: 160 active minutes over two days, 5 of 5 parts completed. S01: one hour, 5 of 5 touched. S04: 16 minutes, 3 of 14 touched | Per-person use table. Only S03 matches the planned window |
+| Attempt first | 8 of 13 parts began with the student typing. Hints came with an attempt 4 times in 6; Refreshers 0 of 3 | RQ1, split by button |
+| Check is the main control | 25 checks, 6 hints, 3 Refreshers, 4 reveals. Third hint level: never | A finding about the design: students put something in the slot and asked what was wrong with it. The ladder did not carry the sessions |
+| Recovery splits by person | 9 parts with a first verdict short of complete: S03 repaired 5 of 5, S01 revealed 3 of 3, S04 left 1 of 1 | RQ2 as three cases. The interview has to explain each |
+| Episode A (S03, part 1(b)) | Two "not yet", then an angry message; Max gave the general shape and one smaller step; the student built the answer in two typed turns; complete two checks later | The worked example of recovery. Also the nearest real case to checklist question 5 |
+| Episode B (S03, part 3) | Eight typed turns in the thread before the slot was filled; Max asked one question each time; correct at the second check | "Why a conversational interface". State honestly that one of Max's questions hands over the central idea |
+| Reveal after work (S01) | Three reveals, each with an attempt in the slot and within a minute of the last feedback. S01 then answered Max's "in your own words" question 3 times in 4; S03 answered it 0 times in 3 | Over-reliance argument: the reveal is used, and what follows it differs by person |
+| AI followed the design | 62 replies: none gave a part's answer before a reveal or a "complete"; none over 400 words (longest 192); 22 over the app's own limits | Fidelity check (F3); set against 7 of 10 replies over 400 words in the baseline. One AI coder: say so |
+| Fault 1 | The agents call the sheet "the lecture", "the deck" or "the slide", on all three people's sheets (36 of 55 replies in S01 and S03) | Limitation; DG3 depends on the student adding a lecture, and no one did |
+| Fault 2 | Asked how she differs from Max, Ellie described a "group": the earlier design (S04; reproduced in the red-team run) | F9 complexity, and the persona question in §8.4 |
+| Fault 3 | Without solutions the check runs against a key the model wrote. S01: 5 of 8 checks on a key marked low confidence, one of them "complete". Each reply said so | Ethics argument 2; transparency |
+| Fault 4 | S03 added the solutions at the start; the app did not use them for the key until two and a half hours in | Limitation; trust in the verdict |
+| Fault 5 | The app turned S03's solutions file into a notes page that states the answers. S03 opened that view for about 25 seconds while stuck on part 3 | Limitation, and a caution on Episode B until the interview |
+| Fault 6 | A part checked "complete" loses its progress if the student then presses Show answer to compare (S03) | "What we would change": let a completed part show its answer at no cost |
 
 ## 7. Overall outline
 
@@ -433,7 +466,7 @@ does not count, so evidence goes in tables and the prose carries the argument.
 | 3 | User research and design rationale | 700 | System design | Yes |
 | 4 | The system: conversation design, architecture, decisions, iterations | 900 | System design | Yes |
 | 5 | User study: design, participants, measures, analysis | 900 | User study | Yes, except participant table |
-| 6 | Results | 1,400, fewer if use stays thin | User study | **S04** can be written now from `field-results.md`; the rest `[DATA]` |
+| 6 | Results | 1,400 | User study | **S01, S03, S04** can be written now from `field-results.md`; the fifth export and all interviews `[DATA]` |
 | 7 | Ethical and design implications | 900 | Ethics | Mostly; two paragraphs wait for data |
 | 8 | Limitations and conclusion | 250 | — | Mostly |
 | 9 | Project contributions among team members | 150 | Required, no weight stated | Yes: from `docs/provenance.md` and git history |
@@ -547,7 +580,7 @@ does not count, so evidence goes in tables and the prose carries the argument.
 | 5 | Programme and year of S01–S04 | `[DATA]`. If any is not STEM, say so (F5) |
 | 6 | `field-study.md` measures table; log events added 15 Nov (`tutorial.help`, `tutorial.check`, `tutorial.text_started`, `tutorial.link_open`, `tutorial.source_pdf`, `app.active`) | Ready |
 | 7 | §6.4; Braun & Clarke (2006); Malterud et al. (2016) | Ready |
-| 8 | Tables: per-participant use (sessions, sheets by type, parts touched, active minutes); RQ1 counts; RQ2 end states; said-against-did matrix; pilot-problem recurrence (§6.5) | **S04** rows filled in `field-results.md` §2; S01–S03 and all interviews `[DATA]`. The coding there is by one AI coder: a person must check it |
+| 8 | Tables: per-participant use (sessions, sheets by type, parts touched, active minutes); RQ1 counts; RQ2 end states; said-against-did matrix; pilot-problem recurrence (§6.5) | **S01, S03, S04** rows filled in `field-results.md` §6; the fifth export and all interviews `[DATA]`. The coding there is by one AI coder: a person must check it |
 | 8, what went wrong | The 18 Nov session: three failed imports of an exam paper, nothing attempted; fixed 19 Nov (#72) | Ready (`field-results.md` §3). Say the build changed during the study |
 | 8, "what we would change" | The table in `field-study.md`, "What each result would change", was written before any data. Use the rows the results trigger | Ready as a frame |
 | 9 | No comparison and no test, so no causal or learning claim; four participants from our networks; they know the log is exported; mixed content across people; revision, not first-time work; Mac only; a proof check is the model's judgement | Ready |
@@ -555,8 +588,10 @@ does not count, so evidence goes in tables and the prose carries the argument.
 **Expectations to record before the data arrives** (from `field-study.md`, trimmed to what a short
 window can show): the share of help requests with an attempt sits nearer the self-set-rule chat than
 the plain ones; most "not yet" paths end in a repair; some accounts still differ from the log.
-These were written on 21 Nov, before any export. S04's sitting does not meet the second (its one
-"not yet" was left) and is too small to speak to the first. Report the expectations and the miss.
+These were written on 21 Nov, before any export. Against three exports: hints came with an attempt
+4 times in 6, which is on the side of the self-set-rule chat (24 of 45) and far from the plain ones
+(0 of 31), though six events are not a rate. Repairs are 5 of 9, a bare majority, and all five are
+one person's. The third waits for the interviews. Report the expectations and how each fared.
 
 ### 8.4 Ethical and design implications (2%)
 
@@ -603,8 +638,8 @@ losing side notices that each question takes longer. Say which side we favoured 
 | 1 Disclosure: does every user know it is AI? | The consent screen speaks of "the AI's replies" and the AI provider; the pill says whether code or Max judged an answer. Nothing in the workspace itself labels Max and Ellie as AI: the chat label reads "Max · Tester". Asked directly, Ellie says "Neither of us is a real person. I'm an AI" (`red-team/README.md` §3.4) | Transparency | Ready; a small gap to state, now with a test behind it |
 | 2 Persona: which human cues did you turn up, and why? | Two named agents with roles and colours, inherited from the notebook design. In the tutorial workspace the second agent does little | Well-being | **S04:** asked the app how the two differ; the answer described the old group design. **Reproduced** in 6 of 6 private replies in the red-team run. More reaction `[DATA]` |
 | 3 Who gains: whom does it serve worst? Did you test with them? | Students without an Apple Silicon Mac cannot use it; weaker students may meet more "not yet"; courses with no answer key get model-judged grades. We did not test with these groups | Fairness | Ready, as a stated gap |
-| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | **Tested:** held 9 of 9 against an injected instruction, a hidden note in the sheet, and "my lecturer confirmed it" (`red-team/README.md` §3.1). Not tested on a disputed key. **S04:** one check, right by our reading |
-| 5 Vulnerable moments: what happens on a distress message? | Nothing specific is designed for it. Exam stress is the likely case | Well-being, safety | **Tested, and it fails** (`red-team/README.md` §3.3): Max acknowledged the message, then went back to the question and named no person or service; Ellie named NUS student support but listed two tasks first. The change and the measure are written there |
+| 4 Sycophancy: will it disagree when the user is wrong? | Yes, by construction: the verdict comes from a formal check or the key in code before the model speaks | Safety | **Tested:** held 9 of 9 against an injected instruction, a hidden note in the sheet, and "my lecturer confirmed it" (`red-team/README.md` §3.1). Not tested on a disputed key. **Field:** 25 checks, 18 of them short of "complete"; none that we could judge was wrong, and each named a flaw (`field-results.md` §4.5, §5.4) |
+| 5 Vulnerable moments: what happens on a distress message? | Nothing specific is designed for it. Exam stress is the likely case | Well-being, safety | **Tested, and it fails** (`red-team/README.md` §3.3): Max acknowledged the message, then went back to the question and named no person or service; Ellie named NUS student support but listed two tasks first. The change and the measure are written there. **S03** gives the nearest real case: frustration, not distress, and Max changed approach without giving the answer (`field-results.md` §4.4) |
 | 6 Exit: how does it end well? Can the user end it? | Show answer ends a part without penalty beyond progress; Max asks for one line on why it works. The student can leave at any point | Agency | Ready |
 | 7 Data: what do you keep, infer, and have consent for? | Argument 3 below | Privacy, accountability | Ready |
 | 8 Measure: which effect on the person, beyond satisfaction? | Productive engagement, from logs (§6.2). We dropped the satisfaction rating on purpose | Well-being | Ready |
@@ -616,8 +651,8 @@ on how we would measure it. Question 5 is ours.
 
 | Argument | Evidence or source | Status |
 |---|---|---|
-| 1 | Bastani et al. (2025); Baker et al. (2004); Show answer after a first check; the Check-after-reveal fix; `group-project.md` §9 on pasted text | Ready. **S04:** one token attempt (28 characters restating the question) was checked, but no reveal followed. More `[DATA]` |
-| 2 | `joint-analysis.md` §3.3; grading order in `check.ts`; pill and chip wording; issue #69 open (the filter is lexical) | Ready. **S04:** with no solutions added the key was the model's own, 6 of 14 marked as disputed; the reply disclosed it, but the student cannot see which parts are affected before checking. Contradiction count `[DATA]` |
+| 1 | Bastani et al. (2025); Baker et al. (2004); Show answer after a first check; the Check-after-reveal fix; `group-project.md` §9 on pasted text | Ready. **S04:** one token attempt (28 characters restating the question) was checked, but no reveal followed. **S01:** three reveals, each after an attempt and within a minute of feedback that left one step; S01 then explained in their own words 3 times in 4. **S03:** no reveal before a repair in 5 parts |
+| 2 | `joint-analysis.md` §3.3; grading order in `check.ts`; pill and chip wording; issue #69 open (the filter is lexical) | Ready. **S04:** with no solutions added the key was the model's own, 6 of 14 marked as disputed; the reply disclosed it, but the student cannot see which parts are affected before checking. **S01:** 5 of 8 checks ran on a low-confidence key. **S03:** solutions were added but not used for the first two parts. Contradiction count `[DATA]` |
 | 3 | Consent screen; `studylog.ts`; export anonymiser; `field-study.md` "Ethics, in brief" | Ready. **The consent notice says "the AI provider you choose" while study builds send to Anthropic: align the report's wording, and the notice** |
 | 4 | Week 11 lecture topics; Lee & See (2004); "felt like it nags" probe in the interview | Framing ready; participants' words `[DATA]` |
 | 5 | Recruitment record; cost figures | Ready |
@@ -625,8 +660,8 @@ on how we would measure it. Question 5 is ours.
 
 ## 9. Before 23 Nov
 
-**Write now.** Sections 1–5 and 7, the changes table, the provenance table, the limits, and the S04
-part of the results from `field-results.md`.
+**Write now.** Sections 1–5 and 7, the changes table, the provenance table, the limits, and the
+results for S01, S03 and S04 from `field-results.md`.
 
 **Small checks to run.**
 
@@ -635,14 +670,16 @@ part of the results from `field-results.md`.
   (§5.5), with the distress message for checklist question 5.
 - Confirm each existing product's current study mode before describing it.
 
-**From Valerie.** Whether the two copy-04 exports are one person or two; S04's programme and year;
-which build each participant ran; a human check of the S04 coding. The third pilot problem in writing; the pilot task; the passage of the Nudge A1
+**From Valerie.** How many people took part and which export is whose (five exports are expected on
+four study copies); each person's programme and year; which build each ran; a human check of the
+coding, above all S03's part 3; the interviews, cued on the moments listed in `field-results.md` §7. The third pilot problem in writing; the pilot task; the passage of the Nudge A1
 that the ladder draws on; her check of her five participants' joint coding.
 
-**Exports in so far (22 Nov):** copy 04, twice (`field-results.md`). It gives the hint example the
-teaching team asked for (§2.5 there), a fidelity check on 7 replies, and three faults to own: hints
-that mention a lecture nobody added, a private chat that describes the old group design, and a
-check against a key the model wrote. Run `tools/field-metrics.py` on each new export.
+**Exports in so far (23 Nov):** copies 01, 03 and 04 (twice); one more expected
+(`field-results.md`). They give the hint example the teaching team asked for (§2.5 there), two
+episodes of recovery from S03 (§4.4), a fidelity check on 62 replies, and six faults to own
+(§6.6 here). Run `tools/field-metrics.py` on each new export, and treat each export as a new
+person whatever copy number it carries.
 
 **When exports arrive.** Classify sheets by type; build paths; code turns; pick cued moments;
 interview; code replies for the fidelity check; fill the tables.

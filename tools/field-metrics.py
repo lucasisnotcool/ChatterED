@@ -25,6 +25,7 @@ from collections import defaultdict
 from pathlib import Path
 
 NOT_YET = {"not_yet", "partial", "incorrect"}
+COMPLETE = {"complete", "correct"}  # the log writes "complete"; the parts table writes "correct"
 
 
 def log_lines(root):
@@ -62,7 +63,8 @@ def measure(root):
 
     # Per part: what came first, and where a "not yet" ended.
     parts = defaultdict(lambda: dict(first=None, max_rung=0, checks=0, verdicts=[],
-                                     refreshers=0, revealed=False, replies=0, after_not_yet=None))
+                                     refreshers=0, revealed=False, replies=0, after_not_yet=None,
+                                     checks_to_complete=None, reveal_after_complete=False))
     timeline = sorted([(h["ts"], "help", h) for h in helps] + [(c["ts"], "check", c) for c in checks] +
                       [(r["ts"], "reply", r) for r in replies] + [(t, "text", dict(part=p)) for p, t in started.items()])
     for ts, what, x in timeline:
@@ -76,17 +78,22 @@ def measure(root):
                 p["refreshers"] += 1
             if x["kind"] == "reveal":
                 p["revealed"] = True
+                # The end state after a "not yet" is whichever came first: a complete check or a reveal.
+                if p["after_not_yet"] == "left":
+                    p["after_not_yet"] = "revealed"
+                elif p["checks_to_complete"]:
+                    p["reveal_after_complete"] = True
         if what == "check":
             p["checks"] += 1
             p["verdicts"].append(x["verdict"])
+            if x["verdict"] in NOT_YET and p["after_not_yet"] is None and not p["checks_to_complete"]:
+                p["after_not_yet"] = "left"
+            if x["verdict"] in COMPLETE:
+                p["checks_to_complete"] = p["checks_to_complete"] or p["checks"]
+                if p["after_not_yet"] == "left":
+                    p["after_not_yet"] = "repaired"
         if what == "reply":
             p["replies"] += 1
-    for p in parts.values():
-        v = p["verdicts"]
-        first_bad = next((i for i, x in enumerate(v) if x in NOT_YET), None)
-        if first_bad is not None:
-            p["after_not_yet"] = ("repaired" if "correct" in v[first_bad + 1:] else
-                                  "revealed" if p["revealed"] else "left")
 
     # Final status and slot size per part, from the database snapshot.
     status = {}
@@ -101,12 +108,17 @@ def measure(root):
     # AI replies: length only.
     words = defaultdict(list)
     learner_turns = 0
+    other_turns = 0
     for f in (root / "readable" / "transcripts").glob("*.json"):
         t = json.loads(f.read_text())
         for th in t.get("threads", []):
             for m in th.get("turns", []):
                 if m.get("authorKind") == "agent":
                     words[m.get("author")].append(len(m["text"].split()))
+                elif th.get("kind") != "span":
+                    # Typed outside a part's thread (the notebook chat or a private chat). These are
+                    # not in `tutorial.reply`, which counts typed turns inside a part's thread only.
+                    other_turns += 1
         for th in t.get("privateThreads", []):
             for m in th.get("turns", []):
                 if m.get("sender") == "agent":
@@ -136,6 +148,7 @@ def measure(root):
         "help_requests": helps,
         "rq1_asks": len(asks), "rq1_asks_with_attempt": sum(h["attempt"] for h in asks),
         "checks": checks, "thread_replies": replies, "private_chat_learner_turns": learner_turns,
+        "typed_turns_outside_parts": other_turns,
         "reveals": sum(h["kind"] == "reveal" for h in helps),
         "parts_touched": {k: {**v, **status.get(k, {})} for k, v in sorted(parts.items())},
         "parts_total": len(status), "parts_untouched": len(status) - len(parts),
