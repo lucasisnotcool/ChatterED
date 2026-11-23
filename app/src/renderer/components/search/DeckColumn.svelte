@@ -62,38 +62,70 @@
     };
   });
 
-  /** Render a page's canvas the first time it comes near the view. */
+  /**
+   * Render a page's canvas while it is near the view, and give it back once it is far away. The
+   * source's cache owns the canvases it returns and blanks the oldest past `SLIDE_CACHE`, so the
+   * column shows a copy, never the cached canvas: adopting it left every page but the last ten
+   * rendered white once the learner scrolled (5 Oct).
+   */
   function lazyPage(el: HTMLElement, p: number): { destroy(): void } {
-    let done = false;
+    let shown = false;
+    let job = 0;
     const io = new IntersectionObserver(
       (entries) => {
-        if (done || !entries.some((e) => e.isIntersecting)) return;
-        done = true;
-        io.disconnect();
-        void render(el, p);
+        const near = entries[entries.length - 1]?.isIntersecting ?? false;
+        if (near === shown) return;
+        shown = near;
+        const mine = ++job;
+        if (near) void render(el, p, () => mine === job);
+        else release(el);
       },
-      { root: scroller, rootMargin: '800px 0px' },
+      { root: el.closest('.dc'), rootMargin: '1200px 0px' },
     );
     io.observe(el);
-    return { destroy: () => io.disconnect() };
+    return {
+      destroy: () => {
+        job++;
+        io.disconnect();
+        release(el);
+      },
+    };
   }
 
-  async function render(el: HTMLElement, p: number): Promise<void> {
+  async function render(el: HTMLElement, p: number, current: () => boolean): Promise<void> {
     const src = source;
     if (!src) return;
     try {
       const size = await src.measure(p);
       if (size.width > 0) aspects = { ...aspects, [p]: size.height / size.width };
       const target = Math.max(640, Math.ceil(Math.max(width, 320) * (window.devicePixelRatio || 1)));
-      const canvas = await src.canvas(p, target);
-      if (!canvas || src !== source) return;
-      canvas.style.width = '100%';
-      canvas.style.height = 'auto';
-      canvas.setAttribute('aria-hidden', 'true');
-      el.querySelector('.dc-canvas')?.replaceChildren(canvas);
+      // Pages render side by side, so a fresh render can be evicted (and blanked) before this
+      // resumes; ask once more, which renders it again.
+      let rendered = await src.canvas(p, target);
+      if (rendered?.width === 0) rendered = await src.canvas(p, target);
+      if (!rendered || src !== source || !current() || rendered.width === 0) return;
+      const copy = document.createElement('canvas');
+      copy.width = rendered.width;
+      copy.height = rendered.height;
+      copy.getContext('2d')?.drawImage(rendered, 0, 0);
+      copy.style.width = '100%';
+      copy.style.height = 'auto';
+      copy.setAttribute('aria-hidden', 'true');
+      el.querySelector('.dc-canvas')?.replaceChildren(copy);
     } catch {
       // A page that will not render stays a blank card with its number; the rest still do.
     }
+  }
+
+  /** Free a far-off page's bitmap; it renders again when it comes back near the view. */
+  function release(el: HTMLElement): void {
+    const host = el.querySelector('.dc-canvas');
+    const canvas = host?.querySelector('canvas');
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    host?.replaceChildren();
   }
 
   // Scroll to the marked slide whenever it, or the deck under it, changes.
