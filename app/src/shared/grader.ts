@@ -146,7 +146,7 @@ export const GRADER_SAMPLE_NOTEBOOK = 'Graph traversal tutorial';
 
 /** The line under the button. */
 export const GRADER_SAMPLE_BLURB =
-  'Six questions on graph traversal and the twelve lecture slides they are on, both written by the team in the style of a course. We read them with this app beforehand, so the sample opens at once. A sheet you add yourself is read when you add it, in about a minute.';
+  'Six questions on graph traversal and the twelve lecture slides they are on, both written by the team in the style of a course. We read them with this app beforehand, so the sample opens at once.';
 
 /**
  * The sample as a notebook already read (`main/notebooks/seed.ts`), in the same folder as the two

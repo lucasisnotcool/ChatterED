@@ -344,9 +344,8 @@
       </div>
       <p class="quiet">
         {#if grader}
-          ChatterED keeps its own copy of each file on this Mac. Max reads the sheet first, through
-          Anthropic's API: about half a minute for the sample, and about a minute for every five
-          pages of your own.
+          ChatterED keeps its own copy of each file on this Mac. Max reads a sheet you add before
+          it opens, through Anthropic's API: about a minute for every five pages.
         {:else}
           ChatterED keeps its own copy of each file on this Mac; nothing is uploaded anywhere. Max
           reads the sheet first: about a minute for every five pages, so a long exam paper takes
