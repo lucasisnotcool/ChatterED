@@ -63,10 +63,11 @@ fidelity checks.
 | `P-34e9da6f` | 02 | 21 Nov, 13:10 to 22 Nov, 16:01 | 23.6 | **S02** |
 | `P-67b070b4` | 03 | 20 Nov, 06:27 to 22 Nov, 15:54 | 27.0 | **S03** |
 | `P-3b69844c` | 04 | 22 Nov, 03:10 to 03:26 | 25.2 | **S04** |
-| `P-a6b72eca` | 04 | 18 Nov, 08:45 to 09:59 | 24.4 | **slot 04, 18 Nov** |
+| `P-a6b72eca` | 04 | 18 Nov, 08:45 to 09:59 | 24.4 | **S05** |
 
 Four study copies were built (01 to 04), and five exports came back: one from each copy, and a
-second from copy 04. The app makes a new random participant id on each install. The two copy-04 exports are treated as
+second from copy 04. S01 to S04 are named after their copy. The fifth person, who ran copy 04 on
+18 Nov, is called S05; there is no copy 05. The app makes a new random participant id on each install. The two copy-04 exports are treated as
 two people: the Macs run different macOS versions, the sheets come from different modules and
 years, and Lucas has said each export is a separate user. Valerie to confirm (§9).
 
@@ -209,7 +210,7 @@ step, was not reached.
 None of these can be fixed now: the app is frozen for submission. They go in the report as
 limitations and as "what we would change".
 
-## 3. Slot 04, 18 Nov: the import failed and nothing was attempted
+## 3. S05 (study copy 04, 18 Nov): the import failed and nothing was attempted
 
 | Measure | Value |
 |---|---|
@@ -630,7 +631,7 @@ One reader checked all 47 replies against the design rules. "Arguable" marks a j
 
 ### 7.1 Per person
 
-| | S01 | S02 | S03 | S04 | Slot 04, 18 Nov |
+| | S01 | S02 | S03 | S04 | S05 (copy 04, 18 Nov) |
 |---|---|---|---|---|---|
 | Sittings | 1 | 1, after a three-minute first visit | 3 over two days | 1 | 2 launches |
 | Active minutes | 29 | 96 | 160 | 15 | 17 |
@@ -744,7 +745,8 @@ answer (§6.6). The 62 replies of S01, S03 and S04 were checked by one reader on
 ## 9. To settle
 
 - **Who is who.** Each export is treated as one person (Lucas, 23 Nov). That makes the two copy-04
-  exports two people, so the 18 Nov participant needs a code of their own. Valerie to confirm, and
+  exports two people. The 18 Nov participant is called S05 here (Lucas, 23 Nov). S01 to S04 are
+  study copy numbers; S05 is not a copy number, because no fifth copy was built. Valerie to confirm, and
   to give each person's programme and year for the participant table.
 - **S02's material** is a practice set from a public course, not obviously their own coursework.
   Ask whether this was revision for a module of theirs, self-study, or trying the app out.
