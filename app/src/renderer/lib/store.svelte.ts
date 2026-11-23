@@ -606,6 +606,19 @@ class Store {
   }
 
   /**
+   * **The grading copy's sample, already read** (`main/notebooks/seed.ts`): main has brought the
+   * finished notebook in, so there is nothing to add or wait for. It opens on its sheet.
+   */
+  async openSample(notebookId: string, tutorialFileId: string | null): Promise<boolean> {
+    if (tutorialFileId) layout.setTutorialMain(notebookId, tutorialFileId);
+    await run(this, () => bridge().completeFirstRun());
+    if (this.boot) this.boot.firstRun = false;
+    void this.notebook.loadList();
+    await this.openNotebook(notebookId);
+    return this.notebook.id === notebookId;
+  }
+
+  /**
    * Let the held sheet be read once the notebook's notes are written, have failed, or have taken
    * too long. Leaving the notebook releases it too: the sheet is then read when it is next open.
    */

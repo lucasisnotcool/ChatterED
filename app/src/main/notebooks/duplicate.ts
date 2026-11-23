@@ -46,11 +46,22 @@ import type { SqlDatabase } from '../db/driver.js';
 export const COPY_SUFFIX = ' (copy)';
 const MAX_NAME_CHARS = 120;
 
+/** Another database and its managed root: where an original is read from when it is not `db`. */
+export interface DuplicateSource {
+  db: SqlDatabase;
+  root: string;
+}
+
 export interface DuplicateDeps {
   db: SqlDatabase;
   /** `<userData>/notebooks`: the managed vault's root. */
   root: string;
   now?: () => string;
+  /**
+   * Read the original from here and write the copy into `db` and `root` (`importNotebook`). Absent:
+   * the original and the copy are in the same database, as for every Duplicate.
+   */
+  from?: DuplicateSource;
 }
 
 export interface DuplicatedNotebook {
@@ -151,12 +162,17 @@ interface NotebookPlan {
 class Duplicator {
   readonly #db: SqlDatabase;
   readonly #root: string;
+  /** Where the original is read from: the same database and root, unless `deps.from` names others. */
+  readonly #src: SqlDatabase;
+  readonly #srcRoot: string;
   readonly #now: () => string;
   readonly #hasExclude: { folders: boolean; notebooks: boolean };
 
   constructor(deps: DuplicateDeps) {
     this.#db = deps.db;
     this.#root = resolve(deps.root);
+    this.#src = deps.from?.db ?? deps.db;
+    this.#srcRoot = resolve(deps.from?.root ?? deps.root);
     this.#now = deps.now ?? (() => new Date().toISOString());
     this.#hasExclude = {
       folders: columns(this.#db, 'folders').has('research_exclude'),
@@ -164,22 +180,23 @@ class Duplicator {
     };
   }
 
-  #dirOf(notebookId: string): string {
+  #dirOf(notebookId: string, root: string = this.#root): string {
     if (!/^nb_[A-Za-z0-9]+$/.test(notebookId)) throw new Error(`Not a notebook id: ${notebookId}`);
-    return join(this.#root, notebookId);
+    return join(root, notebookId);
   }
 
+  /** A source's path under the original's root. */
   #abs(relPath: string): string {
-    const abs = join(this.#root, ...relPath.split('/'));
-    if (!abs.startsWith(this.#root + sep)) throw new Error('A source is outside the notebook storage.');
+    const abs = join(this.#srcRoot, ...relPath.split('/'));
+    if (!abs.startsWith(this.#srcRoot + sep)) throw new Error('A source is outside the notebook storage.');
     return abs;
   }
 
   /** Ids, sources and docs of one notebook's copy. Reads only. */
   plan(notebookId: string, name: string, folderId: string | null, researchExclude: boolean): NotebookPlan {
-    const row = this.#db.prepare('SELECT id FROM notebooks WHERE id = @id').get<{ id: string }>({ id: notebookId });
+    const row = this.#src.prepare('SELECT id FROM notebooks WHERE id = @id').get<{ id: string }>({ id: notebookId });
     if (!row) throw new Error(`No notebook ${notebookId}.`);
-    const sources = this.#db
+    const sources = this.#src
       .prepare(
         `SELECT s.file_id AS fileId, f.rel_path AS relPath FROM notebook_sources s LEFT JOIN files f ON f.id = s.file_id
           WHERE s.notebook_id = @n ORDER BY s.ord, s.file_id`,
@@ -195,7 +212,7 @@ class Duplicator {
   /** The notebook's notes doc (`nb:<id>`) and each tutorial's (`nb:<id>:tut:<file>`). */
   #docIds(notebookId: string): string[] {
     const key = `nb:${notebookId}`;
-    return this.#db
+    return this.#src
       .prepare(
         `SELECT id FROM notes_docs WHERE content_sha = @k OR substr(content_sha, 1, length(@k) + 1) = @k || ':' ORDER BY created_at, id`,
       )
@@ -205,7 +222,7 @@ class Duplicator {
 
   /** Copy every managed file of each source. Returns what to remove if the rows then fail. */
   copyFiles(plan: NotebookPlan): { copied: string[]; missing: string[]; bytes: number } {
-    const fromDir = this.#dirOf(plan.from);
+    const fromDir = this.#dirOf(plan.from, this.#srcRoot);
     const toDir = this.#dirOf(plan.to);
     mkdirSync(toDir, { recursive: true });
     const entries = existsSync(fromDir) ? readdirSync(fromDir) : [];
@@ -248,19 +265,20 @@ class Duplicator {
   /** The rows of one notebook's copy. Inside the caller's transaction. */
   writeRows(plan: NotebookPlan): void {
     const db = this.#db;
+    const src = this.#src;
     const now = this.#now();
     const ids = new Map<string, string>([[plan.from, plan.to], ...plan.files, ...plan.docs]);
     const remap = remapper(ids);
     const fileIds = JSON.stringify([...plan.files.keys()]);
     const docIds = JSON.stringify([...plan.docs.keys()]);
     const copy = (table: string, where: string, params: Row, override: (row: Row) => Row = (r) => r) => {
-      if (!tableExists(db, table)) return 0;
-      const rows = db.prepare(`SELECT * FROM ${q(table)} WHERE ${where}`).all<Row>(params);
+      if (!tableExists(src, table) || (src !== db && !tableExists(db, table))) return 0;
+      const rows = src.prepare(`SELECT * FROM ${q(table)} WHERE ${where}`).all<Row>(params);
       for (const row of rows) insertRow(db, table, override(remapRow({ ...row }, remap)));
       return rows.length;
     };
 
-    const nb = db.prepare('SELECT * FROM notebooks WHERE id = @id').get<Row>({ id: plan.from })!;
+    const nb = src.prepare('SELECT * FROM notebooks WHERE id = @id').get<Row>({ id: plan.from })!;
     const notebook: Row = {
       ...remapRow({ ...nb }, remap),
       name: plan.name,
@@ -275,7 +293,7 @@ class Duplicator {
 
     copy('files', `id IN (SELECT value FROM json_each(@f))`, { f: fileIds });
     // FTS5: the four columns, never the hidden rowid.
-    const text = db
+    const text = src
       .prepare(`SELECT body, name, file_id, page FROM file_text WHERE file_id IN (SELECT value FROM json_each(@f)) ORDER BY rowid`)
       .all<Row>({ f: fileIds });
     const putText = db.prepare('INSERT INTO file_text (body, name, file_id, page) VALUES (@body, @name, @file_id, @page)');
@@ -313,6 +331,11 @@ class Duplicator {
 
   get db(): SqlDatabase {
     return this.#db;
+  }
+
+  /** The database the original is read from (`db` itself for a Duplicate). */
+  get src(): SqlDatabase {
+    return this.#src;
   }
 
   /** Run `plans`: files first, then every row in one transaction; undo the files on a failure. */
@@ -367,6 +390,27 @@ export function duplicateNotebook(
   if (folderId !== null && !d.folderRow(folderId)) throw new Error('That folder no longer exists.');
   const name = trimName(input.name ?? '') || copyName(row.name);
   const plan = d.plan(input.notebookId, name, folderId, input.researchExclude ?? true);
+  return d.run([plan], () => undefined)[0]!;
+}
+
+/**
+ * **Bring a notebook in from another database** (`deps.from`): the same deep copy as a Duplicate,
+ * with the original read from one database and root and the copy written into another. It is how
+ * a notebook that ships already read is written out and read back (`seed.ts`). The copy keeps the
+ * original's name unless one is given, sits outside any folder, and is part of research data
+ * unless asked otherwise: it is the user's own notebook, not a copy made beside one.
+ */
+export function importNotebook(
+  deps: DuplicateDeps & { from: DuplicateSource },
+  input: { notebookId?: string | null; name?: string | null; researchExclude?: boolean } = {},
+): DuplicatedNotebook {
+  const d = new Duplicator(deps);
+  const row = input.notebookId
+    ? d.src.prepare('SELECT id, name FROM notebooks WHERE id = @id').get<{ id: string; name: string }>({ id: input.notebookId })
+    : d.src.prepare('SELECT id, name FROM notebooks ORDER BY created_at, id LIMIT 1').get<{ id: string; name: string }>();
+  if (!row) throw new Error('That notebook is not there to bring in.');
+  const name = trimName(input.name ?? '') || trimName(row.name);
+  const plan = d.plan(row.id, name, null, input.researchExclude ?? false);
   return d.run([plan], () => undefined)[0]!;
 }
 

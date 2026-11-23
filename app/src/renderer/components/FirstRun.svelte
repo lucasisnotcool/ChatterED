@@ -133,9 +133,10 @@
         sampleError = out.error;
         return;
       }
-      // The lecture first, then the sheet: `store.startFromSample` says why the order matters.
+      // Normally the sample is already read and simply opens. Without its seed it is read live,
+      // the lecture first and then the sheet: `store.startFromSample` says why the order matters.
       starting = true;
-      const ok = await store.startFromSample(out.path, out.lecturePath);
+      const ok = 'notebookId' in out ? await store.openSample(out.notebookId, out.tutorialFileId) : await store.startFromSample(out.path, out.lecturePath);
       if (!ok) starting = false;
     } catch {
       sampleError = GRADER_SAMPLE_MISSING;

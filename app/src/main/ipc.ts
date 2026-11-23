@@ -82,7 +82,9 @@ import { registerResearchIpc, trialGate } from './research/ipc.js';
 import { StudyService } from './study/service.js';
 import { persistStudyBundle, registerStudyIpc, resolveBundlePath } from './study/ipc.js';
 import { isGraderCopy, sampleSourcePath, stageSample } from './study/grader.js';
-import { GRADER_LECTURE_FILE } from '../shared/grader.js';
+import { GRADER_LECTURE_FILE, GRADER_SAMPLE_NOTEBOOK, GRADER_SEED_DIR, type GraderSampleResult } from '../shared/grader.js';
+import { hasNotebookSeed } from './notebooks/seed.js';
+import { openDatabase } from './db/driver.js';
 import { workStarted } from './update/runtime.js';
 import { STUDY_IPC } from '../shared/study.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
@@ -300,6 +302,28 @@ export class AppService {
 
   get cost(): CostLedger {
     return this.#cost;
+  }
+
+  /**
+   * The grading copy's sample. It ships already read (`notebooks/seed.ts`), so the notebook is
+   * brought in whole and the button waits on no model call. A copy without the seed, or one whose
+   * seed cannot be read, falls back to the two PDFs, read live with the lecture first.
+   */
+  #graderSample(): GraderSampleResult {
+    const seedDir = graderSampleSource(GRADER_SEED_DIR);
+    if (seedDir && hasNotebookSeed(seedDir)) {
+      try {
+        const out = this.#notebooks.importSeed({ seedDir, userDataDir: this.#d.userDataDir, name: GRADER_SAMPLE_NOTEBOOK, open: openDatabase });
+        return { ok: true, notebookId: out.notebookId, tutorialFileId: out.tutorialFileId };
+      } catch (err) {
+        log().warn('grader.seed_failed', { cause: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return stageSample({
+      source: graderSampleSource() ?? '',
+      lectureSource: graderSampleSource(GRADER_LECTURE_FILE),
+      userDataDir: this.#d.userDataDir,
+    });
   }
 
   /** A grader copy: Help ▸ Show the Grader Tour is in the menu only then (`menu.ts`). */
@@ -1464,12 +1488,7 @@ export class AppService {
       ...(this.#grader
         ? {
             // No source (Electron could not say) reads as missing: the button says so, the slots still work.
-            graderSample: () =>
-              stageSample({
-                source: graderSampleSource() ?? '',
-                lectureSource: graderSampleSource(GRADER_LECTURE_FILE),
-                userDataDir: this.#d.userDataDir,
-              }),
+            graderSample: () => this.#graderSample(),
           }
         : {}),
     });

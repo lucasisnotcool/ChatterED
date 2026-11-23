@@ -73,6 +73,7 @@ import {
 import { guessSourceRole, isSourceRole, type SetSourceRoleInput, type SourceRole } from '../../shared/tutorial.js';
 import { folderView, notebooksRepo, sourceView, type NotebooksRepo, type SourceRecord } from './repo.js';
 import { duplicateFolder, duplicateNotebook, type DuplicatedFolder, type DuplicatedNotebook } from './duplicate.js';
+import { readNotebookSeed, type ReadSeed } from './seed.js';
 
 /** Converted to text on import with macOS `textutil` (`SOURCE_EXTENSIONS` in shared/notebook.ts). */
 export const CONVERT_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'docx', 'rtf']);
@@ -541,6 +542,23 @@ export class NotebookService {
     });
     this.#emit(out.to);
     this.resumeReading();
+    return out;
+  }
+
+  /**
+   * A notebook that ships already read (`seed.ts`), brought in under new ids: nothing is queued
+   * and no model is called. Throws when the seed cannot be read, and then nothing was written.
+   */
+  importSeed(input: { seedDir: string; userDataDir: string; name?: string | null; open: (path: string) => SqlDatabase }): ReadSeed {
+    const out = readNotebookSeed({
+      into: { db: this.#db, root: this.#root, userDataDir: input.userDataDir },
+      seedDir: input.seedDir,
+      name: input.name ?? null,
+      open: input.open,
+      now: this.#now,
+    });
+    log().info('notebook.seeded', { notebook_id: out.notebookId, sources: out.sources, missing: out.missing });
+    this.#emit(out.notebookId);
     return out;
   }
 

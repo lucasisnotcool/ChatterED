@@ -15,7 +15,7 @@ import {
   GRADER_SAMPLE_COPY_NAME,
   GRADER_SAMPLE_FILE,
   GRADER_SAMPLE_MISSING,
-  type GraderSampleResult,
+  type GraderSampleFiles,
 } from '../../shared/grader.js';
 
 /** The marker's name, beside `keys.json` and `preload.txt`. Its contents are not read. */
@@ -66,7 +66,7 @@ function stageOne(source: string, dir: string, name: string): string | null {
  * never reads a half-written or edited file. Fails soft: with no sheet the drop slots still work,
  * and with no lecture the sheet opens alone (`lecturePath: null`).
  */
-export function stageSample(o: { source: string; lectureSource?: string | null; userDataDir: string }): GraderSampleResult {
+export function stageSample(o: { source: string; lectureSource?: string | null; userDataDir: string }): GraderSampleFiles {
   try {
     const dir = join(o.userDataDir, 'grader');
     if (!existsSync(o.source) || !statSync(o.source).isFile()) return { ok: false, error: GRADER_SAMPLE_MISSING };

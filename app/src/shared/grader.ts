@@ -146,7 +146,14 @@ export const GRADER_SAMPLE_NOTEBOOK = 'Graph traversal tutorial';
 
 /** The line under the button. */
 export const GRADER_SAMPLE_BLURB =
-  'Six questions on graph traversal and the twelve lecture slides they are on, both written by the team in the style of a course.';
+  'Six questions on graph traversal and the twelve lecture slides they are on, both written by the team in the style of a course. We read them with this app beforehand, so the sample opens at once. A sheet you add yourself is read when you add it, in about a minute.';
+
+/**
+ * The sample as a notebook already read (`main/notebooks/seed.ts`), in the same folder as the two
+ * PDFs. Made by reading them once in a grading copy and writing the notebook out
+ * (`scripts/export-notebook-seed.mjs`), so pressing the button waits on no model call.
+ */
+export const GRADER_SEED_DIR = 'graph-traversal-seed';
 
 /** The sheet pane's line while the lecture is read first (`tutorialstore` `held`). */
 export const GRADER_SAMPLE_READING =
@@ -159,6 +166,13 @@ export const GRADER_SAMPLE_NOTES_WAIT_MS = 240_000;
  * What `study:graderSample` answers: readable copies of the sample, or why there is none.
  * `lecturePath` is null when only the sheet could be staged; the sheet then opens alone.
  */
-export type GraderSampleResult = { ok: true; path: string; lecturePath: string | null } | { ok: false; error: string };
+export type GraderSampleFiles = { ok: true; path: string; lecturePath: string | null } | { ok: false; error: string };
+
+/**
+ * What the sample button gets back. Normally the notebook is already there, brought in from the
+ * shipped seed: its id, and the sheet to open as the main view. When the seed is missing or
+ * could not be read, the two files to read live instead (`GraderSampleFiles`).
+ */
+export type GraderSampleResult = { ok: true; notebookId: string; tutorialFileId: string | null } | GraderSampleFiles;
 
 export const GRADER_SAMPLE_MISSING = 'The sample tutorial is not in this copy. Add a tutorial sheet below instead.';

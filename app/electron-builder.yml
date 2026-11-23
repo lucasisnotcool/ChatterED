@@ -89,6 +89,10 @@ extraResources:
     to: samples/graph-traversal-tutorial.pdf
   - from: samples/graph-traversal-lecture.pdf
     to: samples/graph-traversal-lecture.pdf
+  # The same two files as a notebook already read (src/main/notebooks/seed.ts), so the sample
+  # opens without a minute of model calls. Made with scripts/export-notebook-seed.mjs.
+  - from: samples/graph-traversal-seed
+    to: samples/graph-traversal-seed
 asar: true
 # pdf.js is loaded with a real dynamic `import()` of a file:// URL (src/main/vault/pdf.ts).
 # Node's ESM loader does not read out of an asar archive, so this one package stays unpacked.
