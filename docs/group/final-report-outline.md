@@ -8,12 +8,12 @@ words of main text). Valerie has not reviewed it.
 
 - **All five exports are in (23 Nov).** S03 worked through a whole tutorial in three sittings over
   two days; S02 worked eight of eleven parts in one evening (96 active minutes); S01 worked through
-  a whole tutorial in one hour; S04 tried three parts in 16 minutes; and on 18 Nov a fifth person
-  (S05, on study copy 04) could not get an exam paper to import. The
+  a whole tutorial in one hour; S04 tried three parts in 16 minutes. An earlier copy-04 export
+  (18 Nov), on which an exam paper failed to import, is excluded. The
   record is `field-results.md`. Only S03's use looks like the "1–2 days" that was planned, so §6.1,
   §6.3, §8.3 and §9 carry both the plan and what was observed.
-- **One export is one person** (Lucas, 23 Nov). Participants are told apart by the export's
-  participant id, not by the study copy number.
+- **Four participants** (Lucas, 23 Nov): S01 to S04. The 18 Nov export is reported only as the
+  19 Nov build change and an exclusion rule, with nothing said about who made it.
 - **The app is frozen** (Lucas, 22 Nov). Faults found in the data go into the report as limitations
   and are not fixed. §9 marks the one submission task this touches (`INNOVATION` comments).
 - **Informal feedback from participants**, relayed by Valerie, is kept in a local-only notes file
@@ -29,10 +29,8 @@ words of main text). Valerie has not reviewed it.
 - **Tutorial sheets and past-year exam papers both count** as study material. This reverses the
   18 Nov line in issue #72 that left exam-paper use out of the analysis.
 - The report counts **6 target users: 2 in an informal pilot and 4 in the field phase.** The pilot was
-  very informal and is described as such; its data is never pooled with the field data. *Open: the
-  two copy-04 exports are treated as two people, so the field phase has five people on four study
-  copies, four of whom used the app (`field-results.md` §9). Settle the count and the
-  codes with Valerie before the participant table is written.*
+  very informal and is described as such; its data is never pooled with the field data. *Settled (Lucas,
+  23 Nov): the field phase has four participants; the 18 Nov export is excluded.*
 
 ---
 
@@ -293,8 +291,8 @@ used: they are private to that assignment and were run on a different branch.
 **Observed so far (23 Nov).** S03: three sittings over two days, 160 active minutes, one tutorial
 sheet with its solutions, 5 of 5 parts completed. S01: one sitting of 63 minutes, one tutorial
 sheet, 5 of 5 parts touched, 2 completed and 3 revealed. S04: one launch, 16 minutes, one tutorial
-sheet from an old module, 3 of 14 parts touched. S05 (copy 04 on 18 Nov): 17 active minutes, the exam
-paper failed to import three times, nothing typed. No one added a lecture, and no exam paper was
+sheet from an old module, 3 of 14 parts touched. Excluded: the copy-04 export of 18 Nov, on which the
+exam paper failed to import three times and nothing was typed. No one added a lecture, and no exam paper was
 worked on. The "Run" column below is the plan the participants were given.
 
 | | Presented (2 Nov) | Run |

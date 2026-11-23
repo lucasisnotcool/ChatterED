@@ -10,14 +10,14 @@ Interviews are not in yet.
 a few short lines the participants typed. The exports themselves are raw research data and stay
 outside the repo, on Lucas's Mac.
 
-**One export is one person** (Lucas, 23 Nov). Participants are told apart by the export's
-participant id, not by the study copy number: a copy number can appear on more than one person's
-export. A new export is never merged with an earlier one because the copy number matches.
+**Four participants** (Lucas, 23 Nov): S01 to S04, the four exports that hold a session. The
+18 Nov copy-04 export, on which a long exam paper failed to import and nothing was attempted, is
+excluded from the analysis. The report gives it only as the build change of 19 Nov and the rule
+that sessions with no imported homework are not analysed (§3), with nothing said about who made it.
 
 ## 0. At a glance
 
-- **Four people used the app on a tutorial of their own choosing; a fifth could not get an exam
-  paper to import.** S03 worked through a whole five-part sheet in three sittings over two days
+- **Four people used the app on a tutorial of their own choosing.** S03 worked through a whole five-part sheet in three sittings over two days
   (160 active minutes). S02 worked eight of eleven parts in one evening (96). S01 worked through a
   whole five-part sheet in one hour. S04 tried three parts in 16 minutes (§7).
 - **Check answer is the control people used: 53 checks, against 7 hints, 4 refreshers and 5
@@ -63,13 +63,12 @@ fidelity checks.
 | `P-34e9da6f` | 02 | 21 Nov, 13:10 to 22 Nov, 16:01 | 23.6 | **S02** |
 | `P-67b070b4` | 03 | 20 Nov, 06:27 to 22 Nov, 15:54 | 27.0 | **S03** |
 | `P-3b69844c` | 04 | 22 Nov, 03:10 to 03:26 | 25.2 | **S04** |
-| `P-a6b72eca` | 04 | 18 Nov, 08:45 to 09:59 | 24.4 | **S05** |
+| `P-a6b72eca` | 04 | 18 Nov, 08:45 to 09:59 | 24.4 | **excluded** (import failed, nothing attempted) |
 
-Four study copies were built (01 to 04), and five exports came back: one from each copy, and a
-second from copy 04. S01 to S04 are named after their copy. The fifth person, who ran copy 04 on
-18 Nov, is called S05; there is no copy 05. The app makes a new random participant id on each install. The two copy-04 exports are treated as
-two people: the Macs run different macOS versions, the sheets come from different modules and
-years, and Lucas has said each export is a separate user. Valerie to confirm (§9).
+Four study copies were built (01 to 04), and five exports came back: one from each copy, and an
+earlier one from copy 04 (18 Nov), made before the import fix of 19 Nov. That export holds no
+session, as the exam paper failed to import and nothing was attempted, so it is excluded (§3). The
+app makes a new random participant id on each install; who made the excluded export is not needed.
 
 Singapore time is UTC + 8, so S01 and S03 both began on the afternoon of 20 Nov.
 
@@ -210,7 +209,7 @@ step, was not reached.
 None of these can be fixed now: the app is frozen for submission. They go in the report as
 limitations and as "what we would change".
 
-## 3. S05 (study copy 04, 18 Nov): the import failed and nothing was attempted
+## 3. The excluded export, 18 Nov: the import failed and nothing was attempted
 
 | Measure | Value |
 |---|---|
@@ -631,7 +630,7 @@ One reader checked all 47 replies against the design rules. "Arguable" marks a j
 
 ### 7.1 Per person
 
-| | S01 | S02 | S03 | S04 | S05 (copy 04, 18 Nov) |
+| | S01 | S02 | S03 | S04 | Excluded, 18 Nov |
 |---|---|---|---|---|---|
 | Sittings | 1 | 1, after a three-minute first visit | 3 over two days | 1 | 2 launches |
 | Active minutes | 29 | 96 | 160 | 15 | 17 |
@@ -709,8 +708,8 @@ answer (§6.6). The 62 replies of S01, S03 and S04 were checked by one reader on
 9. **The faults go in as limitations and as "what we would change".** The naming fault is now on
    three people's sheets. The two new ones (solutions not used at first; solutions turned into a
    notes page) bear directly on the trust and over-reliance arguments.
-10. **The 18 Nov session belongs in the report**, in the account of what went wrong and what was
-    changed during the study. The build was not frozen across the study, which the workshop asks
+10. **The 18 Nov export goes in the report as a build change and an exclusion rule** (report
+    section 5, Table 8), not as a participant. The build was not frozen across the study, which the workshop asks
     us to state.
 11. **Interviews now have specific moments to cue**: S03's angry message and what changed after it;
     S03's reveal after "complete"; S03's visits to the Notes view; S01's three reveals with one
@@ -744,16 +743,14 @@ answer (§6.6). The 62 replies of S01, S03 and S04 were checked by one reader on
 
 ## 9. To settle
 
-- **Who is who.** Each export is treated as one person (Lucas, 23 Nov). That makes the two copy-04
-  exports two people. The 18 Nov participant is called S05 here (Lucas, 23 Nov). S01 to S04 are
-  study copy numbers; S05 is not a copy number, because no fifth copy was built. Valerie to confirm, and
-  to give each person's programme and year for the participant table.
+- **Who is who.** Settled (Lucas, 23 Nov): four participants, S01 to S04; the 18 Nov export is
+  excluded. Valerie to give each person's programme and year for the participant table.
 - **S02's material** is a practice set from a public course, not obviously their own coursework.
   Ask whether this was revision for a module of theirs, self-study, or trying the app out.
 - **A person should read S02's part 4** (§6.4) before the report calls the verdicts wrong. The
   judgement that the answer deserved "complete" is from AI readers working from a rebuilt slot.
 - **Which build each person ran.** The export records version 0.1.0 and no build number. S01 and
-  S03 installed on 20 Nov, after the long-paper fix of 19 Nov; the 18 Nov session was before it.
+  S03 installed on 20 Nov, after the long-paper fix of 19 Nov; the excluded 18 Nov export was before it.
 - **Was it revision, catching up, or trying the app out?** S03 had not studied the topic; S04's
   sheet is from an old module. Ask each person before describing any session as revision.
 - **S03 and the Notes view** (§4.5, fault 3): what they saw there on the first evening.
