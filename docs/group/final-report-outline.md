@@ -9,7 +9,7 @@ words of main text). Valerie has not reviewed it.
 - **All five exports are in (23 Nov).** S03 worked through a whole tutorial in three sittings over
   two days; S02 worked eight of eleven parts in one evening (96 active minutes); S01 worked through
   a whole tutorial in one hour; S04 tried three parts in 16 minutes; and on 18 Nov a fifth person
-  could not get an exam paper to import. The
+  (S05, on study copy 04) could not get an exam paper to import. The
   record is `field-results.md`. Only S03's use looks like the "1–2 days" that was planned, so §6.1,
   §6.3, §8.3 and §9 carry both the plan and what was observed.
 - **One export is one person** (Lucas, 23 Nov). Participants are told apart by the export's
@@ -293,7 +293,7 @@ used: they are private to that assignment and were run on a different branch.
 **Observed so far (23 Nov).** S03: three sittings over two days, 160 active minutes, one tutorial
 sheet with its solutions, 5 of 5 parts completed. S01: one sitting of 63 minutes, one tutorial
 sheet, 5 of 5 parts touched, 2 completed and 3 revealed. S04: one launch, 16 minutes, one tutorial
-sheet from an old module, 3 of 14 parts touched. Copy 04 on 18 Nov: 17 active minutes, the exam
+sheet from an old module, 3 of 14 parts touched. S05 (copy 04 on 18 Nov): 17 active minutes, the exam
 paper failed to import three times, nothing typed. No one added a lecture, and no exam paper was
 worked on. The "Run" column below is the plan the participants were given.
 
