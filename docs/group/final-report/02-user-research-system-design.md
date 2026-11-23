@@ -3,38 +3,43 @@
      them. Notes for Lucas and Valerie are in comments like this one and at the end; delete them
      before the PDF is made.
      Word count, main text only (tables, figures, headings and comments excluded): section 3 about
-     770, section 4 about 950. -->
+     870 (3.1 was expanded in the 23 Nov fact check), section 4 about 950. -->
 
 ## 3. User research and design rationale
 
 ### 3.1 What we did
 
 Our user research combines the two studies that each of us carried out individually earlier in the
-semester, which we then analysed again as a single dataset. In total, we interviewed eight NUS
+semester, which we then analysed again as a single dataset. In total, we interviewed eight
 undergraduates who use AI for their coursework, none of whom are on the team, and collected six AI
-study sessions that students shared with consent, each with a short form on how the session went
-(Table 1). Both studies had numbered their participants from P1, so sources from the first study
-carry the prefix L- and sources from the second carry N-.
+study sessions that students shared with consent, each with the student's own written account of
+how the session went (Table 1). Both studies had numbered their participants from P1, so sources
+from the first study carry the prefix L- and sources from the second carry N-.
+*[Valerie: are N-P1 to N-P5 all NUS students? If so, "eight undergraduates" becomes "eight NUS
+undergraduates", as in Section 1. Please also confirm the N- row of Table 1.]*
 
 **Table 1. Sources of the user research.**
 
 | Source | What it is | Participants |
 |---|---|---|
-| L-P1 to L-P3 | Interviews, recorded as the interviewer's notes | Mechanical Engineering Y4; Computer Science Y4 (two) |
-| N-P1 to N-P5 | Interviews, transcribed | Computer Science Y3 (two); Data Science and Economics Y3; Global Studies Y3; Mathematics Y3 |
-| L-T1 to L-T6 | AI study sessions shared with consent: the full chat log (152 turns, 76 by the student) and the sharer's form answers | Programme not recorded; each session is treated as independent |
+| L-P1 to L-P3 | Interviews, recorded as the interviewer's notes in paraphrase | Final-year NUS students: Mechanical Engineering (one), Computer Science (two) |
+| N-P1 to N-P5 | Two recorded interviews (N-P1, N-P2), one voice-recorded response (N-P3) and two responses prepared in advance (N-P4, N-P5), all transcribed | Year 3: Computer Science (two); Data Science and Economics; Global Studies; Mathematics (describing a graduate course taken on exchange) |
+| L-T1 to L-T6 | AI study sessions shared with consent through a form, held with ChatGPT (three), Perplexity (two) and Claude (one): the full chat log (152 turns, 76 by the student) and the student's written account (their goal, what the AI did well, where it fell short, and any workarounds) | Programme not recorded; each session is treated as independent |
 
 The interviews tell us why students use AI the way they do, but only as the students report it,
-while the shared sessions show what students did without the reasons behind it. To make use of
-both, the fourteen self-report sources (the eight interviews and the six forms) were first
-open-coded twice, independently, and the two sets of codes were merged into one codebook of 36
+while the shared sessions show what students did without the reasons behind it. In the first study,
+all 152 turns of the shared sessions had already been coded turn by turn by two AI coders working
+independently, covering the student's level of engagement under ICAP (Chi & Wylie, 2014) and the
+type of question asked, and 20 of the coded turns were sampled at random and reviewed by one of us.
+For the joint analysis, the fourteen accounts (the eight interviews and the six written accounts)
+were open-coded twice, independently, and the two sets of codes were merged into one codebook of 36
 codes, in which each code also describes what it would look like in a chat log. Two further coders
-then applied the codebook to all fourteen sources, agreeing on whether a code was present with a
-Cohen's κ of 0.93, and the six chat logs were coded with the same codebook, with each sharer's form
-answers compared claim by claim against their own log. It should be noted that all of the coders
-were instances of the same AI model, so the κ reflects consistency between runs and should not be
-read as agreement between human coders. *[Valerie: say here whether you have checked the coding of
-N-P1 to N-P5.]*
+then applied the codebook to all fourteen accounts, agreeing on whether a code was present with a
+Cohen's κ of 0.93, and the six chat logs were coded with the same codebook, with each student's
+written account compared claim by claim against their own log. It should be noted that every coder in both
+passes was an AI model, so the κ reflects consistency between runs and should not be read as
+agreement between human coders; the review of the 20 turns is the only human check so far.
+*[Valerie: say here whether you have checked the coding of N-P1 to N-P5.]*
 
 ### 3.2 What we found
 
@@ -49,12 +54,12 @@ in Section 1, so we concentrate here on the remaining three.
 | 2 | Students' effort exists, but stays outside the conversation | Students try first (N-P5, L-P1, N-P4) | 0 of 31 student turns held an attempt (L-T1 to L-T5); a quiz and code were run outside the chat (L-T1, L-T6) |
 | 3 | The AI's feedback on a student's work is often wrong, and students do not raise it | Only N-P4 verifies, opening "every single linked source" | 12 of 21 judgements wrong in L-T6; the student challenged 2 |
 | 4 | Help that works follows rules the student set up by hand | A teacher system prompt, at the cost of having to "babysit the AI" (N-P5); "It doesn't build the ladder for you" (N-P1) | "do not send the answer with the question" (L-T6); attempts 5 → 19 and answer requests 5 → 2 after the student's rule |
-| 5 | What students report differs from what they did | — | In 4 of 6 sessions the form left out or contradicted the log |
+| 5 | What students report differs from what they did | — | In 4 of 6 sessions the student's written account left out or contradicted the log |
 
 The third finding was not named by either of our individual studies. In the one session where the
 student submitted their own work to be judged (L-T6), 12 of the AI's 21 judgements were wrong,
 which we confirmed by running the student's database queries ourselves. Despite this, none of the
-first study's interviewees and none of the six forms mentioned AI errors at all, and only one
+first study's interviewees and none of the six written accounts mentioned AI errors at all, and only one
 interviewee described verifying what the AI said. We therefore treat feedback that is correct, or
 that can at least be checked, as a need that students have but do not voice.
 
@@ -66,7 +71,7 @@ their requests for the answer fell from 5 to 2, although the same message also a
 questions. Students who did not know how to set up such rules
 went without them, and those who did had to keep enforcing them.
 
-Lastly, in four of the six sessions the sharer's form answer left out or contradicted something in
+Lastly, in four of the six sessions the student's written account left out or contradicted something in
 their own log; for instance, the student in L-T6 reported asking for harder questions, while the
 only request about difficulty in the log asks to lower it. This is why the user study in Section 5
 measures behaviour from logs first, and only then asks students about it.
@@ -237,6 +242,22 @@ NOTES FOR LUCAS AND VALERIE (delete before submission)
 3. Where each number comes from.
    - Section 3: docs/group/joint-analysis.md (sources and programmes §1; method and kappa §2;
      findings §3.1 to §3.5; needs §4) and docs/group/group-project.md §2 to §4 (goals, features).
+   - Section 3.1 was fact-checked on 23 Nov, first against the mid-project deck as presented
+     (docs/group/midterm-presentation/ChatterED_MidProject.pdf, pages 5, 6, 19, 20), then against
+     both A1 reports as submitted and the coding files. From the deck: 8 interviews, none on the
+     team; programme and year of each; 6 chats shared with consent, 152 turns, ChatGPT, Claude and
+     Perplexity; "each with the student's own written account"; 14 accounts. NOT in the deck, and
+     taken from elsewhere: "76 by the student" and the split by tool (counted from the processed
+     logs: 6+10+1+10+4+45 student turns); the turn-by-turn coding and the 20 reviewed turns
+     (Lucas's A1 report, section 1.1); the make-up of N-P1 to N-P5 (Valerie's A1 report: "two
+     recorded interviews, one voice-recorded response, and two prepared responses"); the whole
+     joint-coding method, 36 codes and kappa 0.93 (joint-analysis.md §2; joint-analysis/
+     agreement.txt gives 0.925 on 504 cells; codebook.md has 36 codes). The deck never showed
+     the coding method or kappa.
+   - Corrected in 3.1 on 23 Nov: "NUS" removed for the eight (only Lucas's A1 says NUS, of his
+     three; Valerie's says "adult university students"); the N- row no longer says "Interviews,
+     transcribed"; "all coders were the same AI model" now covers both codings and names the one
+     human check.
    - Figure 2 and "about half a minute": docs/group/field-results.md §2.5, §4.1, §5.1.
    - Table 4, last three rows: docs/group/red-team/README.md §3.1, §3.6.
    - Section 4.4 and Table 5 were checked against the code on 23 Nov: app/src/core/tutor.ts (hint
