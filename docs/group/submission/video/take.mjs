@@ -27,7 +27,8 @@ await press('Continue', { exact: true });
 for (let card = 1; card <= 4; card++) { await W(card === 2 ? 14000 : 10000); await press('Next', { exact: true }); }
 await W(9000);
 await press('Try the sample tutorial');
-// The lecture is read first, then the sheet: about a minute.
+// The sample ships already read, so it opens at once. (Without its seed it is read live, the
+// lecture first and then the sheet, in about a minute: the loop waits for either.)
 for (let i = 0; i < 420; i++) { if ((await ev('document.querySelectorAll(".nd-tut-part").length').catch(() => 0)) >= 6) break; await W(1000); }
 log('sheet is in');
 await W(7000);

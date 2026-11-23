@@ -396,8 +396,8 @@ cd app && tools/release.sh --study ~/.config/chattered-study/keys.json --preload
 
 This gives `out/ChatterED-Grader-<version>-S<NN>-arm64.dmg`. `--grader` is refused without
 `--study … --preload N`, and with `--update`. The script stages `app/study/grader.txt` beside
-`preload.txt`, checks that it and the two sample PDFs in `Contents/Resources/samples/` are inside
-the mounted DMG, and removes its working copy afterwards. An ordinary build refuses to start while
+`preload.txt`, checks that it, the two sample PDFs and the sample's seed in
+`Contents/Resources/samples/` are inside the mounted DMG, and removes its working copy afterwards. An ordinary build refuses to start while
 `app/study/grader.txt` exists, and refuses a DMG that carries one.
 
 **What differs from a study copy** (all of it gated on that marker, read once by
@@ -421,6 +421,22 @@ is in `src/shared/grader.ts`):
   reads it at once, so a sheet and a lecture added together there are not linked. With no lecture
   in the notebook, which is how every field-study participant used the app, the tutors say that
   "the lecture" does not cover a part, or call the sheet "the slide".
+- **The sample ships already read** (`src/main/notebooks/seed.ts`, added 2026-11-23 evening). The
+  lecture-first read above took about 50 seconds of model calls with a waiting line on screen. So
+  the copy also carries `app/samples/graph-traversal-seed/`: the notebook that read left, as an
+  empty migrated database with that one notebook's rows, its two source copies and their page
+  images. The button brings it in under new ids (`NotebookService.importSeed`, the deep copy
+  Duplicate uses, reading from another database) and opens it; no model is called, and the log
+  shows `grader.sample {ok:true, seeded:true}`. A seed carries no messages, progress, usage or
+  settings. If it is missing or cannot be read (`grader.seed_failed`), the button falls back to
+  the lecture-first live read. Tutoring on the sample is live as before.
+- **Remaking the seed** (after the sample PDFs, a prompt of the read, or a migration changes):
+  build a grading copy, open it on a scratch profile (`--user-data-dir`), press the sample button
+  and wait until the sheet is in and the log has gone quiet; quit; then
+  `node scripts/export-notebook-seed.mjs --db <profile>/app.db --out samples/graph-traversal-seed`.
+  Check `tutorial.ingest` in the log first (`linked_notes` equal to `parts`, `low_confidence` 0),
+  commit the seed, rebuild, and delete the scratch profile: it holds the key in a plain file. To
+  make the first seed of a changed sample, move the old seed folder away so the button reads live.
 - Help ▸ **Show the Grader Tour** shows the tour again.
 
 Everything else is a preloaded study copy: the slot's credit and cap, logging, and the export.

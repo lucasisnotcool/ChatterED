@@ -733,11 +733,18 @@ graders mark the version in the ZIP. Group number: 5.
 grading copy's sample the lecture is read before the sheet, so every part is linked to it (9 of 9
 on the build we filmed) and the hints cite its pages. This was done because a notebook with a
 sheet and no lecture makes the tutors say "the lecture does not cover this" or call the sheet "the
-slide", which is what all five study participants met (`field-results.md`). **The report has to
+slide", which is what every study participant met (`field-results.md`). **The report has to
 say two things:** the participants used the app without a lecture and the graders' sample has one;
 and the lecture-first order is a change to the grading copy's sample only, with a participant's
 first run, the prompts and the tutoring rules as they were. Sheet-first reading when a sheet and a
 lecture are dropped together stays a known limit.
+
+**Added later that evening.** The grading copy's sample now ships already read: we read the sample
+lecture and sheet once with the app, and the copy carries the notebook that read left, so the
+sample button opens it at once and a grader does not wait about a minute. If the report mentions
+how long a sheet takes to load, it has to give the live figure (about 30 seconds for the two-page
+sample sheet, about 50 with its lecture read first), not what a grader sees on the sample. Checks,
+hints, refreshers and replies on the sample are live model calls, as for participants.
 
 **To ask the teaching team.** How they want to run a Mac-only app that needs a paid model; our
 group number.

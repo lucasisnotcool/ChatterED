@@ -22,14 +22,14 @@ The app is a macOS desktop app and calls a paid model. So that you need no accou
 material of your own, we prepared a grading copy. It is built from the source in this ZIP, with one
 difference: an API credit is already set up inside it.
 
-**Download:** GRADER_DMG_LINK
+**The prepared copy:** GRADER_DMG_LINK
 
 **You need:** a Mac with Apple silicon (M1 or later), macOS 13 or later, and an internet
 connection.
 
 **Steps.**
 
-1. Download `ChatterED-Grader-0.1.0-S01-arm64.dmg` (326 MB) and open it.
+1. Open `ChatterED-Grader-0.1.0-S01-arm64.dmg` (328 MB).
 2. Double-click **ChatterED** in the window that appears.
 3. macOS will say that Apple could not verify the app, because we have no paid Apple developer
    certificate. Click **Done**. Then open **System Settings ▸ Privacy & Security**, scroll to the
@@ -39,17 +39,19 @@ connection.
    can open it again from **Help ▸ Show the Grader Tour**.
 6. After the tour, click **Try the sample tutorial**. The app opens a two-page tutorial of six
    questions on graph traversal, together with the twelve lecture slides it is on. We wrote both
-   ourselves in the style of a course. The app reads the lecture first and then the sheet, which
-   takes about a minute in all.
+   ourselves in the style of a course. It opens at once: reading a lecture and a sheet takes the
+   app about a minute, so we read these two with the app beforehand, and the copy carries the
+   result. Nothing else about the sample is prepared. No answer is filled in, and every check,
+   hint and reply you get is written by the model as you ask for it.
 
-If you prefer Terminal to step 3, run this once before opening the download:
+If you prefer Terminal to step 3, run this once on the DMG before you open it:
 
 ```sh
-xattr -d com.apple.quarantine ~/Downloads/ChatterED-Grader*.dmg
+xattr -d com.apple.quarantine path/to/ChatterED-Grader-0.1.0-S01-arm64.dmg
 ```
 
-**Your own material.** The same card has a place to drop any tutorial sheet as a PDF. A sheet of
-four pages takes about a minute to read. The tutors work best when the notebook also holds the
+**Your own material.** The same card has a place to drop any tutorial sheet as a PDF. A sheet you
+add is read by the model when you add it: about a minute for four pages. The tutors work best when the notebook also holds the
 lecture the sheet is on, because every hint is drawn from the lecture and points at its pages. To
 get that with your own files, make a notebook from the lecture slides first, wait for its summary
 notes, and then add the sheet from **Sources** (Known limits, in Section 6, says why the order
@@ -99,7 +101,7 @@ scripted demo that cannot read a new sheet. We do not include a key, as the brie
 npm run typecheck && npm run lint && npm test
 ```
 
-From this ZIP, 3,914 of the 3,938 tests pass. The other 24, in five files that test PDF reading
+From this ZIP, 3,917 of the 3,941 tests pass. The other 24, in five files that test PDF reading
 for the notes workspace, read a slide deck that we keep outside `app/` in our repository and did
 not include here. No test of the tutorial workspace depends on it.
 
@@ -129,7 +131,7 @@ All paths are under `app/src/`.
 | Prompts | `room/prompts.tutor.ts` for the tutorial turns; `main/tutorial/prompt.ts` for reading and judging; other `room/prompts*.ts` for the notes workspace | Every prompt is in source, in these files |
 | The agents and their turn-taking | `room/` | The actor that runs a turn (`actor.ts`), the rules that choose who speaks (`orchestrator.ts`), the model clients (`room/llm/`) |
 | The interface | `renderer/` | Svelte components. The tutorial page is `renderer/lib/pm/tutorial.ts` and `renderer/components/notes/TutorialPane.svelte`. The first-run tour is `renderer/components/FirstRun.svelte` |
-| Study and grading copies | `main/study/`, `shared/trial.ts`, `app/tools/release.sh` | The sealed credit, the spending cap, the consent notice, and the build script |
+| Study and grading copies | `main/study/`, `shared/trial.ts`, `shared/grader.ts`, `main/notebooks/seed.ts`, `app/tools/release.sh` | The sealed credit, the spending cap, the consent notice, the grading copy's tour and its sample, and the build script |
 | Research export | `main/research/` | The anonymised export our participants sent us |
 | Configuration | `app/package.json`, `app/electron-builder.yml`, `app/tsconfig*.json`, `app/vite.config.mts` | |
 
@@ -167,8 +169,10 @@ To list them: `grep -rn "INNOVATION" app/src`.
   app this way. The sample comes with its lecture, so you will not see this unless you add a sheet
   on its own.
 - **A sheet and a lecture dropped together** on the first-run card are read sheet first, so the
-  sheet's parts are not linked to the lecture. The sample button avoids this by reading the
-  lecture first; that ordering is the one change we made for the grading copy.
+  sheet's parts are not linked to the lecture. The sample does not have this fault, because we
+  read its lecture first and then its sheet, and the grading copy carries that read
+  (`main/notebooks/seed.ts`). The tour, the sample and its read are the only things the grading
+  copy adds to the copies our participants used.
 - Ellie's private chat can describe a "group" that the tutorial workspace does not have. The
   wording comes from the earlier version of the product.
 - A distress message typed into a part's thread is acknowledged and then steered back to the
@@ -185,9 +189,12 @@ To list them: `grep -rn "INNOVATION" app/src`.
 |---|---|
 | `README.md` | This file |
 | `app/` | All source code, prompts, configuration and tests |
+| `app/samples/` | The two sample files as the app ships them, and `graph-traversal-seed/`: the same two as the app read them (a small database of the notes, the sheet's parts and their answer key, plus page images), which the grading copy opens |
 | `test-data/graph-traversal-tutorial.pdf` | The sample tutorial sheet, written by us |
 | `test-data/graph-traversal-lecture.pdf` | The sample lecture slides the tutorial is on, written by us |
 | `ChatterED-demo.mp4` | The video, if it is not given as a link in Section 1 |
+GRADER_DMG_ROW
 
-There are no API keys in the ZIP. It holds no study data: quotes and counts from the study are in
-the report.
+API_KEYS_NOTE
+
+The ZIP holds no study data: quotes and counts from the study are in the report.
