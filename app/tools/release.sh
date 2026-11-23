@@ -113,6 +113,7 @@ if [ "$GRADER" = 1 ] && { [ -z "$STUDY_BUNDLE" ] || [ -z "$PRELOAD_SLOT" ]; }; t
 fi
 [ "$GRADER" = 0 ] || [ "$UPDATE" = 0 ] || die "--grader is a DMG for the teaching team, never an update: drop --update."
 [ "$GRADER" = 0 ] || [ -s "$APP_DIR/samples/graph-traversal-tutorial.pdf" ] || die "A grader copy needs its sample: app/samples/graph-traversal-tutorial.pdf is missing."
+[ "$GRADER" = 0 ] || [ -s "$APP_DIR/samples/graph-traversal-lecture.pdf" ] || die "A grader copy needs its sample lecture: app/samples/graph-traversal-lecture.pdf is missing."
 
 VERSION="$(node -p "require('./package.json').version")"
 [ "$(uname -m)" = "arm64" ] || die "Build on Apple Silicon: the DMG is arm64-only."
@@ -481,7 +482,8 @@ SHIPPED_GRADER="$DMG_APP/Contents/Resources/study/grader.txt"
 if [ "$GRADER" = 1 ]; then
   [ -f "$SHIPPED_GRADER" ] || die "The grader marker is missing from the DMG ($SHIPPED_GRADER)."
   [ -s "$DMG_APP/Contents/Resources/samples/graph-traversal-tutorial.pdf" ] || die "The sample tutorial is missing from the DMG (Contents/Resources/samples)."
-  say "Grader copy: marker and sample tutorial in Contents/Resources."
+  [ -s "$DMG_APP/Contents/Resources/samples/graph-traversal-lecture.pdf" ] || die "The sample lecture is missing from the DMG (Contents/Resources/samples)."
+  say "Grader copy: marker, sample tutorial and sample lecture in Contents/Resources."
 elif [ -e "$SHIPPED_GRADER" ]; then
   die "This build carries a grader marker it was not asked for ($SHIPPED_GRADER)."
 fi

@@ -34,6 +34,7 @@
    * dropped, as on the notes (`lib/sheetdrop.ts`).
    */
   import { flushSync, untrack } from 'svelte';
+  import { GRADER_SAMPLE_READING } from '../../../shared/grader.js';
   import type { NotebookSourceView } from '../../../shared/notebook.js';
   import { partsDone, tutorialContentKey } from '../../../shared/tutorial.js';
   import {
@@ -126,6 +127,8 @@
   const sources = $derived<NotebookSourceView[]>(store.notebook.view?.sources ?? []);
   const sourceName = (id: string): string | null => sources.find((s) => s.fileId === id)?.name ?? null;
   const reading = $derived(fileId ? (tut.reading[fileId] ?? null) : null);
+  /** A grader copy's sample: the sheet waits for the lecture's notes (`tutorialstore` `held`). */
+  const heldForLecture = $derived(tut.held !== null && tut.held === tut.notebookId && !reading && !view?.docId);
   const failure = $derived(fileId ? (tut.localError[fileId] ?? (view?.status === 'failed' ? (view.error ?? '') : null)) : null);
   const done = $derived(view ? partsDone(view) : { done: 0, total: 0 });
   const parts = $derived(partsLabel(view));
@@ -568,7 +571,9 @@
         <div class="nd-state">
           <div class="nd-state-title">{view?.rereading ? 'Reading the sheet again…' : 'Reading the sheet…'}</div>
           <p class="nd-state-line">
-            {#if reading && reading.total}
+            {#if heldForLecture}
+              {GRADER_SAMPLE_READING}
+            {:else if reading && reading.total}
               page images sent · {reading.done} of {reading.total}
             {:else if view?.progress?.waiting}
               Waiting for a connection to Claude… the pages already read are kept.

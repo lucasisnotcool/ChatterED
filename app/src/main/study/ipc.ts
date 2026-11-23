@@ -71,7 +71,7 @@ export function registerStudyIpc(deps: StudyIpcDeps): void {
   deps.handle(STUDY_IPC.graderSample, (): GraderSampleResult => {
     if (!deps.graderSample) return { ok: false, error: GRADER_SAMPLE_MISSING };
     const out = deps.graderSample();
-    log().info('grader.sample', { ok: out.ok });
+    log().info('grader.sample', out.ok ? { ok: true, lecture: out.lecturePath !== null } : { ok: false });
     return out;
   });
 }

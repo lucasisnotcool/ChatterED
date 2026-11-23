@@ -148,6 +148,13 @@ export class TutorialStore {
   /** Reads this renderer has asked for this session, so a pending one is not started twice. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping nothing renders
   #requested = new Set<string>();
+  /**
+   * **A notebook whose sheet is not read yet, on purpose** (a grader copy's sample, 2026-11-23:
+   * `store.startFromSample`). The sheet's parts can only be linked to the lecture's notes if the
+   * notes exist when the sheet is read, so the read waits here until the shell says the notes are
+   * written (`releaseRead`). Null in every other case: a sheet is read the moment it is ready.
+   */
+  held = $state<string | null>(null);
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping nothing renders
   #solutionsRequested = new Set<string>();
   /** Read again was pressed: the next `ready` replaces the document on screen. */
@@ -411,7 +418,20 @@ export class TutorialStore {
     if (view.docId && view.status === 'ready') return;
     const source = this.#notebook?.sources.find((s) => s.fileId === view.fileId);
     if (!source || source.status !== 'ready') return;
+    if (this.held !== null && this.held === this.notebookId) return;
     void this.read(view.fileId);
+  }
+
+  /** Hold this notebook's first sheet read until `releaseRead` (see `held`). */
+  holdRead(notebookId: string): void {
+    this.held = notebookId;
+  }
+
+  /** The notes are written (or will not be): read what was held. A no-op for any other notebook. */
+  releaseRead(notebookId: string): void {
+    if (this.held !== notebookId) return;
+    this.held = null;
+    if (this.notebookId === notebookId) for (const v of this.views) this.#maybeRead(v);
   }
 
   /** Refresh legacy or incomplete solution keys, with the answer PDF's page images available. */

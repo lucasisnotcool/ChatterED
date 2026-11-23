@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { GRADER_SAMPLE_COPY_NAME, GRADER_SAMPLE_FILE, GRADER_SAMPLE_MISSING } from '../../shared/grader.js';
+import { GRADER_LECTURE_COPY_NAME, GRADER_LECTURE_FILE, GRADER_SAMPLE_COPY_NAME, GRADER_SAMPLE_FILE, GRADER_SAMPLE_MISSING } from '../../shared/grader.js';
+import { guessSourceRole } from '../../shared/tutorial.js';
 import { GRADER_FILE, isGraderCopy, sampleSourcePath, stageSample } from './grader.js';
 
 const dirs: string[] = [];
@@ -56,9 +57,12 @@ describe('sampleSourcePath', () => {
     expect(sampleSourcePath({ packaged: false, resourcesPath: '/ignored', appPath: '/repo/app' })).toBe(`/repo/app/samples/${GRADER_SAMPLE_FILE}`);
   });
 
-  it('points at the PDF that is committed in app/samples', () => {
+  it('points at the PDFs that are committed in app/samples: the sheet, and with `file` the lecture', () => {
     const appDir = join(__dirname, '..', '..', '..');
     expect(existsSync(sampleSourcePath({ packaged: false, resourcesPath: '', appPath: appDir }))).toBe(true);
+    const lecture = sampleSourcePath({ packaged: false, resourcesPath: '', appPath: appDir, file: GRADER_LECTURE_FILE });
+    expect(lecture).toBe(join(appDir, 'samples', GRADER_LECTURE_FILE));
+    expect(existsSync(lecture)).toBe(true);
   });
 });
 
@@ -68,8 +72,32 @@ describe('stageSample', () => {
     writeFileSync(src, '%PDF-1.4 sample');
     const userData = temp();
     const out = stageSample({ source: src, userDataDir: userData });
-    expect(out).toEqual({ ok: true, path: join(userData, 'grader', GRADER_SAMPLE_COPY_NAME) });
+    expect(out).toEqual({ ok: true, path: join(userData, 'grader', GRADER_SAMPLE_COPY_NAME), lecturePath: null });
     expect(readFileSync(join(userData, 'grader', GRADER_SAMPLE_COPY_NAME), 'utf8')).toBe('%PDF-1.4 sample');
+  });
+
+  it('copies the lecture beside the sheet, under a name the role guess reads as a lecture', () => {
+    const dir = temp();
+    writeFileSync(join(dir, GRADER_SAMPLE_FILE), 'sheet');
+    writeFileSync(join(dir, GRADER_LECTURE_FILE), 'deck');
+    const userData = temp();
+    const out = stageSample({ source: join(dir, GRADER_SAMPLE_FILE), lectureSource: join(dir, GRADER_LECTURE_FILE), userDataDir: userData });
+    expect(out).toEqual({
+      ok: true,
+      path: join(userData, 'grader', GRADER_SAMPLE_COPY_NAME),
+      lecturePath: join(userData, 'grader', GRADER_LECTURE_COPY_NAME),
+    });
+    expect(readFileSync(join(userData, 'grader', GRADER_LECTURE_COPY_NAME), 'utf8')).toBe('deck');
+    expect(guessSourceRole(GRADER_LECTURE_COPY_NAME, 'Attempt Tutorial 08 before the tutorial.')).toBe('lecture');
+    expect(guessSourceRole(GRADER_SAMPLE_COPY_NAME, 'Q1). Run BFS on G.')).toBe('tutorial');
+  });
+
+  it('opens the sheet alone when the lecture is missing', () => {
+    const src = join(temp(), GRADER_SAMPLE_FILE);
+    writeFileSync(src, 'sheet');
+    const userData = temp();
+    const out = stageSample({ source: src, lectureSource: join(userData, 'nope.pdf'), userDataDir: userData });
+    expect(out).toEqual({ ok: true, path: join(userData, 'grader', GRADER_SAMPLE_COPY_NAME), lecturePath: null });
   });
 
   it('replaces an earlier copy, so a second press reads the shipped file again', () => {
@@ -90,7 +118,7 @@ describe('stageSample', () => {
 });
 
 describe('the study:graderSample channel', () => {
-  async function channel(graderSample?: () => { ok: true; path: string }) {
+  async function channel(graderSample?: () => { ok: true; path: string; lecturePath: string | null }) {
     const { registerStudyIpc } = await import('./ipc.js');
     const { STUDY_IPC } = await import('../../shared/study.js');
     const handlers = new Map<string, (payload: unknown) => unknown>();
@@ -108,6 +136,7 @@ describe('the study:graderSample channel', () => {
   });
 
   it('hands back the staged path in a grader copy', async () => {
-    expect((await channel(() => ({ ok: true, path: '/u/grader/x.pdf' })))(undefined)).toEqual({ ok: true, path: '/u/grader/x.pdf' });
+    const staged = { ok: true as const, path: '/u/grader/x.pdf', lecturePath: '/u/grader/l.pdf' };
+    expect((await channel(() => staged))(undefined)).toEqual(staged);
   });
 });

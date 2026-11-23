@@ -44,6 +44,7 @@ import { TutorialStore } from './tutorialstore.svelte.js';
 import { SearchStore } from './searchstore.svelte.js';
 import type { NotebookView } from '../../shared/notebook.js';
 import { sourceForPath } from './notebookview.js';
+import { GRADER_SAMPLE_NOTES_WAIT_MS, GRADER_SAMPLE_NOTEBOOK } from '../../shared/grader.js';
 import { regenerateCommand } from './pm/overview.js';
 
 /**
@@ -569,6 +570,57 @@ class Store {
     if (this.boot) this.boot.firstRun = false;
     await this.openNotebook(view.id);
     return true;
+  }
+
+  /**
+   * **A grader copy's sample** (2026-11-23, `shared/grader.ts`): the lecture deck and the tutorial
+   * on it, as one notebook that opens on the sheet. It differs from `startFromTutorial` in order
+   * only. The lecture is added first, so it is ready first, and the sheet's read is held until
+   * the lecture's notes are written (`tutorialstore` `held`): the read links each part to notes
+   * blocks and lecture pages, and it can only link to what exists. Sources added together the
+   * other way round leave every part unlinked, and the tutors then have no lecture to point at.
+   * With no lecture (it could not be staged) this is `startFromTutorial`.
+   */
+  async startFromSample(tutorialPath: string, lecturePath: string | null): Promise<boolean> {
+    if (!lecturePath) return this.startFromTutorial(tutorialPath, null);
+    const view = await this.notebook.create([lecturePath, tutorialPath], GRADER_SAMPLE_NOTEBOOK);
+    if (!view) return false;
+    const fileId = sourceForPath(view.sources, tutorialPath);
+    const lectureId = sourceForPath(view.sources, lecturePath);
+    if (fileId) {
+      try {
+        await bridge().notebookSetRole({ notebookId: view.id, fileId, role: 'tutorial' });
+        layout.setTutorialMain(view.id, fileId);
+        if (lectureId) {
+          this.tutorial.holdRead(view.id);
+          void this.#releaseWhenNotesWritten(view.id);
+        }
+      } catch (err) {
+        this.notebook.say(message(err));
+      }
+    }
+    await run(this, () => bridge().completeFirstRun());
+    if (this.boot) this.boot.firstRun = false;
+    await this.openNotebook(view.id);
+    return true;
+  }
+
+  /**
+   * Let the held sheet be read once the notebook's notes are written, have failed, or have taken
+   * too long. Leaving the notebook releases it too: the sheet is then read when it is next open.
+   */
+  async #releaseWhenNotesWritten(notebookId: string): Promise<void> {
+    const deadline = Date.now() + GRADER_SAMPLE_NOTES_WAIT_MS;
+    let opened = false;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (this.notebook.id === notebookId) opened = true;
+      else if (opened) break;
+      const d = this.doc;
+      if (d.fileId !== notebookId) continue;
+      if (d.ingest.status === 'failed' || (d.docId !== null && d.ingest.status === 'ready')) break;
+    }
+    this.tutorial.releaseRead(notebookId);
   }
 
   /**

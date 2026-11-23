@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Lecture 9: Graph Traversal</title>
+<style>
+  @page { size: 338.67mm 190.5mm; margin: 0; }
+  :root { --accent: #1d4f91; --ink: #1a1a1a; --muted: #555; --rule: #c8c8c8; --code-bg: #f3f5f8; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: var(--ink); }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 25px; line-height: 1.35;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slide { position: relative; width: 338.67mm; height: 190.4mm; overflow: hidden; padding: 40px 64px 70px;
+           break-after: page; page-break-after: always; }
+  .slide:last-of-type { break-after: auto; page-break-after: auto; }
+  h1 { font-size: 42px; line-height: 1.15; color: var(--accent); margin: 0 0 22px; padding-bottom: 12px;
+       border-bottom: 3px solid var(--accent); font-weight: 700; }
+  h2 { font-size: 27px; margin: 0 0 10px; color: var(--accent); }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 14px; padding-left: 1.2em; }
+  li { margin: 0 0 9px; }
+  li::marker { color: var(--accent); }
+  .cols { display: flex; gap: 48px; align-items: flex-start; }
+  .cols > div { flex: 1 1 0; min-width: 0; }
+  .w55 { flex: 1.25 1 0 !important; }
+  .w60 { flex: 1.6 1 0 !important; }
+  .dense { font-size: 22px; }
+  .dense li { margin-bottom: 6px; }
+  .dense h2 { font-size: 25px; margin-bottom: 6px; }
+  .dense .box { padding: 10px 18px; margin-bottom: 12px; }
+  .box { border: 2px solid var(--accent); border-left-width: 8px; padding: 14px 20px; margin: 6px 0 18px; background: #fff; }
+  .box p:last-child { margin-bottom: 0; }
+  pre.code { font-family: Menlo, Consolas, "Courier New", monospace; font-size: 20px; line-height: 1.42;
+             background: var(--code-bg); border: 1px solid var(--rule); padding: 16px 20px; margin: 0 0 14px; white-space: pre; }
+  code, .mono { font-family: Menlo, Consolas, "Courier New", monospace; font-size: 0.88em; }
+  table { border-collapse: collapse; }
+  table.t { font-size: 21px; line-height: 1.3; }
+  table.t th, table.t td { border: 1px solid #9a9a9a; padding: 5px 12px; text-align: left; vertical-align: top; }
+  table.t th { background: var(--code-bg); font-weight: 700; }
+  .small { font-size: 20px; }
+  .muted { color: var(--muted); }
+  .acc { color: var(--accent); font-weight: 700; }
+  .cap { font-size: 18px; color: var(--muted); margin-top: 4px; text-align: center; }
+  svg { display: block; margin: 0 auto; }
+  svg text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  footer { position: absolute; left: 64px; right: 64px; bottom: 20px; display: flex; justify-content: space-between;
+           font-size: 16px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 8px; }
+  /* title slide */
+  .title { padding-top: 150px; }
+  .title .course { font-size: 30px; color: var(--muted); margin-bottom: 18px; }
+  .title .lec { font-size: 64px; font-weight: 700; color: var(--accent); line-height: 1.1; margin-bottom: 18px; }
+  .title .sub { font-size: 32px; margin-bottom: 40px; }
+  .title .week { font-size: 26px; padding-top: 18px; border-top: 3px solid var(--accent); display: inline-block; padding-right: 80px; }
+  .title .note { position: absolute; left: 64px; bottom: 74px; font-size: 17px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- 1 -->
+<section class="slide title">
+  <div class="course">Data Structures and Algorithms</div>
+  <div class="lec">Lecture 9: Graph Traversal</div>
+  <div class="sub">Breadth-First Search (BFS) and Depth-First Search (DFS)</div>
+  <div class="week">Week 9</div>
+  <div class="note">A sample lecture written by the ChatterED team for trying the app. It is not taken from any course.</div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>1</span></footer>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <h1>Today's plan, and a recap</h1>
+  <div class="cols dense">
+    <div>
+      <h2>Today</h2>
+      <ol>
+        <li>Why traverse a graph, and the one idea BFS and DFS share</li>
+        <li>Breadth-First Search, and shortest paths</li>
+        <li>Depth-First Search, and the DFS tree</li>
+        <li>Running time of both: O(V + E)</li>
+        <li>Modelling a problem as a graph</li>
+      </ol>
+      <h2>Recap: storing a graph</h2>
+      <ul>
+        <li>An <b>adjacency list</b> keeps, for each vertex, a list of its neighbours.</li>
+        <li>An adjacency matrix keeps a V × V table instead: entry (u, v) is 1 if there is an edge u–v.</li>
+        <li>Rule for this lecture: <b>when there is a choice of neighbours, take them in alphabetical order.</b></li>
+      </ul>
+    </div>
+    <div>
+      <svg width="370" height="210" viewBox="0 0 440 250" xmlns="http://www.w3.org/2000/svg" font-size="22">
+        <g stroke="#1a1a1a" stroke-width="2.2">
+          <line x1="50" y1="125" x2="170" y2="45"/><line x1="50" y1="125" x2="170" y2="205"/>
+          <line x1="170" y1="45" x2="370" y2="45"/><line x1="170" y1="45" x2="270" y2="125"/>
+          <line x1="270" y1="125" x2="170" y2="205"/><line x1="170" y1="205" x2="370" y2="205"/>
+          <line x1="370" y1="45" x2="370" y2="205"/>
+        </g>
+        <g fill="#fff" stroke="#1d4f91" stroke-width="2.5">
+          <circle cx="50" cy="125" r="21"/><circle cx="170" cy="45" r="21"/><circle cx="370" cy="45" r="21"/>
+          <circle cx="370" cy="205" r="21"/><circle cx="170" cy="205" r="21"/><circle cx="270" cy="125" r="21"/>
+        </g>
+        <g text-anchor="middle" font-weight="700" fill="#1a1a1a">
+          <text x="50" y="133">P</text><text x="170" y="53">R</text><text x="370" y="53">Q</text>
+          <text x="370" y="213">U</text><text x="170" y="213">T</text><text x="270" y="133">S</text>
+        </g>
+      </svg>
+      <div class="cap">The running example: graph H, undirected and unweighted, 6 vertices, 7 edges.</div>
+      <table class="t" style="margin: 14px auto 0;">
+        <tr><th>Vertex</th><th>Neighbours</th><th>Vertex</th><th>Neighbours</th></tr>
+        <tr><td>P</td><td>R, T</td><td>S</td><td>R, T</td></tr>
+        <tr><td>Q</td><td>R, U</td><td>T</td><td>P, S, U</td></tr>
+        <tr><td>R</td><td>P, Q, S</td><td>U</td><td>Q, T</td></tr>
+      </table>
+      <div class="cap">Adjacency list of H, each list in alphabetical order.</div>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>2</span></footer>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <h1>Why traverse a graph?</h1>
+  <div class="cols">
+    <div class="w55">
+      <ul>
+        <li>Many questions about a graph begin with "which vertices can I reach from here?"</li>
+        <li>For example: Is the graph connected? What is the path with the fewest edges from s to t? Does the graph contain a cycle? How many connected components does it have?</li>
+        <li>A <b>traversal</b> from a source vertex s visits every vertex that can be reached from s, each exactly once.</li>
+        <li>BFS and DFS are the two standard traversals. They differ only in <b>which</b> discovered vertex they deal with next.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>The one idea both traversals share</h2>
+      <div class="box">
+        <p><b>Mark a vertex as visited the first time you reach it. Never visit a marked vertex again.</b></p>
+      </div>
+      <ul>
+        <li>Without the mark, a traversal would go round a cycle for ever: in H, P → R → S → T → P → R → …</li>
+        <li>With it, each vertex is handled at most once. This is also why both traversals are fast (slide 10).</li>
+        <li>We store the marks in an array <span class="mono">visited[v]</span>, and record who reached v first in <span class="mono">parent[v]</span>.</li>
+      </ul>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>3</span></footer>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <h1>Breadth-First Search (BFS)</h1>
+  <div class="cols">
+    <div>
+      <h2>The idea: explore in layers, nearest first</h2>
+      <ul>
+        <li>First the source s, then every vertex one edge from s, then every vertex two edges from s, and so on.</li>
+        <li>Vertices that have been discovered but not yet processed wait in a <b>queue</b>: first in, first out.</li>
+        <li><span class="mono">dist[v]</span> is the number of edges from s to v; <span class="mono">parent[v]</span> is the vertex that discovered v.</li>
+        <li>A vertex is marked when it is <b>enqueued</b>, not when it is dequeued, so it never enters the queue twice.</li>
+      </ul>
+    </div>
+    <div class="w55">
+<pre class="code">BFS(G, s):
+    for each vertex v: visited[v] = false
+    visited[s] = true
+    dist[s] = 0;  parent[s] = none
+    Q = empty queue;  Q.enqueue(s)
+    while Q is not empty:
+        u = Q.dequeue()
+        for each neighbour v of u, in order:
+            if not visited[v]:
+                visited[v] = true
+                dist[v] = dist[u] + 1
+                parent[v] = u
+                Q.enqueue(v)</pre>
+      <p class="small muted">"In order" means alphabetical order in this lecture.</p>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>4</span></footer>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <h1>BFS on H from P: a worked example</h1>
+  <div class="cols">
+    <div class="w55">
+      <table class="t">
+        <tr><th>Step</th><th>Dequeue u</th><th>Newly marked (dist, parent)</th><th>Queue after (front first)</th></tr>
+        <tr><td>0</td><td>(start)</td><td>P (0, none)</td><td>P</td></tr>
+        <tr><td>1</td><td>P</td><td>R (1, P), T (1, P)</td><td>R, T</td></tr>
+        <tr><td>2</td><td>R</td><td>Q (2, R), S (2, R)</td><td>T, Q, S</td></tr>
+        <tr><td>3</td><td>T</td><td>U (2, T)</td><td>Q, S, U</td></tr>
+        <tr><td>4</td><td>Q</td><td>none: R and U are marked</td><td>S, U</td></tr>
+        <tr><td>5</td><td>S</td><td>none: R and T are marked</td><td>U</td></tr>
+        <tr><td>6</td><td>U</td><td>none: Q and T are marked</td><td>(empty)</td></tr>
+      </table>
+      <p class="small" style="margin-top: 12px;">At step 3, T's neighbour S is already marked (R found it at step 2), so parent[S] stays R.</p>
+    </div>
+    <div>
+      <div class="box">
+        <p><b>Visiting order:</b> P, R, T, Q, S, U</p>
+        <p><b>dist[]:</b> P = 0, Q = 2, R = 1, S = 2, T = 1, U = 2</p>
+        <p><b>Layers:</b> {P}, then {R, T}, then {Q, S, U}</p>
+      </div>
+      <svg width="370" height="210" viewBox="0 0 440 250" xmlns="http://www.w3.org/2000/svg" font-size="22">
+        <g stroke="#1d4f91" stroke-width="4.5">
+          <line x1="50" y1="125" x2="170" y2="45"/><line x1="50" y1="125" x2="170" y2="205"/>
+          <line x1="170" y1="45" x2="370" y2="45"/><line x1="170" y1="45" x2="270" y2="125"/>
+          <line x1="170" y1="205" x2="370" y2="205"/>
+        </g>
+        <g stroke="#777" stroke-width="2" stroke-dasharray="7 6">
+          <line x1="270" y1="125" x2="170" y2="205"/><line x1="370" y1="45" x2="370" y2="205"/>
+        </g>
+        <g fill="#fff" stroke="#1d4f91" stroke-width="2.5">
+          <circle cx="50" cy="125" r="21"/><circle cx="170" cy="45" r="21"/><circle cx="370" cy="45" r="21"/>
+          <circle cx="370" cy="205" r="21"/><circle cx="170" cy="205" r="21"/><circle cx="270" cy="125" r="21"/>
+        </g>
+        <g text-anchor="middle" font-weight="700" fill="#1a1a1a">
+          <text x="50" y="133">P</text><text x="170" y="53">R</text><text x="370" y="53">Q</text>
+          <text x="370" y="213">U</text><text x="170" y="213">T</text><text x="270" y="133">S</text>
+        </g>
+      </svg>
+      <div class="cap">Thick edges: the BFS tree (the parent edges). Dashed: S–T and Q–U, not in the tree.</div>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>5</span></footer>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <h1>BFS finds shortest paths in an unweighted graph</h1>
+  <div class="cols dense">
+    <div class="w60">
+      <div class="box">
+        <p><b>Claim.</b> On an unweighted graph, the first time BFS reaches a vertex v, the path it has found from s to v (follow parent[] back to s) uses the fewest possible edges. So dist[v] is the shortest distance.</p>
+      </div>
+      <h2>The idea of the argument</h2>
+      <ul>
+        <li>The queue is first-in first-out, so every vertex at distance d leaves the queue before any vertex at distance d + 1.</li>
+        <li>So vertices are discovered layer by layer: all of layer d before any of layer d + 1.</li>
+        <li>So v is first reached from a vertex one layer nearer to s, and its path has exactly dist[v] edges.</li>
+      </ul>
+      <p>The full argument is an induction on the distance; try it in the tutorial.</p>
+      <p><b>This fails when edges have different weights:</b> a path with more edges can have a smaller total weight.</p>
+    </div>
+    <div>
+      <svg width="380" height="250" viewBox="0 0 440 290" xmlns="http://www.w3.org/2000/svg" font-size="22">
+        <g stroke="#1d4f91" stroke-width="4.5">
+          <line x1="60" y1="130" x2="210" y2="60"/><line x1="60" y1="130" x2="210" y2="200"/>
+          <line x1="210" y1="60" x2="360" y2="30"/><line x1="210" y1="60" x2="360" y2="130"/>
+          <line x1="210" y1="200" x2="360" y2="230"/>
+        </g>
+        <g stroke="#777" stroke-width="2" stroke-dasharray="7 6" fill="none">
+          <line x1="210" y1="200" x2="360" y2="130"/>
+          <path d="M 360 30 Q 430 130 360 230"/>
+        </g>
+        <g fill="#fff" stroke="#1d4f91" stroke-width="2.5">
+          <circle cx="60" cy="130" r="21"/><circle cx="210" cy="60" r="21"/><circle cx="210" cy="200" r="21"/>
+          <circle cx="360" cy="30" r="21"/><circle cx="360" cy="130" r="21"/><circle cx="360" cy="230" r="21"/>
+        </g>
+        <g text-anchor="middle" font-weight="700" fill="#1a1a1a">
+          <text x="60" y="138">P</text><text x="210" y="68">R</text><text x="210" y="208">T</text>
+          <text x="360" y="38">Q</text><text x="360" y="138">S</text><text x="360" y="238">U</text>
+        </g>
+        <g text-anchor="middle" fill="#555" font-size="19">
+          <text x="60" y="280">d = 0</text><text x="210" y="280">d = 1</text><text x="360" y="280">d = 2</text>
+        </g>
+      </svg>
+      <div class="cap">H drawn in BFS layers from P. Every edge joins two vertices in the same layer or in neighbouring layers; none skips a layer.</div>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>6</span></footer>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <h1>Depth-First Search (DFS)</h1>
+  <div class="cols">
+    <div>
+      <h2>The idea: go as deep as possible, back up when stuck</h2>
+      <ul>
+        <li>From the current vertex, move to its first unvisited neighbour, and carry on from there.</li>
+        <li>When the current vertex has no unvisited neighbour, back up to the vertex you came from and try its next neighbour.</li>
+        <li>In the recursive version, "backing up" is simply a call to DFS returning. The recursion remembers the way back.</li>
+        <li>The edges u–v with <span class="mono">parent[v] = u</span> form the <b>DFS tree</b>.</li>
+      </ul>
+    </div>
+    <div>
+<pre class="code">DFS(u):
+    visited[u] = true
+    for each neighbour v of u, in order:
+        if not visited[v]:
+            parent[v] = u
+            DFS(v)</pre>
+<pre class="code">To start from s:
+    for each vertex v: visited[v] = false
+    parent[s] = none
+    DFS(s)</pre>
+      <p class="small muted">"In order" means alphabetical order in this lecture.</p>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>7</span></footer>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <h1>DFS on H from P: a worked example</h1>
+  <div class="cols">
+    <div class="w55">
+<pre class="code" style="font-size: 18px; line-height: 1.36;">DFS(P): R not visited, call DFS(R)
+  DFS(R): P visited; Q not visited, call DFS(Q)
+    DFS(Q): R visited; U not visited, call DFS(U)
+      DFS(U): Q visited; T not visited, call DFS(T)
+        DFS(T): P visited; S not visited, call DFS(S)
+          DFS(S): R visited, T visited; return
+        back in DFS(T): U visited; return
+      back in DFS(U): no neighbours left; return
+    back in DFS(Q): no neighbours left; return
+  back in DFS(R): S visited; return
+back in DFS(P): T visited; return</pre>
+      <p><b>Order of first visits:</b> P, R, Q, U, T, S</p>
+    </div>
+    <div>
+      <svg width="400" height="227" viewBox="0 0 440 250" xmlns="http://www.w3.org/2000/svg" font-size="22">
+        <g stroke="#1d4f91" stroke-width="4.5">
+          <line x1="50" y1="125" x2="170" y2="45"/><line x1="170" y1="45" x2="370" y2="45"/>
+          <line x1="370" y1="45" x2="370" y2="205"/><line x1="170" y1="205" x2="370" y2="205"/>
+          <line x1="270" y1="125" x2="170" y2="205"/>
+        </g>
+        <g stroke="#777" stroke-width="2" stroke-dasharray="7 6">
+          <line x1="50" y1="125" x2="170" y2="205"/><line x1="170" y1="45" x2="270" y2="125"/>
+        </g>
+        <g fill="#fff" stroke="#1d4f91" stroke-width="2.5">
+          <circle cx="50" cy="125" r="21"/><circle cx="170" cy="45" r="21"/><circle cx="370" cy="45" r="21"/>
+          <circle cx="370" cy="205" r="21"/><circle cx="170" cy="205" r="21"/><circle cx="270" cy="125" r="21"/>
+        </g>
+        <g text-anchor="middle" font-weight="700" fill="#1a1a1a">
+          <text x="50" y="133">P</text><text x="170" y="53">R</text><text x="370" y="53">Q</text>
+          <text x="370" y="213">U</text><text x="170" y="213">T</text><text x="270" y="133">S</text>
+        </g>
+      </svg>
+      <div class="cap">Thick edges: the DFS tree. Dashed: P–T and R–S, not in the tree.</div>
+      <ul class="small" style="margin-top: 12px;">
+        <li><b>Tree edges:</b> P–R, R–Q, Q–U, U–T, T–S. H is connected, so the tree has V − 1 = 5 edges.</li>
+        <li><b>Not in the tree:</b> P–T and R–S (7 − 5 = 2 edges).</li>
+        <li>In an undirected graph each such edge joins a vertex to one of its ancestors in the tree, so it is a <b>back edge</b>: P is an ancestor of T, and R is an ancestor of S.</li>
+      </ul>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>8</span></footer>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <h1>BFS and DFS side by side</h1>
+  <table class="t" style="width: 100%; font-size: 22px;">
+    <tr><th style="width: 22%;"></th><th style="width: 39%;">BFS</th><th>DFS</th></tr>
+    <tr><td><b>Holds the vertices still to explore in</b></td><td>a queue (first in, first out)</td><td>a stack (last in, first out): the recursion's call stack, or an explicit stack in the iterative version</td></tr>
+    <tr><td><b>How it explores</b></td><td>in layers, nearest first</td><td>goes as deep as possible, then backs up</td></tr>
+    <tr><td><b>Order on H from P</b></td><td>P, R, T, Q, S, U</td><td>P, R, Q, U, T, S</td></tr>
+    <tr><td><b>Its tree on H</b></td><td>wide and shallow: depth 2</td><td>long and thin: depth 5, a single path</td></tr>
+    <tr><td><b>Typical uses</b></td><td>shortest paths (fewest edges) in unweighted graphs</td><td>finding cycles, connected components, ordering vertices (for example, topological order)</td></tr>
+  </table>
+  <div class="box" style="margin-top: 22px;">
+    <p><b>An iterative DFS replaces the recursion with an explicit stack.</b> Swap the queue in BFS for a stack and the traversal goes deep instead of wide.</p>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>9</span></footer>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h1>Running time with an adjacency list: O(V + E)</h1>
+  <div class="cols">
+    <div class="w55">
+      <ul>
+        <li><b>Vertices.</b> Every vertex is marked once and processed once (dequeued in BFS, or given its one call in DFS): O(V).</li>
+        <li><b>Edges.</b> Processing u scans u's adjacency list once. Each list is scanned once in the whole run, and in an undirected graph every edge appears in two lists, so the lists have total length 2E: O(E).</li>
+        <li><b>Total:</b> O(V + E), for both BFS and DFS.</li>
+        <li><b>With an adjacency matrix,</b> finding the neighbours of one vertex means reading its whole row: O(V). Doing that for all V vertices gives O(V²).</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Check on H</h2>
+      <p>V = 6, E = 7. The list lengths are 2 + 2 + 3 + 2 + 3 + 2 = 14 = 2 × 7.</p>
+      <table class="t" style="margin-top: 14px;">
+        <tr><th>Stored as</th><th>Neighbours of one vertex u</th><th>Whole traversal</th></tr>
+        <tr><td>Adjacency list</td><td>O(deg(u))</td><td>O(V + E)</td></tr>
+        <tr><td>Adjacency matrix</td><td>O(V)</td><td>O(V²)</td></tr>
+      </table>
+      <p class="small" style="margin-top: 14px;">For a sparse graph, where E is much smaller than V², the adjacency list is much faster.</p>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>10</span></footer>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h1>Modelling a problem as a graph</h1>
+  <div class="cols">
+    <div>
+      <h2>The recipe: four questions</h2>
+      <ol>
+        <li>What are the vertices?</li>
+        <li>What are the edges?</li>
+        <li>Directed or undirected?</li>
+        <li>Weighted or unweighted?</li>
+      </ol>
+      <p>Then ask which question about the graph the problem is really asking, and pick the algorithm that answers it.</p>
+    </div>
+    <div class="w55">
+      <h2>Example: fewest flights between two cities</h2>
+      <ul>
+        <li><b>Vertices:</b> the cities.</li>
+        <li><b>Edges:</b> a direct flight between two cities. It runs in both directions, so the edge is <b>undirected</b>.</li>
+        <li><b>Unweighted:</b> we count flights, not kilometres or hours.</li>
+        <li><b>Algorithm:</b> BFS from the origin city. dist[destination] is the fewest flights, and following parent[] back from the destination gives the route.</li>
+        <li><b>Cost:</b> O(V + E), with V cities and E direct routes.</li>
+      </ul>
+      <p class="small muted">If we wanted the least total flying time instead, the edges would carry weights and BFS would no longer be correct.</p>
+    </div>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>11</span></footer>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h1>Summary</h1>
+  <ol>
+    <li>Both traversals mark a vertex the first time they reach it and never visit it twice.</li>
+    <li>BFS uses a queue and explores in layers, nearest first.</li>
+    <li>On an unweighted graph, BFS finds paths with the fewest edges: dist[v] is the shortest distance.</li>
+    <li>DFS goes as deep as possible and backs up when stuck, using recursion or an explicit stack; in an undirected graph, the edges it leaves out of its tree are back edges.</li>
+    <li>With an adjacency list, both run in O(V + E); with an adjacency matrix, in O(V²).</li>
+  </ol>
+  <div class="box" style="margin-top: 26px;">
+    <p><b>Before the tutorial: attempt Tutorial 08</b> (for Week 10). Q1 to Q3 run BFS and DFS by hand; Q4 and Q5 ask why BFS finds shortest paths and what DFS costs; Q6 models a problem as a graph.</p>
+  </div>
+  <footer><span>Data Structures and Algorithms · Lecture 9: Graph Traversal</span><span>12</span></footer>
+</section>
+
+</body>
+</html>

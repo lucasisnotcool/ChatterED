@@ -23,7 +23,7 @@
   import StudyUnlock from './study/StudyUnlock.svelte';
   import { createFileDrop, filesToPaths, noPathNotice } from '../lib/dropguard.js';
   import { trial } from '../lib/trialstore.svelte.js';
-  import { GRADER_SAMPLE_MISSING } from '../../shared/grader.js';
+  import { GRADER_SAMPLE_BLURB, GRADER_SAMPLE_MISSING } from '../../shared/grader.js';
   import GraderTour from './grader/GraderTour.svelte';
 
   /** A grader copy: told on `trial:status`, which is settled before first run mounts (`App.svelte`). */
@@ -119,7 +119,7 @@
     if (!ok) starting = false;
   }
 
-  // ── A grader copy's sample: put in the tutorial slot, then opened exactly as a dropped sheet is ──
+  // ── A grader copy's sample: the sheet and its lecture, opened as dropped files are ──
   let sampleBusy = $state(false);
   let sampleError = $state<string | null>(null);
 
@@ -133,8 +133,10 @@
         sampleError = out.error;
         return;
       }
-      setSlot('tutorial', out.path);
-      await startTutorial();
+      // The lecture first, then the sheet: `store.startFromSample` says why the order matters.
+      starting = true;
+      const ok = await store.startFromSample(out.path, out.lecturePath);
+      if (!ok) starting = false;
     } catch {
       sampleError = GRADER_SAMPLE_MISSING;
     } finally {
@@ -308,7 +310,7 @@
           <button type="button" class="btn-primary" disabled={starting || sampleBusy} onclick={() => void trySample()}>
             {sampleBusy || starting ? 'Opening…' : 'Try the sample tutorial'}
           </button>
-          <span class="quiet">Six questions on graph traversal, written by the team in the style of a course tutorial.</span>
+          <span class="quiet">{GRADER_SAMPLE_BLURB}</span>
         </div>
         {#if sampleError}<p class="err">{sampleError}</p>{/if}
         <p class="quiet">Or add your own sheet:</p>

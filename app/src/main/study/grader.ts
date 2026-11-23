@@ -10,7 +10,13 @@
  */
 import { copyFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { GRADER_SAMPLE_COPY_NAME, GRADER_SAMPLE_FILE, GRADER_SAMPLE_MISSING, type GraderSampleResult } from '../../shared/grader.js';
+import {
+  GRADER_LECTURE_COPY_NAME,
+  GRADER_SAMPLE_COPY_NAME,
+  GRADER_SAMPLE_FILE,
+  GRADER_SAMPLE_MISSING,
+  type GraderSampleResult,
+} from '../../shared/grader.js';
 
 /** The marker's name, beside `keys.json` and `preload.txt`. Its contents are not read. */
 export const GRADER_FILE = 'grader.txt';
@@ -36,27 +42,44 @@ export function isGraderCopy(o: GraderFlagInput): boolean {
   }
 }
 
-/** Packaged: `Resources/samples/<file>`. Dev: `app/samples/<file>`. */
-export function sampleSourcePath(o: { packaged: boolean; resourcesPath: string; appPath: string }): string {
-  return o.packaged ? join(o.resourcesPath, 'samples', GRADER_SAMPLE_FILE) : join(o.appPath, 'samples', GRADER_SAMPLE_FILE);
+/** Packaged: `Resources/samples/<file>`. Dev: `app/samples/<file>`. The sheet unless `file` says otherwise. */
+export function sampleSourcePath(o: { packaged: boolean; resourcesPath: string; appPath: string; file?: string }): string {
+  const file = o.file ?? GRADER_SAMPLE_FILE;
+  return o.packaged ? join(o.resourcesPath, 'samples', file) : join(o.appPath, 'samples', file);
+}
+
+/** One file into `<userData>/grader/<name>`, whole or not at all. */
+function stageOne(source: string, dir: string, name: string): string | null {
+  if (!source || !existsSync(source) || !statSync(source).isFile()) return null;
+  const dest = join(dir, name);
+  const tmp = `${dest}.${process.pid}.tmp`;
+  copyFileSync(source, tmp);
+  renameSync(tmp, dest);
+  return dest;
 }
 
 /**
- * **A copy of the sample the tutorial flow can be handed**, in `<userData>/grader/`. The renderer
- * then treats it exactly as a dropped file (the notebook keeps its own copy, as for any source),
- * so the copy here only has to be readable and well named. Re-copied each time, so a pressed
- * button never reads a half-written or edited file. Fails soft: the drop slots still work.
+ * **Copies of the sample the tutorial flow can be handed**, in `<userData>/grader/`: the sheet,
+ * and the lecture deck it is on when `lectureSource` is given and there. The renderer then treats
+ * them exactly as dropped files (the notebook keeps its own copies, as for any source), so the
+ * copies here only have to be readable and well named. Re-copied each time, so a pressed button
+ * never reads a half-written or edited file. Fails soft: with no sheet the drop slots still work,
+ * and with no lecture the sheet opens alone (`lecturePath: null`).
  */
-export function stageSample(o: { source: string; userDataDir: string }): GraderSampleResult {
+export function stageSample(o: { source: string; lectureSource?: string | null; userDataDir: string }): GraderSampleResult {
   try {
-    if (!existsSync(o.source) || !statSync(o.source).isFile()) return { ok: false, error: GRADER_SAMPLE_MISSING };
     const dir = join(o.userDataDir, 'grader');
+    if (!existsSync(o.source) || !statSync(o.source).isFile()) return { ok: false, error: GRADER_SAMPLE_MISSING };
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const dest = join(dir, GRADER_SAMPLE_COPY_NAME);
-    const tmp = `${dest}.${process.pid}.tmp`;
-    copyFileSync(o.source, tmp);
-    renameSync(tmp, dest);
-    return { ok: true, path: dest };
+    const path = stageOne(o.source, dir, GRADER_SAMPLE_COPY_NAME);
+    if (!path) return { ok: false, error: GRADER_SAMPLE_MISSING };
+    let lecturePath: string | null = null;
+    try {
+      lecturePath = o.lectureSource ? stageOne(o.lectureSource, dir, GRADER_LECTURE_COPY_NAME) : null;
+    } catch {
+      lecturePath = null;
+    }
+    return { ok: true, path, lecturePath };
   } catch {
     return { ok: false, error: GRADER_SAMPLE_MISSING };
   }

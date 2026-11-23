@@ -396,7 +396,7 @@ cd app && tools/release.sh --study ~/.config/chattered-study/keys.json --preload
 
 This gives `out/ChatterED-Grader-<version>-S<NN>-arm64.dmg`. `--grader` is refused without
 `--study … --preload N`, and with `--update`. The script stages `app/study/grader.txt` beside
-`preload.txt`, checks that it and `Contents/Resources/samples/graph-traversal-tutorial.pdf` are inside
+`preload.txt`, checks that it and the two sample PDFs in `Contents/Resources/samples/` are inside
 the mounted DMG, and removes its working copy afterwards. An ordinary build refuses to start while
 `app/study/grader.txt` exists, and refuses a DMG that carries one.
 
@@ -408,11 +408,19 @@ is in `src/shared/grader.ts`):
   notice and its checkbox. Consent is still recorded the same way (a participant id is minted), so
   nothing behind the gate changes. The title bar says "Grading copy".
 - First run opens on a four-card tour (Back, Next, Skip tour), then "Start with a tutorial", which
-  has **Try the sample tutorial** above the drop slots. The sample is
-  `docs/group/red-team/sheets/sheetA.pdf` (four graph-search questions), shipped as
-  `app/samples/graph-traversal-tutorial.pdf`; main copies it to
-  `<userData>/grader/Graph traversal tutorial.pdf` and the renderer opens it through the same
-  `startFromTutorial` as a dropped sheet.
+  has **Try the sample tutorial** above the drop slots. The sample is two PDFs the team wrote,
+  sources in `docs/group/submission/sample/`: a two-page tutorial sheet
+  (`app/samples/graph-traversal-tutorial.pdf`) and the twelve-slide lecture deck it is on
+  (`app/samples/graph-traversal-lecture.pdf`). Main copies them to `<userData>/grader/` as
+  `Graph traversal tutorial.pdf` and `Graph traversal lecture.pdf`.
+- **The lecture is read before the sheet** (`store.startFromSample`, added 2026-11-23). The
+  notebook is made with the lecture first, and the sheet's read is held (`tutorialstore` `held`)
+  until the lecture's notes are written, or have failed, or four minutes have passed. The sheet's
+  read links each part to notes blocks and lecture pages, and it can link only to what exists
+  then. A participant's first run (`startFromTutorial`) is unchanged: it adds the sheet first and
+  reads it at once, so a sheet and a lecture added together there are not linked. With no lecture
+  in the notebook, which is how every field-study participant used the app, the tutors say that
+  "the lecture" does not cover a part, or call the sheet "the slide".
 - Help ▸ **Show the Grader Tour** shows the tour again.
 
 Everything else is a preloaded study copy: the slot's credit and cap, logging, and the export.
@@ -422,9 +430,10 @@ Everything else is a preloaded study copy: the slot's credit and cap, logging, a
 
 **Check on a fresh profile before sending** (the launch line in section 5, step 1): the gate shows the grader
 wording; Continue leads to the tour, not to "Start with a tutorial"; Skip tour and Back work; Try
-the sample tutorial opens a notebook called "Graph traversal tutorial" with nine parts (six questions, three of them in two parts); dropping your
+the sample tutorial opens a notebook called "Graph traversal tutorial" with two sources, shows the line about the lecture being read first, and then
+nine parts (six questions, three of them in two parts), each with "From the lecture" links; dropping your
 own sheet still works; Help ▸ Show the Grader Tour opens the tour; `main.log` has `grader.copy`,
-`study.unlock {preloaded:true}`, `trial.consent {grader:true}` and `grader.sample {ok:true}`.
+`study.unlock {preloaded:true}`, `trial.consent {grader:true}` and `grader.sample {ok:true, lecture:true}`.
 
 **Known limits.** The marker lives in the app bundle, so an update to an ordinary study-channel
 build drops it: the Help item goes, and nothing else changes once first run is done. An export

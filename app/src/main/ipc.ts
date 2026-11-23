@@ -82,6 +82,7 @@ import { registerResearchIpc, trialGate } from './research/ipc.js';
 import { StudyService } from './study/service.js';
 import { persistStudyBundle, registerStudyIpc, resolveBundlePath } from './study/ipc.js';
 import { isGraderCopy, sampleSourcePath, stageSample } from './study/grader.js';
+import { GRADER_LECTURE_FILE } from '../shared/grader.js';
 import { workStarted } from './update/runtime.js';
 import { STUDY_IPC } from '../shared/study.js';
 import { describeUrl, type IpcSenderLike } from './security.js';
@@ -171,10 +172,15 @@ function graderCopyFlag(): boolean {
   }
 }
 
-/** Where a grader copy's sample tutorial ships, or null wherever Electron cannot say. */
-function graderSampleSource(): string | null {
+/** Where a grader copy's sample ships (the sheet, or with `file` the lecture), or null wherever Electron cannot say. */
+function graderSampleSource(file?: string): string | null {
   try {
-    return sampleSourcePath({ packaged: app.isPackaged === true, resourcesPath: process.resourcesPath ?? '', appPath: app.getAppPath() });
+    return sampleSourcePath({
+      packaged: app.isPackaged === true,
+      resourcesPath: process.resourcesPath ?? '',
+      appPath: app.getAppPath(),
+      ...(file ? { file } : {}),
+    });
   } catch {
     return null;
   }
@@ -1458,7 +1464,12 @@ export class AppService {
       ...(this.#grader
         ? {
             // No source (Electron could not say) reads as missing: the button says so, the slots still work.
-            graderSample: () => stageSample({ source: graderSampleSource() ?? '', userDataDir: this.#d.userDataDir }),
+            graderSample: () =>
+              stageSample({
+                source: graderSampleSource() ?? '',
+                lectureSource: graderSampleSource(GRADER_LECTURE_FILE),
+                userDataDir: this.#d.userDataDir,
+              }),
           }
         : {}),
     });

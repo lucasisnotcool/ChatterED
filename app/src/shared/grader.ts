@@ -8,7 +8,10 @@
  *  - the consent gate shows `GRADER_NOTICE_*` instead of the participant notice, and needs one
  *    click (consent is still recorded, so nothing behind the gate changes);
  *  - first run opens on the short tour below, before the "Start with a tutorial" card;
- *  - that card offers the bundled sample sheet (`GRADER_SAMPLE_FILE`) above the drop slots;
+ *  - that card offers the bundled sample above the drop slots: a tutorial sheet
+ *    (`GRADER_SAMPLE_FILE`) and the lecture deck it belongs to (`GRADER_LECTURE_FILE`). The lecture
+ *    is read first and the sheet after it, so the sheet's parts are linked to the lecture and the
+ *    hints are drawn from it (`store.startFromSample`);
  *  - Help ▸ Show the Grader Tour opens the tour again.
  *
  * Shared by main, preload and renderer, so it imports nothing.
@@ -95,7 +98,7 @@ export const GRADER_TOUR: readonly TourCard[] = [
   },
   {
     title: 'What to try',
-    paragraphs: ['Next, open the sample tutorial (six questions on graph traversal). Then:'],
+    paragraphs: ['Next, open the sample: a tutorial of six questions on graph traversal, with its lecture slides. Then:'],
     bullets: [
       'type a wrong answer, then press Check answer;',
       'press Hint twice, then Refresher;',
@@ -119,15 +122,43 @@ export function tourStep(current: number, move: TourMove, count: number = GRADER
   return at >= last ? 'done' : at + 1;
 }
 
-// ── The sample tutorial ────────────────────────────────────────────────────────────────────
+// ── The sample: a tutorial sheet and its lecture deck ──────────────────────────────────────
 
 /** In `Contents/Resources/samples/` (and `app/samples/` in dev): `electron-builder.yml`. */
 export const GRADER_SAMPLE_FILE = 'graph-traversal-tutorial.pdf';
 
-/** The name of the copy the app hands to the tutorial flow; the notebook is named after it. */
+/** The name of the copy the app hands to the tutorial flow. */
 export const GRADER_SAMPLE_COPY_NAME = 'Graph traversal tutorial.pdf';
 
-/** What `study:graderSample` answers: a readable copy of the sample, or why there is none. */
-export type GraderSampleResult = { ok: true; path: string } | { ok: false; error: string };
+/**
+ * The lecture the sample tutorial is on, beside it (2026-11-23). Without a lecture in the
+ * notebook the tutors have nothing to ground a hint in, and say so ("the lecture does not cover
+ * this"), or call the sheet "the slide"; the field study's participants, who added no lecture, all
+ * met that. A grader should see the workspace as it is meant to be used.
+ */
+export const GRADER_LECTURE_FILE = 'graph-traversal-lecture.pdf';
+
+/** Its copy's name. "lecture" in the name is what `guessSourceRole` reads it as. */
+export const GRADER_LECTURE_COPY_NAME = 'Graph traversal lecture.pdf';
+
+/** The sample notebook's name (a notebook is otherwise named after its first file, here the lecture). */
+export const GRADER_SAMPLE_NOTEBOOK = 'Graph traversal tutorial';
+
+/** The line under the button. */
+export const GRADER_SAMPLE_BLURB =
+  'Six questions on graph traversal and the twelve lecture slides they are on, both written by the team in the style of a course.';
+
+/** The sheet pane's line while the lecture is read first (`tutorialstore` `held`). */
+export const GRADER_SAMPLE_READING =
+  'Ellie is reading the lecture slides first, so that Max can link each question to them. Then Max reads the sheet. About a minute in all.';
+
+/** How long the sheet's read waits for the lecture's notes before it goes ahead without them. */
+export const GRADER_SAMPLE_NOTES_WAIT_MS = 240_000;
+
+/**
+ * What `study:graderSample` answers: readable copies of the sample, or why there is none.
+ * `lecturePath` is null when only the sheet could be staged; the sheet then opens alone.
+ */
+export type GraderSampleResult = { ok: true; path: string; lecturePath: string | null } | { ok: false; error: string };
 
 export const GRADER_SAMPLE_MISSING = 'The sample tutorial is not in this copy. Add a tutorial sheet below instead.';
