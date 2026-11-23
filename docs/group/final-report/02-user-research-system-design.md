@@ -224,7 +224,7 @@ combined page with the PDF one click away.
 
 Two of these changes carry a cost that we return to later. Offering Show answer only after a first
 check invites a token attempt, which Section 7 discusses, and the fix of 19 Nov means that the
-build was not identical for every participant, which Section 5 states. Several features of the
+build changed during the study, which Section 5 states. Several features of the
 earlier designs remain in the application, such as summary notes, quizzes and search, but they are
 outside the core task and we make no claims about them in this report.
 

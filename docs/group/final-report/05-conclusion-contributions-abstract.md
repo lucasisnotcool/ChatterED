@@ -65,6 +65,9 @@ Bastani, H., Bastani, O., Sungu, A., Ge, H., Kabakcı, Ö., & Mariman, R. (2025)
 without guardrails can harm learning: Evidence from high school mathematics. *Proceedings of the
 National Academy of Sciences, 122*(26), e2422633122.
 
+Carnegie Learning. (n.d.). *MATHia*. Retrieved 23 November 2026, from
+https://www.carnegielearning.com/solutions/math/mathia
+
 Chen, X., Ruan, K., Ju, K. P., Yap, N., & Wang, X. (2025). More AI assistance reduces cognitive
 engagement: Examining the AI assistance dilemma in AI-supported note-taking. *Proceedings of the
 ACM on Human-Computer Interaction, 9*(7), CSCW451. https://doi.org/10.1145/3757632
@@ -81,6 +84,8 @@ D'Mello, S., & Graesser, A. (2012). Dynamics of affective states during complex 
 Fetters, M. D., Curry, L. A., & Creswell, J. W. (2013). Achieving integration in mixed methods
 designs: Principles and practices. *Health Services Research, 48*(6pt2), 2134–2156.
 
+Google. (n.d.). *NotebookLM*. Retrieved 23 November 2026, from https://notebooklm.google/
+
 Graesser, A. C., Person, N. K., & Magliano, J. P. (1995). Collaborative dialogue patterns in
 naturalistic one-to-one tutoring. *Applied Cognitive Psychology, 9*(6), 495–522.
 
@@ -90,13 +95,21 @@ semantics, Vol. 3: Speech acts* (pp. 41–58). Academic Press.
 Hattie, J., & Timperley, H. (2007). The power of feedback. *Review of Educational Research,
 77*(1), 81–112.
 
+Heymans, M. (2025, August 6). *Guided Learning in Gemini: From answers to understanding*. Google.
+https://blog.google/outreach-initiatives/education/guided-learning/
+
 Kapur, M. (2008). Productive failure. *Cognition and Instruction, 26*(3), 379–424.
+
+Khan Academy. (n.d.). *Khanmigo*. Retrieved 23 November 2026, from https://www.khanmigo.ai/
 
 Koedinger, K. R., & Aleven, V. (2007). Exploring the assistance dilemma in experiments with
 Cognitive Tutors. *Educational Psychology Review, 19*(3), 239–264.
 
 Lee, J. D., & See, K. A. (2004). Trust in automation: Designing for appropriate reliance. *Human
 Factors, 46*(1), 50–80.
+
+OpenAI. (n.d.). *ChatGPT study mode FAQ*. OpenAI Help Center. Retrieved 22 November 2026, from
+https://help.openai.com/en/articles/11780217-chatgpt-study-mode-faq
 
 Shute, V. J. (2008). Focus on formative feedback. *Review of Educational Research, 78*(1),
 153–189.
@@ -114,10 +127,6 @@ Child Psychology and Psychiatry, 17*(2), 89–100.
 Xu, Z., Zhang, J., Tang, A., & Lee, Y.-C. (2026). Who you explain to matters: Learning by
 explaining to conversational agents with different pedagogical roles. In *Proceedings of the CHI
 Conference on Human Factors in Computing Systems (CHI '26)*. ACM.
-
-<!-- Product entries still to add, each with its web address and the date it was read: ChatGPT
-     study mode (OpenAI help centre, read 22 Nov 2026), Gemini Guided Learning, Khanmigo,
-     NotebookLM, MATHia. -->
 
 <!--
 NOTES FOR LUCAS AND VALERIE (delete before submission)
@@ -159,7 +168,9 @@ NOTES FOR LUCAS AND VALERIE (delete before submission)
      Academia/Sources/_text/).
    - Not in the list because nothing in files 01 to 04 cites them: Rowland (2014), Braun &
      Clarke (2006), Malterud et al. (2016).
-   - The products need entries (the comment above the notes).
+   - The five products have entries, added at assembly on 23 Nov. Their addresses were found
+     by web search that day; the pages themselves were not opened, apart from the OpenAI
+     page, which was read on 22 Nov.
    - If the Responsible AI lectures should be cited formally in Section 7, add an entry for
      the Week 11 and Week 12 lectures.
 

@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 512" width="720" height="512" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker></defs>
+<rect width="720" height="512" fill="#fff"/>
+<text x="174.0" y="26" text-anchor="middle" font-size="16" font-weight="bold">Homework with a general AI chat</text>
+<text x="174.0" y="46" text-anchor="middle" font-size="12.5" fill="#333">What our user research found</text>
+<text x="546.0" y="26" text-anchor="middle" font-size="16" font-weight="bold">Homework in ChatterED</text>
+<text x="546.0" y="46" text-anchor="middle" font-size="12.5" fill="#333">What the system does</text>
+<rect x="34" y="70" width="280" height="66" rx="6" fill="#fff" stroke="#444" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="174.0" y="97" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">Tries on paper or in their head</text>
+<text x="174.0" y="116" text-anchor="middle" font-size="12" fill="#333">The attempt stays outside the chat</text>
+<rect x="34" y="160" width="280" height="66" rx="6" fill="#fff" stroke="#444" stroke-width="1.3"/>
+<text x="174.0" y="187" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">Sends the question only</text>
+<text x="174.0" y="206" text-anchor="middle" font-size="12" fill="#333">0 of 31 student turns held an attempt</text>
+<rect x="34" y="250" width="280" height="66" rx="6" fill="#fff" stroke="#444" stroke-width="1.3"/>
+<text x="174.0" y="277" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">The prompt decides how much help</text>
+<text x="174.0" y="296" text-anchor="middle" font-size="12" fill="#333">No rule: the answer comes when asked for</text>
+<rect x="34" y="340" width="280" height="66" rx="6" fill="#fff" stroke="#444" stroke-width="1.3"/>
+<text x="174.0" y="367" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">AI answers the question as worded</text>
+<text x="174.0" y="386" text-anchor="middle" font-size="12" fill="#333">7 of 10 replies ran past 400 words</text>
+<rect x="34" y="430" width="280" height="66" rx="6" fill="#fff" stroke="#444" stroke-width="1.3"/>
+<text x="174.0" y="451" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">Student steers the AI</text>
+<text x="174.0" y="470" text-anchor="middle" font-size="12" fill="#333">Effort goes into fixing the help,</text>
+<text x="174.0" y="485" text-anchor="middle" font-size="12" fill="#333">and not into the problem</text>
+<rect x="406" y="70" width="280" height="66" rx="6" fill="#ececec" stroke="#000" stroke-width="1.8"/>
+<text x="546.0" y="97" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">Writes an attempt in the slot</text>
+<text x="546.0" y="116" text-anchor="middle" font-size="12" fill="#222">An answer slot sits under every part</text>
+<rect x="406" y="160" width="280" height="66" rx="6" fill="#ececec" stroke="#000" stroke-width="1.8"/>
+<text x="546.0" y="181" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">Presses a control</text>
+<text x="546.0" y="200" text-anchor="middle" font-size="12" fill="#222">Check answer, Hint, Refresher, Show answer;</text>
+<text x="546.0" y="215" text-anchor="middle" font-size="12" fill="#222">the attempt travels with each request</text>
+<rect x="406" y="250" width="280" height="66" rx="6" fill="#222" stroke="#000" stroke-width="1.8"/>
+<text x="546.0" y="271" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">Code decides how much help</text>
+<text x="546.0" y="290" text-anchor="middle" font-size="12" fill="#eee">Hint levels in a fixed order; Show answer</text>
+<text x="546.0" y="305" text-anchor="middle" font-size="12" fill="#eee">only after a first check</text>
+<rect x="406" y="340" width="280" height="66" rx="6" fill="#ececec" stroke="#000" stroke-width="1.8"/>
+<text x="546.0" y="361" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">The model writes the reply</text>
+<text x="546.0" y="380" text-anchor="middle" font-size="12" fill="#222">What is right, what is missing, and one</text>
+<text x="546.0" y="395" text-anchor="middle" font-size="12" fill="#222">question; word limits on every reply</text>
+<rect x="406" y="430" width="280" height="66" rx="6" fill="#ececec" stroke="#000" stroke-width="1.8"/>
+<text x="546.0" y="457" text-anchor="middle" font-size="14" font-weight="bold" fill="#000">Student revises and checks again</text>
+<text x="546.0" y="476" text-anchor="middle" font-size="12" fill="#222">Progress counts only their own answer</text>
+<line x1="174.0" y1="138" x2="174.0" y2="157" stroke="#000" stroke-width="1.5" marker-end="url(#a)" stroke-dasharray="4 4"/>
+<line x1="174.0" y1="228" x2="174.0" y2="247" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="174.0" y1="318" x2="174.0" y2="337" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="174.0" y1="408" x2="174.0" y2="427" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="546.0" y1="138" x2="546.0" y2="157" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="546.0" y1="228" x2="546.0" y2="247" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="546.0" y1="318" x2="546.0" y2="337" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="546.0" y1="408" x2="546.0" y2="427" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="184.0" y="152" font-size="11.5" font-style="italic" fill="#000">not sent</text>
+<text x="556.0" y="152" font-size="11.5" font-style="italic" fill="#000">sent with every request</text>
+<path d="M34,463.0 H14 V193.0 H31" fill="none" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<path d="M686,463.0 H706 V103.0 H689" fill="none" stroke="#000" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="360" y="107.0" text-anchor="middle" font-size="12" font-style="italic" fill="#444">Attempt</text>
+<text x="360" y="197.0" text-anchor="middle" font-size="12" font-style="italic" fill="#444">Request</text>
+<text x="360" y="280.0" text-anchor="middle" font-size="12" font-style="italic" fill="#444">How much</text>
+<text x="360" y="294.0" text-anchor="middle" font-size="12" font-style="italic" fill="#444">help</text>
+<text x="360" y="377.0" text-anchor="middle" font-size="12" font-style="italic" fill="#444">Reply</text>
+<text x="360" y="467.0" text-anchor="middle" font-size="12" font-style="italic" fill="#444">Next step</text>
+</svg>

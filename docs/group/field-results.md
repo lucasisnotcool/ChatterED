@@ -18,7 +18,7 @@ that sessions with no imported homework are not analysed (§3), with nothing sai
 ## 0. At a glance
 
 - **Four people used the app on a tutorial of their own choosing.** S03 worked through a whole five-part sheet in three sittings over two days
-  (160 active minutes). S02 worked eight of eleven parts in one evening (96). S01 worked through a
+  (193 active minutes, 160 of them in the three sittings). S02 worked eight of eleven parts in one evening (96). S01 worked through a
   whole five-part sheet in one hour. S04 tried three parts in 16 minutes (§7).
 - **Check answer is the control people used: 53 checks, against 7 hints, 4 refreshers and 5
   reveals.** No one reached the third hint level. The feedback after a check names one flaw and
@@ -243,7 +243,7 @@ sheet. No lecture was added. S03 told Max in the first minutes that they had not
 |---|---|
 | App launches | 1; the app was left open for two and a half days |
 | Working sittings | 3: 20 Nov 14:27 to 15:02, 20 Nov 16:00 to 18:10, 21 Nov 16:41 to 18:01 (Singapore time) |
-| Active minutes | 160 in the three sittings (24, 90, 46). The log has 33 more, scattered, with no study event in them |
+| Active minutes | 193 logged (the report's figure, Lucas 23 Nov: all logged minutes): 160 in the three sittings (24, 90, 46) and 33 more, scattered, with no study event in them |
 | Parts touched | 5 of 5 |
 | Parts ended "complete" by a check | 5 of 5, after 2, 4, 2, 6 and 2 checks |
 | Help requests (Hint or Refresher) | 4: two hints on 1(b), a Refresher on 1(a) and on 3 |
@@ -633,7 +633,7 @@ One reader checked all 47 replies against the design rules. "Arguable" marks a j
 | | S01 | S02 | S03 | S04 | Excluded, 18 Nov |
 |---|---|---|---|---|---|
 | Sittings | 1 | 1, after a three-minute first visit | 3 over two days | 1 | 2 launches |
-| Active minutes | 29 | 96 | 160 | 15 | 17 |
+| Active minutes (all logged) | 29 | 96 | 193 | 15 | 17 |
 | Material | Tutorial on reinforcement learning; no solutions | Practice set on probability and counting from a public course; worked solutions in the same file | Tutorial on relational algebra; solutions added | Discussion sheet on graph search, from an old module; no solutions | Exam paper (import failed), then a maths tutorial |
 | Parts touched | 5 of 5 | 8 of 11 | 5 of 5 | 3 of 14 | 0 |
 | First action on a part was typing | 4 of 5 | 7 of 8 | 3 of 5 | 1 of 3 | – |

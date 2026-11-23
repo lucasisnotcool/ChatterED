@@ -288,7 +288,7 @@ used: they are private to that assignment and were run on a different branch.
 
 ### 6.1 Content: planned as 1–2 days
 
-**Observed so far (23 Nov).** S03: three sittings over two days, 160 active minutes, one tutorial
+**Observed so far (23 Nov).** S03: three sittings over two days, 193 active minutes, one tutorial
 sheet with its solutions, 5 of 5 parts completed. S01: one sitting of 63 minutes, one tutorial
 sheet, 5 of 5 parts touched, 2 completed and 3 revealed. S04: one launch, 16 minutes, one tutorial
 sheet from an old module, 3 of 14 parts touched. Excluded: the copy-04 export of 18 Nov, on which the
@@ -445,7 +445,7 @@ Full record: `field-results.md` (§7 for the tables, §8 for what it means, §6 
 
 | | Finding | Use in the report |
 |---|---|---|
-| Use | S03: 160 active minutes over two days, 5 of 5 parts completed. S02: 96 active minutes in one evening, 8 of 11 touched, 7 completed. S01: one hour, 5 of 5 touched. S04: 16 minutes, 3 of 14 touched | Per-person use table. Only S03 matches the planned window |
+| Use | S03: 193 active minutes over two days, 5 of 5 parts completed. S02: 96 active minutes in one evening, 8 of 11 touched, 7 completed. S01: one hour, 5 of 5 touched. S04: 16 minutes, 3 of 14 touched | Per-person use table. Only S03 matches the planned window |
 | Attempt first | 15 of 21 parts began with the student typing. Hints came with an attempt 4 times in 7; 3 Refreshers were pressed on an empty slot and 1 on a part already complete | RQ1, split by button |
 | Check is the main control | 53 checks, 7 hints, 4 Refreshers, 5 reveals. Third hint level: never | A finding about the design: students put something in the slot and asked what was wrong with it. The ladder did not carry the sessions |
 | Recovery splits by person | 14 parts with a first verdict short of complete: S03 repaired 5 of 5, S02 repaired 4 of 5 and revealed 1, S01 revealed 3 of 3, S04 left 1 of 1 | RQ2 as four cases. The interview has to explain each |
