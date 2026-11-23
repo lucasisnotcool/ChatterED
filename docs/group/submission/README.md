@@ -99,7 +99,7 @@ scripted demo that cannot read a new sheet. We do not include a key, as the brie
 npm run typecheck && npm run lint && npm test
 ```
 
-From this ZIP, 3,912 of the 3,936 tests pass. The other 24, in five files that test PDF reading
+From this ZIP, 3,914 of the 3,938 tests pass. The other 24, in five files that test PDF reading
 for the notes workspace, read a slide deck that we keep outside `app/` in our repository and did
 not include here. No test of the tutorial workspace depends on it.
 
