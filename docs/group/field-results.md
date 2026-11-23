@@ -1,9 +1,10 @@
 # Field study: results as the exports come in
 
 **Status.** Working record, 23 Nov 2026, for Lucas and Valerie. It holds what each research export
-shows, measured the way `final-report-outline.md` §6.2 defines the research questions. Four exports
-are in, from study copies 01, 03 and 04 (twice). One more is expected. The coding below is by one
-AI coder and has not been checked by a person. Interviews are not in yet.
+shows, measured the way `final-report-outline.md` §6.2 defines the research questions. Five exports
+are in, from study copies 01, 02, 03 and 04 (twice), and no more are expected. The coding of S01,
+S03 and S04 is by one AI coder; S02 was read by four (§6). None of it has been checked by a person.
+Interviews are not in yet.
 
 **What is committed and what is not.** This file holds counts, times, part ids, the AI's replies and
 a few short lines the participants typed. The exports themselves are raw research data and stay
@@ -15,29 +16,36 @@ export. A new export is never merged with an earlier one because the copy number
 
 ## 0. At a glance
 
-- **Three people used the app on a tutorial of their own; a fourth could not get an exam paper to
-  import.** S03 worked through a whole five-part sheet in three sittings over two days (160 active
-  minutes). S01 worked through a whole five-part sheet in one hour. S04 tried three parts in 16
-  minutes (§6).
-- **Check answer is the control people used: 25 checks, against 6 hints, 3 refreshers and 4
+- **Four people used the app on a tutorial of their own choosing; a fifth could not get an exam
+  paper to import.** S03 worked through a whole five-part sheet in three sittings over two days
+  (160 active minutes). S02 worked eight of eleven parts in one evening (96). S01 worked through a
+  whole five-part sheet in one hour. S04 tried three parts in 16 minutes (§7).
+- **Check answer is the control people used: 53 checks, against 7 hints, 4 refreshers and 5
   reveals.** No one reached the third hint level. The feedback after a check names one flaw and
   asks one question, so in practice it did the work the hint ladder was built for.
-- **RQ1, as counts:** 4 of 9 help requests came with an attempt in the slot. Split by button, that
-  is 4 of 6 hints and 0 of 3 refreshers. 8 of the 13 parts touched began with the student typing.
-- **RQ2 splits by person, not by part.** 9 parts got a first verdict short of "complete". S03
-  repaired all 5 of theirs by checking again. S01 pressed Show answer on all 3 of theirs. S04 left
-  their 1.
-- **The best material is two episodes from S03** (§4.4): a part repaired after two "not yet"
+- **RQ1, as counts:** 4 of 7 hints came with an attempt in the slot. Of the 4 Refreshers, 3 were
+  pressed on an empty slot before trying and 1 on a part already complete. 15 of the 21 parts
+  touched began with the student typing.
+- **RQ2 splits mostly by person.** 14 parts got a first verdict short of "complete". S03 repaired
+  all 5 of theirs and S02 4 of 5, by checking again. S01 pressed Show answer on all 3 of theirs.
+  S04 left their 1. S02's one reveal came after Max had marked a right answer "partly there" (§6.4).
+- **The best material is five episodes.** From S03 (§4.4): a part repaired after two "not yet"
   verdicts and an angry message, and an eight-turn exchange in which the student built a hard answer
-  step by step in the thread.
-- **The AI kept to the design in 62 of 62 replies on the two points we can count:** none gave a
-  part's answer before a reveal or a "complete", and none ran over 400 words (longest 192). 22 ran
-  over the app's own shorter limits, by 1 to 32 words.
-- **Faults the report should own** (§2.6, §4.5, §5.4): the agents call the tutorial sheet "the
-  lecture", "the deck" or "the slide" (in 36 of 55 replies in the two new exports); Ellie's private
-  chat describes a "group" that is not there; S03's solutions file was not used for the answer key
-  until two and a half hours in; and the app turned that solutions file into a notes page that
-  states the answers.
+  step by step in the thread. From S02 (§6.4): a right answer that ends as "revealed" because Max
+  misread it; a sign found by trying all three; and a part repaired over ten checks, one factor at
+  a time.
+- **The AI and the design, over 109 replies:** none stated a part's answer before a reveal or a
+  "complete", and none ran over 400 words (longest 192). 27 ran over the app's own shorter limits,
+  by 1 to 32 words. S02's export was read more closely than the others, and there 2 replies handed
+  over a step, 4 misdescribed the student's answer, and 4 of 28 verdicts were too strict (none too
+  lenient).
+- **Faults the report should own** (§2.6, §4.5, §5.4, §6.6): the agents call the tutorial sheet "the
+  lecture", "the deck" or "the slide" (in 36 of 55 replies in S01 and S03); Ellie's private chat
+  describes a "group" that is not there; S03's solutions file was not used for the answer key until
+  two and a half hours in, and the app turned it into a notes page that states the answers; Max is
+  not told what changed in the slot between checks, so it misread S02's answer and apologised for
+  misreadings it had not made; a wrong "partly there" cannot be undone and the reveal then costs
+  the credit; and when a file holds its own solutions, Max's page references point at them.
 
 ## 1. How these numbers are made
 
@@ -52,13 +60,15 @@ fidelity checks.
 | Export | Study copy | Installed and exported (UTC) | macOS (Darwin) | Called here |
 |---|---|---|---|---|
 | `P-8a12c48b` | 01 | 20 Nov, 07:14 to 08:17 | 24.6 | **S01** |
+| `P-34e9da6f` | 02 | 21 Nov, 13:10 to 22 Nov, 16:01 | 23.6 | **S02** |
 | `P-67b070b4` | 03 | 20 Nov, 06:27 to 22 Nov, 15:54 | 27.0 | **S03** |
 | `P-3b69844c` | 04 | 22 Nov, 03:10 to 03:26 | 25.2 | **S04** |
 | `P-a6b72eca` | 04 | 18 Nov, 08:45 to 09:59 | 24.4 | **slot 04, 18 Nov** |
 
-The app makes a new random participant id on each install. The two copy-04 exports are treated as
+Four study copies were built (01 to 04), and five exports came back: one from each copy, and a
+second from copy 04. The app makes a new random participant id on each install. The two copy-04 exports are treated as
 two people: the Macs run different macOS versions, the sheets come from different modules and
-years, and Lucas has said each export is a separate user. Valerie to confirm (§8).
+years, and Lucas has said each export is a separate user. Valerie to confirm (§9).
 
 Singapore time is UTC + 8, so S01 and S03 both began on the afternoon of 20 Nov.
 
@@ -430,71 +440,271 @@ words (Constructive), and all four are answers to a question Max asked.
 cover the utility equation"). And with no solutions, a part can be marked "complete" against a key
 the app itself doubts: part 2 was.
 
-## 6. Across the exports
+## 6. S02: eight parts in one evening, most of it by checking (22 Nov)
 
-### 6.1 Per person
+### 6.1 What S02 worked on
 
-| | S01 | S03 | S04 | Slot 04, 18 Nov |
-|---|---|---|---|---|
-| Sittings | 1 | 3 over two days | 1 | 2 launches |
-| Active minutes | 29 | 160 | 15 | 17 |
-| Material | Tutorial on reinforcement learning; no solutions | Tutorial on relational algebra; solutions added | Discussion sheet on graph search, from an old module; no solutions | Exam paper (import failed), then a maths tutorial |
-| Parts touched | 5 of 5 | 5 of 5 | 3 of 14 | 0 |
-| First action on a part was typing | 4 of 5 | 3 of 5 | 1 of 3 | – |
-| Hints, by highest level | 1 (level 1) | 2 (level 2) | 3 (level 2) | 0 |
-| Refreshers | 0 | 2 | 1 | 0 |
-| **RQ1: Hint or Refresher with an attempt in the slot** | 0 of 1 | 2 of 4 | 2 of 4 | – |
-| Checks | 8 | 16 | 1 | 0 |
-| Parts complete by a check | 2 | 5 | 0 | – |
-| **RQ2: first verdict short of complete, then…** | revealed 3 of 3 | repaired 5 of 5 | left 1 of 1 | – |
-| Show answer | 3 | 1, after "complete" | 0 | 0 |
-| Typed turns in chat | 4 | 18 | 2 | 0 |
-| AI replies (longest, in words) | 16 (137) | 39 (192) | 7 (173) | 0 |
-| Spend | $0.39 | $1.21 | $0.26 | $1.03 |
+One file: a 13-page practice set on probability and counting from a public course, with the
+questions on pages 1 and 2 and the worked solutions from page 3 on, in the same file. The app read
+it in 41 seconds into 11 parts and marked one key (1(b)) low confidence, because its second solve
+disagreed with the first. No lecture was added. The log labels every key as the model's own, but
+Max's replies quote the solution pages throughout, so the model had the worked solutions in view.
 
-### 6.2 Totals, as counts
+### 6.2 Measures
 
-These add three people who used the app differently. They are counts, not rates.
+| Measure | Value |
+|---|---|
+| App launches | 1 (installed 21 Nov, 21:10 Singapore time; left open) |
+| First launch to export | 26 h 51 min |
+| Active minutes | 96: 79 in the main sitting (22 Nov, 22:24 to 00:02), 9 around the first visit (20:20 to 21:04), 8 scattered earlier |
+| Parts touched | 8 of 11 |
+| Parts where the first action was typing an attempt | 7 of 8 (part 5 began with a hint) |
+| Help requests (Hint or Refresher) | 2: a level 1 hint on 5, slot empty; a Refresher on 2(b), pressed nine minutes after that part was complete |
+| **RQ1: help requests with an attempt in the slot** | **Hint 0 of 1.** The Refresher counts as 1 of 1 by the rule, but the slot held a finished answer, so it says nothing about attempting first |
+| Checks | 28: 7 "complete", 10 "partly there", 11 "not yet". 1 ran against the low-confidence key |
+| Parts complete at the first check | 3 of 8: 1(b), 3(a), 3(b) |
+| **RQ2: after a first verdict short of complete** | **Repaired 4 of 5** (after 5, 2, 10 and 2 checks); **revealed 1 of 5** (part 4, after 6 checks) |
+| Show answer | 1, on part 4, with 229 characters in the slot, 170 seconds after the last Check and 25 seconds after Max's last reply |
+| Typed turns | 16: 15 in parts' threads (2 to 247 characters), 1 to Ellie in private |
+| AI replies | 47: Max 45 (62 to 127 words), Ellie 2 (a Refresher of 142 words, a private reply of 93). 0 over 400; 5 over the app's own limits, by 3 to 15 words |
+| Wait for a reply | 6 to 12 seconds from the press |
+| Spend | $1.43 |
+
+### 6.3 What happened
+
+Times are Singapore time on 22 Nov.
+
+| Time | S02 | The app |
+|---|---|---|
+| 20:20 | Adds the file | Reads it by 20:21: 11 parts |
+| 20:22 | **Check** 1(a) with the sign "=" and no explanation | "Not yet": no explanation, and "=" is not right |
+| 20:23 to 22:24 | Away from the tutorial | |
+| 22:24 | **Check** 1(a) with "<", then 35 seconds later with ">" | "Not yet", then "partly there": the sign is right, the explanation is missing |
+| 22:29 to 22:31 | Types their reasoning (236 characters): one combination of faces for each total, so 21 should be the less likely. Then finds a combination they had missed, and counts its orderings | Max confirms the method, asks whether the list is complete, then asks for a systematic list |
+| 22:34, 22:36 | **Check** 1(a) twice, now with counts in the slot | "Partly there" (both counts off), then "complete" (20 and 10) |
+| 22:39 | **Check** 1(b) | "Complete", with the note that the key was not fully confirmed |
+| 22:44 to 22:45 | **Check** 2(a); asks whether a deck has 54 cards with the jokers; **Check** again | "Partly there" (the denominator), then "complete" |
+| 22:49 to 23:01 | **Check** 2(b) ten times in 12 minutes, changing the formula between checks; two typed turns | Eight "not yet", one "partly there", then "complete". Each reply names what is now right and one factor that is still wrong |
+| 23:05 | Asks why the single card's ordering is not also divided out | Max explains when a division is needed |
+| 23:06, 23:08 | **Check** 3(a), **Check** 3(b) | "Complete" both times, first try |
+| 23:10 | **Refresher** on 2(b), then asks Ellie in private what the Refresher was | Ellie explains two terms; then explains that the Refresher was a reply to the button |
+| 23:16 to 23:37 | Part 4: **Check** six times, five typed turns | "Not yet", then "partly there" five times (§6.4) |
+| 23:40 | **Show answer** on part 4, then: the guidance was bad and they had been right | The worked answer; then Max agrees the student was right |
+| 23:41 to 23:49 | Away | |
+| 23:50 | **Hint** on part 5, slot empty | Level 1: where story proofs are in the file, and one question |
+| 23:55 to 00:01 | **Check** 5; three typed turns; **Check** again | "Partly there" (one side of the identity missing), then "complete" |
+| 00:01 | Exports, seconds after the last Check | |
+
+How this section was made: I read the whole transcript, and three further AI readers (Claude Opus,
+each given the data and a question, and none given my reading) audited the marking, checked every
+reply against the design rules, and coded the student's turns and checks. Their counts are used
+below and agree with my reading on every point I had formed first (parts 1(a) and 4). The export
+does not keep the slot's text at each check, only its length, so what the slot said at an earlier
+check is rebuilt from Max's quotes, the one-line verdict the app wrote under the part, and the
+length. Those reconstructions are likely, not certain.
+
+### 6.4 Three episodes worth telling
+
+**Part 4: a right answer that ends as "revealed".** The part asks for a probability and for a
+showing that it is very close to 1/e. S02 wrote 188 characters over three minutes and checked.
+
+| Time | S02's slot (rebuilt) | Verdict, and what Max said | Our reading |
+|---|---|---|---|
+| 23:19 | The right fraction, with the plan of dividing through | "Not yet": doubts one term | Too strict. Max had read the student's x as the word's length; it is the number of letters left out. The student explained, and Max wrote "I was wrong to doubt that term" |
+| 23:22 | Sum range fixed; the series named but not written out | "Partly there": write one term out | Fair |
+| 23:32 | Adds the list, starting "1 + 1/2! + …" | "Partly there": the list misses a term | Fair, if the list began with 1 |
+| 23:33 | "1 +" becomes "2 +" | "Partly there": accepts "your 2", objects to the word "roughly" | Too strict. The derivation is complete and correct |
+| 23:35 | "roughly 1/e" becomes "very close to 1/e" | "Partly there": quotes the list as "1 + 1/2! + …" again | Wrong. That text was no longer in the slot |
+| 23:35, 23:36 | Types twice that they cannot tell what Max is asking, the second time quoting Max's sentence back | Two apologies for being unclear, each still built on the list having a missing term | Wrong premise, twice more |
+| 23:37 | Unchanged | "Partly there": now "as you wrote" for the list, and asks why "very close" is fair | Too strict. Max dropped this point three minutes later |
+| 23:39 | Types that the series approaching e is surely enough, since it is already close after a few terms | "My earlier replies about your list were muddled, sorry", and then supplies the justification itself | Max gives the missing step |
+| 23:40 | **Show answer**, then types that the guidance was bad and that they had been right | The worked answer: "Your sum … is the same 26 terms". Then: "You were right, and my replies on that part were muddled … I'm dropping my push on the 'very close' wording" | |
+
+The part's status is "revealed", which fills no progress. By the marking audit, the answer deserved
+"complete" from the fourth check at the earliest and the fifth at the latest. Nothing is
+logged for the next ten minutes; the student then began the next part with a hint on an empty slot:
+the only hint of the session, and the only part of the eight that did not begin with typing.
+
+**Part 1(a): the sign by elimination, the reasoning by dialogue.** The part asks for =, < or >
+between two probabilities, with a short explanation. S02 checked "=" at 20:22 and left. Two hours
+later they cleared the slot and checked "<", and 35 seconds later ">", each typed four seconds
+before the press (the log shows the slot being emptied and retyped each time). Max marked ">"
+"partly there" and confirmed the sign. Four minutes later the student typed their own count, which
+still gave "<": so the ">" in the slot had come from trying all three, not from reasoning. What
+followed is real work. In three typed turns the student found a combination of faces they had
+missed (blaming themselves in passing), counted its orderings correctly, and after two more checks
+had both counts right. The full progress given for this part is fair to the final answer; the
+route to the sign was a guess. Max, for its part, apologised twice for misreading a sign it had
+read correctly: "I misspoke earlier about '=': you wrote <", then "I misread it in my earlier
+replies". Max is not told that the slot changed between checks, and blamed itself for the change.
+
+**Part 2(b): ten checks in twelve minutes, one factor at a time.** Eight "not yet" in a row, then
+"partly there", then "complete", with 46 to 93 seconds between presses. Rebuilt from Max's quotes,
+almost every check changed exactly the factor the previous reply had named: a card-by-card product
+became a product of choices; one suit out of three became two cards out of four; 48 became 44; a
+correction for order appeared as "times 6", moved under the line, became 2, and ended as a
+division. The audit found that 9 of Max's 10 replies pointed at a fault that was really there (the
+tenth cannot be judged), and no check re-sent an answer Max had already rejected, except possibly
+one pressed seven seconds after a reply. Two typed turns in the middle show the student reasoning
+("oh two pairs must contain 2 distinct pairs"; a 247-character account of their construction when they
+could not follow Max), and after the "complete" they asked, unprompted, why the single card's
+order is not divided out as well. This is repair, and it is the pattern from S03's 2(b) at larger
+scale. The caution is that Max found every fault: "repaired" here means "fixed what was pointed
+at".
+
+### 6.5 What S02 typed, and how they used Check, coded
+
+**The 16 typed turns.** One reader's coding, in the categories used for S03 (§4.4):
+
+| Kind | Count | Notes |
+|---|---|---|
+| Own reasoning about the problem | 10 | All in parts' threads. 9 build on Max's previous turn (Interactive, 2 of them arguable), 1 is a new inference (Constructive) |
+| A typed request for teaching | 1 | The question about dividing out the single card, which carries the student's own guess |
+| About the system | 5 | 4 are about Max's explanation (cannot follow it, asks for it to be shorter, says it was wrong); 1 asks Ellie what a Refresher is |
+
+S02 asked to be taught by typing once, against S03's five. What S02 did that no earlier
+participant did is argue with the feedback, and on part 4 the argument was right each time: Max
+conceded three times. Seven turns show frustration or impatience with Max, six of them within 23
+minutes on parts 4 and 5. There is one line of self-blame and no word of thanks or relief, including
+after the seven "complete" verdicts.
+
+**The 28 checks**, by what had changed since the previous event on the part (rebuilt, so
+approximate):
+
+| What the student did before pressing | Count |
+|---|---|
+| First attempt at the part | 8 |
+| Revised the slot after typed dialogue | 5 |
+| Revised the slot after reading the check's reply only | 11 |
+| Swapped a one-character answer for another (1(a)) | 2 |
+| Pressed again with the slot unchanged | 2 (one on 2(b), arguable; one on part 4, in effect an appeal) |
+
+Over the 20 re-checks, the time from Max's last reply to the next press had a median of 65
+seconds; three came in under 30 seconds. Read as "gaming the system" against "step-by-step repair",
+3 checks fit the first (the two sign swaps and the seven-second press) and 16 the second.
+
+**After a "complete" or a reveal**, Max asked a question to answer in the student's own words twice
+(2(a) and part 4). S02 answered neither.
+
+### 6.6 Did the AI behave as designed?
+
+One reader checked all 47 replies against the design rules. "Arguable" marks a judgement call.
+
+| Check | Result in 47 replies |
+|---|---|
+| Stated a part's answer before a reveal or a "complete" | 0. But 2 replies handed over a step (both arguable): one put the missing suit factor into words as a question (2(b), 22:53), and one gave the justification Max had been asking for (part 4, 23:39) |
+| Hint stayed at its level | 1 hint, level 1: it points to the right section, then also quotes a definition and asks a leading question (arguable) |
+| Told the truth about the student's work and its own | **4 replies clearly did not** (the part 4 misreadings: 23:19, 23:35, and the two that followed), 6 arguably (the two false apologies on 1(a); an objection on 2(b) to where a divisor was written, which Max then accepted for the final answer; a hedge on a key that was in fact right; two more). Max took back or apologised for something 5 times |
+| Verdicts (marking audit) | 23 of 28 right, 4 too strict (all on part 4), 0 too lenient, 1 cannot be judged. All 8 final answers are correct, including part 4 |
+| Length | Max 62 to 127 words, Ellie's Refresher 142. 5 over the app's own limits (100 for feedback, 130 for a Refresher), 0 over 400 |
+| One question per reply | 4 replies ask two |
+| When the student was confused, rude or asked for brevity (11 turns) | Every next reply changed tone or form without commenting on the student's language. After "pls be concise" the reply was 62 words in a two-item list. But the two apologies on part 4 kept the wrong premise |
+| What the file is called | "The paper", 23 times in 17 replies. Never "the lecture", "the deck" or "the slide", so the naming fault of S01, S03 and S04 does not appear here |
+
+**Faults.**
+
+1. **Max is not told what changed in the slot between checks.** On 1(a) it took the student's new
+   sign for its own earlier misreading, twice. On part 4 it quoted an older version of the answer
+   after it had been corrected, and held to it for three replies.
+2. **A wrong "partly there" cannot be undone, and the reveal then costs the credit.** Part 4 was
+   right, Max said so, and the part is recorded as revealed. Typing an objection changes Max's
+   words; only another Check changes the verdict, and three more checks did not.
+3. **The file held its own worked solutions, and Max sent the student to them.** Of the 35 replies
+   sent before a part was complete or revealed, 19 named the page that holds that part's solution
+   ("The paper's solution on p. 3 starts from…", in the very first reply), and 10 quoted from it.
+   Judged strictly, 1 of those quotes gave a step away and 3 arguably did. The log shows no opening
+   of the PDF, and cannot show whether the student read those pages elsewhere. The page references
+   are DG3 working as built; the design did not foresee questions and solutions in one file.
+4. **The one-line verdicts under the parts are cut short in 10 of 31 lines.** Five end in "…", and
+   five stop at "26!", because the app took the factorial sign for the end of a sentence ("Checked:
+   not yet. The numerator 26!"). Three say "the learner", one "matches the key".
+5. **The Refresher was not understood.** S02 pressed it once, on a part already complete, got a
+   142-word reply on two general terms and a line under the part reading "Refresher: Binomial
+   coefficients.", and asked Ellie in private what that was. Ellie's answer opened "I'm a read-only
+   side session".
+6. **A check on a three-way choice can be passed by trying all three.** The explanation the part
+   also asks for kept the verdict at "partly there" here; a part with no explanation would have
+   been complete on the third press, with full progress.
+
+## 7. Across the exports
+
+### 7.1 Per person
+
+| | S01 | S02 | S03 | S04 | Slot 04, 18 Nov |
+|---|---|---|---|---|---|
+| Sittings | 1 | 1, after a three-minute first visit | 3 over two days | 1 | 2 launches |
+| Active minutes | 29 | 96 | 160 | 15 | 17 |
+| Material | Tutorial on reinforcement learning; no solutions | Practice set on probability and counting from a public course; worked solutions in the same file | Tutorial on relational algebra; solutions added | Discussion sheet on graph search, from an old module; no solutions | Exam paper (import failed), then a maths tutorial |
+| Parts touched | 5 of 5 | 8 of 11 | 5 of 5 | 3 of 14 | 0 |
+| First action on a part was typing | 4 of 5 | 7 of 8 | 3 of 5 | 1 of 3 | – |
+| Hints, by highest level | 1 (level 1) | 1 (level 1) | 2 (level 2) | 3 (level 2) | 0 |
+| Refreshers | 0 | 1, after the part was complete | 2 | 1 | 0 |
+| **RQ1: Hint with an attempt in the slot** | 0 of 1 | 0 of 1 | 2 of 2 | 2 of 3 | – |
+| Checks | 8 | 28 | 16 | 1 | 0 |
+| Parts complete by a check | 2 | 7 | 5 | 0 | – |
+| **RQ2: first verdict short of complete, then…** | revealed 3 of 3 | repaired 4 of 5, revealed 1 | repaired 5 of 5 | left 1 of 1 | – |
+| Show answer | 3 | 1, on an answer that was right | 1, after "complete" | 0 | 0 |
+| Typed turns in chat | 4 | 16 | 18 | 2 | 0 |
+| AI replies (longest, in words) | 16 (137) | 47 (142) | 39 (192) | 7 (173) | 0 |
+| Spend | $0.39 | $1.43 | $1.21 | $0.26 | $1.03 |
+
+### 7.2 Totals, as counts
+
+These add four people who used the app differently. They are counts, not rates.
 
 | | Count |
 |---|---|
-| Parts touched | 13 |
-| Parts that began with the student typing | 8 of 13 (2 began with a hint, 3 with a Refresher) |
-| Hints with an attempt in the slot | 4 of 6 |
-| Refreshers with an attempt in the slot | 0 of 3 |
-| Checks | 25 |
-| Parts with a first verdict short of complete | 9: repaired 5, revealed 3, left 1 |
+| Parts touched | 21 |
+| Parts that began with the student typing | 15 of 21 (3 began with a hint, 3 with a Refresher) |
+| Hints with an attempt in the slot | 4 of 7 |
+| Refreshers | 4: 3 pressed on an empty slot as the first action on a part, 1 pressed on a part already complete |
+| Checks | 53 |
+| Parts complete at the first check | 5 (2 S01, 3 S02) |
+| Parts with a first verdict short of complete | 14: repaired 9, revealed 4, left 1 |
 | Parts worked on and never checked | 2 (both S04) |
 | Third hint level reached | 0 times |
-| AI replies | 62; 0 gave a part's answer before a reveal or a "complete"; 0 over 400 words; 22 over the app's own limits |
+| Typed turns | 40 |
+| AI replies | 109; 0 stated a part's answer before a reveal or a "complete"; 0 over 400 words; 27 over the app's own limits |
 
-## 7. What this means for the report
+The fidelity line needs its caveat. S02's 47 replies were checked rule by rule by a separate reader,
+and that reading found 2 replies that handed over a step and 4 that misdescribed the student's
+answer (§6.6). The 62 replies of S01, S03 and S04 were checked by one reader on two points only
+(an answer given early; length). The same closer reading has not been done on them.
 
-1. **The field phase can now be described as planned for one person and shorter for two.** S03
-   used the app over two days on current work; S01 and S04 used it once. Write it as unsupervised
-   use on the participant's own tutorial, one to three sittings, and give each person's use in a
-   table. The "first-use trial" fallback is no longer needed for the whole phase; it still
+## 8. What this means for the report
+
+1. **The field phase can now be described as planned for one person and shorter for three.** S03
+   used the app over two days on current work; S01, S02 and S04 used it once, for 29, 96 and 15
+   active minutes. Write it as unsupervised use on a tutorial the participant chose, one to three
+   sittings, and give each person's use in a table. The "first-use trial" fallback is no longer needed for the whole phase; it still
    describes S04.
 2. **Report cases and counts, and report by person.** The RQ2 result is the clearest example:
-   5 repaired, 3 revealed, 1 left looks like a spread, and it is in fact three people each doing
-   one thing. Do not set the counts beside the 0 of 31 from the chat logs as if both were rates.
+   9 repaired, 4 revealed, 1 left looks like a spread, and it is in fact four people each doing
+   mostly one thing: two repaired, one revealed, one left. The one reveal by a repairer (S02) has
+   its own cause (point 12). Do not set the counts beside the 0 of 31 from the chat logs as if both were rates.
 3. **Check answer was the main channel, and the hint ladder was barely used.** This is a finding
    about the design: students preferred to put something in the slot and be told what was wrong
    with it. It supports "the attempt comes first" more directly than the RQ1 count does, and it
    means the three-level ladder is not what carried the sessions.
-4. **Split RQ1 by button.** All three Refreshers were pressed on an empty slot before trying, which
-   is what a Refresher is for. Hints came with an attempt 4 times in 6.
-5. **Typed help requests are outside RQ1.** S03 asked to be taught five times by typing. A count of
-   button presses misses them, and so understates how much S03 leaned on the AI before trying.
+4. **Split RQ1 by button.** Three of the four Refreshers were pressed on an empty slot before
+   trying, which is what a Refresher is for; the fourth was pressed on a finished part by a
+   student who then asked what it was. Hints came with an attempt 4 times in 7.
+5. **Typed help requests are outside RQ1.** S03 asked to be taught five times by typing, S02 once.
+   A count of button presses misses them, and so understates how much S03 leaned on the AI before
+   trying.
 6. **The thread is where the work happened.** S03's two hardest parts were built in typed turns
-   before the slot was filled, and S04's one repair was typed there too. This is the evidence for
+   before the slot was filled, S04's one repair was typed there too, and 10 of S02's 16 typed
+   turns are their own reasoning, 9 of them building on what Max had just said. This is the evidence for
    "why a conversational interface" in the introduction.
-7. **Two people did not use the tutorial the way the design assumes.** S03 had not studied the
-   topic and used the app to learn it from the sheet. S04 used an old module's sheet. Only S01
-   looks like practice on material already taught. Ask each of them.
-8. **The fidelity check carries weight, and it has limits.** 62 replies, none gave an answer early
-   and none was long. But one coder read them, that coder is an AI, and the hardest call (how much
-   Max led on S03's part 3) is a judgement.
+7. **Three people did not use the tutorial the way the design assumes.** S03 had not studied the
+   topic and used the app to learn it from the sheet. S04 used an old module's sheet. S02 used a
+   practice set from a public course, with the solutions in the file. Only S01 looks like practice
+   on material already taught. Ask each of them.
+8. **The fidelity check carries weight, and it has limits.** 109 replies, none stated an answer
+   early and none was long. But every reader was an AI, the hardest calls (how much Max led on
+   S03's part 3; the two steps handed over to S02) are judgements, and only S02's replies were
+   checked rule by rule. That closer check is what found the misreadings, so the clean result on
+   the other 62 replies is a result on two rules only.
 9. **The faults go in as limitations and as "what we would change".** The naming fault is now on
    three people's sheets. The two new ones (solutions not used at first; solutions turned into a
    notes page) bear directly on the trust and over-reliance arguments.
@@ -503,24 +713,56 @@ These add three people who used the app differently. They are counts, not rates.
     us to state.
 11. **Interviews now have specific moments to cue**: S03's angry message and what changed after it;
     S03's reveal after "complete"; S03's visits to the Notes view; S01's three reveals with one
-    step left; S04's nine seconds on a level 2 hint.
+    step left; S04's nine seconds on a level 2 hint; S02's three signs on 1(a), the ten checks on
+    2(b), the reveal on part 4 and the ten minutes after it, and what they took the Refresher to be.
+12. **The marking failed against the student once, and the design made it cost them.** On S02's
+    part 4, 4 of 6 verdicts were too strict, one of them because Max quoted an answer that was no
+    longer in the slot. The student objected in the thread and was right; Max agreed in words three
+    times, but the verdict moved only with another Check, and after three more the student took
+    the reveal and lost the credit. Our user research asked for feedback that shows its grounds and
+    is easy to contest. The thread gave the first and not the second. This belongs in the
+    limitations, and it qualifies the red-team result: Max holds a verdict under pressure whether
+    the verdict is right or wrong.
+13. **"Repaired" needs a qualifier.** S02's ten checks on 2(b) are step-by-step repair, with the
+    student's own reasoning in the thread, and they are also a loop in which Max found every fault
+    and the student fixed what was pointed at. It is the step-level feedback that VanLehn (2011)
+    credits, so it supports the design. It does not show that the student could have found the
+    faults alone, and the report should not say it does.
+14. **Check can be used as an oracle on a choice.** S02's ">" on 1(a) came from trying all three
+    signs. Progress is full however many checks a part takes. For a part with a short list of
+    possible answers this is a hole, and "gaming the system" (Baker et al., 2004) is the term the
+    report already cites for it. It happened on 3 of 28 checks.
+15. **Grounding in the material can point at the answer.** With questions and solutions in one
+    file, Max named the solution's page in 19 of 35 replies sent before a part was done. Nothing in
+    the design tells Max which pages are solutions unless the student marks a separate file as
+    solutions.
+16. **S02 is the only participant who was openly unhappy with Max while working**, in 7 of 16 typed
+    turns, and still repaired 4 of 5 parts and finished the eighth part after the reveal. The
+    log shows persistence alongside frustration; the interview should ask which of the two they
+    remember.
 
-## 8. To settle
+## 9. To settle
 
 - **Who is who.** Each export is treated as one person (Lucas, 23 Nov). That makes the two copy-04
   exports two people, so the 18 Nov participant needs a code of their own. Valerie to confirm, and
   to give each person's programme and year for the participant table.
-- **The fifth export**, when it arrives, is a new person whatever copy number it carries.
+- **S02's material** is a practice set from a public course, not obviously their own coursework.
+  Ask whether this was revision for a module of theirs, self-study, or trying the app out.
+- **A person should read S02's part 4** (§6.4) before the report calls the verdicts wrong. The
+  judgement that the answer deserved "complete" is from AI readers working from a rebuilt slot.
 - **Which build each person ran.** The export records version 0.1.0 and no build number. S01 and
   S03 installed on 20 Nov, after the long-paper fix of 19 Nov; the 18 Nov session was before it.
 - **Was it revision, catching up, or trying the app out?** S03 had not studied the topic; S04's
   sheet is from an old module. Ask each person before describing any session as revision.
 - **S03 and the Notes view** (§4.5, fault 3): what they saw there on the first evening.
 - **Which file S01's notebook refused**, if S01 remembers. It may have been a lecture or solutions.
+- **The closer fidelity check on S01, S03 and S04.** S02's replies were checked rule by rule
+  (§6.6); the other 62 were not. If there is time, run the same check on S03's 39 replies before
+  the report states a fidelity result for all four people.
 - **A second coder** for the typed turns (§2.4, §4.4, §5.3) and the fidelity checks. A person
   should at least read S03's part 3 exchange and decide how to describe Max's part in it.
 
-## 9. Traps in the export, for whoever analyses the next one
+## 10. Traps in the export, for whoever analyses the next one
 
 - The study events are JSON lines in `logs/main.log`. Select them by `event`. On `tutorial.help`
   the `level` field holds the hint rung (0, 1, 2, 3), not the log level.
@@ -544,3 +786,15 @@ These add three people who used the app differently. They are counts, not rates.
 - Files in the notebook, their roles, and when the solutions were read into the keys are in
   `notebook.source_role` and `tutorial.solutions`. A check's `key_from` says which key it used.
 - `readable/notes/` can hold a second document, the Summary notes, besides the tutorial itself.
+- The slot's text at each check is not kept, only its length. The nearest trace is the `edits`
+  list in `readable/notes/*.json`: the one-line verdict the app wrote under the part at every
+  check, which often names what the slot said. Max's replies quote the slot too, but Max misquoted
+  it at least once (§6.4).
+- For parts answered by filling a blank, `answer_chars` in `events.jsonl` is 5 higher than
+  `attempt_chars` in the log's `tutorial.check`. Use the log.
+- `tutorial.text_started` fires when an empty slot gets its first character, so it fires again
+  each time a slot is cleared and retyped. That is how S02's three signs on 1(a) show up.
+- A change that keeps the length (48 to 44, "1 +" to "2 +") leaves no trace in the counts. Do not
+  read "same length" as "unchanged".
+- `key_from` says `model` when the solutions are inside the tutorial file itself. Only a separate
+  file given the solutions role is logged as `solutions`.
