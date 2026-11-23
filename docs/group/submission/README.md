@@ -37,9 +37,10 @@ connection.
 4. The app asks "Install ChatterED into Applications?". Click **Install**. It reopens from there.
 5. Read the short notice and click **Continue**. A tour of four cards explains the workspace. You
    can open it again from **Help ▸ Show the Grader Tour**.
-6. After the tour, click **Try the sample tutorial**. The app reads a two-page tutorial of six
-   questions on graph traversal, which we wrote ourselves in the style of a course tutorial. This
-   takes about half a minute.
+6. After the tour, click **Try the sample tutorial**. The app opens a two-page tutorial of six
+   questions on graph traversal, together with the twelve lecture slides it is on. We wrote both
+   ourselves in the style of a course. The app reads the lecture first and then the sheet, which
+   takes about a minute in all.
 
 If you prefer Terminal to step 3, run this once before opening the download:
 
@@ -47,10 +48,12 @@ If you prefer Terminal to step 3, run this once before opening the download:
 xattr -d com.apple.quarantine ~/Downloads/ChatterED-Grader*.dmg
 ```
 
-**Your own material.** The same card has a place to drop any tutorial sheet as a PDF, and
-optionally its lecture slides. You can also add files later from the notebook. A sheet of four
-pages takes about a minute to read. The sample sheet is also in this ZIP, at
-`test-data/graph-traversal-tutorial.pdf`.
+**Your own material.** The same card has a place to drop any tutorial sheet as a PDF. A sheet of
+four pages takes about a minute to read. The tutors work best when the notebook also holds the
+lecture the sheet is on, because every hint is drawn from the lecture and points at its pages. To
+get that with your own files, make a notebook from the lecture slides first, wait for its summary
+notes, and then add the sheet from **Sources** (Known limits, in Section 6, says why the order
+matters). Both sample files are also in this ZIP, in `test-data/`.
 
 **What the copy does with your data.** What you type and the material you open are sent to
 Anthropic's API to get the AI's replies. Everything else stays on your Mac. The app keeps a usage
@@ -158,7 +161,14 @@ To list them: `grep -rn "INNOVATION" app/src`.
 
 **Known limits.** We list these so that you do not have to find them. The report discusses each.
 
-- The agents sometimes call the tutorial sheet "the lecture", "the deck" or "the slide".
+- **A sheet with no lecture.** The tutors are told to ground every hint in the lecture. When a
+  notebook holds a sheet and no lecture slides, they say that "the lecture" does not cover a part,
+  or call the sheet "the lecture", "the deck" or "the slide". Our study participants all used the
+  app this way. The sample comes with its lecture, so you will not see this unless you add a sheet
+  on its own.
+- **A sheet and a lecture dropped together** on the first-run card are read sheet first, so the
+  sheet's parts are not linked to the lecture. The sample button avoids this by reading the
+  lecture first; that ordering is the one change we made for the grading copy.
 - Ellie's private chat can describe a "group" that the tutorial workspace does not have. The
   wording comes from the earlier version of the product.
 - A distress message typed into a part's thread is acknowledged and then steered back to the
@@ -176,6 +186,7 @@ To list them: `grep -rn "INNOVATION" app/src`.
 | `README.md` | This file |
 | `app/` | All source code, prompts, configuration and tests |
 | `test-data/graph-traversal-tutorial.pdf` | The sample tutorial sheet, written by us |
+| `test-data/graph-traversal-lecture.pdf` | The sample lecture slides the tutorial is on, written by us |
 | `ChatterED-demo.mp4` | The video, if it is not given as a link in Section 1 |
 
 There are no API keys in the ZIP. It holds no study data: quotes and counts from the study are in

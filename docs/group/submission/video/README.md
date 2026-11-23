@@ -1,8 +1,9 @@
 # How the demo video was made
 
-`ChatterED-demo.mp4` (7 min 30 s, silent) is one continuous take of the grading copy, from first
+`ChatterED-demo.mp4` (7 min 40 s, silent) is one continuous take of the grading copy, from first
 launch to a revealed answer. It was filmed on 23 Nov 2026 on the build made from app commit
-`c50369c`, with a fresh profile and the live model.
+`6afa315`, with a fresh profile and the live model. It was filmed again that evening, after the
+sample gained its lecture slides: the earlier video showed the sheet on its own.
 
 - `take.mjs` is the script of the walk-through: what is pressed and typed, in order.
 - `film.mjs` drives the app's real interface through the DevTools protocol and records the app's

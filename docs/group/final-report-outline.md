@@ -729,6 +729,16 @@ the video. It holds no study data and no key; the grading DMG is a link in the R
 has to say** that the tour, the sample and the comments were added after the study, because the
 graders mark the version in the ZIP. Group number: 5.
 
+**Added the same evening.** The sample now comes with the lecture slides it is on, and in the
+grading copy's sample the lecture is read before the sheet, so every part is linked to it (9 of 9
+on the build we filmed) and the hints cite its pages. This was done because a notebook with a
+sheet and no lecture makes the tutors say "the lecture does not cover this" or call the sheet "the
+slide", which is what all five study participants met (`field-results.md`). **The report has to
+say two things:** the participants used the app without a lecture and the graders' sample has one;
+and the lecture-first order is a change to the grading copy's sample only, with a participant's
+first run, the prompts and the tutoring rules as they were. Sheet-first reading when a sheet and a
+lecture are dropped together stays a known limit.
+
 **To ask the teaching team.** How they want to run a Mac-only app that needs a paid model; our
 group number.
 

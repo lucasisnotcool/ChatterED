@@ -8,6 +8,7 @@
 #   README.md                              from docs/group/submission/README.md, placeholders filled
 #   app/                                   every tracked file under app/ (source, prompts, config)
 #   test-data/graph-traversal-tutorial.pdf    the sample tutorial the team wrote
+#   test-data/graph-traversal-lecture.pdf     the sample lecture slides it is on, also the team's
 #
 # and nothing else. No study data, no transcripts, no report drafts, no course material, no team
 # policy files, and no key bundle: the grading copy with its credit is a download linked from the
@@ -62,16 +63,17 @@ mkdir -p "$TOP"
 
 README_SRC='docs/group/submission/README.md'
 SAMPLE_SRC='docs/group/submission/sample/graph-traversal-tutorial.pdf'
+LECTURE_SRC='docs/group/submission/sample/graph-traversal-lecture.pdf'
 
 # ── what goes in must match the commit ──────────────────────────────────────
-DIRTY="$(git status --porcelain -- app "$README_SRC" "$SAMPLE_SRC")"
+DIRTY="$(git status --porcelain -- app "$README_SRC" "$SAMPLE_SRC" "$LECTURE_SRC")"
 if [[ -n "$DIRTY" ]]; then
   echo "refusing: a path that goes into the archive is dirty. Commit it first: the graders mark" >&2
   echo "the version in the ZIP, and the grading copy must be built from the same commit." >&2
   echo "$DIRTY" >&2
   exit 1
 fi
-for f in "$README_SRC" "$SAMPLE_SRC"; do
+for f in "$README_SRC" "$SAMPLE_SRC" "$LECTURE_SRC"; do
   git ls-files --error-unmatch -- "$f" >/dev/null 2>&1 || { echo "refusing: $f is not tracked." >&2; exit 1; }
 done
 
@@ -86,6 +88,7 @@ echo "    ${COUNT} files under app/"
 
 mkdir -p "$TOP/test-data"
 cp "$SAMPLE_SRC" "$TOP/test-data/graph-traversal-tutorial.pdf"
+cp "$LECTURE_SRC" "$TOP/test-data/graph-traversal-lecture.pdf"
 
 # ── the README, with its placeholders filled ────────────────────────────────
 if [[ -n "$VIDEO_FILE" ]]; then

@@ -27,7 +27,8 @@ await press('Continue', { exact: true });
 for (let card = 1; card <= 4; card++) { await W(card === 2 ? 14000 : 10000); await press('Next', { exact: true }); }
 await W(9000);
 await press('Try the sample tutorial');
-for (let i = 0; i < 150; i++) { if ((await ev('document.querySelectorAll(".nd-tut-part").length').catch(() => 0)) >= 6) break; await W(1000); }
+// The lecture is read first, then the sheet: about a minute.
+for (let i = 0; i < 420; i++) { if ((await ev('document.querySelectorAll(".nd-tut-part").length').catch(() => 0)) >= 6) break; await W(1000); }
 log('sheet is in');
 await W(7000);
 if (await has('Got it')) { await press('Got it', { exact: true }); await W(2500); }
